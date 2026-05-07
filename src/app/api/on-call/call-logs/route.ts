@@ -161,15 +161,19 @@ export async function POST(req: Request) {
   }
 
   // Find existing contact (by phone OR name fallback) and create only if we
-  // have a phone to seed a new record with. We hydrate the ticket body with
-  // any phone/address pulled from the contact, but we do NOT overwrite the
-  // call log row's customer fields — the log is the electrician's source-of-
+  // have a phone to seed a new record with. We hydrate the ticket body +
+  // structured address from the contact, but we do NOT overwrite the call
+  // log row's customer fields — the log is the electrician's source-of-
   // truth record of what they actually captured on the call.
   safeWaitUntil(
     (async () => {
       let contactId: string | null = null;
       let resolvedPhone: string | null = log.customerPhone;
-      let resolvedAddress: string | null = log.customerAddress;
+      // Structured address: starts blank; filled from contact when available.
+      let street: string | null = log.customerAddress;
+      let city: string | null = null;
+      let state: string | null = null;
+      let zip: string | null = null;
 
       try {
         const contact = await findOrCreateContact({
@@ -179,10 +183,16 @@ export async function POST(req: Request) {
         });
         if (contact) {
           contactId = contact.id;
-          // Hydrate locals only — used downstream for the ticket body. The
-          // call log row stays as the electrician entered it.
           if (!resolvedPhone && contact.phone) resolvedPhone = contact.phone;
-          if (!resolvedAddress && contact.address) resolvedAddress = contact.address;
+          // Always prefer the contact's structured address — the log row only
+          // has a single free-text field, which can't drive HubSpot's Address
+          // card. If the electrician typed an address into the form, it stays
+          // in `street` (used as the "Street Address"); city/state/zip come
+          // from the contact when present.
+          if (!street && contact.address) street = contact.address;
+          if (contact.city) city = contact.city;
+          if (contact.state) state = contact.state;
+          if (contact.zip) zip = contact.zip;
 
           await prisma.onCallCallLog.update({
             where: { id: log.id },
@@ -196,6 +206,11 @@ export async function POST(req: Request) {
       const isFollowUp = !log.resolvedRemotely && !log.dispatched;
       if (isFollowUp) {
         const issueLabel = ISSUE_TYPES.find((t) => t.value === log.issueType)?.label ?? log.issueType;
+        // Combined display address for the ticket body (also used in case the
+        // structured Address card is hidden by a portal admin).
+        const fullAddress = [street, [city, state].filter(Boolean).join(", "), zip]
+          .filter(Boolean)
+          .join(" ");
         try {
           const ticketId = await createServiceTicket({
             subject: `On-Call Follow-Up: ${log.customerName} — ${issueLabel}`,
@@ -204,13 +219,14 @@ export async function POST(req: Request) {
               `Electrician: ${log.reporterCrewMember.name}`,
               `Date: ${log.callReceivedAt.toLocaleString("en-US", { timeZone: log.pool.timezone || "America/Denver" })}`,
               resolvedPhone ? `Phone: ${resolvedPhone}` : null,
-              resolvedAddress ? `Address: ${resolvedAddress}` : null,
+              fullAddress ? `Address: ${fullAddress}` : null,
               log.troubleshootingAttempted ? `Troubleshooting: ${log.troubleshootingAttempted}` : null,
               log.escalatedTo ? `Escalated to: ${log.escalatedTo}` : null,
               log.notes ? `Notes: ${log.notes}` : null,
             ].filter(Boolean).join("\n"),
             priority: log.safetyRisk ? "HIGH" : "MEDIUM",
             contactId: contactId ?? undefined,
+            address: { street, city, state, zip },
           });
           await prisma.onCallCallLog.update({
             where: { id: log.id },

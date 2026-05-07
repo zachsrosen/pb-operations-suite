@@ -692,11 +692,18 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
 /**
  * Resolved HubSpot contact — id plus a few properties we hydrate back into
  * call-log + ticket bodies when the form was filled in without them.
+ *
+ * Address is broken into structured pieces so the ticket's Address card
+ * (street_address / city / state / zip_code) populates correctly. The
+ * `address` field is the contact's "Street Address" (single-line street).
  */
 export type ResolvedContact = {
   id: string;
   phone: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
 };
 
 /**
@@ -723,7 +730,7 @@ export async function findContact(opts: {
         { filters: [{ propertyName: "phone", operator: "EQ" as never, value: opts.phone }] },
         { filters: [{ propertyName: "phone", operator: "EQ" as never, value: digits }] },
       ],
-      properties: ["firstname", "lastname", "phone", "address"],
+      properties: ["firstname", "lastname", "phone", "address", "city", "state", "zip"],
       limit: 1,
       sorts: [],
       after: 0 as never,
@@ -734,6 +741,9 @@ export async function findContact(opts: {
         id: c.id,
         phone: (c.properties.phone as string | null) ?? null,
         address: (c.properties.address as string | null) ?? null,
+        city: (c.properties.city as string | null) ?? null,
+        state: (c.properties.state as string | null) ?? null,
+        zip: (c.properties.zip as string | null) ?? null,
       };
     }
   }
@@ -753,7 +763,7 @@ export async function findContact(opts: {
             ],
           },
         ],
-        properties: ["firstname", "lastname", "phone", "address"],
+        properties: ["firstname", "lastname", "phone", "address", "city", "state", "zip"],
         limit: 5,
         sorts: [],
         after: 0 as never,
@@ -765,6 +775,9 @@ export async function findContact(opts: {
           id: c.id,
           phone: (c.properties.phone as string | null) ?? null,
           address: (c.properties.address as string | null) ?? null,
+          city: (c.properties.city as string | null) ?? null,
+          state: (c.properties.state as string | null) ?? null,
+          zip: (c.properties.zip as string | null) ?? null,
         };
       }
     }
@@ -814,6 +827,11 @@ export async function findOrCreateContact(opts: {
     id: contact.id,
     phone: opts.phone,
     address: opts.address ?? null,
+    // Newly-created contact only has the street address we passed in (no
+    // city/state/zip parsing). Caller should fall back to call-log values.
+    city: null,
+    state: null,
+    zip: null,
   };
 }
 
@@ -827,6 +845,17 @@ export async function createServiceTicket(opts: {
   content: string;
   priority?: "HIGH" | "MEDIUM" | "LOW";
   contactId?: string;
+  /**
+   * Optional structured address that populates the ticket's "Address" card
+   * (street_address / city / state / zip_code). Pass through what's
+   * available; missing parts are simply omitted.
+   */
+  address?: {
+    street?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+  };
 }): Promise<string> {
   const { map: _unused, orderedStageIds } = await getTicketStageMap();
   const firstStageId = orderedStageIds[0];
@@ -844,14 +873,20 @@ export async function createServiceTicket(opts: {
     });
   }
 
+  const properties: Record<string, string> = {
+    subject: opts.subject,
+    content: opts.content,
+    hs_pipeline: SERVICE_TICKET_PIPELINE_ID,
+    hs_pipeline_stage: firstStageId,
+    hs_ticket_priority: opts.priority ?? "MEDIUM",
+  };
+  if (opts.address?.street) properties.street_address = opts.address.street;
+  if (opts.address?.city) properties.city = opts.address.city;
+  if (opts.address?.state) properties.state = opts.address.state;
+  if (opts.address?.zip) properties.zip_code = opts.address.zip;
+
   const ticket = await hubspotClient.crm.tickets.basicApi.create({
-    properties: {
-      subject: opts.subject,
-      content: opts.content,
-      hs_pipeline: SERVICE_TICKET_PIPELINE_ID,
-      hs_pipeline_stage: firstStageId,
-      hs_ticket_priority: opts.priority ?? "MEDIUM",
-    },
+    properties,
     associations: associations as never,
   });
 
