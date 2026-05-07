@@ -2607,9 +2607,47 @@ export default function ConstructionSchedulerPage() {
         <SubJobScheduleModal
           subJobs={subJobScheduleModal.project.zuperSubJobs}
           projectName={getCustomerName(subJobScheduleModal.project.name)}
+          projectContext={{
+            id: subJobScheduleModal.project.id,
+            name: subJobScheduleModal.project.name,
+            address: subJobScheduleModal.project.address,
+            location: subJobScheduleModal.project.location,
+            type: subJobScheduleModal.project.type,
+            amount: subJobScheduleModal.project.amount,
+            stage: "construction",
+            hubspotUrl: subJobScheduleModal.project.hubspotUrl,
+            zuperJobUid: subJobScheduleModal.project.zuperJobUid,
+            zuperJobStatus: subJobScheduleModal.project.zuperJobStatus,
+            zuperWebBaseUrl: zuperWebBaseUrl || undefined,
+            systemSize: subJobScheduleModal.project.systemSize,
+            moduleCount: 0,
+            moduleBrand: "",
+            moduleModel: "",
+            moduleWattage: 0,
+            inverterCount: 0,
+            inverterBrand: "",
+            inverterModel: "",
+            inverterSizeKwac: 0,
+            batteries: subJobScheduleModal.project.batteries,
+            batteryModel: null,
+            batterySizeKwh: 0,
+            batteryExpansion: 0,
+            evCount: subJobScheduleModal.project.evCount,
+            daysInstall: subJobScheduleModal.project.installDays,
+            daysElec: 0,
+            totalDays: subJobScheduleModal.project.installDays,
+            roofersCount: 0,
+            electriciansCount: 0,
+            difficulty: 0,
+            installNotes: "",
+          }}
           availableCrew={availableConstructionAssignees.map((a) => ({ name: a.name, uid: a.userUid }))}
           defaultDate={subJobScheduleModal.date}
           defaultInstallDays={getEffectiveInstallDays(subJobScheduleModal.project)}
+          zuperConfigured={zuperConfigured}
+          syncToZuper={syncToZuper}
+          onSyncToZuperChange={setSyncToZuper}
+          internalDealUrl={`/dashboards/deals?deal=${subJobScheduleModal.project.id}`}
           onSubmit={handleSubJobScheduleSubmit}
           onClose={() => setSubJobScheduleModal(null)}
         />

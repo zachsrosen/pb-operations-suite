@@ -6827,9 +6827,47 @@ export default function SchedulerPage() {
         <SubJobScheduleModal
           subJobs={subJobScheduleModal.project.zuperSubJobs}
           projectName={getCustomerName(subJobScheduleModal.project.name)}
+          projectContext={{
+            id: subJobScheduleModal.project.id,
+            name: subJobScheduleModal.project.name,
+            address: subJobScheduleModal.project.address,
+            location: subJobScheduleModal.project.location,
+            type: subJobScheduleModal.project.type,
+            amount: subJobScheduleModal.project.amount,
+            stage: subJobScheduleModal.project.stage,
+            hubspotUrl: subJobScheduleModal.project.hubspotUrl,
+            zuperJobUid: subJobScheduleModal.project.zuperJobUid,
+            zuperJobStatus: subJobScheduleModal.project.zuperJobStatus,
+            zuperWebBaseUrl: zuperWebBaseUrl || undefined,
+            systemSize: subJobScheduleModal.project.systemSize,
+            moduleCount: subJobScheduleModal.project.moduleCount,
+            moduleBrand: subJobScheduleModal.project.moduleBrand,
+            moduleModel: subJobScheduleModal.project.moduleModel,
+            moduleWattage: subJobScheduleModal.project.moduleWattage,
+            inverterCount: subJobScheduleModal.project.inverterCount,
+            inverterBrand: subJobScheduleModal.project.inverterBrand,
+            inverterModel: subJobScheduleModal.project.inverterModel,
+            inverterSizeKwac: subJobScheduleModal.project.inverterSizeKwac,
+            batteries: subJobScheduleModal.project.batteries,
+            batteryModel: subJobScheduleModal.project.batteryModel,
+            batterySizeKwh: subJobScheduleModal.project.batterySizeKwh,
+            batteryExpansion: subJobScheduleModal.project.batteryExpansion,
+            evCount: subJobScheduleModal.project.evCount,
+            daysInstall: subJobScheduleModal.project.daysInstall,
+            daysElec: subJobScheduleModal.project.daysElec,
+            totalDays: subJobScheduleModal.project.totalDays,
+            roofersCount: subJobScheduleModal.project.roofersCount,
+            electriciansCount: subJobScheduleModal.project.electriciansCount,
+            difficulty: subJobScheduleModal.project.difficulty,
+            installNotes: subJobScheduleModal.project.installNotes,
+          }}
           availableCrew={availableConstructionAssignees.map((a) => ({ name: a.name, uid: a.userUid }))}
           defaultDate={subJobScheduleModal.date}
           defaultInstallDays={getEffectiveConstructionDays(subJobScheduleModal.project) || subJobScheduleModal.project.daysInstall || 2}
+          zuperConfigured={zuperConfigured}
+          syncToZuper={syncToZuper}
+          onSyncToZuperChange={setSyncToZuper}
+          internalDealUrl={`/dashboards/deals?deal=${subJobScheduleModal.project.id}`}
           onSubmit={handleSubJobScheduleSubmit}
           onClose={() => setSubJobScheduleModal(null)}
         />
