@@ -182,21 +182,10 @@ export async function GET(request: NextRequest) {
 
     // --- Process ScheduleRecords first (higher priority) ---
     for (const sr of scheduleRecords) {
-      const crewName = sr.assignedUser!; // guaranteed non-null by query filter
-      const crew = crewByName.get(crewName);
+      const rawAssigned = sr.assignedUser!; // guaranteed non-null by query filter
+      const individualNames = rawAssigned.split(",").map((n) => n.trim()).filter(Boolean);
 
-      // Resolve jobType: scheduleType → crew role fallback → "unknown"
-      const jobType =
-        sr.scheduleType ||
-        (crew ? ROLE_JOB_TYPE_MAP[crew.role] : undefined) ||
-        "unknown";
-
-      // Resolve pbLocation: cache → crew locations[0] → null
       const cached = projectCache.get(sr.projectId);
-      const pbLocation =
-        cached?.pbLocation ||
-        (crew && crew.locations.length > 0 ? crew.locations[0] : null);
-
       const dealValue = cached?.amount ?? null;
 
       // Expand multi-day jobs
@@ -208,66 +197,84 @@ export async function GET(request: NextRequest) {
             )
           : [sr.scheduledDate];
 
-      for (const date of dates) {
-        const dedupKey = `${crewName}|${date}|${sr.projectId}`;
-        if (seen.has(dedupKey)) continue;
-        seen.add(dedupKey);
+      for (const crewName of individualNames) {
+        const crew = crewByName.get(crewName);
 
-        assignments.push({
-          id: `sr_${sr.id}_${date}`,
-          source: "schedule_record",
-          crewMemberName: crewName,
-          date,
-          startTime: sr.scheduledStart ?? null,
-          endTime: sr.scheduledEnd ?? null,
-          jobType,
-          pbLocation,
-          projectId: sr.projectId,
-          projectName: sr.projectName,
-          dealValue,
-          status: sr.status,
-          schedulerPath: resolveSchedulerPath(jobType),
-        });
+        // Resolve jobType: scheduleType → crew role fallback → "unknown"
+        const jobType =
+          sr.scheduleType ||
+          (crew ? ROLE_JOB_TYPE_MAP[crew.role] : undefined) ||
+          "unknown";
+
+        // Resolve pbLocation: cache → crew locations[0] → null
+        const pbLocation =
+          cached?.pbLocation ||
+          (crew && crew.locations.length > 0 ? crew.locations[0] : null);
+
+        for (const date of dates) {
+          const dedupKey = `${crewName}|${date}|${sr.projectId}`;
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+
+          assignments.push({
+            id: `sr_${sr.id}_${date}_${crewName}`,
+            source: "schedule_record",
+            crewMemberName: crewName,
+            date,
+            startTime: sr.scheduledStart ?? null,
+            endTime: sr.scheduledEnd ?? null,
+            jobType,
+            pbLocation,
+            projectId: sr.projectId,
+            projectName: sr.projectName,
+            dealValue,
+            status: sr.status,
+            schedulerPath: resolveSchedulerPath(jobType),
+          });
+        }
       }
     }
 
     // --- Process BookedSlots (lower priority — dedup filters duplicates) ---
     for (const bs of bookedSlots) {
-      const crewName = bs.userName;
-      const crew = crewByName.get(crewName);
+      const individualNames = bs.userName.split(",").map((n) => n.trim()).filter(Boolean);
 
-      const dedupKey = `${crewName}|${bs.date}|${bs.projectId}`;
-      if (seen.has(dedupKey)) continue;
-      seen.add(dedupKey);
-
-      // Resolve jobType: no scheduleType on BookedSlot → crew role fallback → "unknown"
-      const jobType =
-        (crew ? ROLE_JOB_TYPE_MAP[crew.role] : undefined) || "unknown";
-
-      // Resolve pbLocation: BookedSlot.location → cache → crew locations[0] → null
       const cached = projectCache.get(bs.projectId);
-      const pbLocation =
-        bs.location ||
-        cached?.pbLocation ||
-        (crew && crew.locations.length > 0 ? crew.locations[0] : null);
-
       const dealValue = cached?.amount ?? null;
 
-      assignments.push({
-        id: `bs_${bs.id}`,
-        source: "booked_slot",
-        crewMemberName: crewName,
-        date: bs.date,
-        startTime: bs.startTime ?? null,
-        endTime: bs.endTime ?? null,
-        jobType,
-        pbLocation,
-        projectId: bs.projectId,
-        projectName: bs.projectName,
-        dealValue,
-        status: "scheduled",
-        schedulerPath: resolveSchedulerPath(jobType),
-      });
+      for (const crewName of individualNames) {
+        const crew = crewByName.get(crewName);
+
+        const dedupKey = `${crewName}|${bs.date}|${bs.projectId}`;
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+
+        // Resolve jobType: no scheduleType on BookedSlot → crew role fallback → "unknown"
+        const jobType =
+          (crew ? ROLE_JOB_TYPE_MAP[crew.role] : undefined) || "unknown";
+
+        // Resolve pbLocation: BookedSlot.location → cache → crew locations[0] → null
+        const pbLocation =
+          bs.location ||
+          cached?.pbLocation ||
+          (crew && crew.locations.length > 0 ? crew.locations[0] : null);
+
+        assignments.push({
+          id: `bs_${bs.id}_${crewName}`,
+          source: "booked_slot",
+          crewMemberName: crewName,
+          date: bs.date,
+          startTime: bs.startTime ?? null,
+          endTime: bs.endTime ?? null,
+          jobType,
+          pbLocation,
+          projectId: bs.projectId,
+          projectName: bs.projectName,
+          dealValue,
+          status: "scheduled",
+          schedulerPath: resolveSchedulerPath(jobType),
+        });
+      }
     }
 
     // -----------------------------------------------------------------------
