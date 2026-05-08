@@ -22,9 +22,11 @@ export function sumGoalRows(
   const sum = (key: keyof GoalsPipelineData["goals"]) => {
     let totalCurrent = 0;
     let totalTarget = 0;
+    let totalStretch = 0;
     for (const r of rows) {
       totalCurrent += r[key].current;
       totalTarget += r[key].target;
+      totalStretch += r[key].stretchTarget;
     }
     const percent = totalTarget > 0
       ? Math.min(Math.round((totalCurrent / totalTarget) * 100), 999)
@@ -33,7 +35,7 @@ export function sumGoalRows(
     const progressPercent = totalTarget > 0 ? totalCurrent / totalTarget : 1;
     const paceRatio = elapsedPercent > 0 ? progressPercent / elapsedPercent : 1;
     const color = paceRatio >= 1.0 ? "green" as const : paceRatio >= 0.75 ? "yellow" as const : "red" as const;
-    return { current: totalCurrent, target: totalTarget, percent, color };
+    return { current: totalCurrent, target: totalTarget, stretchTarget: Math.max(totalStretch, totalTarget), percent, color };
   };
 
   return {

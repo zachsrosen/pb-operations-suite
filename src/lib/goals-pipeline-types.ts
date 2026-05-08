@@ -12,11 +12,13 @@ export type PaceColor = "green" | "yellow" | "red";
 export interface GoalRow {
   /** Current revenue earned (dollars) or review count */
   current: number;
-  /** Target from OfficeGoal table or default */
+  /** Base target from OfficeGoal table or default */
   target: number;
+  /** Stretch target — the higher "gold" goal */
+  stretchTarget: number;
   /** current / target * 100, clamped to [0, 999] */
   percent: number;
-  /** Pacing color based on pace vs. elapsed month */
+  /** Pacing color based on pace vs. elapsed month (against base target) */
   color: PaceColor;
 }
 
@@ -88,11 +90,20 @@ export const GOAL_METRICS = [
 
 export type GoalMetric = (typeof GOAL_METRICS)[number];
 
-/** Default monthly targets when no OfficeGoal record exists */
+/** Default monthly BASE targets when no OfficeGoal record exists */
 export const DEFAULT_TARGETS: Record<string, Record<GoalMetric, number>> = {
+  Westminster:        { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 15 },
+  Centennial:         { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 15 },
+  "Colorado Springs": { sales_revenue: 400_000,   survey_revenue: 400_000,   da_revenue: 400_000,   cc_revenue: 400_000,   inspection_revenue: 400_000,   pto_revenue: 400_000,   five_star_reviews: 10 },
+  "San Luis Obispo":  { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 8 },
+  Camarillo:          { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 7 },
+};
+
+/** Default monthly STRETCH targets — the gold-tier goal above base */
+export const DEFAULT_STRETCH_TARGETS: Record<string, Record<GoalMetric, number>> = {
   Westminster:        { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
   Centennial:         { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
-  "Colorado Springs": { sales_revenue: 300_000,   survey_revenue: 300_000,   da_revenue: 300_000,   cc_revenue: 300_000,   inspection_revenue: 300_000,   pto_revenue: 300_000,   five_star_reviews: 10 },
+  "Colorado Springs": { sales_revenue: 500_000,   survey_revenue: 500_000,   da_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   pto_revenue: 500_000,   five_star_reviews: 10 },
   "San Luis Obispo":  { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 8 },
   Camarillo:          { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 7 },
 };
