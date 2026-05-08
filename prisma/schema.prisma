@@ -4076,6 +4076,28 @@ model PowerhubTelemetryHistory {
   @@index([siteId, timestamp])
 }
 
+// ===========================================
+// GOALS DIGEST SNAPSHOTS
+// ===========================================
+
+/// Weekly snapshot of goals data per location for week-over-week delta tracking.
+/// One row per location per ISO week. The cron job reads the prior week's row
+/// to compute deltas shown in the email digest.
+model GoalsDigestSnapshot {
+  id       String @id @default(cuid())
+  /// ISO week key, e.g. "2026-W19"
+  weekKey  String
+  /// Canonical location name (Westminster, Centennial, etc.) or "all" for company-wide
+  location String
+  /// JSON blob of { sales: number, surveys: number, da: number, cc: number, inspections: number, pto: number, reviews: number }
+  goals    Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([weekKey, location])
+  @@index([location])
+}
+
 model PowerhubAlert {
   id     String       @id @default(cuid())
   siteId String
