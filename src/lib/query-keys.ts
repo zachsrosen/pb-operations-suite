@@ -102,6 +102,11 @@ export const queryKeys = {
     callLogs: (poolId?: string, from?: string, to?: string) =>
       ["on-call", "call-logs", poolId, from, to] as const,
   },
+  crewSchedule: {
+    root: ["crewSchedule"] as const,
+    list: (startDate: string, endDate: string) =>
+      ["crewSchedule", "list", startDate, endDate] as const,
+  },
   peDeals: {
     root: ["peDeals"] as const,
     list: () => [...queryKeys.peDeals.root, "list"] as const,
@@ -244,5 +249,6 @@ export function cacheKeyToQueryKeys(
     return [queryKeys.powerhub.root, queryKeys.servicePriority.root];
   if (serverKey.startsWith("powerhub"))
     return [queryKeys.powerhub.root];
+  if (serverKey.startsWith("crew-schedule")) return [queryKeys.crewSchedule.root];
   return [];
 }
