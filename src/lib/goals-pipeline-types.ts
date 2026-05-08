@@ -89,8 +89,8 @@ export const DEFAULT_TARGETS: Record<string, Record<GoalMetric, number>> = {
   Westminster:        { sales_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, five_star_reviews: 15 },
   Centennial:         { sales_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, five_star_reviews: 15 },
   "Colorado Springs": { sales_revenue: 300_000,   da_revenue: 300_000,   cc_revenue: 300_000,   inspection_revenue: 300_000,   five_star_reviews: 10 },
-  "San Luis Obispo":  { sales_revenue: 500_000,   da_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   five_star_reviews: 10 },
-  Camarillo:          { sales_revenue: 500_000,   da_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   five_star_reviews: 10 },
+  "San Luis Obispo":  { sales_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   five_star_reviews: 8 },
+  Camarillo:          { sales_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   five_star_reviews: 7 },
 };
 
 /** Pipeline bar chart stage definitions: property names on the Location custom object */
