@@ -30,7 +30,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
 /** Show all pills — TV displays have no scroll/hover, so truncating hides events */
 
@@ -378,10 +378,9 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
     return expandToDayPills(allEvents, year, month);
   }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, location, year, month]);
 
-  // Build the month grid
+  // Build the month grid (weekdays only — Mon–Fri)
   const grid = useMemo(() => {
     const firstDay = new Date(year, month - 1, 1);
-    const startDow = firstDay.getDay(); // 0=Sun
     const daysInMonth = new Date(year, month, 0).getDate();
 
     const cells: {
@@ -395,41 +394,30 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-    // Leading empty cells for days before the 1st
-    for (let i = 0; i < startDow; i++) {
-      cells.push({
-        dateStr: "",
-        dayNum: 0,
-        isToday: false,
-        isWeekend: i === 0 || i === 6,
-        isOutsideMonth: true,
-      });
+    // Find the weekday column (0=Mon .. 4=Fri) for the 1st of the month
+    const firstDow = firstDay.getDay(); // 0=Sun .. 6=Sat
+    const firstWeekdayCol = firstDow === 0 ? 0 : firstDow === 6 ? 0 : firstDow - 1;
+
+    // Leading empty cells for weekdays before the 1st
+    // If the 1st is Sat/Sun, no leading empties needed (first weekday starts Mon)
+    const leadingEmpties = (firstDow === 0 || firstDow === 6) ? 0 : firstWeekdayCol;
+    for (let i = 0; i < leadingEmpties; i++) {
+      cells.push({ dateStr: "", dayNum: 0, isToday: false, isWeekend: false, isOutsideMonth: true });
     }
 
-    // Actual month days
+    // Actual month days — skip weekends
     for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month - 1, d);
+      const dow = date.getDay();
+      if (dow === 0 || dow === 6) continue; // skip weekends
       const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      const dow = (startDow + d - 1) % 7;
-      cells.push({
-        dateStr,
-        dayNum: d,
-        isToday: dateStr === todayStr,
-        isWeekend: dow === 0 || dow === 6,
-        isOutsideMonth: false,
-      });
+      cells.push({ dateStr, dayNum: d, isToday: dateStr === todayStr, isWeekend: false, isOutsideMonth: false });
     }
 
-    // Trailing empty cells to complete the last week
-    const trailing = (7 - (cells.length % 7)) % 7;
+    // Trailing empty cells to complete the last week row
+    const trailing = (5 - (cells.length % 5)) % 5;
     for (let i = 0; i < trailing; i++) {
-      const dow = (cells.length) % 7;
-      cells.push({
-        dateStr: "",
-        dayNum: 0,
-        isToday: false,
-        isWeekend: dow === 0 || dow === 6,
-        isOutsideMonth: true,
-      });
+      cells.push({ dateStr: "", dayNum: 0, isToday: false, isWeekend: false, isOutsideMonth: true });
     }
 
     return cells;
@@ -457,7 +445,7 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
       </div>
 
       {/* Day-of-week headers */}
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-5 gap-1">
         {DAY_HEADERS.map((day) => (
           <div key={day} className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-1">
             {day}
@@ -467,8 +455,8 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
 
       {/* Month grid — equal row heights fill the viewport */}
       <div
-        className="grid grid-cols-7 gap-1 flex-1 min-h-0"
-        style={{ gridTemplateRows: `repeat(${Math.ceil(grid.length / 7)}, 1fr)` }}
+        className="grid grid-cols-5 gap-1 flex-1 min-h-0"
+        style={{ gridTemplateRows: `repeat(${Math.ceil(grid.length / 5)}, 1fr)` }}
       >
         {grid.map((cell, i) => (
           <DayCell
