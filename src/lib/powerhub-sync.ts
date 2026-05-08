@@ -200,7 +200,7 @@ async function upsertSite(
 
   // Use upsert to avoid race conditions between concurrent cron runs
   // that both see a site as "new" and try to create it simultaneously
-  const upserted = await prisma.powerhubSite.upsert({
+  await prisma.powerhubSite.upsert({
     where: { siteId: detail.site_id },
     update: siteData,
     create: {
