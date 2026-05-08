@@ -396,7 +396,7 @@ export default function ConstructionSchedulerPage() {
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
   const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://web.zuperpro.com");
-  const [syncToZuper, setSyncToZuper] = useState(true);
+  const [syncToZuper, setSyncToZuper] = useState(false);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
   const [liveConstructionAssigneesByLocation, setLiveConstructionAssigneesByLocation] = useState<
     Record<string, ZuperAssignee[]>

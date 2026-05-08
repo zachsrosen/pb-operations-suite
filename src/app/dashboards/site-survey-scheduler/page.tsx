@@ -372,7 +372,7 @@ export default function SiteSurveySchedulerPage() {
   /* ---- Zuper integration ---- */
   const [zuperConfigured, setZuperConfigured] = useState(false);
   const [zuperWebBaseUrl, setZuperWebBaseUrl] = useState("https://web.zuperpro.com");
-  const [syncToZuper, setSyncToZuper] = useState(true);
+  const [syncToZuper, setSyncToZuper] = useState(false);
   const [syncingToZuper, setSyncingToZuper] = useState(false);
   const [useTestSlot, setUseTestSlot] = useState(false);
   const [confirmingTentative, setConfirmingTentative] = useState(false);
