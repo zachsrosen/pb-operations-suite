@@ -497,7 +497,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
     // 3. Fetch alerts (paginated, up to ALERT_MAX_PAGES pages)
     const allAlerts: Array<{
       alertId: string;
-      siteId: string | null;
+      siteId: string;
       din: string | null;
       deviceId: string;
       alertName: string;
