@@ -89,7 +89,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "status required" }, { status: 400 });
   }
 
-  const result = await zuper.updateJobStatus(uid, body.status);
+  const result = await zuper.resolveAndSetJobStatus(uid, body.status);
   if (result.type !== "success") {
     return NextResponse.json({ error: result.error || "Update failed" }, { status: 500 });
   }
