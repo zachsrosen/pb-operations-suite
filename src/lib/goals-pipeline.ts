@@ -21,6 +21,7 @@ import {
   HUBSPOT_LOCATION_IDS,
   PIPELINE_STAGES,
   DEFAULT_TARGETS,
+  DEFAULT_STRETCH_TARGETS,
   type GoalsPipelineData,
   type GoalRow,
   type PipelineStageData,
@@ -102,6 +103,7 @@ function computePaceColor(
 function buildGoalRow(
   current: number,
   target: number,
+  stretchTarget: number,
   dayOfMonth: number,
   daysInMonth: number
 ): GoalRow {
@@ -109,6 +111,7 @@ function buildGoalRow(
   return {
     current,
     target,
+    stretchTarget: Math.max(stretchTarget, target),
     percent,
     color: computePaceColor(current, target, dayOfMonth, daysInMonth),
   };
@@ -299,21 +302,26 @@ export async function getGoalsPipelineData(
   }
 
   const defaults = DEFAULT_TARGETS[location] ?? DEFAULT_TARGETS["Westminster"];
+  const stretchDefaults = DEFAULT_STRETCH_TARGETS[location] ?? DEFAULT_STRETCH_TARGETS["Westminster"];
 
   function getTarget(metric: GoalMetric): number {
     return targetMap.get(metric) ?? defaults[metric];
   }
 
+  function getStretchTarget(metric: GoalMetric): number {
+    return stretchDefaults[metric];
+  }
+
   // ------ Build goal rows ------
 
   const goals = {
-    sales: buildGoalRow(salesResult.revenue, getTarget("sales_revenue"), dayOfMonth, daysInMonth),
-    surveys: buildGoalRow(surveyResult.revenue, getTarget("survey_revenue"), dayOfMonth, daysInMonth),
-    da: buildGoalRow(daResult.revenue, getTarget("da_revenue"), dayOfMonth, daysInMonth),
-    cc: buildGoalRow(ccResult.revenue, getTarget("cc_revenue"), dayOfMonth, daysInMonth),
-    inspections: buildGoalRow(inspectionResult.revenue, getTarget("inspection_revenue"), dayOfMonth, daysInMonth),
-    pto: buildGoalRow(ptoResult.revenue, getTarget("pto_revenue"), dayOfMonth, daysInMonth),
-    reviews: buildGoalRow(reviewCount, getTarget("five_star_reviews"), dayOfMonth, daysInMonth),
+    sales: buildGoalRow(salesResult.revenue, getTarget("sales_revenue"), getStretchTarget("sales_revenue"), dayOfMonth, daysInMonth),
+    surveys: buildGoalRow(surveyResult.revenue, getTarget("survey_revenue"), getStretchTarget("survey_revenue"), dayOfMonth, daysInMonth),
+    da: buildGoalRow(daResult.revenue, getTarget("da_revenue"), getStretchTarget("da_revenue"), dayOfMonth, daysInMonth),
+    cc: buildGoalRow(ccResult.revenue, getTarget("cc_revenue"), getStretchTarget("cc_revenue"), dayOfMonth, daysInMonth),
+    inspections: buildGoalRow(inspectionResult.revenue, getTarget("inspection_revenue"), getStretchTarget("inspection_revenue"), dayOfMonth, daysInMonth),
+    pto: buildGoalRow(ptoResult.revenue, getTarget("pto_revenue"), getStretchTarget("pto_revenue"), dayOfMonth, daysInMonth),
+    reviews: buildGoalRow(reviewCount, getTarget("five_star_reviews"), getStretchTarget("five_star_reviews"), dayOfMonth, daysInMonth),
   };
 
   // ------ Pipeline: Location custom object ------
