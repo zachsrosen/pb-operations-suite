@@ -3991,6 +3991,7 @@ model PowerhubSite {
   siteId     String @unique // Tesla site UUID
   siteName   String
   instanceId String
+  aggregatorSiteId String? // Tesla's aggregator_site_identifier — partner-assigned ID
 
   // Address
   address     String

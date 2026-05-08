@@ -185,6 +185,7 @@ async function upsertSite(
     // Instance ID is derived from the client credential's scoped_instance_relationships
     // in the JWT — no separate env var needed
     instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID || "",
+    aggregatorSiteId: detail.aggregator_site_identifier || null,
     address: existing?.address || "",
     city: existing?.city || "",
     state: existing?.state || "",
