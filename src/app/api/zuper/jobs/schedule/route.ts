@@ -937,9 +937,10 @@ export async function PUT(request: NextRequest) {
 
       // Explicitly set the primary job status to "Scheduled" — Zuper's PUT /jobs/schedule
       // auto-transitions some categories but not all (e.g. new Construction - Solar/Battery/EV
-      // sub-jobs stay at "Ready to Build").  Name-based API works even for first-time transitions.
+      // sub-jobs stay at "Ready to Build").  Resolves status name → UID via job history or
+      // category detail, then uses the UID-based API which Zuper reliably honours.
       try {
-        const statusResult = await zuper.updateJobStatus(existingJob.job_uid, "Scheduled");
+        const statusResult = await zuper.resolveAndSetJobStatus(existingJob.job_uid, "Scheduled");
         if (statusResult.type === "success") {
           console.log(`[Zuper Schedule] Primary job ${existingJob.job_uid} status → Scheduled`);
         } else {
@@ -1019,11 +1020,10 @@ export async function PUT(request: NextRequest) {
                   siblingResults.push({ jobUid: sibling.jobUid, category: sibling.category, ok });
                   if (ok) {
                     console.log(`[Zuper Schedule] Sibling ${sibling.category} (${sibling.jobUid}) rescheduled OK`);
-                    // Update Zuper job status to "Scheduled" using name-based API
-                    // (job_status history only contains statuses the job has been through,
-                    //  so UID lookup fails for jobs that have never been scheduled before)
+                    // Update Zuper job status to "Scheduled" — resolves name → UID via
+                    // job history or category detail so UID-based API is used reliably.
                     try {
-                      const statusResult = await zuper.updateJobStatus(sibling.jobUid, "Scheduled");
+                      const statusResult = await zuper.resolveAndSetJobStatus(sibling.jobUid, "Scheduled");
                       if (statusResult.type === "success") {
                         console.log(`[Zuper Schedule] Sibling ${sibling.category} (${sibling.jobUid}) status → Scheduled`);
                       } else {

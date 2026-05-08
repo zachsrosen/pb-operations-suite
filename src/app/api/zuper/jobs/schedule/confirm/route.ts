@@ -758,6 +758,22 @@ export async function POST(request: NextRequest) {
             if (liveAssignedTeamUid) confirmedAssignedTeamUid = liveAssignedTeamUid;
             confirmedZuperAssigned = assignedEntries.length > 0;
           }
+
+          // Explicitly set the primary job status to "Scheduled" — Zuper's reschedule
+          // auto-transitions some categories but not all (e.g. Construction sub-jobs
+          // may stay at "Ready to Build").  Resolves name → UID via job history or
+          // category detail so the UID-based API is used reliably.
+          try {
+            const statusResult = await zuper.resolveAndSetJobStatus(existingJob.job_uid, "Scheduled");
+            if (statusResult.type === "success") {
+              console.log(`[Zuper Confirm] Primary job ${existingJob.job_uid} status → Scheduled`);
+            } else {
+              console.warn(`[Zuper Confirm] Primary job ${existingJob.job_uid} status update failed:`, statusResult.error);
+            }
+          } catch (statusErr) {
+            console.warn(`[Zuper Confirm] Primary job ${existingJob.job_uid} status update error:`, statusErr);
+          }
+
           if (scheduleType === "installation") {
             const installerNote = extractInstallerNote(effectiveNotes);
             if (installerNote) {
@@ -822,11 +838,10 @@ export async function POST(request: NextRequest) {
                       );
                       if (sibResult.type === "success") {
                         console.log(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) rescheduled OK`);
-                        // Update Zuper job status to "Scheduled" using name-based API
-                        // (job_status history only contains statuses the job has been through,
-                        //  so UID lookup fails for jobs that have never been scheduled before)
+                        // Update Zuper job status to "Scheduled" — resolves name → UID via
+                        // job history or category detail so UID-based API is used reliably.
                         try {
-                          const statusResult = await zuper.updateJobStatus(sibling.jobUid, "Scheduled");
+                          const statusResult = await zuper.resolveAndSetJobStatus(sibling.jobUid, "Scheduled");
                           if (statusResult.type === "success") {
                             console.log(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) status → Scheduled`);
                           } else {

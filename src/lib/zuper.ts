@@ -1167,7 +1167,12 @@ export class ZuperClient {
   }
 
   /**
-   * Update job status
+   * Update job status (name-based).
+   *
+   * WARNING: Zuper's PUT /jobs/{uid}/status endpoint may silently ignore
+   * name-based payloads (`{ status: "Scheduled" }`).  Prefer
+   * `resolveAndSetJobStatus()` which resolves the name → status_uid first,
+   * then calls `updateJobStatusByUid()`.
    */
   async updateJobStatus(
     jobUid: string,
@@ -1177,6 +1182,114 @@ export class ZuperClient {
       method: "PUT",
       body: JSON.stringify({ status }),
     });
+  }
+
+  /**
+   * Fetch a job category's full detail, including its status workflow.
+   * Returns an object with `job_statuses[]` containing `status_uid` and
+   * `status_name` for every status in that category.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getJobCategoryDetail(categoryUid: string): Promise<ZuperApiResponse<any>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await this.request<any>(`/job_categories/${categoryUid}`);
+    if (result.type === "success" && result.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = result.data as any;
+      return { type: "success", data: raw?.data ?? raw };
+    }
+    return { type: result.type, error: result.error };
+  }
+
+  /**
+   * Resolve a status name (e.g. "Scheduled") to its `status_uid` for a
+   * specific job.  Three-tier lookup:
+   *
+   * 1. Job's `job_status` history array (fastest, works for previously-visited statuses).
+   * 2. Job category's full status list via `getJobCategoryDetail` (covers first-time transitions).
+   * 3. Returns `null` if the status name doesn't exist in the category.
+   */
+  async resolveStatusUid(
+    jobUid: string,
+    statusName: string
+  ): Promise<{ statusUid: string | null; error?: string }> {
+    const normalizedTarget = statusName.toLowerCase().trim();
+
+    // Fetch the job to check its history and get category info.
+    const jobResult = await this.getJob(jobUid);
+    if (jobResult.type === "error" || !jobResult.data) {
+      return { statusUid: null, error: jobResult.error || "Failed to fetch job" };
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const job = jobResult.data as any;
+
+    // If the job is already at the target status, return its UID immediately.
+    const currentStatusName = String(job?.current_job_status?.status_name || "").toLowerCase().trim();
+    if (currentStatusName === normalizedTarget && job?.current_job_status?.status_uid) {
+      return { statusUid: job.current_job_status.status_uid };
+    }
+
+    // Tier 1: search job_status history
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const historyMatch = (job?.job_status || []).find((s: any) => {
+      const name = String(s?.status_name || "").toLowerCase().trim();
+      return name === normalizedTarget && !!s?.status_uid;
+    });
+    if (historyMatch?.status_uid) {
+      return { statusUid: historyMatch.status_uid };
+    }
+
+    // Tier 2: fetch category detail for full status list
+    const categoryUid =
+      typeof job.job_category === "string"
+        ? job.job_category
+        : job.job_category?.category_uid;
+    if (!categoryUid) {
+      return { statusUid: null, error: "Job has no category_uid — cannot resolve status" };
+    }
+
+    const catResult = await this.getJobCategoryDetail(categoryUid);
+    if (catResult.type === "error" || !catResult.data) {
+      return { statusUid: null, error: catResult.error || "Failed to fetch job category" };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const catData = catResult.data as any;
+    const categoryStatuses: Array<{ status_uid?: string; status_name?: string }> =
+      catData?.job_statuses || catData?.statuses || [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const catMatch = categoryStatuses.find((s: any) => {
+      const name = String(s?.status_name || "").toLowerCase().trim();
+      return name === normalizedTarget && !!s?.status_uid;
+    });
+    if (catMatch?.status_uid) {
+      return { statusUid: catMatch.status_uid };
+    }
+
+    return { statusUid: null, error: `Status "${statusName}" not found in category ${categoryUid}` };
+  }
+
+  /**
+   * High-level helper: resolve a status name → UID, then set the job to that status.
+   * Returns success if the job is already at the target status.
+   * Falls back to name-based `updateJobStatus` only if UID resolution fails entirely.
+   */
+  async resolveAndSetJobStatus(
+    jobUid: string,
+    statusName: string
+  ): Promise<ZuperApiResponse<ZuperJob>> {
+    const { statusUid, error: resolveError } = await this.resolveStatusUid(jobUid, statusName);
+
+    if (statusUid) {
+      return this.updateJobStatusByUid(jobUid, statusUid);
+    }
+
+    // UID resolution failed — log a warning and fall back to name-based as last resort.
+    console.warn(
+      `[Zuper] resolveStatusUid failed for job ${jobUid} status "${statusName}": ${resolveError}. Falling back to name-based API.`
+    );
+    return this.updateJobStatus(jobUid, statusName);
   }
 
   /**
