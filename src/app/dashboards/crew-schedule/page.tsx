@@ -719,14 +719,33 @@ export default function CrewSchedulePage() {
     }
   }, [isLoading, data, trackDashboardView]);
 
+  // -- Merge known crew with virtual entries for assignees missing a CrewMember record --
+  const allCrew = useMemo(() => {
+    if (!data) return [];
+    const knownNames = new Set(data.crew.map((c) => c.name));
+    const virtual: CrewMember[] = [];
+    for (const a of data.assignments) {
+      if (!knownNames.has(a.crewMemberName)) {
+        knownNames.add(a.crewMemberName);
+        virtual.push({
+          id: `virtual_${a.crewMemberName}`,
+          name: a.crewMemberName,
+          role: a.jobType === "unknown" ? "crew" : a.jobType,
+          locations: a.pbLocation ? [a.pbLocation] : [],
+          teamName: null,
+        });
+      }
+    }
+    return [...data.crew, ...virtual];
+  }, [data]);
+
   // -- Filter crew by location --
   const filteredCrew = useMemo(() => {
-    if (!data) return [];
-    if (locationFilter.length === 0) return data.crew;
-    return data.crew.filter((c) =>
-      c.locations.some((loc) => locationFilter.includes(loc))
+    if (locationFilter.length === 0) return allCrew;
+    return allCrew.filter((c) =>
+      c.locations.length === 0 || c.locations.some((loc) => locationFilter.includes(loc))
     );
-  }, [data, locationFilter]);
+  }, [allCrew, locationFilter]);
 
   const filteredCrewNames = useMemo(
     () => new Set(filteredCrew.map((c) => c.name)),
@@ -757,15 +776,14 @@ export default function CrewSchedulePage() {
 
   // -- Location filter options --
   const locationOptions = useMemo<FilterOption[]>(() => {
-    if (!data) return [];
     const set = new Set<string>();
-    for (const c of data.crew) {
+    for (const c of allCrew) {
       for (const loc of c.locations) set.add(loc);
     }
     return Array.from(set)
       .sort()
       .map((loc) => ({ value: loc, label: loc }));
-  }, [data]);
+  }, [allCrew]);
 
   // -- Date range label --
   const dateRangeLabel = useMemo(() => {
