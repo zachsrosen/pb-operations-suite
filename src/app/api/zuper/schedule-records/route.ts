@@ -75,12 +75,19 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Group by project ID, keep only the latest record per project
+    // Group by project ID, keep only the latest record per project.
+    // Also collect all records per project so callers that handle
+    // multiple sub-job tentative records can use the full list.
     const recordMap: Record<string, Record<string, unknown>> = {};
+    const allRecordsByProject: Record<string, Record<string, unknown>[]> = {};
     for (const record of records) {
       if (!recordMap[record.projectId]) {
         recordMap[record.projectId] = record;
       }
+      if (!allRecordsByProject[record.projectId]) {
+        allRecordsByProject[record.projectId] = [];
+      }
+      allRecordsByProject[record.projectId].push(record);
     }
 
     // If a pending/tentative local hold lost its ScheduleRecord but still has a
@@ -160,7 +167,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ records: recordMap });
+    return NextResponse.json({ records: recordMap, allRecords: allRecordsByProject });
   } catch (error) {
     console.error("Error fetching schedule records:", error);
     return NextResponse.json(

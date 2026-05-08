@@ -378,6 +378,7 @@ export default function ConstructionSchedulerPage() {
   const [selectedProject, setSelectedProject] = useState<ConstructionProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, string>>({});
   const [tentativeRecordIds, setTentativeRecordIds] = useState<Record<string, string>>({});
+  const [tentativeSubJobRecords, setTentativeSubJobRecords] = useState<Record<string, string[]>>({});
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [confirmingTentative, setConfirmingTentative] = useState(false);
   const [cancellingTentative, setCancellingTentative] = useState(false);
@@ -427,6 +428,7 @@ export default function ConstructionSchedulerPage() {
       .filter((p: ConstructionProject | null): p is ConstructionProject => p !== null);
     const restoredSchedules: Record<string, string> = {};
     const restoredTentatives: Record<string, string> = {};
+    const restoredSubJobRecords: Record<string, string[]> = {};
 
     // Look up Zuper job UIDs for these projects
     if (transformed.length > 0) {
@@ -471,6 +473,7 @@ export default function ConstructionSchedulerPage() {
         if (tentRes.ok) {
           const tentData = await tentRes.json();
           const records = tentData.records as Record<string, { id: string; scheduledDate: string }>;
+          const allRecords = tentData.allRecords as Record<string, { id: string; scheduledDate: string }[]> | undefined;
           for (const [projectId, rec] of Object.entries(records || {})) {
             const project = transformed.find((p: ConstructionProject) => p.id === projectId);
             if (project?.zuperJobStatus && project.scheduleDate) continue;
@@ -480,6 +483,11 @@ export default function ConstructionSchedulerPage() {
               project.tentativeRecordId = rec.id;
               project.installStatus = "Tentative";
             }
+            // Restore sub-job record IDs for multi-sub-job tentative projects
+            const projectAllRecords = allRecords?.[projectId];
+            if (projectAllRecords && projectAllRecords.length > 1) {
+              restoredSubJobRecords[projectId] = projectAllRecords.map((r) => r.id);
+            }
           }
         }
       } catch (tentErr) {
@@ -487,7 +495,7 @@ export default function ConstructionSchedulerPage() {
       }
     }
 
-    return { transformed, restoredSchedules, restoredTentatives };
+    return { transformed, restoredSchedules, restoredTentatives, restoredSubJobRecords };
   }, []);
 
   const fetchProjectsQueryFn = useCallback(() => fetchProjectsData(false), [fetchProjectsData]);
@@ -501,9 +509,12 @@ export default function ConstructionSchedulerPage() {
   // Sync query results to component state (projects + tentative side-effects)
   useEffect(() => {
     if (projectsQuery.data) {
-      const { transformed, restoredSchedules, restoredTentatives } = projectsQuery.data;
+      const { transformed, restoredSchedules, restoredTentatives, restoredSubJobRecords } = projectsQuery.data;
       setProjects(transformed);
       setTentativeRecordIds(restoredTentatives);
+      if (Object.keys(restoredSubJobRecords).length > 0) {
+        setTentativeSubJobRecords(restoredSubJobRecords);
+      }
       if (Object.keys(restoredSchedules).length > 0) {
         setManualSchedules((prev) => ({ ...restoredSchedules, ...prev }));
       }
@@ -1096,6 +1107,7 @@ export default function ConstructionSchedulerPage() {
 
     setSyncingToZuper(true);
     const results: { jobUid: string; ok: boolean; error?: string }[] = [];
+    const subJobRecordIds: string[] = [];
     for (const sched of schedules) {
       try {
         const crewUids = availableConstructionAssignees
@@ -1139,6 +1151,7 @@ export default function ConstructionSchedulerPage() {
         if (res.ok) {
           const data = await res.json().catch(() => null);
           if (!syncToZuper && data?.record?.id) {
+            subJobRecordIds.push(data.record.id);
             setTentativeRecordIds((prev) => ({ ...prev, [project.id]: data.record.id }));
           }
           results.push({ jobUid: sched.jobUid, ok: true });
@@ -1149,6 +1162,9 @@ export default function ConstructionSchedulerPage() {
       } catch (err) {
         results.push({ jobUid: sched.jobUid, ok: false, error: String(err) });
       }
+    }
+    if (!syncToZuper && subJobRecordIds.length > 0) {
+      setTentativeSubJobRecords((prev) => ({ ...prev, [project.id]: subJobRecordIds }));
     }
     setSyncingToZuper(false);
 
@@ -1186,17 +1202,30 @@ export default function ConstructionSchedulerPage() {
     }
     setConfirmingTentative(true);
     try {
-      const res = await fetch("/api/zuper/jobs/schedule/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduleRecordId: recordId,
-          zuperJobUid: hintedZuperJobUid || undefined,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.success) {
-        showToast(data?.error || "Failed to confirm tentative schedule", "warning");
+      // Collect all record IDs to confirm — single-job has one, sub-jobs have many.
+      const subJobIds = tentativeSubJobRecords[projectId] || [];
+      const allRecordIds = subJobIds.length > 0 ? subJobIds : [recordId];
+
+      let lastData: Record<string, unknown> | null = null;
+      let anyFailed = false;
+      for (const rid of allRecordIds) {
+        const res = await fetch("/api/zuper/jobs/schedule/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scheduleRecordId: rid,
+            zuperJobUid: hintedZuperJobUid || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        lastData = data;
+        if (!res.ok || !data?.success) {
+          anyFailed = true;
+        }
+      }
+
+      if (anyFailed && allRecordIds.length === 1) {
+        showToast(lastData?.error as string || "Failed to confirm tentative schedule", "warning");
         return;
       }
 
@@ -1205,10 +1234,19 @@ export default function ConstructionSchedulerPage() {
         delete next[projectId];
         return next;
       });
+      setTentativeSubJobRecords((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
       setProjects((prev) => prev.map((p) =>
         p.id === projectId ? { ...p, tentativeRecordId: undefined, installStatus: "Scheduled" } : p
       ));
-      showToast(data?.zuperSynced ? "Confirmed & synced to Zuper" : `Confirmed (Zuper sync issue: ${data?.zuperError || "Unknown"})`, data?.zuperSynced ? "success" : "warning");
+      if (anyFailed) {
+        showToast(`Confirmed ${allRecordIds.length - 1}/${allRecordIds.length} sub-jobs (some failed)`, "warning");
+      } else {
+        showToast(lastData?.zuperSynced ? "Confirmed & synced to Zuper" : `Confirmed (Zuper sync issue: ${(lastData?.zuperError as string) || "Unknown"})`, lastData?.zuperSynced ? "success" : "warning");
+      }
       setScheduleModal(null);
       setTimeout(() => fetchProjects(), 700);
     } catch {
@@ -1216,7 +1254,7 @@ export default function ConstructionSchedulerPage() {
     } finally {
       setConfirmingTentative(false);
     }
-  }, [fetchProjects, getTentativeRecordId, projects, showToast]);
+  }, [fetchProjects, getTentativeRecordId, tentativeSubJobRecords, projects, showToast]);
 
   const handleCancelTentative = useCallback(async (projectId: string) => {
     const recordId = getTentativeRecordId(projectId);
@@ -1232,18 +1270,28 @@ export default function ConstructionSchedulerPage() {
     }
     setCancellingTentative(true);
     try {
-      const res = await fetch("/api/zuper/schedule-records", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recordId }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        showToast(data?.error || "Failed to cancel tentative schedule", "warning");
-        return;
+      // Cancel all sub-job records if they exist, otherwise just the single record.
+      const subJobIds = tentativeSubJobRecords[projectId] || [];
+      const allRecordIds = subJobIds.length > 0 ? subJobIds : [recordId];
+      for (const rid of allRecordIds) {
+        const res = await fetch("/api/zuper/schedule-records", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId: rid }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          showToast(data?.error || "Failed to cancel tentative schedule", "warning");
+          return;
+        }
       }
 
       setTentativeRecordIds((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      setTentativeSubJobRecords((prev) => {
         const next = { ...prev };
         delete next[projectId];
         return next;
@@ -1263,7 +1311,7 @@ export default function ConstructionSchedulerPage() {
     } finally {
       setCancellingTentative(false);
     }
-  }, [getTentativeRecordId, showToast]);
+  }, [getTentativeRecordId, tentativeSubJobRecords, showToast]);
 
   const cancelSchedule = useCallback(async (projectId: string) => {
     const project = projects.find(p => p.id === projectId);

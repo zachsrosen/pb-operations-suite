@@ -118,14 +118,16 @@ export async function PUT(request: NextRequest) {
       .filter(Boolean)
       .join(" ");
 
-    // Ensure only one active local-hold record per project + schedule type.
-    // Without this, old tentative/pending rows can reappear in scheduler rehydration.
+    // Ensure only one active local-hold record per project + schedule type + job.
+    // When a zuperJobUid is provided (sub-job scheduling), scope cleanup to that
+    // specific job so sibling sub-job records are preserved.
     if (prisma) {
       await prisma.scheduleRecord.updateMany({
         where: {
           projectId: String(project.id),
           scheduleType,
           status: { in: ["tentative", "pending_zuper"] },
+          ...(rawZuperJobUid ? { zuperJobUid: rawZuperJobUid } : {}),
         },
         data: {
           status: "cancelled",
@@ -135,6 +137,7 @@ export async function PUT(request: NextRequest) {
         where: {
           projectId: String(project.id),
           source: { in: ["tentative", "pending_zuper"] },
+          ...(rawZuperJobUid ? { zuperJobUid: rawZuperJobUid } : {}),
         },
       });
     }
