@@ -4,6 +4,72 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-07
+
+### Tesla PowerHub Fleet Monitoring (Major)
+- New integration with Tesla GridLogic API for monitoring Powerwall/Megapack fleet across customer sites
+- API client with JWT (then OAuth2 client_credentials) auth, rate limiting, and unit tests
+- Three-tier site-to-deal linkage system (HubSpot deal → property → contact) with tests
+- Sync orchestration for assets, telemetry, and alerts with cron handlers
+- PowerHub alert scoring integrated into service priority queue
+- Fleet monitoring dashboard with expandable site table, search, and stats
+- Admin linkage manager + SystemHealth embed component
+- Auto-link Tesla sites to HubSpot properties with greedy 1:1 scoring
+- Address backfill from linked HubSpot deals; SiteDetail enrichment shows deal, property, contacts, system specs
+- API hardening: alert sync via group-level API with DIN mapping, signal-availability check before telemetry queries, upsert for asset sync (prevents unique constraint races), invalid-date handling
+- Performance: batch asset/telemetry/alert polls, skip shell sites, fallback to `site_id` when name is null, dfw Fly region for Tesla proxy
+
+### Construction Sub-Job Splitting (Major)
+- Construction jobs now split by scope: Solar / Battery / EV
+- Sub-job breakdown view on construction scheduler cards (only shown when deal has 2+ sub-jobs)
+- New `SubJobScheduleModal` with same-day/separate-day scheduling modes, project context, and live Zuper status
+- Wired into both master and construction schedulers
+- Sibling cascade reschedule: rescheduling one sub-job updates linked siblings under the same deal, with audit logging
+- Tentative siblings skipped in cascade; legacy parent job excluded when typed sub-jobs exist
+- Zuper API fallback for sibling lookup via `customer_uid` + name-based status updates
+- `skipSiblingCascade` flag on schedule API; primary job explicitly set to Scheduled after reschedule
+- Zuper job status surfaced in all scheduler modals
+
+### Office Performance
+- New office performance cards on operations suite landing page
+- Cache-first fetching dramatically cuts dashboard load time
+- Fixed 504 death spiral with `maxDuration` + cache warming cron
+
+### Scheduler & On-Call
+- Day view timed grid for surveys and inspections
+- On-call electrician overlay on master schedule
+- On-call UX: PTO entry + crew swap flow
+- California calendar: events show for combined location groups
+
+### HubSpot Property Object
+- New `/api/properties/workflow-sync` endpoint for HubSpot workflow-driven property sync
+- Made workflow-sync a public route to bypass HubSpot stored-secret mismatch
+- Middleware accepts HubSpot webhook `API Key` auth header
+
+### Design Review & Email
+- AI design review field mapping corrected
+- Daily design rollup emails now include Elliott Gunning
+
+### PandaDoc
+- DA status drift detector added as backup for HubSpot connector
+- DA approval now read from approval dropdown, not `document.completed` status
+
+### Comms
+- Reverted "HubSpot emails outside inbox" change (#482) due to volume issues
+- Gmail fetch capped, rate-limit errors surfaced to UI
+- Diagnostic logging added to messages API
+
+### BOM & Catalog
+- BOM table consolidates Catalogs column into product badge for cleaner row layout
+- Ticket SO creation falls back gracefully when Zoho lacks the custom field
+- Product sync uses canonical `writeCrossLinkIds` across all systems (HubSpot/Zuper/Zoho)
+
+### Bug Fixes
+- PE Receivable scoped to approved milestones only (no longer pulls in pending)
+- Breadcrumbs: 23 missing `SUITE_MAP` entries added, stale overrides removed
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
