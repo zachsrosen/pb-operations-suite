@@ -35,6 +35,14 @@ const LINKS: SuitePageCard[] = [
     icon: "🗓️",
     section: "Roofing",
   },
+  {
+    href: "/dashboards/crew-schedule",
+    title: "Crew Schedule",
+    description: "See where every crew member is working each day.",
+    tag: "SCHEDULING",
+    tagColor: "blue",
+    icon: "👥",
+  },
 ];
 
 export default async function DNRRoofingSuitePage() {
