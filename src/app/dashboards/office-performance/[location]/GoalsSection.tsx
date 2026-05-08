@@ -48,11 +48,22 @@ function formatTarget(value: number, format: "currency" | "count"): string {
   return `$${value}`;
 }
 
+const GOLD = { bar: "#d97706", barGlow: "#f59e0b" };
+
 function GoalRowDisplay({ row, config }: { row: GoalRow; config: DepartmentConfig }) {
   const colors = PACE_COLORS[row.color];
-  const barWidth = Math.min(row.percent, 100);
+  const hasStretch = row.stretchTarget > row.target;
 
-  // Format current value for CountUp: use raw number with prefix/suffix
+  // Bar positions: the full bar = stretchTarget (or target if no stretch)
+  const barMax = hasStretch ? row.stretchTarget : row.target;
+  const baseMarkerPct = hasStretch ? (row.target / barMax) * 100 : 100;
+  const fillPct = barMax > 0 ? Math.min((row.current / barMax) * 100, 100) : 0;
+  const inStretchZone = row.current > row.target && hasStretch;
+
+  // The base portion fills up to the marker; the gold portion fills beyond
+  const baseFillPct = Math.min(fillPct, baseMarkerPct);
+  const goldFillPct = inStretchZone ? fillPct - baseMarkerPct : 0;
+
   const isCurrency = config.format === "currency";
   let displayValue: number;
   let suffix = "";
@@ -81,7 +92,7 @@ function GoalRowDisplay({ row, config }: { row: GoalRow; config: DepartmentConfi
           {config.label}
         </span>
         <div className="text-right flex items-baseline gap-1">
-          <span className="text-[22px] font-extrabold" style={{ color: colors.text }}>
+          <span className="text-[22px] font-extrabold" style={{ color: inStretchZone ? GOLD.barGlow : colors.text }}>
             {isCurrency && "$"}
             <CountUp
               value={displayValue}
@@ -93,23 +104,47 @@ function GoalRowDisplay({ row, config }: { row: GoalRow; config: DepartmentConfi
           </span>
           <span className="text-[13px] text-slate-500 ml-1">
             / {formatTarget(row.target, config.format)}
+            {hasStretch && (
+              <span className="text-amber-500/60 ml-0.5">
+                / {formatTarget(row.stretchTarget, config.format)}
+              </span>
+            )}
           </span>
           <span
             className="text-sm font-bold ml-2"
-            style={{ color: colors.text }}
+            style={{ color: inStretchZone ? GOLD.barGlow : colors.text }}
           >
             {row.percent}%
           </span>
         </div>
       </div>
-      <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
+      <div className="relative h-2 bg-white/[0.06] rounded-full overflow-hidden">
+        {/* Base progress (pace-colored) */}
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
+          className="absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-out"
           style={{
-            width: `${barWidth}%`,
+            width: `${baseFillPct}%`,
             background: `linear-gradient(90deg, ${colors.bar}, ${colors.barGlow})`,
           }}
         />
+        {/* Stretch/gold progress beyond base target */}
+        {goldFillPct > 0 && (
+          <div
+            className="absolute inset-y-0 rounded-full transition-all duration-700 ease-out"
+            style={{
+              left: `${baseMarkerPct}%`,
+              width: `${goldFillPct}%`,
+              background: `linear-gradient(90deg, ${GOLD.bar}, ${GOLD.barGlow})`,
+            }}
+          />
+        )}
+        {/* Base target marker line */}
+        {hasStretch && (
+          <div
+            className="absolute inset-y-0 w-[2px] bg-white/30"
+            style={{ left: `${baseMarkerPct}%` }}
+          />
+        )}
       </div>
     </div>
   );

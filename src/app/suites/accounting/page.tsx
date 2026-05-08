@@ -39,6 +39,14 @@ const LINKS: SuitePageCard[] = [
 
   // ── Participate Energy ──
   {
+    href: "/dashboards/pe-report",
+    title: "PE Program Report",
+    description: "Shareable PE program overview — pipeline status, document progress, blockers, and action items.",
+    tag: "PE",
+    icon: "📋",
+    section: "Participate Energy",
+  },
+  {
     href: "/dashboards/pe-deals",
     title: "PE Deals & Payments",
     description: "All PE-tagged deals with auto-calculated EPC, lease factor, and payment splits.",
