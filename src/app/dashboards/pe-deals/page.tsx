@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
@@ -539,6 +540,17 @@ export default function PeDealsPage() {
           subtitle="Customer + PE combined"
           color="green"
         />
+      </div>
+
+      {/* Report link */}
+      <div className="mb-4">
+        <Link
+          href="/dashboards/pe-report"
+          className="inline-flex items-center gap-1.5 text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
+        >
+          <span>📋</span> View PE Program Report
+          <span className="text-xs text-muted">— shareable overview for ownership</span>
+        </Link>
       </div>
 
       {/* Filters */}

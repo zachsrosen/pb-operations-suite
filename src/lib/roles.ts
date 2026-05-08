@@ -1395,6 +1395,7 @@ const ACCOUNTING: RoleDefinition = {
     "/dashboards/accounts-receivable",
     "/dashboards/pe-deals",
     "/dashboards/pe",
+    "/dashboards/pe-report",
     "/dashboards/pricing-calculator",
     "/api/accounting",
     "/api/auth",
