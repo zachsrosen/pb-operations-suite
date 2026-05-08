@@ -168,7 +168,7 @@ async function upsertSite(
 
   const existing = await prisma.powerhubSite.findUnique({
     where: { siteId: detail.site_id },
-    select: { id: true, linkMethod: true, address: true },
+    select: { id: true, linkMethod: true, address: true, city: true, state: true, zip: true, addressHash: true, dealId: true },
   });
 
   // Build a complete device snapshot for the JSON column
@@ -186,10 +186,10 @@ async function upsertSite(
     // in the JWT — no separate env var needed
     instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID || "",
     address: existing?.address || "",
-    city: "",
-    state: "",
-    zip: null as string | null,
-    addressHash: null as string | null,
+    city: existing?.city || "",
+    state: existing?.state || "",
+    zip: existing?.zip ?? (null as string | null),
+    addressHash: existing?.addressHash ?? (null as string | null),
     devices: JSON.parse(JSON.stringify(deviceSnapshot)),
     totalBatteryEnergy: totalBatteryEnergy || null,
     totalBatteryPower: totalBatteryPower || null,
@@ -222,7 +222,7 @@ async function upsertSite(
   if (existing?.linkMethod === "UNLINKED" && existing?.address) {
     const street = normalizeAddress(existing.address);
     const linkResult = await linkSite(
-      { street, city: "", state: "", zip: null },
+      { street, city: existing.city || "", state: existing.state || "", zip: existing.zip || null },
       dealAddresses,
       prisma
     );
@@ -237,6 +237,28 @@ async function upsertSite(
         },
       });
       result.sitesLinked++;
+    }
+  }
+
+  // Backfill address from deal cache for linked sites with empty addresses.
+  // Tesla API never provides addresses, so we populate them from the HubSpot
+  // deal cache once a site is linked (auto or manual).
+  const linkedDealId = existing?.dealId;
+  if (linkedDealId && !existing?.address) {
+    const dealCache = await prisma.hubSpotProjectCache.findUnique({
+      where: { dealId: linkedDealId },
+      select: { address: true, city: true, state: true, zipCode: true },
+    });
+    if (dealCache?.address) {
+      await prisma.powerhubSite.update({
+        where: { siteId: detail.site_id },
+        data: {
+          address: dealCache.address,
+          city: dealCache.city || "",
+          state: dealCache.state || "",
+          zip: dealCache.zipCode || null,
+        },
+      });
     }
   }
 }

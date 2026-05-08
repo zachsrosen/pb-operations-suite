@@ -39,8 +39,41 @@ export async function GET(request: Request) {
     },
   });
 
+  // For linked sites with empty addresses, backfill from the HubSpot deal cache.
+  // Tesla API never returns addresses; they come from deal linkage.
+  const linkedDealIds = sites
+    .filter((s) => s.dealId && !s.address)
+    .map((s) => s.dealId as string);
+
+  let dealAddressMap: Record<string, { address: string; city: string | null; state: string | null; zipCode: string | null }> = {};
+  if (linkedDealIds.length > 0) {
+    const dealCaches = await prisma.hubSpotProjectCache.findMany({
+      where: { dealId: { in: linkedDealIds }, address: { not: null } },
+      select: { dealId: true, address: true, city: true, state: true, zipCode: true },
+    });
+    for (const d of dealCaches) {
+      if (d.address) {
+        dealAddressMap[d.dealId] = { address: d.address, city: d.city, state: d.state, zipCode: d.zipCode };
+      }
+    }
+  }
+
+  // Enrich sites with deal address when site address is empty
+  const enrichedSites = sites.map((s) => {
+    if (!s.address && s.dealId && dealAddressMap[s.dealId]) {
+      const deal = dealAddressMap[s.dealId];
+      return {
+        ...s,
+        address: deal.address || "",
+        city: deal.city || "",
+        state: deal.state || "",
+      };
+    }
+    return s;
+  });
+
   // Sort: sites with alerts first, then sites with telemetry, then rest
-  sites.sort((a, b) => {
+  enrichedSites.sort((a, b) => {
     // Alert count descending
     const aAlerts = a.alerts.length;
     const bAlerts = b.alerts.length;
@@ -61,7 +94,7 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({
-    sites,
+    sites: enrichedSites,
     meta: {
       total: sites.length,
       filter,
