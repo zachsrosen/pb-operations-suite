@@ -169,7 +169,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
     key: "california",
     label: "California",
     color: "#8B5CF6",
-    annualTarget: 7_000_000,
+    annualTarget: 9_000_000,
     recognition: [
       {
         pipelineId: PIPELINE.PROJECT,
