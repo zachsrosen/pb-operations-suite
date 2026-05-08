@@ -132,27 +132,15 @@ const MAX_SUGGESTIONS_PER_SITE = 5;
 /** Date window: only consider properties with install dates within ±120 days of STE date */
 const DATE_WINDOW_DAYS = 120;
 
-/** Internal intermediate type before greedy assignment */
-interface ScoredPair {
-  siteIdx: number;
-  siteId: string;
-  siteName: string;
-  steDate: Date | null;
-  batteryCount: number;
-  gatewayCount: number;
-  propertyId: string;
-  score: number;
-  signals: string[];
-}
-
 /**
  * Run the auto-link process for all unlinked provisioned sites.
  *
- * Uses a two-pass greedy algorithm:
- *   Pass 1 — Score every (site, property) pair
- *   Pass 2 — Sort by score desc, greedily assign each site its best
- *            unclaimed property. This enforces 1:1 uniqueness: once a
- *            property is claimed, no other site can take it.
+ * Multiple Tesla sites CAN link to the same property — a single job often
+ * installs multiple Powerwalls/gateways, each registered as a separate
+ * Tesla site at the same address. So there's no 1:1 property constraint.
+ *
+ * Per-site scoring: each site independently finds its best property match.
+ * Auto-links when the top candidate scores ≥50 with ≥15 gap to the runner-up.
  *
  * @param dryRun If true, compute matches but don't write to DB
  * @param limit Max sites to process (default: all)
@@ -199,7 +187,7 @@ export async function autoLinkSites(options: {
     return result;
   }
 
-  // 2. Fetch candidate properties with their deal links
+  // 2. Fetch candidate properties (batteries OR install dates)
   const candidateProperties = await prisma.hubSpotPropertyCache.findMany({
     where: {
       OR: [
@@ -234,176 +222,80 @@ export async function autoLinkSites(options: {
     }
   }
 
-  // 4. Find properties already linked to a Tesla site (to exclude)
-  const alreadyLinkedPropertyIds = new Set<string>();
-  const linkedSites = await prisma.powerhubSite.findMany({
-    where: {
-      propertyId: { not: null },
-      linkMethod: { not: "UNLINKED" },
-    },
-    select: { propertyId: true },
-  });
-  for (const s of linkedSites) {
-    if (s.propertyId) alreadyLinkedPropertyIds.add(s.propertyId);
-  }
+  // 4. Score each site independently against all candidate properties
+  for (const site of unlinkedSites) {
+    try {
+      const steDate = parseSteDate(site.siteName);
 
-  // 5. Filter to unlinked candidate properties
-  const availableCandidates = candidateProperties.filter(
-    (p) => !alreadyLinkedPropertyIds.has(p.id)
-  );
+      // Score candidates, filtering by date window
+      const scored: ScoredCandidate[] = candidateProperties
+        .filter((p) => {
+          if (steDate && p.firstInstallDate) {
+            const diffDays = Math.abs(steDate.getTime() - p.firstInstallDate.getTime()) / 86_400_000;
+            return diffDays <= DATE_WINDOW_DAYS;
+          }
+          return true;
+        })
+        .map((p) => {
+          const { score, signals } = scoreCandidate(steDate, site.totalBatteries, {
+            firstInstallDate: p.firstInstallDate,
+            hasBattery: p.hasBattery,
+          });
+          return {
+            propertyId: p.id,
+            dealId: propertyDealMap.get(p.id) || null,
+            address: p.fullAddress,
+            city: p.city,
+            state: p.state,
+            firstInstallDate: p.firstInstallDate?.toISOString() || null,
+            hasBattery: p.hasBattery,
+            score,
+            signals,
+          };
+        })
+        .filter((c) => c.score >= SUGGESTION_MIN_SCORE)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_SUGGESTIONS_PER_SITE);
 
-  // Build a property lookup for fast access
-  const propertyMap = new Map(availableCandidates.map((p) => [p.id, p]));
-
-  // ─── Pass 1: Score all (site, property) pairs ─────────────────────────
-
-  const allPairs: ScoredPair[] = [];
-
-  for (let i = 0; i < unlinkedSites.length; i++) {
-    const site = unlinkedSites[i];
-    const steDate = parseSteDate(site.siteName);
-
-    for (const prop of availableCandidates) {
-      // Date window filter
-      if (steDate && prop.firstInstallDate) {
-        const diffMs = Math.abs(steDate.getTime() - prop.firstInstallDate.getTime());
-        const diffDays = diffMs / (1000 * 60 * 60 * 24);
-        if (diffDays > DATE_WINDOW_DAYS) continue;
+      if (scored.length === 0) {
+        result.skipped++;
+        continue;
       }
 
-      const { score, signals } = scoreCandidate(steDate, site.totalBatteries, {
-        firstInstallDate: prop.firstInstallDate,
-        hasBattery: prop.hasBattery,
-      });
+      const top = scored[0];
+      const gap = scored.length >= 2 ? top.score - scored[1].score : top.score;
+      const isAutoLink = top.score >= AUTO_LINK_MIN_SCORE && gap >= AUTO_LINK_MIN_GAP;
 
-      if (score >= SUGGESTION_MIN_SCORE) {
-        allPairs.push({
-          siteIdx: i,
+      if (isAutoLink) {
+        if (!dryRun) {
+          await prisma.powerhubSite.update({
+            where: { siteId: site.siteId },
+            data: {
+              propertyId: top.propertyId,
+              dealId: top.dealId,
+              linkMethod: "PROPERTY",
+              linkConfidence: "HIGH",
+              address: top.address || "",
+              city: top.city || "",
+              state: top.state || "",
+            },
+          });
+        }
+        result.autoLinked++;
+      } else {
+        result.suggestions.push({
           siteId: site.siteId,
           siteName: site.siteName,
-          steDate,
+          steDate: steDate?.toISOString().split("T")[0] || null,
           batteryCount: site.totalBatteries,
           gatewayCount: site.totalGateways,
-          propertyId: prop.id,
-          score,
-          signals,
+          candidates: scored,
         });
       }
-    }
-  }
-
-  // ─── Pass 2: Greedy assignment (highest score first) ──────────────────
-
-  // Sort all pairs by score descending, then by date signal specificity
-  allPairs.sort((a, b) => b.score - a.score);
-
-  // Track claimed properties and assigned sites
-  const claimedProperties = new Set<string>();
-  const assignedSites = new Map<string, {
-    top: ScoredPair;
-    allCandidates: ScoredPair[];
-  }>();
-
-  // Group pairs by siteId for gap calculation
-  const pairsBySite = new Map<string, ScoredPair[]>();
-  for (const pair of allPairs) {
-    const existing = pairsBySite.get(pair.siteId) || [];
-    existing.push(pair);
-    pairsBySite.set(pair.siteId, existing);
-  }
-
-  // Greedy: walk pairs from highest score, claim if both site and property are free
-  for (const pair of allPairs) {
-    if (assignedSites.has(pair.siteId)) continue; // Site already assigned
-    if (claimedProperties.has(pair.propertyId)) continue; // Property already claimed
-
-    // Get all candidates for this site (for gap calculation)
-    const siteCandidates = pairsBySite.get(pair.siteId) || [];
-    // Find the best unclaimed alternative for gap
-    const alternatives = siteCandidates.filter(
-      (p) => p.propertyId !== pair.propertyId && !claimedProperties.has(p.propertyId)
-    );
-    const nextBestScore = alternatives.length > 0 ? alternatives[0].score : 0;
-    const gap = pair.score - nextBestScore;
-
-    const meetsAutoLink = pair.score >= AUTO_LINK_MIN_SCORE && gap >= AUTO_LINK_MIN_GAP;
-
-    if (meetsAutoLink) {
-      claimedProperties.add(pair.propertyId);
-      assignedSites.set(pair.siteId, {
-        top: pair,
-        allCandidates: siteCandidates,
-      });
-    }
-  }
-
-  // ─── Pass 3: Write auto-links and build suggestions ───────────────────
-
-  for (const [siteId, assignment] of assignedSites) {
-    try {
-      const { top } = assignment;
-      const property = propertyMap.get(top.propertyId);
-
-      if (!dryRun) {
-        await prisma.powerhubSite.update({
-          where: { siteId },
-          data: {
-            propertyId: top.propertyId,
-            dealId: propertyDealMap.get(top.propertyId) || null,
-            linkMethod: "PROPERTY",
-            linkConfidence: "HIGH",
-            // Backfill address from the property
-            address: property?.fullAddress || "",
-            city: property?.city || "",
-            state: property?.state || "",
-          },
-        });
-      }
-
-      result.autoLinked++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      result.errors.push(`Link ${siteId}: ${msg}`);
+      result.errors.push(`Site ${site.siteId}: ${msg}`);
     }
-  }
-
-  // Build suggestions for non-auto-linked sites
-  for (const site of unlinkedSites) {
-    if (assignedSites.has(site.siteId)) continue; // Already auto-linked
-
-    const siteCandidates = pairsBySite.get(site.siteId) || [];
-    // Filter out claimed properties for suggestion display
-    const unclaimed = siteCandidates
-      .filter((p) => !claimedProperties.has(p.propertyId))
-      .slice(0, MAX_SUGGESTIONS_PER_SITE);
-
-    if (unclaimed.length === 0) {
-      result.skipped++;
-      continue;
-    }
-
-    const steDate = parseSteDate(site.siteName);
-    result.suggestions.push({
-      siteId: site.siteId,
-      siteName: site.siteName,
-      steDate: steDate?.toISOString().split("T")[0] || null,
-      batteryCount: site.totalBatteries,
-      gatewayCount: site.totalGateways,
-      candidates: unclaimed.map((p) => {
-        const prop = propertyMap.get(p.propertyId);
-        return {
-          propertyId: p.propertyId,
-          dealId: propertyDealMap.get(p.propertyId) || null,
-          address: prop?.fullAddress || "",
-          city: prop?.city || "",
-          state: prop?.state || "",
-          firstInstallDate: prop?.firstInstallDate?.toISOString() || null,
-          hasBattery: prop?.hasBattery || false,
-          score: p.score,
-          signals: p.signals,
-        };
-      }),
-    });
   }
 
   return result;
