@@ -238,6 +238,11 @@ export async function getGoalsPipelineData(
   );
   await sleep(120);
 
+  const surveyResult = await queryMonthlyDealRevenue(
+    "site_survey_date", location, monthStart, monthEnd
+  );
+  await sleep(120);
+
   const daResult = await queryMonthlyDealRevenue(
     "layout_approval_date", location, monthStart, monthEnd
   );
@@ -250,6 +255,11 @@ export async function getGoalsPipelineData(
 
   const inspectionResult = await queryMonthlyDealRevenue(
     "inspections_completion_date", location, monthStart, monthEnd
+  );
+  await sleep(120);
+
+  const ptoResult = await queryMonthlyDealRevenue(
+    "pto_completion_date", location, monthStart, monthEnd
   );
   await sleep(120);
 
@@ -298,9 +308,11 @@ export async function getGoalsPipelineData(
 
   const goals = {
     sales: buildGoalRow(salesResult.revenue, getTarget("sales_revenue"), dayOfMonth, daysInMonth),
+    surveys: buildGoalRow(surveyResult.revenue, getTarget("survey_revenue"), dayOfMonth, daysInMonth),
     da: buildGoalRow(daResult.revenue, getTarget("da_revenue"), dayOfMonth, daysInMonth),
     cc: buildGoalRow(ccResult.revenue, getTarget("cc_revenue"), dayOfMonth, daysInMonth),
     inspections: buildGoalRow(inspectionResult.revenue, getTarget("inspection_revenue"), dayOfMonth, daysInMonth),
+    pto: buildGoalRow(ptoResult.revenue, getTarget("pto_revenue"), dayOfMonth, daysInMonth),
     reviews: buildGoalRow(reviewCount, getTarget("five_star_reviews"), dayOfMonth, daysInMonth),
   };
 
