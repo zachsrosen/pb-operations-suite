@@ -11,14 +11,16 @@ A read-only dashboard showing where each crew member is working on every day. Op
 
 **Primary — ScheduleRecord table:**
 The canonical source for crew assignments. Each row represents a scheduled assignment with:
-- `assignedUser` / `assignedUserUid` — who
+- `assignedUser` / `assignedUserUid` — who (nullable — skip records where `assignedUser IS NULL`)
 - `scheduledDate` / `scheduledDays` / `scheduledStart` / `scheduledEnd` — when
-- `scheduleType` — job type (survey, construction, inspection)
+- `scheduleType` — job type (currently: `"survey"`, `"construction"`, `"inspection"` only)
 - `projectId` / `projectName` — deal reference (project name includes proj number, address, customer)
 - `status` — scheduled, completed, cancelled, rescheduled
 
+**Note:** ScheduleRecord only covers survey, construction, and inspection types. Service, D&R, and roofing jobs are managed through Zuper/BookedSlot and do not create ScheduleRecords.
+
 **Secondary — BookedSlot table:**
-Time-slot-level bookings with `date`, `startTime`, `endTime`, `userName`, `location`, `projectId`, `projectName`. Used to fill gaps where ScheduleRecord doesn't have time windows.
+Time-slot-level bookings with `date`, `startTime`, `endTime`, `userName`, `location`, `projectId`, `projectName`. BookedSlot has no `scheduleType` field — job type must be inferred from the booking source or project context (see Job Type Resolution below).
 
 **Supplementary — HubSpot project data:**
 Deal value (`amount`) and PB location (`pbLocation`) are not stored on ScheduleRecord/BookedSlot. The API must resolve these from HubSpot project cache or the projects API.
@@ -50,7 +52,7 @@ interface CrewAssignment {
   startTime: string | null;      // HH:mm
   endTime: string | null;        // HH:mm
   jobType: string;               // survey, construction, inspection, service, dnr, roofing
-  pbLocation: string;            // DTC, Westminster, Colorado Springs, SLO, Camarillo
+  pbLocation: string | null;     // DTC, Westminster, Colorado Springs, SLO, Camarillo (null if unresolvable)
   projectId: string;             // HubSpot deal ID
   projectName: string;           // includes proj#, address, customer
   dealValue: number | null;      // from HubSpot
@@ -63,15 +65,35 @@ interface CrewAssignment {
 
 When both a ScheduleRecord and BookedSlot exist for the same `(userName, date, projectId)`, prefer ScheduleRecord (richer data). Deduplicate by that triple.
 
+### Job Type Resolution
+
+For `ScheduleRecord`-sourced assignments, `jobType` comes directly from `scheduleType` (survey, construction, inspection).
+
+For `BookedSlot`-sourced assignments (which lack a `scheduleType` field), resolve job type via:
+1. Check if a matching `ScheduleRecord` exists for the same `(projectId)` — use its `scheduleType`
+2. Fall back to the crew member's `role` field: surveyor → survey, technician → construction, inspector → inspection, roofer → roofing, electrician → construction
+3. If neither resolves, default to `"unknown"`
+
+### Location Resolution
+
+`pbLocation` resolution chain:
+1. `BookedSlot.location` (if source is BookedSlot)
+2. `HubSpotProjectCache.pbLocation` (batch lookup by `projectId`)
+3. Crew member's primary location (`locations[0]`) as fallback
+4. `null` if none resolve
+
+When grouping by location, assignments with `pbLocation: null` appear under an "Other" group.
+
 ### Scheduler Link Resolution
 
-Map `scheduleType` → dashboard path:
+Map `jobType` → dashboard path:
 - survey → `/dashboards/site-survey-scheduler`
 - construction / installation → `/dashboards/construction-scheduler`
 - inspection → `/dashboards/inspection-scheduler`
 - service → `/dashboards/service-scheduler`
 - dnr → `/dashboards/dnr-scheduler`
 - roofing → `/dashboards/roofing-scheduler`
+- unknown → `/dashboards/scheduler` (master schedule fallback)
 
 ## API
 
@@ -116,14 +138,18 @@ Map `scheduleType` → dashboard path:
 
 **Logic:**
 1. Fetch active CrewMembers (`isActive: true`)
-2. Query ScheduleRecords where `scheduledDate` is in range AND `status != 'cancelled'`
+2. Query ScheduleRecords where `scheduledDate` is in range AND `status NOT IN ('cancelled', 'rescheduled')` AND `assignedUser IS NOT NULL`
 3. Query BookedSlots where `date` is in range
-4. Deduplicate by `(userName, date, projectId)` — prefer ScheduleRecord
-5. Batch-resolve deal values from HubSpotProjectCache (fall back to null if missing)
-6. Resolve `pbLocation` from BookedSlot.location or HubSpotProjectCache
-7. Return crew roster + merged assignments
+4. Deduplicate by `(crewName, date, projectId)` — normalize crew name from `ScheduleRecord.assignedUser` and `BookedSlot.userName`; prefer ScheduleRecord when both exist
+5. Collect unique `projectId` values, batch-resolve deal values + `pbLocation` from `HubSpotProjectCache` via single `findMany({ where: { dealId: { in: projectIds } } })` — fall back to null if missing
+6. Apply location resolution chain (see Location Resolution above)
+7. Apply job type resolution (see Job Type Resolution above)
+8. Expand multi-day jobs: use `getBusinessDatesInSpan()` from `scheduling-utils.ts` to generate one assignment entry per business day in the span (`scheduledDate` + `scheduledDays`, skipping weekends)
+9. Return crew roster + merged assignments
 
-**Caching:** React Query on client with 2-minute stale time. SSE invalidation on `schedule-records` cache key.
+**Caching:** React Query on client with 2-minute stale time. Add `"crew-schedule"` as a new cache key root in `query-keys.ts` with a `cacheKeyToQueryKeys` entry. Invalidate on the same upstream keys that schedulers use (e.g., `projects`, `schedule-records` if added to SSE emitters). For v1, polling via `refetchInterval: 2 * 60 * 1000` is acceptable without SSE.
+
+**Performance:** Date range is capped at 31 days max. HubSpot cache lookups use a single batch query, not per-assignment.
 
 ## UI
 
@@ -221,12 +247,12 @@ The grid table becomes a single-column detailed list. The calendar cards become 
 ### Route Access
 
 Add `/dashboards/crew-schedule` to `allowedRoutes` for every role that currently has access to any scheduler dashboard:
-- ADMIN, OWNER — already have `*` wildcard
-- PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS — add to their allowedRoutes arrays
+- ADMIN, EXECUTIVE — already have `*` wildcard (OWNER normalizes to EXECUTIVE)
+- PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, ROOFING, SALES_MANAGER — add to their allowedRoutes arrays
 
 ### Suite Nav
 
-Add a card in the Operations suite (and any other suite that links to scheduler pages):
+Add a card to the Operations suite page (`src/app/suites/operations/page.tsx`) and any other suite page that links to scheduler dashboards (Service, D&R+Roofing):
 ```ts
 {
   href: "/dashboards/crew-schedule",
@@ -249,8 +275,11 @@ New files:
   src/app/dashboards/crew-schedule/page.tsx    — Dashboard page
 
 Modified files:
-  src/lib/roles.ts        — add /dashboards/crew-schedule to allowedRoutes
-  src/lib/suite-nav.ts    — add card to Operations suite (and others with scheduler links)
+  src/lib/roles.ts                          — add /dashboards/crew-schedule to allowedRoutes for PM, OPS_MGR, OPS, TECH_OPS, ROOFING, SALES_MANAGER
+  src/app/suites/operations/page.tsx        — add Crew Schedule card
+  src/app/suites/service/page.tsx           — add Crew Schedule card (if service suite links schedulers)
+  src/app/suites/dnr-roofing/page.tsx       — add Crew Schedule card
+  src/lib/query-keys.ts                     — add crew-schedule cache key root
 ```
 
 ## Non-Goals
@@ -264,8 +293,8 @@ Modified files:
 ## Edge Cases
 
 - **Crew with multiple assignments on one day:** Show all assignments in the cell (stacked in grid, multiple cards in cards view)
-- **Multi-day jobs:** Repeat the assignment in each day's cell across the span
-- **Crew in multiple locations:** Show under their primary location (first in `locations[]`); assignment's `pbLocation` may differ from home location
-- **Cancelled/rescheduled jobs:** Filtered out by default (`status != 'cancelled'`). Rescheduled shows only the new date.
+- **Multi-day jobs:** Use `getBusinessDatesInSpan()` to expand `scheduledDate + scheduledDays` into individual business days (skips weekends). Each day gets its own assignment entry in the grid. Fractional days (e.g., 0.25 for a 2-hour survey) do NOT expand — they appear only on `scheduledDate`.
+- **Crew in multiple locations:** Show under their primary location (first in `locations[]`); assignment's `pbLocation` may differ from home location. When grouping by location, the assignment appears under its `pbLocation`, not the crew member's home location.
+- **Cancelled/rescheduled jobs:** Both `status = 'cancelled'` and `status = 'rescheduled'` are excluded from the query. Only the new ScheduleRecord (with `status = 'scheduled'`) for a rescheduled job is shown.
 - **No deal value available:** Show "—" instead of dollar amount
 - **Large month view:** Grid table may be wide; use horizontal scroll with sticky crew name column
