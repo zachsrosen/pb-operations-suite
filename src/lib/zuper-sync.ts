@@ -8,7 +8,7 @@
  */
 
 import { zuper, type ZuperJob, type ZuperJobCategory } from "@/lib/zuper";
-import { cacheZuperJob } from "@/lib/db";
+import { cacheZuperJob, prisma } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -242,5 +242,51 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
   }
 
   console.log(`[ZuperSync] Complete — synced: ${synced}, errors: ${errors}, total reported: ${total === Infinity ? "unknown" : total}`);
+
+  // -------------------------------------------------------------------------
+  // Second pass: backfill assignedUsers from individual job GETs.
+  //
+  // The Zuper list API (/jobs) omits assigned_to, so newly synced jobs get
+  // JSON-null for assignedUsers. Fetch the detail endpoint for jobs scheduled
+  // in the next 30 days that are still missing crew data. Typically <50 jobs.
+  // -------------------------------------------------------------------------
+  if (prisma) {
+    try {
+      const cutoff = new Date(Date.now() + 30 * 86_400_000);
+      const missingCrew = await prisma.$queryRaw<{ jobUid: string }[]>`
+        SELECT "jobUid" FROM "ZuperJobCache"
+        WHERE "scheduledStart" >= NOW() - INTERVAL '7 days'
+          AND "scheduledStart" < ${cutoff}
+          AND "assignedUsers" = 'null'::jsonb
+          AND "jobStatus" NOT IN ('CANCELLED')
+      `;
+
+      let backfilled = 0;
+      for (const { jobUid } of missingCrew) {
+        try {
+          const detail = await zuper.getJob(jobUid);
+          if (detail.type !== "success" || !detail.data) continue;
+          const job = detail.data;
+          const users = resolveAssignedUsers(job.assigned_to, userNameCache);
+          if (!users || users.length === 0) continue;
+
+          await prisma.zuperJobCache.update({
+            where: { jobUid },
+            data: { assignedUsers: JSON.parse(JSON.stringify(users)) },
+          });
+          backfilled++;
+        } catch {
+          // Non-fatal — skip this job
+        }
+      }
+
+      if (missingCrew.length > 0) {
+        console.log(`[ZuperSync] Backfilled assignedUsers: ${backfilled}/${missingCrew.length} jobs`);
+      }
+    } catch (err) {
+      console.warn("[ZuperSync] assignedUsers backfill failed:", err);
+    }
+  }
+
   return { synced, errors };
 }
