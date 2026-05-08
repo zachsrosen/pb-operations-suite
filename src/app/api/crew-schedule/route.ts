@@ -90,9 +90,9 @@ export async function GET(request: NextRequest) {
   }
 
   const rangeDays = daysBetween(startDate, endDate);
-  if (rangeDays > 31) {
+  if (rangeDays > 32) {
     return NextResponse.json(
-      { error: "Date range must not exceed 31 days" },
+      { error: "Date range must not exceed 32 days" },
       { status: 400 },
     );
   }
@@ -200,7 +200,7 @@ export async function GET(request: NextRequest) {
       const dealValue = cached?.amount ?? null;
 
       // Expand multi-day jobs
-      const scheduledDays = sr.scheduledDays ?? 1;
+      const scheduledDays = Math.max(sr.scheduledDays ?? 1, 1);
       const dates =
         scheduledDays > 1
           ? getBusinessDatesInSpan(sr.scheduledDate, scheduledDays).filter(

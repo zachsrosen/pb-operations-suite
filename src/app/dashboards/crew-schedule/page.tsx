@@ -803,10 +803,14 @@ export default function CrewSchedulePage() {
     const totalCrew = filteredCrew.length;
     const totalAssignments = filteredAssignments.length;
     const uniqueDays = new Set(filteredAssignments.map((a) => a.date)).size;
-    const totalValue = filteredAssignments.reduce(
-      (sum, a) => sum + (a.dealValue || 0),
-      0
-    );
+    const seenProjects = new Set<string>();
+    let totalValue = 0;
+    for (const a of filteredAssignments) {
+      if (a.dealValue && !seenProjects.has(a.projectId)) {
+        seenProjects.add(a.projectId);
+        totalValue += a.dealValue;
+      }
+    }
     return { totalCrew, totalAssignments, uniqueDays, totalValue };
   }, [filteredCrew, filteredAssignments]);
 
