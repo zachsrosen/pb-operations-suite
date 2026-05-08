@@ -41,9 +41,11 @@ export interface GoalsPipelineData {
 
   goals: {
     sales: GoalRow;
+    surveys: GoalRow;
     da: GoalRow;
     cc: GoalRow;
     inspections: GoalRow;
+    pto: GoalRow;
     reviews: GoalRow;
   };
 
@@ -76,9 +78,11 @@ export const HUBSPOT_LOCATION_IDS: Record<string, string> = {
 /** Metric keys stored in the OfficeGoal Prisma model */
 export const GOAL_METRICS = [
   "sales_revenue",
+  "survey_revenue",
   "da_revenue",
   "cc_revenue",
   "inspection_revenue",
+  "pto_revenue",
   "five_star_reviews",
 ] as const;
 
@@ -86,11 +90,11 @@ export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 /** Default monthly targets when no OfficeGoal record exists */
 export const DEFAULT_TARGETS: Record<string, Record<GoalMetric, number>> = {
-  Westminster:        { sales_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, five_star_reviews: 15 },
-  Centennial:         { sales_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, five_star_reviews: 15 },
-  "Colorado Springs": { sales_revenue: 300_000,   da_revenue: 300_000,   cc_revenue: 300_000,   inspection_revenue: 300_000,   five_star_reviews: 10 },
-  "San Luis Obispo":  { sales_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   five_star_reviews: 8 },
-  Camarillo:          { sales_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   five_star_reviews: 7 },
+  Westminster:        { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
+  Centennial:         { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
+  "Colorado Springs": { sales_revenue: 300_000,   survey_revenue: 300_000,   da_revenue: 300_000,   cc_revenue: 300_000,   inspection_revenue: 300_000,   pto_revenue: 300_000,   five_star_reviews: 10 },
+  "San Luis Obispo":  { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 8 },
+  Camarillo:          { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 7 },
 };
 
 /** Pipeline bar chart stage definitions: property names on the Location custom object */

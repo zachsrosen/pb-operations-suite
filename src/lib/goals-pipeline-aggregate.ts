@@ -38,9 +38,11 @@ export function sumGoalRows(
 
   return {
     sales: sum("sales"),
+    surveys: sum("surveys"),
     da: sum("da"),
     cc: sum("cc"),
     inspections: sum("inspections"),
+    pto: sum("pto"),
     reviews: sum("reviews"),
   };
 }
