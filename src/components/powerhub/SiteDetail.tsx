@@ -28,7 +28,7 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
   const snapshot = site.telemetrySnapshot;
   const property = site.property;
 
-  // Flatten device JSON object into a typed array
+  // devices is stored as a JSON object { gateways:[], batteries:[], inverters:[], meters:[], evse:[] }
   const deviceObj =
     typeof site.devices === "object" && site.devices && !Array.isArray(site.devices)
       ? site.devices
