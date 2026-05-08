@@ -50,11 +50,13 @@ const ASSET_SYNC_BATCH_LIMIT = 50;
 
 /**
  * Max sites to poll per telemetry/alert cron invocation.
- * Telemetry needs 2 API calls per site (available signals + last telemetry).
- * At 4 req/sec: 25 sites × 2 calls = 50 calls ≈ ~14s. Well within 300s limit.
+ * Now that we filter to provisioned sites only (~2400 vs 3100 total),
+ * we can be more aggressive with batch sizes.
+ * Telemetry: 2 API calls per site (available signals + last telemetry).
+ * At 4 req/sec: 50 sites × 2 calls = 100 calls ≈ ~28s. Well within 300s limit.
  */
-const TELEMETRY_BATCH_LIMIT = 25;
-const ALERT_BATCH_LIMIT = 40;
+const TELEMETRY_BATCH_LIMIT = 50;
+const ALERT_BATCH_LIMIT = 60;
 
 // ─── Asset Sync ──────────────────────────────────────────────────────────────
 
@@ -292,17 +294,27 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
     errors: [],
   };
 
-  // Fetch ACTIVE sites ordered by least-recently-polled first
+  // Fetch ACTIVE sites with devices, ordered by least-recently-polled first.
+  // Skip shell sites with no gateways/batteries/inverters — they have no
+  // telemetry signals and waste API calls + batch budget.
+  const provisionedFilter = {
+    status: "ACTIVE" as const,
+    OR: [
+      { totalGateways: { gt: 0 } },
+      { totalBatteries: { gt: 0 } },
+      { totalInverters: { gt: 0 } },
+    ],
+  };
   const activeSites = await prisma.powerhubSite.findMany({
-    where: { status: "ACTIVE" },
+    where: provisionedFilter,
     select: { siteId: true },
     orderBy: { lastTelemetryAt: { sort: "asc", nulls: "first" } },
     take: TELEMETRY_BATCH_LIMIT,
   });
 
-  // Also count total active for reporting
+  // Also count total provisioned for reporting
   result.totalActive = await prisma.powerhubSite.count({
-    where: { status: "ACTIVE" },
+    where: provisionedFilter,
   });
   result.sitesBatched = activeSites.length;
 
@@ -441,16 +453,25 @@ export async function pollAlerts(): Promise<AlertPollResult> {
     errors: [],
   };
 
-  // Fetch ACTIVE sites ordered by least-recently-checked first
+  // Fetch ACTIVE sites with devices, ordered by least-recently-checked first.
+  // Skip shell sites with no devices — they can't generate alerts.
+  const provisionedFilter = {
+    status: "ACTIVE" as const,
+    OR: [
+      { totalGateways: { gt: 0 } },
+      { totalBatteries: { gt: 0 } },
+      { totalInverters: { gt: 0 } },
+    ],
+  };
   const activeSites = await prisma.powerhubSite.findMany({
-    where: { status: "ACTIVE" },
+    where: provisionedFilter,
     select: { siteId: true, lastAlertCheckAt: true },
     orderBy: { lastAlertCheckAt: { sort: "asc", nulls: "first" } },
     take: ALERT_BATCH_LIMIT,
   });
 
   result.totalActive = await prisma.powerhubSite.count({
-    where: { status: "ACTIVE" },
+    where: provisionedFilter,
   });
   result.sitesBatched = activeSites.length;
 
