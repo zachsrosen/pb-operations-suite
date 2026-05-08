@@ -6,8 +6,9 @@ import { getBusinessDatesInSpan } from "@/lib/scheduling-utils";
 /**
  * GET /api/crew-schedule
  *
- * Returns crew members and their assignments (merged from ScheduleRecord + BookedSlot)
- * enriched with deal values from HubSpotProjectCache.
+ * Returns crew members and their assignments (merged from ScheduleRecord +
+ * BookedSlot + ZuperJobCache) enriched with deal values from HubSpotProjectCache.
+ * ZuperJobCache fills gaps for service/D&R/roofing jobs not in ScheduleRecord.
  *
  * Query params:
  *   startDate (required) — YYYY-MM-DD
@@ -25,6 +26,28 @@ const SCHEDULER_PATH_MAP: Record<string, string> = {
   service: "/dashboards/service-scheduler",
   dnr: "/dashboards/dnr-scheduler",
   roofing: "/dashboards/roofing-scheduler",
+};
+
+// ---------------------------------------------------------------------------
+// Zuper job category → jobType
+// ---------------------------------------------------------------------------
+const ZUPER_CATEGORY_MAP: Record<string, string> = {
+  "Site Survey": "survey",
+  "Pre-Sale Site Visit": "survey",
+  "Construction": "construction",
+  "Construction - Battery": "construction",
+  "Construction - Solar": "construction",
+  "Construction - EV": "construction",
+  "Inspection": "inspection",
+  "Service Visit": "service",
+  "Service Revisit": "service",
+  "Additional Visit": "service",
+  "Detach": "dnr",
+  "Reset": "dnr",
+  "D&R Inspection": "dnr",
+  "Roof Build": "roofing",
+  "Roof Final": "roofing",
+  "Walk Roof": "roofing",
 };
 
 const DEFAULT_SCHEDULER_PATH = "/dashboards/scheduler";
@@ -134,6 +157,29 @@ export async function GET(request: NextRequest) {
     });
 
     // -----------------------------------------------------------------------
+    // 3b. Query ZuperJobCache in range (fills gaps for service/D&R/roofing)
+    // -----------------------------------------------------------------------
+    const endDatePlusOne = new Date(new Date(endDate + "T00:00:00Z").getTime() + 86_400_000);
+    const zuperJobs = await prisma.zuperJobCache.findMany({
+      where: {
+        scheduledStart: {
+          gte: new Date(startDate + "T00:00:00Z"),
+          lt: endDatePlusOne,
+        },
+        jobStatus: { notIn: ["CANCELLED"] },
+      },
+      select: {
+        jobUid: true,
+        jobCategory: true,
+        jobStatus: true,
+        scheduledStart: true,
+        assignedUsers: true,
+        hubspotDealId: true,
+        projectName: true,
+      },
+    });
+
+    // -----------------------------------------------------------------------
     // 4. Collect unique projectIds, batch-resolve from HubSpotProjectCache
     // -----------------------------------------------------------------------
     const projectIdSet = new Set<string>();
@@ -142,6 +188,9 @@ export async function GET(request: NextRequest) {
     }
     for (const bs of bookedSlots) {
       if (bs.projectId) projectIdSet.add(bs.projectId);
+    }
+    for (const zj of zuperJobs) {
+      if (zj.hubspotDealId) projectIdSet.add(zj.hubspotDealId);
     }
 
     const projectCache = new Map<string, { amount: number | null; pbLocation: string | null }>();
@@ -272,6 +321,47 @@ export async function GET(request: NextRequest) {
           projectName: bs.projectName,
           dealValue,
           status: "scheduled",
+          schedulerPath: resolveSchedulerPath(jobType),
+        });
+      }
+    }
+
+    // --- Process ZuperJobCache (lowest priority — fills service/D&R/roofing gaps) ---
+    for (const zj of zuperJobs) {
+      const users = zj.assignedUsers as Array<{ user_uid?: string; user_name?: string }> | null;
+      if (!users || !Array.isArray(users) || users.length === 0) continue;
+
+      const projectId = zj.hubspotDealId || zj.jobUid;
+      const jobType = ZUPER_CATEGORY_MAP[zj.jobCategory] ?? "unknown";
+      const date = zj.scheduledStart!.toISOString().slice(0, 10);
+
+      const cached = zj.hubspotDealId ? projectCache.get(zj.hubspotDealId) : undefined;
+      const dealValue = cached?.amount ?? null;
+      const pbLocation = cached?.pbLocation ?? null;
+
+      for (const u of users) {
+        const crewName = u.user_name;
+        if (!crewName) continue;
+
+        const dedupKey = `${crewName}|${date}|${projectId}`;
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+
+        assignments.push({
+          id: `zj_${zj.jobUid}_${crewName}`,
+          source: "booked_slot",
+          crewMemberName: crewName,
+          date,
+          startTime: zj.scheduledStart
+            ? zj.scheduledStart.toISOString().slice(11, 16)
+            : null,
+          endTime: null,
+          jobType,
+          pbLocation,
+          projectId,
+          projectName: zj.projectName ?? zj.jobCategory,
+          dealValue,
+          status: zj.jobStatus.toLowerCase(),
           schedulerPath: resolveSchedulerPath(jobType),
         });
       }
