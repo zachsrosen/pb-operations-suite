@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useSSE } from "@/hooks/useSSE";
@@ -8,6 +9,8 @@ import { StatCard } from "@/components/ui/MetricCard";
 import FleetTable from "@/components/powerhub/FleetTable";
 
 export default function PowerHubDashboard() {
+  const [siteFilter, setSiteFilter] = useState<string>("provisioned");
+
   const fleetQuery = useQuery({
     queryKey: queryKeys.powerhub.fleet(),
     queryFn: async () => {
@@ -18,9 +21,9 @@ export default function PowerHubDashboard() {
   });
 
   const sitesQuery = useQuery({
-    queryKey: queryKeys.powerhub.sites(),
+    queryKey: [...queryKeys.powerhub.sites(), siteFilter],
     queryFn: async () => {
-      const res = await fetch("/api/powerhub/sites");
+      const res = await fetch(`/api/powerhub/sites?filter=${siteFilter}`);
       if (!res.ok) throw new Error("Failed to fetch sites");
       return res.json();
     },
@@ -67,10 +70,10 @@ export default function PowerHubDashboard() {
           color="green"
         />
         <StatCard
-          label="Sites Online"
+          label="Sites Reporting"
           value={
             fleet
-              ? `${fleet.gridConnectedCount} / ${fleet.totalSites}`
+              ? `${fleet.sitesReporting} / ${fleet.provisionedSites}`
               : "—"
           }
           color="blue"
@@ -86,6 +89,8 @@ export default function PowerHubDashboard() {
         <FleetTable
           sites={sitesQuery.data?.sites || []}
           loading={sitesQuery.isLoading}
+          filter={siteFilter}
+          onFilterChange={setSiteFilter}
         />
       </div>
     </DashboardShell>

@@ -91,5 +91,8 @@ export function extractSubJobsFromCandidates(
   }
 
   subJobs.sort((a, b) => SYSTEM_ORDER.indexOf(a.systemType) - SYSTEM_ORDER.indexOf(b.systemType));
-  return subJobs;
+
+  // If typed sub-jobs exist (solar/battery/ev), the legacy parent is redundant — drop it
+  const hasTyped = subJobs.some((s) => s.systemType !== "legacy");
+  return hasTyped ? subJobs.filter((s) => s.systemType !== "legacy") : subJobs;
 }

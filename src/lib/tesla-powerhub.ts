@@ -115,15 +115,24 @@ export interface PowerHubTelemetrySignal {
 
 export interface PowerHubAlert {
   alert_id: string;
-  device_id?: string;
+  device_id?: string | null;
   din?: string;
   alert_name: string;
   description: string;
-  severity: "informational" | "performance" | "critical";
-  origin: string;
-  reported_at: string;
-  resolved_at?: string;
+  severity: string; // "Performance", "Critical", "ReturnMerchandiseAuthorization", etc.
+  status?: string; // "Open", etc.
+  start_time: string;
+  end_time?: string | null;
   is_active: boolean;
+}
+
+/** Paginated alert response — group-level alerts return up to 100 per page */
+export interface PowerHubAlertResponse {
+  data: PowerHubAlert[];
+  metadata: {
+    request_id: string;
+    next_cursor?: string;
+  };
 }
 
 /** Available telemetry signals for a site — maps signal_name → available (true/false) */
@@ -137,10 +146,11 @@ export interface PowerHubClient {
     targetId: string,
     signals: string[]
   ): Promise<PowerHubTelemetrySignal[]>;
+  /** Fetch active alerts for a group (not per-site). Returns paginated results. */
   getActiveAlerts(
-    siteId: string,
-    sinceTime?: string
-  ): Promise<PowerHubAlert[]>;
+    groupId: string,
+    cursor?: string
+  ): Promise<PowerHubAlertResponse>;
 }
 
 // ─── Rate Limiter ────────────────────────────────────────────────────────────
@@ -348,12 +358,28 @@ export function createPowerHubClient(): PowerHubClient {
       );
     },
 
-    async getActiveAlerts(siteId: string, sinceTime?: string) {
-      let path = `/alerts/last?target_id=${siteId}&active_only=true`;
-      if (sinceTime) {
-        path += `&since_time=${sinceTime}`;
+    async getActiveAlerts(groupId: string, cursor?: string) {
+      let path = `/alerts/last?target_id=${groupId}&active_only=true`;
+      if (cursor) {
+        path += `&cursor=${cursor}`;
       }
-      return apiCall<PowerHubAlert[]>(path);
+      // This endpoint returns { data, metadata } at top level,
+      // but apiCall already unwraps the outer { data } envelope.
+      // However, the alerts endpoint wraps differently — it puts
+      // data and metadata at the top level. So we need the raw response.
+      await rateLimiter.acquire();
+      const token = await getToken();
+      const url = `${proxyUrl}/v2${path}`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`PowerHub API ${res.status}: ${path}`);
+      }
+      return (await res.json()) as PowerHubAlertResponse;
     },
   };
 }

@@ -24,12 +24,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
+  // Backfill address from the deal's HubSpot cache when linking
+  const dealCache = await prisma.hubSpotProjectCache.findUnique({
+    where: { dealId },
+    select: { address: true, city: true, state: true, zipCode: true },
+  });
+
   await prisma.powerhubSite.update({
     where: { siteId },
     data: {
       dealId,
       linkMethod: "MANUAL",
       linkConfidence: "HIGH",
+      // Populate address from deal if site has none
+      ...(dealCache?.address && !site.address
+        ? {
+            address: dealCache.address,
+            city: dealCache.city || "",
+            state: dealCache.state || "",
+            zip: dealCache.zipCode || null,
+          }
+        : {}),
     },
   });
 
