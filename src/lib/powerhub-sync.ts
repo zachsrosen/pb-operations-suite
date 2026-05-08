@@ -198,45 +198,45 @@ async function upsertSite(
     lastAssetSyncAt: new Date(),
   };
 
-  if (existing) {
-    await prisma.powerhubSite.update({
-      where: { siteId: detail.site_id },
-      data: siteData,
-    });
-    result.sitesUpdated++;
+  // Use upsert to avoid race conditions between concurrent cron runs
+  // that both see a site as "new" and try to create it simultaneously
+  const upserted = await prisma.powerhubSite.upsert({
+    where: { siteId: detail.site_id },
+    update: siteData,
+    create: {
+      siteId: detail.site_id,
+      ...siteData,
+    },
+  });
 
-    // Linkage: Tesla API doesn't return addresses, so auto-linkage
-    // relies on site_name or manual admin assignment.
-    // If address was manually set (e.g. by admin), try linkage.
-    if (existing.linkMethod === "UNLINKED" && existing.address) {
-      const street = normalizeAddress(existing.address);
-      const linkResult = await linkSite(
-        { street, city: "", state: "", zip: null },
-        dealAddresses,
-        prisma
-      );
-      if (linkResult) {
-        await prisma.powerhubSite.update({
-          where: { siteId: detail.site_id },
-          data: {
-            propertyId: linkResult.propertyId,
-            dealId: linkResult.dealId,
-            linkMethod: linkResult.method,
-            linkConfidence: linkResult.confidence,
-          },
-        });
-        result.sitesLinked++;
-      }
-    }
+  if (existing) {
+    result.sitesUpdated++;
   } else {
-    // Create new site — starts UNLINKED (no address from Tesla API)
-    await prisma.powerhubSite.create({
-      data: {
-        siteId: detail.site_id,
-        ...siteData,
-      },
-    });
     result.sitesCreated++;
+  }
+
+  // Linkage: Tesla API doesn't return addresses, so auto-linkage
+  // relies on site_name or manual admin assignment.
+  // If address was manually set (e.g. by admin), try linkage.
+  if (existing?.linkMethod === "UNLINKED" && existing?.address) {
+    const street = normalizeAddress(existing.address);
+    const linkResult = await linkSite(
+      { street, city: "", state: "", zip: null },
+      dealAddresses,
+      prisma
+    );
+    if (linkResult) {
+      await prisma.powerhubSite.update({
+        where: { siteId: detail.site_id },
+        data: {
+          propertyId: linkResult.propertyId,
+          dealId: linkResult.dealId,
+          linkMethod: linkResult.method,
+          linkConfidence: linkResult.confidence,
+        },
+      });
+      result.sitesLinked++;
+    }
   }
 }
 
