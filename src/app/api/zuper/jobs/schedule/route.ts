@@ -935,6 +935,20 @@ export async function PUT(request: NextRequest) {
         console.log(`[Zuper Schedule] RESCHEDULE SUCCESS`);
       }
 
+      // Explicitly set the primary job status to "Scheduled" — Zuper's PUT /jobs/schedule
+      // auto-transitions some categories but not all (e.g. new Construction - Solar/Battery/EV
+      // sub-jobs stay at "Ready to Build").  Name-based API works even for first-time transitions.
+      try {
+        const statusResult = await zuper.updateJobStatus(existingJob.job_uid, "Scheduled");
+        if (statusResult.type === "success") {
+          console.log(`[Zuper Schedule] Primary job ${existingJob.job_uid} status → Scheduled`);
+        } else {
+          console.warn(`[Zuper Schedule] Primary job ${existingJob.job_uid} status update failed:`, statusResult.error);
+        }
+      } catch (statusErr) {
+        console.warn(`[Zuper Schedule] Primary job ${existingJob.job_uid} status update error:`, statusErr);
+      }
+
       let zuperNoteWarning: string | undefined;
       if (schedule.type === "installation") {
         const installerNote = extractInstallerNote(schedule.notes, schedule.installerNotes);
