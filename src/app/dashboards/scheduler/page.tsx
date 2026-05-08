@@ -2690,7 +2690,11 @@ export default function SchedulerPage() {
           .map((a) => a.userUid);
         const teamUid = availableConstructionAssignees.find((a) => sched.assigneeNames.includes(a.name))?.teamUid;
 
-        const res = await fetch("/api/zuper/jobs/schedule", {
+        const endpoint = syncToZuper
+          ? "/api/zuper/jobs/schedule"
+          : "/api/zuper/jobs/schedule/tentative";
+
+        const res = await fetch(endpoint, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2714,10 +2718,9 @@ export default function SchedulerPage() {
               assignedUser: sched.assigneeNames.join(", "),
               teamUid: teamUid || "",
               timezone: scheduleTimezone,
-              notes: sched.notes || `Scheduled via Master Schedule (${sched.systemType})`,
+              notes: sched.notes || `${syncToZuper ? "Scheduled" : "Tentatively scheduled"} via Master Schedule (${sched.systemType})`,
             },
-            rescheduleOnly: true,
-            skipSiblingCascade: true,
+            ...(syncToZuper ? { rescheduleOnly: true, skipSiblingCascade: true } : {}),
           }),
         });
         if (res.ok) {
@@ -2732,13 +2735,14 @@ export default function SchedulerPage() {
     }
     setSyncingToZuper(false);
 
+    const modeLabel = syncToZuper ? "scheduled" : "tentatively scheduled";
     const successes = results.filter((r) => r.ok).length;
     const failures = results.filter((r) => !r.ok);
     if (failures.length === 0) {
-      showToast(`${getCustomerName(project.name)} — ${successes} sub-job${successes > 1 ? "s" : ""} scheduled`);
+      showToast(`${getCustomerName(project.name)} — ${successes} sub-job${successes > 1 ? "s" : ""} ${modeLabel}`);
     } else {
       showToast(
-        `${getCustomerName(project.name)} — ${successes} scheduled, ${failures.length} failed`,
+        `${getCustomerName(project.name)} — ${successes} ${modeLabel}, ${failures.length} failed`,
         "warning"
       );
     }
@@ -2750,14 +2754,14 @@ export default function SchedulerPage() {
           startDate: schedules[0].startDate,
           days: schedules[0].installDays,
           crew: schedules[0].assigneeNames.join(", "),
-          isTentative: false,
+          isTentative: !syncToZuper,
           scheduleType: "installation" as const,
         },
       }));
     }
     setSubJobScheduleModal(null);
     setTimeout(() => fetchProjects(), 700);
-  }, [subJobScheduleModal, availableConstructionAssignees, showToast, trackFeature, fetchProjects]);
+  }, [subJobScheduleModal, availableConstructionAssignees, syncToZuper, showToast, trackFeature, fetchProjects]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, projectId: string) => {
