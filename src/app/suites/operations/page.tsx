@@ -14,6 +14,15 @@ const BASE_LINKS: SuitePageCard[] = [
     hardNavigate: true,
   },
   {
+    href: "/dashboards/crew-schedule",
+    title: "Crew Schedule",
+    description: "See where every crew member is working each day across all locations.",
+    tag: "SCHEDULING",
+    tagColor: "blue",
+    icon: "👥",
+    section: "Scheduling & Planning",
+  },
+  {
     href: "/dashboards/map",
     title: "Jobs Map",
     description: "Map of scheduled and unscheduled work with crew positions and proximity insights.",

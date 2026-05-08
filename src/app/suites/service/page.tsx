@@ -29,6 +29,15 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Daily Operations",
   },
   {
+    href: "/dashboards/crew-schedule",
+    title: "Crew Schedule",
+    description: "See where every crew member is working each day.",
+    tag: "SCHEDULING",
+    tagColor: "blue",
+    icon: "👥",
+    section: "Daily Operations",
+  },
+  {
     href: "/dashboards/service-unscheduled",
     title: "Unscheduled Jobs",
     description: "List of every Zuper job awaiting a scheduled date, with age-based urgency flags.",
