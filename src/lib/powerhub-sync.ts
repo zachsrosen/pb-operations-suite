@@ -56,7 +56,6 @@ const ASSET_SYNC_BATCH_LIMIT = 50;
  * At 4 req/sec: 50 sites × 2 calls = 100 calls ≈ ~28s. Well within 300s limit.
  */
 const TELEMETRY_BATCH_LIMIT = 50;
-const ALERT_BATCH_LIMIT = 60;
 
 // ─── Asset Sync ──────────────────────────────────────────────────────────────
 
@@ -430,141 +429,196 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
 // ─── Alert Poll ──────────────────────────────────────────────────────────────
 
 export interface AlertPollResult {
-  totalActive: number;
-  sitesBatched: number;
-  sitesPolled: number;
+  alertsFetched: number;
   alertsCreated: number;
   alertsResolved: number;
+  alertsMapped: number;
+  alertsUnmapped: number;
   errors: string[];
 }
 
 /**
- * Poll active alerts for ACTIVE sites, upsert new alerts,
- * resolve alerts no longer in the response. Batched to stay within limits.
+ * Poll active alerts at the GROUP level (Tesla's alert API returns alerts
+ * per-group, not per-site). Alerts are mapped to sites via DIN matching
+ * against the devices JSON on PowerhubSite.
+ *
+ * Pagination: Tesla returns up to 100 alerts per page with a next_cursor.
+ * We fetch up to 5 pages (500 alerts) per cron invocation to stay within
+ * Vercel function time limits.
  */
+const ALERT_MAX_PAGES = 5;
+
 export async function pollAlerts(): Promise<AlertPollResult> {
   const client = createPowerHubClient();
   const result: AlertPollResult = {
-    totalActive: 0,
-    sitesBatched: 0,
-    sitesPolled: 0,
+    alertsFetched: 0,
     alertsCreated: 0,
     alertsResolved: 0,
+    alertsMapped: 0,
+    alertsUnmapped: 0,
     errors: [],
   };
 
-  // Fetch ACTIVE sites with devices, ordered by least-recently-checked first.
-  // Skip shell sites with no devices — they can't generate alerts.
-  const provisionedFilter = {
-    status: "ACTIVE" as const,
-    OR: [
-      { totalGateways: { gt: 0 } },
-      { totalBatteries: { gt: 0 } },
-      { totalInverters: { gt: 0 } },
-    ],
-  };
-  const activeSites = await prisma.powerhubSite.findMany({
-    where: provisionedFilter,
-    select: { siteId: true, lastAlertCheckAt: true },
-    orderBy: { lastAlertCheckAt: { sort: "asc", nulls: "first" } },
-    take: ALERT_BATCH_LIMIT,
-  });
+  try {
+    // 1. Get our group ID (we have one group: "Photon Brothers")
+    const groups = await client.getGroups();
+    if (groups.length === 0) {
+      result.errors.push("No groups found");
+      return result;
+    }
+    const groupId = groups[0].group_id;
 
-  result.totalActive = await prisma.powerhubSite.count({
-    where: provisionedFilter,
-  });
-  result.sitesBatched = activeSites.length;
+    // 2. Build DIN → siteId lookup from all provisioned sites
+    const sites = await prisma.powerhubSite.findMany({
+      where: {
+        OR: [
+          { totalGateways: { gt: 0 } },
+          { totalBatteries: { gt: 0 } },
+          { totalInverters: { gt: 0 } },
+        ],
+      },
+      select: { siteId: true, devices: true },
+    });
 
-  for (let i = 0; i < activeSites.length; i += CHUNK_SIZE) {
-    const chunk = activeSites.slice(i, i + CHUNK_SIZE);
-
-    await Promise.all(
-      chunk.map(async (site: { siteId: string; lastAlertCheckAt: Date | null }) => {
-        try {
-          result.sitesPolled++;
-
-          const sinceTime = site.lastAlertCheckAt?.toISOString();
-          const alerts = await client.getActiveAlerts(
-            site.siteId,
-            sinceTime || undefined
-          );
-
-          // Upsert each alert
-          const activeAlertKeys = new Set<string>();
-          for (const alert of alerts) {
-            const deviceId = alert.device_id || "site";
-
-            // Tesla sometimes returns invalid/missing reported_at — skip those
-            const reportedAt = new Date(alert.reported_at);
-            if (isNaN(reportedAt.getTime())) continue;
-
-            const key = `${site.siteId}|${deviceId}|${alert.alert_name}|${reportedAt.toISOString()}`;
-            activeAlertKeys.add(key);
-
-            const existing = await prisma.powerhubAlert.findUnique({
-              where: {
-                siteId_deviceId_alertName_reportedAt: {
-                  siteId: site.siteId,
-                  deviceId,
-                  alertName: alert.alert_name,
-                  reportedAt,
-                },
-              },
-            });
-
-            if (!existing) {
-              await prisma.powerhubAlert.create({
-                data: {
-                  siteId: site.siteId,
-                  deviceId,
-                  din: alert.din || null,
-                  alertName: alert.alert_name,
-                  description: alert.description,
-                  severity: alert.severity.toUpperCase() as any,
-                  isActive: true,
-                  origin: alert.origin,
-                  reportedAt,
-                },
-              });
-              result.alertsCreated++;
-            }
+    const dinToSiteId = new Map<string, string>();
+    for (const site of sites) {
+      const devObj = site.devices as Record<string, Array<{ din?: string }>> | null;
+      if (!devObj || typeof devObj !== "object") continue;
+      for (const category of Object.values(devObj)) {
+        if (!Array.isArray(category)) continue;
+        for (const device of category) {
+          if (device.din) {
+            dinToSiteId.set(device.din, site.siteId);
           }
-
-          // Resolve alerts that are no longer active
-          const currentlyActive = await prisma.powerhubAlert.findMany({
-            where: { siteId: site.siteId, isActive: true },
-            select: { id: true, deviceId: true, alertName: true, reportedAt: true },
-          });
-
-          for (const existing of currentlyActive) {
-            const key = `${site.siteId}|${existing.deviceId}|${existing.alertName}|${existing.reportedAt.toISOString()}`;
-            if (!activeAlertKeys.has(key)) {
-              await prisma.powerhubAlert.update({
-                where: { id: existing.id },
-                data: { isActive: false, resolvedAt: new Date() },
-              });
-              result.alertsResolved++;
-            }
-          }
-
-          // Update site metadata
-          await prisma.powerhubSite.update({
-            where: { siteId: site.siteId },
-            data: { lastAlertCheckAt: new Date() },
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          result.errors.push(`Alerts ${site.siteId}: ${msg}`);
         }
-      })
-    );
+      }
+    }
 
-    if (i + CHUNK_SIZE < activeSites.length) {
+    // 3. Fetch alerts (paginated, up to ALERT_MAX_PAGES pages)
+    const allAlerts: Array<{
+      alertId: string;
+      siteId: string | null;
+      din: string | null;
+      deviceId: string;
+      alertName: string;
+      description: string;
+      severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL";
+      reportedAt: Date;
+    }> = [];
+
+    let cursor: string | undefined;
+    for (let page = 0; page < ALERT_MAX_PAGES; page++) {
+      const response = await client.getActiveAlerts(groupId, cursor);
+      const alerts = response.data || [];
+      result.alertsFetched += alerts.length;
+
+      for (const alert of alerts) {
+        const reportedAt = new Date(alert.start_time);
+        if (isNaN(reportedAt.getTime())) continue;
+
+        // Map DIN to site
+        const siteId = alert.din ? dinToSiteId.get(alert.din) || null : null;
+        if (siteId) {
+          result.alertsMapped++;
+        } else {
+          result.alertsUnmapped++;
+        }
+
+        // Skip alerts we can't map to a site
+        if (!siteId) continue;
+
+        // Normalize severity to match Prisma enum
+        const rawSev = alert.severity?.toUpperCase() || "";
+        const severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL" =
+          rawSev === "CRITICAL" ? "CRITICAL" :
+          rawSev === "PERFORMANCE" ? "PERFORMANCE" :
+          "INFORMATIONAL"; // ReturnMerchandiseAuthorization, etc. → INFORMATIONAL
+
+        allAlerts.push({
+          alertId: alert.alert_id,
+          siteId,
+          din: alert.din || null,
+          deviceId: alert.device_id || alert.din || "site",
+          alertName: alert.alert_name,
+          description: alert.description,
+          severity,
+          reportedAt,
+        });
+      }
+
+      // Check for more pages
+      const nextCursor = response.metadata?.next_cursor;
+      if (!nextCursor) break;
+      cursor = nextCursor;
+
+      // Rate limit between pages
       await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
     }
+
+    // 4. Upsert alerts in DB
+    const activeAlertIds = new Set<string>();
+    for (const alert of allAlerts) {
+      activeAlertIds.add(`${alert.siteId}|${alert.deviceId}|${alert.alertName}|${alert.reportedAt.toISOString()}`);
+
+      const existing = await prisma.powerhubAlert.findUnique({
+        where: {
+          siteId_deviceId_alertName_reportedAt: {
+            siteId: alert.siteId,
+            deviceId: alert.deviceId,
+            alertName: alert.alertName,
+            reportedAt: alert.reportedAt,
+          },
+        },
+      });
+
+      if (!existing) {
+        await prisma.powerhubAlert.create({
+          data: {
+            siteId: alert.siteId,
+            deviceId: alert.deviceId,
+            din: alert.din,
+            alertName: alert.alertName,
+            description: alert.description,
+            severity: alert.severity,
+            isActive: true,
+            origin: "powerhub",
+            reportedAt: alert.reportedAt,
+          },
+        });
+        result.alertsCreated++;
+      }
+    }
+
+    // 5. Resolve alerts that are no longer in the active set
+    //    Only resolve for sites that appeared in this poll — don't resolve
+    //    alerts for sites we didn't fetch alerts about.
+    const siteIdsInPoll = new Set(allAlerts.map((a) => a.siteId));
+    if (siteIdsInPoll.size > 0) {
+      const currentlyActive = await prisma.powerhubAlert.findMany({
+        where: {
+          siteId: { in: [...siteIdsInPoll] },
+          isActive: true,
+        },
+        select: { id: true, siteId: true, deviceId: true, alertName: true, reportedAt: true },
+      });
+
+      for (const existing of currentlyActive) {
+        const key = `${existing.siteId}|${existing.deviceId}|${existing.alertName}|${existing.reportedAt.toISOString()}`;
+        if (!activeAlertIds.has(key)) {
+          await prisma.powerhubAlert.update({
+            where: { id: existing.id },
+            data: { isActive: false, resolvedAt: new Date() },
+          });
+          result.alertsResolved++;
+        }
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    result.errors.push(`Alert poll: ${msg}`);
   }
 
-  // Emit SSE invalidation — cascades to service priority queue via cacheKeyToQueryKeys
+  // Emit SSE invalidation
   appCache.invalidate("powerhub:alerts");
 
   return result;
