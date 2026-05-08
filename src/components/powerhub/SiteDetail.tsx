@@ -25,7 +25,18 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
   if (!site) return <div className="text-muted">No data</div>;
 
   const snapshot = site.telemetrySnapshot;
-  const devices = site.devices || [];
+
+  // devices is stored as a JSON object { gateways:[], batteries:[], inverters:[], meters:[], evse:[] }
+  const deviceObj = (typeof site.devices === "object" && site.devices && !Array.isArray(site.devices))
+    ? site.devices
+    : {};
+  const devices = [
+    ...(deviceObj.gateways || []).map((d: any) => ({ ...d, device_type: "gateway" })),
+    ...(deviceObj.batteries || []).map((d: any) => ({ ...d, device_type: "battery" })),
+    ...(deviceObj.inverters || []).map((d: any) => ({ ...d, device_type: "inverter" })),
+    ...(deviceObj.meters || []).map((d: any) => ({ ...d, device_type: "meter" })),
+    ...(deviceObj.evse || []).map((d: any) => ({ ...d, device_type: "evse" })),
+  ];
 
   return (
     <div className="space-y-4">
@@ -66,10 +77,10 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
         </h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
           {devices.map((device: any, i: number) => (
-            <div key={i} className="p-2 bg-surface rounded">
-              <div className="font-medium capitalize">{device.device_type}</div>
-              <div className="text-muted">
-                {device.manufacturer} {device.model}
+            <div key={device.device_id || device.din || i} className="p-2 bg-surface rounded">
+              <div className="font-medium capitalize">{device.device_type?.replace("_", " ")}</div>
+              <div className="text-muted truncate">
+                {device.part_number || device.din || device.serial_number || "—"}
               </div>
             </div>
           ))}
