@@ -8,9 +8,24 @@ export async function GET() {
     return NextResponse.json({ error: "PowerHub disabled" }, { status: 404 });
   }
 
-  const [siteCount, activeSites, snapshots, activeAlerts] = await Promise.all([
+  const [
+    siteCount,
+    activeSites,
+    provisionedSites,
+    snapshots,
+    activeAlerts,
+  ] = await Promise.all([
     prisma.powerhubSite.count(),
     prisma.powerhubSite.count({ where: { status: "ACTIVE" } }),
+    prisma.powerhubSite.count({
+      where: {
+        OR: [
+          { totalGateways: { gt: 0 } },
+          { totalBatteries: { gt: 0 } },
+          { totalInverters: { gt: 0 } },
+        ],
+      },
+    }),
     prisma.powerhubTelemetrySnapshot.findMany({
       select: {
         solarPowerW: true,
@@ -28,7 +43,8 @@ export async function GET() {
   const socValues = snapshots.filter((s) => s.batterySocPercent != null);
   const avgBatterySoc =
     socValues.length > 0
-      ? socValues.reduce((sum, s) => sum + (s.batterySocPercent || 0), 0) / socValues.length
+      ? socValues.reduce((sum, s) => sum + (s.batterySocPercent || 0), 0) /
+        socValues.length
       : null;
   const gridConnectedCount = snapshots.filter(
     (s) => s.gridConnectedStatus === "Grid Connected"
@@ -38,8 +54,11 @@ export async function GET() {
     fleet: {
       totalSites: siteCount,
       activeSites,
+      provisionedSites,
+      sitesReporting: snapshots.length,
       totalSolarPowerW,
-      avgBatterySocPercent: avgBatterySoc ? Math.round(avgBatterySoc * 10) / 10 : null,
+      avgBatterySocPercent:
+        avgBatterySoc ? Math.round(avgBatterySoc * 10) / 10 : null,
       gridConnectedCount,
       gridDisconnectedCount: activeSites - gridConnectedCount,
       activeAlertCount: activeAlerts,
