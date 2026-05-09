@@ -1,0 +1,145 @@
+{
+  "capturedAt": "2026-05-08",
+  "projects": {
+    "CO2603-WHIT17": {
+      "name": "Josh Whitmore",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "ACTION_REQUIRED",
+        "Installation Order": "ACTION_REQUIRED",
+        "State Disclosures": "ACTION_REQUIRED",
+        "Utility Bill": "ACTION_REQUIRED",
+        "Signed Proposal": "ACTION_REQUIRED",
+        "Design Plan": "APPROVED",
+        "Photos per Policy": "ACTION_REQUIRED",
+        "Signed Final Permit": "APPROVED",
+        "Access to Monitoring": "ACTION_REQUIRED",
+        "Certificate of Acceptance": "APPROVED",
+        "Attestation of Customer Payment": "ACTION_REQUIRED",
+        "Conditional Progress Lien Waiver": "UNDER_REVIEW",
+        "Signed Interconnection Agreement": "ACTION_REQUIRED",
+        "Conditional Waiver — Final Payment": "UNDER_REVIEW",
+        "Permission to Operate (PTO)": "UNDER_REVIEW"
+      }
+    },
+    "CO2603-CHRI7": {
+      "name": "Christiaan Rees",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "ACTION_REQUIRED",
+        "Installation Order": "ACTION_REQUIRED",
+        "State Disclosures": "ACTION_REQUIRED",
+        "Utility Bill": "UNDER_REVIEW",
+        "Signed Proposal": "ACTION_REQUIRED",
+        "Design Plan": "APPROVED",
+        "Photos per Policy": "UNDER_REVIEW",
+        "Signed Final Permit": "APPROVED",
+        "Access to Monitoring": "UNDER_REVIEW",
+        "Certificate of Acceptance": "APPROVED",
+        "Attestation of Customer Payment": "APPROVED",
+        "Conditional Progress Lien Waiver": "UNDER_REVIEW",
+        "Signed Interconnection Agreement": "APPROVED",
+        "Conditional Waiver — Final Payment": "UNDER_REVIEW",
+        "Permission to Operate (PTO)": "UNDER_REVIEW"
+      }
+    },
+    "CO2602-OKUN1": {
+      "name": "Larry Okuneff",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "APPROVED",
+        "Installation Order": "APPROVED",
+        "State Disclosures": "NOT_UPLOADED",
+        "Utility Bill": "APPROVED",
+        "Signed Proposal": "APPROVED",
+        "Design Plan": "APPROVED",
+        "Photos per Policy": "UNDER_REVIEW",
+        "Signed Final Permit": "APPROVED",
+        "Access to Monitoring": "UNDER_REVIEW",
+        "Certificate of Acceptance": "ACTION_REQUIRED",
+        "Attestation of Customer Payment": "APPROVED",
+        "Conditional Progress Lien Waiver": "UNDER_REVIEW",
+        "Signed Interconnection Agreement": "APPROVED",
+        "Conditional Waiver — Final Payment": "UNDER_REVIEW",
+        "Permission to Operate (PTO)": "ACTION_REQUIRED"
+      }
+    },
+    "CA2602-CAST4": {
+      "name": "David Castillo",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "APPROVED",
+        "Installation Order": "APPROVED",
+        "State Disclosures": "NOT_UPLOADED",
+        "Utility Bill": "APPROVED",
+        "Signed Proposal": "APPROVED",
+        "Design Plan": "UNDER_REVIEW",
+        "Photos per Policy": "ACTION_REQUIRED",
+        "Signed Final Permit": "NOT_UPLOADED",
+        "Access to Monitoring": "ACTION_REQUIRED",
+        "Certificate of Acceptance": "ACTION_REQUIRED",
+        "Attestation of Customer Payment": "ACTION_REQUIRED",
+        "Conditional Progress Lien Waiver": "UNDER_REVIEW",
+        "Signed Interconnection Agreement": "UNDER_REVIEW",
+        "Conditional Waiver — Final Payment": "UNDER_REVIEW",
+        "Permission to Operate (PTO)": "ACTION_REQUIRED"
+      }
+    },
+    "CO2601-BECK1": {
+      "name": "William Beckett",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "APPROVED",
+        "Installation Order": "APPROVED",
+        "State Disclosures": "APPROVED",
+        "Utility Bill": "APPROVED",
+        "Signed Proposal": "APPROVED",
+        "Design Plan": "APPROVED",
+        "Photos per Policy": "UNDER_REVIEW",
+        "Signed Final Permit": "APPROVED",
+        "Access to Monitoring": "UNDER_REVIEW",
+        "Certificate of Acceptance": "ACTION_REQUIRED",
+        "Attestation of Customer Payment": "APPROVED",
+        "Conditional Progress Lien Waiver": "UNDER_REVIEW",
+        "Signed Interconnection Agreement": "NOT_UPLOADED",
+        "Conditional Waiver — Final Payment": "UNDER_REVIEW",
+        "Permission to Operate (PTO)": "ACTION_REQUIRED"
+      }
+    },
+    "CO2602-MART21": {
+      "name": "Ricardo Martinez",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "ACTION_REQUIRED",
+        "Installation Order": "APPROVED",
+        "State Disclosures": "ACTION_REQUIRED",
+        "Utility Bill": "UNDER_REVIEW",
+        "Signed Proposal": "ACTION_REQUIRED",
+        "Design Plan": "APPROVED",
+        "Photos per Policy": "UNDER_REVIEW",
+        "Signed Final Permit": "APPROVED",
+        "Access to Monitoring": "UNDER_REVIEW",
+        "Certificate of Acceptance": "APPROVED",
+        "Attestation of Customer Payment": "ACTION_REQUIRED",
+        "Conditional Progress Lien Waiver": "ACTION_REQUIRED",
+        "Signed Interconnection Agreement": "UNDER_REVIEW",
+        "Conditional Waiver — Final Payment": "ACTION_REQUIRED",
+        "Permission to Operate (PTO)": "APPROVED"
+      }
+    },
+    "CA2602-FRAN2": {
+      "name": "John Frantz",
+      "docs": {
+        "Customer Agreement (PPA/ESA)": "APPROVED",
+        "Installation Order": "NOT_UPLOADED",
+        "State Disclosures": "NOT_UPLOADED",
+        "Utility Bill": "NOT_UPLOADED",
+        "Signed Proposal": "ACTION_REQUIRED",
+        "Design Plan": "UNDER_REVIEW",
+        "Photos per Policy": "UNDER_REVIEW",
+        "Signed Final Permit": "UNDER_REVIEW",
+        "Access to Monitoring": "UNDER_REVIEW",
+        "Certificate of Acceptance": "UNDER_REVIEW",
+        "Attestation of Customer Payment": "UNDER_REVIEW",
+        "Conditional Progress Lien Waiver": "UNDER_REVIEW",
+        "Signed Interconnection Agreement": "UNDER_REVIEW",
+        "Conditional Waiver — Final Payment": "NOT_UPLOADED",
+        "Permission to Operate (PTO)": "NOT_UPLOADED"
+      }
+    }
+  }
+}
