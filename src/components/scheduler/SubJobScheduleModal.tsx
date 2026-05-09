@@ -34,6 +34,8 @@ export type SubJobProjectContext = {
   zuperJobUid?: string;
   zuperJobStatus?: string;
   zuperWebBaseUrl?: string;
+  /** Zuper project UID — reserved for future project-level linking */
+  zuperProjectUid?: string;
   // Equipment
   systemSize: number;
   moduleCount: number;
@@ -388,7 +390,30 @@ export function SubJobScheduleModal({
                     >
                       HubSpot
                     </a>
-                    {projectContext.zuperJobUid && projectContext.zuperWebBaseUrl && (
+                    {projectContext.zuperWebBaseUrl && subJobs.length > 0 && subJobs.some((sj) => sj.jobUid) && (
+                      <>
+                        {subJobs.filter((sj) => sj.jobUid).map((sj, idx) => (
+                          <span key={sj.jobUid} className="contents">
+                            {(idx === 0 || idx > 0) && <span className="text-muted/70">|</span>}
+                            <a
+                              href={`${projectContext.zuperWebBaseUrl}/jobs/${sj.jobUid}/details`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-[0.7rem] hover:opacity-80 ${
+                                sj.systemType === "solar" ? "text-amber-400"
+                                  : sj.systemType === "battery" ? "text-emerald-400"
+                                  : sj.systemType === "ev" ? "text-cyan-400"
+                                  : "text-cyan-400"
+                              }`}
+                            >
+                              {SYSTEM_TAGS[sj.systemType] || "Zuper"}
+                            </a>
+                          </span>
+                        ))}
+                      </>
+                    )}
+                    {/* Fallback: single Zuper link when no sub-jobs but a job UID exists */}
+                    {projectContext.zuperJobUid && projectContext.zuperWebBaseUrl && subJobs.length === 0 && (
                       <>
                         <span className="text-muted/70">|</span>
                         <a
