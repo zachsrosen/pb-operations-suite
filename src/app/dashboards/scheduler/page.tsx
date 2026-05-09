@@ -9,7 +9,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import { extractInstallerNote } from "@/lib/schedule-notes";
-import type { SubJobInfo } from "@/lib/scheduler-subjobs";
+import { SYSTEM_TAGS, type SubJobInfo } from "@/lib/scheduler-subjobs";
 import { ViewModeToggle, useViewMode } from "@/components/scheduler/ViewModeToggle";
 import { SubJobBreakdown } from "@/components/scheduler/SubJobBreakdown";
 import { SubJobScheduleModal, type PerSubJobSchedule } from "@/components/scheduler/SubJobScheduleModal";
@@ -4112,7 +4112,27 @@ export default function SchedulerPage() {
                       >
                         Deal
                       </Link>
-                      {p.zuperJobUid && (
+                      {p.zuperSubJobs && p.zuperSubJobs.length > 0 && p.zuperSubJobs.some((sj) => sj.jobUid) ? (
+                        <>
+                          {p.zuperSubJobs.filter((sj) => sj.jobUid).map((sj) => (
+                            <a
+                              key={sj.jobUid}
+                              href={`${zuperWebBaseUrl}/jobs/${sj.jobUid}/details`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`text-[0.5rem] px-1 py-0.5 rounded font-semibold ${
+                                sj.systemType === "solar" ? "bg-amber-500/30 text-amber-400 hover:bg-amber-500/50"
+                                  : sj.systemType === "battery" ? "bg-emerald-500/30 text-emerald-400 hover:bg-emerald-500/50"
+                                  : "bg-cyan-500/30 text-cyan-400 hover:bg-cyan-500/50"
+                              }`}
+                              title={`Open ${SYSTEM_TAGS[sj.systemType] || "Zuper"} job`}
+                            >
+                              {SYSTEM_TAGS[sj.systemType] || "Zuper"}
+                            </a>
+                          ))}
+                        </>
+                      ) : p.zuperJobUid ? (
                         <a
                           href={`${zuperWebBaseUrl}/jobs/${p.zuperJobUid}/details`}
                           target="_blank"
@@ -4123,7 +4143,7 @@ export default function SchedulerPage() {
                         >
                           Zuper
                         </a>
-                      )}
+                      ) : null}
                       <a
                         href={p.hubspotUrl}
                         target="_blank"
@@ -5764,7 +5784,28 @@ export default function SchedulerPage() {
                     >
                       HubSpot
                     </a>
-                    {scheduleModal.project.zuperJobUid && (
+                    {scheduleModal.project.zuperSubJobs && scheduleModal.project.zuperSubJobs.length > 0 && scheduleModal.project.zuperSubJobs.some((sj) => sj.jobUid) ? (
+                      <>
+                        {scheduleModal.project.zuperSubJobs.filter((sj) => sj.jobUid).map((sj) => (
+                          <span key={sj.jobUid} className="contents">
+                            <span className="text-muted/70">|</span>
+                            <a
+                              href={`${zuperWebBaseUrl}/jobs/${sj.jobUid}/details`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-[0.7rem] hover:opacity-80 ${
+                                sj.systemType === "solar" ? "text-amber-400"
+                                  : sj.systemType === "battery" ? "text-emerald-400"
+                                  : sj.systemType === "ev" ? "text-cyan-400"
+                                  : "text-cyan-400"
+                              }`}
+                            >
+                              {SYSTEM_TAGS[sj.systemType] || "Zuper"}
+                            </a>
+                          </span>
+                        ))}
+                      </>
+                    ) : scheduleModal.project.zuperJobUid ? (
                       <>
                         <span className="text-muted/70">|</span>
                         <a
@@ -5776,7 +5817,7 @@ export default function SchedulerPage() {
                           Zuper
                         </a>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </ModalSection>
@@ -6223,7 +6264,28 @@ export default function SchedulerPage() {
                     >
                       HubSpot
                     </a>
-                    {detailModal.zuperJobUid && !detailModalEvent?.isForecast && (
+                    {!detailModalEvent?.isForecast && detailModal.zuperSubJobs && detailModal.zuperSubJobs.length > 0 && detailModal.zuperSubJobs.some((sj) => sj.jobUid) ? (
+                      <>
+                        {detailModal.zuperSubJobs.filter((sj) => sj.jobUid).map((sj) => (
+                          <span key={sj.jobUid} className="contents">
+                            <span className="text-muted/70">|</span>
+                            <a
+                              href={`${zuperWebBaseUrl}/jobs/${sj.jobUid}/details`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-[0.7rem] hover:opacity-80 ${
+                                sj.systemType === "solar" ? "text-amber-400"
+                                  : sj.systemType === "battery" ? "text-emerald-400"
+                                  : sj.systemType === "ev" ? "text-cyan-400"
+                                  : "text-cyan-400"
+                              }`}
+                            >
+                              {SYSTEM_TAGS[sj.systemType] || "Zuper"}
+                            </a>
+                          </span>
+                        ))}
+                      </>
+                    ) : detailModal.zuperJobUid && !detailModalEvent?.isForecast ? (
                       <>
                         <span className="text-muted/70">|</span>
                         <a
@@ -6235,7 +6297,7 @@ export default function SchedulerPage() {
                           Zuper
                         </a>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </ModalSection>
@@ -6626,7 +6688,25 @@ export default function SchedulerPage() {
               >
                 Open in HubSpot
               </a>
-              {detailModal.zuperJobUid && !detailModalEvent?.isForecast && (
+              {!detailModalEvent?.isForecast && detailModal.zuperSubJobs && detailModal.zuperSubJobs.length > 0 && detailModal.zuperSubJobs.some((sj) => sj.jobUid) ? (
+                <>
+                  {detailModal.zuperSubJobs.filter((sj) => sj.jobUid).map((sj) => (
+                    <a
+                      key={sj.jobUid}
+                      href={`${zuperWebBaseUrl}/jobs/${sj.jobUid}/details`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`px-3.5 py-2 rounded-md border text-white text-[0.75rem] font-semibold no-underline transition-colors ${
+                        sj.systemType === "solar" ? "bg-amber-600 border-amber-600 hover:bg-amber-700"
+                          : sj.systemType === "battery" ? "bg-emerald-600 border-emerald-600 hover:bg-emerald-700"
+                          : "bg-cyan-600 border-cyan-600 hover:bg-cyan-700"
+                      }`}
+                    >
+                      {SYSTEM_TAGS[sj.systemType] || "Zuper"}
+                    </a>
+                  ))}
+                </>
+              ) : detailModal.zuperJobUid && !detailModalEvent?.isForecast ? (
                 <a
                   href={`${zuperWebBaseUrl}/jobs/${detailModal.zuperJobUid}/details`}
                   target="_blank"
@@ -6635,7 +6715,7 @@ export default function SchedulerPage() {
                 >
                   Open in Zuper
                 </a>
-              )}
+              ) : null}
               <button
                 onClick={() => { setDetailModal(null); setDetailModalEvent(null); }}
                 className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors"

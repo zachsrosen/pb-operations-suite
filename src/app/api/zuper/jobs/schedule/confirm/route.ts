@@ -944,14 +944,82 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Cancel any older local-held records for the same project/type so stale
-    // tentative/pending dates cannot rehydrate after a successful confirmation.
+    // --- Auto-confirm sibling sub-job tentative records ---
+    // When a project has multiple tentative records (one per sub-job: PV, ESS, EV),
+    // confirming one should confirm them all. Each sibling has its own zuperJobUid,
+    // dates, and crew stored from the tentative step.
+    const siblingTentativeRecords = await prisma.scheduleRecord.findMany({
+      where: {
+        projectId: record.projectId,
+        scheduleType,
+        status: { in: ["tentative", "pending_zuper"] },
+        id: { not: scheduleRecordId },
+        zuperJobUid: { not: null },
+      },
+    });
+
+    for (const sibling of siblingTentativeRecords) {
+      try {
+        const sibStartTime = sibling.scheduledStart || "08:00";
+        const sibEndTime = sibling.scheduledEnd || "16:00";
+        const sibStartDateTime = localToUtc(sibling.scheduledDate, sibStartTime);
+        const sibEndDateForSchedule = scheduleType === "installation"
+          ? getBusinessEndDateInclusive(sibling.scheduledDate, sibling.scheduledDays || 1)
+          : sibling.scheduledDate;
+        const sibEndDateTime = localToUtc(sibEndDateForSchedule, sibEndTime);
+
+        // Resolve sibling's crew UIDs
+        const sibUserUids = sibling.assignedUserUid
+          ? sibling.assignedUserUid.split(",").map((u) => u.trim()).filter(Boolean)
+          : [];
+
+        const sibReschedule = await zuper.rescheduleJob(
+          sibling.zuperJobUid!,
+          sibStartDateTime,
+          sibEndDateTime,
+          sibUserUids.length > 0 ? sibUserUids : undefined,
+          sibling.assignedTeamUid || undefined,
+        );
+
+        if (sibReschedule.type === "success") {
+          await prisma.scheduleRecord.update({
+            where: { id: sibling.id },
+            data: {
+              status: "scheduled",
+              zuperSynced: true,
+              zuperError: null,
+              notes: sibling.notes
+                ? sibling.notes.replace("[TENTATIVE]", "[CONFIRMED]").replace("[PENDING_ZUPER]", "[CONFIRMED]")
+                : "[CONFIRMED]",
+            },
+          });
+          await cacheZuperJob({
+            jobUid: sibling.zuperJobUid!,
+            jobTitle: `${scheduleType} - ${record.projectName}`,
+            jobCategory: getCategoryNameForScheduleType(scheduleType),
+            jobStatus: "SCHEDULED",
+            hubspotDealId: record.projectId,
+            projectName: record.projectName,
+          });
+          console.log(`[Zuper Confirm] Sibling sub-job ${sibling.zuperJobUid} confirmed OK`);
+        } else {
+          console.warn(`[Zuper Confirm] Sibling sub-job ${sibling.zuperJobUid} reschedule failed:`, sibReschedule.error);
+          // Leave as tentative — don't cancel, user can retry
+        }
+      } catch (sibErr) {
+        console.warn(`[Zuper Confirm] Sibling sub-job ${sibling.zuperJobUid} error:`, sibErr);
+      }
+    }
+
+    // Cancel any older local-held records that don't have their own Zuper job
+    // (stale duplicates, not sub-job records).
     await prisma.scheduleRecord.updateMany({
       where: {
         projectId: record.projectId,
         scheduleType,
         status: { in: ["tentative", "pending_zuper"] },
         id: { not: scheduleRecordId },
+        zuperJobUid: null,
       },
       data: {
         status: "cancelled",
