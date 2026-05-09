@@ -4098,3 +4098,32 @@ model PowerhubAlert {
   @@index([siteId, isActive])
   @@index([severity, isActive])
 }
+
+// ---------------------------------------------------------------------------
+// Participate Energy — per-document status tracking
+// ---------------------------------------------------------------------------
+
+enum PeDocStatus {
+  NOT_UPLOADED
+  UPLOADED
+  UNDER_REVIEW
+  ACTION_REQUIRED
+  REJECTED
+  APPROVED
+}
+
+model PeDocumentReview {
+  id         String      @id @default(cuid())
+  dealId     String
+  docName    String
+  status     PeDocStatus
+  notes      String?
+  reviewedAt DateTime    @default(now())
+  reviewedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([dealId, docName])
+  @@index([dealId])
+}

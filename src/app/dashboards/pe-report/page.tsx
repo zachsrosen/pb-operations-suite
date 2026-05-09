@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
 
 // ---------------------------------------------------------------------------
-// Types (mirrors PE deals API response)
+// Types
 // ---------------------------------------------------------------------------
 
 interface PeDeal {
@@ -29,6 +29,24 @@ interface PeDeal {
   milestoneHighlight: "m1" | "m2" | "complete" | null;
   hubspotUrl: string;
 }
+
+interface DocReview {
+  id: string;
+  dealId: string;
+  docName: string;
+  status: PeDocStatusValue;
+  notes: string | null;
+  reviewedAt: string;
+  reviewedBy: string | null;
+}
+
+type PeDocStatusValue =
+  | "NOT_UPLOADED"
+  | "UPLOADED"
+  | "UNDER_REVIEW"
+  | "ACTION_REQUIRED"
+  | "REJECTED"
+  | "APPROVED";
 
 // ---------------------------------------------------------------------------
 // PE document requirements by milestone section
@@ -129,6 +147,66 @@ const M1M2_STATUSES = [
   "Approved",
   "Paid",
 ];
+
+const DOC_STATUS_OPTIONS: { value: PeDocStatusValue; label: string }[] = [
+  { value: "NOT_UPLOADED", label: "Not Uploaded" },
+  { value: "UPLOADED", label: "Uploaded" },
+  { value: "UNDER_REVIEW", label: "Under Review" },
+  { value: "ACTION_REQUIRED", label: "Action Required" },
+  { value: "REJECTED", label: "Rejected" },
+  { value: "APPROVED", label: "Approved" },
+];
+
+const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
+  NOT_UPLOADED: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  UPLOADED: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  UNDER_REVIEW: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  ACTION_REQUIRED: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  REJECTED: "bg-red-500/20 text-red-400 border-red-500/30",
+  APPROVED: "bg-green-500/20 text-green-400 border-green-500/30",
+};
+
+function docStatusSummary(
+  dealId: string,
+  sections: ("onboarding" | "ic" | "pc")[],
+  docMap: Map<string, DocReview>,
+): { approved: number; rejected: number; actionRequired: number; underReview: number; notUploaded: number; notReviewed: number; total: number } {
+  const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
+  let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, notReviewed = 0;
+  for (const doc of docs) {
+    const key = `${dealId}:${doc.name}`;
+    const review = docMap.get(key);
+    if (!review) { notReviewed++; continue; }
+    switch (review.status) {
+      case "APPROVED": approved++; break;
+      case "REJECTED": rejected++; break;
+      case "ACTION_REQUIRED": actionRequired++; break;
+      case "UNDER_REVIEW": underReview++; break;
+      case "NOT_UPLOADED": notUploaded++; break;
+      case "UPLOADED": underReview++; break;
+    }
+  }
+  return { approved, rejected, actionRequired, underReview, notUploaded, notReviewed, total: docs.length };
+}
+
+function summaryText(summary: ReturnType<typeof docStatusSummary>): string {
+  if (summary.notReviewed === summary.total) return "Not yet reviewed";
+  if (summary.approved === summary.total) return "All approved";
+  const parts: string[] = [];
+  if (summary.rejected > 0) parts.push(`${summary.rejected} rejected`);
+  if (summary.actionRequired > 0) parts.push(`${summary.actionRequired} action needed`);
+  if (summary.notUploaded > 0) parts.push(`${summary.notUploaded} not uploaded`);
+  if (summary.underReview > 0) parts.push(`${summary.underReview} in review`);
+  if (summary.approved > 0) parts.push(`${summary.approved} approved`);
+  return parts.join(" · ");
+}
+
+function summaryColor(summary: ReturnType<typeof docStatusSummary>): string {
+  if (summary.notReviewed === summary.total) return "text-muted";
+  if (summary.approved === summary.total) return "text-green-400";
+  if (summary.rejected > 0 || summary.actionRequired > 0) return "text-orange-400";
+  return "text-blue-400";
+}
 
 // PE portal document status snapshot — updated manually from raceway.participate.energy
 const PE_PORTAL_SNAPSHOT = {
@@ -235,11 +313,125 @@ function MilestoneBadge({ milestone }: { milestone: PeMilestone }) {
   );
 }
 
+// Inline document status editor for a single document
+function DocStatusSelect({ dealId, doc, review, onUpdate }: {
+  dealId: string;
+  doc: DocRequirement;
+  review: DocReview | undefined;
+  onUpdate: (dealId: string, docName: string, status: PeDocStatusValue, notes?: string) => void;
+}) {
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState(review?.notes ?? "");
+  const currentStatus = review?.status ?? null;
+
+  return (
+    <div className="flex items-start gap-3 py-1.5">
+      {/* Status indicator */}
+      <span className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+        currentStatus === "APPROVED" ? "bg-green-500" :
+        currentStatus === "REJECTED" ? "bg-red-500" :
+        currentStatus === "ACTION_REQUIRED" ? "bg-orange-500" :
+        currentStatus === "UNDER_REVIEW" || currentStatus === "UPLOADED" ? "bg-blue-500" :
+        currentStatus === "NOT_UPLOADED" ? "bg-zinc-500" :
+        "bg-zinc-700"
+      }`} />
+
+      <div className="flex-1 min-w-0">
+        {/* Doc name + owner */}
+        <div className="flex items-center gap-2">
+          <span className={`text-xs ${currentStatus === "APPROVED" ? "text-muted line-through" : "text-foreground"}`}>
+            {doc.name}
+          </span>
+          <span className="text-[10px] text-muted/50">{doc.owner}</span>
+        </div>
+
+        {/* Note from PE doc definition */}
+        {doc.note && currentStatus !== "APPROVED" && (
+          <div className="text-[10px] text-muted/60 mt-0.5">{doc.note}</div>
+        )}
+
+        {/* Review notes */}
+        {review?.notes && !editingNotes && (
+          <div
+            className="text-[10px] text-orange-400/80 mt-0.5 cursor-pointer hover:text-orange-300"
+            onClick={(e) => { e.stopPropagation(); setEditingNotes(true); setNotesDraft(review.notes ?? ""); }}
+          >
+            Note: {review.notes}
+          </div>
+        )}
+
+        {/* Notes editor */}
+        {editingNotes && (
+          <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="text"
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              placeholder="Add a note (e.g. rejection reason)…"
+              className="text-[10px] bg-surface border border-border rounded px-1.5 py-0.5 text-foreground flex-1 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  onUpdate(dealId, doc.name, currentStatus || "NOT_UPLOADED", notesDraft || undefined);
+                  setEditingNotes(false);
+                }
+                if (e.key === "Escape") setEditingNotes(false);
+              }}
+            />
+            <button
+              onClick={() => { onUpdate(dealId, doc.name, currentStatus || "NOT_UPLOADED", notesDraft || undefined); setEditingNotes(false); }}
+              className="text-[10px] text-emerald-400 hover:text-emerald-300"
+            >Save</button>
+            <button onClick={() => setEditingNotes(false)} className="text-[10px] text-muted hover:text-foreground">Cancel</button>
+          </div>
+        )}
+
+        {/* Reviewed timestamp */}
+        {review && (
+          <div className="text-[10px] text-muted/40 mt-0.5">
+            Reviewed {new Date(review.reviewedAt).toLocaleDateString()}{review.reviewedBy ? ` by ${review.reviewedBy}` : ""}
+          </div>
+        )}
+      </div>
+
+      {/* Status dropdown */}
+      <select
+        value={currentStatus ?? ""}
+        onChange={(e) => {
+          e.stopPropagation();
+          if (e.target.value) onUpdate(dealId, doc.name, e.target.value as PeDocStatusValue);
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className={`text-[10px] rounded border px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 cursor-pointer ${
+          currentStatus ? DOC_STATUS_COLORS[currentStatus] : "bg-surface-2 text-muted border-border"
+        }`}
+      >
+        <option value="">— Set status —</option>
+        {DOC_STATUS_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+
+      {/* Add/edit notes button */}
+      {!editingNotes && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setEditingNotes(true); setNotesDraft(review?.notes ?? ""); }}
+          className="text-[10px] text-muted hover:text-foreground mt-0.5 flex-shrink-0"
+          title="Add note"
+        >
+          {review?.notes ? "Edit" : "+Note"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Document checklist for an expanded project row
-function ProjectDocChecklist({ milestone, m1Status, m2Status }: {
+function ProjectDocChecklist({ dealId, milestone, docMap, onUpdate }: {
+  dealId: string;
   milestone: PeMilestone;
-  m1Status: string | null;
-  m2Status: string | null;
+  docMap: Map<string, DocReview>;
+  onUpdate: (dealId: string, docName: string, status: PeDocStatusValue, notes?: string) => void;
 }) {
   const sections = milestoneDocSections(milestone);
   const sectionLabel: Record<string, string> = {
@@ -247,46 +439,36 @@ function ProjectDocChecklist({ milestone, m1Status, m2Status }: {
     ic: "Inspection Complete (M1)",
     pc: "Project Complete (M2)",
   };
-  const sectionStatus: Record<string, string | null> = {
-    onboarding: null,
-    ic: m1Status,
-    pc: m2Status,
-  };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {sections.map((sec) => {
         const docs = PE_DOCUMENTS.filter((d) => d.section === sec);
-        const status = sectionStatus[sec];
-        const isComplete = status === "Paid" || status === "Approved";
-        const isSubmitted = status === "Submitted" || status === "Resubmitted";
+        const sectionDocs = docs.map((d) => ({
+          doc: d,
+          review: docMap.get(`${dealId}:${d.name}`),
+        }));
+        const approvedCount = sectionDocs.filter((d) => d.review?.status === "APPROVED").length;
+        const reviewedCount = sectionDocs.filter((d) => d.review).length;
+
         return (
           <div key={sec} className="bg-surface-2 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-foreground">{sectionLabel[sec]}</span>
-              {status && <StatusBadge status={status} />}
+              <span className="text-[10px] text-muted">
+                {approvedCount}/{docs.length} approved
+                {reviewedCount < docs.length && ` · ${docs.length - reviewedCount} unreviewed`}
+              </span>
             </div>
-            <div className="space-y-1.5">
-              {docs.map((doc) => (
-                <div key={doc.name} className="flex items-start gap-2">
-                  <span className={`mt-0.5 w-3.5 h-3.5 rounded flex-shrink-0 flex items-center justify-center text-[9px] ${
-                    isComplete
-                      ? "bg-green-500/30 text-green-400"
-                      : isSubmitted
-                        ? "bg-blue-500/30 text-blue-400"
-                        : "bg-surface border border-border text-muted"
-                  }`}>
-                    {isComplete ? "✓" : isSubmitted ? "…" : ""}
-                  </span>
-                  <div className="min-w-0">
-                    <div className={`text-xs ${isComplete ? "text-muted line-through" : "text-foreground"}`}>
-                      {doc.name}
-                    </div>
-                    {doc.note && !isComplete && (
-                      <div className="text-[10px] text-muted/60">{doc.note}</div>
-                    )}
-                  </div>
-                </div>
+            <div className="divide-y divide-border/30">
+              {sectionDocs.map(({ doc, review }) => (
+                <DocStatusSelect
+                  key={doc.name}
+                  dealId={dealId}
+                  doc={doc}
+                  review={review}
+                  onUpdate={onUpdate}
+                />
               ))}
             </div>
           </div>
@@ -327,11 +509,78 @@ function FilterSelect({ label, value, onChange, options }: {
 // ---------------------------------------------------------------------------
 
 export default function PeReportPage() {
+  const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery<{ deals: PeDeal[]; lastUpdated: string }>({
     queryKey: queryKeys.peDeals.list(),
     queryFn: () => fetch("/api/accounting/pe-deals").then((r) => r.json()),
     staleTime: 5 * 60 * 1000,
   });
+
+  const { data: docsData } = useQuery<{ docs: DocReview[] }>({
+    queryKey: ["peDocReviews"],
+    queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
+    staleTime: 60 * 1000,
+  });
+
+  const docMap = useMemo(() => {
+    const m = new Map<string, DocReview>();
+    for (const d of docsData?.docs ?? []) {
+      m.set(`${d.dealId}:${d.docName}`, d);
+    }
+    return m;
+  }, [docsData]);
+
+  const updateDocMutation = useMutation({
+    mutationFn: async ({ dealId, docName, status, notes }: {
+      dealId: string; docName: string; status: PeDocStatusValue; notes?: string;
+    }) => {
+      const res = await fetch("/api/accounting/pe-docs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, docName, status, notes }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onMutate: async ({ dealId, docName, status, notes }) => {
+      await queryClient.cancelQueries({ queryKey: ["peDocReviews"] });
+      const prev = queryClient.getQueryData<{ docs: DocReview[] }>(["peDocReviews"]);
+
+      queryClient.setQueryData<{ docs: DocReview[] }>(["peDocReviews"], (old) => {
+        if (!old) return { docs: [] };
+        const key = `${dealId}:${docName}`;
+        const existing = old.docs.find((d) => `${d.dealId}:${d.docName}` === key);
+        if (existing) {
+          return {
+            docs: old.docs.map((d) =>
+              `${d.dealId}:${d.docName}` === key
+                ? { ...d, status, notes: notes ?? d.notes, reviewedAt: new Date().toISOString() }
+                : d,
+            ),
+          };
+        }
+        return {
+          docs: [
+            ...old.docs,
+            { id: "temp", dealId, docName, status, notes: notes ?? null, reviewedAt: new Date().toISOString(), reviewedBy: null },
+          ],
+        };
+      });
+
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(["peDocReviews"], context.prev);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["peDocReviews"] });
+    },
+  });
+
+  const handleDocUpdate = useCallback((dealId: string, docName: string, status: PeDocStatusValue, notes?: string) => {
+    updateDocMutation.mutate({ dealId, docName, status, notes });
+  }, [updateDocMutation]);
 
   const deals = data?.deals ?? [];
 
@@ -341,16 +590,15 @@ export default function PeReportPage() {
   const [stageFilter, setStageFilter] = useState("all");
   const [m1Filter, setM1Filter] = useState("all");
   const [m2Filter, setM2Filter] = useState("all");
+  const [docStatusFilter, setDocStatusFilter] = useState("all");
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
 
-  // Unique values for filter dropdowns
   const filterOptions = useMemo(() => {
     const locations = [...new Set(deals.map((d) => d.pbLocation).filter(Boolean))].sort();
     const stages = [...new Set(deals.map((d) => d.dealStageLabel).filter(Boolean))].sort();
     return { locations, stages };
   }, [deals]);
 
-  // Filtered deals
   const filtered = useMemo(() => {
     return deals.filter((d) => {
       if (search) {
@@ -367,9 +615,18 @@ export default function PeReportPage() {
         if (m2Filter === "none" && d.peM2Status) return false;
         if (m2Filter !== "none" && d.peM2Status !== m2Filter) return false;
       }
+      if (docStatusFilter !== "all") {
+        const milestone = dealStageToPeMilestone(d.dealStageLabel);
+        const sections = milestoneDocSections(milestone);
+        const summary = docStatusSummary(d.dealId, sections, docMap);
+        if (docStatusFilter === "not-reviewed" && summary.notReviewed !== summary.total) return false;
+        if (docStatusFilter === "has-issues" && summary.rejected === 0 && summary.actionRequired === 0 && summary.notUploaded === 0) return false;
+        if (docStatusFilter === "all-approved" && summary.approved !== summary.total) return false;
+        if (docStatusFilter === "in-progress" && (summary.approved === summary.total || summary.notReviewed === summary.total || (summary.rejected === 0 && summary.actionRequired === 0 && summary.notUploaded === 0))) return false;
+      }
       return true;
     });
-  }, [deals, search, locFilter, stageFilter, m1Filter, m2Filter]);
+  }, [deals, search, locFilter, stageFilter, m1Filter, m2Filter, docStatusFilter, docMap]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedDeal((prev) => (prev === id ? null : id));
@@ -409,6 +666,19 @@ export default function PeReportPage() {
     const byStage = new Map<string, number>();
     deals.forEach((d) => { byStage.set(d.dealStageLabel, (byStage.get(d.dealStageLabel) ?? 0) + 1); });
 
+    // Doc review stats
+    let totalDocs = 0, reviewedDocs = 0, approvedDocs = 0, rejectedDocs = 0, actionReqDocs = 0;
+    for (const d of deals) {
+      const milestone = dealStageToPeMilestone(d.dealStageLabel);
+      const sections = milestoneDocSections(milestone);
+      const summary = docStatusSummary(d.dealId, sections, docMap);
+      totalDocs += summary.total;
+      reviewedDocs += summary.total - summary.notReviewed;
+      approvedDocs += summary.approved;
+      rejectedDocs += summary.rejected;
+      actionReqDocs += summary.actionRequired;
+    }
+
     return {
       totalDeals, totalEpcValue, totalPePayment,
       m1: { paid: m1Paid, approved: m1Approved, submitted: m1Submitted, ready: m1Ready, notStarted: m1NotStarted },
@@ -417,11 +687,12 @@ export default function PeReportPage() {
       m1PaidValue, m2PaidValue, m1ApprovedValue, m2ApprovedValue,
       byLocation: [...byLocation.entries()].sort((a, b) => b[1] - a[1]),
       byStage: [...byStage.entries()].sort((a, b) => b[1] - a[1]),
+      docs: { totalDocs, reviewedDocs, approvedDocs, rejectedDocs, actionReqDocs },
     };
-  }, [deals]);
+  }, [deals, docMap]);
 
   const snap = PE_PORTAL_SNAPSHOT;
-  const hasFilters = search || locFilter !== "all" || stageFilter !== "all" || m1Filter !== "all" || m2Filter !== "all";
+  const hasFilters = search || locFilter !== "all" || stageFilter !== "all" || m1Filter !== "all" || m2Filter !== "all" || docStatusFilter !== "all";
 
   return (
     <DashboardShell title="PE Program Report" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
@@ -440,6 +711,17 @@ export default function PeReportPage() {
         <StatCard label="PE Revenue Collected" value={metrics ? fmt(metrics.collected) : null} subtitle={metrics ? `${fmtPct(metrics.collectPct)} of ${fmt(metrics.totalPePayment)}` : undefined} color="green" />
         <StatCard label="Ready to Invoice" value={metrics ? fmt(metrics.readyToInvoice) : null} subtitle="Approved, awaiting invoice" color={metrics && metrics.readyToInvoice > 0 ? "orange" : "green"} />
       </div>
+
+      {/* Document Review Stats */}
+      {metrics && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 stagger-grid">
+          <MiniStat label="Total Documents" value={metrics.docs.totalDocs} />
+          <MiniStat label="Reviewed" value={`${metrics.docs.reviewedDocs} / ${metrics.docs.totalDocs}`} />
+          <MiniStat label="Approved" value={metrics.docs.approvedDocs} />
+          <MiniStat label="Rejected" value={metrics.docs.rejectedDocs} />
+          <MiniStat label="Action Required" value={metrics.docs.actionReqDocs} />
+        </div>
+      )}
 
       {/* M1 / M2 Pipeline Status */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -475,8 +757,8 @@ export default function PeReportPage() {
       <div className="bg-surface rounded-xl border border-border p-6 shadow-card mb-8">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-foreground">All PE Projects — Document Requirements</h3>
-            <p className="text-xs text-muted">Click a row to see required documents for that project&apos;s milestone. {filtered.length} of {deals.length} projects shown.</p>
+            <h3 className="text-lg font-semibold text-foreground">All PE Projects — Document Status</h3>
+            <p className="text-xs text-muted">Click a row to review documents. Status changes save immediately. {filtered.length} of {deals.length} projects shown.</p>
           </div>
         </div>
 
@@ -513,9 +795,21 @@ export default function PeReportPage() {
             onChange={setM2Filter}
             options={[{ value: "all", label: "All" }, { value: "none", label: "Not Started" }, ...M1M2_STATUSES.map((s) => ({ value: s, label: s }))]}
           />
+          <FilterSelect
+            label="Docs"
+            value={docStatusFilter}
+            onChange={setDocStatusFilter}
+            options={[
+              { value: "all", label: "All" },
+              { value: "not-reviewed", label: "Not Reviewed" },
+              { value: "has-issues", label: "Has Issues" },
+              { value: "in-progress", label: "In Progress" },
+              { value: "all-approved", label: "All Approved" },
+            ]}
+          />
           {hasFilters && (
             <button
-              onClick={() => { setSearch(""); setLocFilter("all"); setStageFilter("all"); setM1Filter("all"); setM2Filter("all"); }}
+              onClick={() => { setSearch(""); setLocFilter("all"); setStageFilter("all"); setM1Filter("all"); setM2Filter("all"); setDocStatusFilter("all"); }}
               className="text-xs text-muted hover:text-foreground transition-colors"
             >
               Clear filters
@@ -531,9 +825,8 @@ export default function PeReportPage() {
                 <th className="pb-2 pr-3 w-6" />
                 <th className="pb-2 pr-4">Deal</th>
                 <th className="pb-2 pr-4">Location</th>
-                <th className="pb-2 pr-4">Stage</th>
                 <th className="pb-2 pr-4">PE Milestone</th>
-                <th className="pb-2 pr-4">Docs Needed</th>
+                <th className="pb-2 pr-4">Document Status</th>
                 <th className="pb-2 pr-4">M1</th>
                 <th className="pb-2 pr-4">M2</th>
                 <th className="pb-2 pr-4 text-right">PE Total</th>
@@ -543,7 +836,7 @@ export default function PeReportPage() {
               {filtered.map((d) => {
                 const milestone = dealStageToPeMilestone(d.dealStageLabel);
                 const docSections = milestoneDocSections(milestone);
-                const totalDocs = docSections.reduce((s, sec) => s + PE_DOCUMENTS.filter((doc) => doc.section === sec).length, 0);
+                const summary = docStatusSummary(d.dealId, docSections, docMap);
                 const isExpanded = expandedDeal === d.dealId;
 
                 return (
@@ -553,7 +846,7 @@ export default function PeReportPage() {
                       onClick={() => toggleExpand(d.dealId)}
                     >
                       <td className="py-2.5 pr-3 text-muted text-xs">
-                        <span className={`inline-block transition-transform ${isExpanded ? "rotate-90" : ""}`}>▸</span>
+                        <span className={`inline-block transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9656;</span>
                       </td>
                       <td className="py-2.5 pr-4">
                         <a
@@ -567,12 +860,21 @@ export default function PeReportPage() {
                         </a>
                       </td>
                       <td className="py-2.5 pr-4 text-muted text-xs">{d.pbLocation}</td>
-                      <td className="py-2.5 pr-4 text-muted text-xs">{d.dealStageLabel}</td>
                       <td className="py-2.5 pr-4"><MilestoneBadge milestone={milestone} /></td>
                       <td className="py-2.5 pr-4">
-                        <span className="text-xs text-muted">
-                          {totalDocs} docs across {docSections.length} section{docSections.length > 1 ? "s" : ""}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {summary.notReviewed < summary.total && (
+                            <ProgressBar
+                              approved={summary.approved}
+                              underReview={summary.underReview}
+                              actionRequired={summary.rejected + summary.actionRequired + summary.notUploaded}
+                              total={summary.total}
+                            />
+                          )}
+                          <span className={`text-xs whitespace-nowrap ${summaryColor(summary)}`}>
+                            {summaryText(summary)}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-2.5 pr-4"><StatusBadge status={d.peM1Status} /></td>
                       <td className="py-2.5 pr-4"><StatusBadge status={d.peM2Status} /></td>
@@ -580,8 +882,13 @@ export default function PeReportPage() {
                     </tr>
                     {isExpanded && (
                       <tr className="bg-surface-2/70">
-                        <td colSpan={9} className="px-4 py-4">
-                          <ProjectDocChecklist milestone={milestone} m1Status={d.peM1Status} m2Status={d.peM2Status} />
+                        <td colSpan={8} className="px-4 py-4">
+                          <ProjectDocChecklist
+                            dealId={d.dealId}
+                            milestone={milestone}
+                            docMap={docMap}
+                            onUpdate={handleDocUpdate}
+                          />
                         </td>
                       </tr>
                     )}
