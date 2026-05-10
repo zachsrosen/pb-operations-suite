@@ -993,15 +993,22 @@ export async function POST(request: NextRequest) {
                 : "[CONFIRMED]",
             },
           });
+          // Preserve actual sub-category (e.g. "Construction - Solar") from the
+          // existing cache entry. Falling back to the generic category only when
+          // no cache entry exists prevents sub-job type corruption.
+          const sibCachedEntry = await prisma.zuperJobCache.findFirst({
+            where: { jobUid: sibling.zuperJobUid! },
+            select: { jobCategory: true },
+          });
           await cacheZuperJob({
             jobUid: sibling.zuperJobUid!,
             jobTitle: `${scheduleType} - ${record.projectName}`,
-            jobCategory: getCategoryNameForScheduleType(scheduleType),
+            jobCategory: sibCachedEntry?.jobCategory || getCategoryNameForScheduleType(scheduleType),
             jobStatus: "SCHEDULED",
             hubspotDealId: record.projectId,
             projectName: record.projectName,
           });
-          console.log(`[Zuper Confirm] Sibling sub-job ${sibling.zuperJobUid} confirmed OK`);
+          console.log(`[Zuper Confirm] Sibling sub-job ${sibling.zuperJobUid} confirmed OK (category: ${sibCachedEntry?.jobCategory || "fallback"})`);
         } else {
           console.warn(`[Zuper Confirm] Sibling sub-job ${sibling.zuperJobUid} reschedule failed:`, sibReschedule.error);
           // Leave as tentative — don't cancel, user can retry
@@ -1034,10 +1041,15 @@ export async function POST(request: NextRequest) {
 
     // Cache the Zuper job if created
     if (zuperJobUid) {
+      // Preserve actual sub-category from existing cache (e.g. "Construction - Solar")
+      const primaryCachedEntry = await prisma.zuperJobCache.findFirst({
+        where: { jobUid: zuperJobUid },
+        select: { jobCategory: true },
+      });
       await cacheZuperJob({
         jobUid: zuperJobUid,
         jobTitle: `${scheduleType} - ${record.projectName}`,
-        jobCategory: getCategoryNameForScheduleType(scheduleType),
+        jobCategory: primaryCachedEntry?.jobCategory || getCategoryNameForScheduleType(scheduleType),
         jobStatus: "SCHEDULED",
         hubspotDealId: record.projectId,
         projectName: record.projectName,
