@@ -185,11 +185,22 @@ function DealSection({
       ? "border-l-emerald-400"
       : "border-l-transparent";
 
+  // Section sums
+  const sumPeTotal = deals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+  const sumPeIC = deals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+  const sumPePC = deals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const sumEpc = deals.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
+
   return (
     <div>
       <div className={`flex items-baseline gap-3 mb-2 ${accent ? `border-l-2 ${accentBorder} pl-3` : ""}`}>
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         <span className="text-xs text-muted">{subtitle}</span>
+        {deals.length > 0 && (
+          <span className="text-xs text-muted ml-auto">
+            PE: {fmt(sumPeTotal)} ({fmt(sumPeIC)} IC + {fmt(sumPePC)} PC) · EPC: {fmt(sumEpc)}
+          </span>
+        )}
       </div>
       <div className="bg-surface rounded-lg border border-border shadow-card">
         <table className="w-full text-xs">
@@ -458,31 +469,39 @@ export default function PeDealsPage() {
   const totalPEReceivable = m1ReceivableValue + m2ReceivableValue;
   const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
 
-  // Submitted to PE = milestones genuinely waiting on PE decision.
-  const SUBMITTED_STATUSES = new Set(["Submitted", "Resubmitted", "Waiting on Information"]);
-  const m1SubmittedCount = filtered.filter((d) => d.peM1Status !== null && SUBMITTED_STATUSES.has(d.peM1Status)).length;
-  const m2SubmittedCount = filtered.filter((d) => d.peM2Status !== null && SUBMITTED_STATUSES.has(d.peM2Status)).length;
-  const m1SubmittedValue = filtered
-    .filter((d) => d.peM1Status !== null && SUBMITTED_STATUSES.has(d.peM1Status))
-    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
-  const m2SubmittedValue = filtered
-    .filter((d) => d.peM2Status !== null && SUBMITTED_STATUSES.has(d.peM2Status))
-    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-  const totalSubmittedValue = m1SubmittedValue + m2SubmittedValue;
-  const totalSubmittedCount = m1SubmittedCount + m2SubmittedCount;
-
-  // Needs PB Action = milestones rejected or needing resubmission (ball in our court).
-  const ACTION_STATUSES = new Set(["Rejected", "Ready to Resubmit"]);
-  const m1ActionCount = filtered.filter((d) => d.peM1Status !== null && ACTION_STATUSES.has(d.peM1Status)).length;
-  const m2ActionCount = filtered.filter((d) => d.peM2Status !== null && ACTION_STATUSES.has(d.peM2Status)).length;
-  const m1ActionValue = filtered
-    .filter((d) => d.peM1Status !== null && ACTION_STATUSES.has(d.peM1Status))
-    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
-  const m2ActionValue = filtered
-    .filter((d) => d.peM2Status !== null && ACTION_STATUSES.has(d.peM2Status))
-    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-  const totalActionValue = m1ActionValue + m2ActionValue;
-  const totalActionCount = m1ActionCount + m2ActionCount;
+  // Awaiting PE Approval = PE payment we're owed based on deal stage,
+  // minus what's already Approved or Paid.
+  // PTO deals: M1 (pePaymentIC) should be done
+  // Close Out / Complete deals: both M1 (pePaymentIC) + M2 (pePaymentPC)
+  const isPto = (d: PeDeal) => {
+    const s = d.dealStageLabel.toLowerCase();
+    return s.includes("permission to operate") || s.includes("pto");
+  };
+  const isCloseOutOrComplete = (d: PeDeal) => {
+    const s = d.dealStageLabel.toLowerCase();
+    return s.includes("close out") || s.includes("complete");
+  };
+  let awaitingM1Value = 0;
+  let awaitingM2Value = 0;
+  let awaitingM1Count = 0;
+  let awaitingM2Count = 0;
+  for (const d of filtered) {
+    const atPto = isPto(d);
+    const atCloseOut = isCloseOutOrComplete(d);
+    if (!atPto && !atCloseOut) continue;
+    // M1: should be approved/paid at PTO or later
+    if (!APPROVED_OR_PAID.has(d.peM1Status ?? "")) {
+      awaitingM1Value += d.pePaymentIC ?? 0;
+      awaitingM1Count++;
+    }
+    // M2: should be approved/paid at close-out or later
+    if (atCloseOut && !APPROVED_OR_PAID.has(d.peM2Status ?? "")) {
+      awaitingM2Value += d.pePaymentPC ?? 0;
+      awaitingM2Count++;
+    }
+  }
+  const totalAwaitingValue = awaitingM1Value + awaitingM2Value;
+  const totalAwaitingCount = awaitingM1Count + awaitingM2Count;
 
   // CSV export data
   const exportData = filtered.map((d) => ({
@@ -525,7 +544,7 @@ export default function PeDealsPage() {
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats — PE payment pipeline */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 stagger-grid">
         <StatCard
           key={`deals-${filtered.length}`}
           label="PE Deals"
@@ -534,10 +553,10 @@ export default function PeDealsPage() {
           color="orange"
         />
         <StatCard
-          key={`sub-${totalSubmittedCount}-${totalSubmittedValue}`}
-          label="Submitted to PE"
-          value={fmt(totalSubmittedValue)}
-          subtitle={`${totalSubmittedCount} milestones · ${m1SubmittedCount} M1 + ${m2SubmittedCount} M2`}
+          key={`awaiting-${totalAwaitingCount}-${totalAwaitingValue}`}
+          label="Awaiting PE Approval"
+          value={fmt(totalAwaitingValue)}
+          subtitle={`${totalAwaitingCount} milestones · ${awaitingM1Count} M1 + ${awaitingM2Count} M2`}
           color="amber"
         />
         <StatCard
@@ -562,19 +581,6 @@ export default function PeDealsPage() {
           color="green"
         />
       </div>
-      {/* Needs PB Action alert — rejected or needing resubmission */}
-      {totalActionCount > 0 && (
-        <div className="mb-4 px-4 py-3 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center gap-3">
-          <span className="text-orange-400 text-lg">⚠️</span>
-          <div className="text-sm">
-            <span className="font-semibold text-orange-300">{totalActionCount} milestones need PB action</span>
-            <span className="text-muted ml-2">
-              ({m1ActionCount} M1 + {m2ActionCount} M2 · {fmt(totalActionValue)} at stake)
-              — Rejected or ready to resubmit
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Report link */}
       <div className="mb-4">
