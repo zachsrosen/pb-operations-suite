@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
 
 // ---------------------------------------------------------------------------
@@ -166,6 +167,38 @@ const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
   APPROVED: "bg-green-500/20 text-green-400 border-green-500/30",
 };
 
+// ---------------------------------------------------------------------------
+// Doc filter category helpers
+// ---------------------------------------------------------------------------
+
+type DocFilterCategory = "no-portal-data" | "waiting-on-pe" | "pb-needs-upload" | "pb-action-required" | "all-approved" | "in-progress";
+
+const DOC_FILTER_OPTIONS: { value: DocFilterCategory; label: string }[] = [
+  { value: "no-portal-data", label: "No Portal Data" },
+  { value: "waiting-on-pe", label: "Waiting on PE" },
+  { value: "pb-needs-upload", label: "PB Needs to Upload" },
+  { value: "pb-action-required", label: "PB Action Required" },
+  { value: "all-approved", label: "All Approved" },
+  { value: "in-progress", label: "In Progress" },
+];
+
+function classifyDocStatus(summary: ReturnType<typeof docStatusSummary>): DocFilterCategory {
+  // No portal data — all docs are unreviewed
+  if (summary.notReviewed === summary.total) return "no-portal-data";
+  // All approved
+  if (summary.approved === summary.total) return "all-approved";
+  // PB Action Required — at least one doc is ACTION_REQUIRED or REJECTED
+  if (summary.actionRequired > 0 || summary.rejected > 0) return "pb-action-required";
+  // PB Needs to Upload — at least one doc is NOT_UPLOADED
+  if (summary.notUploaded > 0) return "pb-needs-upload";
+  // Waiting on PE — remaining reviewed docs are all APPROVED, UNDER_REVIEW, or UPLOADED
+  // (nothing for PB to do)
+  const pbDone = summary.approved + summary.underReview;
+  if (pbDone === summary.total - summary.notReviewed && summary.notReviewed === 0) return "waiting-on-pe";
+  // In Progress — mixed bag
+  return "in-progress";
+}
+
 function docStatusSummary(
   dealId: string,
   sections: ("onboarding" | "ic" | "pc")[],
@@ -190,7 +223,7 @@ function docStatusSummary(
 }
 
 function summaryText(summary: ReturnType<typeof docStatusSummary>): string {
-  if (summary.notReviewed === summary.total) return "Not yet reviewed";
+  if (summary.notReviewed === summary.total) return "No portal data";
   if (summary.approved === summary.total) return "All approved";
   const parts: string[] = [];
   if (summary.rejected > 0) parts.push(`${summary.rejected} rejected`);
@@ -207,34 +240,6 @@ function summaryColor(summary: ReturnType<typeof docStatusSummary>): string {
   if (summary.rejected > 0 || summary.actionRequired > 0) return "text-orange-400";
   return "text-blue-400";
 }
-
-// PE portal document status snapshot — updated manually from raceway.participate.energy
-const PE_PORTAL_SNAPSHOT = {
-  lastUpdated: "2026-05-08",
-  totalProjects: 286,
-  byStatus: { actionRequired: 166, underReview: 113, approved: 7, drafts: 6 },
-  byMilestone: { onboarded: 244, ic: 26, pc: 5 },
-  pcProjects: [
-    { customer: "Benjamin Burnham", projectId: "CO2601-BURN3", location: "Erie, CO", approved: 15, underReview: 0, actionRequired: 0, status: "ready" as const, blockers: [] as string[] },
-    { customer: "Sarah Skigen-Caird", projectId: "CO2602-CAIR1", location: "Golden, CO", approved: 15, underReview: 0, actionRequired: 0, status: "ready" as const, blockers: [] },
-    { customer: "David Rose", projectId: "CO2601-ROSE4", location: "Boulder, CO", approved: 13, underReview: 2, actionRequired: 0, status: "waiting" as const, blockers: ["Photos per Policy (V7)", "Cond. Progress Lien Waiver (V3)"] },
-    { customer: "Bradley Baker", projectId: "CO2601-BAKE1", location: "Colorado Springs, CO", approved: 13, underReview: 1, actionRequired: 1, status: "blocked" as const, blockers: ["Photos per Policy (not uploaded)", "Cond. Progress Lien Waiver"] },
-    { customer: "Tin Aung", projectId: "CO2603-AUNG2", location: "Colorado Springs, CO", approved: 11, underReview: 2, actionRequired: 2, status: "blocked" as const, blockers: ["Customer Agreement PPA/ESA", "Photos per Policy", "Cond. Progress Lien Waiver", "Cond. Waiver Final Payment"] },
-  ],
-  topBlockers: [
-    { doc: "Photos per Policy", section: "IC / PC", frequency: "Nearly every project", note: "Often requires 3–7 resubmissions" },
-    { doc: "Design Plan", section: "IC", frequency: "Very common", note: "Second most frequent IC blocker" },
-    { doc: "Customer Agreement (PPA/ESA)", section: "Onboarding", frequency: "Common", note: "Still incomplete on many IC-stage projects" },
-    { doc: "Installation Order", section: "Onboarding", frequency: "Common", note: "Same pattern as Customer Agreement" },
-    { doc: "Cond. Progress Lien Waiver", section: "IC", frequency: "Most projects", note: "Typically Under Review by PE" },
-    { doc: "Access to Monitoring", section: "IC", frequency: "Moderate", note: "Requires monitoring platform credentials" },
-  ],
-  complianceDocs: [
-    { name: "W-9", status: "missing" as const },
-    { name: "ACORD Certificate of Insurance", status: "missing" as const },
-    { name: "Voided check or bank letter", status: "missing" as const },
-  ],
-};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -254,16 +259,6 @@ function StatusBadge({ status }: { status: string | null }) {
   };
   const cls = colors[status] || "bg-surface-2 text-muted border-border";
   return <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>{status}</span>;
-}
-
-function DocStatusBadge({ status }: { status: "ready" | "waiting" | "blocked" }) {
-  const map = {
-    ready: { label: "Ready for Payment", cls: "bg-green-500/20 text-green-400 border-green-500/30" },
-    waiting: { label: "Waiting on PE", cls: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-    blocked: { label: "PB Action Needed", cls: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-  };
-  const { label, cls } = map[status];
-  return <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>{label}</span>;
 }
 
 function ProgressBar({ approved, underReview, actionRequired, total }: {
@@ -426,7 +421,7 @@ function DocStatusSelect({ dealId, doc, review, onUpdate }: {
   );
 }
 
-// Document checklist for an expanded project row
+// Document checklist for an expanded project row — adapts grid to section count
 function ProjectDocChecklist({ dealId, milestone, docMap, onUpdate }: {
   dealId: string;
   milestone: PeMilestone;
@@ -440,8 +435,13 @@ function ProjectDocChecklist({ dealId, milestone, docMap, onUpdate }: {
     pc: "Project Complete (M2)",
   };
 
+  const gridCols =
+    sections.length === 1 ? "grid-cols-1" :
+    sections.length === 2 ? "grid-cols-1 md:grid-cols-2" :
+    "grid-cols-1 md:grid-cols-3";
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className={`grid ${gridCols} gap-4`}>
       {sections.map((sec) => {
         const docs = PE_DOCUMENTS.filter((d) => d.section === sec);
         const sectionDocs = docs.map((d) => ({
@@ -474,32 +474,6 @@ function ProjectDocChecklist({ dealId, milestone, docMap, onUpdate }: {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Filter select component
-// ---------------------------------------------------------------------------
-
-function FilterSelect({ label, value, onChange, options }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="text-xs text-muted whitespace-nowrap">{label}:</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="text-xs bg-surface-2 border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
     </div>
   );
 }
@@ -584,13 +558,13 @@ export default function PeReportPage() {
 
   const deals = data?.deals ?? [];
 
-  // Filter state
+  // Filter state — all multi-select (empty array = all)
   const [search, setSearch] = useState("");
-  const [locFilter, setLocFilter] = useState("all");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [m1Filter, setM1Filter] = useState("all");
-  const [m2Filter, setM2Filter] = useState("all");
-  const [docStatusFilter, setDocStatusFilter] = useState("all");
+  const [locFilter, setLocFilter] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [m1Filter, setM1Filter] = useState<string[]>([]);
+  const [m2Filter, setM2Filter] = useState<string[]>([]);
+  const [docStatusFilter, setDocStatusFilter] = useState<string[]>([]);
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
 
   const filterOptions = useMemo(() => {
@@ -605,24 +579,22 @@ export default function PeReportPage() {
         const q = search.toLowerCase();
         if (!d.dealName.toLowerCase().includes(q) && !d.pbLocation.toLowerCase().includes(q)) return false;
       }
-      if (locFilter !== "all" && d.pbLocation !== locFilter) return false;
-      if (stageFilter !== "all" && d.dealStageLabel !== stageFilter) return false;
-      if (m1Filter !== "all") {
-        if (m1Filter === "none" && d.peM1Status) return false;
-        if (m1Filter !== "none" && d.peM1Status !== m1Filter) return false;
+      if (locFilter.length > 0 && !locFilter.includes(d.pbLocation)) return false;
+      if (stageFilter.length > 0 && !stageFilter.includes(d.dealStageLabel)) return false;
+      if (m1Filter.length > 0) {
+        const m1Val = d.peM1Status || "none";
+        if (!m1Filter.includes(m1Val)) return false;
       }
-      if (m2Filter !== "all") {
-        if (m2Filter === "none" && d.peM2Status) return false;
-        if (m2Filter !== "none" && d.peM2Status !== m2Filter) return false;
+      if (m2Filter.length > 0) {
+        const m2Val = d.peM2Status || "none";
+        if (!m2Filter.includes(m2Val)) return false;
       }
-      if (docStatusFilter !== "all") {
+      if (docStatusFilter.length > 0) {
         const milestone = dealStageToPeMilestone(d.dealStageLabel);
         const sections = milestoneDocSections(milestone);
         const summary = docStatusSummary(d.dealId, sections, docMap);
-        if (docStatusFilter === "not-reviewed" && summary.notReviewed !== summary.total) return false;
-        if (docStatusFilter === "has-issues" && summary.rejected === 0 && summary.actionRequired === 0 && summary.notUploaded === 0) return false;
-        if (docStatusFilter === "all-approved" && summary.approved !== summary.total) return false;
-        if (docStatusFilter === "in-progress" && (summary.approved === summary.total || summary.notReviewed === summary.total || (summary.rejected === 0 && summary.actionRequired === 0 && summary.notUploaded === 0))) return false;
+        const category = classifyDocStatus(summary);
+        if (!docStatusFilter.includes(category)) return false;
       }
       return true;
     });
@@ -691,8 +663,7 @@ export default function PeReportPage() {
     };
   }, [deals, docMap]);
 
-  const snap = PE_PORTAL_SNAPSHOT;
-  const hasFilters = search || locFilter !== "all" || stageFilter !== "all" || m1Filter !== "all" || m2Filter !== "all" || docStatusFilter !== "all";
+  const hasFilters = search || locFilter.length > 0 || stageFilter.length > 0 || m1Filter.length > 0 || m2Filter.length > 0 || docStatusFilter.length > 0;
 
   return (
     <DashboardShell title="PE Program Report" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
@@ -700,7 +671,7 @@ export default function PeReportPage() {
       <div className="mb-8">
         <p className="text-muted text-sm">
           Participate Energy program overview for Photon Brothers leadership.
-          HubSpot data is live; PE portal document status last updated {snap.lastUpdated}.
+          HubSpot data is live; PE portal document data last captured 2026-05-10.
         </p>
       </div>
 
@@ -771,45 +742,44 @@ export default function PeReportPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="text-xs bg-surface-2 border border-border rounded-lg px-3 py-1.5 text-foreground placeholder:text-muted w-56 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
           />
-          <FilterSelect
+          <MultiSelectFilter
             label="Location"
-            value={locFilter}
+            options={filterOptions.locations.map((l) => ({ value: l, label: l }))}
+            selected={locFilter}
             onChange={setLocFilter}
-            options={[{ value: "all", label: "All" }, ...filterOptions.locations.map((l) => ({ value: l, label: l }))]}
+            accentColor="green"
           />
-          <FilterSelect
+          <MultiSelectFilter
             label="Stage"
-            value={stageFilter}
+            options={filterOptions.stages.map((s) => ({ value: s, label: s }))}
+            selected={stageFilter}
             onChange={setStageFilter}
-            options={[{ value: "all", label: "All" }, ...filterOptions.stages.map((s) => ({ value: s, label: s }))]}
+            accentColor="green"
           />
-          <FilterSelect
+          <MultiSelectFilter
             label="M1"
-            value={m1Filter}
+            options={[{ value: "none", label: "Not Started" }, ...M1M2_STATUSES.map((s) => ({ value: s, label: s }))]}
+            selected={m1Filter}
             onChange={setM1Filter}
-            options={[{ value: "all", label: "All" }, { value: "none", label: "Not Started" }, ...M1M2_STATUSES.map((s) => ({ value: s, label: s }))]}
+            accentColor="green"
           />
-          <FilterSelect
+          <MultiSelectFilter
             label="M2"
-            value={m2Filter}
+            options={[{ value: "none", label: "Not Started" }, ...M1M2_STATUSES.map((s) => ({ value: s, label: s }))]}
+            selected={m2Filter}
             onChange={setM2Filter}
-            options={[{ value: "all", label: "All" }, { value: "none", label: "Not Started" }, ...M1M2_STATUSES.map((s) => ({ value: s, label: s }))]}
+            accentColor="green"
           />
-          <FilterSelect
+          <MultiSelectFilter
             label="Docs"
-            value={docStatusFilter}
+            options={DOC_FILTER_OPTIONS}
+            selected={docStatusFilter}
             onChange={setDocStatusFilter}
-            options={[
-              { value: "all", label: "All" },
-              { value: "not-reviewed", label: "Not Reviewed" },
-              { value: "has-issues", label: "Has Issues" },
-              { value: "in-progress", label: "In Progress" },
-              { value: "all-approved", label: "All Approved" },
-            ]}
+            accentColor="green"
           />
           {hasFilters && (
             <button
-              onClick={() => { setSearch(""); setLocFilter("all"); setStageFilter("all"); setM1Filter("all"); setM2Filter("all"); setDocStatusFilter("all"); }}
+              onClick={() => { setSearch(""); setLocFilter([]); setStageFilter([]); setM1Filter([]); setM2Filter([]); setDocStatusFilter([]); }}
               className="text-xs text-muted hover:text-foreground transition-colors"
             >
               Clear filters
@@ -901,131 +871,6 @@ export default function PeReportPage() {
         {filtered.length === 0 && !isLoading && (
           <div className="text-center py-8 text-muted text-sm">No projects match your filters.</div>
         )}
-      </div>
-
-      {/* ── PE Portal Document Status (snapshot) ── */}
-      <div className="bg-surface rounded-xl border border-border p-6 shadow-card mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">PE Portal Status Snapshot</h3>
-            <p className="text-xs text-muted">Source: raceway.participate.energy — {snap.lastUpdated}</p>
-          </div>
-          <div className="flex gap-3 text-xs">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-green-500" /> Approved</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Under Review</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-orange-500" /> Action Required</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <MiniStat label="Total Projects" value={snap.totalProjects} />
-          <MiniStat label="Action Required" value={snap.byStatus.actionRequired} />
-          <MiniStat label="Under Review" value={snap.byStatus.underReview} />
-          <MiniStat label="Approved" value={snap.byStatus.approved} />
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-surface-2 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-foreground">{snap.byMilestone.onboarded}</div>
-            <div className="text-xs text-muted">Onboarded</div>
-            <div className="text-[10px] text-muted mt-1">Early stage — docs being collected</div>
-          </div>
-          <div className="bg-surface-2 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-foreground">{snap.byMilestone.ic}</div>
-            <div className="text-xs text-muted">Inspection Complete (M1)</div>
-            <div className="text-[10px] text-muted mt-1">23 action required · 3 under review</div>
-          </div>
-          <div className="bg-surface-2 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-foreground">{snap.byMilestone.pc}</div>
-            <div className="text-xs text-muted">Project Complete (M2)</div>
-            <div className="text-[10px] text-muted mt-1">2 ready for payment · 3 need work</div>
-          </div>
-        </div>
-      </div>
-
-      {/* PC Projects Detail */}
-      <div className="bg-surface rounded-xl border border-border p-6 shadow-card mb-8">
-        <h3 className="text-lg font-semibold text-foreground mb-1">Project Complete (M2) — Document Detail</h3>
-        <p className="text-xs text-muted mb-4">These 5 projects have reached PTO and are closest to PE M2 payment</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted border-b border-border">
-                <th className="pb-2 pr-4">Customer</th>
-                <th className="pb-2 pr-4">Project ID</th>
-                <th className="pb-2 pr-4">Location</th>
-                <th className="pb-2 pr-4">Progress</th>
-                <th className="pb-2 pr-4">Status</th>
-                <th className="pb-2">Blockers</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snap.pcProjects.map((p) => (
-                <tr key={p.projectId} className="border-b border-border/50 last:border-0">
-                  <td className="py-3 pr-4 font-medium text-foreground">{p.customer}</td>
-                  <td className="py-3 pr-4 text-muted font-mono text-xs">{p.projectId}</td>
-                  <td className="py-3 pr-4 text-muted">{p.location}</td>
-                  <td className="py-3 pr-4 w-40">
-                    <ProgressBar approved={p.approved} underReview={p.underReview} actionRequired={p.actionRequired} total={p.approved + p.underReview + p.actionRequired} />
-                    <div className="text-[10px] text-muted mt-1">{p.approved} approved · {p.underReview} review · {p.actionRequired} action</div>
-                  </td>
-                  <td className="py-3 pr-4"><DocStatusBadge status={p.status} /></td>
-                  <td className="py-3">
-                    {p.blockers.length === 0 ? (
-                      <span className="text-green-400 text-xs">All documents approved</span>
-                    ) : (
-                      <ul className="text-xs text-muted space-y-0.5">
-                        {p.blockers.map((b) => <li key={b}>• {b}</li>)}
-                      </ul>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Top Blockers + Compliance + Recommendations */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-surface rounded-xl border border-border p-6 shadow-card">
-          <h3 className="text-lg font-semibold text-foreground mb-1">Top Document Blockers</h3>
-          <p className="text-xs text-muted mb-4">Most common reasons projects are stuck in the PE portal</p>
-          <div className="space-y-3">
-            {snap.topBlockers.map((b, i) => (
-              <div key={b.doc} className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-xs font-bold">{i + 1}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-foreground">{b.doc}</div>
-                  <div className="text-xs text-muted">{b.section} · {b.frequency}</div>
-                  <div className="text-xs text-muted/70 mt-0.5">{b.note}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="space-y-6">
-          <div className="bg-surface rounded-xl border border-red-500/30 p-6 shadow-card">
-            <h3 className="text-lg font-semibold text-foreground mb-1">Account Compliance</h3>
-            <p className="text-xs text-muted mb-4">Company-level docs required by PE — may block all payments</p>
-            <div className="space-y-2">
-              {snap.complianceDocs.map((d) => (
-                <div key={d.name} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-                  <span className="text-sm text-foreground">{d.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full border bg-red-500/20 text-red-400 border-red-500/30">Missing</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="bg-surface rounded-xl border border-emerald-500/30 p-6 shadow-card">
-            <h3 className="text-lg font-semibold text-foreground mb-3">Recommendations</h3>
-            <ol className="space-y-2 text-sm text-muted list-decimal list-inside">
-              <li><span className="text-foreground font-medium">Collect M2 on Burnham &amp; Skigen-Caird</span> — all docs approved, ready for payment</li>
-              <li><span className="text-foreground font-medium">Upload Photos per Policy for Baker</span> — only blocker on a PC project</li>
-              <li><span className="text-foreground font-medium">Upload 3 company compliance docs</span> — W-9, insurance cert, voided check</li>
-              <li><span className="text-foreground font-medium">Standardize Photos per Policy process</span> — #1 blocker across all projects, high rejection rate</li>
-              <li><span className="text-foreground font-medium">Clear Onboarding doc backlog</span> — Customer Agreement + Installation Order missing on many IC projects</li>
-            </ol>
-          </div>
-        </div>
       </div>
 
       {/* Location & Stage Breakdown */}
