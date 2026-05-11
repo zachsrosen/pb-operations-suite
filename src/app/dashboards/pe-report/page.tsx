@@ -246,6 +246,81 @@ function summaryColor(summary: ReturnType<typeof docStatusSummary>): string {
 }
 
 // ---------------------------------------------------------------------------
+// Sorting
+// ---------------------------------------------------------------------------
+
+type SortColumn = "deal" | "location" | "milestone" | "docs" | "custPaid" | "m1" | "m2" | "peTotal";
+type SortDirection = "asc" | "desc";
+
+const MILESTONE_ORDER: Record<PeMilestone, number> = {
+  "pre-construction": 0,
+  construction: 1,
+  inspection: 2,
+  pto: 3,
+  "close-out": 4,
+  complete: 5,
+};
+
+const M1M2_STATUS_ORDER: Record<string, number> = {
+  "": 0,
+  "Ready to Submit": 1,
+  "Waiting on Information": 2,
+  "Submitted": 3,
+  "Ready to Resubmit": 4,
+  "Resubmitted": 5,
+  "Rejected": 6,
+  "Approved": 7,
+  "Paid": 8,
+};
+
+function customerPaidOrder(d: PeDeal): number {
+  if (d.paidInFull) return 3;
+  const paidCount = [d.daInvoiceStatus, d.ccInvoiceStatus, d.ptoInvoiceStatus]
+    .filter((s) => s === "Paid In Full").length;
+  if (paidCount === 3) return 3;
+  if (paidCount > 0) return 2;
+  const openCount = [d.daInvoiceStatus, d.ccInvoiceStatus, d.ptoInvoiceStatus]
+    .filter((s) => s === "Open").length;
+  if (openCount > 0) return 1;
+  return 0;
+}
+
+function SortHeader({ label, column, current, direction, onSort, align }: {
+  label: string;
+  column: SortColumn;
+  current: SortColumn | null;
+  direction: SortDirection;
+  onSort: (col: SortColumn) => void;
+  align?: "right";
+}) {
+  const active = current === column;
+  return (
+    <th
+      className={`pb-2 pr-3 cursor-pointer select-none hover:text-foreground transition-colors ${align === "right" ? "text-right" : ""}`}
+      onClick={() => onSort(column)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {align === "right" && active && (
+          <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor">
+            {direction === "asc"
+              ? <path d="M6 2l4 5H2z" />
+              : <path d="M6 10l4-5H2z" />}
+          </svg>
+        )}
+        {label}
+        {align !== "right" && active && (
+          <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor">
+            {direction === "asc"
+              ? <path d="M6 2l4 5H2z" />
+              : <path d="M6 10l4-5H2z" />}
+          </svg>
+        )}
+      </span>
+    </th>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
@@ -600,7 +675,20 @@ export default function PeReportPage() {
   const [m2Filter, setM2Filter] = useState<string[]>([]);
   const [docStatusFilter, setDocStatusFilter] = useState<string[]>([]);
   const [custPaidFilter, setCustPaidFilter] = useState<string[]>([]);
+  const [sortCol, setSortCol] = useState<SortColumn | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
+
+  const handleSort = useCallback((col: SortColumn) => {
+    setSortCol((prev) => {
+      if (prev === col) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        return col;
+      }
+      setSortDir("asc");
+      return col;
+    });
+  }, []);
 
   const filterOptions = useMemo(() => {
     const locations = [...new Set(deals.map((d) => d.pbLocation).filter(Boolean))].sort();
@@ -646,6 +734,43 @@ export default function PeReportPage() {
       return true;
     });
   }, [deals, search, locFilter, stageFilter, m1Filter, m2Filter, docStatusFilter, custPaidFilter, docMap]);
+
+  const sorted = useMemo(() => {
+    if (!sortCol) return filtered;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      switch (sortCol) {
+        case "deal":
+          return dir * a.dealName.localeCompare(b.dealName);
+        case "location":
+          return dir * (a.pbLocation || "").localeCompare(b.pbLocation || "");
+        case "milestone": {
+          const mA = MILESTONE_ORDER[dealStageToPeMilestone(a.dealStageLabel)];
+          const mB = MILESTONE_ORDER[dealStageToPeMilestone(b.dealStageLabel)];
+          return dir * (mA - mB);
+        }
+        case "docs": {
+          const secA = milestoneDocSections(dealStageToPeMilestone(a.dealStageLabel));
+          const secB = milestoneDocSections(dealStageToPeMilestone(b.dealStageLabel));
+          const sA = docStatusSummary(a.dealId, secA, docMap);
+          const sB = docStatusSummary(b.dealId, secB, docMap);
+          const pctA = sA.total > 0 ? sA.approved / sA.total : -1;
+          const pctB = sB.total > 0 ? sB.approved / sB.total : -1;
+          return dir * (pctA - pctB);
+        }
+        case "custPaid":
+          return dir * (customerPaidOrder(a) - customerPaidOrder(b));
+        case "m1":
+          return dir * ((M1M2_STATUS_ORDER[a.peM1Status ?? ""] ?? 0) - (M1M2_STATUS_ORDER[b.peM1Status ?? ""] ?? 0));
+        case "m2":
+          return dir * ((M1M2_STATUS_ORDER[a.peM2Status ?? ""] ?? 0) - (M1M2_STATUS_ORDER[b.peM2Status ?? ""] ?? 0));
+        case "peTotal":
+          return dir * ((a.pePaymentTotal ?? 0) - (b.pePaymentTotal ?? 0));
+        default:
+          return 0;
+      }
+    });
+  }, [filtered, sortCol, sortDir, docMap]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedDeal((prev) => (prev === id ? null : id));
@@ -865,17 +990,17 @@ export default function PeReportPage() {
             <thead>
               <tr className="text-left text-xs text-muted border-b border-border">
                 <th className="pb-2 pr-2" />
-                <th className="pb-2 pr-3">Deal</th>
-                <th className="pb-2 pr-3">Location</th>
-                <th className="pb-2 pr-3">PE Milestone</th>
-                <th className="pb-2 pr-3">Document Status</th>
-                <th className="pb-2 pr-3">Cust. Paid</th>
-                <th className="pb-2 pr-3">M1</th>
-                <th className="pb-2 pr-3">M2</th>
-                <th className="pb-2 pr-3 text-right">PE Total</th>
+                <SortHeader label="Deal" column="deal" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="Location" column="location" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="PE Milestone" column="milestone" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="Document Status" column="docs" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="Cust. Paid" column="custPaid" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="M1" column="m1" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="M2" column="m2" current={sortCol} direction={sortDir} onSort={handleSort} />
+                <SortHeader label="PE Total" column="peTotal" current={sortCol} direction={sortDir} onSort={handleSort} align="right" />
               </tr>
             </thead>
-            {filtered.map((d) => {
+            {sorted.map((d) => {
               const milestone = dealStageToPeMilestone(d.dealStageLabel);
               const docSections = milestoneDocSections(milestone);
               const summary = docStatusSummary(d.dealId, docSections, docMap);
