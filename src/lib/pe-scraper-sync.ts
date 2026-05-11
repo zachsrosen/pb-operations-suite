@@ -547,6 +547,16 @@ export async function syncPeDocStatuses(
     unmatchedProjects: [],
   };
 
+  // Build all upsert operations first, then execute in batches
+  interface UpsertOp {
+    dealId: string;
+    docName: string;
+    status: PeDocStatus;
+    notes: string;
+  }
+
+  const ops: UpsertOp[] = [];
+
   for (const project of projects) {
     const dealId = matchProjectToDeal(project, dealMap);
 
@@ -560,31 +570,52 @@ export async function syncPeDocStatuses(
     result.projectsMatched++;
 
     for (const doc of project.documents) {
-      const status = mapScraperStatus(doc.status);
-      const notes = buildNotesString(doc, project.projNumber);
+      ops.push({
+        dealId,
+        docName: doc.name,
+        status: mapScraperStatus(doc.status),
+        notes: buildNotesString(doc, project.projNumber),
+      });
+    }
+  }
 
-      try {
-        await prisma.peDocumentReview.upsert({
-          where: { dealId_docName: { dealId, docName: doc.name } },
+  // Execute upserts in parallel batches of 50 (Neon connection pool friendly)
+  const BATCH_SIZE = 50;
+  const now = new Date();
+
+  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+    const batch = ops.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map((op) =>
+        prisma.peDocumentReview.upsert({
+          where: { dealId_docName: { dealId: op.dealId, docName: op.docName } },
           create: {
-            dealId,
-            docName: doc.name,
-            status,
-            notes,
+            dealId: op.dealId,
+            docName: op.docName,
+            status: op.status,
+            notes: op.notes,
             reviewedBy: "pe-scraper-sync",
-            reviewedAt: new Date(),
+            reviewedAt: now,
           },
           update: {
-            status,
-            notes,
+            status: op.status,
+            notes: op.notes,
             reviewedBy: "pe-scraper-sync",
-            reviewedAt: new Date(),
+            reviewedAt: now,
           },
-        });
+        }),
+      ),
+    );
+
+    for (let j = 0; j < results.length; j++) {
+      if (results[j].status === "fulfilled") {
         result.docsUpserted++;
-      } catch (err) {
-        const msg = `Failed to upsert ${doc.name} for deal ${dealId}: ${err instanceof Error ? err.message : String(err)}`;
-        result.errors.push(msg);
+      } else {
+        const err = (results[j] as PromiseRejectedResult).reason;
+        const op = batch[j];
+        result.errors.push(
+          `Failed to upsert ${op.docName} for deal ${op.dealId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
         result.docsSkipped++;
       }
     }
