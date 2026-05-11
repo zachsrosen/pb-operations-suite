@@ -62,6 +62,11 @@ interface PeDeal {
   peM1Status: string | null;
   peM2Status: string | null;
   milestoneHighlight: "m1" | "m2" | "complete" | null;
+  // Customer payment status (DA/CC/PTO invoice milestones)
+  daInvoiceStatus: string | null;
+  ccInvoiceStatus: string | null;
+  ptoInvoiceStatus: string | null;
+  paidInFull: boolean;
   hubspotUrl: string;
 }
 
@@ -99,6 +104,11 @@ const PE_DEAL_PROPERTIES = [
   "pe_payment_ic",
   "pe_payment_pc",
   "pe_total_pb_revenue",
+  // Customer payment milestones (DA/CC/PTO invoice statuses)
+  "da_invoice_status",
+  "cc_invoice_status",
+  "pto_invoice_status",
+  "paid_in_full",
 ];
 
 // ---------------------------------------------------------------------------
@@ -277,6 +287,10 @@ export async function GET() {
           : stageLabel === "Close Out" ? "m2" as const
           : stageLabel === "Project Complete" ? "complete" as const
           : null,
+        daInvoiceStatus: deal.da_invoice_status ? String(deal.da_invoice_status) : null,
+        ccInvoiceStatus: deal.cc_invoice_status ? String(deal.cc_invoice_status) : null,
+        ptoInvoiceStatus: deal.pto_invoice_status ? String(deal.pto_invoice_status) : null,
+        paidInFull: String(deal.paid_in_full || "").toLowerCase() === "true",
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
       };
     });

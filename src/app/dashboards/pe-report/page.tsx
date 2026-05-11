@@ -28,6 +28,10 @@ interface PeDeal {
   peM1Status: string | null;
   peM2Status: string | null;
   milestoneHighlight: "m1" | "m2" | "complete" | null;
+  daInvoiceStatus: string | null;
+  ccInvoiceStatus: string | null;
+  ptoInvoiceStatus: string | null;
+  paidInFull: boolean;
   hubspotUrl: string;
 }
 
@@ -308,6 +312,36 @@ function MilestoneBadge({ milestone }: { milestone: PeMilestone }) {
   );
 }
 
+function CustomerPaymentBadge({ deal }: { deal: PeDeal }) {
+  if (deal.paidInFull) {
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full border bg-green-500/20 text-green-400 border-green-500/30" title={`DA: ${deal.daInvoiceStatus || "—"} · CC: ${deal.ccInvoiceStatus || "—"} · PTO: ${deal.ptoInvoiceStatus || "—"}`}>
+        Paid
+      </span>
+    );
+  }
+
+  const milestones = [
+    { label: "DA", status: deal.daInvoiceStatus },
+    { label: "CC", status: deal.ccInvoiceStatus },
+    { label: "PTO", status: deal.ptoInvoiceStatus },
+  ];
+  const paidCount = milestones.filter((m) => m.status === "Paid In Full").length;
+  const openCount = milestones.filter((m) => m.status === "Open").length;
+  const tooltip = milestones.map((m) => `${m.label}: ${m.status || "—"}`).join(" · ");
+
+  if (paidCount === 3) {
+    return <span className="text-xs px-2 py-0.5 rounded-full border bg-green-500/20 text-green-400 border-green-500/30" title={tooltip}>Paid</span>;
+  }
+  if (paidCount > 0) {
+    return <span className="text-xs px-2 py-0.5 rounded-full border bg-yellow-500/20 text-yellow-300 border-yellow-500/30" title={tooltip}>{paidCount}/3</span>;
+  }
+  if (openCount > 0) {
+    return <span className="text-xs px-2 py-0.5 rounded-full border bg-blue-500/20 text-blue-400 border-blue-500/30" title={tooltip}>Invoiced</span>;
+  }
+  return <span className="text-xs text-muted" title={tooltip}>—</span>;
+}
+
 // Inline document status editor for a single document
 function DocStatusSelect({ dealId, doc, review, onUpdate }: {
   dealId: string;
@@ -565,6 +599,7 @@ export default function PeReportPage() {
   const [m1Filter, setM1Filter] = useState<string[]>([]);
   const [m2Filter, setM2Filter] = useState<string[]>([]);
   const [docStatusFilter, setDocStatusFilter] = useState<string[]>([]);
+  const [custPaidFilter, setCustPaidFilter] = useState<string[]>([]);
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
 
   const filterOptions = useMemo(() => {
@@ -596,9 +631,21 @@ export default function PeReportPage() {
         const category = classifyDocStatus(summary);
         if (!docStatusFilter.includes(category)) return false;
       }
+      if (custPaidFilter.length > 0) {
+        const paidCount = [d.daInvoiceStatus, d.ccInvoiceStatus, d.ptoInvoiceStatus]
+          .filter((s) => s === "Paid In Full").length;
+        const openCount = [d.daInvoiceStatus, d.ccInvoiceStatus, d.ptoInvoiceStatus]
+          .filter((s) => s === "Open").length;
+        let payStatus: string;
+        if (d.paidInFull || paidCount === 3) payStatus = "paid";
+        else if (paidCount > 0) payStatus = "partial";
+        else if (openCount > 0) payStatus = "invoiced";
+        else payStatus = "not-invoiced";
+        if (!custPaidFilter.includes(payStatus)) return false;
+      }
       return true;
     });
-  }, [deals, search, locFilter, stageFilter, m1Filter, m2Filter, docStatusFilter, docMap]);
+  }, [deals, search, locFilter, stageFilter, m1Filter, m2Filter, docStatusFilter, custPaidFilter, docMap]);
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedDeal((prev) => (prev === id ? null : id));
@@ -663,7 +710,7 @@ export default function PeReportPage() {
     };
   }, [deals, docMap]);
 
-  const hasFilters = search || locFilter.length > 0 || stageFilter.length > 0 || m1Filter.length > 0 || m2Filter.length > 0 || docStatusFilter.length > 0;
+  const hasFilters = search || locFilter.length > 0 || stageFilter.length > 0 || m1Filter.length > 0 || m2Filter.length > 0 || docStatusFilter.length > 0 || custPaidFilter.length > 0;
 
   return (
     <DashboardShell title="PE Program Report" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
@@ -777,9 +824,21 @@ export default function PeReportPage() {
             onChange={setDocStatusFilter}
             accentColor="green"
           />
+          <MultiSelectFilter
+            label="Cust. Paid"
+            options={[
+              { value: "paid", label: "Fully Paid" },
+              { value: "partial", label: "Partially Paid" },
+              { value: "invoiced", label: "Invoiced (Unpaid)" },
+              { value: "not-invoiced", label: "Not Invoiced" },
+            ]}
+            selected={custPaidFilter}
+            onChange={setCustPaidFilter}
+            accentColor="green"
+          />
           {hasFilters && (
             <button
-              onClick={() => { setSearch(""); setLocFilter([]); setStageFilter([]); setM1Filter([]); setM2Filter([]); setDocStatusFilter([]); }}
+              onClick={() => { setSearch(""); setLocFilter([]); setStageFilter([]); setM1Filter([]); setM2Filter([]); setDocStatusFilter([]); setCustPaidFilter([]); }}
               className="text-xs text-muted hover:text-foreground transition-colors"
             >
               Clear filters
@@ -810,7 +869,7 @@ export default function PeReportPage() {
                 <th className="pb-2 pr-3">Location</th>
                 <th className="pb-2 pr-3">PE Milestone</th>
                 <th className="pb-2 pr-3">Document Status</th>
-                <th className="pb-2 pr-3 text-right">Cust. Pays</th>
+                <th className="pb-2 pr-3">Cust. Paid</th>
                 <th className="pb-2 pr-3">M1</th>
                 <th className="pb-2 pr-3">M2</th>
                 <th className="pb-2 pr-3 text-right">PE Total</th>
@@ -859,7 +918,7 @@ export default function PeReportPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-2.5 pr-3 text-right text-muted tabular-nums text-xs">{fmt(d.customerPays)}</td>
+                    <td className="py-2.5 pr-3"><CustomerPaymentBadge deal={d} /></td>
                     <td className="py-2.5 pr-3"><StatusBadge status={d.peM1Status} /></td>
                     <td className="py-2.5 pr-3"><StatusBadge status={d.peM2Status} /></td>
                     <td className="py-2.5 pr-3 text-right text-foreground font-medium tabular-nums">{fmt(d.pePaymentTotal)}</td>
