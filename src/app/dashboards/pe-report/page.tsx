@@ -900,26 +900,30 @@ export default function PeReportPage() {
     const byStage = new Map<string, number>();
     deals.forEach((d) => { byStage.set(d.dealStageLabel, (byStage.get(d.dealStageLabel) ?? 0) + 1); });
 
-    // Doc review stats — grouped by milestone stage so "Not Uploaded" is
-    // actionable: it only counts docs for deals that have actually reached
-    // the relevant submission point.
-    const emptyDocStats = () => ({ dealCount: 0, total: 0, tracked: 0, approved: 0, rejected: 0, actionReq: 0, underReview: 0, notUploaded: 0 });
-    const m1Docs = emptyDocStats(); // inspection+ deals → onboarding + IC (14 docs)
-    const m2Docs = emptyDocStats(); // PTO+ deals → onboarding + IC + PC (17 docs)
-    let preM1DealCount = 0;         // pre-construction + construction → not at submission stage
+    // Doc review stats — split by document section, only counting deals
+    // that have reached the relevant milestone. "Not Uploaded" means the
+    // deal IS at the stage and the doc SHOULD be uploaded.
+    interface SectionDocStats {
+      dealCount: number; total: number; tracked: number;
+      approved: number; rejected: number; actionReq: number;
+      underReview: number; notUploaded: number;
+      byStage: Map<string, { notUploaded: number; total: number }>;
+    }
+    const emptySectionStats = (): SectionDocStats => ({
+      dealCount: 0, total: 0, tracked: 0, approved: 0, rejected: 0,
+      actionReq: 0, underReview: 0, notUploaded: 0,
+      byStage: new Map(),
+    });
+    // Onboarding (4 docs): relevant at inspection+ (part of M1 submission)
+    const onboardingDocs = emptySectionStats();
+    // IC (10 docs): relevant at inspection+ (part of M1 submission)
+    const icDocs = emptySectionStats();
+    // PC (3 docs): relevant at PTO+ (part of M2 submission)
+    const pcDocs = emptySectionStats();
+    let preM1DealCount = 0;
 
-    for (const d of deals) {
-      const milestone = dealStageToPeMilestone(d.dealStageLabel);
-      if (milestone === "pre-construction" || milestone === "construction") {
-        preM1DealCount++;
-        continue;
-      }
-      // Determine which bucket this deal belongs to and what docs apply
-      const isM2 = milestone === "pto" || milestone === "close-out" || milestone === "complete";
-      const bucket = isM2 ? m2Docs : m1Docs;
-      const sections = milestoneDocSections(milestone);
-      const summary = docStatusSummary(d.dealId, sections, docMap);
-      bucket.dealCount++;
+    const addToSection = (bucket: SectionDocStats, dealId: string, section: "onboarding" | "ic" | "pc", stageLabel: string) => {
+      const summary = docStatusSummary(dealId, [section], docMap);
       bucket.total += summary.total;
       bucket.tracked += summary.total - summary.notReviewed;
       bucket.approved += summary.approved;
@@ -927,7 +931,46 @@ export default function PeReportPage() {
       bucket.actionReq += summary.actionRequired;
       bucket.underReview += summary.underReview;
       bucket.notUploaded += summary.notUploaded;
+      const existing = bucket.byStage.get(stageLabel) ?? { notUploaded: 0, total: 0 };
+      existing.notUploaded += summary.notUploaded;
+      existing.total += summary.total;
+      bucket.byStage.set(stageLabel, existing);
+    };
+
+    for (const d of deals) {
+      const milestone = dealStageToPeMilestone(d.dealStageLabel);
+      if (milestone === "pre-construction" || milestone === "construction") {
+        preM1DealCount++;
+        continue;
+      }
+      const atM1 = milestone === "inspection" || milestone === "pto" || milestone === "close-out" || milestone === "complete";
+      const atM2 = milestone === "pto" || milestone === "close-out" || milestone === "complete";
+      const stage = milestoneLabel(milestone);
+      if (atM1) {
+        // Count deal once for onboarding and IC sections
+        if (!onboardingDocs.byStage.has(stage) || true) { // always add per deal
+          addToSection(onboardingDocs, d.dealId, "onboarding", stage);
+        }
+        addToSection(icDocs, d.dealId, "ic", stage);
+      }
+      if (atM2) {
+        addToSection(pcDocs, d.dealId, "pc", stage);
+      }
+      // Increment deal counts (avoid double-counting)
+      if (atM1) {
+        onboardingDocs.dealCount++;
+        icDocs.dealCount++;
+      }
+      if (atM2) {
+        pcDocs.dealCount++;
+      }
     }
+
+    // Convert byStage maps to sorted arrays for rendering
+    const stageBreakdown = (bucket: SectionDocStats) =>
+      [...bucket.byStage.entries()]
+        .filter(([, v]) => v.notUploaded > 0)
+        .sort((a, b) => b[1].notUploaded - a[1].notUploaded);
 
     return {
       totalDeals, totalEpcValue, totalPePayment,
@@ -937,7 +980,7 @@ export default function PeReportPage() {
       m1PaidValue, m2PaidValue, m1ApprovedValue, m2ApprovedValue,
       byLocation: [...byLocation.entries()].sort((a, b) => b[1] - a[1]),
       byStage: [...byStage.entries()].sort((a, b) => b[1] - a[1]),
-      m1Docs, m2Docs, preM1DealCount,
+      onboardingDocs, icDocs, pcDocs, preM1DealCount, stageBreakdown,
     };
   }, [deals, docMap]);
 
@@ -1014,39 +1057,38 @@ export default function PeReportPage() {
         <StatCard label="Ready to Invoice" value={metrics ? fmt(metrics.readyToInvoice) : null} subtitle="Approved, awaiting invoice" color={metrics && metrics.readyToInvoice > 0 ? "orange" : "green"} />
       </div>
 
-      {/* Document Review Stats — by milestone stage */}
+      {/* Document Review Stats — by section, only deals at relevant milestone */}
       {metrics && (
         <div className="space-y-4 mb-8">
-          {/* M1 docs — deals at inspection stage */}
-          <div className="bg-surface rounded-xl border border-border p-4 shadow-card">
-            <div className="flex items-baseline gap-2 mb-3">
-              <h4 className="text-sm font-semibold text-foreground">M1 Documents</h4>
-              <span className="text-xs text-muted">{metrics.m1Docs.dealCount} deals at inspection · onboarding + IC docs ({metrics.m1Docs.total} total)</span>
+          {[
+            { label: "Onboarding", sub: "4 docs per deal · inspection+ deals", data: metrics.onboardingDocs },
+            { label: "M1 — Inspection Complete (IC)", sub: "10 docs per deal · inspection+ deals", data: metrics.icDocs },
+            { label: "M2 — Project Completion (PC)", sub: "3 docs per deal · PTO+ deals", data: metrics.pcDocs },
+          ].map(({ label, sub, data }) => (
+            <div key={label} className="bg-surface rounded-xl border border-border p-4 shadow-card">
+              <div className="flex items-baseline gap-2 mb-3">
+                <h4 className="text-sm font-semibold text-foreground">{label}</h4>
+                <span className="text-xs text-muted">{data.dealCount} deals · {sub}</span>
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                <MiniStat label="Approved" value={data.approved} />
+                <MiniStat label="Under Review" value={data.underReview} />
+                <MiniStat label="Not Uploaded" value={data.notUploaded} />
+                <MiniStat label="Action Required" value={data.actionReq} />
+                <MiniStat label="Rejected" value={data.rejected} />
+                <MiniStat label="No Data" value={data.total - data.tracked} />
+              </div>
+              {/* Stage breakdown for Not Uploaded */}
+              {data.notUploaded > 0 && metrics.stageBreakdown(data).length > 0 && (
+                <div className="mt-2 text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
+                  <span className="text-muted/70">Not uploaded by stage:</span>
+                  {metrics.stageBreakdown(data).map(([stage, { notUploaded }]) => (
+                    <span key={stage}>{stage}: {notUploaded}</span>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-              <MiniStat label="Approved" value={metrics.m1Docs.approved} />
-              <MiniStat label="Under Review" value={metrics.m1Docs.underReview} />
-              <MiniStat label="Not Uploaded" value={metrics.m1Docs.notUploaded} />
-              <MiniStat label="Action Required" value={metrics.m1Docs.actionReq} />
-              <MiniStat label="Rejected" value={metrics.m1Docs.rejected} />
-              <MiniStat label="No Data" value={metrics.m1Docs.total - metrics.m1Docs.tracked} />
-            </div>
-          </div>
-          {/* M2 docs — deals at PTO or later */}
-          <div className="bg-surface rounded-xl border border-border p-4 shadow-card">
-            <div className="flex items-baseline gap-2 mb-3">
-              <h4 className="text-sm font-semibold text-foreground">M2 Documents</h4>
-              <span className="text-xs text-muted">{metrics.m2Docs.dealCount} deals at PTO+ · all docs ({metrics.m2Docs.total} total)</span>
-            </div>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-              <MiniStat label="Approved" value={metrics.m2Docs.approved} />
-              <MiniStat label="Under Review" value={metrics.m2Docs.underReview} />
-              <MiniStat label="Not Uploaded" value={metrics.m2Docs.notUploaded} />
-              <MiniStat label="Action Required" value={metrics.m2Docs.actionReq} />
-              <MiniStat label="Rejected" value={metrics.m2Docs.rejected} />
-              <MiniStat label="No Data" value={metrics.m2Docs.total - metrics.m2Docs.tracked} />
-            </div>
-          </div>
+          ))}
           {/* Pre-M1 note */}
           {metrics.preM1DealCount > 0 && (
             <p className="text-xs text-muted px-1">
