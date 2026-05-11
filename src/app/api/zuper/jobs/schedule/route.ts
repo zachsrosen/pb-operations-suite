@@ -1121,10 +1121,14 @@ export async function PUT(request: NextRequest) {
         // Parse the UTC start/end datetimes back into Date objects for the cache
         const parsedStart = startDateTime ? new Date(startDateTime.replace(' ', 'T') + 'Z') : undefined;
         const parsedEnd = endDateTime ? new Date(endDateTime.replace(' ', 'T') + 'Z') : undefined;
+        // Preserve the actual sub-category (e.g. "Construction - Solar") instead
+        // of flattening to "Construction". This prevents sub-job type corruption
+        // in the cache, which would break the lookup API's category-based matching.
+        const rescheduledCategory = getJobCategoryInfo(existingJob).name || getCategoryNameForScheduleType(schedule.type);
         await cacheZuperJob({
           jobUid: existingJob.job_uid,
           jobTitle: rescheduleResult.data.job_title || `${schedule.type} - ${project.name}`,
-          jobCategory: getCategoryNameForScheduleType(schedule.type),
+          jobCategory: rescheduledCategory,
           jobStatus: "SCHEDULED",
           hubspotDealId: project.id,
           projectName: project.name,
@@ -1287,10 +1291,12 @@ export async function PUT(request: NextRequest) {
       if (createResult.data && newJobUid) {
         const parsedStart = startDateTime ? new Date(startDateTime.replace(' ', 'T') + 'Z') : undefined;
         const parsedEnd = endDateTime ? new Date(endDateTime.replace(' ', 'T') + 'Z') : undefined;
+        // Preserve actual sub-category from the created job
+        const createdCategory = getJobCategoryInfo(createResult.data).name || getCategoryNameForScheduleType(schedule.type);
         await cacheZuperJob({
           jobUid: newJobUid,
           jobTitle: createResult.data.job_title || `${schedule.type} - ${project.name}`,
-          jobCategory: getCategoryNameForScheduleType(schedule.type),
+          jobCategory: createdCategory,
           jobStatus: "SCHEDULED",
           hubspotDealId: project.id,
           projectName: project.name,
