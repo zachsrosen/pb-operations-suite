@@ -2554,6 +2554,10 @@ model IdrMeetingItem {
   shitShowFlagged Boolean @default(false)
   shitShowReason  String?
 
+  // Design Revision flag — sets design_status on sync
+  designRevisionNeeded Boolean @default(false)
+  designRevisionReason String?
+
   // Adder checkboxes
   adderTileRoof     Boolean @default(false)
   adderMetalRoof    Boolean @default(false)
@@ -2633,6 +2637,8 @@ model IdrEscalationQueue {
   opsRevisionNotes        String?
   designNotes             String?
   conclusion              String?
+  designRevisionNeeded    Boolean @default(false)
+  designRevisionReason    String?
 
   // Adder checkboxes (carried over from prep/skip)
   adderTileRoof     Boolean @default(false)

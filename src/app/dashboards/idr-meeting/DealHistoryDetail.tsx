@@ -41,6 +41,8 @@ interface SessionItem {
   escalationReason: string | null;
   shitShowFlagged: boolean;
   shitShowReason: string | null;
+  designRevisionNeeded: boolean;
+  designRevisionReason: string | null;
   adderTileRoof: boolean;
   adderMetalRoof: boolean;
   adderFlatFoamRoof: boolean;
@@ -287,6 +289,9 @@ function SessionCard({ item }: { item: SessionItem }) {
         )}
         {item.opsChangeNotes && (
           <NoteField label="Ops Change Reason" value={item.opsChangeNotes} />
+        )}
+        {item.designRevisionNeeded && (
+          <NoteField label="Design Revision Needed" value={item.designRevisionReason || "Yes"} />
         )}
         {!item.conclusion && !item.customerNotes && !item.operationsNotes && !item.opsRevisionNotes && !item.designNotes && !item.escalationReason && (
           <p className="text-xs text-muted italic">No notes recorded</p>

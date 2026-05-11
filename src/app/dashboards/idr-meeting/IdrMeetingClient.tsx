@@ -87,6 +87,8 @@ export interface IdrItem {
   reviewed: boolean;
   shitShowFlagged: boolean;
   shitShowReason: string | null;
+  designRevisionNeeded: boolean;
+  designRevisionReason: string | null;
   // Adder checkboxes
   adderTileRoof: boolean;
   adderMetalRoof: boolean;
@@ -443,6 +445,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       const textFields = new Set([
         "customerNotes", "operationsNotes", "designNotes", "conclusion",
         "salesChangeNotes", "opsChangeNotes", "shitShowReason", "escalationReason",
+        "designRevisionReason",
       ]);
       const isTextOnly = Object.keys(updates).every((k) => textFields.has(k));
 

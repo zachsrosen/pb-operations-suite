@@ -336,7 +336,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
 
-            <Section title="DA Status Actions">
+            <Section title="Status Actions">
               <StatusActionsForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
 

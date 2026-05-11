@@ -163,6 +163,8 @@ describe("buildHubSpotPropertyUpdates", () => {
       salesChangeRequested: null,
       salesChangeNotes: null,
       opsChangeNotes: null,
+      designRevisionNeeded: false,
+      reviewed: false,
     });
     expect(updates.install_difficulty).toBe("3");
     expect(updates.expected_installer_cont).toBe("2");
@@ -189,6 +191,8 @@ describe("buildHubSpotPropertyUpdates", () => {
       salesChangeRequested: null,
       salesChangeNotes: null,
       opsChangeNotes: null,
+      designRevisionNeeded: false,
+      reviewed: false,
     });
     expect(updates.install_difficulty).toBe("3");
     expect(updates).not.toHaveProperty("expected_installer_cont");

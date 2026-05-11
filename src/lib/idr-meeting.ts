@@ -292,6 +292,8 @@ interface NoteFields {
   shitShowFlagged?: boolean | null;
   shitShowReason?: string | null;
   opsRevisionNotes?: string | null;
+  designRevisionNeeded?: boolean;
+  designRevisionReason?: string | null;
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
@@ -340,6 +342,9 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
   if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
   if (fields.adderSummary) lines.push(`<strong>Adders:</strong> ${esc(fields.adderSummary)}`);
+  if (fields.designRevisionNeeded) {
+    lines.push(`<strong>⚠️ Design Revision Needed</strong>${fields.designRevisionReason ? `: ${esc(fields.designRevisionReason)}` : ""}`);
+  }
   if (fields.shitShowFlagged) lines.push(`<strong>🔥 Shit Show:</strong> ${fields.shitShowReason ? esc(fields.shitShowReason) : "Flagged"}`);
   if (fields.opsRevisionNotes) lines.push(`<strong>Ops Revision Notes:</strong> ${esc(fields.opsRevisionNotes)}`);
   if (fields.designNotes) lines.push(`<strong>Design Notes:</strong> ${esc(fields.designNotes)}`);
@@ -373,6 +378,8 @@ interface PropertyFields {
   opsChangeNotes: string | null;
   adderSummary?: string | null;
   adderAmount?: number | null;
+  designRevisionNeeded: boolean;
+  reviewed: boolean;
 }
 
 /** Map item fields to HubSpot deal property key-value pairs. Only includes non-null fields. */
@@ -403,6 +410,13 @@ export function buildHubSpotPropertyUpdates(
 
   updates.idr_adders = fields.adderSummary ?? "";
   if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
+
+  // Design status — revision flag vs auto-advance (independent of layout_status)
+  if (fields.designRevisionNeeded) {
+    updates.design_status = "IDR Revision Needed";
+  } else if (fields.reviewed) {
+    updates.design_status = "Draft Complete - Waiting on Approvals";
+  }
 
   return updates;
 }
@@ -711,6 +725,9 @@ export async function syncItemToHubSpot(
     shitShowFlagged: boolean;
     shitShowReason: string | null;
     opsRevisionNotes: string | null;
+    designRevisionNeeded: boolean;
+    designRevisionReason: string | null;
+    reviewed: boolean;
     adderTileRoof: boolean;
     adderMetalRoof: boolean;
     adderFlatFoamRoof: boolean;
@@ -746,6 +763,8 @@ export async function syncItemToHubSpot(
       opsChangeNotes: item.opsChangeNotes,
       adderSummary: serializeAdderSummary(item),
       adderAmount: computeAdderTotal(item),
+      designRevisionNeeded: item.designRevisionNeeded,
+      reviewed: item.reviewed,
     });
 
     if (Object.keys(properties).length > 0) {
@@ -778,6 +797,8 @@ export async function syncItemToHubSpot(
           shitShowFlagged: item.shitShowFlagged,
           shitShowReason: item.shitShowReason,
           opsRevisionNotes: item.opsRevisionNotes,
+          designRevisionNeeded: item.designRevisionNeeded,
+          designRevisionReason: item.designRevisionReason,
         },
         sessionDate.toISOString(),
       );
