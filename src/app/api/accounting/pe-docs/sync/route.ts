@@ -26,6 +26,10 @@ import {
   fetchPeScraperReport,
 } from "@/lib/pe-scraper-sync";
 
+// Extend serverless function timeout — the full sync (342 projects × 14 docs
+// = ~4800 sequential upserts + GCS fetch + HubSpot deal map) needs > 60s.
+export const maxDuration = 120;
+
 const ALLOWED_ROLES = ["ADMIN", "EXECUTIVE", "ACCOUNTING", "OWNER"];
 
 // ---------------------------------------------------------------------------
