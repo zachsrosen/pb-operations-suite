@@ -77,6 +77,8 @@ const PE_DOCUMENTS: DocRequirement[] = [
   { name: "Certificate of Acceptance", section: "ic", owner: "PB" },
   { name: "Attestation of Customer Payment", section: "ic", owner: "PB" },
   { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB" },
+  { name: "Shading Analysis", section: "ic", owner: "PB" },
+  { name: "Issued Permit", section: "ic", owner: "PB" },
   { name: "Signed Interconnection Agreement", section: "pc", owner: "PB" },
   { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB" },
   { name: "Permission to Operate (PTO)", section: "pc", owner: "PB" },
