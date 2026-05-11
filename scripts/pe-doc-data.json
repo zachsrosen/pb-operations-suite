@@ -2685,6 +2685,7 @@
     },
     "CO2601-LYON2": {
       "name": "Ella Lyons",
+      "dealId": "11759580080",
       "docs": {
         "Customer Agreement (PPA/ESA)": "UNDER_REVIEW",
         "Installation Order": "UNDER_REVIEW",
@@ -2785,6 +2786,7 @@
     },
     "CO2602-CRUZ3": {
       "name": "Alcidez Cruz Jr",
+      "dealId": "53561556257",
       "docs": {
         "Customer Agreement (PPA/ESA)": "UNDER_REVIEW",
         "Installation Order": "UNDER_REVIEW",
