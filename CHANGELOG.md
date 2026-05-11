@@ -4,6 +4,73 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-11
+
+### IDR Meeting Hub (Major)
+- Tier 1 (15%) and Tier 2 (20%) auto-calculated percentage-based adders with mutual exclusivity (#477)
+- New `opsRevisionNotes` field alongside meeting notes; expanded deal history cards now surface all meeting fields (adders, flags, install planning, all notes) (#477)
+- Yellow warning banner when sales change delta is under 10% of project cost; "Shit Show" status line written into HubSpot timeline when flagged (#477)
+- HubSpot roof type auto-populates from deal property; new adder amount property, % of deal calculation, and waiver warnings (#487)
+- Pricing calculator delta replaced with user-entered `salesChangeAmount` field; adder costs shown inline in checklist instead of `PricingBreakdown` (#483, #484, #485)
+- React hooks ordering fix in `ProjectDetail`; cleanup of duplicate `pricingDeltaPct` and unused `useMemo` (#480, #481, #488)
+
+### Aircall Call Analytics (Major)
+- Phase 1: call analytics dashboard with Postgres cache (provider-discriminated for future Zuper Connect ingestion), webhook + cron sync, Admin sandbox at `/dashboards/admin/calls` (#501)
+- Per-user answer rate via ring tracking (#502)
+- Analytics+ ringing-attempts CSV importer for historical backfill (#503)
+- Phase 2: executive call analytics dashboard (#505)
+- On-Call Calls section sourced from `OnCallCallLog` (#507)
+
+### On-Call Workflow
+- Roofing issue type, 3-way outcome selector, pool-filtered crew dropdown on the on-call form (#496)
+- Auto-create HubSpot service ticket when call outcome is "follow-up needed" (#500)
+- Customer phone/address fields capture + HubSpot contact find-or-create (search by phone, exact + digits-only); follow-up tickets auto-associate the contact (#504)
+- Increased publish timeout to support 6-month assignment horizon (#499)
+- On-call electrician overlay on master scheduler with CO/CA region chips; toggle persists in localStorage (#511)
+
+### Service BOM Pipeline
+- New Service BOM page covering both deals and tickets, with ticket-keyed snapshots (#506)
+- Ticket-context link fixes and `dealname` cleanup on service BOMs (#508)
+- `bom-so-create` falls back without the custom field if the Zoho org lacks it, unblocking ticket SOs (#510)
+- Zoho Inventory retries token refresh on Access Denied (#509)
+- BOM table consolidates the Catalogs column into the product badge (#513)
+
+### Scheduler Enhancements
+- Day view timed grid for surveys and inspections (#516)
+- Sub-job breakdown view on construction cards, only shown when a deal has 2+ sub-jobs (#518, #520)
+- Construction job split (Solar / Battery / EV) — centralized deal-level aggregation in `lib/zuper-construction.ts` covering revenue calendar, schedule optimizer, calendar events, metrics, with completion-stamping cron (#515)
+- Zuper job status shown in all scheduler modals (#519)
+- Zuper assignment metadata persisted on confirm (#478)
+- Calendar shows events for combined location groups (California) (#526)
+
+### Cost Audit & Sync Health
+- Cost Audit: cross-references Zoho bills against item purchase rates (#491)
+- Sales price, margin, and cross-system link badges (#493)
+- Bulk-sync costs to latest bill with suggested sales price (#495)
+- Sync Health page: drift rollup across InternalProduct/HubSpot/Zuper/Zoho with 9 issue tiles deep-linking into `/dashboards/product-comparison` with filters pre-applied (#497)
+- Canonical `writeCrossLinkIds` now used for all systems (#517)
+
+### PandaDoc Integration
+- DA status drift detector cron polls PandaDoc every 15 min for terminal-status DA documents and writes mismatches to new `DaStatusDrift` table; admins review at `/dashboards/admin/da-drift` (#528)
+- DA status now read from the approval dropdown rather than `document.completed` (#529)
+
+### Operations Suite & Office Performance
+- 6 office performance cards (All Locations + Westminster, Centennial, Colorado Springs, SLO, Camarillo) added to operations suite; role-gated via `SuitePageShell.allowedRoutes` (#527)
+- Cache-first fetching cuts office performance dashboard load time (#525)
+
+### Comms
+- Initial "include HubSpot emails outside inbox" rollout (#482) reverted after issues (#521)
+- Diagnostic logging added to messages API (#523)
+- Gmail fetch capped and rate-limit errors surfaced to UI (#524)
+
+### Admin & Infra
+- New admin testing suite landing page (`/suites/testing`)
+- 23 missing `SUITE_MAP` breadcrumb entries added; stale overrides removed (#514)
+- `product-comparison` page wrapped in Suspense to fix prod build (#498)
+- Zuper downstream follow-up handling for pending state; three follow-up type fixes (#472, #474, #475, #476)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
