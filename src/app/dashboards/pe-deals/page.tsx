@@ -459,6 +459,19 @@ export default function PeDealsPage() {
   const totalPEReceivable = m1ReceivableValue + m2ReceivableValue;
   const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
 
+  // Pending PE Approval = milestones submitted/in-review but not yet Approved or Paid.
+  const PENDING_STATUSES = new Set(["Submitted", "Resubmitted", "Waiting on Information", "Ready to Resubmit", "Rejected"]);
+  const m1PendingCount = filtered.filter((d) => d.peM1Status !== null && PENDING_STATUSES.has(d.peM1Status)).length;
+  const m2PendingCount = filtered.filter((d) => d.peM2Status !== null && PENDING_STATUSES.has(d.peM2Status)).length;
+  const m1PendingValue = filtered
+    .filter((d) => d.peM1Status !== null && PENDING_STATUSES.has(d.peM1Status))
+    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+  const m2PendingValue = filtered
+    .filter((d) => d.peM2Status !== null && PENDING_STATUSES.has(d.peM2Status))
+    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const totalPendingValue = m1PendingValue + m2PendingValue;
+  const totalPendingCount = m1PendingCount + m2PendingCount;
+
   // CSV export data
   const exportData = filtered.map((d) => ({
     "Deal Name": d.dealName,
@@ -499,8 +512,8 @@ export default function PeDealsPage() {
       lastUpdated={lastUpdated}
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
-      {/* Hero Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
+      {/* Hero Stats — Pipeline: Pending → Approved → Paid */}
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6 stagger-grid">
         <StatCard
           key={`deals-${filtered.length}`}
           label="All PE Deals"
@@ -509,29 +522,32 @@ export default function PeDealsPage() {
           color="orange"
         />
         <StatCard
-          key={`ready-${readyToInvoiceCount}-${readyToInvoiceValue}`}
-          label="Ready to Invoice"
-          value={String(readyToInvoiceCount)}
-          subtitle={`${fmt(readyToInvoiceValue)} · ${m1ReadyDeals.length} M1 + ${m2ReadyDeals.length} M2 approved`}
+          key={`pending-${totalPendingCount}-${totalPendingValue}`}
+          label="Pending Approval"
+          value={fmt(totalPendingValue)}
+          subtitle={`${totalPendingCount} milestones · ${m1PendingCount} M1 + ${m2PendingCount} M2`}
           color="amber"
         />
         <StatCard
-          key={`recv-${totalPEReceivable}`}
-          label="PE Receivable"
-          value={fmt(totalPEReceivable)}
-          subtitle={`Collected ${fmt(totalPECollected)} · Outstanding ${fmt(totalPEOutstanding)}`}
+          key={`ready-${readyToInvoiceCount}-${readyToInvoiceValue}`}
+          label="Approved (Unpaid)"
+          value={fmt(readyToInvoiceValue)}
+          subtitle={`${readyToInvoiceCount} milestones · ${m1ReadyDeals.length} M1 + ${m2ReadyDeals.length} M2`}
+          color="blue"
+        />
+        <StatCard
+          key={`paid-${totalPECollected}`}
+          label="PE Collected"
+          value={fmt(totalPECollected)}
+          subtitle={`${totalPEReceivable > 0 ? ((totalPECollected / totalPEReceivable) * 100).toFixed(0) : 0}% of ${fmt(totalPEReceivable)} approved`}
           color="emerald"
         />
         <StatCard
-          key={`pct-${totalPECollected}-${totalPEReceivable}`}
-          label="% PE Collected"
-          value={
-            totalPEReceivable > 0
-              ? `${((totalPECollected / totalPEReceivable) * 100).toFixed(0)}%`
-              : "—"
-          }
-          subtitle="Of expected PE receivable"
-          color="emerald"
+          key={`recv-${totalPEReceivable}`}
+          label="Total Approved"
+          value={fmt(totalPEReceivable)}
+          subtitle={`Paid ${fmt(totalPECollected)} · Unpaid ${fmt(totalPEOutstanding)}`}
+          color="green"
         />
         <StatCard
           key={`rev-${totalRevenue}`}
