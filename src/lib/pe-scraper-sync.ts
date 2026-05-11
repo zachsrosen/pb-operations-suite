@@ -20,6 +20,9 @@
 
 import { prisma } from "@/lib/db";
 import { PeDocStatus } from "@/generated/prisma/enums";
+import { searchWithRetry } from "@/lib/hubspot";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
+import { PIPELINE_IDS } from "@/lib/deals-pipeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -473,6 +476,62 @@ export function parsePeScraperReport(html: string): {
 }
 
 // ---------------------------------------------------------------------------
+// HubSpot PE deal lookup — builds a name→dealId map
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a map of lowercased deal names → HubSpot deal IDs for all PE-tagged
+ * deals in the project pipeline. Used by both HTML scraper sync and CSV import.
+ */
+export async function buildPeDealMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const pipelineId = PIPELINE_IDS.project;
+  if (!pipelineId) return map;
+
+  let after: string | undefined;
+  do {
+    const searchRequest = {
+      filterGroups: [
+        {
+          filters: [
+            {
+              propertyName: "pipeline",
+              operator: FilterOperatorEnum.Eq,
+              value: pipelineId,
+            },
+            {
+              propertyName: "tags",
+              operator: FilterOperatorEnum.ContainsToken,
+              value: "Participate Energy",
+            },
+          ],
+        },
+      ],
+      properties: ["hs_object_id", "dealname"],
+      sorts: [
+        { propertyName: "dealname", direction: "ASCENDING" },
+      ] as unknown as string[],
+      limit: 100,
+      ...(after ? { after } : {}),
+    } as any;
+
+    const response = await searchWithRetry(searchRequest);
+
+    for (const deal of response.results) {
+      const id = String(deal.properties.hs_object_id);
+      const name = String(deal.properties.dealname || "");
+      if (id && name) {
+        map.set(name.toLowerCase().trim(), id);
+      }
+    }
+
+    after = response.paging?.next?.after;
+  } while (after);
+
+  return map;
+}
+
+// ---------------------------------------------------------------------------
 // Deal matching — PROJ number + customer name fuzzy match
 // ---------------------------------------------------------------------------
 
@@ -664,4 +723,372 @@ export async function fetchPeScraperReport(url: string): Promise<string> {
   }
 
   return response.text();
+}
+
+// ---------------------------------------------------------------------------
+// PE Portal CSV Import
+//
+// The PE portal CSV export contains project-level summary data including
+// overall Doc Review Status, milestone, financials, and dates. It does NOT
+// contain per-document detail (that comes from the HTML scraper).
+//
+// This import supplements the scraper by:
+//   - Updating M1/M2 payment amounts from CSV financials
+//   - For projects with no scraper doc data, creating a synthetic
+//     "Portal Summary" doc review row so the dashboard shows *something*
+//   - Storing the PE portal project ID for cross-reference
+// ---------------------------------------------------------------------------
+
+export interface CsvProject {
+  peProjectId: string;      // e.g. "CO2602-DIER1"
+  customerName: string;
+  milestone: string;        // e.g. "Project Onboarded", "Inspection Complete"
+  docReviewStatus: string;  // e.g. "Action Required (Installer)", "Under Review (PE)", "Approved"
+  installerEpc: number | null;
+  netAmountDue: number | null;
+  finalInspectionPayment: number | null;
+  projectCompletionPayment: number | null;
+  contractSigned: string | null;
+  permitApproved: string | null;
+  installationComplete: string | null;
+  pto: string | null;
+  actionItems: string | null;
+}
+
+export interface CsvSyncResult {
+  projectsFound: number;
+  projectsMatched: number;
+  projectsUpdated: number;
+  projectsSkippedHasScraperData: number;
+  errors: string[];
+  unmatchedProjects: string[];
+}
+
+/**
+ * Parse a PE portal CSV export into structured project data.
+ * Handles quoted fields with commas (e.g. "$30,015.80").
+ */
+export function parsePePortalCsv(csvText: string): {
+  projects: CsvProject[];
+  parseErrors: string[];
+} {
+  const parseErrors: string[] = [];
+  const projects: CsvProject[] = [];
+
+  // Simple RFC 4180 CSV parser that handles quoted fields
+  const rows = parseCsvRows(csvText);
+  if (rows.length < 2) {
+    parseErrors.push("CSV has fewer than 2 rows (expected header + data)");
+    return { projects, parseErrors };
+  }
+
+  const header = rows[0].map((h) => h.trim());
+  const colIdx = (name: string): number => {
+    const idx = header.indexOf(name);
+    if (idx === -1) parseErrors.push(`Missing expected column: "${name}"`);
+    return idx;
+  };
+
+  // Map expected columns
+  const iProjectId = colIdx("Project ID");
+  const iCustomerName = colIdx("Customer Name");
+  const iMilestone = colIdx("Milestone");
+  const iDocReview = colIdx("Doc Review Status");
+  const iInstallerEpc = colIdx("Installer EPC");
+  const iNetAmountDue = colIdx("Net Amount Due");
+  const iFinalInspection = colIdx("Final Inspection Payment");
+  const iProjectCompletion = colIdx("Project Completion Payment");
+  const iContractSigned = colIdx("Contract Signed");
+  const iPermitApproved = colIdx("Permit Approved");
+  const iInstallComplete = colIdx("Installation Complete");
+  const iPto = colIdx("PTO");
+  const iActionItems = colIdx("Action Items");
+
+  if (iProjectId === -1 || iCustomerName === -1) {
+    parseErrors.push("Cannot parse CSV without Project ID and Customer Name columns");
+    return { projects, parseErrors };
+  }
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.length < header.length) {
+      // Skip obviously short rows (empty trailing lines)
+      if (row.length <= 1 && !row[0]?.trim()) continue;
+      parseErrors.push(`Row ${r + 1}: expected ${header.length} columns, got ${row.length}`);
+      continue;
+    }
+
+    const cell = (idx: number): string => (idx >= 0 && idx < row.length ? row[idx].trim() : "");
+    const parseMoney = (idx: number): number | null => {
+      const raw = cell(idx).replace(/[$,]/g, "");
+      if (!raw) return null;
+      const n = parseFloat(raw);
+      return isNaN(n) ? null : n;
+    };
+
+    const projectId = cell(iProjectId);
+    const customerName = cell(iCustomerName);
+    if (!projectId && !customerName) continue;
+
+    projects.push({
+      peProjectId: projectId,
+      customerName,
+      milestone: cell(iMilestone),
+      docReviewStatus: cell(iDocReview),
+      installerEpc: parseMoney(iInstallerEpc),
+      netAmountDue: parseMoney(iNetAmountDue),
+      finalInspectionPayment: parseMoney(iFinalInspection),
+      projectCompletionPayment: parseMoney(iProjectCompletion),
+      contractSigned: cell(iContractSigned) || null,
+      permitApproved: cell(iPermitApproved) || null,
+      installationComplete: cell(iInstallComplete) || null,
+      pto: cell(iPto) || null,
+      actionItems: cell(iActionItems) || null,
+    });
+  }
+
+  return { projects, parseErrors };
+}
+
+/**
+ * Map CSV Doc Review Status to PeDocStatus enum.
+ */
+function mapCsvDocReviewStatus(status: string): PeDocStatus {
+  const s = status.toLowerCase().trim();
+  if (s.includes("approved")) return PeDocStatus.APPROVED;
+  if (s.includes("under review")) return PeDocStatus.UNDER_REVIEW;
+  if (s.includes("action required")) return PeDocStatus.ACTION_REQUIRED;
+  return PeDocStatus.NOT_UPLOADED;
+}
+
+/**
+ * Match a CSV project to a HubSpot deal ID.
+ * Uses the same deal map as the HTML scraper sync.
+ */
+export function matchCsvProjectToDeal(
+  project: CsvProject,
+  dealMap: Map<string, string>,
+): string | null {
+  const custLower = project.customerName.toLowerCase().trim();
+  if (!custLower) return null;
+
+  // 1. Exact customer name match in deal names
+  for (const [dealName, dealId] of dealMap) {
+    if (dealName.includes(custLower)) return dealId;
+  }
+
+  // 2. Last-name match (skip suffixes)
+  const parts = custLower.split(/\s+/);
+  const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+  const meaningfulParts = parts.filter((p) => !SUFFIXES.has(p));
+  const lastName = meaningfulParts[meaningfulParts.length - 1];
+  if (lastName && lastName.length >= 3) {
+    // Only match if first name also present (avoid false positives like "Smith")
+    if (meaningfulParts.length >= 2) {
+      const firstName = meaningfulParts[0];
+      for (const [dealName, dealId] of dealMap) {
+        if (dealName.includes(firstName) && dealName.includes(lastName)) {
+          return dealId;
+        }
+      }
+    }
+    // Single last-name match as fallback
+    for (const [dealName, dealId] of dealMap) {
+      if (dealName.includes(lastName)) return dealId;
+    }
+  }
+
+  return null;
+}
+
+// Synthetic doc name for CSV-imported overall status
+const CSV_SUMMARY_DOC_NAME = "Portal Summary (CSV)";
+
+/**
+ * Sync CSV data into the database.
+ *
+ * For projects that already have scraper doc data, this is a no-op (scraper
+ * data is more granular). For projects with NO scraper data, it creates a
+ * synthetic doc review row so the dashboard can show the overall status.
+ */
+export async function syncPeCsvStatuses(
+  csvProjects: CsvProject[],
+  dealMap: Map<string, string>,
+): Promise<CsvSyncResult> {
+  const result: CsvSyncResult = {
+    projectsFound: csvProjects.length,
+    projectsMatched: 0,
+    projectsUpdated: 0,
+    projectsSkippedHasScraperData: 0,
+    errors: [],
+    unmatchedProjects: [],
+  };
+
+  // First, find which deals already have scraper doc data
+  const scraperDeals = new Set<string>();
+  const existing = await prisma.peDocumentReview.findMany({
+    where: { reviewedBy: "pe-scraper-sync" },
+    select: { dealId: true },
+    distinct: ["dealId"],
+  });
+  for (const row of existing) scraperDeals.add(row.dealId);
+
+  // Build upsert operations
+  interface CsvUpsertOp {
+    dealId: string;
+    status: PeDocStatus;
+    notes: string;
+  }
+
+  const ops: CsvUpsertOp[] = [];
+
+  for (const project of csvProjects) {
+    const dealId = matchCsvProjectToDeal(project, dealMap);
+
+    if (!dealId) {
+      result.unmatchedProjects.push(
+        `${project.peProjectId} (${project.customerName})`,
+      );
+      continue;
+    }
+
+    result.projectsMatched++;
+
+    // Skip if this deal already has scraper doc data (more granular)
+    if (scraperDeals.has(dealId)) {
+      result.projectsSkippedHasScraperData++;
+      continue;
+    }
+
+    // Build notes with CSV metadata
+    const noteParts: string[] = [];
+    noteParts.push(`PE Portal ID: ${project.peProjectId}`);
+    noteParts.push(`Milestone: ${project.milestone}`);
+    noteParts.push(`Doc Review: ${project.docReviewStatus}`);
+    if (project.installerEpc) noteParts.push(`EPC: $${project.installerEpc.toLocaleString()}`);
+    if (project.finalInspectionPayment) noteParts.push(`IC Payment: $${project.finalInspectionPayment.toLocaleString()}`);
+    if (project.projectCompletionPayment) noteParts.push(`PC Payment: $${project.projectCompletionPayment.toLocaleString()}`);
+    if (project.contractSigned) noteParts.push(`Contract Signed: ${project.contractSigned}`);
+    if (project.installationComplete) noteParts.push(`Install Complete: ${project.installationComplete}`);
+    if (project.pto) noteParts.push(`PTO: ${project.pto}`);
+    if (project.actionItems) noteParts.push(`Action Items: ${project.actionItems.substring(0, 500)}`);
+
+    ops.push({
+      dealId,
+      status: mapCsvDocReviewStatus(project.docReviewStatus),
+      notes: noteParts.join(" | "),
+    });
+  }
+
+  // Execute upserts in batches
+  const BATCH_SIZE = 50;
+  const now = new Date();
+
+  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+    const batch = ops.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map((op) =>
+        prisma.peDocumentReview.upsert({
+          where: {
+            dealId_docName: { dealId: op.dealId, docName: CSV_SUMMARY_DOC_NAME },
+          },
+          create: {
+            dealId: op.dealId,
+            docName: CSV_SUMMARY_DOC_NAME,
+            status: op.status,
+            notes: op.notes,
+            reviewedBy: "pe-csv-import",
+            reviewedAt: now,
+          },
+          update: {
+            status: op.status,
+            notes: op.notes,
+            reviewedBy: "pe-csv-import",
+            reviewedAt: now,
+          },
+        }),
+      ),
+    );
+
+    for (let j = 0; j < results.length; j++) {
+      if (results[j].status === "fulfilled") {
+        result.projectsUpdated++;
+      } else {
+        const err = (results[j] as PromiseRejectedResult).reason;
+        const op = batch[j];
+        result.errors.push(
+          `Failed to upsert CSV status for deal ${op.dealId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Simple CSV parser (RFC 4180 compliant)
+// ---------------------------------------------------------------------------
+
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < text.length && text[i + 1] === '"') {
+          // Escaped quote
+          field += '"';
+          i += 2;
+        } else {
+          // End of quoted field
+          inQuotes = false;
+          i++;
+        }
+      } else {
+        field += ch;
+        i++;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+        i++;
+      } else if (ch === ",") {
+        current.push(field);
+        field = "";
+        i++;
+      } else if (ch === "\n" || ch === "\r") {
+        current.push(field);
+        field = "";
+        if (ch === "\r" && i + 1 < text.length && text[i + 1] === "\n") {
+          i += 2;
+        } else {
+          i++;
+        }
+        if (current.length > 1 || current[0] !== "") {
+          rows.push(current);
+        }
+        current = [];
+      } else {
+        field += ch;
+        i++;
+      }
+    }
+  }
+
+  // Last field/row
+  if (field || current.length > 0) {
+    current.push(field);
+    if (current.length > 1 || current[0] !== "") {
+      rows.push(current);
+    }
+  }
+
+  return rows;
 }

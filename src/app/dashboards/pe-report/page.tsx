@@ -188,7 +188,14 @@ const DOC_FILTER_OPTIONS: { value: DocFilterCategory; label: string }[] = [
   { value: "in-progress", label: "In Progress" },
 ];
 
-function classifyDocStatus(summary: ReturnType<typeof docStatusSummary>): DocFilterCategory {
+function classifyDocStatus(summary: DocSummary): DocFilterCategory {
+  // CSV-only projects: classify based on the overall portal status
+  if (summary.csvOnly && summary.csvStatus) {
+    if (summary.csvStatus === "APPROVED") return "all-approved";
+    if (summary.csvStatus === "ACTION_REQUIRED") return "pb-action-required";
+    if (summary.csvStatus === "UNDER_REVIEW") return "waiting-on-pe";
+    return "in-progress";
+  }
   // No portal data — all docs are unreviewed
   if (summary.notReviewed === summary.total) return "no-portal-data";
   // All approved
@@ -205,11 +212,28 @@ function classifyDocStatus(summary: ReturnType<typeof docStatusSummary>): DocFil
   return "in-progress";
 }
 
+// Synthetic doc name for CSV-imported overall status (must match pe-scraper-sync.ts)
+const CSV_SUMMARY_DOC_NAME = "Portal Summary (CSV)";
+
+interface DocSummary {
+  approved: number;
+  rejected: number;
+  actionRequired: number;
+  underReview: number;
+  notUploaded: number;
+  notReviewed: number;
+  total: number;
+  /** When true, this deal has NO scraper doc data but has a CSV summary row */
+  csvOnly: boolean;
+  csvStatus: PeDocStatusValue | null;
+  csvNotes: string | null;
+}
+
 function docStatusSummary(
   dealId: string,
   sections: ("onboarding" | "ic" | "pc")[],
   docMap: Map<string, DocReview>,
-): { approved: number; rejected: number; actionRequired: number; underReview: number; notUploaded: number; notReviewed: number; total: number } {
+): DocSummary {
   const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
   let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, notReviewed = 0;
   for (const doc of docs) {
@@ -225,10 +249,26 @@ function docStatusSummary(
       case "UPLOADED": underReview++; break;
     }
   }
-  return { approved, rejected, actionRequired, underReview, notUploaded, notReviewed, total: docs.length };
+
+  // Check for CSV summary row when no scraper data exists
+  const csvRow = docMap.get(`${dealId}:${CSV_SUMMARY_DOC_NAME}`);
+  const csvOnly = notReviewed === docs.length && !!csvRow;
+
+  return {
+    approved, rejected, actionRequired, underReview, notUploaded, notReviewed,
+    total: docs.length,
+    csvOnly,
+    csvStatus: csvRow?.status ?? null,
+    csvNotes: csvRow?.notes ?? null,
+  };
 }
 
-function summaryText(summary: ReturnType<typeof docStatusSummary>): string {
+function summaryText(summary: DocSummary): string {
+  // CSV-only: show overall status from portal export
+  if (summary.csvOnly && summary.csvStatus) {
+    const label = DOC_STATUS_OPTIONS.find((o) => o.value === summary.csvStatus)?.label ?? summary.csvStatus;
+    return `${label} (CSV)`;
+  }
   if (summary.notReviewed === summary.total) return "No portal data";
   if (summary.approved === summary.total) return "All approved";
   const parts: string[] = [];
@@ -240,7 +280,13 @@ function summaryText(summary: ReturnType<typeof docStatusSummary>): string {
   return parts.join(" · ");
 }
 
-function summaryColor(summary: ReturnType<typeof docStatusSummary>): string {
+function summaryColor(summary: DocSummary): string {
+  if (summary.csvOnly && summary.csvStatus) {
+    if (summary.csvStatus === "APPROVED") return "text-green-400";
+    if (summary.csvStatus === "ACTION_REQUIRED" || summary.csvStatus === "REJECTED") return "text-orange-400";
+    if (summary.csvStatus === "UNDER_REVIEW") return "text-blue-400";
+    return "text-muted";
+  }
   if (summary.notReviewed === summary.total) return "text-muted";
   if (summary.approved === summary.total) return "text-green-400";
   if (summary.rejected > 0 || summary.actionRequired > 0) return "text-orange-400";
@@ -667,6 +713,48 @@ export default function PeReportPage() {
     updateDocMutation.mutate({ dealId, docName, status, notes });
   }, [updateDocMutation]);
 
+  // CSV import mutation
+  const [csvImportResult, setCsvImportResult] = useState<{
+    projectsFound: number;
+    projectsMatched: number;
+    projectsUpdated: number;
+    projectsSkippedHasScraperData: number;
+    unmatchedProjects: string[];
+    errors: string[];
+  } | null>(null);
+
+  const csvImportMutation = useMutation({
+    mutationFn: async (csvText: string) => {
+      const res = await fetch("/api/accounting/pe-docs/csv-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv: csvText }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Import failed" }));
+        throw new Error(err.error || "Import failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setCsvImportResult(data);
+      queryClient.invalidateQueries({ queryKey: ["peDocReviews"] });
+    },
+  });
+
+  const handleCsvUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result as string;
+      csvImportMutation.mutate(text);
+    };
+    reader.readAsText(file);
+    // Reset input so same file can be re-uploaded
+    e.target.value = "";
+  }, [csvImportMutation]);
+
   const deals = data?.deals ?? [];
 
   // Filter state — all multi-select (empty array = all)
@@ -842,12 +930,65 @@ export default function PeReportPage() {
   return (
     <DashboardShell title="PE Program Report" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
       {/* Report Header */}
-      <div className="mb-8">
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <p className="text-muted text-sm">
           Participate Energy program overview for Photon Brothers leadership.
-          HubSpot data is live; PE portal document data last captured 2026-05-10.
+          HubSpot data is live; PE portal document data synced from scraper + CSV.
         </p>
+        <div className="flex items-center gap-3 shrink-0">
+          <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-2 border border-border text-sm text-foreground hover:bg-surface cursor-pointer transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+            </svg>
+            {csvImportMutation.isPending ? "Importing..." : "Import CSV"}
+            <input
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleCsvUpload}
+              disabled={csvImportMutation.isPending}
+            />
+          </label>
+        </div>
       </div>
+      {/* CSV Import Result */}
+      {csvImportResult && (
+        <div className="mb-6 p-4 rounded-lg bg-surface-2 border border-border text-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-medium text-foreground">CSV Import Complete</span>
+            <button onClick={() => setCsvImportResult(null)} className="text-muted hover:text-foreground">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-muted">
+            <span>{csvImportResult.projectsFound} in CSV</span>
+            <span>{csvImportResult.projectsMatched} matched</span>
+            <span className="text-green-400">{csvImportResult.projectsUpdated} updated</span>
+            <span>{csvImportResult.projectsSkippedHasScraperData} skipped (has scraper data)</span>
+          </div>
+          {csvImportResult.unmatchedProjects.length > 0 && (
+            <details className="mt-2">
+              <summary className="text-muted cursor-pointer hover:text-foreground">{csvImportResult.unmatchedProjects.length} unmatched projects</summary>
+              <div className="mt-1 text-xs text-muted max-h-32 overflow-auto">
+                {csvImportResult.unmatchedProjects.map((p, i) => <div key={i}>{p}</div>)}
+              </div>
+            </details>
+          )}
+          {csvImportResult.errors.length > 0 && (
+            <details className="mt-2">
+              <summary className="text-red-400 cursor-pointer">{csvImportResult.errors.length} errors</summary>
+              <div className="mt-1 text-xs text-red-400 max-h-32 overflow-auto">
+                {csvImportResult.errors.map((e, i) => <div key={i}>{e}</div>)}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+      {csvImportMutation.isError && (
+        <div className="mb-6 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-400">
+          CSV import failed: {csvImportMutation.error.message}
+        </div>
+      )}
 
       {/* Hero Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
