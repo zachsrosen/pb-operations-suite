@@ -40,6 +40,7 @@ type PeDocStatus =
 
 interface CapturedProject {
   name: string;
+  dealId?: string; // Optional manual override when fuzzy matching fails
   docs: Record<string, string>;
 }
 
@@ -219,7 +220,7 @@ async function main() {
   const unmatched: string[] = [];
 
   for (const [projectId, project] of Object.entries(data.projects)) {
-    const dealId = findDealId(project.name, dealMap);
+    const dealId = project.dealId || findDealId(project.name, dealMap);
     if (!dealId) {
       console.log(`❌ ${projectId} (${project.name}) — no HubSpot deal match`);
       unmatched.push(`${projectId} (${project.name})`);
