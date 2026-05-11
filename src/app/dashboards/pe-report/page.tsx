@@ -901,16 +901,18 @@ export default function PeReportPage() {
     deals.forEach((d) => { byStage.set(d.dealStageLabel, (byStage.get(d.dealStageLabel) ?? 0) + 1); });
 
     // Doc review stats
-    let totalDocs = 0, reviewedDocs = 0, approvedDocs = 0, rejectedDocs = 0, actionReqDocs = 0;
+    let totalDocs = 0, trackedDocs = 0, approvedDocs = 0, rejectedDocs = 0, actionReqDocs = 0, underReviewDocs = 0, notUploadedDocs = 0;
     for (const d of deals) {
       const milestone = dealStageToPeMilestone(d.dealStageLabel);
       const sections = milestoneDocSections(milestone);
       const summary = docStatusSummary(d.dealId, sections, docMap);
       totalDocs += summary.total;
-      reviewedDocs += summary.total - summary.notReviewed;
+      trackedDocs += summary.total - summary.notReviewed;
       approvedDocs += summary.approved;
       rejectedDocs += summary.rejected;
       actionReqDocs += summary.actionRequired;
+      underReviewDocs += summary.underReview;
+      notUploadedDocs += summary.notUploaded;
     }
 
     return {
@@ -921,7 +923,7 @@ export default function PeReportPage() {
       m1PaidValue, m2PaidValue, m1ApprovedValue, m2ApprovedValue,
       byLocation: [...byLocation.entries()].sort((a, b) => b[1] - a[1]),
       byStage: [...byStage.entries()].sort((a, b) => b[1] - a[1]),
-      docs: { totalDocs, reviewedDocs, approvedDocs, rejectedDocs, actionReqDocs },
+      docs: { totalDocs, trackedDocs, approvedDocs, rejectedDocs, actionReqDocs, underReviewDocs, notUploadedDocs },
     };
   }, [deals, docMap]);
 
@@ -1000,12 +1002,14 @@ export default function PeReportPage() {
 
       {/* Document Review Stats */}
       {metrics && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 stagger-grid">
+        <div className="grid grid-cols-3 md:grid-cols-7 gap-4 mb-8 stagger-grid">
           <MiniStat label="Total Documents" value={metrics.docs.totalDocs} />
-          <MiniStat label="Reviewed" value={`${metrics.docs.reviewedDocs} / ${metrics.docs.totalDocs}`} />
+          <MiniStat label="Tracked" value={`${metrics.docs.trackedDocs} / ${metrics.docs.totalDocs}`} />
           <MiniStat label="Approved" value={metrics.docs.approvedDocs} />
-          <MiniStat label="Rejected" value={metrics.docs.rejectedDocs} />
+          <MiniStat label="Under Review" value={metrics.docs.underReviewDocs} />
+          <MiniStat label="Not Uploaded" value={metrics.docs.notUploadedDocs} />
           <MiniStat label="Action Required" value={metrics.docs.actionReqDocs} />
+          <MiniStat label="Rejected" value={metrics.docs.rejectedDocs} />
         </div>
       )}
 
