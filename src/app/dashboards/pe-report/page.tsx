@@ -268,7 +268,7 @@ function ProgressBar({ approved, underReview, actionRequired, total }: {
   const pctApproved = (approved / total) * 100;
   const pctReview = (underReview / total) * 100;
   return (
-    <div className="flex h-2 rounded-full overflow-hidden bg-surface-2" title={`${approved} approved, ${underReview} under review, ${actionRequired} action required`}>
+    <div className="flex-1 min-w-[80px] flex h-2 rounded-full overflow-hidden bg-surface-2" title={`${approved} approved, ${underReview} under review, ${actionRequired} action required`}>
       {pctApproved > 0 && <div className="bg-green-500" style={{ width: `${pctApproved}%` }} />}
       {pctReview > 0 && <div className="bg-blue-500" style={{ width: `${pctReview}%` }} />}
     </div>
@@ -789,83 +789,96 @@ export default function PeReportPage() {
 
         {/* Project table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-8" />
+              {/* Deal name — flexible */}
+              <col />
+              <col className="w-28" />
+              <col className="w-32" />
+              {/* Document Status — flexible */}
+              <col />
+              <col className="w-28" />
+              <col className="w-28" />
+              <col className="w-28" />
+              <col className="w-28" />
+            </colgroup>
             <thead>
               <tr className="text-left text-xs text-muted border-b border-border">
-                <th className="pb-2 pr-3 w-6" />
-                <th className="pb-2 pr-4">Deal</th>
-                <th className="pb-2 pr-4">Location</th>
-                <th className="pb-2 pr-4">PE Milestone</th>
-                <th className="pb-2 pr-4">Document Status</th>
-                <th className="pb-2 pr-4">M1</th>
-                <th className="pb-2 pr-4">M2</th>
-                <th className="pb-2 pr-4 text-right">PE Total</th>
+                <th className="pb-2 pr-2" />
+                <th className="pb-2 pr-3">Deal</th>
+                <th className="pb-2 pr-3">Location</th>
+                <th className="pb-2 pr-3">PE Milestone</th>
+                <th className="pb-2 pr-3">Document Status</th>
+                <th className="pb-2 pr-3 text-right">Cust. Pays</th>
+                <th className="pb-2 pr-3">M1</th>
+                <th className="pb-2 pr-3">M2</th>
+                <th className="pb-2 pr-3 text-right">PE Total</th>
               </tr>
             </thead>
-            <tbody>
-              {filtered.map((d) => {
-                const milestone = dealStageToPeMilestone(d.dealStageLabel);
-                const docSections = milestoneDocSections(milestone);
-                const summary = docStatusSummary(d.dealId, docSections, docMap);
-                const isExpanded = expandedDeal === d.dealId;
+            {filtered.map((d) => {
+              const milestone = dealStageToPeMilestone(d.dealStageLabel);
+              const docSections = milestoneDocSections(milestone);
+              const summary = docStatusSummary(d.dealId, docSections, docMap);
+              const isExpanded = expandedDeal === d.dealId;
 
-                return (
-                  <tbody key={d.dealId}>
-                    <tr
-                      className={`border-b border-border/50 cursor-pointer transition-colors ${isExpanded ? "bg-surface-2" : "hover:bg-surface-2/50"}`}
-                      onClick={() => toggleExpand(d.dealId)}
-                    >
-                      <td className="py-2.5 pr-3 text-muted text-xs">
-                        <span className={`inline-block transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9656;</span>
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <a
-                          href={d.hubspotUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-foreground hover:text-emerald-400 transition-colors"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {d.dealName}
-                        </a>
-                      </td>
-                      <td className="py-2.5 pr-4 text-muted text-xs">{d.pbLocation}</td>
-                      <td className="py-2.5 pr-4"><MilestoneBadge milestone={milestone} /></td>
-                      <td className="py-2.5 pr-4">
-                        <div className="flex items-center gap-2">
-                          {summary.notReviewed < summary.total && (
-                            <ProgressBar
-                              approved={summary.approved}
-                              underReview={summary.underReview}
-                              actionRequired={summary.rejected + summary.actionRequired + summary.notUploaded}
-                              total={summary.total}
-                            />
-                          )}
-                          <span className={`text-xs whitespace-nowrap ${summaryColor(summary)}`}>
-                            {summaryText(summary)}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 pr-4"><StatusBadge status={d.peM1Status} /></td>
-                      <td className="py-2.5 pr-4"><StatusBadge status={d.peM2Status} /></td>
-                      <td className="py-2.5 pr-4 text-right text-foreground font-medium tabular-nums">{fmt(d.pePaymentTotal)}</td>
-                    </tr>
-                    {isExpanded && (
-                      <tr className="bg-surface-2/70">
-                        <td colSpan={8} className="px-4 py-4">
-                          <ProjectDocChecklist
-                            dealId={d.dealId}
-                            milestone={milestone}
-                            docMap={docMap}
-                            onUpdate={handleDocUpdate}
+              return (
+                <tbody key={d.dealId}>
+                  <tr
+                    className={`border-b border-border/50 cursor-pointer transition-colors ${isExpanded ? "bg-surface-2" : "hover:bg-surface-2/50"}`}
+                    onClick={() => toggleExpand(d.dealId)}
+                  >
+                    <td className="py-2.5 pr-2 text-muted text-xs">
+                      <span className={`inline-block transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9656;</span>
+                    </td>
+                    <td className="py-2.5 pr-3 truncate">
+                      <a
+                        href={d.hubspotUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-foreground hover:text-emerald-400 transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {d.dealName}
+                      </a>
+                    </td>
+                    <td className="py-2.5 pr-3 text-muted text-xs truncate">{d.pbLocation}</td>
+                    <td className="py-2.5 pr-3"><MilestoneBadge milestone={milestone} /></td>
+                    <td className="py-2.5 pr-3">
+                      <div className="flex items-center gap-2">
+                        {summary.notReviewed < summary.total && (
+                          <ProgressBar
+                            approved={summary.approved}
+                            underReview={summary.underReview}
+                            actionRequired={summary.rejected + summary.actionRequired + summary.notUploaded}
+                            total={summary.total}
                           />
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                );
-              })}
-            </tbody>
+                        )}
+                        <span className={`text-xs whitespace-nowrap ${summaryColor(summary)}`}>
+                          {summaryText(summary)}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-3 text-right text-muted tabular-nums text-xs">{fmt(d.customerPays)}</td>
+                    <td className="py-2.5 pr-3"><StatusBadge status={d.peM1Status} /></td>
+                    <td className="py-2.5 pr-3"><StatusBadge status={d.peM2Status} /></td>
+                    <td className="py-2.5 pr-3 text-right text-foreground font-medium tabular-nums">{fmt(d.pePaymentTotal)}</td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-surface-2/70">
+                      <td colSpan={9} className="px-4 py-4">
+                        <ProjectDocChecklist
+                          dealId={d.dealId}
+                          milestone={milestone}
+                          docMap={docMap}
+                          onUpdate={handleDocUpdate}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              );
+            })}
           </table>
         </div>
         {filtered.length === 0 && !isLoading && (
