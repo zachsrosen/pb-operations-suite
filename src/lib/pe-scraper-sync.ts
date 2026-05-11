@@ -280,6 +280,13 @@ export function parsePeScraperReport(html: string): {
         if (m1Match) m1Status = m1Match[1].trim();
         if (m2Match) m2Status = m2Match[1].trim();
 
+        // Skip ghost rows — header rows with no name or PROJ number
+        // (e.g. tab category separators that happen to have data-deal-stage)
+        if (!projNumber && !customerName) {
+          currentProject = null;
+          continue;
+        }
+
         currentProject = {
           customerName,
           projNumber,
@@ -480,16 +487,27 @@ export function matchProjectToDeal(
   project: ParsedProject,
   dealMap: Map<string, string>,
 ): string | null {
+  // 0. PROJ number match — most reliable since HubSpot deal names contain "PROJ-XXXX"
+  if (project.projNumber) {
+    const projLower = project.projNumber.toLowerCase();
+    for (const [dealName, dealId] of dealMap) {
+      if (dealName.includes(projLower)) return dealId;
+    }
+  }
+
   const custLower = project.customerName.toLowerCase().trim();
+  if (!custLower) return null;
 
   // 1. Exact match: customer name appears in a deal name
   for (const [dealName, dealId] of dealMap) {
-    if (dealName.includes(custLower) && custLower.length > 0) return dealId;
+    if (dealName.includes(custLower)) return dealId;
   }
 
-  // 2. Last name match
+  // 2. Last name match (skip suffixes like "jr", "sr", "ii", "iii")
   const parts = custLower.split(/\s+/);
-  const lastName = parts[parts.length - 1];
+  const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+  const meaningfulParts = parts.filter((p) => !SUFFIXES.has(p));
+  const lastName = meaningfulParts[meaningfulParts.length - 1];
   if (lastName && lastName.length >= 3) {
     for (const [dealName, dealId] of dealMap) {
       if (dealName.includes(lastName)) return dealId;
@@ -497,8 +515,8 @@ export function matchProjectToDeal(
   }
 
   // 3. First + last name match (independently)
-  if (parts.length >= 2) {
-    const firstName = parts[0];
+  if (meaningfulParts.length >= 2) {
+    const firstName = meaningfulParts[0];
     for (const [dealName, dealId] of dealMap) {
       if (dealName.includes(firstName) && dealName.includes(lastName)) {
         return dealId;
