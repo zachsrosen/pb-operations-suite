@@ -17,13 +17,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma } from "@/lib/db";
-import { searchWithRetry } from "@/lib/hubspot";
-import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
-import { PIPELINE_IDS } from "@/lib/deals-pipeline";
 import {
   parsePeScraperReport,
   syncPeDocStatuses,
   fetchPeScraperReport,
+  buildPeDealMap,
 } from "@/lib/pe-scraper-sync";
 
 // Extend serverless function timeout — the full sync (342 projects × 14 docs
@@ -31,58 +29,6 @@ import {
 export const maxDuration = 120;
 
 const ALLOWED_ROLES = ["ADMIN", "EXECUTIVE", "ACCOUNTING", "OWNER"];
-
-// ---------------------------------------------------------------------------
-// HubSpot PE deal lookup — builds a name→dealId map
-// ---------------------------------------------------------------------------
-
-async function buildPeDealMap(): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  const pipelineId = PIPELINE_IDS.project;
-  if (!pipelineId) return map;
-
-  let after: string | undefined;
-  do {
-    const searchRequest = {
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: "pipeline",
-              operator: FilterOperatorEnum.Eq,
-              value: pipelineId,
-            },
-            {
-              propertyName: "tags",
-              operator: FilterOperatorEnum.ContainsToken,
-              value: "Participate Energy",
-            },
-          ],
-        },
-      ],
-      properties: ["hs_object_id", "dealname"],
-      sorts: [
-        { propertyName: "dealname", direction: "ASCENDING" },
-      ] as unknown as string[],
-      limit: 100,
-      ...(after ? { after } : {}),
-    } as any;
-
-    const response = await searchWithRetry(searchRequest);
-
-    for (const deal of response.results) {
-      const id = String(deal.properties.hs_object_id);
-      const name = String(deal.properties.dealname || "");
-      if (id && name) {
-        map.set(name.toLowerCase().trim(), id);
-      }
-    }
-
-    after = response.paging?.next?.after;
-  } while (after);
-
-  return map;
-}
 
 // ---------------------------------------------------------------------------
 // POST — Trigger sync
