@@ -900,19 +900,33 @@ export default function PeReportPage() {
     const byStage = new Map<string, number>();
     deals.forEach((d) => { byStage.set(d.dealStageLabel, (byStage.get(d.dealStageLabel) ?? 0) + 1); });
 
-    // Doc review stats
-    let totalDocs = 0, trackedDocs = 0, approvedDocs = 0, rejectedDocs = 0, actionReqDocs = 0, underReviewDocs = 0, notUploadedDocs = 0;
+    // Doc review stats — grouped by milestone stage so "Not Uploaded" is
+    // actionable: it only counts docs for deals that have actually reached
+    // the relevant submission point.
+    const emptyDocStats = () => ({ dealCount: 0, total: 0, tracked: 0, approved: 0, rejected: 0, actionReq: 0, underReview: 0, notUploaded: 0 });
+    const m1Docs = emptyDocStats(); // inspection+ deals → onboarding + IC (14 docs)
+    const m2Docs = emptyDocStats(); // PTO+ deals → onboarding + IC + PC (17 docs)
+    let preM1DealCount = 0;         // pre-construction + construction → not at submission stage
+
     for (const d of deals) {
       const milestone = dealStageToPeMilestone(d.dealStageLabel);
+      if (milestone === "pre-construction" || milestone === "construction") {
+        preM1DealCount++;
+        continue;
+      }
+      // Determine which bucket this deal belongs to and what docs apply
+      const isM2 = milestone === "pto" || milestone === "close-out" || milestone === "complete";
+      const bucket = isM2 ? m2Docs : m1Docs;
       const sections = milestoneDocSections(milestone);
       const summary = docStatusSummary(d.dealId, sections, docMap);
-      totalDocs += summary.total;
-      trackedDocs += summary.total - summary.notReviewed;
-      approvedDocs += summary.approved;
-      rejectedDocs += summary.rejected;
-      actionReqDocs += summary.actionRequired;
-      underReviewDocs += summary.underReview;
-      notUploadedDocs += summary.notUploaded;
+      bucket.dealCount++;
+      bucket.total += summary.total;
+      bucket.tracked += summary.total - summary.notReviewed;
+      bucket.approved += summary.approved;
+      bucket.rejected += summary.rejected;
+      bucket.actionReq += summary.actionRequired;
+      bucket.underReview += summary.underReview;
+      bucket.notUploaded += summary.notUploaded;
     }
 
     return {
@@ -923,7 +937,7 @@ export default function PeReportPage() {
       m1PaidValue, m2PaidValue, m1ApprovedValue, m2ApprovedValue,
       byLocation: [...byLocation.entries()].sort((a, b) => b[1] - a[1]),
       byStage: [...byStage.entries()].sort((a, b) => b[1] - a[1]),
-      docs: { totalDocs, trackedDocs, approvedDocs, rejectedDocs, actionReqDocs, underReviewDocs, notUploadedDocs },
+      m1Docs, m2Docs, preM1DealCount,
     };
   }, [deals, docMap]);
 
@@ -1000,16 +1014,45 @@ export default function PeReportPage() {
         <StatCard label="Ready to Invoice" value={metrics ? fmt(metrics.readyToInvoice) : null} subtitle="Approved, awaiting invoice" color={metrics && metrics.readyToInvoice > 0 ? "orange" : "green"} />
       </div>
 
-      {/* Document Review Stats */}
+      {/* Document Review Stats — by milestone stage */}
       {metrics && (
-        <div className="grid grid-cols-3 md:grid-cols-7 gap-4 mb-8 stagger-grid">
-          <MiniStat label="Total Documents" value={metrics.docs.totalDocs} />
-          <MiniStat label="Tracked" value={`${metrics.docs.trackedDocs} / ${metrics.docs.totalDocs}`} />
-          <MiniStat label="Approved" value={metrics.docs.approvedDocs} />
-          <MiniStat label="Under Review" value={metrics.docs.underReviewDocs} />
-          <MiniStat label="Not Uploaded" value={metrics.docs.notUploadedDocs} />
-          <MiniStat label="Action Required" value={metrics.docs.actionReqDocs} />
-          <MiniStat label="Rejected" value={metrics.docs.rejectedDocs} />
+        <div className="space-y-4 mb-8">
+          {/* M1 docs — deals at inspection stage */}
+          <div className="bg-surface rounded-xl border border-border p-4 shadow-card">
+            <div className="flex items-baseline gap-2 mb-3">
+              <h4 className="text-sm font-semibold text-foreground">M1 Documents</h4>
+              <span className="text-xs text-muted">{metrics.m1Docs.dealCount} deals at inspection · onboarding + IC docs ({metrics.m1Docs.total} total)</span>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <MiniStat label="Approved" value={metrics.m1Docs.approved} />
+              <MiniStat label="Under Review" value={metrics.m1Docs.underReview} />
+              <MiniStat label="Not Uploaded" value={metrics.m1Docs.notUploaded} />
+              <MiniStat label="Action Required" value={metrics.m1Docs.actionReq} />
+              <MiniStat label="Rejected" value={metrics.m1Docs.rejected} />
+              <MiniStat label="No Data" value={metrics.m1Docs.total - metrics.m1Docs.tracked} />
+            </div>
+          </div>
+          {/* M2 docs — deals at PTO or later */}
+          <div className="bg-surface rounded-xl border border-border p-4 shadow-card">
+            <div className="flex items-baseline gap-2 mb-3">
+              <h4 className="text-sm font-semibold text-foreground">M2 Documents</h4>
+              <span className="text-xs text-muted">{metrics.m2Docs.dealCount} deals at PTO+ · all docs ({metrics.m2Docs.total} total)</span>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <MiniStat label="Approved" value={metrics.m2Docs.approved} />
+              <MiniStat label="Under Review" value={metrics.m2Docs.underReview} />
+              <MiniStat label="Not Uploaded" value={metrics.m2Docs.notUploaded} />
+              <MiniStat label="Action Required" value={metrics.m2Docs.actionReq} />
+              <MiniStat label="Rejected" value={metrics.m2Docs.rejected} />
+              <MiniStat label="No Data" value={metrics.m2Docs.total - metrics.m2Docs.tracked} />
+            </div>
+          </div>
+          {/* Pre-M1 note */}
+          {metrics.preM1DealCount > 0 && (
+            <p className="text-xs text-muted px-1">
+              {metrics.preM1DealCount} deals are pre-construction or in construction — not yet at a document submission stage.
+            </p>
+          )}
         </div>
       )}
 

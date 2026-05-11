@@ -427,8 +427,7 @@ export default function PeDealsPage() {
   // Hero-card stats use the FULL filtered PE deal set (paid + approved +
   // unpaid). NOT `allDeals` — that's the leftover bucket after subtracting
   // deals shown in other table sections.
-  const totalEPC = filtered.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
-  const totalRevenue = filtered.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
+  const totalPeExpected = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
   const m1ReadyDeals = filtered.filter((d) => d.peM1Status === "Approved");
@@ -459,18 +458,31 @@ export default function PeDealsPage() {
   const totalPEReceivable = m1ReceivableValue + m2ReceivableValue;
   const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
 
-  // Pending PE Approval = milestones submitted/in-review but not yet Approved or Paid.
-  const PENDING_STATUSES = new Set(["Submitted", "Resubmitted", "Waiting on Information", "Ready to Resubmit", "Rejected"]);
-  const m1PendingCount = filtered.filter((d) => d.peM1Status !== null && PENDING_STATUSES.has(d.peM1Status)).length;
-  const m2PendingCount = filtered.filter((d) => d.peM2Status !== null && PENDING_STATUSES.has(d.peM2Status)).length;
-  const m1PendingValue = filtered
-    .filter((d) => d.peM1Status !== null && PENDING_STATUSES.has(d.peM1Status))
+  // Submitted to PE = milestones genuinely waiting on PE decision.
+  const SUBMITTED_STATUSES = new Set(["Submitted", "Resubmitted", "Waiting on Information"]);
+  const m1SubmittedCount = filtered.filter((d) => d.peM1Status !== null && SUBMITTED_STATUSES.has(d.peM1Status)).length;
+  const m2SubmittedCount = filtered.filter((d) => d.peM2Status !== null && SUBMITTED_STATUSES.has(d.peM2Status)).length;
+  const m1SubmittedValue = filtered
+    .filter((d) => d.peM1Status !== null && SUBMITTED_STATUSES.has(d.peM1Status))
     .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
-  const m2PendingValue = filtered
-    .filter((d) => d.peM2Status !== null && PENDING_STATUSES.has(d.peM2Status))
+  const m2SubmittedValue = filtered
+    .filter((d) => d.peM2Status !== null && SUBMITTED_STATUSES.has(d.peM2Status))
     .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-  const totalPendingValue = m1PendingValue + m2PendingValue;
-  const totalPendingCount = m1PendingCount + m2PendingCount;
+  const totalSubmittedValue = m1SubmittedValue + m2SubmittedValue;
+  const totalSubmittedCount = m1SubmittedCount + m2SubmittedCount;
+
+  // Needs PB Action = milestones rejected or needing resubmission (ball in our court).
+  const ACTION_STATUSES = new Set(["Rejected", "Ready to Resubmit"]);
+  const m1ActionCount = filtered.filter((d) => d.peM1Status !== null && ACTION_STATUSES.has(d.peM1Status)).length;
+  const m2ActionCount = filtered.filter((d) => d.peM2Status !== null && ACTION_STATUSES.has(d.peM2Status)).length;
+  const m1ActionValue = filtered
+    .filter((d) => d.peM1Status !== null && ACTION_STATUSES.has(d.peM1Status))
+    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+  const m2ActionValue = filtered
+    .filter((d) => d.peM2Status !== null && ACTION_STATUSES.has(d.peM2Status))
+    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const totalActionValue = m1ActionValue + m2ActionValue;
+  const totalActionCount = m1ActionCount + m2ActionCount;
 
   // CSV export data
   const exportData = filtered.map((d) => ({
@@ -512,20 +524,20 @@ export default function PeDealsPage() {
       lastUpdated={lastUpdated}
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
-      {/* Hero Stats — Pipeline: Pending → Approved → Paid */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6 stagger-grid">
+      {/* Hero Stats — PE payment pipeline */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <StatCard
           key={`deals-${filtered.length}`}
-          label="All PE Deals"
+          label="PE Deals"
           value={String(filtered.length)}
-          subtitle={`Total EPC ${fmt(totalEPC)}`}
+          subtitle={`${fmt(totalPeExpected)} total PE expected`}
           color="orange"
         />
         <StatCard
-          key={`pending-${totalPendingCount}-${totalPendingValue}`}
-          label="Pending Approval"
-          value={fmt(totalPendingValue)}
-          subtitle={`${totalPendingCount} milestones · ${m1PendingCount} M1 + ${m2PendingCount} M2`}
+          key={`sub-${totalSubmittedCount}-${totalSubmittedValue}`}
+          label="Submitted to PE"
+          value={fmt(totalSubmittedValue)}
+          subtitle={`${totalSubmittedCount} milestones · ${m1SubmittedCount} M1 + ${m2SubmittedCount} M2`}
           color="amber"
         />
         <StatCard
@@ -549,14 +561,20 @@ export default function PeDealsPage() {
           subtitle={`Paid ${fmt(totalPECollected)} · Unpaid ${fmt(totalPEOutstanding)}`}
           color="green"
         />
-        <StatCard
-          key={`rev-${totalRevenue}`}
-          label="Total PB Revenue"
-          value={fmt(totalRevenue)}
-          subtitle="Customer + PE combined"
-          color="green"
-        />
       </div>
+      {/* Needs PB Action alert — rejected or needing resubmission */}
+      {totalActionCount > 0 && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center gap-3">
+          <span className="text-orange-400 text-lg">⚠️</span>
+          <div className="text-sm">
+            <span className="font-semibold text-orange-300">{totalActionCount} milestones need PB action</span>
+            <span className="text-muted ml-2">
+              ({m1ActionCount} M1 + {m2ActionCount} M2 · {fmt(totalActionValue)} at stake)
+              — Rejected or ready to resubmit
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Report link */}
       <div className="mb-4">
