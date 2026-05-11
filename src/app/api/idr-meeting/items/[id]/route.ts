@@ -17,6 +17,7 @@ const EDITABLE_FIELDS = [
   "customerNotes", "customerNotesCreateTask",
   "operationsNotes", "opsRevisionNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
+  "designRevisionNeeded", "designRevisionReason",
   // Adders
   "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
   "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",

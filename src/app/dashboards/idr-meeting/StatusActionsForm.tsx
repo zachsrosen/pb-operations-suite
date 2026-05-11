@@ -29,20 +29,34 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
     [onChange],
   );
 
-  // Determine which status will be set on sync
+  // Determine which layout_status will be set on sync
   const activeStatus = item.needsSurveyInfo
     ? "Pending Ops Changes"
     : item.salesChangeRequested
       ? "Pending Sales Changes"
       : null;
 
+  // Design status is independent of layout_status
+  const designAction = item.designRevisionNeeded
+    ? "IDR Revision Needed"
+    : null;
+
   return (
     <div className="space-y-2">
-      {/* Active status indicator */}
+      {/* Active layout_status indicator */}
       {activeStatus && (
         <div className="rounded border border-orange-500/30 bg-orange-500/10 px-2 py-1">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-500">
-            On sync: {activeStatus}
+            On sync → approval status: {activeStatus}
+          </p>
+        </div>
+      )}
+
+      {/* Active design_status indicator */}
+      {designAction && (
+        <div className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-red-500">
+            On sync → design status: {designAction}
           </p>
         </div>
       )}
@@ -116,6 +130,26 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
               onChange={(val) => handleText("opsChangeNotes", val)}
               readOnly={readOnly}
               placeholder="Ops communication reason (required)..."
+            />
+          )}
+        </div>
+
+        {/* Design Revision Needed */}
+        <div>
+          <div className="flex items-center gap-2">
+            <ToggleSwitch
+              checked={!!item.designRevisionNeeded}
+              onChange={() => handleToggle("designRevisionNeeded")}
+              disabled={readOnly}
+            />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Design Revision Needed</span>
+          </div>
+          {item.designRevisionNeeded && (
+            <CompactTextarea
+              value={item.designRevisionReason ?? ""}
+              onChange={(val) => handleText("designRevisionReason", val)}
+              readOnly={readOnly}
+              placeholder="Revision reason (required)..."
             />
           )}
         </div>
