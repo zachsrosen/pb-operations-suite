@@ -267,6 +267,39 @@ const CATEGORY_PRIORITY: Record<ActionCategory, number> = {
 };
 
 // ---------------------------------------------------------------------------
+// M1/M2 status badge helpers
+// ---------------------------------------------------------------------------
+
+function m1m2Color(status: string | null): string {
+  if (!status) return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+  const s = status.toLowerCase();
+  if (s === "paid") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+  if (s === "approved") return "bg-green-500/20 text-green-400 border-green-500/30";
+  if (s.includes("rejected")) return "bg-red-500/20 text-red-400 border-red-500/30";
+  if (s.includes("ready to resubmit")) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
+  if (s === "submitted" || s === "resubmitted" || s.includes("onboarding submitted") || s.includes("onboarding resubmitted"))
+    return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+  if (s.includes("ready for onboarding")) return "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
+  if (s === "waiting on information") return "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
+  if (s === "ready to submit") return "bg-yellow-500/20 text-yellow-300 border-yellow-500/30";
+  return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+}
+
+function m1m2Short(status: string | null): string {
+  if (!status) return "—";
+  // Shorten long onboarding labels
+  if (status === "Ready for Onboarding") return "Onb. Ready";
+  if (status === "Onboarding Submitted") return "Onb. Submitted";
+  if (status === "Onboarding Rejected") return "Onb. Rejected";
+  if (status === "Onboarding Ready to Resubmit") return "Onb. Resubmit";
+  if (status === "Onboarding Resubmitted") return "Onb. Resubmitted";
+  if (status === "Waiting on Information") return "Waiting Info";
+  if (status === "Ready to Resubmit") return "Resubmit";
+  if (status === "Ready to Submit") return "Ready";
+  return status;
+}
+
+// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
@@ -381,6 +414,14 @@ function DealCard({ summary, docMap, defaultExpanded }: {
             {deal.peProjectId && (
               <span className="text-[10px] text-muted/50">{deal.peProjectId}</span>
             )}
+            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${m1m2Color(deal.peM1Status)}`}
+              title={`M1: ${deal.peM1Status || "Not started"}`}>
+              M1: {m1m2Short(deal.peM1Status)}
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${m1m2Color(deal.peM2Status)}`}
+              title={`M2: ${deal.peM2Status || "Not started"}`}>
+              M2: {m1m2Short(deal.peM2Status)}
+            </span>
             {csvOnly && (
               <span className="text-[10px] text-purple-400/60">CSV only</span>
             )}
