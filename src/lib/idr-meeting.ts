@@ -68,7 +68,7 @@ export const SNAPSHOT_PROPERTIES = [
   "link_to_opensolar", "os_project_link",
   "tags",
   "roof_type",
-  "idr_re_review_needed",
+  "idr_re_review_needed", "idr_revision_complete_date",
   // Read-only notes from sales/design
   "os_notes", "sales_change_order_notes", "sales_change_order_needed",
   "notes_for_design_", "specific_notes_for_design",
@@ -554,7 +554,7 @@ export async function fetchInitialReviewDeals(): Promise<
   const response = await searchWithRetry({
     filterGroups: [
       { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" }] },
-      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "IDR Revision Complete" }, { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" }] },
+      { filters: [...commonFilters, { propertyName: "idr_revision_complete_date", operator: FilterOperatorEnum.HasProperty }, { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" }] },
     ] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
