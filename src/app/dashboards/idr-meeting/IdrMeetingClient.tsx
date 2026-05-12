@@ -111,6 +111,7 @@ export interface IdrItem {
   updatedAt: string;
   badge: "green" | "yellow" | "orange" | "red";
   isReturning: boolean;
+  isReReview: boolean;
   surveyJobUid: string | null;
   notes?: IdrNote[];
 }

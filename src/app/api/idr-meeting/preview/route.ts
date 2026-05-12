@@ -140,6 +140,7 @@ export async function GET() {
       updatedAt: new Date().toISOString(),
       badge,
       isReturning: false,
+      isReReview: snapshot.designStatus === "IDR Revision Complete",
       surveyJobUid: surveyJobByDeal.get(deal.dealId) ?? null,
     };
   });
@@ -224,6 +225,7 @@ export async function GET() {
           updatedAt: esc.updatedAt.toISOString(),
           badge,
           isReturning: false,
+          isReReview: snapshot.designStatus === "IDR Revision Complete",
           surveyJobUid: surveyJobByDeal.get(esc.dealId) ?? null,
         });
       }

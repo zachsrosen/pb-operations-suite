@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      items.push({ ...item, badge, isReturning });
+      items.push({ ...item, badge, isReturning, isReReview: snapshot.designStatus === "IDR Revision Complete" });
     }
   }
 
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
           });
 
           const badge = computeReadinessBadge(snapshot.surveyCompleted, snapshot.plansetDate);
-          items.push({ ...item, badge, isReturning: false });
+          items.push({ ...item, badge, isReturning: false, isReReview: snapshot.designStatus === "IDR Revision Complete" });
         }
       } catch (err) {
         console.error("[idr-meeting] Failed to fetch escalation deal snapshots:", err);

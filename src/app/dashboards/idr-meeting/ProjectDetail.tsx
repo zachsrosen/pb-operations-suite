@@ -143,6 +143,11 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
                   ESCALATION
                 </span>
               )}
+              {item.isReReview && (
+                <span className="rounded-full bg-purple-500/20 border border-purple-500/40 px-2 py-0.5 text-[10px] font-bold text-purple-300 shrink-0">
+                  RE-REVIEW
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
               {item.address && <span className="text-xs text-muted truncate">{item.address}</span>}
