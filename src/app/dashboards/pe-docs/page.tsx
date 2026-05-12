@@ -122,15 +122,6 @@ function milestoneDocSections(m: PeMilestone): ("onboarding" | "ic" | "pc")[] {
   }
 }
 
-const MILESTONE_ORDER: Record<PeMilestone, number> = {
-  "pre-construction": 0,
-  construction: 1,
-  inspection: 2,
-  pto: 3,
-  "close-out": 4,
-  complete: 5,
-};
-
 // ---------------------------------------------------------------------------
 // Doc status helpers
 // ---------------------------------------------------------------------------
@@ -258,9 +249,9 @@ const CATEGORY_DOT: Record<ActionCategory, string> = {
 };
 
 const CATEGORY_PRIORITY: Record<ActionCategory, number> = {
-  "rejected": 0,
-  "action-required": 1,
-  "needs-upload": 2,
+  "needs-upload": 0,
+  "rejected": 1,
+  "action-required": 2,
   "waiting-on-pe": 3,
   "no-data": 4,
   "approved": 5,
@@ -564,14 +555,15 @@ export default function PeDocsPage() {
     });
   }, [summaries, search, locFilter, categoryFilter, milestoneFilter]);
 
-  // Sort: actionable first, then by category priority, then by deal name
+  // Sort: category priority, then by "to do" count (least first), then deal name
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       const catDiff = CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category];
       if (catDiff !== 0) return catDiff;
-      // Within same category, sort by milestone (furthest along first)
-      const mileDiff = MILESTONE_ORDER[b.milestone] - MILESTONE_ORDER[a.milestone];
-      if (mileDiff !== 0) return mileDiff;
+      // Within same category, sort by action count ascending (least to do first)
+      const aTodo = a.rejected + a.actionRequired + a.notUploaded;
+      const bTodo = b.rejected + b.actionRequired + b.notUploaded;
+      if (aTodo !== bTodo) return aTodo - bTodo;
       return a.deal.dealName.localeCompare(b.deal.dealName);
     });
   }, [filtered]);
@@ -585,7 +577,7 @@ export default function PeDocsPage() {
       groups.set(s.category, existing);
     }
     // Return in priority order
-    const order: ActionCategory[] = ["rejected", "action-required", "needs-upload", "waiting-on-pe", "no-data", "approved"];
+    const order: ActionCategory[] = ["needs-upload", "rejected", "action-required", "waiting-on-pe", "no-data", "approved"];
     return order
       .filter((cat) => groups.has(cat))
       .map((cat) => ({ category: cat, items: groups.get(cat)! }));
