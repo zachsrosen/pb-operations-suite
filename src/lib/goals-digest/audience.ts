@@ -27,6 +27,7 @@ const OFFICE_BCC = [
   "derek@photonbrothers.com",    // Derek Pomar — Sr. Director of Ops
   "matt@photonbrothers.com",     // Matt Raichart — CEO
   "tracey.mallory@photonbrothers.com", // Tracey Mallory — Sr. Director of HR
+  "zach@photonbrothers.com",     // Zach — Precon Manager / Tech Ops
 ];
 
 const ROUTING: DigestAudienceMap = {
