@@ -105,7 +105,10 @@ async function main() {
       zuperStatus: c.jobStatus,
       completedAt: c.completedDate ? c.completedDate.toISOString() : null,
       dealId: c.hubspotDealId,
-      projectNumber: extractProjectNumberFromTitle(c.jobTitle),
+      // Fall back to dealId so markSupersededJobs (which skips null
+      // projectNumber) doesn't leak duplicate rows for jobs whose titles
+      // don't contain PROJ-XXXX.
+      projectNumber: extractProjectNumberFromTitle(c.jobTitle) ?? c.hubspotDealId,
       scheduledStart: c.scheduledStart ? c.scheduledStart.toISOString() : null,
       createdAt: null,
       isSuperseded: false,

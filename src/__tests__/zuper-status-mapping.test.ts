@@ -60,6 +60,27 @@ describe("evaluateJobDrift — STATUS", () => {
     const d: DriftEvalDeal = { ...baseDeal, constructionStatus: "Construction Complete" };
     expect(evaluateJobDrift(j, d)).toEqual([]);
   });
+
+  // Inspection re-inspection path: Zuper job stays in "Failed" status after the
+  // team has moved on to a re-inspection (HS shows a post-failure status like
+  // "Ready For Inspection" with a recorded fail date). This is HubSpot-legit-ahead
+  // and STATUS must NOT fire — otherwise re-inspection rework would pollute the
+  // drift list indefinitely. Note: FAIL_DISAGREEMENT does NOT apply here because
+  // the HS status isn't "Passed".
+  it("does NOT fire STATUS for inspection re-inspection (Zuper Failed, HS post-failure with fail date)", () => {
+    const j = job({
+      category: "inspection",
+      zuperStatus: "Failed",
+      completedAt: "2026-05-01T18:00:00Z",
+    });
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      inspectionStatus: "Ready For Inspection",
+      inspectionFailDate: "2026-05-01",
+    };
+    expect(evaluateJobDrift(j, d)).not.toContain("STATUS");
+    expect(evaluateJobDrift(j, d)).not.toContain("FAIL_DISAGREEMENT");
+  });
 });
 
 describe("evaluateJobDrift — FAIL_DISAGREEMENT", () => {

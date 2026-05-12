@@ -135,7 +135,11 @@ export async function GET(request: NextRequest) {
         zuperStatus: c.jobStatus,
         completedAt: c.completedDate ? c.completedDate.toISOString() : null,
         dealId: c.hubspotDealId,
-        projectNumber: extractProjectNumberFromTitle(c.jobTitle),
+        // Fall back to dealId so markSupersededJobs (which skips null
+        // projectNumber) doesn't leak duplicate drift rows for jobs
+        // with non-standard titles. We already filter to hubspotDealId
+        // above, so this fallback is always populated.
+        projectNumber: extractProjectNumberFromTitle(c.jobTitle) ?? c.hubspotDealId,
         scheduledStart: c.scheduledStart ? c.scheduledStart.toISOString() : null,
         createdAt: null, // ZuperJobCache lacks Zuper's createdAt; scheduledStart is sufficient
         isSuperseded: false,
