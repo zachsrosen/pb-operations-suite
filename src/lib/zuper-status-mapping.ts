@@ -303,9 +303,90 @@ export function markSupersededJobs<T extends SupersedableJob>(jobs: T[]): void {
 }
 
 // ============================================================================
-// evaluateJobDrift — STUB (implemented in Task 2.3 after failing tests land)
+// evaluateJobDrift — core decision function
 // ============================================================================
 
-export function evaluateJobDrift(_job: DriftEvalJob, _deal: DriftEvalDeal): DriftType[] {
-  throw new Error("not yet implemented");
+const CONSTRUCTION_SUB_TYPES = new Set([
+  "construction",
+  "solar_install",
+  "battery_install",
+  "ev_install",
+]);
+
+/**
+ * Pure decision function: given a Zuper job and its HubSpot deal, return the
+ * set of drift types that fire. Empty array → fully in sync.
+ *
+ * Single source of truth shared by the reconcile cron and the backfill
+ * script. Tested directly in `src/__tests__/zuper-status-mapping.test.ts`.
+ */
+export function evaluateJobDrift(job: DriftEvalJob, deal: DriftEvalDeal): DriftType[] {
+  const out: DriftType[] = [];
+  const mappingCategory = toMappingCategory(job.category);
+
+  // Pick the right HubSpot status for this category.
+  const hubspotStatus = (() => {
+    switch (mappingCategory) {
+      case "site_survey":
+        return deal.siteSurveyStatus;
+      case "construction":
+        return deal.constructionStatus;
+      case "inspection":
+        return deal.inspectionStatus;
+    }
+  })();
+
+  // FAIL_DISAGREEMENT — inspection only, hard-disagree case.
+  // Evaluated first so STATUS logic can treat it as "always drift".
+  let failDisagreement = false;
+  if (mappingCategory === "inspection") {
+    const z = job.zuperStatus.toLowerCase();
+    const h = (hubspotStatus ?? "").toLowerCase();
+    if ((z === "failed" && h === "passed") || (z === "passed" && h === "failed")) {
+      failDisagreement = true;
+      out.push("FAIL_DISAGREEMENT");
+    }
+  }
+
+  // STATUS — Zuper↔HubSpot status mapping, considering legit HS-ahead cases.
+  // Fail/pass disagreement is never "HS legitimately ahead" — that's actively
+  // contradictory data, so force STATUS to fire in that case.
+  const statusMismatched = isStatusMismatch(job.zuperStatus, hubspotStatus, mappingCategory);
+  const hubspotAhead = checkHubspotAhead(job.zuperStatus, hubspotStatus, {
+    inspectionFailDate: deal.inspectionFailDate,
+  });
+  if (statusMismatched && (failDisagreement || !hubspotAhead)) {
+    out.push("STATUS");
+  }
+
+  // COMPLETION_DATE — construction sub-types only.
+  if (
+    CONSTRUCTION_SUB_TYPES.has(job.category) &&
+    job.completedAt &&
+    deal.constructionCompleteDate
+  ) {
+    if (compareDates(job.completedAt, deal.constructionCompleteDate) === false) {
+      out.push("COMPLETION_DATE");
+    }
+  }
+
+  // INSPECTION_PASS_DATE — inspection Passed only.
+  if (mappingCategory === "inspection" && job.zuperStatus.toLowerCase() === "passed") {
+    if (job.completedAt && deal.inspectionPassDate) {
+      if (compareDates(job.completedAt, deal.inspectionPassDate) === false) {
+        out.push("INSPECTION_PASS_DATE");
+      }
+    }
+  }
+
+  // INSPECTION_FAIL_DATE — inspection Failed only.
+  if (mappingCategory === "inspection" && job.zuperStatus.toLowerCase() === "failed") {
+    if (job.completedAt && deal.inspectionFailDate) {
+      if (compareDates(job.completedAt, deal.inspectionFailDate) === false) {
+        out.push("INSPECTION_FAIL_DATE");
+      }
+    }
+  }
+
+  return out;
 }
