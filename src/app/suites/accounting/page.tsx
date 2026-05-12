@@ -39,6 +39,14 @@ const LINKS: SuitePageCard[] = [
 
   // ── Participate Energy ──
   {
+    href: "/dashboards/pe-docs",
+    title: "PE Document Tracker",
+    description: "Live document checklist — see what needs uploading, what's rejected, and what's approved per deal.",
+    tag: "PE",
+    icon: "📝",
+    section: "Participate Energy",
+  },
+  {
     href: "/dashboards/pe-report",
     title: "PE Program Report",
     description: "Shareable PE program overview — pipeline status, document progress, blockers, and action items.",
