@@ -13,7 +13,12 @@
  * but does not throw or block the other writes.
  */
 import { zohoInventory } from "@/lib/zoho-inventory";
-import { updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
+import {
+  getZuperPartById,
+  updateZuperPart,
+  mergeZuperMetaData,
+} from "@/lib/zuper-catalog";
+import type { ZuperMetaDataEntry } from "@/lib/zuper-catalog";
 
 export interface CrossLinkInput {
   internalProductId?: string | null;
@@ -52,17 +57,35 @@ export async function writeCrossLinkIds(input: CrossLinkInput): Promise<CrossLin
     }
   }
 
-  // Zuper cross-link
+  // Zuper cross-link — write via meta_data merge, not custom_fields.
+  // Zuper's PUT endpoint does NOT translate custom_fields → meta_data the way
+  // the POST (create) endpoint does, so cross-link IDs must be written as
+  // meta_data entries and merged with the existing array (Zuper requires the
+  // FULL array on every PUT; omitted entries are silently dropped).
   if (zuperItemId && otherIdsForZuper) {
     result.attempted.push("zuper");
     try {
-      const customFields = buildZuperProductCustomFields({
-        hubspotProductId,
-        zohoItemId,
-        internalProductId,
-      });
-      if (customFields) {
-        const out = await updateZuperPart(zuperItemId, { custom_fields: customFields });
+      // Build cross-link meta_data entries
+      const crossLinkEntries: ZuperMetaDataEntry[] = [];
+      if (internalProductId) {
+        crossLinkEntries.push({ label: "Internal Product ID", value: internalProductId, type: "SINGLE_LINE" });
+      }
+      if (zohoItemId) {
+        crossLinkEntries.push({ label: "Zoho Item ID", value: zohoItemId, type: "SINGLE_LINE" });
+      }
+      if (hubspotProductId) {
+        crossLinkEntries.push({ label: "HubSpot Product ID", value: hubspotProductId, type: "SINGLE_LINE" });
+      }
+
+      if (crossLinkEntries.length > 0) {
+        // Fetch existing meta_data to preserve spec fields and other entries
+        const existing = await getZuperPartById(zuperItemId);
+        const existingMeta = existing
+          ? (existing as Record<string, unknown>).meta_data
+          : undefined;
+        const merged = mergeZuperMetaData(existingMeta, crossLinkEntries);
+
+        const out = await updateZuperPart(zuperItemId, { meta_data: merged });
         if (out.status !== "updated") {
           result.warnings.push(`Zuper cross-link returned ${out.status}: ${out.message || "unknown"}`);
         }
