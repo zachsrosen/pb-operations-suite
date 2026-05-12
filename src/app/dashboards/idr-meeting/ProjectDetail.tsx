@@ -228,6 +228,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           )}
           {item.openSolarUrl && <QuickLink href={item.openSolarUrl} label="OpenSolar" />}
           {item.driveFolderUrl && <QuickLink href={item.driveFolderUrl} label="Drive" />}
+          <DaQuickLink dealId={item.dealId} />
           {(() => {
             const allLinks: string[] = [
               getInternalDealUrl(item.dealId),
@@ -440,6 +441,45 @@ function QuickLink({ href, label }: { href: string; label: string }) {
     >
       {label}
       <span className="text-muted">&#8599;</span>
+    </a>
+  );
+}
+
+const DA_STATUS_STYLE: Record<string, string> = {
+  sent: "border-blue-500/40 bg-blue-500/10 text-blue-300",
+  viewed: "border-blue-500/40 bg-blue-500/10 text-blue-300",
+  completed: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+  approved: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
+  rejected: "border-red-500/40 bg-red-500/10 text-red-300",
+  declined: "border-red-500/40 bg-red-500/10 text-red-300",
+  draft: "border-yellow-500/40 bg-yellow-500/10 text-yellow-300",
+};
+
+function DaQuickLink({ dealId }: { dealId: string }) {
+  const daQuery = useQuery({
+    queryKey: queryKeys.idrMeeting.pandadocDa(dealId),
+    queryFn: async () => {
+      const res = await fetch(`/api/idr-meeting/pandadoc-da/${dealId}`);
+      if (!res.ok) return null;
+      return (await res.json()) as { da: { id: string; name: string; status: string; url: string } | null };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const da = daQuery.data?.da;
+  if (!da) return null;
+
+  const style = DA_STATUS_STYLE[da.status] ?? "border-t-border bg-surface-2 text-foreground";
+
+  return (
+    <a
+      href={da.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium hover:opacity-80 transition-colors ${style}`}
+    >
+      DA: {da.status}
+      <span className="opacity-60">&#8599;</span>
     </a>
   );
 }

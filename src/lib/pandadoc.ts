@@ -164,6 +164,38 @@ export async function getDocumentDetail(documentId: string): Promise<PandaDocDoc
 }
 
 /**
+ * Find the most recent DA document linked to a HubSpot deal.
+ * Uses PandaDoc metadata filter (set by the native HubSpot integration).
+ */
+export async function findDaForDeal(dealId: string): Promise<{
+  id: string;
+  name: string;
+  status: string;
+  url: string;
+  dateSent: string | null;
+  dateCompleted: string | null;
+} | null> {
+  const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+    searchParams: {
+      template_id: DA_TEMPLATE_ID,
+      "metadata_hubspot.deal_id": dealId,
+      count: 1,
+      order_by: "-date_modified",
+    },
+  });
+  const doc = data.results?.[0];
+  if (!doc) return null;
+  return {
+    id: doc.id,
+    name: doc.name,
+    status: doc.status.replace("document.", ""),
+    url: `https://app.pandadoc.com/a/#/documents/${doc.id}`,
+    dateSent: doc.date_created,
+    dateCompleted: doc.date_completed,
+  };
+}
+
+/**
  * Pull the HubSpot deal id off a PandaDoc document. Tries `metadata.hubspot.deal_id`
  * first (set by the native HubSpot integration), then falls back to scanning
  * `linked_objects` for a deal entity.
