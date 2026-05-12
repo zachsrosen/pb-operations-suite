@@ -196,8 +196,13 @@ export default function PePipelinePage() {
     const totalDays = filtered.reduce((sum, d) => sum + d.daysInStage, 0);
     const avgDays = filtered.length > 0 ? Math.round(totalDays / filtered.length) : 0;
     const stale = filtered.filter((d) => d.daysInStage >= STALE_THRESHOLD).length;
-    const totalRevenue = filtered.reduce((sum, d) => sum + (d.amount ?? 0), 0);
-    return { inConstruction, inInspection, avgDays, stale, totalRevenue };
+    const constructionRevenue = filtered
+      .filter((d) => d.stage === "Construction")
+      .reduce((sum, d) => sum + (d.amount ?? 0), 0);
+    const inspectionRevenue = filtered
+      .filter((d) => d.stage === "Inspection")
+      .reduce((sum, d) => sum + (d.amount ?? 0), 0);
+    return { inConstruction, inInspection, avgDays, stale, constructionRevenue, inspectionRevenue };
   }, [filtered]);
 
   // Sort handler
@@ -229,24 +234,18 @@ export default function PePipelinePage() {
       fullWidth
     >
       {/* Hero Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard
           label="In Construction"
           value={isLoading ? null : stats.inConstruction}
-          subtitle="PE deals"
+          subtitle={isLoading ? "PE deals" : fmtCurrency(stats.constructionRevenue)}
           color="orange"
         />
         <StatCard
           label="In Inspection"
           value={isLoading ? null : stats.inInspection}
-          subtitle="PE deals"
+          subtitle={isLoading ? "PE deals" : fmtCurrency(stats.inspectionRevenue)}
           color="blue"
-        />
-        <StatCard
-          label="Total Revenue"
-          value={isLoading ? null : fmtCurrency(stats.totalRevenue)}
-          subtitle="in pipeline"
-          color="emerald"
         />
         <StatCard
           label="Avg Days in Stage"
