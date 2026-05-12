@@ -624,9 +624,10 @@ export default function PeDocsPage() {
     const actionableDeals = summaries.filter((s) =>
       s.category === "rejected" || s.category === "action-required" || s.category === "needs-upload"
     ).length;
+    const totalDecided = totalApproved + totalRejected + totalActionReq;
     return {
       total, totalDocs, totalApproved, totalRejected, totalActionReq,
-      totalNotUploaded, totalUnderReview, allApprovedDeals, actionableDeals,
+      totalNotUploaded, totalUnderReview, totalDecided, allApprovedDeals, actionableDeals,
     };
   }, [summaries]);
 
@@ -676,8 +677,8 @@ export default function PeDocsPage() {
         />
         <StatCard
           label="Approval Rate"
-          value={isLoading ? null : stats.totalDocs > 0 ? `${Math.round((stats.totalApproved / stats.totalDocs) * 100)}%` : "—"}
-          subtitle={`${stats.totalApproved} of ${stats.totalDocs} docs`}
+          value={isLoading ? null : stats.totalDecided > 0 ? `${Math.round((stats.totalApproved / stats.totalDecided) * 100)}%` : "—"}
+          subtitle={`${stats.totalApproved} of ${stats.totalDecided} decided`}
           color="emerald"
         />
       </div>
