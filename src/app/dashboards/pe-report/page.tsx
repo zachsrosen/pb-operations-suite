@@ -465,20 +465,17 @@ function CustomerPaymentBadge({ deal }: { deal: PeDeal }) {
   return <span className="text-xs text-muted" title={tooltip}>—</span>;
 }
 
-// Inline document status editor for a single document
-function DocStatusSelect({ dealId, doc, review, onUpdate }: {
-  dealId: string;
+function DocStatusDisplay({ doc, review }: {
   doc: DocRequirement;
   review: DocReview | undefined;
-  onUpdate: (dealId: string, docName: string, status: PeDocStatusValue, notes?: string) => void;
 }) {
-  const [editingNotes, setEditingNotes] = useState(false);
-  const [notesDraft, setNotesDraft] = useState(review?.notes ?? "");
   const currentStatus = review?.status ?? null;
+  const statusLabel = currentStatus
+    ? DOC_STATUS_OPTIONS.find((o) => o.value === currentStatus)?.label ?? currentStatus
+    : null;
 
   return (
     <div className="flex items-start gap-3 py-1.5">
-      {/* Status indicator */}
       <span className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${
         currentStatus === "APPROVED" ? "bg-green-500" :
         currentStatus === "REJECTED" ? "bg-red-500" :
@@ -489,7 +486,6 @@ function DocStatusSelect({ dealId, doc, review, onUpdate }: {
       }`} />
 
       <div className="flex-1 min-w-0">
-        {/* Doc name + owner */}
         <div className="flex items-center gap-2">
           <span className={`text-xs ${currentStatus === "APPROVED" ? "text-muted line-through" : "text-foreground"}`}>
             {doc.name}
@@ -497,48 +493,16 @@ function DocStatusSelect({ dealId, doc, review, onUpdate }: {
           <span className="text-[10px] text-muted/50">{doc.owner}</span>
         </div>
 
-        {/* Note from PE doc definition */}
         {doc.note && currentStatus !== "APPROVED" && (
           <div className="text-[10px] text-muted/60 mt-0.5">{doc.note}</div>
         )}
 
-        {/* Review notes */}
-        {review?.notes && !editingNotes && (
-          <div
-            className="text-[10px] text-orange-400/80 mt-0.5 cursor-pointer hover:text-orange-300"
-            onClick={(e) => { e.stopPropagation(); setEditingNotes(true); setNotesDraft(review.notes ?? ""); }}
-          >
+        {review?.notes && (
+          <div className="text-[10px] text-orange-400/80 mt-0.5">
             Note: {review.notes}
           </div>
         )}
 
-        {/* Notes editor */}
-        {editingNotes && (
-          <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
-            <input
-              type="text"
-              value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              placeholder="Add a note (e.g. rejection reason)…"
-              className="text-[10px] bg-surface border border-border rounded px-1.5 py-0.5 text-foreground flex-1 focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  onUpdate(dealId, doc.name, currentStatus || "NOT_UPLOADED", notesDraft || undefined);
-                  setEditingNotes(false);
-                }
-                if (e.key === "Escape") setEditingNotes(false);
-              }}
-            />
-            <button
-              onClick={() => { onUpdate(dealId, doc.name, currentStatus || "NOT_UPLOADED", notesDraft || undefined); setEditingNotes(false); }}
-              className="text-[10px] text-emerald-400 hover:text-emerald-300"
-            >Save</button>
-            <button onClick={() => setEditingNotes(false)} className="text-[10px] text-muted hover:text-foreground">Cancel</button>
-          </div>
-        )}
-
-        {/* Reviewed timestamp */}
         {review && (
           <div className="text-[10px] text-muted/40 mt-0.5">
             Reviewed {new Date(review.reviewedAt).toLocaleDateString()}{review.reviewedBy ? ` by ${review.reviewedBy}` : ""}
@@ -546,44 +510,21 @@ function DocStatusSelect({ dealId, doc, review, onUpdate }: {
         )}
       </div>
 
-      {/* Status dropdown */}
-      <select
-        value={currentStatus ?? ""}
-        onChange={(e) => {
-          e.stopPropagation();
-          if (e.target.value) onUpdate(dealId, doc.name, e.target.value as PeDocStatusValue);
-        }}
-        onClick={(e) => e.stopPropagation()}
-        className={`text-[10px] rounded border px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 cursor-pointer ${
-          currentStatus ? DOC_STATUS_COLORS[currentStatus] : "bg-surface-2 text-muted border-border"
-        }`}
-      >
-        <option value="">— Set status —</option>
-        {DOC_STATUS_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-
-      {/* Add/edit notes button */}
-      {!editingNotes && (
-        <button
-          onClick={(e) => { e.stopPropagation(); setEditingNotes(true); setNotesDraft(review?.notes ?? ""); }}
-          className="text-[10px] text-muted hover:text-foreground mt-0.5 flex-shrink-0"
-          title="Add note"
-        >
-          {review?.notes ? "Edit" : "+Note"}
-        </button>
+      {statusLabel ? (
+        <span className={`text-[10px] rounded border px-1.5 py-0.5 ${DOC_STATUS_COLORS[currentStatus!]}`}>
+          {statusLabel}
+        </span>
+      ) : (
+        <span className="text-[10px] text-muted">—</span>
       )}
     </div>
   );
 }
 
-// Document checklist for an expanded project row — adapts grid to section count
-function ProjectDocChecklist({ dealId, milestone, docMap, onUpdate }: {
+function ProjectDocChecklist({ dealId, milestone, docMap }: {
   dealId: string;
   milestone: PeMilestone;
   docMap: Map<string, DocReview>;
-  onUpdate: (dealId: string, docName: string, status: PeDocStatusValue, notes?: string) => void;
 }) {
   const sections = milestoneDocSections(milestone);
   const sectionLabel: Record<string, string> = {
@@ -619,13 +560,7 @@ function ProjectDocChecklist({ dealId, milestone, docMap, onUpdate }: {
             </div>
             <div className="divide-y divide-border/30">
               {sectionDocs.map(({ doc, review }) => (
-                <DocStatusSelect
-                  key={doc.name}
-                  dealId={dealId}
-                  doc={doc}
-                  review={review}
-                  onUpdate={onUpdate}
-                />
+                <DocStatusDisplay key={doc.name} doc={doc} review={review} />
               ))}
             </div>
           </div>
@@ -661,57 +596,6 @@ export default function PeReportPage() {
     }
     return m;
   }, [docsData]);
-
-  const updateDocMutation = useMutation({
-    mutationFn: async ({ dealId, docName, status, notes }: {
-      dealId: string; docName: string; status: PeDocStatusValue; notes?: string;
-    }) => {
-      const res = await fetch("/api/accounting/pe-docs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, docName, status, notes }),
-      });
-      if (!res.ok) throw new Error("Failed to update");
-      return res.json();
-    },
-    onMutate: async ({ dealId, docName, status, notes }) => {
-      await queryClient.cancelQueries({ queryKey: ["peDocReviews"] });
-      const prev = queryClient.getQueryData<{ docs: DocReview[] }>(["peDocReviews"]);
-
-      queryClient.setQueryData<{ docs: DocReview[] }>(["peDocReviews"], (old) => {
-        if (!old) return { docs: [] };
-        const key = `${dealId}:${docName}`;
-        const existing = old.docs.find((d) => `${d.dealId}:${d.docName}` === key);
-        if (existing) {
-          return {
-            docs: old.docs.map((d) =>
-              `${d.dealId}:${d.docName}` === key
-                ? { ...d, status, notes: notes ?? d.notes, reviewedAt: new Date().toISOString() }
-                : d,
-            ),
-          };
-        }
-        return {
-          docs: [
-            ...old.docs,
-            { id: "temp", dealId, docName, status, notes: notes ?? null, reviewedAt: new Date().toISOString(), reviewedBy: null },
-          ],
-        };
-      });
-
-      return { prev };
-    },
-    onError: (_err, _vars, context) => {
-      if (context?.prev) queryClient.setQueryData(["peDocReviews"], context.prev);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["peDocReviews"] });
-    },
-  });
-
-  const handleDocUpdate = useCallback((dealId: string, docName: string, status: PeDocStatusValue, notes?: string) => {
-    updateDocMutation.mutate({ dealId, docName, status, notes });
-  }, [updateDocMutation]);
 
   // CSV import mutation
   const [csvImportResult, setCsvImportResult] = useState<{
@@ -914,11 +798,11 @@ export default function PeReportPage() {
       actionReq: 0, underReview: 0, notUploaded: 0,
       byStage: new Map(),
     });
-    // Onboarding (4 docs): relevant at inspection+ (part of M1 submission)
+    // Onboarding (4 docs): relevant at PTO+ (inspection complete → ready for M1)
     const onboardingDocs = emptySectionStats();
-    // IC (10 docs): relevant at inspection+ (part of M1 submission)
+    // IC (10 docs): relevant at PTO+ (inspection complete → ready for M1)
     const icDocs = emptySectionStats();
-    // PC (3 docs): relevant at PTO+ (part of M2 submission)
+    // PC (3 docs): relevant at close-out+ (PTO received → ready for M2)
     const pcDocs = emptySectionStats();
     let preM1DealCount = 0;
 
@@ -939,12 +823,14 @@ export default function PeReportPage() {
 
     for (const d of deals) {
       const milestone = dealStageToPeMilestone(d.dealStageLabel);
-      if (milestone === "pre-construction" || milestone === "construction") {
+      if (milestone === "pre-construction" || milestone === "construction" || milestone === "inspection") {
         preM1DealCount++;
         continue;
       }
-      const atM1 = milestone === "inspection" || milestone === "pto" || milestone === "close-out" || milestone === "complete";
-      const atM2 = milestone === "pto" || milestone === "close-out" || milestone === "complete";
+      // M1 = Inspection Complete: deal must be PAST inspection (PTO+)
+      const atM1 = milestone === "pto" || milestone === "close-out" || milestone === "complete";
+      // M2 = Project Complete: deal must be PAST PTO (Close Out+)
+      const atM2 = milestone === "close-out" || milestone === "complete";
       const stage = milestoneLabel(milestone);
       if (atM1) {
         // Count deal once for onboarding and IC sections
@@ -1054,16 +940,16 @@ export default function PeReportPage() {
         <StatCard label="Total PE Deals" value={metrics?.totalDeals ?? null} subtitle="Active in project pipeline" color="emerald" />
         <StatCard label="Total EPC Value" value={metrics ? fmt(metrics.totalEpcValue) : null} subtitle="Across all PE projects" color="blue" />
         <StatCard label="PE Revenue Collected" value={metrics ? fmt(metrics.collected) : null} subtitle={metrics ? `${fmtPct(metrics.collectPct)} of ${fmt(metrics.totalPePayment)}` : undefined} color="green" />
-        <StatCard label="Ready to Invoice" value={metrics ? fmt(metrics.readyToInvoice) : null} subtitle="Approved, awaiting invoice" color={metrics && metrics.readyToInvoice > 0 ? "orange" : "green"} />
+        <StatCard label="Awaiting Payment" value={metrics ? fmt(metrics.readyToInvoice) : null} subtitle="Approved, awaiting payment" color={metrics && metrics.readyToInvoice > 0 ? "orange" : "green"} />
       </div>
 
       {/* Document Review Stats — by section, only deals at relevant milestone */}
       {metrics && (
         <div className="space-y-4 mb-8">
           {[
-            { label: "Onboarding", sub: "4 docs per deal · inspection+ deals", data: metrics.onboardingDocs },
-            { label: "M1 — Inspection Complete (IC)", sub: "10 docs per deal · inspection+ deals", data: metrics.icDocs },
-            { label: "M2 — Project Completion (PC)", sub: "3 docs per deal · PTO+ deals", data: metrics.pcDocs },
+            { label: "Onboarding", sub: "4 docs per deal · PTO+ deals", data: metrics.onboardingDocs },
+            { label: "M1 — Inspection Complete (IC)", sub: "10 docs per deal · PTO+ deals", data: metrics.icDocs },
+            { label: "M2 — Project Completion (PC)", sub: "3 docs per deal · close-out+ deals", data: metrics.pcDocs },
           ].map(({ label, sub, data }) => (
             <div key={label} className="bg-surface rounded-xl border border-border p-4 shadow-card">
               <div className="flex items-baseline gap-2 mb-3">
@@ -1092,7 +978,7 @@ export default function PeReportPage() {
           {/* Pre-M1 note */}
           {metrics.preM1DealCount > 0 && (
             <p className="text-xs text-muted px-1">
-              {metrics.preM1DealCount} deals are pre-construction or in construction — not yet at a document submission stage.
+              {metrics.preM1DealCount} deals are pre-construction, in construction, or at inspection — not yet at a document submission stage.
             </p>
           )}
         </div>
@@ -1287,7 +1173,6 @@ export default function PeReportPage() {
                           dealId={d.dealId}
                           milestone={milestone}
                           docMap={docMap}
-                          onUpdate={handleDocUpdate}
                         />
                       </td>
                     </tr>
