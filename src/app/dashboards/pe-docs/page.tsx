@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -509,6 +509,34 @@ export default function PeDocsPage() {
     staleTime: 60 * 1000,
   });
 
+  const queryClient = useQueryClient();
+  const [emailSyncing, setEmailSyncing] = useState(false);
+  const [emailSyncResult, setEmailSyncResult] = useState<{
+    upserted: number;
+    matched: number;
+    errors: number;
+    gmailError?: string;
+  } | null>(null);
+
+  const handleEmailSync = useCallback(async () => {
+    setEmailSyncing(true);
+    setEmailSyncResult(null);
+    try {
+      const res = await fetch("/api/accounting/pe-docs/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "email" }),
+      });
+      const result = await res.json();
+      setEmailSyncResult(result);
+      queryClient.invalidateQueries({ queryKey: ["peDocReviews"] });
+    } catch (err) {
+      setEmailSyncResult({ upserted: 0, matched: 0, errors: 1, gmailError: String(err) });
+    } finally {
+      setEmailSyncing(false);
+    }
+  }, [queryClient]);
+
   const docMap = useMemo(() => {
     const m = new Map<string, DocReview>();
     for (const d of docsData?.docs ?? []) {
@@ -613,6 +641,24 @@ export default function PeDocsPage() {
 
   return (
     <DashboardShell title="PE Document Tracker" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
+      {/* Email sync controls */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={handleEmailSync}
+          disabled={emailSyncing}
+          className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface transition-colors disabled:opacity-50"
+        >
+          {emailSyncing ? "Syncing..." : "Sync from Email"}
+        </button>
+        {emailSyncResult && (
+          <span className="text-xs text-muted">
+            {emailSyncResult.gmailError
+              ? `Error: ${emailSyncResult.gmailError}`
+              : `${emailSyncResult.upserted} updated, ${emailSyncResult.matched} matched`}
+          </span>
+        )}
+      </div>
+
       {/* Summary stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label="PE Deals" value={isLoading ? null : stats.total} color="emerald" />
