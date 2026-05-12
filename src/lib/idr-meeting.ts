@@ -875,9 +875,18 @@ export async function syncItemToHubSpot(
           taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
         } else if (item.designRevisionNeeded) {
           // Task completed → workflow will set "Draft Complete" async.
-          // Wait for the workflow to fire, then override with "IDR Revision Needed".
-          await new Promise((r) => setTimeout(r, 5000));
-          await pushDealProperties(item.dealId, { design_status: "IDR Revision Needed" });
+          // Fire a detached delayed override: wait 2 minutes for the workflow,
+          // then set design_status to "IDR Revision Needed". Detached so it
+          // doesn't block the sync loop (other items continue immediately).
+          const revDealId = item.dealId;
+          setTimeout(async () => {
+            try {
+              await pushDealProperties(revDealId, { design_status: "IDR Revision Needed" });
+              console.log(`[idr-meeting] Delayed revision status override applied for deal ${revDealId}`);
+            } catch (err) {
+              console.error(`[idr-meeting] Delayed revision status override failed for deal ${revDealId}:`, err);
+            }
+          }, 120_000);
         }
       } catch (err) {
         console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
