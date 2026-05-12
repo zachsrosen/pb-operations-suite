@@ -24,7 +24,7 @@ import { getGoalsPipelineData } from "@/lib/goals-pipeline";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";
 import { GoalsWeeklyDigest } from "@/emails/GoalsWeeklyDigest";
-import { getGoalsDigestAudience } from "@/lib/goals-digest/audience";
+import { getGoalsDigestAudienceMap, type DigestRecipients } from "@/lib/goals-digest/audience";
 import {
   buildPerOfficeDigests,
   extractSnapshotValues,
@@ -157,9 +157,12 @@ export async function GET(request: NextRequest) {
       referenceDate: now,
     });
 
-    // ---- 4. Get audience and send one email per office ----
-    const recipients = await getGoalsDigestAudience();
-    if (recipients.length === 0) {
+    // ---- 4. Get per-digest audience and send ----
+    const audienceMap = getGoalsDigestAudienceMap();
+    const allRecipients = Object.values(audienceMap).flatMap((r: DigestRecipients) => [...r.to, ...r.bcc]);
+    const totalRecipients = new Set(allRecipients).size;
+
+    if (totalRecipients === 0) {
       console.warn("[goals-digest] No recipients — skipping send");
       await prisma.idempotencyKey.update({
         where: { key_scope: { key: weekKey, scope: SCOPE } },
@@ -169,12 +172,19 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(
-      `[goals-digest] Sending ${officeDigests.length} office emails to ${recipients.length} recipients...`,
+      `[goals-digest] Sending ${officeDigests.length} office emails to ${totalRecipients} unique recipients...`,
     );
 
-    const sendResults: Array<{ office: string; success: boolean; error?: string }> = [];
+    const sendResults: Array<{ office: string; success: boolean; recipients: number; error?: string }> = [];
 
     for (const digest of officeDigests) {
+      const audience = audienceMap[digest.slug];
+      if (!audience || audience.to.length === 0) {
+        console.log(`[goals-digest] Skipping ${digest.label} — no recipients for slug "${digest.slug}"`);
+        sendResults.push({ office: digest.label, success: true, recipients: 0 });
+        continue;
+      }
+
       try {
         const html = await render(GoalsWeeklyDigest(digest.props));
         const text = await render(GoalsWeeklyDigest(digest.props), {
@@ -182,7 +192,8 @@ export async function GET(request: NextRequest) {
         });
 
         const result = await sendEmailMessage({
-          to: [...recipients],
+          to: [...audience.to],
+          bcc: audience.bcc.length > 0 ? [...audience.bcc] : undefined,
           subject: `${digest.label} Goals — Week of ${fmtWeekLabel(now)}`,
           html,
           text,
@@ -193,6 +204,7 @@ export async function GET(request: NextRequest) {
         sendResults.push({
           office: digest.label,
           success: result.success,
+          recipients: audience.to.length + audience.bcc.length,
           error: result.error,
         });
 
@@ -201,11 +213,11 @@ export async function GET(request: NextRequest) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "unknown error";
         console.error(`[goals-digest] Failed to send ${digest.label}:`, err);
-        sendResults.push({ office: digest.label, success: false, error: msg });
+        sendResults.push({ office: digest.label, success: false, recipients: audience.to.length, error: msg });
       }
     }
 
-    const sentCount = sendResults.filter((r) => r.success).length;
+    const sentCount = sendResults.filter((r) => r.success && r.recipients > 0).length;
     console.log(
       `[goals-digest] Sent ${sentCount}/${officeDigests.length} office emails`,
     );
@@ -232,6 +244,7 @@ export async function GET(request: NextRequest) {
       sales: perLocationData.reduce((s, d) => s + d.goals.sales.current, 0),
       surveys: perLocationData.reduce((s, d) => s + d.goals.surveys.current, 0),
       da: perLocationData.reduce((s, d) => s + d.goals.da.current, 0),
+      permits: perLocationData.reduce((s, d) => s + d.goals.permits.current, 0),
       cc: perLocationData.reduce((s, d) => s + d.goals.cc.current, 0),
       inspections: perLocationData.reduce(
         (s, d) => s + d.goals.inspections.current,
@@ -273,7 +286,7 @@ export async function GET(request: NextRequest) {
           sent: true,
           officesSent: sentCount,
           officesTotal: officeDigests.length,
-          recipientsCount: recipients.length,
+          recipientsCount: totalRecipients,
           locationsCount: perLocationData.length,
           results: sendResults,
         },
@@ -285,7 +298,7 @@ export async function GET(request: NextRequest) {
       weekKey,
       officesSent: sentCount,
       officesTotal: officeDigests.length,
-      recipientsCount: recipients.length,
+      recipientsCount: totalRecipients,
       locationsCount: perLocationData.length,
       results: sendResults,
     });

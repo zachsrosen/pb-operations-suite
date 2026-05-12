@@ -1,51 +1,75 @@
 /**
- * Goals Weekly Digest audience list.
+ * Goals Weekly Digest audience routing.
  *
- * Recipients: leadership (ADMIN, OWNER/EXECUTIVE) and ops directors
- * (OPS_MGR, PROJECT_MANAGER).
- *
- * Unlike PM-tracker audience which is a static allowlist, this pulls from
- * the User table by role so new hires automatically receive the digest.
+ * Static routing map — each office digest goes to its designated recipients.
+ * The "All Locations" executive digest goes to the ops leadership group.
+ * Derek, Matt, and Tracey are BCC'd on all 4 per-office digests.
  */
 
-import { prisma } from "@/lib/db";
-import type { UserRole } from "@/generated/prisma";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-/** Roles that receive the weekly goals digest */
-const DIGEST_ROLES: UserRole[] = [
-  "ADMIN",
-  "EXECUTIVE",
-  "OWNER",
-  "OPERATIONS_MANAGER",
-  "PROJECT_MANAGER",
+export interface DigestRecipients {
+  to: string[];
+  bcc: string[];
+}
+
+/** Map from digest slug to recipients */
+export type DigestAudienceMap = Record<string, DigestRecipients>;
+
+// ---------------------------------------------------------------------------
+// Static routing
+// ---------------------------------------------------------------------------
+
+/** BCC'd on every per-office digest */
+const OFFICE_BCC = [
+  "derek@photonbrothers.com",    // Derek Pomar — Sr. Director of Ops
+  "matt@photonbrothers.com",     // Matt Raichart — CEO
+  "tracey.mallory@photonbrothers.com", // Tracey Mallory — Sr. Director of HR
 ];
 
-/**
- * Fetch unique email addresses for all users with digest-eligible roles.
- * Falls back to a hardcoded list if DB is unreachable.
- */
-export async function getGoalsDigestAudience(): Promise<string[]> {
-  try {
-    const users = await prisma.user.findMany({
-      where: {
-        roles: { hasSome: DIGEST_ROLES },
-      },
-      select: { email: true },
-    });
+const ROUTING: DigestAudienceMap = {
+  westminster: {
+    to: [
+      "joe@photonbrothers.com",    // Joe Lynch — Regional Director
+      "nathan@photonbrothers.com", // Nathan Kirkegaard — covering for Joe
+    ],
+    bcc: OFFICE_BCC,
+  },
+  centennial: {
+    to: [
+      "drew@photonbrothers.com",   // Drew Perry — Field Supervisor
+      "alan@photonbrothers.com",   // Alan Lanka — Electrical Supervisor
+    ],
+    bcc: OFFICE_BCC,
+  },
+  "colorado-springs": {
+    to: [
+      "rolando@photonbrothers.com", // Rolando Valle — Regional Director
+      "lenny@photonbrothers.com",   // Lenny Uematsu — Field Supervisor
+    ],
+    bcc: OFFICE_BCC,
+  },
+  california: {
+    to: [
+      "kat@photonbrothers.com",    // Katlyyn Arnoldi — Regional Implementation Mgr
+      "nick@photonbrothers.com",   // Nick Scarpellino — Regional Director
+    ],
+    bcc: OFFICE_BCC,
+  },
+  "all-locations": {
+    to: [
+      "leadership@photonbrothers.com", // Ops Leadership group
+    ],
+    bcc: [],
+  },
+};
 
-    const emails = [
-      ...new Set(
-        users
-          .map((u) => u.email?.toLowerCase().trim())
-          .filter((e): e is string => !!e),
-      ),
-    ];
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
-    if (emails.length > 0) return emails;
-  } catch (err) {
-    console.error("[goals-digest] Failed to fetch audience from DB:", err);
-  }
-
-  // Fallback: at minimum always send to the owner
-  return ["zach@photonbrothers.com"];
+export function getGoalsDigestAudienceMap(): DigestAudienceMap {
+  return ROUTING;
 }

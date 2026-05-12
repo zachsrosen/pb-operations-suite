@@ -14,6 +14,7 @@ import { sumGoalRows } from "@/lib/goals-pipeline-aggregate";
 import type {
   GoalLineItem,
   GoalsWeeklyDigestProps,
+  OfficeBreakdown,
 } from "@/emails/GoalsWeeklyDigest";
 
 // ---------------------------------------------------------------------------
@@ -27,11 +28,12 @@ interface GoalDef {
 }
 
 const GOAL_DEFS: GoalDef[] = [
-  { key: "sales",       label: "Sales",                    format: "currency" },
-  { key: "surveys",     label: "Site Surveys",             format: "currency" },
+  { key: "sales",       label: "Sales Closed",             format: "currency" },
+  { key: "surveys",     label: "Surveys Completed",        format: "currency" },
   { key: "da",          label: "Design Approvals",         format: "currency" },
+  { key: "permits",     label: "Permits Issued",           format: "currency" },
   { key: "cc",          label: "Construction Completions", format: "currency" },
-  { key: "inspections", label: "Inspections",              format: "currency" },
+  { key: "inspections", label: "Inspections Passed",       format: "currency" },
   { key: "pto",         label: "PTO Granted",              format: "currency" },
   { key: "reviews",     label: "5-Star Reviews",           format: "count"    },
 ];
@@ -61,6 +63,7 @@ export interface GoalsSnapshotValues {
   sales: number;
   surveys: number;
   da: number;
+  permits: number;
   cc: number;
   inspections: number;
   pto: number;
@@ -74,6 +77,7 @@ export function extractSnapshotValues(
     sales: goals.sales.current,
     surveys: goals.surveys.current,
     da: goals.da.current,
+    permits: goals.permits.current,
     cc: goals.cc.current,
     inspections: goals.inspections.current,
     pto: goals.pto.current,
@@ -188,6 +192,7 @@ export function buildPerOfficeDigests(opts: {
         sales: matchingPriors.reduce((s, p) => s + p.sales, 0),
         surveys: matchingPriors.reduce((s, p) => s + p.surveys, 0),
         da: matchingPriors.reduce((s, p) => s + p.da, 0),
+        permits: matchingPriors.reduce((s, p) => s + p.permits, 0),
         cc: matchingPriors.reduce((s, p) => s + p.cc, 0),
         inspections: matchingPriors.reduce((s, p) => s + p.inspections, 0),
         pto: matchingPriors.reduce((s, p) => s + p.pto, 0),
@@ -218,6 +223,30 @@ export function buildPerOfficeDigests(opts: {
       },
     });
   }
+
+  // ---- Executive "All Locations" digest ----
+  // Uses company-wide rollup as the hero section with per-office breakdowns
+  const officeBreakdowns: OfficeBreakdown[] = results.map((r) => ({
+    officeName: r.label,
+    goals: r.props.officeGoals,
+  }));
+
+  results.push({
+    slug: "all-locations",
+    label: "All Locations",
+    props: {
+      weekLabel,
+      dayOfMonth,
+      daysInMonth,
+      monthName: MONTH_NAMES[month] || "Unknown",
+      year,
+      officeName: "All Locations",
+      officeGoals: companyGoals,
+      companyGoals: [], // empty — hide the company-wide context section
+      officeBreakdowns,
+      dashboardUrl: `${baseUrl}/dashboards/office-performance`,
+    },
+  });
 
   return results;
 }

@@ -251,6 +251,11 @@ export async function getGoalsPipelineData(
   );
   await sleep(120);
 
+  const permitsResult = await queryMonthlyDealRevenue(
+    "permit_completion_date", location, monthStart, monthEnd
+  );
+  await sleep(120);
+
   const ccResult = await queryMonthlyDealRevenue(
     "construction_complete_date", location, monthStart, monthEnd
   );
@@ -318,6 +323,7 @@ export async function getGoalsPipelineData(
     sales: buildGoalRow(salesResult.revenue, getTarget("sales_revenue"), getStretchTarget("sales_revenue"), dayOfMonth, daysInMonth),
     surveys: buildGoalRow(surveyResult.revenue, getTarget("survey_revenue"), getStretchTarget("survey_revenue"), dayOfMonth, daysInMonth),
     da: buildGoalRow(daResult.revenue, getTarget("da_revenue"), getStretchTarget("da_revenue"), dayOfMonth, daysInMonth),
+    permits: buildGoalRow(permitsResult.revenue, getTarget("permits_revenue"), getStretchTarget("permits_revenue"), dayOfMonth, daysInMonth),
     cc: buildGoalRow(ccResult.revenue, getTarget("cc_revenue"), getStretchTarget("cc_revenue"), dayOfMonth, daysInMonth),
     inspections: buildGoalRow(inspectionResult.revenue, getTarget("inspection_revenue"), getStretchTarget("inspection_revenue"), dayOfMonth, daysInMonth),
     pto: buildGoalRow(ptoResult.revenue, getTarget("pto_revenue"), getStretchTarget("pto_revenue"), dayOfMonth, daysInMonth),

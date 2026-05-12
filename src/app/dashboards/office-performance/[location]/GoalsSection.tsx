@@ -35,6 +35,7 @@ const DEPARTMENTS: DepartmentConfig[] = [
   { key: "sales",       label: "SALES",                    labelColor: "#f97316", format: "currency" },
   { key: "surveys",     label: "SITE SURVEYS",             labelColor: "#3b82f6", format: "currency" },
   { key: "da",          label: "DESIGN APPROVALS",         labelColor: "#8b5cf6", format: "currency" },
+  { key: "permits",     label: "PERMITS ISSUED",           labelColor: "#ec4899", format: "currency" },
   { key: "cc",          label: "CONSTRUCTION COMPLETIONS", labelColor: "#22c55e", format: "currency" },
   { key: "inspections", label: "INSPECTIONS",              labelColor: "#06b6d4", format: "currency" },
   { key: "pto",         label: "PTO GRANTED",              labelColor: "#10b981", format: "currency" },
