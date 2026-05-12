@@ -26,7 +26,7 @@ import { prisma } from "@/lib/db";
 // ---------------------------------------------------------------------------
 
 const PE_NOTIFICATION_SENDER =
-  process.env.PE_NOTIFICATION_SENDER ?? "noreply@participate.energy";
+  process.env.PE_NOTIFICATION_SENDER ?? "ict@participate.energy";
 
 const PE_TPO_MAILBOX =
   process.env.PE_TPO_MAILBOX ?? "tpo@photonbrothers.com";

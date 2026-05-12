@@ -22,7 +22,7 @@ function makeMsg(overrides: Partial<SharedInboxMessage> = {}): SharedInboxMessag
     id: "msg-001",
     threadId: "thread-001",
     subject: "David Rose - Photos",
-    from: "noreply@participate.energy",
+    from: "ict@participate.energy",
     date: "2026-05-10T14:30:00.000Z",
     plainTextBody: [
       "Hi Photon Brothers Inc,",
