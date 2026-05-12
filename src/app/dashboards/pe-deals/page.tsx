@@ -12,7 +12,26 @@ import { queryKeys } from "@/lib/query-keys";
 // Types (mirrors API response)
 // ---------------------------------------------------------------------------
 
-const M1M2_OPTIONS = [
+// M1 has an onboarding phase before submission; M2 does not.
+// Sourced from HubSpot property definitions for pe_m1_status / pe_m2_status.
+const M1_OPTIONS = [
+  "",
+  "Ready for Onboarding",
+  "Onboarding Submitted",
+  "Onboarding Rejected",
+  "Onboarding Ready to Resubmit",
+  "Onboarding Resubmitted",
+  "Ready to Submit",
+  "Waiting on Information",
+  "Submitted",
+  "Rejected",
+  "Ready to Resubmit",
+  "Resubmitted",
+  "Approved",
+  "Paid",
+] as const;
+
+const M2_OPTIONS = [
   "",
   "Ready to Submit",
   "Waiting on Information",
@@ -136,10 +155,12 @@ function StatusDropdown({
   value,
   onChange,
   saving,
+  options,
 }: {
   value: string | null;
   onChange: (val: string) => void;
   saving: boolean;
+  options: readonly string[];
 }) {
   return (
     <select
@@ -149,7 +170,7 @@ function StatusDropdown({
       title={value || ""}
       className={`text-xs rounded px-1 py-0.5 border border-border bg-surface-2 text-foreground cursor-pointer hover:bg-surface-elevated transition-colors max-w-[80px] truncate ${saving ? "opacity-50" : ""}`}
     >
-      {M1M2_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <option key={opt} value={opt}>
           {opt || "—"}
         </option>
@@ -284,6 +305,7 @@ function DealSection({
                       value={deal.peM1Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
                       saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
+                      options={M1_OPTIONS}
                     />
                   </td>
                   <td className="px-1.5 py-1.5 whitespace-nowrap">
@@ -291,6 +313,7 @@ function DealSection({
                       value={deal.peM2Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
                       saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
+                      options={M2_OPTIONS}
                     />
                   </td>
                 </tr>
@@ -561,7 +584,7 @@ export default function PeDealsPage() {
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats — PE payment pipeline */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <StatCard
           key={`deals-${filtered.length}`}
           label="PE Deals"
@@ -573,14 +596,14 @@ export default function PeDealsPage() {
           key={`awaiting-${totalAwaitingCount}-${totalAwaitingValue}`}
           label="Awaiting PE Approval"
           value={fmt(totalAwaitingValue)}
-          subtitle={`${totalAwaitingCount} milestones · ${awaitingM1Count} M1 + ${awaitingM2Count} M2`}
+          subtitle={`${awaitingM1Count} M1 (${fmt(awaitingM1Value)}) + ${awaitingM2Count} M2 (${fmt(awaitingM2Value)})`}
           color="amber"
         />
         <StatCard
           key={`ready-${readyToInvoiceCount}-${readyToInvoiceValue}`}
           label="Approved (Unpaid)"
           value={fmt(readyToInvoiceValue)}
-          subtitle={`${readyToInvoiceCount} milestones · ${m1ReadyDeals.length} M1 + ${m2ReadyDeals.length} M2`}
+          subtitle={`${m1ReadyDeals.length} M1 (${fmt(m1ReadyDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0))}) + ${m2ReadyDeals.length} M2 (${fmt(m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0))})`}
           color="blue"
         />
         <StatCard
@@ -598,6 +621,65 @@ export default function PeDealsPage() {
           color="green"
         />
       </div>
+
+      {/* Reconciliation bar — shows how Total PE Expected breaks down */}
+      {!isLoading && totalPeExpected > 0 && (() => {
+        const preMilestone = totalPeExpected - totalAwaitingValue - readyToInvoiceValue - totalPECollected;
+        const pcts = {
+          preMilestone: (preMilestone / totalPeExpected) * 100,
+          awaiting: (totalAwaitingValue / totalPeExpected) * 100,
+          approved: (readyToInvoiceValue / totalPeExpected) * 100,
+          collected: (totalPECollected / totalPeExpected) * 100,
+        };
+        return (
+          <div className="mb-6 bg-surface rounded-lg border border-border p-3 shadow-card">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-foreground">PE Payment Pipeline</span>
+              <span className="text-xs text-muted">{fmt(totalPeExpected)} total expected</span>
+            </div>
+            <div className="flex h-3 rounded-full overflow-hidden bg-surface-2 mb-2">
+              {pcts.collected > 0 && (
+                <div className="bg-green-500 transition-all" style={{ width: `${pcts.collected}%` }}
+                  title={`Collected: ${fmt(totalPECollected)}`} />
+              )}
+              {pcts.approved > 0 && (
+                <div className="bg-blue-500 transition-all" style={{ width: `${pcts.approved}%` }}
+                  title={`Approved (Unpaid): ${fmt(readyToInvoiceValue)}`} />
+              )}
+              {pcts.awaiting > 0 && (
+                <div className="bg-amber-500 transition-all" style={{ width: `${pcts.awaiting}%` }}
+                  title={`Awaiting Approval: ${fmt(totalAwaitingValue)}`} />
+              )}
+              {pcts.preMilestone > 0 && (
+                <div className="bg-zinc-600 transition-all" style={{ width: `${pcts.preMilestone}%` }}
+                  title={`Pre-Milestone: ${fmt(preMilestone)}`} />
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-muted">Collected</span>
+                <span className="text-foreground font-medium">{fmt(totalPECollected)}</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                <span className="text-muted">Approved</span>
+                <span className="text-foreground font-medium">{fmt(readyToInvoiceValue)}</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span className="text-muted">Awaiting Approval</span>
+                <span className="text-foreground font-medium">{fmt(totalAwaitingValue)}</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-zinc-600" />
+                <span className="text-muted">Pre-Milestone</span>
+                <span className="text-foreground font-medium">{fmt(preMilestone)}</span>
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Report link */}
       <div className="mb-4">
