@@ -77,8 +77,6 @@ const PE_DOCUMENTS: DocRequirement[] = [
   { name: "Certificate of Acceptance", section: "ic", owner: "PB" },
   { name: "Attestation of Customer Payment", section: "ic", owner: "PB" },
   { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB" },
-  { name: "Shading Analysis", section: "ic", owner: "PB" },
-  { name: "Issued Permit", section: "ic", owner: "PB" },
   { name: "Signed Interconnection Agreement", section: "pc", owner: "PB" },
   { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB" },
   { name: "Permission to Operate (PTO)", section: "pc", owner: "PB" },
@@ -872,6 +870,28 @@ export default function PeReportPage() {
 
   const hasFilters = search || locFilter.length > 0 || stageFilter.length > 0 || m1Filter.length > 0 || m2Filter.length > 0 || docStatusFilter.length > 0 || custPaidFilter.length > 0;
 
+  // Compute summary totals for the currently-filtered deals
+  const filteredTotals = useMemo(() => {
+    if (!filtered.length) return null;
+    const peTotal = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+    const m1Paid = filtered.filter((d) => d.peM1Status === "Paid").length;
+    const m1Approved = filtered.filter((d) => d.peM1Status === "Approved").length;
+    const m1PaidVal = filtered.filter((d) => d.peM1Status === "Paid").reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+    const m1ApprovedVal = filtered.filter((d) => d.peM1Status === "Approved").reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+    const m2Paid = filtered.filter((d) => d.peM2Status === "Paid").length;
+    const m2Approved = filtered.filter((d) => d.peM2Status === "Approved").length;
+    const m2PaidVal = filtered.filter((d) => d.peM2Status === "Paid").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+    const m2ApprovedVal = filtered.filter((d) => d.peM2Status === "Approved").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+    const collected = m1PaidVal + m2PaidVal;
+    const custFullyPaid = filtered.filter((d) => d.paidInFull).length;
+    return {
+      count: filtered.length, peTotal,
+      m1Paid, m1Approved, m1PaidVal, m1ApprovedVal,
+      m2Paid, m2Approved, m2PaidVal, m2ApprovedVal,
+      collected, custFullyPaid,
+    };
+  }, [filtered]);
+
   return (
     <DashboardShell title="PE Program Report" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
       {/* Report Header */}
@@ -1088,6 +1108,28 @@ export default function PeReportPage() {
             </button>
           )}
         </div>
+
+        {/* Summary totals for filtered set */}
+        {filteredTotals && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted mb-3 px-1 py-2 border-b border-border/50">
+            <span className="font-medium text-foreground">{filteredTotals.count} projects</span>
+            <span>PE Total: <span className="text-foreground font-medium tabular-nums">{fmt(filteredTotals.peTotal)}</span></span>
+            <span>Collected: <span className="text-green-400 font-medium tabular-nums">{fmt(filteredTotals.collected)}</span></span>
+            <span className="border-l border-border/50 pl-6">
+              M1: <span className="text-green-400">{filteredTotals.m1Paid} paid</span>
+              {filteredTotals.m1PaidVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m1PaidVal)})</span>}
+              {" · "}<span className="text-emerald-400">{filteredTotals.m1Approved} approved</span>
+              {filteredTotals.m1ApprovedVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m1ApprovedVal)})</span>}
+            </span>
+            <span className="border-l border-border/50 pl-6">
+              M2: <span className="text-green-400">{filteredTotals.m2Paid} paid</span>
+              {filteredTotals.m2PaidVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m2PaidVal)})</span>}
+              {" · "}<span className="text-emerald-400">{filteredTotals.m2Approved} approved</span>
+              {filteredTotals.m2ApprovedVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m2ApprovedVal)})</span>}
+            </span>
+            <span>Cust. Paid: <span className="text-foreground">{filteredTotals.custFullyPaid}</span></span>
+          </div>
+        )}
 
         {/* Project table */}
         <div className="overflow-x-auto">

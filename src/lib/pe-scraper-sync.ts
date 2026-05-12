@@ -66,11 +66,152 @@ const SCRAPER_STATUS_MAP: Record<string, PeDocStatus> = {
   "pending approval": PeDocStatus.UNDER_REVIEW,
   "response needed": PeDocStatus.ACTION_REQUIRED,
   "not submitted": PeDocStatus.NOT_UPLOADED,
+  // Compact-format full-text labels (from portal scrape)
+  "action required": PeDocStatus.ACTION_REQUIRED,
+  "under review": PeDocStatus.UNDER_REVIEW,
+  "uploaded": PeDocStatus.UPLOADED,
+  "not yet expected": PeDocStatus.NOT_UPLOADED,
+  "draft": PeDocStatus.UPLOADED,
+  "not found": PeDocStatus.NOT_UPLOADED,
+  "unknown": PeDocStatus.NOT_UPLOADED,
 };
 
 export function mapScraperStatus(status: string): PeDocStatus {
   const normalized = status.trim().toLowerCase();
   return SCRAPER_STATUS_MAP[normalized] ?? PeDocStatus.NOT_UPLOADED;
+}
+
+// ---------------------------------------------------------------------------
+// Compact format status mapping (portal scrape codes → PeDocStatus)
+// ---------------------------------------------------------------------------
+
+const COMPACT_STATUS_MAP: Record<string, PeDocStatus> = {
+  A: PeDocStatus.APPROVED,
+  R: PeDocStatus.ACTION_REQUIRED,
+  U: PeDocStatus.UNDER_REVIEW,
+  N: PeDocStatus.NOT_UPLOADED,   // NOT YET EXPECTED → NOT_UPLOADED
+  X: PeDocStatus.UPLOADED,
+  D: PeDocStatus.UPLOADED,       // DRAFT → UPLOADED
+  F: PeDocStatus.NOT_UPLOADED,   // NOT FOUND → NOT_UPLOADED
+  K: PeDocStatus.NOT_UPLOADED,   // UNKNOWN → NOT_UPLOADED
+};
+
+const COMPACT_STATUS_LABELS: Record<string, string> = {
+  A: "APPROVED",
+  R: "ACTION REQUIRED",
+  U: "UNDER REVIEW",
+  N: "NOT YET EXPECTED",
+  X: "UPLOADED",
+  D: "DRAFT",
+  F: "NOT FOUND",
+  K: "UNKNOWN",
+};
+
+// ---------------------------------------------------------------------------
+// Compact format parser
+//
+// Reads the compact encoding from the PE portal manual scrape:
+//   projectId|customerName|milestone|docStatusCodes
+//
+// docStatusCodes is a 15-char string (one char per document in order).
+// Milestone codes: OB=Project Onboarded, IC=Inspection Complete, PC=Project Complete
+// ---------------------------------------------------------------------------
+
+const COMPACT_DOC_NAMES = [
+  "Customer Agreement (PPA/ESA)",
+  "Installation Order",
+  "State Disclosures",
+  "Utility Bill",
+  "Signed Proposal",
+  "Design Plan",
+  "Photos per Policy",
+  "Signed Final Permit",
+  "Access to Monitoring",
+  "Certificate of Acceptance",
+  "Attestation of Customer Payment",
+  "Conditional Progress Lien Waiver",
+  "Signed Interconnection Agreement",
+  "Conditional Waiver — Final Payment",
+  "Permission to Operate (PTO)",
+];
+
+const COMPACT_MILESTONE_MAP: Record<string, string> = {
+  OB: "Project Onboarded",
+  IC: "Inspection Complete",
+  PC: "Project Complete",
+};
+
+export interface CompactProject {
+  peProjectId: string;
+  customerName: string;
+  milestone: string;
+  documents: ParsedDocument[];
+}
+
+/**
+ * Parse the compact-format PE portal scrape.
+ * Returns ParsedProject[] compatible with the existing sync pipeline.
+ */
+export function parseCompactPeScrape(compactText: string): {
+  projects: ParsedProject[];
+  parseErrors: string[];
+} {
+  const projects: ParsedProject[] = [];
+  const parseErrors: string[] = [];
+
+  const lines = compactText.split("\n").filter((l) => l.trim());
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    const parts = line.split("|");
+    if (parts.length !== 4) {
+      parseErrors.push(`Line ${i + 1}: expected 4 pipe-delimited fields, got ${parts.length}`);
+      continue;
+    }
+
+    const [peProjectId, customerName, milestoneCode, docCodes] = parts;
+
+    if (docCodes.length !== 15) {
+      parseErrors.push(`Line ${i + 1} (${peProjectId}): expected 15 status codes, got ${docCodes.length}`);
+      continue;
+    }
+
+    const milestone = COMPACT_MILESTONE_MAP[milestoneCode] || milestoneCode;
+
+    // Convert to ParsedDocument[] for compatibility with existing sync pipeline
+    const documents: ParsedDocument[] = [];
+    for (let j = 0; j < 15; j++) {
+      const code = docCodes[j] || "K";
+      documents.push({
+        name: COMPACT_DOC_NAMES[j],
+        status: COMPACT_STATUS_LABELS[code] || "UNKNOWN",
+        dateSubmitted: null,
+        partnerComments: null,
+        dateResponded: null,
+        approverNotes: null,
+      });
+    }
+
+    // Map to ParsedProject shape — use peProjectId as projNumber for matching
+    projects.push({
+      customerName,
+      projNumber: peProjectId,  // e.g. "CO2602-DIER1" — used for deal matching
+      stage: milestone,
+      m1Status: null,
+      m2Status: null,
+      epcCost: null,
+      documents,
+    });
+  }
+
+  return { projects, parseErrors };
+}
+
+/**
+ * Map compact status code to PeDocStatus enum (for direct DB writes).
+ */
+export function mapCompactStatus(code: string): PeDocStatus {
+  return COMPACT_STATUS_MAP[code] ?? PeDocStatus.NOT_UPLOADED;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,8 +235,6 @@ const DOC_NAME_MAP: Record<string, string> = {
   "certificate of acceptance": "Certificate of Acceptance",
   "attestation of customer payment": "Attestation of Customer Payment",
   "conditional progress lien waiver": "Conditional Progress Lien Waiver",
-  "shading analysis": "Shading Analysis",
-  "issued permit": "Issued Permit",
   "signed interconnection agreement": "Signed Interconnection Agreement",
   "conditional waiver — final payment": "Conditional Waiver — Final Payment",
   "conditional waiver - final payment": "Conditional Waiver — Final Payment",
@@ -480,8 +619,11 @@ export function parsePeScraperReport(html: string): {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a map of lowercased deal names → HubSpot deal IDs for all PE-tagged
- * deals in the project pipeline. Used by both HTML scraper sync and CSV import.
+ * Build maps for PE deal matching:
+ *   - dealNameMap: lowercased deal name → deal ID
+ *   - peProjectIdMap: PE project ID (e.g. "CO2602-DIER1") → deal ID
+ *
+ * Fetches all PE-tagged deals in the project pipeline.
  */
 export async function buildPeDealMap(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
@@ -507,7 +649,7 @@ export async function buildPeDealMap(): Promise<Map<string, string>> {
           ],
         },
       ],
-      properties: ["hs_object_id", "dealname"],
+      properties: ["hs_object_id", "dealname", "pe_project_id"],
       sorts: [
         { propertyName: "dealname", direction: "ASCENDING" },
       ] as unknown as string[],
@@ -523,6 +665,11 @@ export async function buildPeDealMap(): Promise<Map<string, string>> {
       if (id && name) {
         map.set(name.toLowerCase().trim(), id);
       }
+      // Also index by PE project ID if present
+      const peId = deal.properties.pe_project_id;
+      if (id && peId && typeof peId === "string" && peId.trim()) {
+        map.set(`pe:${peId.trim().toLowerCase()}`, id);
+      }
     }
 
     after = response.paging?.next?.after;
@@ -536,48 +683,60 @@ export async function buildPeDealMap(): Promise<Map<string, string>> {
 // ---------------------------------------------------------------------------
 
 /**
- * Match PROJ-XXXX numbers or customer names to HubSpot deal IDs.
+ * Match projects to HubSpot deal IDs using multiple strategies:
+ *   0. PE project ID match (e.g. "CO2602-DIER1") — most reliable for compact format
+ *   1. PROJ number match (e.g. "PROJ-1234") — reliable for HTML scraper format
+ *   2. Exact customer name match in deal names
+ *   3. Last-name match
+ *   4. First + last name match
  *
- * The dealMap should be pre-populated with:
+ * The dealMap contains:
  *   - dealName (lowercased) → dealId
- * for all PE-tagged deals in the project pipeline.
+ *   - "pe:projectid" → dealId (when pe_project_id property is set)
  */
 export function matchProjectToDeal(
   project: ParsedProject,
   dealMap: Map<string, string>,
 ): string | null {
-  // 0. PROJ number match — most reliable since HubSpot deal names contain "PROJ-XXXX"
+  // 0. PE project ID match — check if projNumber is a PE ID (e.g. "CO2602-DIER1")
+  if (project.projNumber && /^C[AO]\d{4}-[A-Z]+\d*$/i.test(project.projNumber)) {
+    const peKey = `pe:${project.projNumber.toLowerCase()}`;
+    const peMatch = dealMap.get(peKey);
+    if (peMatch) return peMatch;
+  }
+
+  // 1. PROJ number match — HubSpot deal names contain "PROJ-XXXX"
   if (project.projNumber) {
     const projLower = project.projNumber.toLowerCase();
     for (const [dealName, dealId] of dealMap) {
-      if (dealName.includes(projLower)) return dealId;
+      if (!dealName.startsWith("pe:") && dealName.includes(projLower)) return dealId;
     }
   }
 
   const custLower = project.customerName.toLowerCase().trim();
   if (!custLower) return null;
 
-  // 1. Exact match: customer name appears in a deal name
+  // 2. Exact match: customer name appears in a deal name
   for (const [dealName, dealId] of dealMap) {
-    if (dealName.includes(custLower)) return dealId;
+    if (!dealName.startsWith("pe:") && dealName.includes(custLower)) return dealId;
   }
 
-  // 2. Last name match (skip suffixes like "jr", "sr", "ii", "iii")
+  // 3. Last name match (skip suffixes like "jr", "sr", "ii", "iii")
   const parts = custLower.split(/\s+/);
   const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
   const meaningfulParts = parts.filter((p) => !SUFFIXES.has(p));
   const lastName = meaningfulParts[meaningfulParts.length - 1];
   if (lastName && lastName.length >= 3) {
     for (const [dealName, dealId] of dealMap) {
-      if (dealName.includes(lastName)) return dealId;
+      if (!dealName.startsWith("pe:") && dealName.includes(lastName)) return dealId;
     }
   }
 
-  // 3. First + last name match (independently)
+  // 4. First + last name match (independently)
   if (meaningfulParts.length >= 2) {
     const firstName = meaningfulParts[0];
     for (const [dealName, dealId] of dealMap) {
-      if (dealName.includes(firstName) && dealName.includes(lastName)) {
+      if (!dealName.startsWith("pe:") && dealName.includes(firstName) && dealName.includes(lastName)) {
         return dealId;
       }
     }
