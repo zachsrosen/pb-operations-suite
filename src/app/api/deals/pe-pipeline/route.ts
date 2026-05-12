@@ -29,6 +29,8 @@ const PROPERTIES = [
   "pe_m2_status",
   "amount",
   "is_participate_energy",
+  "install_status",
+  "final_inspection_status",
 ];
 
 interface PePipelineDeal {
@@ -42,6 +44,8 @@ interface PePipelineDeal {
   m2Status: string | null;
   amount: number | null;
   contactName: string | null;
+  constructionStatus: string | null;
+  finalInspectionStatus: string | null;
 }
 
 function computeDaysInStage(dateEntered: string | null | undefined): number {
@@ -136,6 +140,8 @@ export async function GET(request: NextRequest) {
             m2Status: props.pe_m2_status || null,
             amount: props.amount ? parseFloat(props.amount) : null,
             contactName: contactMap.get(deal.id) ?? null,
+            constructionStatus: props.install_status || null,
+            finalInspectionStatus: props.final_inspection_status || null,
           };
         });
 
