@@ -31,7 +31,7 @@ export default async function SharedInboxesPage({
 
   const { status, message } = await searchParams;
 
-  // Known inboxes from env (Permit Hub + IC Hub).
+  // Known inboxes from env (Permit Hub + IC Hub + PE/TPO).
   const known: Array<{ label: string; address: string }> = [
     {
       label: "Permits — Colorado",
@@ -48,6 +48,10 @@ export default async function SharedInboxesPage({
     {
       label: "Interconnections — California",
       address: readInboxEnv("IC_INBOX_CA", "interconnectionsca@photonbrothers.com"),
+    },
+    {
+      label: "PE / TPO",
+      address: readInboxEnv("PE_TPO_MAILBOX", "tpo@photonbrothers.com"),
     },
   ];
 
