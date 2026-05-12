@@ -42,6 +42,7 @@ export function sumGoalRows(
     sales: sum("sales"),
     surveys: sum("surveys"),
     da: sum("da"),
+    permits: sum("permits"),
     cc: sum("cc"),
     inspections: sum("inspections"),
     pto: sum("pto"),

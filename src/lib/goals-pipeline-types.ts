@@ -45,6 +45,7 @@ export interface GoalsPipelineData {
     sales: GoalRow;
     surveys: GoalRow;
     da: GoalRow;
+    permits: GoalRow;
     cc: GoalRow;
     inspections: GoalRow;
     pto: GoalRow;
@@ -82,6 +83,7 @@ export const GOAL_METRICS = [
   "sales_revenue",
   "survey_revenue",
   "da_revenue",
+  "permits_revenue",
   "cc_revenue",
   "inspection_revenue",
   "pto_revenue",
@@ -92,20 +94,20 @@ export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 /** Default monthly BASE targets when no OfficeGoal record exists */
 export const DEFAULT_TARGETS: Record<string, Record<GoalMetric, number>> = {
-  Westminster:        { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 15 },
-  Centennial:         { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 15 },
-  "Colorado Springs": { sales_revenue: 400_000,   survey_revenue: 400_000,   da_revenue: 400_000,   cc_revenue: 400_000,   inspection_revenue: 400_000,   pto_revenue: 400_000,   five_star_reviews: 10 },
-  "San Luis Obispo":  { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 8 },
-  Camarillo:          { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 7 },
+  Westminster:        { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, permits_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 15 },
+  Centennial:         { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, permits_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 15 },
+  "Colorado Springs": { sales_revenue: 400_000,   survey_revenue: 400_000,   da_revenue: 400_000,   permits_revenue: 400_000,   cc_revenue: 400_000,   inspection_revenue: 400_000,   pto_revenue: 400_000,   five_star_reviews: 10 },
+  "San Luis Obispo":  { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   permits_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 8 },
+  Camarillo:          { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   permits_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 7 },
 };
 
 /** Default monthly STRETCH targets — the gold-tier goal above base */
 export const DEFAULT_STRETCH_TARGETS: Record<string, Record<GoalMetric, number>> = {
-  Westminster:        { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
-  Centennial:         { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
-  "Colorado Springs": { sales_revenue: 500_000,   survey_revenue: 500_000,   da_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   pto_revenue: 500_000,   five_star_reviews: 10 },
-  "San Luis Obispo":  { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 8 },
-  Camarillo:          { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 7 },
+  Westminster:        { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, permits_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
+  Centennial:         { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, permits_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 15 },
+  "Colorado Springs": { sales_revenue: 500_000,   survey_revenue: 500_000,   da_revenue: 500_000,   permits_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   pto_revenue: 500_000,   five_star_reviews: 10 },
+  "San Luis Obispo":  { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   permits_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 8 },
+  Camarillo:          { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   permits_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 7 },
 };
 
 /** Pipeline bar chart stage definitions: property names on the Location custom object */
