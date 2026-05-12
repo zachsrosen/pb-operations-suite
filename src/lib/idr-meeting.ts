@@ -534,13 +534,15 @@ const TERMINAL_DEAL_STAGES = [
 export async function fetchInitialReviewDeals(): Promise<
   Array<{ dealId: string; properties: Record<string, string | null> }>
 > {
-  const filters: Record<string, unknown>[] = [
+  const commonFilters: Record<string, unknown>[] = [
     { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
-    { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" },
     { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: TERMINAL_DEAL_STAGES },
   ];
   const response = await searchWithRetry({
-    filterGroups: [{ filters }] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
+    filterGroups: [
+      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" }] },
+      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "IDR Revision Complete" }] },
+    ] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
   });
