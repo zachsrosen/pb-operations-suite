@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      items.push({ ...item, badge, isReturning });
+      items.push({ ...item, badge, isReturning, isReReview: snapshot.designStatus === "IDR Revision Complete" });
     }
   }
 
@@ -188,6 +188,7 @@ export async function POST(req: NextRequest) {
       ...(Array.isArray(q.customAdders) && q.customAdders.length > 0 ? { customAdders: q.customAdders } : {}),
       ...(q.designRevisionNeeded ? { designRevisionNeeded: q.designRevisionNeeded } : {}),
       ...(q.designRevisionReason ? { designRevisionReason: q.designRevisionReason } : {}),
+      ...(q.needsReReview ? { needsReReview: q.needsReReview } : {}),
     });
 
     // New escalation deals (not already in session) — fetch snapshots and create items
@@ -234,7 +235,7 @@ export async function POST(req: NextRequest) {
           });
 
           const badge = computeReadinessBadge(snapshot.surveyCompleted, snapshot.plansetDate);
-          items.push({ ...item, badge, isReturning: false });
+          items.push({ ...item, badge, isReturning: false, isReReview: snapshot.designStatus === "IDR Revision Complete" });
         }
       } catch (err) {
         console.error("[idr-meeting] Failed to fetch escalation deal snapshots:", err);

@@ -145,12 +145,26 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Design Revision Needed</span>
           </div>
           {item.designRevisionNeeded && (
-            <CompactTextarea
-              value={item.designRevisionReason ?? ""}
-              onChange={(val) => handleText("designRevisionReason", val)}
-              readOnly={readOnly}
-              placeholder="Revision reason (required)..."
-            />
+            <>
+              <div className="flex items-center gap-2 mt-1.5 ml-1">
+                <input
+                  type="checkbox"
+                  checked={!!item.needsReReview}
+                  onChange={() => handleToggle("needsReReview")}
+                  disabled={readOnly}
+                  className="h-3.5 w-3.5 rounded border-t-border bg-surface-2 accent-orange-500 disabled:opacity-50"
+                />
+                <span className="text-[10px] text-muted">
+                  Needs re-review after revision
+                </span>
+              </div>
+              <CompactTextarea
+                value={item.designRevisionReason ?? ""}
+                onChange={(val) => handleText("designRevisionReason", val)}
+                readOnly={readOnly}
+                placeholder="Revision reason (required)..."
+              />
+            </>
           )}
         </div>
 

@@ -62,6 +62,7 @@ export async function GET(
     ...item,
     badge: computeReadinessBadge(item.surveyCompleted, item.plansetDate),
     isReturning: returningDealIds.has(item.dealId),
+    isReReview: item.designStatus === "IDR Revision Complete",
     surveyJobUid: surveyJobByDeal.get(item.dealId) ?? null,
   }));
 

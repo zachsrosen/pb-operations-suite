@@ -2560,6 +2560,7 @@ model IdrMeetingItem {
   // Design Revision flag — sets design_status on sync
   designRevisionNeeded Boolean @default(false)
   designRevisionReason String?
+  needsReReview        Boolean @default(false) // When revision completes, auto-appear in next meeting for re-review
 
   // Adder checkboxes
   adderTileRoof     Boolean @default(false)
@@ -2642,6 +2643,7 @@ model IdrEscalationQueue {
   conclusion              String?
   designRevisionNeeded    Boolean @default(false)
   designRevisionReason    String?
+  needsReReview           Boolean @default(false)
 
   // Adder checkboxes (carried over from prep/skip)
   adderTileRoof     Boolean @default(false)

@@ -89,6 +89,7 @@ export interface IdrItem {
   shitShowReason: string | null;
   designRevisionNeeded: boolean;
   designRevisionReason: string | null;
+  needsReReview: boolean;
   // Adder checkboxes
   adderTileRoof: boolean;
   adderMetalRoof: boolean;
@@ -110,6 +111,7 @@ export interface IdrItem {
   updatedAt: string;
   badge: "green" | "yellow" | "orange" | "red";
   isReturning: boolean;
+  isReReview: boolean;
   surveyJobUid: string | null;
   notes?: IdrNote[];
 }

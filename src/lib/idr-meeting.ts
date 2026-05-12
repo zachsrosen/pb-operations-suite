@@ -68,6 +68,7 @@ export const SNAPSHOT_PROPERTIES = [
   "link_to_opensolar", "os_project_link",
   "tags",
   "roof_type",
+  "idr_re_review_needed", "idr_revision_complete_date",
   // Read-only notes from sales/design
   "os_notes", "sales_change_order_notes", "sales_change_order_needed",
   "notes_for_design_", "specific_notes_for_design",
@@ -294,6 +295,7 @@ interface NoteFields {
   opsRevisionNotes?: string | null;
   designRevisionNeeded?: boolean;
   designRevisionReason?: string | null;
+  needsReReview?: boolean;
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
@@ -343,7 +345,8 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
   if (fields.adderSummary) lines.push(`<strong>Adders:</strong> ${esc(fields.adderSummary)}`);
   if (fields.designRevisionNeeded) {
-    lines.push(`<strong>⚠️ Design Revision Needed</strong>${fields.designRevisionReason ? `: ${esc(fields.designRevisionReason)}` : ""}`);
+    const reReview = fields.needsReReview ? " (re-review requested)" : "";
+    lines.push(`<strong>⚠️ Design Revision Needed</strong>${fields.designRevisionReason ? `: ${esc(fields.designRevisionReason)}` : ""}${reReview}`);
   }
   if (fields.shitShowFlagged) lines.push(`<strong>🔥 Shit Show:</strong> ${fields.shitShowReason ? esc(fields.shitShowReason) : "Flagged"}`);
   if (fields.opsRevisionNotes) lines.push(`<strong>Ops Revision Notes:</strong> ${esc(fields.opsRevisionNotes)}`);
@@ -379,6 +382,8 @@ interface PropertyFields {
   adderSummary?: string | null;
   adderAmount?: number | null;
   designRevisionNeeded: boolean;
+  designRevisionReason: string | null;
+  needsReReview: boolean;
   reviewed: boolean;
 }
 
@@ -417,8 +422,16 @@ export function buildHubSpotPropertyUpdates(
   //   "Draft Complete" (value) = "Draft Complete - Waiting on Approvals" (label)
   if (fields.designRevisionNeeded) {
     updates.design_status = "IDR Revision Needed";
+    // When a revision is flagged, also push whether re-review is needed after completion
+    updates.idr_re_review_needed = fields.needsReReview ? "true" : "false";
+    // Push revision reason to a dedicated property (also appears in timeline note)
+    if (fields.designRevisionReason) {
+      updates.idr_revision_reason = fields.designRevisionReason;
+    }
   } else if (fields.reviewed) {
     updates.design_status = "Draft Complete";
+    // Clear the re-review flag when a deal is reviewed (normal or re-review)
+    updates.idr_re_review_needed = "false";
   }
 
   return updates;
@@ -534,13 +547,15 @@ const TERMINAL_DEAL_STAGES = [
 export async function fetchInitialReviewDeals(): Promise<
   Array<{ dealId: string; properties: Record<string, string | null> }>
 > {
-  const filters: Record<string, unknown>[] = [
+  const commonFilters: Record<string, unknown>[] = [
     { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
-    { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" },
     { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: TERMINAL_DEAL_STAGES },
   ];
   const response = await searchWithRetry({
-    filterGroups: [{ filters }] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
+    filterGroups: [
+      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" }] },
+      { filters: [...commonFilters, { propertyName: "idr_revision_complete_date", operator: FilterOperatorEnum.HasProperty }, { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" }] },
+    ] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
   });
@@ -730,6 +745,7 @@ export async function syncItemToHubSpot(
     opsRevisionNotes: string | null;
     designRevisionNeeded: boolean;
     designRevisionReason: string | null;
+    needsReReview: boolean;
     reviewed: boolean;
     adderTileRoof: boolean;
     adderMetalRoof: boolean;
@@ -767,6 +783,8 @@ export async function syncItemToHubSpot(
       adderSummary: serializeAdderSummary(item),
       adderAmount: computeAdderTotal(item),
       designRevisionNeeded: item.designRevisionNeeded,
+      designRevisionReason: item.designRevisionReason,
+      needsReReview: item.needsReReview,
       reviewed: item.reviewed,
     });
 
@@ -802,6 +820,7 @@ export async function syncItemToHubSpot(
           opsRevisionNotes: item.opsRevisionNotes,
           designRevisionNeeded: item.designRevisionNeeded,
           designRevisionReason: item.designRevisionReason,
+          needsReReview: item.needsReReview,
         },
         sessionDate.toISOString(),
       );

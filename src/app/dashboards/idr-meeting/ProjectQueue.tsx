@@ -143,6 +143,13 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                       </span>
                     )}
 
+                    {/* Re-review indicator */}
+                    {item.isReReview && (
+                      <span className="text-[10px] font-semibold text-purple-400 shrink-0" title="Re-review after design revision">
+                        RE-REVIEW
+                      </span>
+                    )}
+
                     {/* Shit show flag */}
                     {item.shitShowFlagged && (
                       <span className="text-xs shrink-0" title="Flagged for Shit Show meeting">
