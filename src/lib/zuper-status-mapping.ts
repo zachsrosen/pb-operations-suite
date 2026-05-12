@@ -19,7 +19,14 @@ export interface DriftEvalDeal {
   pbLocation: string | null;
   projectNumber: string | null;
   siteSurveyStatus: string | null;
-  constructionStatus: string | null; // install_status
+  /** install_status — the deal-level rollup status. */
+  constructionStatus: string | null;
+  /** construction_status_solar — per-sub-type status (null when deal has no solar work). */
+  solarInstallStatus: string | null;
+  /** construction_status_battery — per-sub-type status. */
+  batteryInstallStatus: string | null;
+  /** construction_status_ev — per-sub-type status. */
+  evInstallStatus: string | null;
   inspectionStatus: string | null; // final_inspection_status
   constructionCompleteDate: string | null;
   inspectionPassDate: string | null; // inspections_completion_date
@@ -58,7 +65,8 @@ export type DriftType =
   | "FAIL_DISAGREEMENT"
   | "COMPLETION_DATE"
   | "INSPECTION_PASS_DATE"
-  | "INSPECTION_FAIL_DATE";
+  | "INSPECTION_FAIL_DATE"
+  | "ROLLUP_MISMATCH";
 
 // ============================================================================
 // Status mapping
@@ -313,6 +321,40 @@ const CONSTRUCTION_SUB_TYPES = new Set([
   "ev_install",
 ]);
 
+/** HubSpot's terminal "all done" status for any construction-type field. */
+export const CONSTRUCTION_COMPLETE_STATUS = "Construction Complete";
+
+/**
+ * Pick the right HubSpot status field for a Zuper job's sub-type. Solar /
+ * Battery / EV install jobs each have their own per-sub-type HubSpot status
+ * column (`construction_status_solar` etc). General construction and any
+ * deal that lacks the sub-type split falls back to the deal-level
+ * `install_status`.
+ *
+ * Returning the deal-level `constructionStatus` as a fallback when the
+ * per-sub-type column is null lets us behave correctly on older deals
+ * (pre-sub-type-split), and is a sensible default — the rollup column is
+ * what the customer-facing deal stage typically reflects anyway.
+ */
+export function hubspotStatusForJob(job: DriftEvalJob, deal: DriftEvalDeal): string | null {
+  switch (job.category) {
+    case "solar_install":
+      return deal.solarInstallStatus ?? deal.constructionStatus;
+    case "battery_install":
+      return deal.batteryInstallStatus ?? deal.constructionStatus;
+    case "ev_install":
+      return deal.evInstallStatus ?? deal.constructionStatus;
+    case "construction":
+      return deal.constructionStatus;
+    case "site_survey":
+      return deal.siteSurveyStatus;
+    case "inspection":
+      return deal.inspectionStatus;
+    default:
+      return null;
+  }
+}
+
 /**
  * Pure decision function: given a Zuper job and its HubSpot deal, return the
  * set of drift types that fire. Empty array → fully in sync.
@@ -324,17 +366,8 @@ export function evaluateJobDrift(job: DriftEvalJob, deal: DriftEvalDeal): DriftT
   const out: DriftType[] = [];
   const mappingCategory = toMappingCategory(job.category);
 
-  // Pick the right HubSpot status for this category.
-  const hubspotStatus = (() => {
-    switch (mappingCategory) {
-      case "site_survey":
-        return deal.siteSurveyStatus;
-      case "construction":
-        return deal.constructionStatus;
-      case "inspection":
-        return deal.inspectionStatus;
-    }
-  })();
+  // Pick the right HubSpot status for this Zuper job — sub-type aware.
+  const hubspotStatus = hubspotStatusForJob(job, deal);
 
   // FAIL_DISAGREEMENT — inspection only, hard-disagree case.
   // Evaluated first so STATUS logic can treat it as "always drift".
@@ -389,4 +422,73 @@ export function evaluateJobDrift(job: DriftEvalJob, deal: DriftEvalDeal): DriftT
   }
 
   return out;
+}
+
+// ============================================================================
+// Rollup drift — HubSpot-internal consistency check
+// ============================================================================
+
+/**
+ * Result of the per-deal rollup check. When `drifted` is true the cron emits
+ * a synthetic drift row keyed on a fabricated `zuperJobUid` of
+ * `rollup-construction:<dealId>` so dashboard rendering can distinguish it
+ * from per-job rows.
+ */
+export interface RollupDriftResult {
+  drifted: boolean;
+  /** Sub-type statuses that are "Construction Complete" (the prereq for rollup expected to be Complete). */
+  completeSubTypes: Array<"solar" | "battery" | "ev">;
+  /** Sub-type statuses that are set but NOT yet Complete. When any is present, the rollup check is skipped. */
+  incompleteSubTypes: Array<"solar" | "battery" | "ev">;
+}
+
+/**
+ * Per-deal rollup integrity check (NOT keyed to any specific Zuper job).
+ *
+ * Fires when ALL set construction sub-type HubSpot statuses
+ * (`construction_status_solar/battery/ev`) are "Construction Complete" but
+ * the main `install_status` isn't. This catches a HubSpot-internal
+ * automation gap where sub-type statuses update independently and the
+ * rollup column doesn't follow.
+ *
+ * Returns `drifted: false` when:
+ * - No sub-type statuses are set on the deal (legacy single-job deal — nothing to roll up)
+ * - At least one set sub-type is still incomplete (work still in progress)
+ * - All set sub-types are Complete AND `install_status` is also Complete (in sync)
+ */
+export function evaluateRollupDrift(deal: DriftEvalDeal): RollupDriftResult {
+  const subTypes: Array<{ name: "solar" | "battery" | "ev"; status: string | null }> = [
+    { name: "solar", status: deal.solarInstallStatus },
+    { name: "battery", status: deal.batteryInstallStatus },
+    { name: "ev", status: deal.evInstallStatus },
+  ];
+
+  const setSubTypes = subTypes.filter((s) => s.status !== null && s.status !== "");
+  // No sub-types in play → no rollup question. Returning empty arrays so
+  // callers can also use this output to decide whether to auto-resolve an
+  // older ROLLUP_MISMATCH row that's no longer applicable.
+  if (setSubTypes.length === 0) {
+    return { drifted: false, completeSubTypes: [], incompleteSubTypes: [] };
+  }
+
+  const completeSubTypes = setSubTypes
+    .filter((s) => s.status === CONSTRUCTION_COMPLETE_STATUS)
+    .map((s) => s.name);
+  const incompleteSubTypes = setSubTypes
+    .filter((s) => s.status !== CONSTRUCTION_COMPLETE_STATUS)
+    .map((s) => s.name);
+
+  // Sub-jobs still in progress → no rollup expectation yet.
+  if (incompleteSubTypes.length > 0) {
+    return { drifted: false, completeSubTypes, incompleteSubTypes };
+  }
+
+  // All set sub-types are Complete. Main install_status should also be Complete.
+  const drifted = deal.constructionStatus !== CONSTRUCTION_COMPLETE_STATUS;
+  return { drifted, completeSubTypes, incompleteSubTypes };
+}
+
+/** Synthetic `zuperJobUid` for a rollup row attached to a deal. */
+export function rollupDriftRowKey(dealId: string): string {
+  return `rollup-construction:${dealId}`;
 }

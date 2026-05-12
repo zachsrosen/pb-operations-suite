@@ -16,7 +16,10 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 import { CONSTRUCTION_CATEGORY_NAMES, JOB_CATEGORIES } from "../src/lib/zuper";
 import {
   evaluateJobDrift,
+  evaluateRollupDrift,
+  hubspotStatusForJob,
   markSupersededJobs,
+  rollupDriftRowKey,
   toMappingCategory,
   type DriftEvalDeal,
   type DriftEvalJob,
@@ -58,6 +61,9 @@ const HUBSPOT_PROPS = [
   "pb_project_number",
   "site_survey_status",
   "install_status",
+  "construction_status_solar",
+  "construction_status_battery",
+  "construction_status_ev",
   "final_inspection_status",
   "construction_complete_date",
   "inspections_completion_date",
@@ -141,6 +147,11 @@ async function main() {
           projectNumber: (d.properties.pb_project_number as string) ?? null,
           siteSurveyStatus: (d.properties.site_survey_status as string) ?? null,
           constructionStatus: (d.properties.install_status as string) ?? null,
+          solarInstallStatus:
+            (d.properties.construction_status_solar as string) ?? null,
+          batteryInstallStatus:
+            (d.properties.construction_status_battery as string) ?? null,
+          evInstallStatus: (d.properties.construction_status_ev as string) ?? null,
           inspectionStatus: (d.properties.final_inspection_status as string) ?? null,
           constructionCompleteDate:
             (d.properties.construction_complete_date as string) ?? null,
@@ -186,13 +197,10 @@ async function main() {
     }
 
     drifted++;
+    // Sub-type aware hubspotStatus for display — matches what evaluateJobDrift
+    // actually compared against.
+    const hubspotStatus = hubspotStatusForJob(job, deal);
     const mc = toMappingCategory(job.category);
-    const hubspotStatus =
-      mc === "site_survey"
-        ? deal.siteSurveyStatus
-        : mc === "construction"
-          ? deal.constructionStatus
-          : deal.inspectionStatus;
 
     const hubspotCompletionAt =
       mc === "construction"
@@ -255,13 +263,81 @@ async function main() {
     );
   }
 
+  // Per-deal rollup integrity check.
+  let rollupDrifted = 0;
+  let rollupHealed = 0;
+  for (const [dealId, deal] of dealsById) {
+    const rollup = evaluateRollupDrift(deal);
+    const rowKey = rollupDriftRowKey(dealId);
+
+    if (!rollup.drifted) {
+      const healed = await prisma.zuperStatusDrift.updateMany({
+        where: { zuperJobUid: rowKey, status: "OPEN" },
+        data: {
+          status: "RESOLVED",
+          resolvedAt: new Date(),
+          resolvedBy: "system:healed",
+          resolveNote:
+            rollup.incompleteSubTypes.length > 0
+              ? "Sub-type work still in progress; rollup check not applicable"
+              : "install_status now matches sub-type rollup",
+        },
+      });
+      if (healed.count > 0) rollupHealed += healed.count;
+      continue;
+    }
+
+    rollupDrifted++;
+    const completeList = rollup.completeSubTypes.join("+");
+    await prisma.zuperStatusDrift.upsert({
+      where: { zuperJobUid: rowKey },
+      update: {
+        hubspotDealId: dealId,
+        projectNumber: deal.projectNumber,
+        dealName: deal.dealName,
+        pbLocation: deal.pbLocation,
+        category: "construction_rollup",
+        zuperJobTitle: `Rollup: ${completeList} complete, install_status lagging`,
+        zuperStatus: completeList,
+        hubspotStatus: deal.constructionStatus,
+        driftTypes: ["ROLLUP_MISMATCH"],
+        zuperCompletedAt: null,
+        hubspotCompletionAt: null,
+        zuperFailedAt: null,
+        hubspotFailAt: null,
+        status: "OPEN",
+        resolvedAt: null,
+        resolvedBy: null,
+        resolveNote: null,
+      },
+      create: {
+        zuperJobUid: rowKey,
+        hubspotDealId: dealId,
+        projectNumber: deal.projectNumber,
+        dealName: deal.dealName,
+        pbLocation: deal.pbLocation,
+        category: "construction_rollup",
+        zuperJobTitle: `Rollup: ${completeList} complete, install_status lagging`,
+        zuperStatus: completeList,
+        hubspotStatus: deal.constructionStatus,
+        driftTypes: ["ROLLUP_MISMATCH"],
+      },
+    });
+    process.stdout.write(
+      `  • rollup drift: deal=${dealId} sub-types-complete=${completeList} install_status="${deal.constructionStatus ?? "(empty)"}"\n`,
+    );
+  }
+
   console.log("\n=== Summary ===");
   console.log(`Scanned (cache rows):     ${cached.length}`);
   console.log(`With deal linkage:        ${jobs.length}`);
   console.log(`After dedup:              ${survivors.length}`);
   console.log(`Matched (in sync):        ${matched}`);
   console.log(`Auto-healed open rows:    ${autoHealed}`);
-  console.log(`Drifted (logged):         ${drifted}`);
+  console.log(`Per-job drifted:          ${drifted}`);
+  console.log(`Deals checked for rollup: ${dealsById.size}`);
+  console.log(`Rollup-drifted:           ${rollupDrifted}`);
+  console.log(`Rollup auto-healed:       ${rollupHealed}`);
   console.log(`Errors:                   ${errors.length}`);
   if (errors.length) errors.slice(0, 20).forEach((e) => console.log("  -", e));
 
