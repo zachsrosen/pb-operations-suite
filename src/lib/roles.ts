@@ -357,6 +357,8 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/design-revisions",
     "/dashboards/da-drift",
     "/api/da-drift",
+    "/dashboards/zuper-drift",
+    "/api/zuper-drift",
     "/dashboards/de-metrics",
     "/api/hubspot/da-rework-flags",
     "/dashboards/clipping-analytics",
