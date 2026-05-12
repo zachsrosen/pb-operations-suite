@@ -8,7 +8,8 @@ type DriftType =
   | "FAIL_DISAGREEMENT"
   | "COMPLETION_DATE"
   | "INSPECTION_PASS_DATE"
-  | "INSPECTION_FAIL_DATE";
+  | "INSPECTION_FAIL_DATE"
+  | "ROLLUP_MISMATCH";
 
 interface DriftRow {
   id: string;
@@ -64,6 +65,7 @@ const CATEGORY_BADGE: Record<string, { bg: string; text: string; label: string }
   battery_install: { bg: "bg-green-500/15", text: "text-green-400", label: "Battery" },
   ev_install: { bg: "bg-cyan-500/15", text: "text-cyan-400", label: "EV" },
   inspection: { bg: "bg-purple-500/15", text: "text-purple-400", label: "Inspection" },
+  construction_rollup: { bg: "bg-pink-500/15", text: "text-pink-400", label: "Rollup" },
 };
 
 const categoryBadge = (category: string) => {
@@ -85,6 +87,7 @@ const DRIFT_LABEL: Record<DriftType, string> = {
   COMPLETION_DATE: "Completion Date",
   INSPECTION_PASS_DATE: "Inspection Pass Date",
   INSPECTION_FAIL_DATE: "Inspection Fail Date",
+  ROLLUP_MISMATCH: "Rollup",
 };
 
 const driftChip = (t: DriftType) => (
@@ -262,14 +265,16 @@ export default function ZuperDriftClient({ initialRows, currentFilter, counts }:
                               Deal ↗
                             </a>
                           )}
-                          <a
-                            href={zuperUrl(r.zuperJobUid)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline"
-                          >
-                            Zuper job ↗
-                          </a>
+                          {!r.zuperJobUid.startsWith("rollup-construction:") && (
+                            <a
+                              href={zuperUrl(r.zuperJobUid)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline"
+                            >
+                              Zuper job ↗
+                            </a>
+                          )}
                           {r.pbLocation && <span>· {r.pbLocation}</span>}
                         </div>
                       </td>

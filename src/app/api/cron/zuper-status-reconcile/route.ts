@@ -16,7 +16,10 @@ import { hubspotClient } from "@/lib/hubspot";
 import { CONSTRUCTION_CATEGORY_NAMES, JOB_CATEGORIES } from "@/lib/zuper";
 import {
   evaluateJobDrift,
+  evaluateRollupDrift,
+  hubspotStatusForJob,
   markSupersededJobs,
+  rollupDriftRowKey,
   toMappingCategory,
   type DriftEvalDeal,
   type DriftEvalJob,
@@ -34,6 +37,9 @@ type ReconcileSummary = {
   matched: number;
   drifted: number;
   autoHealed: number;
+  rollupChecked: number;
+  rollupDrifted: number;
+  rollupHealed: number;
   newDriftIds: string[];
   errors: string[];
 };
@@ -64,6 +70,9 @@ const HUBSPOT_PROPS = [
   "pb_project_number",
   "site_survey_status",
   "install_status",
+  "construction_status_solar",
+  "construction_status_battery",
+  "construction_status_ev",
   "final_inspection_status",
   "construction_complete_date",
   "inspections_completion_date",
@@ -94,6 +103,9 @@ export async function GET(request: NextRequest) {
     matched: 0,
     drifted: 0,
     autoHealed: 0,
+    rollupChecked: 0,
+    rollupDrifted: 0,
+    rollupHealed: 0,
     newDriftIds: [],
     errors: [],
   };
@@ -172,6 +184,11 @@ export async function GET(request: NextRequest) {
             projectNumber: (d.properties.pb_project_number as string) ?? null,
             siteSurveyStatus: (d.properties.site_survey_status as string) ?? null,
             constructionStatus: (d.properties.install_status as string) ?? null,
+            solarInstallStatus:
+              (d.properties.construction_status_solar as string) ?? null,
+            batteryInstallStatus:
+              (d.properties.construction_status_battery as string) ?? null,
+            evInstallStatus: (d.properties.construction_status_ev as string) ?? null,
             inspectionStatus: (d.properties.final_inspection_status as string) ?? null,
             constructionCompleteDate:
               (d.properties.construction_complete_date as string) ?? null,
@@ -212,14 +229,11 @@ export async function GET(request: NextRequest) {
 
       summary.drifted++;
 
-      // Pick the relevant hubspotStatus for display.
+      // Pick the relevant hubspotStatus for display. Sub-type aware — solar
+      // jobs show construction_status_solar, etc. Matches what evaluateJobDrift
+      // actually compared against.
+      const hubspotStatus = hubspotStatusForJob(job, deal);
       const mc = toMappingCategory(job.category);
-      const hubspotStatus =
-        mc === "site_survey"
-          ? deal.siteSurveyStatus
-          : mc === "construction"
-            ? deal.constructionStatus
-            : deal.inspectionStatus;
 
       // Pick the relevant HubSpot date for display.
       const hubspotCompletionAt =
@@ -276,6 +290,73 @@ export async function GET(request: NextRequest) {
               ? new Date(job.completedAt)
               : null,
           hubspotFailAt: hubspotFailAt ? new Date(hubspotFailAt) : null,
+        },
+      });
+      summary.newDriftIds.push(drift.id);
+    }
+
+    // 6. Per-deal rollup integrity check: for every deal we processed, see
+    //    if all set sub-type statuses are Complete but install_status isn't.
+    //    A synthetic ZuperStatusDrift row (uid = rollup-construction:<dealId>)
+    //    is upserted on drift, auto-healed when the rollup is consistent
+    //    (or no longer applicable).
+    for (const [dealId, deal] of dealsById) {
+      summary.rollupChecked++;
+      const rollup = evaluateRollupDrift(deal);
+      const rowKey = rollupDriftRowKey(dealId);
+
+      if (!rollup.drifted) {
+        // Heal any existing open rollup drift for this deal.
+        const healed = await prisma.zuperStatusDrift.updateMany({
+          where: { zuperJobUid: rowKey, status: "OPEN" },
+          data: {
+            status: "RESOLVED",
+            resolvedAt: new Date(),
+            resolvedBy: "system:healed",
+            resolveNote:
+              rollup.incompleteSubTypes.length > 0
+                ? "Sub-type work still in progress; rollup check not applicable"
+                : "install_status now matches sub-type rollup",
+          },
+        });
+        if (healed.count > 0) summary.rollupHealed += healed.count;
+        continue;
+      }
+
+      summary.rollupDrifted++;
+      const completeList = rollup.completeSubTypes.join("+");
+      const drift = await prisma.zuperStatusDrift.upsert({
+        where: { zuperJobUid: rowKey },
+        update: {
+          hubspotDealId: dealId,
+          projectNumber: deal.projectNumber,
+          dealName: deal.dealName,
+          pbLocation: deal.pbLocation,
+          category: "construction_rollup",
+          zuperJobTitle: `Rollup: ${completeList} complete, install_status lagging`,
+          zuperStatus: completeList, // e.g. "solar+battery"
+          hubspotStatus: deal.constructionStatus,
+          driftTypes: ["ROLLUP_MISMATCH"],
+          zuperCompletedAt: null,
+          hubspotCompletionAt: null,
+          zuperFailedAt: null,
+          hubspotFailAt: null,
+          status: "OPEN",
+          resolvedAt: null,
+          resolvedBy: null,
+          resolveNote: null,
+        },
+        create: {
+          zuperJobUid: rowKey,
+          hubspotDealId: dealId,
+          projectNumber: deal.projectNumber,
+          dealName: deal.dealName,
+          pbLocation: deal.pbLocation,
+          category: "construction_rollup",
+          zuperJobTitle: `Rollup: ${completeList} complete, install_status lagging`,
+          zuperStatus: completeList,
+          hubspotStatus: deal.constructionStatus,
+          driftTypes: ["ROLLUP_MISMATCH"],
         },
       });
       summary.newDriftIds.push(drift.id);

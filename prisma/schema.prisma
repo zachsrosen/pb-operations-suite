@@ -4169,6 +4169,7 @@ enum ZuperDriftType {
   COMPLETION_DATE
   INSPECTION_PASS_DATE
   INSPECTION_FAIL_DATE
+  ROLLUP_MISMATCH // construction sub-type statuses all Complete but install_status isn't
 }
 
 enum ZuperDriftStatus {

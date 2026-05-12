@@ -1,6 +1,8 @@
 import {
   evaluateJobDrift,
+  evaluateRollupDrift,
   toMappingCategory,
+  rollupDriftRowKey,
   type DriftEvalDeal,
   type DriftEvalJob,
 } from "@/lib/zuper-status-mapping";
@@ -12,6 +14,9 @@ const baseDeal: DriftEvalDeal = {
   projectNumber: "PROJ-1234",
   siteSurveyStatus: null,
   constructionStatus: null,
+  solarInstallStatus: null,
+  batteryInstallStatus: null,
+  evInstallStatus: null,
   inspectionStatus: null,
   constructionCompleteDate: null,
   inspectionPassDate: null,
@@ -239,5 +244,118 @@ describe("evaluateJobDrift — combined", () => {
       inspectionPassDate: "2026-05-10",
     };
     expect(evaluateJobDrift(j, d)).toEqual([]);
+  });
+});
+
+describe("evaluateJobDrift — sub-type HubSpot status routing", () => {
+  it("solar_install job compares to construction_status_solar, not install_status", () => {
+    const j = job({ category: "solar_install", zuperStatus: "Construction Complete" });
+    // install_status looks "wrong" (Scheduled), but the right column to check
+    // for a solar job is solarInstallStatus — and that matches.
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "Scheduled",
+      solarInstallStatus: "Construction Complete",
+    };
+    expect(evaluateJobDrift(j, d)).toEqual([]);
+  });
+
+  it("battery_install job fires STATUS when construction_status_battery disagrees with Zuper", () => {
+    const j = job({ category: "battery_install", zuperStatus: "Construction Complete" });
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "Construction Complete", // rollup looks fine
+      batteryInstallStatus: "Scheduled", // but battery sub-type lags
+    };
+    expect(evaluateJobDrift(j, d)).toContain("STATUS");
+  });
+
+  it("ev_install falls back to install_status when construction_status_ev is null (legacy deal)", () => {
+    const j = job({ category: "ev_install", zuperStatus: "Construction Complete" });
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "Construction Complete",
+      evInstallStatus: null,
+    };
+    // No sub-type column on this deal → fallback to install_status, which matches.
+    expect(evaluateJobDrift(j, d)).toEqual([]);
+  });
+
+  it("general construction job continues to compare to install_status", () => {
+    const j = job({ category: "construction", zuperStatus: "Construction Complete" });
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "Construction Complete",
+      // Sub-type columns null — general construction job, no fan-out.
+    };
+    expect(evaluateJobDrift(j, d)).toEqual([]);
+  });
+});
+
+describe("evaluateRollupDrift", () => {
+  it("returns { drifted: false } when no sub-type statuses are set (legacy deal)", () => {
+    const result = evaluateRollupDrift(baseDeal);
+    expect(result.drifted).toBe(false);
+    expect(result.completeSubTypes).toEqual([]);
+    expect(result.incompleteSubTypes).toEqual([]);
+  });
+
+  it("fires when all set sub-types are Complete but install_status isn't", () => {
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "In Progress", // lagging
+      solarInstallStatus: "Construction Complete",
+      batteryInstallStatus: "Construction Complete",
+      evInstallStatus: null, // not in scope for this deal
+    };
+    const result = evaluateRollupDrift(d);
+    expect(result.drifted).toBe(true);
+    expect(result.completeSubTypes.sort()).toEqual(["battery", "solar"]);
+    expect(result.incompleteSubTypes).toEqual([]);
+  });
+
+  it("does NOT fire while any set sub-type is still in progress", () => {
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "In Progress",
+      solarInstallStatus: "Construction Complete",
+      batteryInstallStatus: "Scheduled", // still pending
+      evInstallStatus: null,
+    };
+    const result = evaluateRollupDrift(d);
+    expect(result.drifted).toBe(false);
+    expect(result.completeSubTypes).toEqual(["solar"]);
+    expect(result.incompleteSubTypes).toEqual(["battery"]);
+  });
+
+  it("does NOT fire when all sub-types AND main install_status are Complete (in sync)", () => {
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "Construction Complete",
+      solarInstallStatus: "Construction Complete",
+      batteryInstallStatus: "Construction Complete",
+      evInstallStatus: "Construction Complete",
+    };
+    expect(evaluateRollupDrift(d).drifted).toBe(false);
+  });
+
+  it("fires with all 3 sub-types Complete + main not Complete", () => {
+    const d: DriftEvalDeal = {
+      ...baseDeal,
+      constructionStatus: "Loose Ends Remaining",
+      solarInstallStatus: "Construction Complete",
+      batteryInstallStatus: "Construction Complete",
+      evInstallStatus: "Construction Complete",
+    };
+    const result = evaluateRollupDrift(d);
+    expect(result.drifted).toBe(true);
+    expect(result.completeSubTypes.sort()).toEqual(["battery", "ev", "solar"]);
+  });
+});
+
+describe("rollupDriftRowKey", () => {
+  it("returns a deterministic synthetic uid keyed on deal id", () => {
+    expect(rollupDriftRowKey("12345")).toBe("rollup-construction:12345");
+    expect(rollupDriftRowKey("12345")).toBe(rollupDriftRowKey("12345"));
   });
 });
