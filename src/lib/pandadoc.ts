@@ -258,3 +258,40 @@ export function expectedLayoutStatusForDoc(doc: PandaDocDocumentDetail): string 
 export function isCandidateForReconcile(status: string): boolean {
   return status === "document.completed" || status === "document.declined";
 }
+
+/**
+ * Group detailed docs by HubSpot deal id and keep only the latest per deal
+ * (by `date_modified`). Returns the surviving docs plus the set of older
+ * pandaDocIds that were dropped — used by callers to auto-resolve any
+ * stale drift rows for the same deal.
+ *
+ * Why: a single deal can have multiple DA revisions in the same scan
+ * window (original declined → revised approved). Only the latest doc's
+ * dropdown reflects the customer's final decision, so it's the only one
+ * worth comparing against `layout_status`. Older revisions create false
+ * positives if compared in isolation.
+ */
+export function pickLatestDocPerDeal(
+  docs: Array<{ detail: PandaDocDocumentDetail; dealId: string }>,
+): {
+  latest: Map<string, { detail: PandaDocDocumentDetail; dealId: string }>;
+  supersededPandaDocIds: Set<string>;
+} {
+  const latest = new Map<string, { detail: PandaDocDocumentDetail; dealId: string }>();
+  const supersededPandaDocIds = new Set<string>();
+  for (const entry of docs) {
+    const existing = latest.get(entry.dealId);
+    if (!existing) {
+      latest.set(entry.dealId, entry);
+      continue;
+    }
+    // Compare by date_modified — newer wins; supersede the older.
+    if (entry.detail.date_modified > existing.detail.date_modified) {
+      supersededPandaDocIds.add(existing.detail.id);
+      latest.set(entry.dealId, entry);
+    } else {
+      supersededPandaDocIds.add(entry.detail.id);
+    }
+  }
+  return { latest, supersededPandaDocIds };
+}
