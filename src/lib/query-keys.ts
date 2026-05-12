@@ -111,6 +111,7 @@ export const queryKeys = {
     root: ["peDeals"] as const,
     list: () => [...queryKeys.peDeals.root, "list"] as const,
   },
+  pePipeline: () => ["pePipeline"] as const,
   funnel: {
     root: ["funnel"] as const,
     designPipeline: (months?: number, locations?: string[]) =>
