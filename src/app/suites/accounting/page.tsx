@@ -36,6 +36,14 @@ const LINKS: SuitePageCard[] = [
     icon: "⏳",
     section: "Tools",
   },
+  {
+    href: "/dashboards/payment-timeline",
+    title: "Payment Timeline",
+    description: "Received and outstanding payments by date — see what came in and what's still owed.",
+    tag: "ACCOUNTING",
+    icon: "📅",
+    section: "Tools",
+  },
 
   // ── Participate Energy ──
   {

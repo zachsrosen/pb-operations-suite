@@ -1392,6 +1392,7 @@ const ACCOUNTING: RoleDefinition = {
     "/",
     "/suites/accounting",
     "/dashboards/payment-tracking",
+    "/dashboards/payment-timeline",
     "/dashboards/payment-action-queue",
     "/dashboards/ready-to-invoice",
     "/dashboards/accounts-receivable",
