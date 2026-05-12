@@ -240,6 +240,16 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Office Performance",
   },
 
+  // ── Meetings ──
+  {
+    href: "/dashboards/idr-meeting",
+    title: "Design & Ops Meeting Hub",
+    description: "Design/ops meeting review queue with auto-populated projects, inline editing, and HubSpot sync.",
+    tag: "MEETING",
+    icon: "📋",
+    section: "Meetings",
+  },
+
   // ── On-Call ──
   {
     href: "/dashboards/on-call",
