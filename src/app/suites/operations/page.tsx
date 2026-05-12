@@ -100,6 +100,14 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "⏱️",
     section: "Construction",
   },
+  {
+    href: "/dashboards/pe-pipeline",
+    title: "PE Pipeline Tracker",
+    description: "PE deals stuck in construction and inspection — sorted by days in stage.",
+    tag: "PE",
+    icon: "🚧",
+    section: "Construction",
+  },
 
   // ── Inspections ──
   {

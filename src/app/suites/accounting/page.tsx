@@ -63,6 +63,14 @@ const LINKS: SuitePageCard[] = [
     section: "Participate Energy",
   },
   {
+    href: "/dashboards/pe-pipeline",
+    title: "PE Pipeline Tracker",
+    description: "PE deals stuck in construction and inspection — sorted by days in stage to push Ops forward.",
+    tag: "PE",
+    icon: "🚧",
+    section: "Participate Energy",
+  },
+  {
     href: "/dashboards/pe-deals",
     title: "PE Deals & Payments",
     description: "All PE-tagged deals with auto-calculated EPC, lease factor, and payment splits.",
