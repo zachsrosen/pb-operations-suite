@@ -45,6 +45,8 @@ interface PEProject {
   pto_basis: string;
   days_to_pto: number | null;
   days_since_close: number | null;
+  pe_portal_url: string | null;
+  pe_project_id: string | null;
 }
 
 interface APIProject {
@@ -71,6 +73,8 @@ interface APIProject {
   daysToInspection: number | null;
   daysToPto: number | null;
   daysSinceClose: number | null;
+  pePortalUrl: string | null;
+  peProjectId: string | null;
 }
 
 interface APIResponse {
@@ -247,6 +251,8 @@ function transformProject(
     pto_basis: ptoBasis,
     days_to_pto: daysToPto,
     days_since_close: p.daysSinceClose,
+    pe_portal_url: p.pePortalUrl ?? null,
+    pe_project_id: p.peProjectId ?? null,
   };
 }
 
@@ -514,14 +520,29 @@ function MilestoneGroup({
             className="flex items-center justify-between p-3 border-b border-t-border/50 hover:bg-surface-2/30 transition-colors"
           >
             <div>
-              <a
-                href={p.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-green-400 hover:text-green-300 hover:underline"
-              >
-                {displayName(p.name)}
-              </a>
+              <div className="flex items-center gap-1">
+                <a
+                  href={p.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-400 hover:text-green-300 hover:underline"
+                >
+                  {displayName(p.name)}
+                </a>
+                {p.pe_portal_url && (
+                  <a
+                    href={p.pe_portal_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-500/60 hover:text-emerald-400 flex-shrink-0"
+                    title={`PE Portal${p.pe_project_id ? ` — ${p.pe_project_id}` : ""}`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                    </svg>
+                  </a>
+                )}
+              </div>
               <div className="text-xs text-muted">
                 {p.pb_location} | {p.ahj}
               </div>
@@ -1288,14 +1309,29 @@ export default function PEDashboardPage() {
                       }`}
                     >
                       <td className="p-3">
-                        <a
-                          href={p.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-green-400 hover:text-green-300 hover:underline font-medium"
-                        >
-                          {displayName(p.name)}
-                        </a>
+                        <div className="flex items-center gap-1">
+                          <a
+                            href={p.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-green-400 hover:text-green-300 hover:underline font-medium"
+                          >
+                            {displayName(p.name)}
+                          </a>
+                          {p.pe_portal_url && (
+                            <a
+                              href={p.pe_portal_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-emerald-500/60 hover:text-emerald-400 flex-shrink-0"
+                              title={`PE Portal${p.pe_project_id ? ` — ${p.pe_project_id}` : ""}`}
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                              </svg>
+                            </a>
+                          )}
+                        </div>
                         <div className="text-xs text-muted">{p.stage}</div>
                       </td>
                       <td className="p-3 text-sm text-muted">

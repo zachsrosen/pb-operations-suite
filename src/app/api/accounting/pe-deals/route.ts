@@ -68,6 +68,8 @@ interface PeDeal {
   ptoInvoiceStatus: string | null;
   paidInFull: boolean;
   hubspotUrl: string;
+  pePortalUrl: string | null;
+  peProjectId: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +102,9 @@ const PE_DEAL_PROPERTIES = [
   // PE milestone statuses (confirmed via HubSpot property search)
   "pe_m1_status",
   "pe_m2_status",
+  // PE portal cross-reference
+  "pe_portal_url",
+  "pe_project_id",
   // PE payment properties — synced back to HubSpot on each load
   "pe_payment_ic",
   "pe_payment_pc",
@@ -292,6 +297,8 @@ export async function GET() {
         ptoInvoiceStatus: deal.pto_invoice_status ? String(deal.pto_invoice_status) : null,
         paidInFull: String(deal.paid_in_full || "").toLowerCase() === "true",
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
+        pePortalUrl: deal.pe_portal_url ? String(deal.pe_portal_url) : null,
+        peProjectId: deal.pe_project_id ? String(deal.pe_project_id) : null,
       };
     });
 

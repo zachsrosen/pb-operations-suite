@@ -33,6 +33,8 @@ interface PeDeal {
   ptoInvoiceStatus: string | null;
   paidInFull: boolean;
   hubspotUrl: string;
+  pePortalUrl: string | null;
+  peProjectId: string | null;
 }
 
 interface DocReview {
@@ -1176,15 +1178,31 @@ export default function PeReportPage() {
                       <span className={`inline-block transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9656;</span>
                     </td>
                     <td className="py-2.5 pr-3 truncate">
-                      <a
-                        href={d.hubspotUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-foreground hover:text-emerald-400 transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {d.dealName}
-                      </a>
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={d.hubspotUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-foreground hover:text-emerald-400 transition-colors truncate"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {d.dealName}
+                        </a>
+                        {d.pePortalUrl && (
+                          <a
+                            href={d.pePortalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-500/60 hover:text-emerald-400 flex-shrink-0 transition-colors"
+                            title={`PE Portal${d.peProjectId ? ` — ${d.peProjectId}` : ""}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2.5 pr-3 text-muted text-xs truncate">{d.pbLocation}</td>
                     <td className="py-2.5 pr-3"><MilestoneBadge milestone={milestone} /></td>

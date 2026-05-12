@@ -427,6 +427,10 @@ export interface Project {
   daToCc: number | null;
   daToPermit: number | null;
 
+  // PE Portal
+  pePortalUrl: string | null;       // pe_portal_url (direct link to PE portal project)
+  peProjectId: string | null;       // pe_project_id (e.g. CO2603-WHIT17)
+
   // External links & folder IDs
   designFolderUrl: string | null;   // design_document_folder_id (Drive folder ID)
   driveUrl: string | null;          // g_drive (general Drive folder link)
@@ -574,6 +578,8 @@ const DEAL_PROPERTIES = [
   "is_interconnection_submitted_",
   "interconnection_approved_",
   "is_participate_energy",
+  "pe_portal_url",
+  "pe_project_id",
 
   // Permit dates
   "permit_submit_date",
@@ -1081,6 +1087,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
         ""
       ).trim() || null,
     driveUrl: String(deal.g_drive || "").trim() || null,
+    pePortalUrl: String(deal.pe_portal_url || "").trim() || null,
+    peProjectId: String(deal.pe_project_id || "").trim() || null,
     openSolarUrl: String(deal.os_project_link || deal.link_to_opensolar || "").trim() || null,
     openSolarId: String(deal.os_project_id || "").trim() || null,
     zuperUid: String(deal.zuper_site_survey_uid || "").trim() || null,
