@@ -22,6 +22,8 @@ interface PePipelineDeal {
   m2Status: string | null;
   amount: number | null;
   contactName: string | null;
+  constructionStatus: string | null;
+  finalInspectionStatus: string | null;
 }
 
 interface PePipelineResponse {
@@ -85,6 +87,25 @@ function m1m2Badge(status: string | null) {
   else if (lower.includes("submitted") || lower.includes("resubmitted"))
     color = "bg-blue-500/10 text-blue-600 dark:text-blue-400";
   else if (lower.includes("waiting") || lower.includes("ready"))
+    color = "bg-amber-500/10 text-amber-600 dark:text-amber-400";
+  return (
+    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${color}`}>
+      {status}
+    </span>
+  );
+}
+
+function statusBadge(status: string | null) {
+  if (!status) return <span className="text-muted">—</span>;
+  const lower = status.toLowerCase();
+  let color = "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400";
+  if (lower.includes("complete") || lower.includes("pass"))
+    color = "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+  else if (lower.includes("fail") || lower.includes("cancel"))
+    color = "bg-red-500/10 text-red-600 dark:text-red-400";
+  else if (lower.includes("schedule") || lower.includes("progress"))
+    color = "bg-blue-500/10 text-blue-600 dark:text-blue-400";
+  else if (lower.includes("pending") || lower.includes("waiting") || lower.includes("hold"))
     color = "bg-amber-500/10 text-amber-600 dark:text-amber-400";
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${color}`}>
@@ -271,6 +292,8 @@ export default function PePipelinePage() {
                 {renderSortHeader("Location", "location")}
                 {renderSortHeader("Stage", "stage")}
                 {renderSortHeader("Days in Stage", "daysInStage")}
+                <th className="px-3 py-2">Construction</th>
+                <th className="px-3 py-2">Inspection</th>
                 <th className="px-3 py-2">M1 Status</th>
                 <th className="px-3 py-2">M2 Status</th>
                 <th className="px-3 py-2">Contact</th>
@@ -299,6 +322,8 @@ export default function PePipelinePage() {
                       {deal.daysInStage}d
                     </span>
                   </td>
+                  <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>
+                  <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>
                   <td className="px-3 py-3">{m1m2Badge(deal.m1Status)}</td>
                   <td className="px-3 py-3">{m1m2Badge(deal.m2Status)}</td>
                   <td className="text-muted px-3 py-3 text-xs">{deal.contactName || "—"}</td>
