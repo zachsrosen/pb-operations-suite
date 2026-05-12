@@ -373,7 +373,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     zuperUid: deal.zuperUid ?? null,
     hubspotContactId: deal.hubspotContactId ?? null,
 
-    // PE Portal
+    // Participate Energy (not in Prisma Deal — populated only from HubSpot)
     pePortalUrl: null,
     peProjectId: null,
   };
