@@ -123,6 +123,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/utility-design-requirements",
   "/dashboards/utility-tracker",
   "/dashboards/zuper-compliance",
+  "/dashboards/zuper-drift",
   "/dashboards/zuper-status-comparison",
   "/estimator",
   "/estimator/battery",

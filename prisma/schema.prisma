@@ -4158,3 +4158,52 @@ model PeDocumentReview {
   @@unique([dealId, docName])
   @@index([dealId])
 }
+
+// ---------------------------------------------------------------------------
+// Zuper ↔ HubSpot status drift — PM-facing flag list
+// ---------------------------------------------------------------------------
+
+enum ZuperDriftType {
+  STATUS
+  FAIL_DISAGREEMENT
+  COMPLETION_DATE
+  INSPECTION_PASS_DATE
+  INSPECTION_FAIL_DATE
+}
+
+enum ZuperDriftStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+/// PM-facing flag list of Zuper job ↔ HubSpot deal drift.
+/// Written by /api/cron/zuper-status-reconcile every 15 min.
+/// One row per Zuper job uid (any combination of drift types
+/// fires into the same row via the driftTypes array).
+model ZuperStatusDrift {
+  id                  String              @id @default(cuid())
+  zuperJobUid         String              @unique
+  hubspotDealId       String?
+  projectNumber       String?
+  dealName            String?
+  pbLocation          String?
+  category            String              // site_survey | construction | solar_install | battery_install | ev_install | inspection
+  zuperJobTitle       String?
+  zuperStatus         String
+  hubspotStatus       String?
+  driftTypes          ZuperDriftType[]
+  zuperCompletedAt    DateTime?
+  hubspotCompletionAt DateTime?
+  zuperFailedAt       DateTime?
+  hubspotFailAt       DateTime?
+  detectedAt          DateTime            @default(now())
+  status              ZuperDriftStatus    @default(OPEN)
+  resolvedAt          DateTime?
+  resolvedBy          String?
+  resolveNote         String?
+
+  @@index([status])
+  @@index([hubspotDealId])
+  @@index([category])
+}

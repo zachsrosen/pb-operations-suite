@@ -109,6 +109,14 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "📋",
     section: "Reviews",
   },
+  {
+    href: "/dashboards/zuper-drift",
+    title: "Zuper Status Drift",
+    description: "Zuper jobs whose status, completion date, or inspection result doesn't match HubSpot — backup for the native HubSpot↔Zuper sync.",
+    tag: "REVIEW",
+    icon: "🔁",
+    section: "Reviews",
+  },
 
   // ── Metrics ──
   {

@@ -4,6 +4,13 @@ import { getUserByEmail } from "@/lib/db";
 import { zuper, JOB_CATEGORY_UIDS, CONSTRUCTION_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCompletedTimeFromHistory, COMPLETED_STATUSES } from "@/lib/compliance-helpers";
 import { Client } from "@hubspot/api-client";
+import {
+  isStatusMismatch,
+  checkHubspotAhead,
+  compareDates,
+  dateDiffDays,
+  markSupersededJobs,
+} from "@/lib/zuper-status-mapping";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -258,160 +265,10 @@ function getTeamName(job: any): string | null {
   return null;
 }
 
-// Define which Zuper statuses map to which HubSpot statuses
-const STATUS_MAPPING: Record<string, Record<string, string[]>> = {
-  site_survey: {
-    "Scheduling On-Hold": ["Scheduling On-Hold"],
-    "Ready To Schedule": ["Ready to Schedule"],
-    "Awaiting Reply": ["Awaiting Reply"],
-    "Scheduled": ["Scheduled"],
-    "On Our Way": ["On Our Way"],
-    "Started": ["Started", "In Progress"],
-    "Completed": ["Completed"],
-    "Needs Revisit": ["Needs Revisit"],
-  },
-  construction: {
-    "Ready To Build": ["Ready to Build"],
-    "Scheduled": ["Scheduled"],
-    "On Our Way": ["On Our Way"],
-    "Started": ["Started", "In Progress"],
-    "Loose Ends Remaining": ["Loose Ends Remaining"],
-    "Construction Complete": ["Construction Complete"],
-  },
-  inspection: {
-    "Ready For Inspection": ["Ready For Inspection"],
-    "Scheduled": ["Scheduled"],
-    "On Our Way": ["On Our Way"],
-    "Started": ["Started", "In Progress"],
-    "Passed": ["Passed"],
-    "Partial Pass": ["Partial Pass"],
-    "Failed": ["Failed"],
-  },
-};
-
-// HubSpot terminal statuses — if HS shows one of these and Zuper is behind, it's not a real problem
-const HS_TERMINAL_STATUSES = new Set([
-  "completed", "passed", "construction complete", "partial pass",
-]);
-
-// Check if Zuper status and HubSpot status are in sync
-function isStatusMismatch(
-  zuperStatus: string,
-  hubspotStatus: string | null,
-  category: string
-): boolean {
-  if (!hubspotStatus) return true;
-
-  const categoryMap = STATUS_MAPPING[category];
-  if (!categoryMap) return zuperStatus.toLowerCase() !== hubspotStatus.toLowerCase();
-
-  const expectedHubspotStatuses = categoryMap[zuperStatus];
-  if (!expectedHubspotStatuses) {
-    return zuperStatus.toLowerCase() !== hubspotStatus.toLowerCase();
-  }
-
-  return !expectedHubspotStatuses.some(
-    (s) => s.toLowerCase() === hubspotStatus.toLowerCase()
-  );
-}
-
-// Post-failure statuses — if Zuper is "Failed" and HS shows one of these,
-// it means the team moved on to re-inspection. Not a real mismatch IF the fail date was recorded.
-const POST_FAILURE_STATUSES = new Set([
-  "ready for inspection", "waiting on revisions", "scheduled",
-]);
-
-// Check if HubSpot is ahead: HS shows terminal but Zuper doesn't,
-// OR Zuper failed and HS moved to a post-failure status with the fail date recorded AND matching
-function checkHubspotAhead(
-  zuperStatus: string,
-  hubspotStatus: string | null,
-  deal?: HubSpotDealData,
-  job?: ZuperJobSummary,
-): boolean {
-  if (!hubspotStatus) return false;
-  const hsLower = hubspotStatus.toLowerCase();
-  const zLower = zuperStatus.toLowerCase();
-
-  // Case 1: HS is terminal, Zuper isn't
-  if (HS_TERMINAL_STATUSES.has(hsLower) && !HS_TERMINAL_STATUSES.has(zLower)) return true;
-
-  // Case 2: Zuper failed, HS moved to post-failure status, AND fail date was recorded correctly
-  if (zLower === "failed" && POST_FAILURE_STATUSES.has(hsLower) && deal?.inspectionFailDate) {
-    // If we have the Zuper fail date, verify it matches HubSpot's fail date (±1 day tolerance)
-    if (job?.failedAt) {
-      const match = compareDates(job.failedAt, deal.inspectionFailDate);
-      return match === true; // only mark as HS-ahead if fail dates align
-    }
-    // No Zuper fail date available — trust HubSpot's fail date existence
-    return true;
-  }
-
-  return false;
-}
-
-// HubSpot date-only properties use the portal timezone (America/Denver for PB).
-// Zuper returns UTC timestamps. Convert to Mountain Time before extracting the date
-// to avoid false 1-day mismatches at the day boundary.
-const PORTAL_TZ = "America/Denver";
-
-/**
- * Convert a Zuper UTC timestamp to a YYYY-MM-DD date in the portal timezone.
- * Zuper stores full ISO timestamps (e.g. "2026-01-14T18:00:00.000Z").
- */
-function zuperDateToLocal(dateStr: string): string {
-  const d = new Date(dateStr);
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: PORTAL_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-/**
- * Extract a YYYY-MM-DD from a HubSpot date property.
- * HubSpot date-only properties are stored as midnight UTC (e.g. "2026-01-14"
- * or "2026-01-14T00:00:00.000Z"). Converting to Mountain would shift them
- * back a day, so we just take the first 10 characters.
- */
-function hubspotDateToLocal(dateStr: string): string {
-  // If it's already YYYY-MM-DD, return as-is
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-  // If it's a full ISO timestamp at midnight UTC, extract the date portion
-  return dateStr.slice(0, 10);
-}
-
-// Compare a Zuper date (UTC timestamp) with a HubSpot date (date-only property)
-// Returns true if they are the same day, false if different, null if either is missing
-function compareDates(zuperDate: string | null, hubspotDate: string | null): boolean | null {
-  if (!zuperDate || !hubspotDate) return null;
-  try {
-    const d1 = zuperDateToLocal(zuperDate);
-    const d2 = hubspotDateToLocal(hubspotDate);
-    if (d1 === d2) return true;
-    // Allow 1-day tolerance — timezone handling differences between
-    // Zuper, Zapier, and HubSpot cause unavoidable ±1 day drift
-    const ms = Math.abs(new Date(d1).getTime() - new Date(d2).getTime());
-    const days = Math.round(ms / (1000 * 60 * 60 * 24));
-    return days <= 1;
-  } catch {
-    return null;
-  }
-}
-
-// Calculate absolute difference in days between a Zuper date and HubSpot date
-function dateDiffDays(zuperDate: string | null, hubspotDate: string | null): number | null {
-  if (!zuperDate || !hubspotDate) return null;
-  try {
-    const d1 = zuperDateToLocal(zuperDate);
-    const d2 = hubspotDateToLocal(hubspotDate);
-    const ms = Math.abs(new Date(d1).getTime() - new Date(d2).getTime());
-    return Math.round(ms / (1000 * 60 * 60 * 24));
-  } catch {
-    return null;
-  }
-}
+// STATUS_MAPPING, HS_TERMINAL_STATUSES, POST_FAILURE_STATUSES,
+// isStatusMismatch, checkHubspotAhead, zuperDateToLocal,
+// hubspotDateToLocal, compareDates, dateDiffDays are imported from
+// `@/lib/zuper-status-mapping`. The cron + backfill share that same source.
 
 /** Parse a date string to numeric timestamp for comparison. Returns 0 on failure. */
 function toTimestamp(dateStr: string | null | undefined): number {
@@ -503,46 +360,9 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
   return { enriched: enrichedCount, total: needsEnrichment.length };
 }
 
+// markSupersededJobs is imported from `@/lib/zuper-status-mapping`.
+
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
-/**
- * Mark superseded inspection jobs: when multiple non-cancelled inspection jobs
- * exist for the same deal, the older ones are marked superseded. HubSpot only
- * tracks the latest inspection's status, so comparing older jobs creates false
- * mismatches. Only applies to inspection — construction/survey re-dos are rare
- * and worth flagging as true duplicates.
- */
-function markSupersededJobs(jobs: ZuperJobSummary[]): void {
-  const CANCELLED = new Set(["cancelled", "canceled"]);
-
-  // Group inspection jobs by projectNumber (works even without deal link).
-  // Both the original inspection and re-inspection share the same Zuper project
-  // and have the same PROJ-XXXX in their title.
-  const groups = new Map<string, ZuperJobSummary[]>();
-  for (const job of jobs) {
-    if (job.category !== "inspection") continue;
-    if (CANCELLED.has(job.zuperStatus.toLowerCase())) continue;
-    if (!job.projectNumber) continue;
-    const key = job.projectNumber; // e.g. "PROJ-7159"
-    const arr = groups.get(key) || [];
-    arr.push(job);
-    groups.set(key, arr);
-  }
-
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
-    // Sort by scheduled start descending (newest first), fallback to createdAt
-    group.sort((a, b) => {
-      const dateA = a.scheduledStart || a.createdAt || "";
-      const dateB = b.scheduledStart || b.createdAt || "";
-      return dateB.localeCompare(dateA);
-    });
-    // Mark all but the newest as superseded
-    for (let i = 1; i < group.length; i++) {
-      group[i].isSuperseded = true;
-    }
-  }
-}
-
 const MAX_PAGES = 50; // Safety cap: 50 pages × 100 jobs = 5,000 jobs max per category
 
 interface FetchResult {

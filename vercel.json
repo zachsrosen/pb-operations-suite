@@ -168,6 +168,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/zuper-status-reconcile",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/office-performance-warm",
       "schedule": "*/4 * * * *"
     },
