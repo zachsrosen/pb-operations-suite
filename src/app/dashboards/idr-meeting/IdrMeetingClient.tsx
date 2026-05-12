@@ -89,6 +89,7 @@ export interface IdrItem {
   shitShowReason: string | null;
   designRevisionNeeded: boolean;
   designRevisionReason: string | null;
+  needsReReview: boolean;
   // Adder checkboxes
   adderTileRoof: boolean;
   adderMetalRoof: boolean;

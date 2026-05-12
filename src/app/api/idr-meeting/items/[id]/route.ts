@@ -17,7 +17,7 @@ const EDITABLE_FIELDS = [
   "customerNotes", "customerNotesCreateTask",
   "operationsNotes", "opsRevisionNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
-  "designRevisionNeeded", "designRevisionReason",
+  "designRevisionNeeded", "designRevisionReason", "needsReReview",
   // Adders
   "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
   "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",
@@ -181,6 +181,7 @@ export async function DELETE(
           adderTier1: item.adderTier1,
           adderTier2: item.adderTier2,
           ...(item.customAdders != null ? { customAdders: item.customAdders } : {}),
+          needsReReview: item.needsReReview,
         },
       });
     }

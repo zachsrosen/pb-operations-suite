@@ -188,6 +188,7 @@ export async function POST(req: NextRequest) {
       ...(Array.isArray(q.customAdders) && q.customAdders.length > 0 ? { customAdders: q.customAdders } : {}),
       ...(q.designRevisionNeeded ? { designRevisionNeeded: q.designRevisionNeeded } : {}),
       ...(q.designRevisionReason ? { designRevisionReason: q.designRevisionReason } : {}),
+      ...(q.needsReReview ? { needsReReview: q.needsReReview } : {}),
     });
 
     // New escalation deals (not already in session) — fetch snapshots and create items

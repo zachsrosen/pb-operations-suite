@@ -18,7 +18,7 @@ const PREP_FIELDS = [
   "needsSurveyInfo", "needsResurvey", "salesChangeRequested",
   "salesChangeNotes", "salesChangeAmount", "opsChangeNotes",
   "customerNotes", "customerNotesCreateTask", "operationsNotes", "opsRevisionNotes",
-  "designNotes", "conclusion", "designRevisionNeeded", "designRevisionReason",
+  "designNotes", "conclusion", "designRevisionNeeded", "designRevisionReason", "needsReReview",
   // Adders
   "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
   "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",

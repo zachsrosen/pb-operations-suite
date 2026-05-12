@@ -164,6 +164,8 @@ describe("buildHubSpotPropertyUpdates", () => {
       salesChangeNotes: null,
       opsChangeNotes: null,
       designRevisionNeeded: false,
+      designRevisionReason: null,
+      needsReReview: false,
       reviewed: false,
     });
     expect(updates.install_difficulty).toBe("3");
@@ -192,6 +194,8 @@ describe("buildHubSpotPropertyUpdates", () => {
       salesChangeNotes: null,
       opsChangeNotes: null,
       designRevisionNeeded: false,
+      designRevisionReason: null,
+      needsReReview: false,
       reviewed: false,
     });
     expect(updates.install_difficulty).toBe("3");
