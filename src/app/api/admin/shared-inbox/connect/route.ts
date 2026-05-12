@@ -23,6 +23,8 @@ import { requireApiAuth } from "@/lib/api-auth";
  */
 
 const SCOPES = [
+  "openid",
+  "email",
   "https://www.googleapis.com/auth/gmail.readonly",
 ].join(" ");
 
