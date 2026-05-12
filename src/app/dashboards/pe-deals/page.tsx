@@ -584,7 +584,7 @@ export default function PeDealsPage() {
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats — PE payment pipeline */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <StatCard
           key={`deals-${filtered.length}`}
           label="PE Deals"
