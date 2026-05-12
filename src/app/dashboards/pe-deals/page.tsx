@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
@@ -109,6 +109,75 @@ function truncateName(name: string, max = 20): string {
   return name.slice(0, max) + "…";
 }
 
+// ---------------------------------------------------------------------------
+// PE Document requirements + milestone mapping (shared with pe-docs)
+// ---------------------------------------------------------------------------
+
+interface DocReview {
+  id: string;
+  dealId: string;
+  docName: string;
+  status: "NOT_UPLOADED" | "UPLOADED" | "UNDER_REVIEW" | "ACTION_REQUIRED" | "REJECTED" | "APPROVED";
+  notes: string | null;
+}
+
+interface DocRequirement {
+  name: string;
+  section: "onboarding" | "ic" | "pc";
+  owner: "PB" | "Customer" | "PE";
+  note?: string;
+}
+
+const PE_DOCUMENTS: DocRequirement[] = [
+  { name: "Customer Agreement (PPA/ESA)", section: "onboarding", owner: "Customer" },
+  { name: "Installation Order", section: "onboarding", owner: "PB" },
+  { name: "State Disclosures", section: "onboarding", owner: "PB" },
+  { name: "Utility Bill", section: "onboarding", owner: "Customer" },
+  { name: "Signed Proposal", section: "ic", owner: "PB" },
+  { name: "Design Plan", section: "ic", owner: "PB" },
+  { name: "Photos per Policy", section: "ic", owner: "PB" },
+  { name: "Signed Final Permit", section: "ic", owner: "PB" },
+  { name: "Access to Monitoring", section: "ic", owner: "PB" },
+  { name: "Certificate of Acceptance", section: "ic", owner: "PB" },
+  { name: "Attestation of Customer Payment", section: "ic", owner: "PB" },
+  { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB" },
+  { name: "Signed Interconnection Agreement", section: "pc", owner: "PB" },
+  { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB" },
+  { name: "Permission to Operate (PTO)", section: "pc", owner: "PB" },
+];
+
+const DOC_SECTION_LABELS: Record<string, string> = {
+  onboarding: "Onboarding",
+  ic: "Inspection Complete (M1)",
+  pc: "Project Complete (M2)",
+};
+
+const DOC_STATUS_DOT: Record<string, string> = {
+  APPROVED: "bg-green-500",
+  REJECTED: "bg-red-500",
+  ACTION_REQUIRED: "bg-orange-500",
+  UNDER_REVIEW: "bg-blue-500",
+  UPLOADED: "bg-blue-500",
+  NOT_UPLOADED: "bg-zinc-500",
+};
+
+const DOC_STATUS_LABEL: Record<string, string> = {
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  ACTION_REQUIRED: "Action Required",
+  UNDER_REVIEW: "Under Review",
+  UPLOADED: "Uploaded",
+  NOT_UPLOADED: "Not Uploaded",
+};
+
+function dealDocSections(stageLabel: string): ("onboarding" | "ic" | "pc")[] {
+  const s = stageLabel.toLowerCase();
+  if (s.includes("complete") || s.includes("close out") || s.includes("pto") || s.includes("permission to operate"))
+    return ["onboarding", "ic", "pc"];
+  if (s.includes("inspection")) return ["onboarding", "ic"];
+  return ["onboarding"];
+}
+
 type SortKey = keyof PeDeal;
 type SortDir = "asc" | "desc";
 
@@ -190,6 +259,7 @@ function DealSection({
   toggleSort,
   onStatusChange,
   savingDeals,
+  docMap,
 }: {
   title: string;
   subtitle: string;
@@ -201,7 +271,10 @@ function DealSection({
   toggleSort: (key: SortKey) => void;
   onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
   savingDeals: Set<string>;
+  docMap: Map<string, DocReview>;
 }) {
+  const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
+
   const accentBorder = accent === "orange"
     ? "border-l-orange-400"
     : accent === "emerald"
@@ -248,76 +321,162 @@ function DealSection({
                 </td>
               </tr>
             ) : (
-              deals.map((deal) => (
-                <tr key={deal.dealId} className="border-b border-border/50 hover:bg-surface-2/50">
-                  <td className="px-1.5 py-1.5 whitespace-nowrap max-w-[160px]">
-                    <div className="flex items-center gap-1">
-                      <a
-                        href={deal.hubspotUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-orange-400 hover:text-orange-300 hover:underline truncate"
-                        title={deal.dealName}
-                      >
-                        {truncateName(deal.dealName, 16)}
-                      </a>
-                      {deal.pePortalUrl && (
-                        <a
-                          href={deal.pePortalUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-emerald-500/60 hover:text-emerald-400 flex-shrink-0"
-                          title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                          </svg>
-                        </a>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap" title={deal.pbLocation}>{shortLocation(deal.pbLocation) || "—"}</td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap max-w-[80px] truncate" title={deal.dealStageLabel}>{deal.dealStageLabel}</td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap">
-                    {deal.closeDate ? new Date(deal.closeDate).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }) : "—"}
-                  </td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap" title={deal.systemType}>
-                    {shortType(deal.systemType)}
-                  </td>
-                  <td className="px-1.5 py-1.5 whitespace-nowrap text-center">
-                    {deal.ecLookupFailed ? (
-                      <span className="text-yellow-400" title="EC lookup failed">⚠️</span>
-                    ) : deal.energyCommunity ? (
-                      <span className="text-emerald-400">✓</span>
-                    ) : (
-                      <span className="text-muted">—</span>
+              deals.map((deal) => {
+                const isExpanded = expandedDeal === deal.dealId;
+                const sections = dealDocSections(deal.dealStageLabel);
+                const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
+                const approvedCount = docs.filter((d) => docMap.get(`${deal.dealId}:${d.name}`)?.status === "APPROVED").length;
+
+                return (
+                  <React.Fragment key={deal.dealId}>
+                    <tr
+                      className={`border-b border-border/50 hover:bg-surface-2/50 cursor-pointer ${isExpanded ? "bg-surface-2/30" : ""}`}
+                      onClick={() => setExpandedDeal(isExpanded ? null : deal.dealId)}
+                    >
+                      <td className="px-1.5 py-1.5 whitespace-nowrap max-w-[160px]">
+                        <div className="flex items-center gap-1">
+                          <a
+                            href={deal.hubspotUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-orange-400 hover:text-orange-300 hover:underline truncate"
+                            title={deal.dealName}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {truncateName(deal.dealName, 16)}
+                          </a>
+                          {deal.pePortalUrl && (
+                            <a
+                              href={deal.pePortalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-emerald-500/60 hover:text-emerald-400 flex-shrink-0"
+                              title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                              </svg>
+                            </a>
+                          )}
+                          {/* Doc progress indicator */}
+                          {docs.length > 0 && (
+                            <span className={`text-[9px] ml-0.5 ${approvedCount === docs.length ? "text-green-400" : "text-muted/50"}`} title={`${approvedCount}/${docs.length} docs approved`}>
+                              {approvedCount}/{docs.length}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap" title={deal.pbLocation}>{shortLocation(deal.pbLocation) || "—"}</td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap max-w-[80px] truncate" title={deal.dealStageLabel}>{deal.dealStageLabel}</td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap">
+                        {deal.closeDate ? new Date(deal.closeDate).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }) : "—"}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap" title={deal.systemType}>
+                        {shortType(deal.systemType)}
+                      </td>
+                      <td className="px-1.5 py-1.5 whitespace-nowrap text-center">
+                        {deal.ecLookupFailed ? (
+                          <span className="text-yellow-400" title="EC lookup failed">⚠️</span>
+                        ) : deal.energyCommunity ? (
+                          <span className="text-emerald-400">✓</span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
+                      <td className="px-1.5 py-1.5 text-foreground whitespace-nowrap text-right font-medium">{fmt(deal.epcPrice)}</td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.customerPays)}</td>
+                      <td className="px-1.5 py-1.5 text-blue-400 whitespace-nowrap text-right font-medium">{fmt(deal.pePaymentTotal)}</td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentIC)}</td>
+                      <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
+                      <td className="px-1.5 py-1.5 text-emerald-400 whitespace-nowrap text-right font-medium">{fmt(deal.totalPBRevenue)}</td>
+                      <td className="px-1.5 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <StatusDropdown
+                          value={deal.peM1Status}
+                          onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
+                          saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
+                          options={M1_OPTIONS}
+                        />
+                      </td>
+                      <td className="px-1.5 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <StatusDropdown
+                          value={deal.peM2Status}
+                          onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
+                          saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
+                          options={M2_OPTIONS}
+                        />
+                      </td>
+                    </tr>
+                    {/* Expanded document breakdown */}
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={COLUMNS.length} className="bg-surface-2/30 px-4 py-3 border-b border-border/50">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {sections.map((sec) => {
+                              const sectionDocs = PE_DOCUMENTS.filter((d) => d.section === sec);
+                              const sectionApproved = sectionDocs.filter((d) =>
+                                docMap.get(`${deal.dealId}:${d.name}`)?.status === "APPROVED"
+                              ).length;
+                              return (
+                                <div key={sec}>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-xs font-semibold text-foreground">{DOC_SECTION_LABELS[sec]}</span>
+                                    <span className={`text-[10px] ${sectionApproved === sectionDocs.length ? "text-green-400" : "text-muted"}`}>
+                                      {sectionApproved}/{sectionDocs.length}
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1">
+                                    {sectionDocs.map((doc) => {
+                                      const review = docMap.get(`${deal.dealId}:${doc.name}`);
+                                      const status = review?.status ?? null;
+                                      const isApproved = status === "APPROVED";
+                                      return (
+                                        <div key={doc.name} className="flex items-center gap-1.5">
+                                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${status ? DOC_STATUS_DOT[status] : "bg-zinc-700"}`} />
+                                          <span className={`text-[11px] flex-1 truncate ${isApproved ? "text-muted line-through" : "text-foreground"}`} title={doc.name}>
+                                            {doc.name}
+                                          </span>
+                                          {status ? (
+                                            <span className={`text-[9px] whitespace-nowrap ${isApproved ? "text-green-400" : status === "REJECTED" ? "text-red-400" : status === "ACTION_REQUIRED" ? "text-orange-400" : "text-muted"}`}>
+                                              {DOC_STATUS_LABEL[status]}
+                                            </span>
+                                          ) : (
+                                            <span className="text-[9px] text-muted/40">—</span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* PE notes */}
+                          {(() => {
+                            const notes = sections.flatMap((sec) =>
+                              PE_DOCUMENTS.filter((d) => d.section === sec)
+                                .map((d) => ({ doc: d.name, note: docMap.get(`${deal.dealId}:${d.name}`)?.notes }))
+                                .filter((n) => n.note)
+                            );
+                            if (!notes.length) return null;
+                            return (
+                              <div className="mt-3 pt-2 border-t border-border/30">
+                                <span className="text-[10px] font-medium text-muted">PE Notes:</span>
+                                {notes.map((n) => (
+                                  <div key={n.doc} className="text-[10px] text-orange-400/80 mt-0.5">
+                                    <span className="text-muted">{n.doc}:</span> {n.note}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
-                  <td className="px-1.5 py-1.5 text-foreground whitespace-nowrap text-right font-medium">{fmt(deal.epcPrice)}</td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.customerPays)}</td>
-                  <td className="px-1.5 py-1.5 text-blue-400 whitespace-nowrap text-right font-medium">{fmt(deal.pePaymentTotal)}</td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentIC)}</td>
-                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
-                  <td className="px-1.5 py-1.5 text-emerald-400 whitespace-nowrap text-right font-medium">{fmt(deal.totalPBRevenue)}</td>
-                  <td className="px-1.5 py-1.5 whitespace-nowrap">
-                    <StatusDropdown
-                      value={deal.peM1Status}
-                      onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
-                      saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
-                      options={M1_OPTIONS}
-                    />
-                  </td>
-                  <td className="px-1.5 py-1.5 whitespace-nowrap">
-                    <StatusDropdown
-                      value={deal.peM2Status}
-                      onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
-                      saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
-                      options={M2_OPTIONS}
-                    />
-                  </td>
-                </tr>
-              ))
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -341,6 +500,21 @@ export default function PeDealsPage() {
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // Fetch PE document reviews for inline doc breakdown
+  const { data: docsData } = useQuery<{ docs: DocReview[] }>({
+    queryKey: ["peDocReviews"],
+    queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
+    staleTime: 60 * 1000,
+  });
+
+  const docMap = useMemo(() => {
+    const m = new Map<string, DocReview>();
+    for (const d of docsData?.docs ?? []) {
+      m.set(`${d.dealId}:${d.docName}`, d);
+    }
+    return m;
+  }, [docsData]);
 
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -743,6 +917,7 @@ export default function PeDealsPage() {
             toggleSort={toggleSort}
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
+            docMap={docMap}
           />
           {partiallyPaidDeals.length > 0 && (
             <DealSection
@@ -756,6 +931,7 @@ export default function PeDealsPage() {
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
+              docMap={docMap}
             />
           )}
           {fullyApprovedDeals.length > 0 && (
@@ -770,6 +946,7 @@ export default function PeDealsPage() {
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
+              docMap={docMap}
             />
           )}
           {partiallyApprovedDeals.length > 0 && (
@@ -784,6 +961,7 @@ export default function PeDealsPage() {
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
+              docMap={docMap}
             />
           )}
           {m2Deals.length > 0 && (
@@ -798,6 +976,7 @@ export default function PeDealsPage() {
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
+              docMap={docMap}
             />
           )}
           {m1Deals.length > 0 && (
@@ -812,6 +991,7 @@ export default function PeDealsPage() {
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
+              docMap={docMap}
             />
           )}
           <DealSection
@@ -824,6 +1004,7 @@ export default function PeDealsPage() {
             toggleSort={toggleSort}
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
+            docMap={docMap}
           />
         </div>
       )}
