@@ -6,15 +6,17 @@ import DaDriftClient from "./DaDriftClient";
 import type { DaDriftStatus } from "@/generated/prisma/enums";
 
 /**
- * Admin DA Drift dashboard.
+ * DA Drift dashboard — lives in the Project Management suite.
  *
  * Lists mismatches between PandaDoc DA status and HubSpot `layout_status`
  * detected by /api/cron/pandadoc-da-reconcile. Backup for the native
  * HubSpot↔PandaDoc connector, which silently drops events sometimes.
  *
- * Flag-only: the admin clicks through to HubSpot to fix `layout_status`
+ * Flag-only: the user clicks through to HubSpot to fix `layout_status`
  * themselves, then marks the row Resolved or Ignored here.
  */
+const ALLOWED_ROLES = ["ADMIN", "OWNER", "EXECUTIVE", "PROJECT_MANAGER"] as const;
+
 export default async function DaDriftPage({
   searchParams,
 }: {
@@ -23,8 +25,10 @@ export default async function DaDriftPage({
   const session = await auth();
   const roles = (session?.user as { roles?: string[] } | undefined)?.roles ?? [];
   if (!session?.user) redirect("/");
-  const isAdmin = roles.some((r) => r === "ADMIN" || r === "OWNER" || r === "EXECUTIVE");
-  if (!isAdmin) redirect("/");
+  const hasAccess = roles.some((r) =>
+    (ALLOWED_ROLES as readonly string[]).includes(r),
+  );
+  if (!hasAccess) redirect("/");
 
   if (!prisma) {
     return (

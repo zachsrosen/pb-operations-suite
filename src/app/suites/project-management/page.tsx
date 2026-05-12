@@ -101,6 +101,14 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "🔄",
     section: "Reviews",
   },
+  {
+    href: "/dashboards/da-drift",
+    title: "DA Status Drift",
+    description: "DAs whose customer dropdown choice (approved/rejected) didn't sync to HubSpot — backup for the native PandaDoc connector.",
+    tag: "REVIEW",
+    icon: "📋",
+    section: "Reviews",
+  },
 
   // ── Metrics ──
   {

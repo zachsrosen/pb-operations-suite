@@ -1,11 +1,15 @@
 /**
- * GET  /api/admin/da-drift?status=open|resolved|ignored|all
- * POST /api/admin/da-drift  { id, action: "resolve"|"ignore"|"reopen", note? }
+ * GET  /api/da-drift?status=open|resolved|ignored|all
+ * POST /api/da-drift  { id, action: "resolve"|"ignore"|"reopen", note? }
  *
  * Lists and resolves DA status drift entries written by the
  * /api/cron/pandadoc-da-reconcile job. Flag-only — these endpoints do not
- * push corrections to HubSpot; the admin uses the linked deal URL to fix
+ * push corrections to HubSpot; the user uses the linked deal URL to fix
  * `layout_status` themselves.
+ *
+ * Surfaced in the Project Management suite — PMs are the ones who reconcile
+ * the underlying HubSpot deal property, so they get access alongside admin
+ * and executive.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,9 +17,9 @@ import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
 import type { DaDriftStatus } from "@/generated/prisma/enums";
 
-const ALLOWED_ROLES = ["ADMIN", "OWNER", "EXECUTIVE"] as const;
+const ALLOWED_ROLES = ["ADMIN", "OWNER", "EXECUTIVE", "PROJECT_MANAGER"] as const;
 
-async function requireAdmin() {
+async function requireAccess() {
   const session = await auth();
   if (!session?.user?.email) {
     return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
@@ -32,7 +36,7 @@ async function requireAdmin() {
 }
 
 export async function GET(request: NextRequest) {
-  const gate = await requireAdmin();
+  const gate = await requireAccess();
   if ("error" in gate) return gate.error;
 
   const statusParam = (request.nextUrl.searchParams.get("status") ?? "open").toLowerCase();
@@ -56,7 +60,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const gate = await requireAdmin();
+  const gate = await requireAccess();
   if ("error" in gate) return gate.error;
 
   let body: { id?: string; action?: string; note?: string };
