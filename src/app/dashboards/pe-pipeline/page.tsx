@@ -196,7 +196,8 @@ export default function PePipelinePage() {
     const totalDays = filtered.reduce((sum, d) => sum + d.daysInStage, 0);
     const avgDays = filtered.length > 0 ? Math.round(totalDays / filtered.length) : 0;
     const stale = filtered.filter((d) => d.daysInStage >= STALE_THRESHOLD).length;
-    return { inConstruction, inInspection, avgDays, stale };
+    const totalRevenue = filtered.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+    return { inConstruction, inInspection, avgDays, stale, totalRevenue };
   }, [filtered]);
 
   // Sort handler
@@ -228,7 +229,7 @@ export default function PePipelinePage() {
       fullWidth
     >
       {/* Hero Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard
           label="In Construction"
           value={isLoading ? null : stats.inConstruction}
@@ -240,6 +241,12 @@ export default function PePipelinePage() {
           value={isLoading ? null : stats.inInspection}
           subtitle="PE deals"
           color="blue"
+        />
+        <StatCard
+          label="Total Revenue"
+          value={isLoading ? null : fmtCurrency(stats.totalRevenue)}
+          subtitle="in pipeline"
+          color="emerald"
         />
         <StatCard
           label="Avg Days in Stage"
