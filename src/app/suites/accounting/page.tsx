@@ -63,6 +63,14 @@ const LINKS: SuitePageCard[] = [
     section: "Participate Energy",
   },
   {
+    href: "/dashboards/pipeline-tracker",
+    title: "Pipeline Tracker",
+    description: "All deals in construction and inspection — sorted by days in stage.",
+    tag: "OPS",
+    icon: "📊",
+    section: "Participate Energy",
+  },
+  {
     href: "/dashboards/pe-pipeline",
     title: "PE Pipeline Tracker",
     description: "PE deals stuck in construction and inspection — sorted by days in stage to push Ops forward.",

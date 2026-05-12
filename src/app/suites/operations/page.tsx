@@ -101,6 +101,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Construction",
   },
   {
+    href: "/dashboards/pipeline-tracker",
+    title: "Pipeline Tracker",
+    description: "All deals in construction and inspection — sorted by days in stage.",
+    tag: "OPS",
+    icon: "📊",
+    section: "Construction",
+  },
+  {
     href: "/dashboards/pe-pipeline",
     title: "PE Pipeline Tracker",
     description: "PE deals stuck in construction and inspection — sorted by days in stage.",
