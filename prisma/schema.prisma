@@ -304,6 +304,9 @@ enum ActivityType {
   WEBHOOK_AIRCALL_SIGNATURE_FAILED
   AIRCALL_BACKFILL_RUN
   AIRCALL_SYNC_RUN
+
+  // Participate Energy — email status sync
+  PE_EMAIL_SYNC
 }
 
 enum ClientType {

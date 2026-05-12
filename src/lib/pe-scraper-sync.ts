@@ -221,7 +221,7 @@ export function mapCompactStatus(code: string): PeDocStatus {
 // PE_DOCUMENTS list. This map normalizes scraper names to our canonical names.
 // ---------------------------------------------------------------------------
 
-const DOC_NAME_MAP: Record<string, string> = {
+export const DOC_NAME_MAP: Record<string, string> = {
   "customer agreement (ppa/esa)": "Customer Agreement (PPA/ESA)",
   "customer agreement": "Customer Agreement (PPA/ESA)",
   "installation order": "Installation Order",
@@ -242,7 +242,7 @@ const DOC_NAME_MAP: Record<string, string> = {
   "permission to operate": "Permission to Operate (PTO)",
 };
 
-function normalizeDocName(raw: string): string {
+export function normalizeDocName(raw: string): string {
   const lower = raw.trim().toLowerCase();
   return DOC_NAME_MAP[lower] ?? raw.trim();
 }

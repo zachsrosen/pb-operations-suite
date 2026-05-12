@@ -26,6 +26,7 @@ import {
   fetchPeScraperReport,
   buildPeDealMap,
 } from "@/lib/pe-scraper-sync";
+import { syncPeEmailStatuses } from "@/lib/pe-email-sync";
 
 // Extend serverless function timeout — the full sync (342 projects × 14 docs
 // = ~4800 sequential upserts + GCS fetch + HubSpot deal map) needs > 60s.
@@ -48,6 +49,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    // Email sync path: { source: "email", sinceDate?: string }
+    if (body.source === "email") {
+      const result = await syncPeEmailStatuses({
+        sinceDate: body.sinceDate,
+      });
+      return NextResponse.json(result);
+    }
+
     const { url, html: rawHtml, compact } = body as {
       url?: string;
       html?: string;

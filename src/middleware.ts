@@ -66,6 +66,8 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/powerhub-telemetry",  // PowerHub telemetry poll — CRON_SECRET validated in route
   "/api/cron/powerhub-alerts",     // PowerHub alert poll — CRON_SECRET validated in route
   "/api/cron/goals-digest",        // Goals Weekly Digest — CRON_SECRET validated + IdempotencyKey check in route
+  "/api/cron/pe-invoice-audit",    // PE invoice payment audit — CRON_SECRET validated in route
+  "/api/cron/pe-email-sync",       // PE email status sync — CRON_SECRET validated in route
   "/api/properties/workflow-sync", // HubSpot workflow webhook → property sync — PROPERTY_SYNC_ENABLED + Zod validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
