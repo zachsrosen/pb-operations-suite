@@ -200,6 +200,7 @@ export const dealPropertyMap: Record<string, PropertyMapping> = {
   link_to_opensolar: { column: "openSolarUrl", type: "string" },
   os_project_id: { column: "openSolarId", type: "string" },
   zuper_site_survey_uid: { column: "zuperUid", type: "string" },
+  // pe_portal_url + pe_project_id: consumed by transformDealToProject, not synced to Deal table
 
   // Install Planning
   expected_days_for_install: { column: "expectedDaysForInstall", type: "int" },

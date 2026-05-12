@@ -1,10 +1,12 @@
 /**
  * PE Document Scraper Sync API
  *
- * POST — Trigger a sync from the PE portal scraper HTML report.
- *   Accepts either:
- *     { url: string }  — GCS signed URL to fetch HTML from
- *     { html: string } — Raw HTML content pushed directly
+ * POST — Trigger a sync from PE portal data.
+ *   Accepts one of:
+ *     { url: string }     — GCS signed URL to fetch HTML from
+ *     { html: string }    — Raw HTML content pushed directly
+ *     { compact: string } — Compact format from manual portal scrape
+ *                           (projectId|customerName|milestone|docStatusCodes per line)
  *
  *   GCS bucket: gs://photon-brothers-schedules/pe-status-scraper/
  *   Reports (scraper runs twice daily):
@@ -19,6 +21,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma } from "@/lib/db";
 import {
   parsePeScraperReport,
+  parseCompactPeScrape,
   syncPeDocStatuses,
   fetchPeScraperReport,
   buildPeDealMap,
@@ -45,44 +48,54 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { url, html: rawHtml } = body as {
+    const { url, html: rawHtml, compact } = body as {
       url?: string;
       html?: string;
+      compact?: string;
     };
 
-    if (!url && !rawHtml) {
+    if (!url && !rawHtml && !compact) {
       return NextResponse.json(
-        { error: "Provide either 'url' (GCS signed URL) or 'html' (raw HTML content)" },
+        { error: "Provide 'url' (GCS signed URL), 'html' (raw HTML), or 'compact' (compact scrape format)" },
         { status: 400 },
       );
     }
 
-    // 1. Get the HTML content
-    let html: string;
-    if (rawHtml) {
-      html = rawHtml;
-    } else {
-      html = await fetchPeScraperReport(url!);
-    }
+    let projects: ReturnType<typeof parsePeScraperReport>["projects"];
+    let parseErrors: string[];
 
-    // 2. Parse the HTML report
-    const { projects, parseErrors } = parsePeScraperReport(html);
+    if (compact) {
+      // Compact format from manual portal scrape
+      const result = parseCompactPeScrape(compact);
+      projects = result.projects;
+      parseErrors = result.parseErrors;
+    } else {
+      // HTML format from GCS scraper
+      let html: string;
+      if (rawHtml) {
+        html = rawHtml;
+      } else {
+        html = await fetchPeScraperReport(url!);
+      }
+      const result = parsePeScraperReport(html);
+      projects = result.projects;
+      parseErrors = result.parseErrors;
+    }
 
     if (projects.length === 0) {
       return NextResponse.json(
         {
-          error: "No projects parsed from HTML report",
+          error: "No projects parsed from report",
           parseErrors,
-          htmlLength: html.length,
         },
         { status: 422 },
       );
     }
 
-    // 3. Build deal name → deal ID map from HubSpot
+    // Build deal name → deal ID map from HubSpot
     const dealMap = await buildPeDealMap();
 
-    // 4. Sync to database
+    // Sync to database
     const result = await syncPeDocStatuses(projects, dealMap);
 
     console.log(

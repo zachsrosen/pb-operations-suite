@@ -33,6 +33,8 @@ interface PeDeal {
   ptoInvoiceStatus: string | null;
   paidInFull: boolean;
   hubspotUrl: string;
+  pePortalUrl: string | null;
+  peProjectId: string | null;
 }
 
 interface DocReview {
@@ -77,8 +79,6 @@ const PE_DOCUMENTS: DocRequirement[] = [
   { name: "Certificate of Acceptance", section: "ic", owner: "PB" },
   { name: "Attestation of Customer Payment", section: "ic", owner: "PB" },
   { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB" },
-  { name: "Shading Analysis", section: "ic", owner: "PB" },
-  { name: "Issued Permit", section: "ic", owner: "PB" },
   { name: "Signed Interconnection Agreement", section: "pc", owner: "PB" },
   { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB" },
   { name: "Permission to Operate (PTO)", section: "pc", owner: "PB" },
@@ -872,6 +872,28 @@ export default function PeReportPage() {
 
   const hasFilters = search || locFilter.length > 0 || stageFilter.length > 0 || m1Filter.length > 0 || m2Filter.length > 0 || docStatusFilter.length > 0 || custPaidFilter.length > 0;
 
+  // Compute summary totals for the currently-filtered deals
+  const filteredTotals = useMemo(() => {
+    if (!filtered.length) return null;
+    const peTotal = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+    const m1Paid = filtered.filter((d) => d.peM1Status === "Paid").length;
+    const m1Approved = filtered.filter((d) => d.peM1Status === "Approved").length;
+    const m1PaidVal = filtered.filter((d) => d.peM1Status === "Paid").reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+    const m1ApprovedVal = filtered.filter((d) => d.peM1Status === "Approved").reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+    const m2Paid = filtered.filter((d) => d.peM2Status === "Paid").length;
+    const m2Approved = filtered.filter((d) => d.peM2Status === "Approved").length;
+    const m2PaidVal = filtered.filter((d) => d.peM2Status === "Paid").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+    const m2ApprovedVal = filtered.filter((d) => d.peM2Status === "Approved").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+    const collected = m1PaidVal + m2PaidVal;
+    const custFullyPaid = filtered.filter((d) => d.paidInFull).length;
+    return {
+      count: filtered.length, peTotal,
+      m1Paid, m1Approved, m1PaidVal, m1ApprovedVal,
+      m2Paid, m2Approved, m2PaidVal, m2ApprovedVal,
+      collected, custFullyPaid,
+    };
+  }, [filtered]);
+
   return (
     <DashboardShell title="PE Program Report" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
       {/* Report Header */}
@@ -1089,6 +1111,28 @@ export default function PeReportPage() {
           )}
         </div>
 
+        {/* Summary totals for filtered set */}
+        {filteredTotals && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted mb-3 px-1 py-2 border-b border-border/50">
+            <span className="font-medium text-foreground">{filteredTotals.count} projects</span>
+            <span>PE Total: <span className="text-foreground font-medium tabular-nums">{fmt(filteredTotals.peTotal)}</span></span>
+            <span>Collected: <span className="text-green-400 font-medium tabular-nums">{fmt(filteredTotals.collected)}</span></span>
+            <span className="border-l border-border/50 pl-6">
+              M1: <span className="text-green-400">{filteredTotals.m1Paid} paid</span>
+              {filteredTotals.m1PaidVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m1PaidVal)})</span>}
+              {" · "}<span className="text-emerald-400">{filteredTotals.m1Approved} approved</span>
+              {filteredTotals.m1ApprovedVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m1ApprovedVal)})</span>}
+            </span>
+            <span className="border-l border-border/50 pl-6">
+              M2: <span className="text-green-400">{filteredTotals.m2Paid} paid</span>
+              {filteredTotals.m2PaidVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m2PaidVal)})</span>}
+              {" · "}<span className="text-emerald-400">{filteredTotals.m2Approved} approved</span>
+              {filteredTotals.m2ApprovedVal > 0 && <span className="text-muted"> ({fmt(filteredTotals.m2ApprovedVal)})</span>}
+            </span>
+            <span>Cust. Paid: <span className="text-foreground">{filteredTotals.custFullyPaid}</span></span>
+          </div>
+        )}
+
         {/* Project table */}
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-sm">
@@ -1134,15 +1178,31 @@ export default function PeReportPage() {
                       <span className={`inline-block transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9656;</span>
                     </td>
                     <td className="py-2.5 pr-3 truncate">
-                      <a
-                        href={d.hubspotUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-foreground hover:text-emerald-400 transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {d.dealName}
-                      </a>
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={d.hubspotUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-foreground hover:text-emerald-400 transition-colors truncate"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {d.dealName}
+                        </a>
+                        {d.pePortalUrl && (
+                          <a
+                            href={d.pePortalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-500/60 hover:text-emerald-400 flex-shrink-0 transition-colors"
+                            title={`PE Portal${d.peProjectId ? ` — ${d.peProjectId}` : ""}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            </svg>
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2.5 pr-3 text-muted text-xs truncate">{d.pbLocation}</td>
                     <td className="py-2.5 pr-3"><MilestoneBadge milestone={milestone} /></td>
