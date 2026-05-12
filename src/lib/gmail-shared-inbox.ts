@@ -400,3 +400,170 @@ export async function fetchSharedInboxThreads(
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Full message body fetch (for PE email sync and similar use-cases)
+// ---------------------------------------------------------------------------
+
+export interface SharedInboxMessage {
+  id: string;
+  threadId: string;
+  subject: string;
+  from: string;
+  date: string; // ISO 8601
+  plainTextBody: string;
+}
+
+export type FetchMessagesResult =
+  | { ok: true; messages: SharedInboxMessage[] }
+  | { ok: false; error: string };
+
+/**
+ * Fetch full messages (including plaintext body) from a shared inbox.
+ * Unlike `fetchSharedInboxThreads()` which only returns metadata + snippets,
+ * this fetches the full message payload for parsing email body content.
+ *
+ * Returns a discriminated union so callers can distinguish "no emails" from
+ * "Gmail unreachable".
+ */
+export async function fetchSharedInboxMessages(opts: {
+  mailbox: string;
+  query: string;
+  maxMessages?: number;
+}): Promise<FetchMessagesResult> {
+  const { mailbox, query, maxMessages = 100 } = opts;
+
+  // Auth: same stored-token-first, service-account-fallback pattern
+  let token: string | null = null;
+  try {
+    const { getStoredSharedInboxToken } = await import(
+      "@/lib/shared-inbox-token"
+    );
+    token = await getStoredSharedInboxToken(mailbox);
+  } catch (err) {
+    console.error(
+      `[gmail-shared-inbox] stored-token lookup failed for ${mailbox}:`,
+      err,
+    );
+  }
+
+  if (!token) {
+    const tokenResult = await getReadonlyTokenVerbose(mailbox);
+    if (!tokenResult.ok) {
+      return {
+        ok: false,
+        error: `Auth failed for ${mailbox}: ${tokenResult.reason}${tokenResult.body ? ` — ${tokenResult.body}` : ""}`,
+      };
+    }
+    token = tokenResult.token;
+  }
+
+  const encodedMailbox = encodeURIComponent(mailbox);
+
+  // 1. List message IDs matching the query
+  const listUrl = new URL(
+    `${GMAIL_API_BASE}/users/${encodedMailbox}/messages`,
+  );
+  listUrl.searchParams.set("q", query);
+  listUrl.searchParams.set("maxResults", String(maxMessages));
+
+  let listResp: Response;
+  try {
+    listResp = await fetch(listUrl.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    return { ok: false, error: `Network error listing messages: ${err}` };
+  }
+
+  if (!listResp.ok) {
+    const body = await listResp.text().catch(() => "");
+    return {
+      ok: false,
+      error: `messages.list failed (HTTP ${listResp.status}): ${body.slice(0, 300)}`,
+    };
+  }
+
+  const listBody = (await listResp.json()) as {
+    messages?: Array<{ id: string; threadId: string }>;
+  };
+  const messageIds = listBody.messages ?? [];
+  if (messageIds.length === 0) {
+    return { ok: true, messages: [] };
+  }
+
+  // 2. Fetch each message with full payload (sequential to respect rate limits)
+  const messages: SharedInboxMessage[] = [];
+
+  for (const { id } of messageIds) {
+    const msgUrl = `${GMAIL_API_BASE}/users/${encodedMailbox}/messages/${id}?format=full`;
+    let msgResp: Response;
+    try {
+      msgResp = await fetch(msgUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      console.warn(`[gmail-shared-inbox] failed to fetch message ${id}`);
+      continue;
+    }
+    if (!msgResp.ok) {
+      console.warn(
+        `[gmail-shared-inbox] message ${id} fetch failed (HTTP ${msgResp.status})`,
+      );
+      continue;
+    }
+
+    const msg = (await msgResp.json()) as GmailMessage;
+    const payload = msg.payload;
+    if (!payload) continue;
+
+    // Extract plaintext body
+    const plainText = extractPlainTextBody(payload);
+    if (!plainText) continue;
+
+    // Extract headers
+    const headers = payload.headers;
+    const subject = getHeader(headers, "Subject") ?? "";
+    const from = getHeader(headers, "From") ?? "";
+    const dateHeader = getHeader(headers, "Date");
+    const date = msg.internalDate
+      ? new Date(Number(msg.internalDate)).toISOString()
+      : dateHeader
+        ? new Date(dateHeader).toISOString()
+        : new Date().toISOString();
+
+    messages.push({
+      id: msg.id,
+      threadId: msg.threadId,
+      subject,
+      from,
+      date,
+      plainTextBody: plainText,
+    });
+  }
+
+  // Sort oldest-first (chronological order for safe upsert)
+  messages.sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  return { ok: true, messages };
+}
+
+/**
+ * Recursively walk the MIME tree to find the text/plain body and decode it.
+ */
+function extractPlainTextBody(part: GmailMessagePart): string | null {
+  // Direct text/plain at this level
+  if (part.mimeType === "text/plain" && part.body?.data) {
+    return Buffer.from(part.body.data, "base64url").toString("utf-8");
+  }
+
+  // Multipart — recurse into parts
+  if (part.parts) {
+    for (const child of part.parts) {
+      const text = extractPlainTextBody(child);
+      if (text) return text;
+    }
+  }
+
+  return null;
+}
