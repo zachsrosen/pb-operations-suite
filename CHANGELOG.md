@@ -4,6 +4,59 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-12
+
+### Participate Energy (PE) Program (Major)
+- New `/dashboards/pe-docs` PE Document Tracker with "Under Review" hero card and approval rate (decided docs only)
+- New PE Program Report dashboard for ownership visibility with per-project document checklist + filters
+- PE Deals view: inline document breakdown on row click, traceable IC/PC breakdown with reconciliation bar, invoice audit + email sync
+- PE scraper: parses portal HTML reports into `PeDocumentReview`, rewritten to handle flat single-table format; PROJ number matching + ghost filtering; timeout fix with batched upserts
+- PE portal CSV import to supplement scraper data
+- PE Report: sortable columns, doc stats split into Onboarding / IC / PC with stage breakdown, milestone stage thresholds corrected, customer payment status pulled from HubSpot invoices, full-width table layout, doc statuses read-only
+- PE dashboard metric clarity: auto-size cards, PE-focused stats, doc stats by milestone, clearer payment metric labels
+- `deal-reader` now returns `pePortalUrl` / `peProjectId` and full PE field set
+- PE notification sender corrected from `noreply@` to `ict@participate.energy`
+
+### Zuper ↔ HubSpot Drift Reconciliation (Major)
+- New PM dashboard surfacing Zuper ↔ HubSpot status drift
+- Per-sub-type evaluation plus `install_status` rollup integrity check
+- Cron `LOOKBACK_DAYS` reduced 90 → 14 to stay under Vercel 60s budget
+- `ZUPER_RECONCILE_ENABLED=true` rolled out
+- Zuper status UID resolved before updating job status (prevents 400s on status writes)
+- `ZuperJobCache` preserves sub-category on schedule/confirm
+
+### Payment Tracking
+- New Payment Timeline dashboard for Accounting suite
+- Payment volume bar chart with day/week/month toggle
+- Fixed payments missing from timeline due to null dates
+- Fixed payment volume chart bars rendering invisible (flex alignment)
+
+### IDR Meeting & Design Review
+- IDR Meeting: PandaDoc DA link + plan docs surfaced
+- IDR Meeting: design revision toggle with auto-advance on sync
+- DA Drift relocated from Admin → Project Management suite
+- DA Drift deduped per deal so revised DAs no longer create false positives
+
+### Master Scheduler — Sub-jobs
+- Individual sub-job Zuper links shown in schedule modal
+- All sub-job tentative records confirmed together; sub-job links added to master scheduler
+- Fixed sub-job tentative scheduling and `syncToZuper` toggle
+
+### Goals Digest
+- Weekly goals digest email — one per office (#576)
+- Zero-delta rows hidden when no prior snapshot exists
+- BCC Zach on goals digests
+
+### Catalog & Shared Inbox
+- Catalog: Zuper cross-link IDs now written via `meta_data` instead of `custom_fields`
+- Shared inbox OAuth connect requests `openid` + `email` scopes
+- `tpo@` added to shared inbox connections admin page
+
+### Bug Fixes
+- Removed unused `DashboardLocationGroup` import that was breaking the build
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
