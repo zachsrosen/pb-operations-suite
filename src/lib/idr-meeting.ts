@@ -416,10 +416,11 @@ export function buildHubSpotPropertyUpdates(
   updates.idr_adders = fields.adderSummary ?? "";
   if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
 
-  // Design status — revision flag vs auto-advance (independent of layout_status)
+  // Design status — revision flag is a direct property write (no task for this).
+  // Reviewed (non-revision) is handled by completing the HubSpot "Complete Initial
+  // Design Review" task in syncItemToHubSpot — the workflow sets design_status.
   // NOTE: HubSpot enumeration values differ from labels. Use internal values here.
   //   "IDR Revision Needed" (value) = "IDR Revision Needed" (label)
-  //   "Draft Complete" (value) = "Draft Complete - Waiting on Approvals" (label)
   if (fields.designRevisionNeeded) {
     updates.design_status = "IDR Revision Needed";
     // When a revision is flagged, also push whether re-review is needed after completion
@@ -429,8 +430,8 @@ export function buildHubSpotPropertyUpdates(
       updates.idr_revision_reason = fields.designRevisionReason;
     }
   } else if (fields.reviewed) {
-    updates.design_status = "Draft Complete";
-    // Clear the re-review flag when a deal is reviewed (normal or re-review)
+    // Clear the re-review flag when a deal is reviewed (normal or re-review).
+    // design_status is set by the HubSpot workflow when the task completes.
     updates.idr_re_review_needed = "false";
   }
 
@@ -686,6 +687,73 @@ export async function createDealTask(
 }
 
 /**
+ * Find and complete the "Complete Initial Design Review" HubSpot task on a deal.
+ * The task is created by HubSpot workflows when a deal enters the design phase;
+ * completing it triggers downstream workflow effects (status change, notifications).
+ *
+ * Returns { completed: true, taskId } if found and completed,
+ * { completed: false } if no matching task exists (caller can fall back to direct update).
+ */
+export async function completeInitialDesignReviewTask(dealId: string): Promise<{
+  completed: boolean;
+  taskId?: string;
+}> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN not configured");
+
+  // Search for open tasks associated with this deal whose subject starts with
+  // "Complete Initial Design Review". The suffix varies (ZRS, WMS, etc.).
+  const searchRes = await fetch("https://api.hubapi.com/crm/v3/objects/tasks/search", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN", value: "Complete Initial Design Review" },
+            { propertyName: "hs_task_status", operator: "EQ", value: "NOT_STARTED" },
+            { propertyName: "associations.deal", operator: "EQ", value: dealId },
+          ],
+        },
+      ],
+      properties: ["hs_task_subject", "hs_task_status"],
+      limit: 1,
+    }),
+  });
+
+  if (!searchRes.ok) {
+    const errBody = await searchRes.text().catch(() => "");
+    throw new Error(`HubSpot task search failed: ${searchRes.status} ${errBody.slice(0, 200)}`);
+  }
+
+  const searchData = (await searchRes.json()) as { results: Array<{ id: string }> };
+  const task = searchData.results?.[0];
+  if (!task) return { completed: false };
+
+  // Complete the task
+  const patchRes = await fetch(`https://api.hubapi.com/crm/v3/objects/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      properties: { hs_task_status: "COMPLETED" },
+    }),
+  });
+
+  if (!patchRes.ok) {
+    const errBody = await patchRes.text().catch(() => "");
+    throw new Error(`HubSpot task complete failed: ${patchRes.status} ${errBody.slice(0, 200)}`);
+  }
+
+  return { completed: true, taskId: task.id };
+}
+
+/**
  * Look up the HubSpot owner ID for a deal's project_manager property
  * (falls back to hubspot_owner_id). Used to target IDR customer-notes tasks
  * at the project manager.
@@ -792,6 +860,22 @@ export async function syncItemToHubSpot(
       await pushDealProperties(item.dealId, properties);
     }
 
+    // Complete the "Complete Initial Design Review" HubSpot task when reviewed
+    // (non-revision). The task's workflow sets design_status — we don't write it directly.
+    let taskCompleteWarning: string | undefined;
+    if (item.reviewed && !item.designRevisionNeeded) {
+      try {
+        const result = await completeInitialDesignReviewTask(item.dealId);
+        if (!result.completed) {
+          console.warn(`[idr-meeting] No "Complete Initial Design Review" task found for deal ${item.dealId} — workflow won't fire`);
+          taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
+        }
+      } catch (err) {
+        console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
+        taskCompleteWarning = "Failed to complete design review task — design_status may need manual update.";
+      }
+    }
+
     let noteWarning: string | undefined;
     try {
       const noteBody = buildHubSpotNoteBody(
@@ -851,7 +935,9 @@ export async function syncItemToHubSpot(
       data: { hubspotSyncStatus: "SYNCED", hubspotSyncedAt: new Date() },
     });
 
-    return { ok: true, noteWarning, taskWarning };
+    // Combine task warnings (PM task + design review task)
+    const allTaskWarnings = [taskCompleteWarning, taskWarning].filter(Boolean).join(" ");
+    return { ok: true, noteWarning, taskWarning: allTaskWarnings || undefined };
   } catch (err) {
     console.error(`[idr-meeting] Sync failed for item ${item.id} (deal ${item.dealId}):`, err);
     await prisma.idrMeetingItem.update({
