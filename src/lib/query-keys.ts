@@ -153,6 +153,8 @@ export const queryKeys = {
     escalationQueue: () => [...queryKeys.idrMeeting.root, "escalation-queue"] as const,
     meetingSearch: (q: string, from?: string, to?: string) =>
       [...queryKeys.idrMeeting.root, "meeting-search", q, from ?? "", to ?? ""] as const,
+    pandadocDa: (dealId: string) =>
+      [...queryKeys.idrMeeting.root, "pandadoc-da", dealId] as const,
   },
   permitHub: {
     root: ["permit-hub"] as const,
