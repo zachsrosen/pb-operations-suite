@@ -15,6 +15,7 @@ import type {
 } from "@/lib/payment-tracking-types";
 
 type Tab = "received" | "outstanding";
+type Granularity = "day" | "week" | "month";
 
 const MILESTONE_LABEL: Record<Milestone, string> = {
   da: "DA",
@@ -66,6 +67,179 @@ function fmtDate(iso: string | null): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ── Volume chart helpers ──
+
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** ISO week key: "2026-W19" */
+function weekKey(iso: string): string {
+  const d = new Date(iso);
+  // Shift to Monday-based week
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() + 4 - day);
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const weekNum = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+function weekLabel(key: string): string {
+  // Parse "2026-W19" → Monday of that week
+  const [yearStr, wStr] = key.split("-W");
+  const year = Number(yearStr);
+  const week = Number(wStr);
+  const jan1 = new Date(year, 0, 1);
+  const jan1Day = jan1.getDay() || 7;
+  const mondayOfWeek1 = new Date(year, 0, 1 + (1 - jan1Day));
+  const monday = new Date(mondayOfWeek1.getTime() + (week - 1) * 7 * 86400000);
+  return monday.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function dayLabel(key: string): string {
+  const d = new Date(key + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+interface VolumeBucket {
+  key: string;
+  label: string;
+  total: number;
+  count: number;
+}
+
+function bucketRows(rows: ReceivedRow[], granularity: Granularity, numBuckets: number): VolumeBucket[] {
+  const keyFn = granularity === "day" ? dayKey : granularity === "week" ? weekKey : monthKey;
+  const labelFn = granularity === "day" ? dayLabel : granularity === "week" ? weekLabel : monthLabel;
+
+  // Build ordered bucket keys for the last N periods
+  const now = new Date();
+  const keys: string[] = [];
+  if (granularity === "day") {
+    for (let i = numBuckets - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      keys.push(dayKey(d.toISOString()));
+    }
+  } else if (granularity === "week") {
+    for (let i = numBuckets - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 7 * 86400000);
+      keys.push(weekKey(d.toISOString()));
+    }
+  } else {
+    for (let i = numBuckets - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      keys.push(monthKey(d.toISOString()));
+    }
+  }
+
+  // Dedupe keys (week boundaries can overlap)
+  const uniqueKeys = [...new Set(keys)];
+
+  // Aggregate
+  const map = new Map<string, { total: number; count: number }>();
+  for (const k of uniqueKeys) map.set(k, { total: 0, count: 0 });
+  for (const r of rows) {
+    const k = keyFn(r.paidDate);
+    const bucket = map.get(k);
+    if (bucket) {
+      bucket.total += r.amount;
+      bucket.count += 1;
+    }
+  }
+
+  return uniqueKeys.map((k) => ({
+    key: k,
+    label: labelFn(k),
+    total: map.get(k)!.total,
+    count: map.get(k)!.count,
+  }));
+}
+
+const GRANULARITY_BUCKETS: Record<Granularity, number> = { day: 14, week: 12, month: 6 };
+
+function PaymentVolumeChart({ rows }: { rows: ReceivedRow[] }) {
+  const [granularity, setGranularity] = useState<Granularity>("week");
+
+  const buckets = useMemo(
+    () => bucketRows(rows, granularity, GRANULARITY_BUCKETS[granularity]),
+    [rows, granularity],
+  );
+
+  const maxTotal = useMemo(() => Math.max(...buckets.map((b) => b.total), 1), [buckets]);
+  const periodTotal = useMemo(() => buckets.reduce((s, b) => s + b.total, 0), [buckets]);
+  const periodCount = useMemo(() => buckets.reduce((s, b) => s + b.count, 0), [buckets]);
+
+  const BAR_HEIGHT = 120;
+
+  return (
+    <div className="bg-surface/50 border border-t-border rounded-xl mb-4 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 pb-2">
+        <div className="flex items-center gap-3">
+          <h3 className="text-sm font-semibold text-foreground">Payment Volume</h3>
+          <span className="text-xs text-muted">
+            {periodCount} payments · {fmtMoney(periodTotal)}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 text-[11px]">
+          {(["day", "week", "month"] as const).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGranularity(g)}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                granularity === g
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : "bg-surface-2 text-muted hover:text-foreground border border-transparent"
+              }`}
+            >
+              {g === "day" ? "Day" : g === "week" ? "Week" : "Month"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div className="px-4 pb-4">
+        <div className="flex items-end gap-1" style={{ height: BAR_HEIGHT + 28 }}>
+          {buckets.map((b, i) => {
+            const barH = maxTotal > 0 ? (b.total / maxTotal) * BAR_HEIGHT : 0;
+            return (
+              <div key={b.key} className="flex-1 flex flex-col items-center gap-0.5 group min-w-0">
+                {/* Hover tooltip */}
+                <div className="relative flex flex-col items-center" style={{ height: BAR_HEIGHT }}>
+                  {b.total > 0 && (
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-elevated border border-t-border rounded px-2 py-1 shadow-lg pointer-events-none z-10 whitespace-nowrap">
+                      <div className="text-[11px] text-emerald-300 font-medium">{fmtMoney(b.total)}</div>
+                      <div className="text-[10px] text-muted">{b.count} payment{b.count !== 1 ? "s" : ""}</div>
+                    </div>
+                  )}
+                  <div className="flex-1" />
+                  <div
+                    className={`w-full rounded-t-sm transition-all duration-300 ${
+                      b.total > 0
+                        ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.25)]"
+                        : "bg-surface-2"
+                    }`}
+                    style={{
+                      height: Math.max(barH, b.total > 0 ? 3 : 1),
+                      animationDelay: `${i * 30}ms`,
+                    }}
+                  />
+                </div>
+                {/* Label */}
+                <span className="text-[9px] text-muted truncate w-full text-center mt-0.5">
+                  {b.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function monthKey(iso: string): string {
@@ -273,6 +447,9 @@ export default function PaymentTimelineClient() {
           color="red"
         />
       </div>
+
+      {/* Volume Chart */}
+      <PaymentVolumeChart rows={receivedRows} />
 
       {/* Filters */}
       <div className="bg-surface border border-t-border rounded-lg p-3 mb-4 flex flex-wrap gap-3 items-center">
