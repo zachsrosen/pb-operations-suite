@@ -163,11 +163,12 @@ export function parsePeNotificationEmail(
   }
 
   // --- Body parsing ---
-  const reviewerMatch = body.match(/Reviewer\s*-\s*(.+)/i);
+  // Note: use [ \t]* (not \s*) after dashes to prevent matching across newlines
+  const reviewerMatch = body.match(/Reviewer[ \t]*-[ \t]*(.+)/i);
   const reviewer = reviewerMatch ? reviewerMatch[1].trim() : null;
 
   // Status line: "{DocType} Status - {status}" — use a flexible pattern
-  const statusMatch = body.match(/Status\s*-\s*(.+)/i);
+  const statusMatch = body.match(/Status[ \t]*-[ \t]*(.+)/i);
   let status: PeDocStatus | null = null;
   if (statusMatch) {
     const rawStatus = statusMatch[1].trim().toLowerCase();
@@ -181,10 +182,10 @@ export function parsePeNotificationEmail(
     return null;
   }
 
-  const partnerMatch = body.match(/Partner\s*Comments\s*-\s*(.*)/i);
+  const partnerMatch = body.match(/Partner[ \t]*Comments[ \t]*-[ \t]*(.*)/i);
   const partnerComments = partnerMatch?.[1]?.trim() || null;
 
-  const approverMatch = body.match(/Approver\s*Comments\s*-\s*(.*)/i);
+  const approverMatch = body.match(/Approver[ \t]*Comments[ \t]*-[ \t]*(.*)/i);
   const approverComments = approverMatch?.[1]?.trim() || null;
 
   return {
