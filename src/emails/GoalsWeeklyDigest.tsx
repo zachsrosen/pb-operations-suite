@@ -173,9 +173,11 @@ function GoalRow({ goal }: { goal: GoalLineItem }) {
               }}>
                 {goal.percent}%
               </span>
-              <span style={{ fontSize: "13px", fontWeight: 500, color: deltaColor, marginLeft: "12px" }}>
-                {fmtDelta(goal.weekDelta, goal.format)}
-              </span>
+              {goal.weekDelta !== 0 && (
+                <span style={{ fontSize: "13px", fontWeight: 500, color: deltaColor, marginLeft: "12px" }}>
+                  {fmtDelta(goal.weekDelta, goal.format)}
+                </span>
+              )}
             </td>
           </tr>
         </tbody>
@@ -229,9 +231,11 @@ function CompactGoalRow({ goal }: { goal: GoalLineItem }) {
             </span>
           </td>
           <td style={{ verticalAlign: "middle", textAlign: "right" as const, paddingLeft: "8px", whiteSpace: "nowrap" as const }}>
-            <span style={{ fontSize: "12px", fontWeight: 500, color: deltaColor }}>
-              {fmtDelta(goal.weekDelta, goal.format)}
-            </span>
+            {goal.weekDelta !== 0 && (
+              <span style={{ fontSize: "12px", fontWeight: 500, color: deltaColor }}>
+                {fmtDelta(goal.weekDelta, goal.format)}
+              </span>
+            )}
           </td>
         </tr>
       </tbody>
