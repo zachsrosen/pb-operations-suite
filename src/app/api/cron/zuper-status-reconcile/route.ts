@@ -28,7 +28,13 @@ import {
 
 export const maxDuration = 60;
 
-const LOOKBACK_DAYS = 90;
+// Cron tick scope: rolling window of ZuperJobCache rows touched recently.
+// 90 days was attempted initially and timed out at 60s on prod (504) —
+// the cache holds 3k+ jobs over that window plus 1.6k unique deals to
+// batch-fetch from HubSpot. 14 days catches anything genuinely "new"
+// drift while keeping each tick under ~10s. The backfill script handles
+// historical sweeps on demand with a wider window.
+const LOOKBACK_DAYS = 14;
 
 type ReconcileSummary = {
   scanned: number;
