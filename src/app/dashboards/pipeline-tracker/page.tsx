@@ -11,23 +11,22 @@ import { queryKeys } from "@/lib/query-keys";
 // Types
 // ---------------------------------------------------------------------------
 
-interface PePipelineDeal {
+interface PipelineDeal {
   dealId: string;
   dealName: string;
   stage: string;
   location: string;
   daysInStage: number;
   dateEnteredStage: string | null;
-  m1Status: string | null;
-  m2Status: string | null;
   amount: number | null;
   contactName: string | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
+  isPE: boolean;
 }
 
-interface PePipelineResponse {
-  deals: PePipelineDeal[];
+interface PipelineResponse {
+  deals: PipelineDeal[];
   cached: boolean;
   stale: boolean;
   lastUpdated: string;
@@ -37,8 +36,8 @@ interface PePipelineResponse {
 // Constants
 // ---------------------------------------------------------------------------
 
-const STALE_THRESHOLD = 14; // days
-const WATCH_THRESHOLD = 7; // days
+const STALE_THRESHOLD = 14;
+const WATCH_THRESHOLD = 7;
 
 const STAGE_OPTIONS: FilterOption[] = [
   { value: "Construction", label: "Construction" },
@@ -106,7 +105,7 @@ function fmtCurrency(n: number | null): string {
 
 type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount";
 
-function sortDeals(deals: PePipelineDeal[], key: SortKey, asc: boolean): PePipelineDeal[] {
+function sortDeals(deals: PipelineDeal[], key: SortKey, asc: boolean): PipelineDeal[] {
   return [...deals].sort((a, b) => {
     let cmp = 0;
     switch (key) {
@@ -134,17 +133,17 @@ function sortDeals(deals: PePipelineDeal[], key: SortKey, asc: boolean): PePipel
 // Component
 // ---------------------------------------------------------------------------
 
-export default function PePipelinePage() {
+export default function PipelineTrackerPage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("daysInStage");
-  const [sortAsc, setSortAsc] = useState(false); // descending by default
+  const [sortAsc, setSortAsc] = useState(false);
 
-  const { data, isLoading } = useQuery<PePipelineResponse>({
-    queryKey: queryKeys.pePipeline(),
+  const { data, isLoading } = useQuery<PipelineResponse>({
+    queryKey: queryKeys.pipelineTracker(),
     queryFn: async () => {
-      const res = await fetch("/api/deals/pe-pipeline");
-      if (!res.ok) throw new Error("Failed to fetch PE pipeline data");
+      const res = await fetch("/api/deals/pipeline-tracker");
+      if (!res.ok) throw new Error("Failed to fetch pipeline data");
       return res.json();
     },
     staleTime: 5 * 60 * 1000,
@@ -152,13 +151,11 @@ export default function PePipelinePage() {
 
   const deals = useMemo(() => data?.deals ?? [], [data]);
 
-  // Derive location options from data
   const locationOptions: FilterOption[] = useMemo(() => {
     const locs = new Set(deals.map((d) => d.location).filter(Boolean));
     return [...locs].sort().map((l) => ({ value: l, label: l }));
   }, [deals]);
 
-  // Filtered deals
   const filtered = useMemo(() => {
     let result = deals;
     if (locationFilter.length > 0) {
@@ -170,7 +167,6 @@ export default function PePipelinePage() {
     return sortDeals(result, sortKey, sortAsc);
   }, [deals, locationFilter, stageFilter, sortKey, sortAsc]);
 
-  // Stats
   const stats = useMemo(() => {
     const inConstruction = filtered.filter((d) => d.stage === "Construction").length;
     const inInspection = filtered.filter((d) => d.stage === "Inspection").length;
@@ -186,13 +182,12 @@ export default function PePipelinePage() {
     return { inConstruction, inInspection, avgDays, stale, constructionRevenue, inspectionRevenue };
   }, [filtered]);
 
-  // Sort handler
   function handleSort(key: SortKey) {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
     } else {
       setSortKey(key);
-      setSortAsc(key === "dealName" || key === "location"); // alpha asc, numeric desc
+      setSortAsc(key === "dealName" || key === "location");
     }
   }
 
@@ -209,7 +204,7 @@ export default function PePipelinePage() {
 
   return (
     <DashboardShell
-      title="PE Pipeline Tracker"
+      title="Pipeline Tracker"
       accentColor="orange"
       lastUpdated={data?.lastUpdated}
       fullWidth
@@ -219,13 +214,13 @@ export default function PePipelinePage() {
         <StatCard
           label="In Construction"
           value={isLoading ? null : stats.inConstruction}
-          subtitle={isLoading ? "PE deals" : fmtCurrency(stats.constructionRevenue)}
+          subtitle={isLoading ? "deals" : fmtCurrency(stats.constructionRevenue)}
           color="orange"
         />
         <StatCard
           label="In Inspection"
           value={isLoading ? null : stats.inInspection}
-          subtitle={isLoading ? "PE deals" : fmtCurrency(stats.inspectionRevenue)}
+          subtitle={isLoading ? "deals" : fmtCurrency(stats.inspectionRevenue)}
           color="blue"
         />
         <StatCard
@@ -268,7 +263,7 @@ export default function PePipelinePage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-muted py-20 text-center">
-          No PE deals in construction or inspection stages.
+          No deals in construction or inspection stages.
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -287,16 +282,23 @@ export default function PePipelinePage() {
             </thead>
             <tbody>
               {filtered.map((deal) => (
-                <tr key={deal.dealId} className="bg-surface rounded-md">
+                <tr key={deal.dealId} className={`bg-surface rounded-md ${deal.isPE ? "border-l-[3px] border-l-emerald-500" : ""}`}>
                   <td className="rounded-l-md px-3 py-3 font-medium">
-                    <a
-                      href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069"}/record/0-3/${deal.dealId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline"
-                    >
-                      {deal.dealName}
-                    </a>
+                    <div className="flex items-center gap-1.5">
+                      {deal.isPE && (
+                        <span className="inline-block rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                          PE
+                        </span>
+                      )}
+                      <a
+                        href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069"}/record/0-3/${deal.dealId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {deal.dealName}
+                      </a>
+                    </div>
                   </td>
                   <td className="px-3 py-3">{deal.location || "—"}</td>
                   <td className="px-3 py-3">{stageBadge(deal.stage)}</td>
