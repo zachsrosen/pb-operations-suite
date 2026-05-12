@@ -84,7 +84,10 @@ function extractReceivedRows(deals: PaymentTrackingDeal[]): ReceivedRow[] {
   for (const d of deals) {
     const tryInvoice = (ms: Milestone, inv: InvoiceSummary | undefined, fallbackDate: string | null) => {
       const paid = inv?.amountPaid ?? 0;
-      const date = inv?.paymentDate ?? fallbackDate;
+      // Date cascade: invoice paymentDate → deal-property fallback → invoiceDate
+      // (last resort — invoice exists and is paid, but HubSpot never got a
+      // payment date stamped; using the billing date is better than hiding it).
+      const date = inv?.paymentDate ?? fallbackDate ?? (paid > 0 ? inv?.invoiceDate : null);
       if (paid > 0 && date) {
         rows.push({
           dealId: d.dealId,
@@ -101,7 +104,7 @@ function extractReceivedRows(deals: PaymentTrackingDeal[]): ReceivedRow[] {
     };
     tryInvoice("da", d.invoices?.da, d.daPaidDate);
     tryInvoice("cc", d.invoices?.cc, d.ccPaidDate);
-    tryInvoice("pto", d.invoices?.pto, null);
+    tryInvoice("pto", d.invoices?.pto, d.ptoGrantedDate);
     tryInvoice("peM1", d.invoices?.peM1, d.peM1ApprovalDate);
     tryInvoice("peM2", d.invoices?.peM2, d.peM2ApprovalDate);
   }
