@@ -333,7 +333,16 @@ export async function GET() {
 // PATCH — Update M1/M2 status on a deal in HubSpot
 // ---------------------------------------------------------------------------
 
+// Sourced from HubSpot property definitions for pe_m1_status / pe_m2_status.
+// M1 has an onboarding phase (5 statuses) before the submission phase.
 const VALID_M1M2_VALUES = [
+  // Onboarding phase (M1 only)
+  "Ready for Onboarding",
+  "Onboarding Submitted",
+  "Onboarding Rejected",
+  "Onboarding Ready to Resubmit",
+  "Onboarding Resubmitted",
+  // Submission phase (M1 + M2)
   "Ready to Submit",
   "Waiting on Information",
   "Submitted",

@@ -145,6 +145,13 @@ function fmtPct(n: number): string {
 }
 
 const M1M2_STATUSES = [
+  // Onboarding phase (M1 only)
+  "Ready for Onboarding",
+  "Onboarding Submitted",
+  "Onboarding Rejected",
+  "Onboarding Ready to Resubmit",
+  "Onboarding Resubmitted",
+  // Submission phase (M1 + M2)
   "Ready to Submit",
   "Waiting on Information",
   "Submitted",
@@ -311,14 +318,19 @@ const MILESTONE_ORDER: Record<PeMilestone, number> = {
 
 const M1M2_STATUS_ORDER: Record<string, number> = {
   "": 0,
-  "Ready to Submit": 1,
-  "Waiting on Information": 2,
-  "Submitted": 3,
-  "Ready to Resubmit": 4,
-  "Resubmitted": 5,
-  "Rejected": 6,
-  "Approved": 7,
-  "Paid": 8,
+  "Ready for Onboarding": 1,
+  "Onboarding Submitted": 2,
+  "Onboarding Rejected": 3,
+  "Onboarding Ready to Resubmit": 4,
+  "Onboarding Resubmitted": 5,
+  "Ready to Submit": 6,
+  "Waiting on Information": 7,
+  "Submitted": 8,
+  "Ready to Resubmit": 9,
+  "Resubmitted": 10,
+  "Rejected": 11,
+  "Approved": 12,
+  "Paid": 13,
 };
 
 function customerPaidOrder(d: PeDeal): number {
@@ -383,6 +395,12 @@ function StatusBadge({ status }: { status: string | null }) {
     Rejected: "bg-red-500/20 text-red-400 border-red-500/30",
     "Ready to Resubmit": "bg-orange-500/20 text-orange-400 border-orange-500/30",
     "Waiting on Information": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    // Onboarding phase (M1 only)
+    "Ready for Onboarding": "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+    "Onboarding Submitted": "bg-sky-500/20 text-sky-400 border-sky-500/30",
+    "Onboarding Rejected": "bg-red-500/20 text-red-400 border-red-500/30",
+    "Onboarding Ready to Resubmit": "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    "Onboarding Resubmitted": "bg-sky-500/20 text-sky-400 border-sky-500/30",
   };
   const cls = colors[status] || "bg-surface-2 text-muted border-border";
   return <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>{status}</span>;
@@ -758,10 +776,13 @@ export default function PeReportPage() {
     const totalEpcValue = deals.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
     const totalPePayment = deals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
+    const ONBOARDING_STATUSES = new Set(["Ready for Onboarding", "Onboarding Submitted", "Onboarding Rejected", "Onboarding Ready to Resubmit", "Onboarding Resubmitted"]);
     const m1Paid = deals.filter((d) => d.peM1Status === "Paid").length;
     const m1Approved = deals.filter((d) => d.peM1Status === "Approved").length;
     const m1Submitted = deals.filter((d) => ["Submitted", "Resubmitted"].includes(d.peM1Status ?? "")).length;
     const m1Ready = deals.filter((d) => d.peM1Status === "Ready to Submit").length;
+    const m1Onboarding = deals.filter((d) => ONBOARDING_STATUSES.has(d.peM1Status ?? "")).length;
+    const m1Other = deals.filter((d) => ["Rejected", "Ready to Resubmit", "Waiting on Information"].includes(d.peM1Status ?? "")).length;
     const m1NotStarted = deals.filter((d) => !d.peM1Status || d.peM1Status === "").length;
 
     const m2Paid = deals.filter((d) => d.peM2Status === "Paid").length;
@@ -860,7 +881,7 @@ export default function PeReportPage() {
 
     return {
       totalDeals, totalEpcValue, totalPePayment,
-      m1: { paid: m1Paid, approved: m1Approved, submitted: m1Submitted, ready: m1Ready, notStarted: m1NotStarted },
+      m1: { paid: m1Paid, approved: m1Approved, submitted: m1Submitted, ready: m1Ready, onboarding: m1Onboarding, other: m1Other, notStarted: m1NotStarted },
       m2: { paid: m2Paid, approved: m2Approved, submitted: m2Submitted, ready: m2Ready, notStarted: m2NotStarted },
       collected, collectPct, readyToInvoice,
       m1PaidValue, m2PaidValue, m1ApprovedValue, m2ApprovedValue,
@@ -1017,6 +1038,8 @@ export default function PeReportPage() {
               <PipelineRow label="Approved" count={metrics.m1.approved} total={metrics.totalDeals} color="bg-emerald-500" value={fmt(metrics.m1ApprovedValue)} />
               <PipelineRow label="Submitted" count={metrics.m1.submitted} total={metrics.totalDeals} color="bg-blue-500" />
               <PipelineRow label="Ready to Submit" count={metrics.m1.ready} total={metrics.totalDeals} color="bg-yellow-500" />
+              {metrics.m1.other > 0 && <PipelineRow label="Rejected / Waiting" count={metrics.m1.other} total={metrics.totalDeals} color="bg-orange-500" />}
+              <PipelineRow label="Onboarding" count={metrics.m1.onboarding} total={metrics.totalDeals} color="bg-cyan-500" />
               <PipelineRow label="Not Started" count={metrics.m1.notStarted} total={metrics.totalDeals} color="bg-zinc-600" />
             </div>
           )}

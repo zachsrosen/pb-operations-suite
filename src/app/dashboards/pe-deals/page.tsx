@@ -12,7 +12,26 @@ import { queryKeys } from "@/lib/query-keys";
 // Types (mirrors API response)
 // ---------------------------------------------------------------------------
 
-const M1M2_OPTIONS = [
+// M1 has an onboarding phase before submission; M2 does not.
+// Sourced from HubSpot property definitions for pe_m1_status / pe_m2_status.
+const M1_OPTIONS = [
+  "",
+  "Ready for Onboarding",
+  "Onboarding Submitted",
+  "Onboarding Rejected",
+  "Onboarding Ready to Resubmit",
+  "Onboarding Resubmitted",
+  "Ready to Submit",
+  "Waiting on Information",
+  "Submitted",
+  "Rejected",
+  "Ready to Resubmit",
+  "Resubmitted",
+  "Approved",
+  "Paid",
+] as const;
+
+const M2_OPTIONS = [
   "",
   "Ready to Submit",
   "Waiting on Information",
@@ -136,10 +155,12 @@ function StatusDropdown({
   value,
   onChange,
   saving,
+  options,
 }: {
   value: string | null;
   onChange: (val: string) => void;
   saving: boolean;
+  options: readonly string[];
 }) {
   return (
     <select
@@ -149,7 +170,7 @@ function StatusDropdown({
       title={value || ""}
       className={`text-xs rounded px-1 py-0.5 border border-border bg-surface-2 text-foreground cursor-pointer hover:bg-surface-elevated transition-colors max-w-[80px] truncate ${saving ? "opacity-50" : ""}`}
     >
-      {M1M2_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <option key={opt} value={opt}>
           {opt || "—"}
         </option>
@@ -284,6 +305,7 @@ function DealSection({
                       value={deal.peM1Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
                       saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
+                      options={M1_OPTIONS}
                     />
                   </td>
                   <td className="px-1.5 py-1.5 whitespace-nowrap">
@@ -291,6 +313,7 @@ function DealSection({
                       value={deal.peM2Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
                       saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
+                      options={M2_OPTIONS}
                     />
                   </td>
                 </tr>

@@ -485,10 +485,13 @@ export default function PeDocsPage() {
     return m;
   }, [docsData]);
 
-  // Compute summaries for all deals
+  // Compute summaries — only deals at milestone stages (PTO+)
+  const MILESTONE_STAGES = new Set<PeMilestone>(["pto", "close-out", "complete"]);
   const summaries = useMemo(() => {
     if (!data?.deals) return [];
-    return data.deals.map((deal) => computeDealDocSummary(deal, docMap));
+    return data.deals
+      .map((deal) => computeDealDocSummary(deal, docMap))
+      .filter((s) => MILESTONE_STAGES.has(s.milestone));
   }, [data, docMap]);
 
   // Filters
@@ -640,9 +643,6 @@ export default function PeDocsPage() {
         <MultiSelectFilter
           label="Milestone"
           options={[
-            { value: "pre-construction", label: "Pre-Construction" },
-            { value: "construction", label: "Construction" },
-            { value: "inspection", label: "Inspection" },
             { value: "pto", label: "PTO" },
             { value: "close-out", label: "Close Out" },
             { value: "complete", label: "Complete" },
