@@ -23,12 +23,6 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
     icon: "⚙️",
   },
   {
-    href: "/dashboards/admin/da-drift",
-    title: "DA Status Drift",
-    description: "Backup detector for the HubSpot↔PandaDoc connector — DAs whose status didn't sync.",
-    icon: "📋",
-  },
-  {
     href: "/dashboards/availability-approvals",
     title: "Availability Approvals",
     description: "Approve or reject crew availability change requests.",

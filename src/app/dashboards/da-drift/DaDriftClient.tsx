@@ -75,7 +75,7 @@ export default function DaDriftClient({ initialRows, currentFilter, counts }: Pr
     setBusyId(id);
     setError(null);
     try {
-      const res = await fetch("/api/admin/da-drift", {
+      const res = await fetch("/api/da-drift", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action }),
