@@ -208,8 +208,8 @@ function PaymentVolumeChart({ rows }: { rows: ReceivedRow[] }) {
             const barH = maxTotal > 0 ? (b.total / maxTotal) * BAR_HEIGHT : 0;
             return (
               <div key={b.key} className="flex-1 flex flex-col items-center gap-0.5 group min-w-0">
-                {/* Hover tooltip */}
-                <div className="relative flex flex-col items-center" style={{ height: BAR_HEIGHT }}>
+                {/* Bar + tooltip */}
+                <div className="w-full relative flex flex-col items-stretch" style={{ height: BAR_HEIGHT }}>
                   {b.total > 0 && (
                     <div className="absolute -top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-elevated border border-t-border rounded px-2 py-1 shadow-lg pointer-events-none z-10 whitespace-nowrap">
                       <div className="text-[11px] text-emerald-300 font-medium">{fmtMoney(b.total)}</div>
@@ -218,7 +218,7 @@ function PaymentVolumeChart({ rows }: { rows: ReceivedRow[] }) {
                   )}
                   <div className="flex-1" />
                   <div
-                    className={`w-full rounded-t-sm transition-all duration-300 ${
+                    className={`rounded-t-sm transition-all duration-300 ${
                       b.total > 0
                         ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.25)]"
                         : "bg-surface-2"
