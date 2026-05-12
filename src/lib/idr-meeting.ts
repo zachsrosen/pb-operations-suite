@@ -412,10 +412,13 @@ export function buildHubSpotPropertyUpdates(
   if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
 
   // Design status — revision flag vs auto-advance (independent of layout_status)
+  // NOTE: HubSpot enumeration values differ from labels. Use internal values here.
+  //   "IDR Revision Needed" (value) = "IDR Revision Needed" (label)
+  //   "Draft Complete" (value) = "Draft Complete - Waiting on Approvals" (label)
   if (fields.designRevisionNeeded) {
     updates.design_status = "IDR Revision Needed";
   } else if (fields.reviewed) {
-    updates.design_status = "Draft Complete - Waiting on Approvals";
+    updates.design_status = "Draft Complete";
   }
 
   return updates;
