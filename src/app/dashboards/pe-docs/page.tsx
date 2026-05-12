@@ -661,13 +661,19 @@ export default function PeDocsPage() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <StatCard label="PE Deals" value={isLoading ? null : stats.total} color="emerald" />
         <StatCard
           label="Actionable"
           value={isLoading ? null : stats.actionableDeals}
           subtitle="Deals needing PB action"
           color={stats.actionableDeals > 0 ? "orange" : "green"}
+        />
+        <StatCard
+          label="Under Review"
+          value={isLoading ? null : stats.totalUnderReview}
+          subtitle="Waiting on PE"
+          color="blue"
         />
         <StatCard
           label="All Docs Approved"
