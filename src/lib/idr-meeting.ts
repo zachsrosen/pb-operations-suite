@@ -416,22 +416,22 @@ export function buildHubSpotPropertyUpdates(
   updates.idr_adders = fields.adderSummary ?? "";
   if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
 
-  // Design status — revision flag is a direct property write (no task for this).
-  // Reviewed (non-revision) is handled by completing the HubSpot "Complete Initial
-  // Design Review" task in syncItemToHubSpot — the workflow sets design_status.
-  // NOTE: HubSpot enumeration values differ from labels. Use internal values here.
-  //   "IDR Revision Needed" (value) = "IDR Revision Needed" (label)
+  // Design status is handled via HubSpot task completion in syncItemToHubSpot.
+  // Completing the "Complete Initial Design Review" task triggers a workflow that
+  // sets design_status. When a revision is also flagged, syncItemToHubSpot waits
+  // for the workflow to fire, then overrides design_status to "IDR Revision Needed"
+  // in a separate property push (see postTaskRevisionUpdate).
+  //
+  // This first property push does NOT include design_status — only the revision
+  // metadata fields. design_status is set either by the workflow (normal review)
+  // or by the post-task override (revision flagged).
   if (fields.designRevisionNeeded) {
-    updates.design_status = "IDR Revision Needed";
-    // When a revision is flagged, also push whether re-review is needed after completion
     updates.idr_re_review_needed = fields.needsReReview ? "true" : "false";
-    // Push revision reason to a dedicated property (also appears in timeline note)
     if (fields.designRevisionReason) {
       updates.idr_revision_reason = fields.designRevisionReason;
     }
   } else if (fields.reviewed) {
     // Clear the re-review flag when a deal is reviewed (normal or re-review).
-    // design_status is set by the HubSpot workflow when the task completes.
     updates.idr_re_review_needed = "false";
   }
 
@@ -860,15 +860,24 @@ export async function syncItemToHubSpot(
       await pushDealProperties(item.dealId, properties);
     }
 
-    // Complete the "Complete Initial Design Review" HubSpot task when reviewed
-    // (non-revision). The task's workflow sets design_status — we don't write it directly.
+    // Complete the "Complete Initial Design Review" HubSpot task when reviewed.
+    // The review IS complete whether they approve or flag a revision — the task
+    // should be completed either way. The workflow sets design_status to "Draft Complete".
+    //
+    // When a revision is ALSO flagged, we wait for the workflow to fire, then
+    // override design_status to "IDR Revision Needed" in a second property push.
     let taskCompleteWarning: string | undefined;
-    if (item.reviewed && !item.designRevisionNeeded) {
+    if (item.reviewed) {
       try {
         const result = await completeInitialDesignReviewTask(item.dealId);
         if (!result.completed) {
           console.warn(`[idr-meeting] No "Complete Initial Design Review" task found for deal ${item.dealId} — workflow won't fire`);
           taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
+        } else if (item.designRevisionNeeded) {
+          // Task completed → workflow will set "Draft Complete" async.
+          // Wait for the workflow to fire, then override with "IDR Revision Needed".
+          await new Promise((r) => setTimeout(r, 5000));
+          await pushDealProperties(item.dealId, { design_status: "IDR Revision Needed" });
         }
       } catch (err) {
         console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
