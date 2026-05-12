@@ -6,10 +6,7 @@
  */
 
 import type { GoalsPipelineData, GoalRow } from "@/lib/goals-pipeline-types";
-import {
-  DASHBOARD_LOCATION_GROUPS,
-  type DashboardLocationGroup,
-} from "@/lib/dashboard-location-groups";
+import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
 import { sumGoalRows } from "@/lib/goals-pipeline-aggregate";
 import type {
   GoalLineItem,
