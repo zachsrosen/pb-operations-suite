@@ -103,6 +103,7 @@ const TICKET_PROPERTIES = [
   "notes_last_contacted",
   "hubspot_owner_id",
   "service_type",
+  "pb_location",
   "ticket_documents",          // Drive folder URL for ticket docs (preferred)
   "ticket_document_folder_id", // bare folder ID fallback
 ];
@@ -180,7 +181,7 @@ export function transformTicketToPriorityItem(
     lastContactDate: props.notes_last_contacted || null,
     createDate: props.createdate || new Date().toISOString(),
     amount: null, // Tickets don't have amounts
-    location: ticket._derivedLocation || null,
+    location: props.pb_location || ticket._derivedLocation || null,
     url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
     priority: props.hs_ticket_priority || null,
     ownerId: props.hubspot_owner_id || null,
@@ -676,7 +677,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       lastModified: props.hs_lastmodifieddate || props.createdate || new Date().toISOString(),
       lastContactDate: props.notes_last_contacted || null,
       ownerId: props.hubspot_owner_id || null,
-      location: derivedLocation,
+      location: props.pb_location || derivedLocation,
       url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
       folderUrl:
         String(props.ticket_documents || props.ticket_document_folder_id || "").trim() || null,
