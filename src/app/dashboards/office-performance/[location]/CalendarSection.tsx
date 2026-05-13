@@ -1,25 +1,12 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/query-keys";
 import {
-  generateProjectEvents,
-  generateZuperEvents,
-  expandToDayPills,
-  toCalendarProject,
   EVENT_COLORS,
   LEGEND_ITEMS,
-  SERVICE_CATEGORY_UIDS,
-  DNR_CATEGORY_UIDS,
-  ROOFING_CATEGORY_UIDS,
-  EXCLUDE_OTHER_CATEGORY_UIDS,
-  type RawApiProject,
-  type ZuperCategoryJob,
   type DayPill,
 } from "@/lib/calendar-events";
-import type { CanonicalLocation } from "@/lib/locations";
-import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
+import { useCalendarData } from "./useCalendarData";
 
 interface CalendarSectionProps {
   location: string; // Dashboard group label (e.g. "California", "Westminster")
@@ -31,101 +18,6 @@ const MONTH_NAMES = [
 ];
 
 const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-
-/** Show all pills — TV displays have no scroll/hover, so truncating hides events */
-
-// ---------------------------------------------------------------------------
-// Data fetching hooks
-// ---------------------------------------------------------------------------
-
-function useCalendarData(location: string) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1; // 1-indexed
-
-  // Buffered date range for Zuper: prev month start → next month end
-  const fromDate = new Date(year, month - 2, 1);
-  const toDate = new Date(year, month + 1, 0);
-  const fromStr = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-01`;
-  const toStr = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, "0")}-${String(toDate.getDate()).padStart(2, "0")}`;
-
-  const projectsQuery = useQuery<{ projects?: RawApiProject[] }>({
-    queryKey: queryKeys.officeCalendar.projects(location, month, year),
-    queryFn: async () => {
-      const res = await fetch("/api/projects?context=scheduling&refresh=true");
-      if (!res.ok) throw new Error("Failed to fetch projects");
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const serviceQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.serviceJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        categories: SERVICE_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const dnrQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.dnrJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        categories: DNR_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const roofingQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.roofingJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        categories: ROOFING_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const otherQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.otherJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        exclude: EXCLUDE_OTHER_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  return { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month };
-}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -160,12 +52,12 @@ function EventPill({ pill, compact }: { pill: DayPill; compact?: boolean }) {
     return (
       <div
         className={`
-          ${compact ? "h-3.5" : "h-5"} rounded-sm border-l-2 flex items-center ${compact ? "px-0.5" : "px-1.5"}
+          ${compact ? "h-5" : "h-6"} rounded-sm border-l-2 flex items-center ${compact ? "px-1" : "px-1.5"}
           ${colors.border} ${colors.bg}
           ${isCompleted ? "opacity-30" : ""}
         `}
       >
-        <span className={`${compact ? "text-[8px]" : "text-[10px]"} font-medium ${colors.text} ${isCompleted ? "opacity-70" : ""}`}>
+        <span className={`${compact ? "text-xs" : "text-sm"} font-medium ${colors.text} ${isCompleted ? "opacity-70" : ""}`}>
           D{pill.dayIndex}/{pill.totalDays}
         </span>
       </div>
@@ -179,14 +71,14 @@ function EventPill({ pill, compact }: { pill: DayPill; compact?: boolean }) {
     return (
       <div
         className={`
-          rounded-sm border-l-2 px-0.5
+          rounded-sm border-l-2 px-1
           ${colors.border} ${colors.bg}
           ${isCompleted ? "opacity-30" : ""}
           ${isOverdue ? "ring-1 ring-red-500" : ""}
           ${isFailed ? "ring-1 ring-amber-500" : ""}
         `}
       >
-        <div className={`text-[8px] font-medium leading-tight truncate ${colors.text} ${isCompleted ? "opacity-70" : ""} ${isFailed ? "line-through" : ""}`}>
+        <div className={`text-xs font-medium leading-snug truncate ${colors.text} ${isCompleted ? "opacity-70" : ""} ${isFailed ? "line-through" : ""}`}>
           {pill.name} — {formatEventLabel(pill.eventType)}{dayLabel}
         </div>
       </div>
@@ -203,11 +95,11 @@ function EventPill({ pill, compact }: { pill: DayPill; compact?: boolean }) {
         ${isFailed ? "ring-1 ring-amber-500" : ""}
       `}
     >
-      <div className={`text-[11px] font-medium leading-tight truncate ${colors.text} ${isCompleted ? "opacity-70" : ""} ${isFailed ? "line-through" : ""}`}>
+      <div className={`text-sm font-medium leading-snug truncate ${colors.text} ${isCompleted ? "opacity-70" : ""} ${isFailed ? "line-through" : ""}`}>
         {pill.name} — {formatEventLabel(pill.eventType)}{dayLabel}
       </div>
       {pill.assignee && (
-        <div className="text-[9px] text-slate-400 leading-tight truncate">
+        <div className="text-xs text-slate-400 leading-snug truncate">
           {pill.assignee}
         </div>
       )}
@@ -281,7 +173,7 @@ function DayCell({
       ref={cellRef}
       className={`p-1 rounded border border-white/5 overflow-hidden h-full ${isToday ? "bg-orange-500/10 ring-1 ring-orange-500/50" : "bg-white/[0.02]"}`}
     >
-      <div className={`text-[10px] font-semibold mb-0.5 ${isToday ? "text-orange-400" : isWeekend ? "text-slate-600" : "text-slate-400"}`}>
+      <div className={`text-sm font-semibold mb-0.5 ${isToday ? "text-orange-400" : isWeekend ? "text-slate-600" : "text-slate-400"}`}>
         {dayNum}
       </div>
       <div ref={pillsRef} className={`flex flex-col ${compact ? "gap-px" : "gap-0.5"}`}>
@@ -289,7 +181,7 @@ function DayCell({
           <EventPill key={`${pill.id}-${pill.dayIndex}-${i}`} pill={pill} compact={compact} />
         ))}
         {overflow > 0 && (
-          <div data-overflow="true" className="text-[8px] text-slate-400 font-medium pl-1">
+          <div data-overflow="true" className="text-xs text-slate-400 font-medium pl-1">
             +{overflow} more
           </div>
         )}
@@ -324,7 +216,7 @@ function SummaryBar({ pills }: { pills: Map<string, DayPill[]> }) {
     <div className="flex items-center gap-4 flex-wrap">
       {items.map((item) => (
         <span key={item.label} className="flex items-center gap-1.5 text-sm text-slate-300">
-          <span className={`w-2 h-2 rounded-full ${item.dotColor}`} />
+          <span className={`w-2.5 h-2.5 rounded-full ${item.dotColor}`} />
           {item.count} {item.label}{item.count !== 1 ? "s" : ""}
         </span>
       ))}
@@ -336,8 +228,8 @@ function Legend() {
   return (
     <div className="flex items-center gap-4 flex-wrap">
       {LEGEND_ITEMS.map((item) => (
-        <span key={item.label} className="flex items-center gap-1.5 text-xs text-slate-400">
-          <span className={`w-2 h-2 rounded-full ${item.dotColor}`} />
+        <span key={item.label} className="flex items-center gap-1.5 text-sm text-slate-400">
+          <span className={`w-2.5 h-2.5 rounded-full ${item.dotColor}`} />
           {item.label}
         </span>
       ))}
@@ -350,33 +242,7 @@ function Legend() {
 // ---------------------------------------------------------------------------
 
 export default function CalendarSection({ location }: CalendarSectionProps) {
-  const { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month } = useCalendarData(location);
-
-  const isLoading = projectsQuery.isLoading;
-
-  // Generate all events
-  const allPills = useMemo(() => {
-    const rawProjects = projectsQuery.data?.projects || [];
-    const projects = rawProjects.map(toCalendarProject);
-    const serviceJobs = serviceQuery.data?.jobs || [];
-    const dnrJobs = dnrQuery.data?.jobs || [];
-    const roofingJobs = roofingQuery.data?.jobs || [];
-    const otherJobs = otherQuery.data?.jobs || [];
-
-    // Resolve canonical locations for combined groups (e.g. California = SLO + Camarillo)
-    const group = DASHBOARD_LOCATION_GROUPS.find((g) => g.label === location);
-    const canonicals: CanonicalLocation[] = group
-      ? (group.canonicals as unknown as CanonicalLocation[])
-      : [location as CanonicalLocation];
-    const projectEvents = generateProjectEvents(projects, canonicals);
-    const serviceEvents = generateZuperEvents(serviceJobs, "service", canonicals);
-    const dnrEvents = generateZuperEvents(dnrJobs, "dnr", canonicals);
-    const roofingEvents = generateZuperEvents(roofingJobs, "roofing", canonicals);
-    const otherEvents = generateZuperEvents(otherJobs, "other", canonicals);
-
-    const allEvents = [...projectEvents, ...serviceEvents, ...dnrEvents, ...roofingEvents, ...otherEvents];
-    return expandToDayPills(allEvents, year, month);
-  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, location, year, month]);
+  const { allPills, isLoading, year, month } = useCalendarData(location);
 
   // Build the month grid (weekdays only — Mon–Fri)
   const grid = useMemo(() => {
@@ -447,7 +313,7 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
       {/* Day-of-week headers */}
       <div className="grid grid-cols-5 gap-1">
         {DAY_HEADERS.map((day) => (
-          <div key={day} className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-1">
+          <div key={day} className="text-center text-sm font-semibold text-slate-500 uppercase tracking-wider py-1">
             {day}
           </div>
         ))}

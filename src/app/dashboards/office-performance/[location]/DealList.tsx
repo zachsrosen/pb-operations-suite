@@ -23,16 +23,16 @@ export default function DealList({ deals, showAssigned = true }: DealListProps) 
   if (deals.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2">
-      <table className="w-full text-sm table-auto">
+    <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2 overflow-hidden">
+      <table className="w-full text-base table-fixed">
         <thead>
-          <tr className="text-xs text-slate-500 tracking-wider">
-            <th className="text-left pb-1 font-semibold whitespace-nowrap">DEAL</th>
-            <th className="text-left pb-1 font-semibold w-20 whitespace-nowrap">STAGE</th>
-            <th className="text-right pb-1 font-semibold w-14 whitespace-nowrap">DAYS</th>
-            <th className="text-center pb-1 font-semibold w-6"></th>
+          <tr className="text-sm text-slate-500 tracking-wider">
+            <th className="text-left pb-1.5 font-semibold whitespace-nowrap" style={{ width: "55%" }}>DEAL</th>
+            <th className="text-left pb-1.5 font-semibold whitespace-nowrap" style={{ width: "20%" }}>STAGE</th>
+            <th className="text-right pb-1.5 font-semibold whitespace-nowrap" style={{ width: "10%" }}>DAYS</th>
+            <th className="text-center pb-1.5 font-semibold" style={{ width: "5%" }}></th>
             {showAssigned && (
-              <th className="text-left pb-1 font-semibold whitespace-nowrap">ASSIGNED</th>
+              <th className="text-left pb-1.5 font-semibold whitespace-nowrap" style={{ width: "10%" }}>ASSIGNED</th>
             )}
           </tr>
         </thead>
@@ -48,28 +48,29 @@ export default function DealList({ deals, showAssigned = true }: DealListProps) 
                   transform: isVisible ? "translateX(0)" : "translateX(-12px)",
                 }}
               >
-                <td className="py-0.5 pr-2">
+                <td className="py-1 pr-2 max-w-0">
                   <div
-                    className="text-slate-200 font-medium"
+                    className="text-slate-200 font-medium truncate"
                     style={{
                       borderLeft: deal.overdue ? "3px solid rgba(239,68,68,0.6)" : "3px solid transparent",
                       paddingLeft: "8px",
                     }}
+                    title={deal.name}
                   >
                     {deal.name}
                   </div>
                 </td>
-                <td className="py-0.5 text-slate-400">{deal.stage}</td>
-                <td className="py-0.5 text-right text-slate-300 font-mono">
+                <td className="py-1 text-slate-400 truncate">{deal.stage}</td>
+                <td className="py-1 text-right text-slate-300 font-mono">
                   {deal.daysInStage}d
                 </td>
-                <td className="py-0.5 text-center">
+                <td className="py-1 text-center">
                   {deal.overdue && (
                     <span title={`${deal.daysOverdue}d overdue`}>⚠️</span>
                   )}
                 </td>
                 {showAssigned && (
-                  <td className="py-0.5 pl-4 text-slate-400 whitespace-nowrap">
+                  <td className="py-1 pl-4 text-slate-400 truncate">
                     {deal.assignedUsers && deal.assignedUsers.length > 0
                       ? deal.assignedUsers.join(", ")
                       : "—"}
