@@ -65,7 +65,7 @@ const LINKS: SuitePageCard[] = [
   {
     href: "/dashboards/pipeline-tracker",
     title: "Pipeline Tracker",
-    description: "All deals in construction and inspection — sorted by days in stage.",
+    description: "All deals in site survey, construction, and inspection — sorted by days in stage.",
     tag: "OPS",
     icon: "📊",
     section: "Participate Energy",
