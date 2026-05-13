@@ -310,6 +310,8 @@ export async function getGoalsPipelineData(
   const stretchDefaults = DEFAULT_STRETCH_TARGETS[location] ?? DEFAULT_STRETCH_TARGETS["Westminster"];
 
   function getTarget(metric: GoalMetric): number {
+    // five_star_reviews: always use code defaults (lowered per leadership — PR #640)
+    if (metric === "five_star_reviews") return defaults[metric];
     return targetMap.get(metric) ?? defaults[metric];
   }
 

@@ -190,7 +190,7 @@ function DayCell({
   );
 }
 
-function SummaryBar({ pills }: { pills: Map<string, DayPill[]> }) {
+function SummaryLegend({ pills }: { pills: Map<string, DayPill[]> }) {
   // Count unique events by base type (dedupe by event ID)
   const counts = new Map<string, Set<string>>();
   for (const dayPills of pills.values()) {
@@ -203,36 +203,18 @@ function SummaryBar({ pills }: { pills: Map<string, DayPill[]> }) {
     }
   }
 
-  const items: { label: string; count: number; dotColor: string }[] = [];
-  for (const legend of LEGEND_ITEMS) {
-    const key = legend.label.toLowerCase().replace("install", "construction").replace("d&r", "dnr");
-    const count = counts.get(key)?.size || 0;
-    if (count > 0) {
-      items.push({ label: legend.label, count, dotColor: legend.dotColor });
-    }
-  }
-
   return (
     <div className="flex items-center gap-4 flex-wrap">
-      {items.map((item) => (
-        <span key={item.label} className="flex items-center gap-1.5 text-sm text-slate-300">
-          <span className={`w-2.5 h-2.5 rounded-full ${item.dotColor}`} />
-          {item.count} {item.label}{item.count !== 1 ? "s" : ""}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function Legend() {
-  return (
-    <div className="flex items-center gap-4 flex-wrap">
-      {LEGEND_ITEMS.map((item) => (
-        <span key={item.label} className="flex items-center gap-1.5 text-sm text-slate-400">
-          <span className={`w-2.5 h-2.5 rounded-full ${item.dotColor}`} />
-          {item.label}
-        </span>
-      ))}
+      {LEGEND_ITEMS.map((legend) => {
+        const key = legend.label.toLowerCase().replace("install", "construction").replace("d&r", "dnr");
+        const count = counts.get(key)?.size || 0;
+        return (
+          <span key={legend.label} className={`flex items-center gap-1.5 text-sm ${count > 0 ? "text-slate-300" : "text-slate-500"}`}>
+            <span className={`w-2.5 h-2.5 rounded-full ${legend.dotColor}`} />
+            {count > 0 ? `${count} ` : ""}{legend.label}{count > 1 ? "s" : ""}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -301,19 +283,19 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
   }
 
   return (
-    <div className="h-full flex flex-col px-6 py-4 gap-3">
+    <div className="h-full flex flex-col px-6 py-3 gap-2">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">
           {MONTH_NAMES[month]} {year}
         </h2>
-        <SummaryBar pills={allPills} />
+        <SummaryLegend pills={allPills} />
       </div>
 
       {/* Day-of-week headers */}
       <div className="grid grid-cols-5 gap-1">
         {DAY_HEADERS.map((day) => (
-          <div key={day} className="text-center text-sm font-semibold text-slate-500 uppercase tracking-wider py-1">
+          <div key={day} className="text-center text-xs font-semibold text-slate-500 uppercase tracking-wider py-0.5">
             {day}
           </div>
         ))}
@@ -337,10 +319,6 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
         ))}
       </div>
 
-      {/* Legend */}
-      <div className="pt-1">
-        <Legend />
-      </div>
     </div>
   );
 }
