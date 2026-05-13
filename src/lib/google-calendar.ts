@@ -59,7 +59,7 @@ function isNickSurveyorEmail(email?: string | null): boolean {
   const parsed = parseEmailAddress(email || undefined);
   if (!parsed) return false;
   const normalized = parsed.toLowerCase();
-  return normalized === "nick.scarpellino@photonbrothers.com" || normalized === "nick@photonbrothers.com";
+  return normalized === "nick.scarpellino@photonbrothers.com";
 }
 
 function resolveSurveyCalendarId(params: { calendarId?: string; surveyorEmail?: string }): string {

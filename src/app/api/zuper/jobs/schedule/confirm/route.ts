@@ -147,7 +147,7 @@ function parseHubSpotValueToDateOnly(raw: string): string | null {
 
 function isNickSurveyorEmail(email?: string | null): boolean {
   const normalized = normalizeEmail(email);
-  return normalized === "nick.scarpellino@photonbrothers.com" || normalized === "nick@photonbrothers.com";
+  return normalized === "nick.scarpellino@photonbrothers.com";
 }
 
 function getNickSiteSurveyCalendarId(): string | null {

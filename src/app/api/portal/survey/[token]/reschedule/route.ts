@@ -561,7 +561,7 @@ async function firePostRescheduleSideEffects(ctx: {
 
 function isNickSurveyorEmail(email?: string | null): boolean {
   const normalized = (email || "").trim().toLowerCase();
-  return normalized === "nick.scarpellino@photonbrothers.com" || normalized === "nick@photonbrothers.com";
+  return normalized === "nick.scarpellino@photonbrothers.com";
 }
 
 function getNickSiteSurveyCalendarId(): string | null {
