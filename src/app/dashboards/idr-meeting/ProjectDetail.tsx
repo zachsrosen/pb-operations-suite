@@ -169,6 +169,9 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
             {item.escalationReason && (
               <p className="text-xs text-orange-500 mt-1">
                 <span className="font-medium">Reason:</span> {item.escalationReason}
+                {item.addedBy && item.addedBy !== "system" && (
+                  <span className="text-muted ml-2">— {item.addedBy.split("@")[0]}</span>
+                )}
               </p>
             )}
           </div>
