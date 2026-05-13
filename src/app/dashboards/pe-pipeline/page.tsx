@@ -133,6 +133,7 @@ type StageTab = "all" | "Construction" | "Inspection";
 
 export default function PePipelinePage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<StageTab>("all");
   const [sortKey, setSortKey] = useState<SortKey>("daysInStage");
   const [sortAsc, setSortAsc] = useState(false);
@@ -155,6 +156,19 @@ export default function PePipelinePage() {
     return [...locs].sort().map((l) => ({ value: l, label: l }));
   }, [deals]);
 
+  const statusOptions: FilterOption[] = useMemo(() => {
+    const statuses = new Set<string>();
+    for (const d of deals) {
+      if (activeTab === "all" || activeTab === "Construction") {
+        if (d.constructionStatus) statuses.add(d.constructionStatus);
+      }
+      if (activeTab === "all" || activeTab === "Inspection") {
+        if (d.finalInspectionStatus) statuses.add(d.finalInspectionStatus);
+      }
+    }
+    return [...statuses].sort().map((s) => ({ value: s, label: s }));
+  }, [deals, activeTab]);
+
   const filtered = useMemo(() => {
     let result = deals;
     if (locationFilter.length > 0) {
@@ -163,8 +177,18 @@ export default function PePipelinePage() {
     if (activeTab !== "all") {
       result = result.filter((d) => d.stage === activeTab);
     }
+    if (statusFilter.length > 0) {
+      result = result.filter((d) => {
+        if (activeTab === "Construction") return d.constructionStatus && statusFilter.includes(d.constructionStatus);
+        if (activeTab === "Inspection") return d.finalInspectionStatus && statusFilter.includes(d.finalInspectionStatus);
+        return (
+          (d.constructionStatus && statusFilter.includes(d.constructionStatus)) ||
+          (d.finalInspectionStatus && statusFilter.includes(d.finalInspectionStatus))
+        );
+      });
+    }
     return sortDeals(result, sortKey, sortAsc);
-  }, [deals, locationFilter, activeTab, sortKey, sortAsc]);
+  }, [deals, locationFilter, statusFilter, activeTab, sortKey, sortAsc]);
 
   // Stats
   const stats = useMemo(() => {
@@ -244,7 +268,7 @@ export default function PePipelinePage() {
           {(["all", "Construction", "Inspection"] as StageTab[]).map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => { setActiveTab(tab); setStatusFilter([]); }}
               className={`px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ${
                 activeTab === tab
                   ? tab === "Construction"
@@ -269,6 +293,12 @@ export default function PePipelinePage() {
           options={locationOptions}
           selected={locationFilter}
           onChange={setLocationFilter}
+        />
+        <MultiSelectFilter
+          label="Status"
+          options={statusOptions}
+          selected={statusFilter}
+          onChange={setStatusFilter}
         />
         <span className="text-muted ml-auto text-sm">
           {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
