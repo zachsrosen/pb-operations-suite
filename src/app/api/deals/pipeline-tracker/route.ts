@@ -7,6 +7,8 @@ import {
   DEAL_STAGE_MAP,
 } from "@/lib/hubspot";
 import { appCache } from "@/lib/cache";
+import { prisma } from "@/lib/db";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 /**
  * GET /api/deals/pipeline-tracker
@@ -29,6 +31,13 @@ const PROPERTIES = [
   "site_survey_status",
 ];
 
+interface ZuperJobLink {
+  jobUid: string;
+  category: string;
+  status: string;
+  url: string;
+}
+
 interface PipelineDeal {
   dealId: string;
   dealName: string;
@@ -41,6 +50,7 @@ interface PipelineDeal {
   finalInspectionStatus: string | null;
   siteSurveyStatus: string | null;
   isPE: boolean;
+  zuperJobs: ZuperJobLink[];
 }
 
 function computeDaysInStage(dateEntered: string | null | undefined): number {
@@ -93,6 +103,23 @@ export async function GET(request: NextRequest) {
           after = response.paging?.next?.after;
         } while (after);
 
+        const dealIds = results.map((r) => r.id);
+        const zuperRows = dealIds.length > 0
+          ? await prisma.zuperJobCache.findMany({
+              where: { hubspotDealId: { in: dealIds } },
+              select: { jobUid: true, jobCategory: true, jobStatus: true, hubspotDealId: true },
+            })
+          : [];
+        const zuperByDeal = new Map<string, ZuperJobLink[]>();
+        for (const row of zuperRows) {
+          if (!row.hubspotDealId) continue;
+          const url = getZuperJobUrl(row.jobUid);
+          if (!url) continue;
+          const list = zuperByDeal.get(row.hubspotDealId) ?? [];
+          list.push({ jobUid: row.jobUid, category: row.jobCategory, status: row.jobStatus, url });
+          zuperByDeal.set(row.hubspotDealId, list);
+        }
+
         const deals: PipelineDeal[] = results.map((deal) => {
           const props = deal.properties;
           const stageId = props.dealstage ?? "";
@@ -108,6 +135,7 @@ export async function GET(request: NextRequest) {
             finalInspectionStatus: props.final_inspection_status || null,
             siteSurveyStatus: props.site_survey_status || null,
             isPE: props.is_participate_energy === "true",
+            zuperJobs: zuperByDeal.get(deal.id) ?? [],
           };
         });
 

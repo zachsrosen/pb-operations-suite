@@ -12,6 +12,13 @@ import { queryKeys } from "@/lib/query-keys";
 // Types
 // ---------------------------------------------------------------------------
 
+interface ZuperJobLink {
+  jobUid: string;
+  category: string;
+  status: string;
+  url: string;
+}
+
 interface PipelineDeal {
   dealId: string;
   dealName: string;
@@ -24,6 +31,7 @@ interface PipelineDeal {
   finalInspectionStatus: string | null;
   siteSurveyStatus: string | null;
   isPE: boolean;
+  zuperJobs: ZuperJobLink[];
 }
 
 interface PipelineResponse {
@@ -379,6 +387,7 @@ export default function PipelineTrackerPage() {
                 {(activeTab === "all" || activeTab === "Site Survey") && renderSortHeader("Survey Status", "surveyStatus")}
                 {(activeTab === "all" || activeTab === "Construction") && renderSortHeader("Construction", "constructionStatus")}
                 {(activeTab === "all" || activeTab === "Inspection") && renderSortHeader("Inspection", "inspectionStatus")}
+                <th className="px-3 py-2">Zuper</th>
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
@@ -414,6 +423,26 @@ export default function PipelineTrackerPage() {
                   {(activeTab === "all" || activeTab === "Site Survey") && <td className="px-3 py-3">{statusBadge(deal.siteSurveyStatus)}</td>}
                   {(activeTab === "all" || activeTab === "Construction") && <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>}
                   {(activeTab === "all" || activeTab === "Inspection") && <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>}
+                  <td className="px-3 py-3">
+                    {deal.zuperJobs.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {deal.zuperJobs.map((job) => (
+                          <a
+                            key={job.jobUid}
+                            href={job.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`${job.category} — ${job.status}`}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors"
+                          >
+                            {job.category === "Site Survey" ? "Survey" : job.category}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
                   <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
                     {fmtCurrency(deal.amount)}
                   </td>

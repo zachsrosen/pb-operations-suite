@@ -12,6 +12,13 @@ import { queryKeys } from "@/lib/query-keys";
 // Types
 // ---------------------------------------------------------------------------
 
+interface ZuperJobLink {
+  jobUid: string;
+  category: string;
+  status: string;
+  url: string;
+}
+
 interface PePipelineDeal {
   dealId: string;
   dealName: string;
@@ -25,6 +32,7 @@ interface PePipelineDeal {
   contactName: string | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
+  zuperJobs: ZuperJobLink[];
 }
 
 interface PePipelineResponse {
@@ -344,6 +352,7 @@ export default function PePipelinePage() {
                 {renderSortHeader("Days in Stage", "daysInStage")}
                 {activeTab !== "Inspection" && renderSortHeader("Construction", "constructionStatus")}
                 {activeTab !== "Construction" && renderSortHeader("Inspection", "inspectionStatus")}
+                <th className="px-3 py-2">Zuper</th>
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
@@ -371,6 +380,26 @@ export default function PePipelinePage() {
                   </td>
                   {activeTab !== "Inspection" && <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>}
                   {activeTab !== "Construction" && <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>}
+                  <td className="px-3 py-3">
+                    {deal.zuperJobs.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {deal.zuperJobs.map((job) => (
+                          <a
+                            key={job.jobUid}
+                            href={job.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`${job.category} — ${job.status}`}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors"
+                          >
+                            {job.category === "Site Survey" ? "Survey" : job.category}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
                   <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
                     {fmtCurrency(deal.amount)}
                   </td>
