@@ -5,8 +5,6 @@ import { requireApiAuth } from "@/lib/api-auth";
 import {
   searchWithRetry,
   DEAL_STAGE_MAP,
-  fetchPrimaryContactId,
-  hubspotClient,
 } from "@/lib/hubspot";
 import { appCache } from "@/lib/cache";
 
@@ -38,7 +36,6 @@ interface PipelineDeal {
   daysInStage: number;
   dateEnteredStage: string | null;
   amount: number | null;
-  contactName: string | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
   isPE: boolean;
@@ -87,28 +84,6 @@ export async function GET(request: NextRequest) {
         );
         const results = response.results ?? [];
 
-        const contactMap = new Map<string, string | null>();
-        const contactPromises = results.map(async (deal) => {
-          try {
-            const contactId = await Promise.race([
-              fetchPrimaryContactId(deal.id),
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
-            ]);
-            if (contactId) {
-              const contact = await hubspotClient.crm.contacts.basicApi.getById(
-                contactId,
-                ["firstname", "lastname"],
-              );
-              const first = contact.properties?.firstname ?? "";
-              const last = contact.properties?.lastname ?? "";
-              contactMap.set(deal.id, [first, last].filter(Boolean).join(" ") || null);
-            }
-          } catch {
-            // Best-effort
-          }
-        });
-        await Promise.allSettled(contactPromises);
-
         const deals: PipelineDeal[] = results.map((deal) => {
           const props = deal.properties;
           const stageId = props.dealstage ?? "";
@@ -120,7 +95,6 @@ export async function GET(request: NextRequest) {
             daysInStage: computeDaysInStage(props.hs_v2_date_entered_current_stage),
             dateEnteredStage: props.hs_v2_date_entered_current_stage ?? null,
             amount: props.amount ? parseFloat(props.amount) : null,
-            contactName: contactMap.get(deal.id) ?? null,
             constructionStatus: props.install_status || null,
             finalInspectionStatus: props.final_inspection_status || null,
             isPE: props.is_participate_energy === "true",

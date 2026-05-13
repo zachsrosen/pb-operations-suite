@@ -19,7 +19,6 @@ interface PipelineDeal {
   daysInStage: number;
   dateEnteredStage: string | null;
   amount: number | null;
-  contactName: string | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
   isPE: boolean;
@@ -38,11 +37,6 @@ interface PipelineResponse {
 
 const STALE_THRESHOLD = 14;
 const WATCH_THRESHOLD = 7;
-
-const STAGE_OPTIONS: FilterOption[] = [
-  { value: "Construction", label: "Construction" },
-  { value: "Inspection", label: "Inspection" },
-];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -133,9 +127,11 @@ function sortDeals(deals: PipelineDeal[], key: SortKey, asc: boolean): PipelineD
 // Component
 // ---------------------------------------------------------------------------
 
+type StageTab = "all" | "Construction" | "Inspection";
+
 export default function PipelineTrackerPage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
-  const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<StageTab>("all");
   const [sortKey, setSortKey] = useState<SortKey>("daysInStage");
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -161,11 +157,11 @@ export default function PipelineTrackerPage() {
     if (locationFilter.length > 0) {
       result = result.filter((d) => locationFilter.includes(d.location));
     }
-    if (stageFilter.length > 0) {
-      result = result.filter((d) => stageFilter.includes(d.stage));
+    if (activeTab !== "all") {
+      result = result.filter((d) => d.stage === activeTab);
     }
     return sortDeals(result, sortKey, sortAsc);
-  }, [deals, locationFilter, stageFilter, sortKey, sortAsc]);
+  }, [deals, locationFilter, activeTab, sortKey, sortAsc]);
 
   const stats = useMemo(() => {
     const inConstruction = filtered.filter((d) => d.stage === "Construction").length;
@@ -237,19 +233,37 @@ export default function PipelineTrackerPage() {
         />
       </div>
 
-      {/* Filters */}
+      {/* Stage Tabs + Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex rounded-lg border border-t-border overflow-hidden">
+          {(["all", "Construction", "Inspection"] as StageTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                activeTab === tab
+                  ? tab === "Construction"
+                    ? "bg-orange-500 text-black"
+                    : tab === "Inspection"
+                      ? "bg-blue-500 text-white"
+                      : "bg-surface-elevated text-foreground"
+                  : "bg-background text-muted hover:text-foreground"
+              }`}
+            >
+              {tab === "all" ? "All" : tab}
+              <span className="ml-1.5 opacity-70">
+                {tab === "all"
+                  ? deals.filter((d) => locationFilter.length === 0 || locationFilter.includes(d.location)).length
+                  : deals.filter((d) => d.stage === tab && (locationFilter.length === 0 || locationFilter.includes(d.location))).length}
+              </span>
+            </button>
+          ))}
+        </div>
         <MultiSelectFilter
           label="Location"
           options={locationOptions}
           selected={locationFilter}
           onChange={setLocationFilter}
-        />
-        <MultiSelectFilter
-          label="Stage"
-          options={STAGE_OPTIONS}
-          selected={stageFilter}
-          onChange={setStageFilter}
         />
         <span className="text-muted ml-auto text-sm">
           {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
@@ -276,7 +290,6 @@ export default function PipelineTrackerPage() {
                 {renderSortHeader("Days in Stage", "daysInStage")}
                 <th className="px-3 py-2">Construction</th>
                 <th className="px-3 py-2">Inspection</th>
-                <th className="px-3 py-2">Contact</th>
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
@@ -311,7 +324,6 @@ export default function PipelineTrackerPage() {
                   </td>
                   <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>
                   <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>
-                  <td className="text-muted px-3 py-3 text-xs">{deal.contactName || "—"}</td>
                   <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
                     {fmtCurrency(deal.amount)}
                   </td>
