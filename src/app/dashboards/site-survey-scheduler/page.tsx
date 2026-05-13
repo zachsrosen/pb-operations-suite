@@ -205,6 +205,12 @@ function isTomorrow(dateStr: string): boolean {
   return dateStr === toDateStr(tomorrow);
 }
 
+const CALIFORNIA_STATES = ["ca", "california"];
+function isCaliforniaState(state: string | undefined | null): boolean {
+  if (!state) return false;
+  return CALIFORNIA_STATES.includes(state.trim().toLowerCase());
+}
+
 function locationKey(value: string | null | undefined): string {
   return String(value || "").trim().toLowerCase();
 }
@@ -1040,12 +1046,12 @@ export default function SiteSurveySchedulerPage() {
       setDraggedProjectId(null);
       return;
     }
-    if (userRole === "SALES" && isTomorrow(date)) {
+    const project = projects.find(p => p.id === draggedProjectId);
+    if (userRole === "SALES" && isTomorrow(date) && !isCaliforniaState(project?.state)) {
       showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
       setDraggedProjectId(null);
       return;
     }
-    const project = projects.find(p => p.id === draggedProjectId);
     if (project) {
       const currentSlot = findCurrentSlotForProject(project.id, date, project.name, project.zuperJobUid);
       trackFeature("schedule-modal-open", "Opened survey schedule modal via drag", {
@@ -1068,7 +1074,7 @@ export default function SiteSurveySchedulerPage() {
       showToast("Cannot schedule on past dates");
       return;
     }
-    if (userRole === "SALES" && isTomorrow(date)) {
+    if (userRole === "SALES" && isTomorrow(date) && !isCaliforniaState(project?.state)) {
       showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
       return;
     }
@@ -1225,8 +1231,8 @@ export default function SiteSurveySchedulerPage() {
       return;
     }
 
-    // Safety net: prevent SALES from confirming a tomorrow schedule
-    if (userRole === "SALES" && isTomorrow(date)) {
+    // Safety net: prevent SALES from confirming a tomorrow schedule (CA exempt)
+    if (userRole === "SALES" && isTomorrow(date) && !isCaliforniaState(project.state)) {
       showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
       setScheduleModal(null);
       return;
