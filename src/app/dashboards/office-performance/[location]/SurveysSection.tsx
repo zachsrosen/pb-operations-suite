@@ -79,16 +79,9 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
         </div>
       </div>
 
-      {/* Deal lists side by side, compliance below */}
-      <div className="grid grid-cols-2 gap-3 mb-2 flex-shrink-0 overflow-hidden items-start">
-        <div>
-          <div className="text-[10px] font-bold tracking-[1.5px] text-slate-500 mb-1 px-1">IN PROGRESS</div>
-          <DealList deals={data.deals} />
-        </div>
-        <div>
-          <div className="text-[10px] font-bold tracking-[1.5px] text-emerald-500/70 mb-1 px-1">COMPLETED THIS MONTH</div>
-          <DealList deals={data.completedDeals} showAssigned={false} />
-        </div>
+      {/* Deal list — full width */}
+      <div className="mb-2 flex-shrink-0 overflow-hidden">
+        <DealList deals={data.deals} variant="survey" />
       </div>
       <div className="mb-3 flex-shrink-0">
         <ComplianceBlock compliance={data.compliance} />

@@ -253,6 +253,16 @@ interface ProjectForMetrics {
   hasInspectionFailedNotRejected?: boolean;
   systemSizeKwdc?: number;
   batteryCount?: number;  // battery.count + battery.expansionCount
+  isParticipateEnergy?: boolean;
+}
+
+// ---------- Helpers ----------
+
+/** Parse HubSpot semicolon-delimited tags string into an array */
+function parseTags(tagsValue: unknown): string[] {
+  if (!tagsValue) return [];
+  const str = String(tagsValue);
+  return str.split(";").map((t) => t.trim()).filter(Boolean);
 }
 
 // ---------- Deal Drill-Down ----------
@@ -317,6 +327,9 @@ export function buildDealRows(
       overdue,
       daysOverdue,
       assignedUsers,
+      amount: p.amount,
+      isPE: p.isParticipateEnergy || false,
+      systemSizeKw: p.systemSizeKwdc,
     };
   });
 
@@ -365,6 +378,10 @@ function buildCompletedDealRows(
     daysInStage: 0,
     overdue: false,
     daysOverdue: 0,
+    amount: p.amount,
+    isPE: p.isParticipateEnergy || false,
+    systemSizeKw: p.systemSizeKwdc,
+    isCompleted: true,
   }));
 }
 
@@ -404,6 +421,7 @@ const COMPLETED_DEAL_PROPERTIES = [
   "hubspot_owner_id",
   "design",
   "install_crew",
+  "tags",
 ];
 
 const PROJECT_COMPLETE_STAGE_ID = "20440343";
@@ -506,6 +524,7 @@ async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]
       dealOwner: str(d.hubspot_owner_id),
       designLead: str(d.design),
       installCrew: str(d.install_crew),
+      isParticipateEnergy: parseTags(d.tags).includes("Participate Energy"),
     } as ProjectForMetrics;
   });
 }
@@ -845,6 +864,55 @@ function extractAssignedUsers(assignedUsers: unknown): Array<{ user_uid: string;
       user_uid: u.user_uid,
       user_name: u.user_name || u.user_uid.slice(0, 8),
     }));
+}
+
+/**
+ * Batch-fetch Zuper job statuses + assigned users for a set of deal IDs.
+ * Returns Map<dealId, { jobStatus, assignedUsers }> keyed by HubSpot deal ID.
+ * Queries ZuperJobCache for matching category, picks the most recently scheduled job per deal.
+ */
+async function batchFetchZuperJobInfo(
+  dealIds: string[],
+  category: string
+): Promise<Map<string, { jobStatus: string; assignedUsers: string[] }>> {
+  const result = new Map<string, { jobStatus: string; assignedUsers: string[] }>();
+  if (!prisma || dealIds.length === 0) return result;
+
+  try {
+    // For construction, look up all sub-categories too
+    const categories = category === "Construction"
+      ? ["Construction", "Construction - Solar", "Construction - Battery", "Construction - EV"]
+      : [category];
+
+    const jobs = await prisma.zuperJobCache.findMany({
+      where: {
+        hubspotDealId: { in: dealIds },
+        jobCategory: { in: categories },
+      },
+      select: {
+        hubspotDealId: true,
+        jobStatus: true,
+        assignedUsers: true,
+        scheduledStart: true,
+      },
+      orderBy: { scheduledStart: "desc" },
+    });
+
+    // Pick the most recently scheduled job per deal (first in desc order)
+    for (const job of jobs) {
+      if (!job.hubspotDealId || result.has(job.hubspotDealId)) continue;
+      const users = extractAssignedUsers(job.assignedUsers)
+        .map((u) => u.user_name);
+      result.set(job.hubspotDealId, {
+        jobStatus: job.jobStatus || "Unknown",
+        assignedUsers: users,
+      });
+    }
+  } catch (err) {
+    console.warn("[office-performance] batchFetchZuperJobInfo failed:", err);
+  }
+
+  return result;
 }
 
 export function buildLeaderboard(
@@ -1187,14 +1255,32 @@ export async function buildSurveyData(
 
   const surveyHistory = await getMonthlyJobHistory(primaryCanonical, "Site Survey", now, 3, locationDealIds);
 
-  // Deal rows filtered to survey stages
+  // Deal rows: in-progress (survey stages) + completed this month, merged
   const surveyProjects = (locationProjects || []).filter(
     (p) => SURVEY_STAGES.has(normalizeStage(p.stage || ""))
   );
-  const { deals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
-
-  // Completed deals — surveys completed this month (from all location projects)
+  const { deals: inProgressDeals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
   const completedDeals = buildCompletedDealRows(locationProjects || [], "siteSurveyCompletionDate", now);
+
+  // Merge: in-progress first, then completed — cap total
+  const mergedDeals = [...inProgressDeals, ...completedDeals].slice(0, DEAL_LIST_CAP);
+
+  // Enrich with Zuper job status + assigned users
+  const dealIdsForZuper = surveyProjects.filter((p) => p.id).map((p) => String(p.id));
+  const zuperInfo = await batchFetchZuperJobInfo(dealIdsForZuper, "Site Survey");
+  for (const deal of mergedDeals) {
+    // Extract deal ID from name pattern "PROJ-XXXX | Name | Address" or deal name
+    const matchingProject = surveyProjects.find((p) => (p.name || `Deal ${p.id ?? "?"}`) === deal.name);
+    if (matchingProject?.id) {
+      const info = zuperInfo.get(String(matchingProject.id));
+      if (info) {
+        deal.jobStatus = info.jobStatus;
+        if (!deal.assignedUsers?.length && info.assignedUsers.length > 0) {
+          deal.assignedUsers = info.assignedUsers;
+        }
+      }
+    }
+  }
 
   // Compliance from Zuper "Site Survey" category
   // Compliance is populated by the orchestrator via computeLocationCompliance
@@ -1209,8 +1295,7 @@ export async function buildSurveyData(
     avgTurnaroundPrior: 0,
     scheduledThisWeek,
     leaderboard: buildLeaderboard([...userCounts.values()], surveyHistory) as EnrichedPersonStat[],
-    deals,
-    completedDeals,
+    deals: mergedDeals,
     totalCount,
     compliance,
   };
@@ -1352,14 +1437,29 @@ export async function buildInstallData(
   const installerHistory = filterHistoryByUids(constructionHistory, installerUids);
   const electricianHistory = filterHistoryByUids(constructionHistory, electricianUids);
 
-  // Deal rows filtered to install stages
+  // Deal rows: in-progress (install stages) + completed this month, merged
   const installProjects = (locationProjects || []).filter(
     (p) => INSTALL_STAGES.has(normalizeStage(p.stage || ""))
   );
-  const { deals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
-
-  // Completed deals — installs completed this month (from all location projects)
+  const { deals: inProgressDeals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
   const completedDeals = buildCompletedDealRows(locationProjects || [], "constructionCompleteDate", now);
+  const mergedDeals = [...inProgressDeals, ...completedDeals].slice(0, DEAL_LIST_CAP);
+
+  // Enrich with Zuper job status (all construction categories)
+  const dealIdsForZuper = installProjects.filter((p) => p.id).map((p) => String(p.id));
+  const zuperInfo = await batchFetchZuperJobInfo(dealIdsForZuper, "Construction");
+  for (const deal of mergedDeals) {
+    const matchingProject = installProjects.find((p) => (p.name || `Deal ${p.id ?? "?"}`) === deal.name);
+    if (matchingProject?.id) {
+      const info = zuperInfo.get(String(matchingProject.id));
+      if (info) {
+        deal.jobStatus = info.jobStatus;
+        if (!deal.assignedUsers?.length && info.assignedUsers.length > 0) {
+          deal.assignedUsers = info.assignedUsers;
+        }
+      }
+    }
+  }
 
   // Compliance from Zuper "Construction" category
   // Compliance is populated by the orchestrator via computeLocationCompliance
@@ -1375,8 +1475,7 @@ export async function buildInstallData(
     scheduledThisWeek,
     installerLeaderboard: buildLeaderboard([...installerCounts.values()], installerHistory) as EnrichedPersonStat[],
     electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], electricianHistory) as EnrichedPersonStat[],
-    deals,
-    completedDeals,
+    deals: mergedDeals,
     totalCount,
     compliance,
   };
@@ -1428,20 +1527,17 @@ export async function buildInspectionData(
   // Scheduled this week — from HubSpot inspection_schedule_date (source of truth)
   const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Inspection", now);
 
-  // Deal rows filtered to inspection stages
+  // Deal rows: in-progress (inspection stages) + failed + passed this month, merged
   const inspectionProjects = (locationProjects || []).filter(
     (p) => INSPECTION_STAGES.has(normalizeStage(p.stage || ""))
   );
-  const { deals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
-
-  // Completed deals — inspections passed this month + outstanding failed inspections
+  const { deals: inProgressDeals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
   const passedDeals = buildCompletedDealRows(locationProjects || [], "inspectionPassDate", now);
 
   // Outstanding failed inspections: failed but NOT yet passed (any time, not just this month)
   const outstandingFailed = (locationProjects || [])
     .filter((p) => p.hasInspectionFailedNotRejected && !p.inspectionPassDate)
     .sort((a, b) => {
-      // Sort by fail date descending
       const da = a.inspectionFailDate ? new Date(a.inspectionFailDate).getTime() : 0;
       const db = b.inspectionFailDate ? new Date(b.inspectionFailDate).getTime() : 0;
       return db - da;
@@ -1457,10 +1553,30 @@ export async function buildInspectionData(
       daysOverdue: p.inspectionFailDate
         ? Math.floor((now.getTime() - new Date(p.inspectionFailDate).getTime()) / (24 * 60 * 60 * 1000))
         : 0,
+      isPE: p.isParticipateEnergy || false,
+      isFailed: true,
     }));
 
-  // Merge: failed first (they need attention), then passed
-  const completedDeals = [...outstandingFailed, ...passedDeals].slice(0, DEAL_LIST_CAP);
+  // Merge: in-progress first, then failed (need attention), then passed
+  const mergedDeals = [...inProgressDeals, ...outstandingFailed, ...passedDeals].slice(0, DEAL_LIST_CAP);
+
+  // Enrich with Zuper job status
+  const dealIdsForZuper = inspectionProjects.filter((p) => p.id).map((p) => String(p.id));
+  const zuperInfo = await batchFetchZuperJobInfo(dealIdsForZuper, "Inspection");
+  for (const deal of mergedDeals) {
+    const matchingProject = [...inspectionProjects, ...(locationProjects || [])].find(
+      (p) => (p.name || `Deal ${p.id ?? "?"}`) === deal.name
+    );
+    if (matchingProject?.id) {
+      const info = zuperInfo.get(String(matchingProject.id));
+      if (info) {
+        deal.jobStatus = info.jobStatus;
+        if (!deal.assignedUsers?.length && info.assignedUsers.length > 0) {
+          deal.assignedUsers = info.assignedUsers;
+        }
+      }
+    }
+  }
 
   // Compliance from Zuper "Inspection" category
   // Compliance is populated by the orchestrator via computeLocationCompliance
@@ -1477,8 +1593,7 @@ export async function buildInspectionData(
     avgCcToPtoDaysPrior: 0,
     scheduledThisWeek,
     leaderboard,
-    deals,
-    completedDeals,
+    deals: mergedDeals,
     totalCount,
     compliance,
   };
@@ -1795,11 +1910,15 @@ export async function getOfficePerformanceData(
   for (const p of (activeProjects || []) as ProjectForMetrics[]) {
     if (p.id && !seenDealIds.has(p.id)) {
       seenDealIds.add(p.id);
-      // Enrich with equipment data for team results
-      const proj = p as ProjectForMetrics & { equipment?: { systemSizeKwdc?: number; battery?: { count?: number; expansionCount?: number } } };
+      // Enrich with equipment + PE data from full Project object
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const proj = p as any;
       if (proj.equipment) {
         p.systemSizeKwdc = proj.equipment.systemSizeKwdc || 0;
         p.batteryCount = (proj.equipment.battery?.count || 0) + (proj.equipment.battery?.expansionCount || 0);
+      }
+      if (proj.isParticipateEnergy !== undefined) {
+        p.isParticipateEnergy = proj.isParticipateEnergy;
       }
       allProjects.push(p);
     }
