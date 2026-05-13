@@ -133,7 +133,8 @@ type StageTab = "all" | "Construction" | "Inspection";
 
 export default function PePipelinePage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [constructionStatusFilter, setConstructionStatusFilter] = useState<string[]>([]);
+  const [inspectionStatusFilter, setInspectionStatusFilter] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<StageTab>("all");
   const [sortKey, setSortKey] = useState<SortKey>("daysInStage");
   const [sortAsc, setSortAsc] = useState(false);
@@ -156,18 +157,15 @@ export default function PePipelinePage() {
     return [...locs].sort().map((l) => ({ value: l, label: l }));
   }, [deals]);
 
-  const statusOptions: FilterOption[] = useMemo(() => {
-    const statuses = new Set<string>();
-    for (const d of deals) {
-      if (activeTab === "all" || activeTab === "Construction") {
-        if (d.constructionStatus) statuses.add(d.constructionStatus);
-      }
-      if (activeTab === "all" || activeTab === "Inspection") {
-        if (d.finalInspectionStatus) statuses.add(d.finalInspectionStatus);
-      }
-    }
-    return [...statuses].sort().map((s) => ({ value: s, label: s }));
-  }, [deals, activeTab]);
+  const constructionStatusOptions: FilterOption[] = useMemo(() => {
+    const s = new Set(deals.map((d) => d.constructionStatus).filter(Boolean) as string[]);
+    return [...s].sort().map((v) => ({ value: v, label: v }));
+  }, [deals]);
+
+  const inspectionStatusOptions: FilterOption[] = useMemo(() => {
+    const s = new Set(deals.map((d) => d.finalInspectionStatus).filter(Boolean) as string[]);
+    return [...s].sort().map((v) => ({ value: v, label: v }));
+  }, [deals]);
 
   const filtered = useMemo(() => {
     let result = deals;
@@ -177,18 +175,14 @@ export default function PePipelinePage() {
     if (activeTab !== "all") {
       result = result.filter((d) => d.stage === activeTab);
     }
-    if (statusFilter.length > 0) {
-      result = result.filter((d) => {
-        if (activeTab === "Construction") return d.constructionStatus && statusFilter.includes(d.constructionStatus);
-        if (activeTab === "Inspection") return d.finalInspectionStatus && statusFilter.includes(d.finalInspectionStatus);
-        return (
-          (d.constructionStatus && statusFilter.includes(d.constructionStatus)) ||
-          (d.finalInspectionStatus && statusFilter.includes(d.finalInspectionStatus))
-        );
-      });
+    if (constructionStatusFilter.length > 0) {
+      result = result.filter((d) => d.constructionStatus && constructionStatusFilter.includes(d.constructionStatus));
+    }
+    if (inspectionStatusFilter.length > 0) {
+      result = result.filter((d) => d.finalInspectionStatus && inspectionStatusFilter.includes(d.finalInspectionStatus));
     }
     return sortDeals(result, sortKey, sortAsc);
-  }, [deals, locationFilter, statusFilter, activeTab, sortKey, sortAsc]);
+  }, [deals, locationFilter, constructionStatusFilter, inspectionStatusFilter, activeTab, sortKey, sortAsc]);
 
   // Stats
   const stats = useMemo(() => {
@@ -268,7 +262,7 @@ export default function PePipelinePage() {
           {(["all", "Construction", "Inspection"] as StageTab[]).map((tab) => (
             <button
               key={tab}
-              onClick={() => { setActiveTab(tab); setStatusFilter([]); }}
+              onClick={() => { setActiveTab(tab); setConstructionStatusFilter([]); setInspectionStatusFilter([]); }}
               className={`px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ${
                 activeTab === tab
                   ? tab === "Construction"
@@ -294,12 +288,22 @@ export default function PePipelinePage() {
           selected={locationFilter}
           onChange={setLocationFilter}
         />
-        <MultiSelectFilter
-          label="Status"
-          options={statusOptions}
-          selected={statusFilter}
-          onChange={setStatusFilter}
-        />
+        {(activeTab === "all" || activeTab === "Construction") && (
+          <MultiSelectFilter
+            label="Construction Status"
+            options={constructionStatusOptions}
+            selected={constructionStatusFilter}
+            onChange={setConstructionStatusFilter}
+          />
+        )}
+        {(activeTab === "all" || activeTab === "Inspection") && (
+          <MultiSelectFilter
+            label="Inspection Status"
+            options={inspectionStatusOptions}
+            selected={inspectionStatusFilter}
+            onChange={setInspectionStatusFilter}
+          />
+        )}
         <span className="text-muted ml-auto text-sm">
           {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
         </span>
