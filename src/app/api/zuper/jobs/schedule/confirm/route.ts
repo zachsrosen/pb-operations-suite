@@ -354,11 +354,13 @@ export async function POST(request: NextRequest) {
 
     const timezoneFromNotes = effectiveNotes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
     const effectiveRoles = resolveEffectiveRolesFromRequest(request, userRolesForPolicy);
+    const dealStateProps = await getDealProperties(record.projectId, ["state"]);
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
       roles: effectiveRoles,
       scheduleType,
       scheduleDate: record.scheduledDate,
       timezone: timezoneFromNotes,
+      state: typeof dealStateProps?.state === "string" ? dealStateProps.state : undefined,
     });
     if (salesLeadTimeError) {
       return NextResponse.json({ error: salesLeadTimeError }, { status: 403 });

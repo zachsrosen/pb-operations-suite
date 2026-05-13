@@ -464,6 +464,7 @@ export async function PUT(request: NextRequest) {
       scheduleType,
       scheduleDate: schedule.date,
       timezone: typeof schedule.timezone === "string" ? schedule.timezone : undefined,
+      state: typeof project.state === "string" ? project.state : undefined,
     });
     if (salesLeadTimeError) {
       return NextResponse.json({ error: salesLeadTimeError }, { status: 403 });

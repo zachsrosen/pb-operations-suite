@@ -7,6 +7,7 @@ interface SalesSurveyLeadTimeInput {
   scheduleType: "survey" | "pre-sale-survey" | "installation" | "inspection";
   scheduleDate: string;
   timezone?: string | null;
+  state?: string | null;
 }
 
 function parseRole(value: string | null | undefined): UserRole | null {
@@ -109,11 +110,19 @@ export function resolveEffectiveRoleFromRequest(request: NextRequest, actualRole
   return resolved[0] ?? normalizeRole(actualRole);
 }
 
+const CALIFORNIA_STATES = ["CA", "California"];
+
+function isCalifornia(state: string | null | undefined): boolean {
+  if (!state) return false;
+  return CALIFORNIA_STATES.some(s => s.toLowerCase() === state.trim().toLowerCase());
+}
+
 export function getSalesSurveyLeadTimeError({
   roles,
   scheduleType,
   scheduleDate,
   timezone,
+  state,
 }: SalesSurveyLeadTimeInput): string | null {
   // Multi-role: guard applies if ANY of the user's roles is SALES. A user with
   // roles [PROJECT_MANAGER, SALES] — PM first — still gets the lead-time rule.
@@ -124,6 +133,15 @@ export function getSalesSurveyLeadTimeError({
   const today = formatDateInTimezone(new Date(), tz);
   const tomorrow = addDays(today, 1);
 
+  if (isCalifornia(state)) {
+    // CA: no same-day, but next-day is allowed
+    if (scheduleDate === today) {
+      return "Sales users cannot schedule same-day site surveys. Please choose a date at least 1 day out.";
+    }
+    return null;
+  }
+
+  // Default (Colorado): no same-day or next-day
   if (scheduleDate === today || scheduleDate === tomorrow) {
     return "Sales users cannot schedule site surveys for today or tomorrow. Please choose a date at least 2 days out.";
   }
