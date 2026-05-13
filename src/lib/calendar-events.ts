@@ -439,11 +439,11 @@ export function generateZuperEvents(
       normalizeLocation(job.city);
     if (!jobLocation || !locationSet.has(jobLocation as CanonicalLocation)) continue;
 
-    // Resolve assignee
-    const rawAssignee =
+    // Resolve assignee(s) — show all assigned users, not just the first
+    const rawAssignees =
       (Array.isArray(job.assignedUsers) && job.assignedUsers.length > 0)
-        ? job.assignedUsers[0]
-        : job.assignedUser || "";
+        ? job.assignedUsers
+        : job.assignedUser ? [job.assignedUser] : [];
 
     // Derive inclusive calendar-day span from scheduledStart/End
     let days = 1;
@@ -464,7 +464,7 @@ export function generateZuperEvents(
       date: dateStr,
       days,
       eventType,
-      assignee: formatAssignee(rawAssignee),
+      assignee: rawAssignees.map(formatAssignee).filter(Boolean).join(", "),
       isCompleted: false,
       isOverdue: false,
       isFailed: false,
