@@ -34,7 +34,7 @@ const ROUTING: DigestAudienceMap = {
   westminster: {
     to: [
       "joe@photonbrothers.com",    // Joe Lynch — Regional Director
-      "nathan@photonbrothers.com", // Nathan Kirkegaard — covering for Joe
+      "nathan.kirkegaard@photonbrothers.com", // Nathan Kirkegaard — covering for Joe
     ],
     bcc: OFFICE_BCC,
   },
@@ -55,7 +55,7 @@ const ROUTING: DigestAudienceMap = {
   california: {
     to: [
       "kat@photonbrothers.com",    // Katlyyn Arnoldi — Regional Implementation Mgr
-      "nick@photonbrothers.com",   // Nick Scarpellino — Regional Director
+      "nick.scarpellino@photonbrothers.com", // Nick Scarpellino — Regional Director
     ],
     bcc: OFFICE_BCC,
   },

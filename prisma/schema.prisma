@@ -2504,6 +2504,8 @@ model IdrMeetingItem {
   siteSurveyor           String?
   projectManager         String?
   operationsManager      String?
+  designLead             String?
+  permitLead             String?
   surveyStatus           String?
   surveyDate             String?
   designStatus           String?

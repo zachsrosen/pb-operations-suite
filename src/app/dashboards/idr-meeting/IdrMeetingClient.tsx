@@ -44,6 +44,8 @@ export interface IdrItem {
   siteSurveyor: string | null;
   projectManager: string | null;
   operationsManager: string | null;
+  designLead: string | null;
+  permitLead: string | null;
   surveyStatus: string | null;
   surveyDate: string | null;
   designStatus: string | null;
