@@ -144,8 +144,10 @@ function initPerJobState(
 // Validation
 // ---------------------------------------------------------------------------
 
-function isValid(schedules: PerSubJobSchedule[]): boolean {
-  return schedules.every((s) => s.startDate !== "" && s.assigneeNames.length > 0);
+function isValid(schedules: PerSubJobSchedule[], requireAssignees: boolean): boolean {
+  return schedules.every(
+    (s) => s.startDate !== "" && (!requireAssignees || s.assigneeNames.length > 0),
+  );
 }
 
 function formatDisplayDate(dateStr: string): string {
@@ -234,7 +236,7 @@ export function SubJobScheduleModal({
   }, [mode, subJobs, sharedDate, sharedDays, sharedCrew, sharedNotes, perJob]);
 
   const schedules = useMemo(() => buildSchedules(), [buildSchedules]);
-  const canSubmit = isValid(schedules);
+  const canSubmit = isValid(schedules, syncToZuper ?? true);
 
   // ── Per-job field updater ─────────────────────────────────────────────
   const updatePerJob = useCallback(
