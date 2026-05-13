@@ -194,7 +194,7 @@ Your job is to review a planset PDF and cross-reference it against:
 
 **utility_compliance** — Check against utility requirements:
 - AC disconnect: if "ac_disconnect_required_" is true/yes, verify shown on line diagram
-- Production meter: if "is_production_meter_required_" is true/yes, verify shown
+- Production meter: if "is_production_meter_required_" is true/yes, verify a dedicated production meter (labeled "production meter", "PV meter", or "PV production meter") is shown on the line diagram. If "is_production_meter_required_" is false/no/empty, do NOT flag the absence or presence of a production meter. IMPORTANT: A "bi-directional utility meter", "revenue meter", "service meter", or "utility meter" (UM) is NOT a production meter — it is the standard utility service meter and must NEVER be flagged as a production meter. Only meters explicitly labeled as production/PV meters count.
 - System size: the utility's "system_size_rule" field describes size limits as free text (e.g., "DC ≤ 25kW" or "AC cannot exceed 10kW"). Parse it to determine whether the limit applies to DC or AC, then compare against the correct deal field: "calculated_system_size__kwdc_" for DC limits, "system_size_kwac" for AC limits. NEVER compare an AC value against a DC limit or vice versa. If the rule says "DC" (like Xcel's 10kW DC threshold), use the DC field only.
 - Backup switch: if "backup_switch_allowed_" is relevant and battery system includes backup, verify backup switch is shown
 
