@@ -4,6 +4,74 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-12
+
+### Pipeline Trackers (Major)
+- New general Pipeline Tracker dashboard surfacing deals across Site Survey, Construction, and Inspection stages
+- PE Pipeline Tracker dashboard with total revenue + per-stage revenue hero cards
+- Construction and Inspection status columns on PE Pipeline Tracker
+- Tabs added for Site Survey, Construction, and Inspection on the general Pipeline Tracker
+- M1/M2 columns removed from PE tracker; Contact column removed from both
+- Status filters on both pipeline trackers, split into per-type filters for finer control
+- Sortable status columns on both pipeline trackers
+- Cross-links between PE Pipeline page and Pipeline Tracker
+- Pipeline tracker APIs paginate HubSpot search to handle large pipelines
+- Tracker descriptions updated to include site survey scope
+
+### PE Document Tracker (Major)
+- New PE Document Tracker dashboard at `/dashboards/pe-docs` with IC/PC document breakdown
+- Inline document breakdown on PE Deals rows; traceable IC/PC breakdown with reconciliation bar
+- PE deals doc breakdown + invoice audit + email sync
+- Under Review hero card on PE doc tracker
+- Approval rate now counts only decided docs (excludes Under Review)
+- PE Report cleanup: doc grouping, per-section stats, table totals
+- Deal-reader exposes `pePortalUrl` / `peProjectId` and additional PE fields
+- PE notification sender corrected from `noreply@` to `ict@participate.energy`
+
+### Payment Timeline (Accounting Suite)
+- New Payment Timeline dashboard for the Accounting suite
+- Payment volume bar chart with day/week/month toggle
+- Fix: payment timeline rendered no payments because of null date fields
+- Fix: payment volume bars invisible due to `items-center` collapsing height (now `items-stretch`)
+
+### IDR Revision Workflow
+- IDR revision workflow: re-review toggle, auto-appear on revision, revision reason sync
+- IDR sync now completes the linked HubSpot task and adds a `RE-REVIEW` badge
+- AI design review no longer flags utility meters as production meters
+- Use HubSpot internal value for `design_status` auto-advance
+
+### TV Dashboard
+- Rich deal list with Zuper status, PE flags, and unified layout
+- Stack deal lists above the compliance block for readability
+- Completed deals shown; goals labels and inspections terminology updated
+- Calendar week/day views and overall readability improvements
+
+### Weekly Goals Digest
+- Weekly goals digest email — one per office, with BCC to Zach
+- Suppress zero-delta entries when no prior snapshot exists
+- Lower 5-star review goals to 20 base / 25 stretch company-wide
+
+### Zuper Drift Compliance
+- New PM dashboard for Zuper↔HubSpot status drift
+- Per-sub-type evaluation + `install_status` rollup integrity check
+- Cron `LOOKBACK_DAYS` dropped 90→14 to stay under the 60s Vercel budget
+
+### Operations Suite
+- New Design & Ops Meeting Hub added to the Operations Suite
+- Show assignees on all calendar event types (not just installs)
+
+### Catalog & Shared Inbox
+- Catalog writes Zuper cross-link IDs via `meta_data` instead of `custom_fields`
+- Shared inbox OAuth connect now requests `openid` + `email` scopes
+- `tpo@` added to the shared inbox connections admin page
+
+### Bug Fixes
+- HubSpot properties type accepts `null` values (matches API responses)
+- Removed unused `DashboardLocationGroup` import that broke the build
+- Redeploy chore to pick up `ZUPER_RECONCILE_ENABLED=true`
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
