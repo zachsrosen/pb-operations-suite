@@ -949,7 +949,7 @@ export default function ConstructionSchedulerPage() {
     const selectedAssignees = availableConstructionAssignees.filter((assignee) =>
       selectedAssigneeNames.includes(assignee.name)
     );
-    if (selectedAssignees.length === 0) {
+    if (selectedAssignees.length === 0 && syncToZuper) {
       showToast("Select at least one construction assignee", "warning");
       return;
     }
