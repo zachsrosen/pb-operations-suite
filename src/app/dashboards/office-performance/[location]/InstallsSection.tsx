@@ -62,8 +62,8 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
         </div>
       </div>
 
-      {/* Deal lists: In Progress + Completed + Compliance */}
-      <div className="grid grid-cols-3 gap-3 mb-3 flex-shrink-0 overflow-hidden items-start">
+      {/* Deal lists side by side, compliance below */}
+      <div className="grid grid-cols-2 gap-3 mb-2 flex-shrink-0 overflow-hidden items-start">
         <div>
           <div className="text-[10px] font-bold tracking-[1.5px] text-slate-500 mb-1 px-1">IN PROGRESS</div>
           <DealList deals={data.deals} />
@@ -72,6 +72,8 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
           <div className="text-[10px] font-bold tracking-[1.5px] text-emerald-500/70 mb-1 px-1">COMPLETED THIS MONTH</div>
           <DealList deals={data.completedDeals} showAssigned={false} />
         </div>
+      </div>
+      <div className="mb-3 flex-shrink-0">
         <ComplianceBlock compliance={data.compliance} />
       </div>
 
