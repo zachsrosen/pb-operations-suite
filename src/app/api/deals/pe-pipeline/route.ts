@@ -9,6 +9,8 @@ import {
   hubspotClient,
 } from "@/lib/hubspot";
 import { appCache } from "@/lib/cache";
+import { prisma } from "@/lib/db";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 /**
  * GET /api/deals/pe-pipeline
@@ -33,6 +35,13 @@ const PROPERTIES = [
   "final_inspection_status",
 ];
 
+interface ZuperJobLink {
+  jobUid: string;
+  category: string;
+  status: string;
+  url: string;
+}
+
 interface PePipelineDeal {
   dealId: string;
   dealName: string;
@@ -46,6 +55,7 @@ interface PePipelineDeal {
   contactName: string | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
+  zuperJobs: ZuperJobLink[];
 }
 
 function computeDaysInStage(dateEntered: string | null | undefined): number {
@@ -133,6 +143,23 @@ export async function GET(request: NextRequest) {
         });
         await Promise.allSettled(contactPromises);
 
+        const dealIds = results.map((r) => r.id);
+        const zuperRows = dealIds.length > 0
+          ? await prisma.zuperJobCache.findMany({
+              where: { hubspotDealId: { in: dealIds } },
+              select: { jobUid: true, jobCategory: true, jobStatus: true, hubspotDealId: true },
+            })
+          : [];
+        const zuperByDeal = new Map<string, ZuperJobLink[]>();
+        for (const row of zuperRows) {
+          if (!row.hubspotDealId) continue;
+          const url = getZuperJobUrl(row.jobUid);
+          if (!url) continue;
+          const list = zuperByDeal.get(row.hubspotDealId) ?? [];
+          list.push({ jobUid: row.jobUid, category: row.jobCategory, status: row.jobStatus, url });
+          zuperByDeal.set(row.hubspotDealId, list);
+        }
+
         const deals: PePipelineDeal[] = results.map((deal) => {
           const props = deal.properties;
           const stageId = props.dealstage ?? "";
@@ -149,6 +176,7 @@ export async function GET(request: NextRequest) {
             contactName: contactMap.get(deal.id) ?? null,
             constructionStatus: props.install_status || null,
             finalInspectionStatus: props.final_inspection_status || null,
+            zuperJobs: zuperByDeal.get(deal.id) ?? [],
           };
         });
 
