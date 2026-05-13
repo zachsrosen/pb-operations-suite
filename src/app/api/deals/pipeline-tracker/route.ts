@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
       CACHE_KEY,
       async () => {
-        const results: Array<{ id: string; properties: Record<string, string> }> = [];
+        const results: Array<{ id: string; properties: Record<string, string | null> }> = [];
         let after: string | undefined;
 
         do {
