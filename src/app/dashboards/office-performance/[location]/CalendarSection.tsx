@@ -1,25 +1,12 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { queryKeys } from "@/lib/query-keys";
 import {
-  generateProjectEvents,
-  generateZuperEvents,
-  expandToDayPills,
-  toCalendarProject,
   EVENT_COLORS,
   LEGEND_ITEMS,
-  SERVICE_CATEGORY_UIDS,
-  DNR_CATEGORY_UIDS,
-  ROOFING_CATEGORY_UIDS,
-  EXCLUDE_OTHER_CATEGORY_UIDS,
-  type RawApiProject,
-  type ZuperCategoryJob,
   type DayPill,
 } from "@/lib/calendar-events";
-import type { CanonicalLocation } from "@/lib/locations";
-import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
+import { useCalendarData } from "./useCalendarData";
 
 interface CalendarSectionProps {
   location: string; // Dashboard group label (e.g. "California", "Westminster")
@@ -31,101 +18,6 @@ const MONTH_NAMES = [
 ];
 
 const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-
-/** Show all pills — TV displays have no scroll/hover, so truncating hides events */
-
-// ---------------------------------------------------------------------------
-// Data fetching hooks
-// ---------------------------------------------------------------------------
-
-function useCalendarData(location: string) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1; // 1-indexed
-
-  // Buffered date range for Zuper: prev month start → next month end
-  const fromDate = new Date(year, month - 2, 1);
-  const toDate = new Date(year, month + 1, 0);
-  const fromStr = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-01`;
-  const toStr = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, "0")}-${String(toDate.getDate()).padStart(2, "0")}`;
-
-  const projectsQuery = useQuery<{ projects?: RawApiProject[] }>({
-    queryKey: queryKeys.officeCalendar.projects(location, month, year),
-    queryFn: async () => {
-      const res = await fetch("/api/projects?context=scheduling&refresh=true");
-      if (!res.ok) throw new Error("Failed to fetch projects");
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const serviceQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.serviceJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        categories: SERVICE_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const dnrQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.dnrJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        categories: DNR_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const roofingQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.roofingJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        categories: ROOFING_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  const otherQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
-    queryKey: queryKeys.officeCalendar.otherJobs(location, fromStr, toStr),
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        exclude: EXCLUDE_OTHER_CATEGORY_UIDS,
-        from_date: fromStr,
-        to_date: toStr,
-      });
-      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
-      if (!res.ok) return { jobs: [] };
-      return res.json();
-    },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
-  });
-
-  return { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month };
-}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -350,33 +242,7 @@ function Legend() {
 // ---------------------------------------------------------------------------
 
 export default function CalendarSection({ location }: CalendarSectionProps) {
-  const { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month } = useCalendarData(location);
-
-  const isLoading = projectsQuery.isLoading;
-
-  // Generate all events
-  const allPills = useMemo(() => {
-    const rawProjects = projectsQuery.data?.projects || [];
-    const projects = rawProjects.map(toCalendarProject);
-    const serviceJobs = serviceQuery.data?.jobs || [];
-    const dnrJobs = dnrQuery.data?.jobs || [];
-    const roofingJobs = roofingQuery.data?.jobs || [];
-    const otherJobs = otherQuery.data?.jobs || [];
-
-    // Resolve canonical locations for combined groups (e.g. California = SLO + Camarillo)
-    const group = DASHBOARD_LOCATION_GROUPS.find((g) => g.label === location);
-    const canonicals: CanonicalLocation[] = group
-      ? (group.canonicals as unknown as CanonicalLocation[])
-      : [location as CanonicalLocation];
-    const projectEvents = generateProjectEvents(projects, canonicals);
-    const serviceEvents = generateZuperEvents(serviceJobs, "service", canonicals);
-    const dnrEvents = generateZuperEvents(dnrJobs, "dnr", canonicals);
-    const roofingEvents = generateZuperEvents(roofingJobs, "roofing", canonicals);
-    const otherEvents = generateZuperEvents(otherJobs, "other", canonicals);
-
-    const allEvents = [...projectEvents, ...serviceEvents, ...dnrEvents, ...roofingEvents, ...otherEvents];
-    return expandToDayPills(allEvents, year, month);
-  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, location, year, month]);
+  const { allPills, isLoading, year, month } = useCalendarData(location);
 
   // Build the month grid (weekdays only — Mon–Fri)
   const grid = useMemo(() => {

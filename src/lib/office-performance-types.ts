@@ -198,13 +198,15 @@ export type OfficeMetricName =
   | "projects_completed";
 
 /** Carousel section identifiers */
-export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections" | "allLocations" | "goals" | "pipeline" | "calendar";
+export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections" | "allLocations" | "goals" | "pipeline" | "calendar" | "calendarWeek" | "calendarDay";
 
 export const CAROUSEL_SECTIONS: CarouselSection[] = [
   "teamResults",
   "goals",
   "pipeline",
   "calendar",
+  "calendarWeek",
+  "calendarDay",
   "surveys",
   "installs",
   "inspections",
@@ -216,6 +218,8 @@ export const SECTION_COLORS: Record<CarouselSection, string> = {
   goals: "#eab308",        // yellow
   pipeline: "#ec4899",     // pink
   calendar: "#14b8a6",     // teal (calendar accent)
+  calendarWeek: "#0d9488", // teal-600 (week view)
+  calendarDay: "#0f766e",  // teal-700 (day view)
   surveys: "#3b82f6",      // blue
   installs: "#22c55e",     // green
   inspections: "#06b6d4",  // cyan
@@ -227,6 +231,8 @@ export const SECTION_LABELS: Record<CarouselSection, string> = {
   goals: "MONTHLY GOALS",
   pipeline: "PIPELINE",
   calendar: "CALENDAR",
+  calendarWeek: "THIS WEEK",
+  calendarDay: "TODAY",
   surveys: "SURVEYS",
   installs: "INSTALLS",
   inspections: "INSPECTIONS & QUALITY",
