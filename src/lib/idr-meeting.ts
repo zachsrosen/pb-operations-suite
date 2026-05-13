@@ -63,7 +63,7 @@ export const SNAPSHOT_PROPERTIES = [
   "inverter_brand", "inverter_model", "inverter_qty",
   "battery_brand", "battery_model", "battery_count",
   "ahj", "utility_company",
-  "hubspot_owner_id", "site_surveyor", "design", "operations_manager", "project_manager",
+  "hubspot_owner_id", "site_surveyor", "design", "permit_tech", "operations_manager", "project_manager",
   "disco__reco", "interior_access", "notes_for_install",
   "link_to_opensolar", "os_project_link",
   "tags",
@@ -128,6 +128,8 @@ export type SnapshotFields = {
   siteSurveyor: string | null;
   projectManager: string | null;
   operationsManager: string | null;
+  designLead: string | null;
+  permitLead: string | null;
   surveyStatus: string | null;
   surveyDate: string | null;
   designStatus: string | null;
@@ -199,6 +201,8 @@ export function snapshotDealProperties(
     siteSurveyor: resolveName(p.site_surveyor),
     projectManager: resolveName(p.project_manager),
     operationsManager: resolveName(p.operations_manager),
+    designLead: resolveName(p.design),
+    permitLead: resolveName(p.permit_tech),
     surveyStatus: p.site_survey_status ?? null,
     surveyDate: p.site_survey_date ?? null,
     designStatus: p.design_status ?? null,

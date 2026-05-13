@@ -289,6 +289,8 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
                 <InfoCell label="Site Surveyor" value={item.siteSurveyor} />
                 <InfoCell label="Project Manager" value={item.projectManager} />
                 <InfoCell label="Ops Manager" value={item.operationsManager} />
+                <InfoCell label="Design Lead" value={item.designLead} />
+                <InfoCell label="Permit Lead" value={item.permitLead} />
               </div>
             </Section>
 
