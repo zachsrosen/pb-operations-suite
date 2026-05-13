@@ -25,6 +25,18 @@ export interface DealRow {
   overdue: boolean;
   daysOverdue: number;
   assignedUsers?: string[];
+  /** Deal dollar amount */
+  amount?: number;
+  /** True for Participate Energy deals */
+  isPE?: boolean;
+  /** Zuper job status (e.g. "Scheduled", "Started", "Completed") */
+  jobStatus?: string;
+  /** System size in kW (for installs) */
+  systemSizeKw?: number;
+  /** True if this deal's milestone is completed this month */
+  isCompleted?: boolean;
+  /** True if this deal has a failed inspection */
+  isFailed?: boolean;
 }
 
 /** Per-employee compliance stats (full metrics from live Zuper API) */
@@ -118,8 +130,6 @@ export interface SurveyData {
   scheduledThisWeek: number;
   leaderboard: EnrichedPersonStat[];
   deals: DealRow[];
-  /** Deals that completed their survey this month */
-  completedDeals: DealRow[];
   totalCount: number;
   compliance?: SectionCompliance;
 }
@@ -135,8 +145,6 @@ export interface InstallData {
   installerLeaderboard: EnrichedPersonStat[];
   electricianLeaderboard: EnrichedPersonStat[];
   deals: DealRow[];
-  /** Deals that completed their install this month */
-  completedDeals: DealRow[];
   totalCount: number;
   compliance?: SectionCompliance;
 }
@@ -154,8 +162,6 @@ export interface InspectionData {
   scheduledThisWeek: number;
   leaderboard: InspectionPersonStat[];
   deals: DealRow[];
-  /** Deals that passed/failed inspection this month */
-  completedDeals: DealRow[];
   totalCount: number;
   compliance?: SectionCompliance;
 }
