@@ -101,7 +101,7 @@ function fmtCurrency(n: number | null): string {
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount";
+type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount" | "surveyStatus" | "constructionStatus" | "inspectionStatus";
 
 function sortDeals(deals: PipelineDeal[], key: SortKey, asc: boolean): PipelineDeal[] {
   return [...deals].sort((a, b) => {
@@ -121,6 +121,15 @@ function sortDeals(deals: PipelineDeal[], key: SortKey, asc: boolean): PipelineD
         break;
       case "amount":
         cmp = (a.amount ?? 0) - (b.amount ?? 0);
+        break;
+      case "surveyStatus":
+        cmp = (a.siteSurveyStatus ?? "").localeCompare(b.siteSurveyStatus ?? "");
+        break;
+      case "constructionStatus":
+        cmp = (a.constructionStatus ?? "").localeCompare(b.constructionStatus ?? "");
+        break;
+      case "inspectionStatus":
+        cmp = (a.finalInspectionStatus ?? "").localeCompare(b.finalInspectionStatus ?? "");
         break;
     }
     return asc ? cmp : -cmp;
@@ -367,9 +376,9 @@ export default function PipelineTrackerPage() {
                 {renderSortHeader("Location", "location")}
                 {renderSortHeader("Stage", "stage")}
                 {renderSortHeader("Days in Stage", "daysInStage")}
-                {(activeTab === "all" || activeTab === "Site Survey") && <th className="px-3 py-2">Survey Status</th>}
-                {(activeTab === "all" || activeTab === "Construction") && <th className="px-3 py-2">Construction</th>}
-                {(activeTab === "all" || activeTab === "Inspection") && <th className="px-3 py-2">Inspection</th>}
+                {(activeTab === "all" || activeTab === "Site Survey") && renderSortHeader("Survey Status", "surveyStatus")}
+                {(activeTab === "all" || activeTab === "Construction") && renderSortHeader("Construction", "constructionStatus")}
+                {(activeTab === "all" || activeTab === "Inspection") && renderSortHeader("Inspection", "inspectionStatus")}
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
