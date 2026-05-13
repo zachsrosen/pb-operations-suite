@@ -118,6 +118,8 @@ export interface SurveyData {
   scheduledThisWeek: number;
   leaderboard: EnrichedPersonStat[];
   deals: DealRow[];
+  /** Deals that completed their survey this month */
+  completedDeals: DealRow[];
   totalCount: number;
   compliance?: SectionCompliance;
 }
@@ -133,6 +135,8 @@ export interface InstallData {
   installerLeaderboard: EnrichedPersonStat[];
   electricianLeaderboard: EnrichedPersonStat[];
   deals: DealRow[];
+  /** Deals that completed their install this month */
+  completedDeals: DealRow[];
   totalCount: number;
   compliance?: SectionCompliance;
 }
@@ -150,6 +154,8 @@ export interface InspectionData {
   scheduledThisWeek: number;
   leaderboard: InspectionPersonStat[];
   deals: DealRow[];
+  /** Deals that passed/failed inspection this month */
+  completedDeals: DealRow[];
   totalCount: number;
   compliance?: SectionCompliance;
 }
@@ -235,7 +241,7 @@ export const SECTION_LABELS: Record<CarouselSection, string> = {
   calendarDay: "TODAY",
   surveys: "SURVEYS",
   installs: "INSTALLS",
-  inspections: "INSPECTIONS & QUALITY",
+  inspections: "INSPECTIONS",
   allLocations: "ALL LOCATIONS",
 };
 
