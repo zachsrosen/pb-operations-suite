@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
@@ -310,9 +311,17 @@ export default function PePipelinePage() {
             onChange={setInspectionStatusFilter}
           />
         )}
-        <span className="text-muted ml-auto text-sm">
-          {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
-        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <Link
+            href="/dashboards/pipeline-tracker"
+            className="text-xs font-medium text-orange-500 hover:text-orange-400 transition-colors"
+          >
+            ← All Pipelines
+          </Link>
+          <span className="text-muted text-sm">
+            {filtered.length} deal{filtered.length !== 1 ? "s" : ""}
+          </span>
+        </div>
       </div>
 
       {/* Table */}
