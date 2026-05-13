@@ -60,14 +60,25 @@ export default function DealList({ deals, showAssigned = true }: DealListProps) 
                     {deal.name}
                   </div>
                 </td>
-                <td className="py-1 text-slate-400 truncate">{deal.stage}</td>
+                <td
+                  className="py-1 truncate"
+                  style={{
+                    color: deal.stage === "Completed" ? "#22c55e" :
+                           deal.stage === "Failed" ? "#ef4444" :
+                           "#94a3b8",
+                  }}
+                >
+                  {deal.stage}
+                </td>
                 <td className="py-1 text-right text-slate-300 font-mono">
-                  {deal.daysInStage}d
+                  {deal.stage === "Completed" ? "" : `${deal.daysInStage}d`}
                 </td>
                 <td className="py-1 text-center">
-                  {deal.overdue && (
+                  {deal.stage === "Completed" ? (
+                    <span className="text-green-400">✓</span>
+                  ) : deal.overdue ? (
                     <span title={`${deal.daysOverdue}d overdue`}>⚠️</span>
-                  )}
+                  ) : null}
                 </td>
                 {showAssigned && (
                   <td className="py-1 pl-4 text-slate-400 truncate">

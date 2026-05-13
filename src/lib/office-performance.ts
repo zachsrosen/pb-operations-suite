@@ -249,6 +249,7 @@ interface ProjectForMetrics {
   dealOwner?: string | null;
   designLead?: string | null;
   installCrew?: string | null;
+  inspectionFailDate?: string | null;
   hasInspectionFailedNotRejected?: boolean;
   systemSizeKwdc?: number;
   batteryCount?: number;  // battery.count + battery.expansionCount
@@ -333,6 +334,40 @@ export function buildDealRows(
   };
 }
 
+/**
+ * Build a DealRow[] for projects that completed a milestone this month.
+ * Used by survey/install/inspection sections to show a "Completed" list.
+ */
+function buildCompletedDealRows(
+  projects: ProjectForMetrics[],
+  dateField: keyof ProjectForMetrics,
+  now: Date,
+): DealRow[] {
+  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const completed = projects.filter((p) => {
+    const raw = p[dateField];
+    if (!raw || typeof raw !== "string") return false;
+    const d = new Date(raw);
+    return d >= mtdStart && d <= now;
+  });
+
+  // Sort by completion date descending (most recent first)
+  completed.sort((a, b) => {
+    const da = new Date(a[dateField] as string);
+    const db = new Date(b[dateField] as string);
+    return db.getTime() - da.getTime();
+  });
+
+  return completed.slice(0, DEAL_LIST_CAP).map((p) => ({
+    name: p.name || `Deal ${p.id ?? "?"}`,
+    stage: "Completed",
+    daysInStage: 0,
+    overdue: false,
+    daysOverdue: 0,
+  }));
+}
+
 // ---------- Completed Projects Fetch ----------
 
 // Properties needed for ProjectForMetrics from completed deals
@@ -360,6 +395,7 @@ const COMPLETED_DEAL_PROPERTIES = [
   "first_time_inspection_pass_",
   "has_inspection_failed_",
   "has_inspection_failed__not_rejected__",
+  "inspections_fail_date",
   "calculated_system_size__kwdc_",
   "battery_count",
   "battery_expansion_count",
@@ -461,6 +497,7 @@ async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]
       timeCcToPto: num(d.time_between_cc___pto),
       isFirstTimeInspectionPass: d.first_time_inspection_pass_ === "true" || d.first_time_inspection_pass_ === true,
       hasInspectionFailed: d.has_inspection_failed_ === "true" || d.has_inspection_failed_ === true,
+      inspectionFailDate: str(d.inspections_fail_date),
       hasInspectionFailedNotRejected: d.has_inspection_failed__not_rejected__ === "true" || d.has_inspection_failed__not_rejected__ === true,
       systemSizeKwdc: num(d.calculated_system_size__kwdc_) || 0,
       batteryCount: batteryCount || 0,
@@ -1156,6 +1193,9 @@ export async function buildSurveyData(
   );
   const { deals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
 
+  // Completed deals — surveys completed this month (from all location projects)
+  const completedDeals = buildCompletedDealRows(locationProjects || [], "siteSurveyCompletionDate", now);
+
   // Compliance from Zuper "Site Survey" category
   // Compliance is populated by the orchestrator via computeLocationCompliance
   const compliance = undefined;
@@ -1170,6 +1210,7 @@ export async function buildSurveyData(
     scheduledThisWeek,
     leaderboard: buildLeaderboard([...userCounts.values()], surveyHistory) as EnrichedPersonStat[],
     deals,
+    completedDeals,
     totalCount,
     compliance,
   };
@@ -1317,6 +1358,9 @@ export async function buildInstallData(
   );
   const { deals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
 
+  // Completed deals — installs completed this month (from all location projects)
+  const completedDeals = buildCompletedDealRows(locationProjects || [], "constructionCompleteDate", now);
+
   // Compliance from Zuper "Construction" category
   // Compliance is populated by the orchestrator via computeLocationCompliance
   const compliance = undefined;
@@ -1332,6 +1376,7 @@ export async function buildInstallData(
     installerLeaderboard: buildLeaderboard([...installerCounts.values()], installerHistory) as EnrichedPersonStat[],
     electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], electricianHistory) as EnrichedPersonStat[],
     deals,
+    completedDeals,
     totalCount,
     compliance,
   };
@@ -1389,6 +1434,34 @@ export async function buildInspectionData(
   );
   const { deals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
 
+  // Completed deals — inspections passed this month + outstanding failed inspections
+  const passedDeals = buildCompletedDealRows(locationProjects || [], "inspectionPassDate", now);
+
+  // Outstanding failed inspections: failed but NOT yet passed (any time, not just this month)
+  const outstandingFailed = (locationProjects || [])
+    .filter((p) => p.hasInspectionFailedNotRejected && !p.inspectionPassDate)
+    .sort((a, b) => {
+      // Sort by fail date descending
+      const da = a.inspectionFailDate ? new Date(a.inspectionFailDate).getTime() : 0;
+      const db = b.inspectionFailDate ? new Date(b.inspectionFailDate).getTime() : 0;
+      return db - da;
+    })
+    .slice(0, DEAL_LIST_CAP)
+    .map((p): DealRow => ({
+      name: p.name || `Deal ${p.id ?? "?"}`,
+      stage: "Failed",
+      daysInStage: p.inspectionFailDate
+        ? Math.floor((now.getTime() - new Date(p.inspectionFailDate).getTime()) / (24 * 60 * 60 * 1000))
+        : 0,
+      overdue: true,
+      daysOverdue: p.inspectionFailDate
+        ? Math.floor((now.getTime() - new Date(p.inspectionFailDate).getTime()) / (24 * 60 * 60 * 1000))
+        : 0,
+    }));
+
+  // Merge: failed first (they need attention), then passed
+  const completedDeals = [...outstandingFailed, ...passedDeals].slice(0, DEAL_LIST_CAP);
+
   // Compliance from Zuper "Inspection" category
   // Compliance is populated by the orchestrator via computeLocationCompliance
   const compliance = undefined;
@@ -1405,6 +1478,7 @@ export async function buildInspectionData(
     scheduledThisWeek,
     leaderboard,
     deals,
+    completedDeals,
     totalCount,
     compliance,
   };
