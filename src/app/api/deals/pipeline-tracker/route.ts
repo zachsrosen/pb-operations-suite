@@ -61,30 +61,37 @@ export async function GET(request: NextRequest) {
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
       CACHE_KEY,
       async () => {
-        const searchRequest = {
-          filterGroups: STAGE_IDS.map((stageId) => ({
-            filters: [
-              {
-                propertyName: "dealstage",
-                operator: "EQ" as const,
-                value: stageId,
-              },
-              {
-                propertyName: "pipeline",
-                operator: "EQ" as const,
-                value: "6900017",
-              },
-            ],
-          })),
-          properties: PROPERTIES,
-          limit: 100,
-          sorts: [{ propertyName: "dealname", direction: "ASCENDING" as const }],
-        };
+        const results: Array<{ id: string; properties: Record<string, string> }> = [];
+        let after: string | undefined;
 
-        const response = await searchWithRetry(
-          searchRequest as unknown as Parameters<typeof searchWithRetry>[0],
-        );
-        const results = response.results ?? [];
+        do {
+          const searchRequest = {
+            filterGroups: STAGE_IDS.map((stageId) => ({
+              filters: [
+                {
+                  propertyName: "dealstage",
+                  operator: "EQ" as const,
+                  value: stageId,
+                },
+                {
+                  propertyName: "pipeline",
+                  operator: "EQ" as const,
+                  value: "6900017",
+                },
+              ],
+            })),
+            properties: PROPERTIES,
+            limit: 100,
+            sorts: [{ propertyName: "dealname", direction: "ASCENDING" as const }],
+            ...(after ? { after } : {}),
+          };
+
+          const response = await searchWithRetry(
+            searchRequest as unknown as Parameters<typeof searchWithRetry>[0],
+          );
+          results.push(...(response.results ?? []));
+          after = response.paging?.next?.after;
+        } while (after);
 
         const deals: PipelineDeal[] = results.map((deal) => {
           const props = deal.properties;

@@ -82,26 +82,33 @@ export async function GET(request: NextRequest) {
           },
         ];
 
-        const searchRequest = {
-          filterGroups: PE_STAGE_IDS.map((stageId) => ({
-            filters: [
-              {
-                propertyName: "dealstage",
-                operator: "EQ" as const,
-                value: stageId,
-              },
-              ...commonFilters,
-            ],
-          })),
-          properties: PROPERTIES,
-          limit: 100,
-          sorts: [{ propertyName: "dealname", direction: "ASCENDING" as const }],
-        };
+        const results: Array<{ id: string; properties: Record<string, string> }> = [];
+        let after: string | undefined;
 
-        const response = await searchWithRetry(
-          searchRequest as unknown as Parameters<typeof searchWithRetry>[0],
-        );
-        const results = response.results ?? [];
+        do {
+          const searchRequest = {
+            filterGroups: PE_STAGE_IDS.map((stageId) => ({
+              filters: [
+                {
+                  propertyName: "dealstage",
+                  operator: "EQ" as const,
+                  value: stageId,
+                },
+                ...commonFilters,
+              ],
+            })),
+            properties: PROPERTIES,
+            limit: 100,
+            sorts: [{ propertyName: "dealname", direction: "ASCENDING" as const }],
+            ...(after ? { after } : {}),
+          };
+
+          const response = await searchWithRetry(
+            searchRequest as unknown as Parameters<typeof searchWithRetry>[0],
+          );
+          results.push(...(response.results ?? []));
+          after = response.paging?.next?.after;
+        } while (after);
 
         // Batch-resolve primary contacts (best-effort, 5s timeout per)
         const contactMap = new Map<string, string | null>();
