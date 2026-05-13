@@ -6,8 +6,10 @@ import { queryKeys } from "@/lib/query-keys";
 import {
   generateProjectEvents,
   generateZuperEvents,
+  buildAssigneeLookup,
   expandToDayPills,
   toCalendarProject,
+  PROJECT_CATEGORY_UIDS,
   SERVICE_CATEGORY_UIDS,
   DNR_CATEGORY_UIDS,
   ROOFING_CATEGORY_UIDS,
@@ -39,6 +41,23 @@ export function useCalendarData(location: string) {
     queryFn: async () => {
       const res = await fetch("/api/projects?context=scheduling&refresh=true");
       if (!res.ok) throw new Error("Failed to fetch projects");
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
+  // Fetch Zuper survey/construction/inspection jobs for assignee enrichment
+  const projectJobsQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: queryKeys.officeCalendar.projectJobs(location, fromStr, toStr),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        categories: PROJECT_CATEGORY_UIDS,
+        from_date: fromStr,
+        to_date: toStr,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
       return res.json();
     },
     refetchInterval: 120_000,
@@ -115,16 +134,20 @@ export function useCalendarData(location: string) {
   const allPills = useMemo(() => {
     const rawProjects = projectsQuery.data?.projects || [];
     const projects = rawProjects.map(toCalendarProject);
+    const projectJobs = projectJobsQuery.data?.jobs || [];
     const serviceJobs = serviceQuery.data?.jobs || [];
     const dnrJobs = dnrQuery.data?.jobs || [];
     const roofingJobs = roofingQuery.data?.jobs || [];
     const otherJobs = otherQuery.data?.jobs || [];
 
+    // Build assignee lookup from Zuper project-category jobs (survey/construction/inspection)
+    const assigneeLookup = buildAssigneeLookup(projectJobs);
+
     const group = DASHBOARD_LOCATION_GROUPS.find((g) => g.label === location);
     const canonicals: CanonicalLocation[] = group
       ? (group.canonicals as unknown as CanonicalLocation[])
       : [location as CanonicalLocation];
-    const projectEvents = generateProjectEvents(projects, canonicals);
+    const projectEvents = generateProjectEvents(projects, canonicals, assigneeLookup);
     const serviceEvents = generateZuperEvents(serviceJobs, "service", canonicals);
     const dnrEvents = generateZuperEvents(dnrJobs, "dnr", canonicals);
     const roofingEvents = generateZuperEvents(roofingJobs, "roofing", canonicals);
@@ -132,7 +155,7 @@ export function useCalendarData(location: string) {
 
     const allEvents = [...projectEvents, ...serviceEvents, ...dnrEvents, ...roofingEvents, ...otherEvents];
     return expandToDayPills(allEvents, year, month);
-  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, location, year, month]);
+  }, [projectsQuery.data, projectJobsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, location, year, month]);
 
   return { allPills, isLoading, year, month };
 }

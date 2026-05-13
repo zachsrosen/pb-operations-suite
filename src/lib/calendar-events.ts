@@ -198,6 +198,15 @@ export const LEGEND_ITEMS: { label: string; dotColor: string }[] = [
   { label: "Other",      dotColor: "bg-slate-400" },
 ];
 
+/** Zuper category UIDs for project-type jobs (survey, construction, inspection).
+ *  Used to fetch assignee data that enriches HubSpot project events. */
+export const PROJECT_CATEGORY_UIDS = [
+  "002bac33-84d3-4083-a35d-50626fc49288", // Site Survey
+  "c53070e5-63fd-41bc-8803-f66ad842dbb5", // Pre-Sale Site Visit
+  "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Construction
+  "b7dc03d2-25d0-40df-a2fc-b1a477b16b65", // Inspection
+].join(",");
+
 /** Zuper category UIDs — same constants as master scheduler (scheduler/page.tsx:267-276) */
 export const SERVICE_CATEGORY_UIDS = [
   "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
@@ -287,9 +296,41 @@ export function isOverdue(
   return schedMidnight < todayMidnight;
 }
 
+/**
+ * Build a dealId → formatted assignee string lookup from Zuper project-category jobs.
+ * This lets us enrich HubSpot project events with real tech names from Zuper.
+ */
+export function buildAssigneeLookup(
+  jobs: ZuperCategoryJob[]
+): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const job of jobs) {
+    if (!job.hubspotDealId) continue;
+    const rawAssignees =
+      (Array.isArray(job.assignedUsers) && job.assignedUsers.length > 0)
+        ? job.assignedUsers
+        : job.assignedUser ? [job.assignedUser] : [];
+    const formatted = rawAssignees.map(formatAssignee).filter(Boolean).join(", ");
+    if (formatted) {
+      // If multiple Zuper jobs map to the same deal, merge assignees
+      const existing = lookup.get(job.hubspotDealId);
+      if (existing) {
+        // Deduplicate names
+        const allNames = new Set([...existing.split(", "), ...formatted.split(", ")]);
+        lookup.set(job.hubspotDealId, [...allNames].join(", "));
+      } else {
+        lookup.set(job.hubspotDealId, formatted);
+      }
+    }
+  }
+  return lookup;
+}
+
 export function generateProjectEvents(
   projects: CalendarProject[],
-  location: CanonicalLocation | CanonicalLocation[]
+  location: CanonicalLocation | CanonicalLocation[],
+  /** Optional Zuper assignee lookup: dealId → formatted assignee string */
+  assigneeLookup?: Map<string, string>
 ): CalendarEvent[] {
   const locationSet = new Set(Array.isArray(location) ? location : [location]);
   const events: CalendarEvent[] = [];
@@ -324,7 +365,7 @@ export function generateProjectEvents(
           date: constructionDate,
           days,
           eventType: done ? "construction-complete" : "construction",
-          assignee: p.crew || "",
+          assignee: assigneeLookup?.get(p.id) || p.crew || "",
           isCompleted: done,
           isOverdue: isOverdue(constructionDate, days, done, true, today),
           isFailed: false,
@@ -348,7 +389,7 @@ export function generateProjectEvents(
           date: p.inspectionScheduleDate,
           days: 1,
           eventType: done ? (failed ? "inspection-fail" : "inspection-pass") : "inspection",
-          assignee: "",
+          assignee: assigneeLookup?.get(p.id) || "",
           isCompleted: done,
           isOverdue: isOverdue(p.inspectionScheduleDate, 1, done, false, today),
           isFailed: failed,
@@ -371,7 +412,7 @@ export function generateProjectEvents(
           date: p.surveyScheduleDate,
           days: 1,
           eventType: done ? "survey-complete" : "survey",
-          assignee: "",
+          assignee: assigneeLookup?.get(p.id) || "",
           isCompleted: done,
           isOverdue: isOverdue(p.surveyScheduleDate, 1, done, false, today),
           isFailed: false,
@@ -402,7 +443,7 @@ export function generateProjectEvents(
         date: p.scheduleDate,
         days,
         eventType: done ? "construction-complete" : stage,
-        assignee: p.crew || "",
+        assignee: assigneeLookup?.get(p.id) || p.crew || "",
         isCompleted: done,
         isOverdue: isOverdue(p.scheduleDate, days, done, true, today),
         isFailed: false,
