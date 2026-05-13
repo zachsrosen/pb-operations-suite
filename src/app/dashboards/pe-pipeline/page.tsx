@@ -99,7 +99,7 @@ function fmtCurrency(n: number | null): string {
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount";
+type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount" | "constructionStatus" | "inspectionStatus";
 
 function sortDeals(deals: PePipelineDeal[], key: SortKey, asc: boolean): PePipelineDeal[] {
   return [...deals].sort((a, b) => {
@@ -119,6 +119,12 @@ function sortDeals(deals: PePipelineDeal[], key: SortKey, asc: boolean): PePipel
         break;
       case "amount":
         cmp = (a.amount ?? 0) - (b.amount ?? 0);
+        break;
+      case "constructionStatus":
+        cmp = (a.constructionStatus ?? "").localeCompare(b.constructionStatus ?? "");
+        break;
+      case "inspectionStatus":
+        cmp = (a.finalInspectionStatus ?? "").localeCompare(b.finalInspectionStatus ?? "");
         break;
     }
     return asc ? cmp : -cmp;
@@ -327,8 +333,8 @@ export default function PePipelinePage() {
                 {renderSortHeader("Location", "location")}
                 {renderSortHeader("Stage", "stage")}
                 {renderSortHeader("Days in Stage", "daysInStage")}
-                {activeTab !== "Inspection" && <th className="px-3 py-2">Construction</th>}
-                {activeTab !== "Construction" && <th className="px-3 py-2">Inspection</th>}
+                {activeTab !== "Inspection" && renderSortHeader("Construction", "constructionStatus")}
+                {activeTab !== "Construction" && renderSortHeader("Inspection", "inspectionStatus")}
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
