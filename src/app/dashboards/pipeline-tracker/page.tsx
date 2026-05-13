@@ -21,6 +21,7 @@ interface PipelineDeal {
   amount: number | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
+  siteSurveyStatus: string | null;
   isPE: boolean;
 }
 
@@ -55,13 +56,15 @@ function daysBg(days: number): string {
 }
 
 function stageBadge(stage: string) {
-  const isConstruction = stage === "Construction";
+  const colorMap: Record<string, string> = {
+    "Site Survey": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    Construction: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+    Inspection: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  };
   return (
     <span
       className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-        isConstruction
-          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
-          : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+        colorMap[stage] ?? "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400"
       }`}
     >
       {stage}
@@ -127,7 +130,7 @@ function sortDeals(deals: PipelineDeal[], key: SortKey, asc: boolean): PipelineD
 // Component
 // ---------------------------------------------------------------------------
 
-type StageTab = "all" | "Construction" | "Inspection";
+type StageTab = "all" | "Site Survey" | "Construction" | "Inspection";
 
 export default function PipelineTrackerPage() {
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -164,18 +167,22 @@ export default function PipelineTrackerPage() {
   }, [deals, locationFilter, activeTab, sortKey, sortAsc]);
 
   const stats = useMemo(() => {
+    const inSiteSurvey = filtered.filter((d) => d.stage === "Site Survey").length;
     const inConstruction = filtered.filter((d) => d.stage === "Construction").length;
     const inInspection = filtered.filter((d) => d.stage === "Inspection").length;
     const totalDays = filtered.reduce((sum, d) => sum + d.daysInStage, 0);
     const avgDays = filtered.length > 0 ? Math.round(totalDays / filtered.length) : 0;
     const stale = filtered.filter((d) => d.daysInStage >= STALE_THRESHOLD).length;
+    const siteSurveyRevenue = filtered
+      .filter((d) => d.stage === "Site Survey")
+      .reduce((sum, d) => sum + (d.amount ?? 0), 0);
     const constructionRevenue = filtered
       .filter((d) => d.stage === "Construction")
       .reduce((sum, d) => sum + (d.amount ?? 0), 0);
     const inspectionRevenue = filtered
       .filter((d) => d.stage === "Inspection")
       .reduce((sum, d) => sum + (d.amount ?? 0), 0);
-    return { inConstruction, inInspection, avgDays, stale, constructionRevenue, inspectionRevenue };
+    return { inSiteSurvey, inConstruction, inInspection, avgDays, stale, siteSurveyRevenue, constructionRevenue, inspectionRevenue };
   }, [filtered]);
 
   function handleSort(key: SortKey) {
@@ -206,7 +213,13 @@ export default function PipelineTrackerPage() {
       fullWidth
     >
       {/* Hero Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <StatCard
+          label="Site Survey"
+          value={isLoading ? null : stats.inSiteSurvey}
+          subtitle={isLoading ? "deals" : fmtCurrency(stats.siteSurveyRevenue)}
+          color="emerald"
+        />
         <StatCard
           label="In Construction"
           value={isLoading ? null : stats.inConstruction}
@@ -236,28 +249,34 @@ export default function PipelineTrackerPage() {
       {/* Stage Tabs + Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex rounded-lg border border-t-border overflow-hidden">
-          {(["all", "Construction", "Inspection"] as StageTab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ${
-                activeTab === tab
-                  ? tab === "Construction"
-                    ? "bg-orange-500 text-black"
-                    : tab === "Inspection"
-                      ? "bg-blue-500 text-white"
-                      : "bg-surface-elevated text-foreground"
-                  : "bg-background text-muted hover:text-foreground"
-              }`}
-            >
-              {tab === "all" ? "All" : tab}
-              <span className="ml-1.5 opacity-70">
-                {tab === "all"
-                  ? deals.filter((d) => locationFilter.length === 0 || locationFilter.includes(d.location)).length
-                  : deals.filter((d) => d.stage === tab && (locationFilter.length === 0 || locationFilter.includes(d.location))).length}
-              </span>
-            </button>
-          ))}
+          {(["all", "Site Survey", "Construction", "Inspection"] as StageTab[]).map((tab) => {
+            const tabColor =
+              tab === "Site Survey"
+                ? "bg-emerald-500 text-black"
+                : tab === "Construction"
+                  ? "bg-orange-500 text-black"
+                  : tab === "Inspection"
+                    ? "bg-blue-500 text-white"
+                    : "bg-surface-elevated text-foreground";
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                  activeTab === tab
+                    ? tabColor
+                    : "bg-background text-muted hover:text-foreground"
+                }`}
+              >
+                {tab === "all" ? "All" : tab}
+                <span className="ml-1.5 opacity-70">
+                  {tab === "all"
+                    ? deals.filter((d) => locationFilter.length === 0 || locationFilter.includes(d.location)).length
+                    : deals.filter((d) => d.stage === tab && (locationFilter.length === 0 || locationFilter.includes(d.location))).length}
+                </span>
+              </button>
+            );
+          })}
         </div>
         <MultiSelectFilter
           label="Location"
@@ -277,7 +296,7 @@ export default function PipelineTrackerPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-muted py-20 text-center">
-          No deals in construction or inspection stages.
+          No deals found.
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -288,8 +307,9 @@ export default function PipelineTrackerPage() {
                 {renderSortHeader("Location", "location")}
                 {renderSortHeader("Stage", "stage")}
                 {renderSortHeader("Days in Stage", "daysInStage")}
-                <th className="px-3 py-2">Construction</th>
-                <th className="px-3 py-2">Inspection</th>
+                {(activeTab === "all" || activeTab === "Site Survey") && <th className="px-3 py-2">Survey Status</th>}
+                {(activeTab === "all" || activeTab === "Construction") && <th className="px-3 py-2">Construction</th>}
+                {(activeTab === "all" || activeTab === "Inspection") && <th className="px-3 py-2">Inspection</th>}
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
@@ -322,8 +342,9 @@ export default function PipelineTrackerPage() {
                       {deal.daysInStage}d
                     </span>
                   </td>
-                  <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>
-                  <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>
+                  {(activeTab === "all" || activeTab === "Site Survey") && <td className="px-3 py-3">{statusBadge(deal.siteSurveyStatus)}</td>}
+                  {(activeTab === "all" || activeTab === "Construction") && <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>}
+                  {(activeTab === "all" || activeTab === "Inspection") && <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>}
                   <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
                     {fmtCurrency(deal.amount)}
                   </td>

@@ -293,8 +293,8 @@ export default function PePipelinePage() {
                 {renderSortHeader("Location", "location")}
                 {renderSortHeader("Stage", "stage")}
                 {renderSortHeader("Days in Stage", "daysInStage")}
-                <th className="px-3 py-2">Construction</th>
-                <th className="px-3 py-2">Inspection</th>
+                {activeTab !== "Inspection" && <th className="px-3 py-2">Construction</th>}
+                {activeTab !== "Construction" && <th className="px-3 py-2">Inspection</th>}
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
@@ -320,8 +320,8 @@ export default function PePipelinePage() {
                       {deal.daysInStage}d
                     </span>
                   </td>
-                  <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>
-                  <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>
+                  {activeTab !== "Inspection" && <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>}
+                  {activeTab !== "Construction" && <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>}
                   <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
                     {fmtCurrency(deal.amount)}
                   </td>

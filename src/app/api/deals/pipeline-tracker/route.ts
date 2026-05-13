@@ -15,7 +15,7 @@ import { appCache } from "@/lib/cache";
  * with days-in-stage. General-purpose version of the PE Pipeline Tracker.
  */
 
-const STAGE_IDS = ["20440342", "22580872"]; // Construction, Inspection
+const STAGE_IDS = ["20461936", "20440342", "22580872"]; // Site Survey, Construction, Inspection
 
 const PROPERTIES = [
   "dealname",
@@ -26,6 +26,7 @@ const PROPERTIES = [
   "is_participate_energy",
   "install_status",
   "final_inspection_status",
+  "site_survey_status",
 ];
 
 interface PipelineDeal {
@@ -38,6 +39,7 @@ interface PipelineDeal {
   amount: number | null;
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
+  siteSurveyStatus: string | null;
   isPE: boolean;
 }
 
@@ -97,6 +99,7 @@ export async function GET(request: NextRequest) {
             amount: props.amount ? parseFloat(props.amount) : null,
             constructionStatus: props.install_status || null,
             finalInspectionStatus: props.final_inspection_status || null,
+            siteSurveyStatus: props.site_survey_status || null,
             isPE: props.is_participate_energy === "true",
           };
         });
