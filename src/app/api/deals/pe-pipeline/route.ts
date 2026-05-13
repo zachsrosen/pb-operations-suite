@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
           },
         ];
 
-        const results: Array<{ id: string; properties: Record<string, string> }> = [];
+        const results: Array<{ id: string; properties: Record<string, string | null> }> = [];
         let after: string | undefined;
 
         do {
