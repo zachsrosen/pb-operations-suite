@@ -31,7 +31,7 @@ export const SYSTEM_TAGS: Record<SystemType, string> = {
   solar: "PV",
   battery: "ESS",
   ev: "EV",
-  legacy: "ALL",
+  legacy: "CONST",
 };
 
 export const SYSTEM_TAG_CLASSES: Record<SystemType, string> = {
