@@ -1041,7 +1041,7 @@ export const SERVICE_PIPELINE_CONFIG: BomPipelineConfig = {
     kind === "ticket"
       ? `/api/bom/ticket-history?ticketId=${encodeURIComponent(id)}`
       : `/api/bom/history?dealId=${encodeURIComponent(id)}`,
-  historyAllEndpoint: "/api/bom/ticket-history/all",
+  historyAllEndpoint: "/api/bom/service-history/all",
 };
 
 export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: { pipelineConfig?: BomPipelineConfig } = {}) {
@@ -1120,7 +1120,7 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
   const [compareB, setCompareB] = useState<BomSnapshot | null>(null);
   const [showDiff, setShowDiff] = useState(false);
   // All-history (inline at bottom of page)
-  const [allSnapshots, setAllSnapshots] = useState<{ id: string; dealId: string; dealName: string; version: number; sourceFile: string | null; savedBy: string | null; createdAt: string; customer: string | null; address: string | null; systemSizeKwdc: number | string | null; moduleCount: number | string | null; itemCount: number }[]>([]);
+  const [allSnapshots, setAllSnapshots] = useState<{ id: string; dealId: string; dealName: string; version: number; sourceFile: string | null; savedBy: string | null; createdAt: string; customer: string | null; address: string | null; systemSizeKwdc: number | string | null; moduleCount: number | string | null; itemCount: number; kind?: "deal" | "ticket" }[]>([]);
   const [allHistoryLoading, setAllHistoryLoading] = useState(true);
   const [allHistorySearch, setAllHistorySearch] = useState("");
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
@@ -3872,9 +3872,7 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
               .catch(() => {/* silent */})
               .finally(() => setHistoryLoading(false));
           } else {
-            // For the service-bom page the inline history is ticket-keyed; for
-            // the project-bom page it's deal-keyed.
-            const param = pipelineConfig.supportsTickets ? "ticket" : "deal";
+            const param = snap.kind === "ticket" ? "ticket" : "deal";
             router.push(`${pipelineConfig.dashboardPath}?${param}=${snap.dealId}&load=latest`);
           }
         }}
@@ -4130,6 +4128,7 @@ interface AllHistorySnapshot {
   systemSizeKwdc: number | string | null;
   moduleCount: number | string | null;
   itemCount: number;
+  kind?: "deal" | "ticket";
 }
 
 function BomHistoryInline({

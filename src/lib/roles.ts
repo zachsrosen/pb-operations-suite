@@ -593,6 +593,7 @@ const SERVICE: RoleDefinition = {
     "/dashboards/service-customers",
     "/dashboards/service-backlog",
     "/dashboards/service-bom",
+    "/api/bom",
     "/dashboards/service-scheduler",
     "/dashboards/service-unscheduled",
     "/dashboards/crew-schedule",
