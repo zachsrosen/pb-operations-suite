@@ -154,9 +154,21 @@ export default function PropertyDrawer({
             <div className="px-5 py-4 space-y-6">
               {/* Header block */}
               <section>
-                <h3 className="text-lg font-semibold text-foreground break-words">
-                  {detail.fullAddress}
-                </h3>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-lg font-semibold text-foreground break-words">
+                    {detail.fullAddress}
+                  </h3>
+                  {detail.hubspotUrl && (
+                    <a
+                      href={detail.hubspotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 mt-1 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20"
+                    >
+                      HubSpot ↗
+                    </a>
+                  )}
+                </div>
                 <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
                   <div>
                     <div className="text-muted text-xs">PB Shop</div>
@@ -218,6 +230,7 @@ export default function PropertyDrawer({
                 </h4>
                 <PropertyOwnershipList
                   contactIds={detail.contactIds}
+                  contacts={detail.contacts}
                   primaryLabel={detail.ownershipLabel}
                   primaryAssociatedAt={detail.associatedAt}
                 />

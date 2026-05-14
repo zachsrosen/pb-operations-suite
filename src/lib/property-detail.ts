@@ -18,6 +18,13 @@ import type {
   PropertyTicketLink,
 } from "@/generated/prisma/client";
 
+function buildHubSpotPropertyUrl(hubspotObjectId: string): string | null {
+  const portalId = process.env.HUBSPOT_PORTAL_ID ?? process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID;
+  const objectTypeId = process.env.HUBSPOT_PROPERTY_OBJECT_TYPE;
+  if (!portalId || !objectTypeId) return null;
+  return `https://app.hubspot.com/contacts/${portalId}/record/${objectTypeId}/${hubspotObjectId}`;
+}
+
 export type OwnershipLabel =
   | "Current Owner"
   | "Previous Owner"
@@ -70,6 +77,8 @@ export interface PropertyDetail {
   dealIds: string[];
   ticketIds: string[];
   contactIds: string[];
+  contacts: { id: string; name: string }[];
+  hubspotUrl: string | null;
 
   equipmentSummary: EquipmentSummary;
 }
@@ -332,5 +341,7 @@ export function mapCacheRowToPropertyDetail(
     dealIds,
     ticketIds,
     contactIds,
+    contacts: [],
+    hubspotUrl: buildHubSpotPropertyUrl(row.hubspotObjectId),
   };
 }
