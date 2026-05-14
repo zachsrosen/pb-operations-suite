@@ -19,6 +19,7 @@ export interface GeocodeResult {
   state: string;
   zip: string;
   county: string | null;
+  country: string | null; // ISO 3166-1 alpha-2, e.g. "US"
 }
 
 export async function geocodeAddress(input: GeocodeInput): Promise<GeocodeResult | null> {
@@ -86,5 +87,6 @@ export async function geocodeFreeform(query: string): Promise<GeocodeResult | nu
     state: comp("administrative_area_level_1"),
     zip: comp("postal_code"),
     county: comp("administrative_area_level_2") || null,
+    country: comp("country") || null,
   };
 }

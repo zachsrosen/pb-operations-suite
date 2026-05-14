@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     if ("status" in result) {
       return NextResponse.json(
-        { error: "Geocode failed", reason: "geocode failed" },
+        { error: "Geocode failed", reason: result.reason },
         { status: 422 },
       );
     }

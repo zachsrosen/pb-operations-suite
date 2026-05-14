@@ -130,26 +130,38 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
   if (!contact) return { status: "skipped", reason: "contact not found" };
 
   const p = contact.properties;
-  if (!p.address || !p.city || !p.state || !p.zip) {
+  const street = (p.address ?? "").trim();
+  const city = (p.city ?? "").trim();
+  const state = (p.state ?? "").trim();
+  const zip = (p.zip ?? "").trim();
+  const unit = (p.address2 ?? "").trim() || undefined;
+  const country = (p.country ?? "").trim();
+
+  if (!street || !city || !state || !zip) {
     return { status: "skipped", reason: "address incomplete" };
+  }
+
+  const quality = validateAddressQuality(street);
+  if (quality) {
+    return { status: "skipped", reason: quality };
   }
 
   // 3) Geocode + find-or-create — delegated to `upsertPropertyFromGeocode`
   //    so the admin manual-create route can reuse the exact same path.
   const upsert = await upsertPropertyFromGeocode({
-    street: p.address,
-    unit: p.address2,
-    city: p.city,
-    state: p.state,
-    zip: p.zip,
-    country: p.country ?? "USA",
+    street,
+    unit,
+    city,
+    state,
+    zip,
+    country: country || "USA",
   });
   if ("status" in upsert) {
-    await logActivity("PROPERTY_SYNC_FAILED", "Geocode failed for contact", {
+    await logActivity("PROPERTY_SYNC_FAILED", "Property sync rejected for contact", {
       contactId,
-      reason: "geocode miss",
+      reason: upsert.reason,
     });
-    return { status: "failed", reason: "geocode failed" };
+    return { status: "failed", reason: upsert.reason };
   }
 
   const result = upsert;
@@ -205,6 +217,28 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
     status: result.created ? "created" : "associated",
     propertyCacheId: result.propertyCacheId,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Address quality validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a skip-reason string if the street value is obviously not a real
+ * address (email, URL, placeholder text, numeric-only fragment). Returns
+ * null when the address looks plausible.
+ */
+function validateAddressQuality(street: string): string | null {
+  if (street.includes("@")) return "street contains email";
+  if (/^https?:\/\//i.test(street)) return "street is a URL";
+  if (/\.(com|org|net|io|gov)\b/i.test(street)) return "street contains domain";
+  if (/^[0-9]+$/.test(street)) return "street is numeric-only";
+  if (street.length < 5) return "street too short";
+  // Reject strings with no digits — real US addresses almost always have a
+  // street number. Exceptions (e.g. "Main Street") are rare enough that
+  // missing them is better than creating garbage records.
+  if (!/\d/.test(street)) return "street has no number";
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1029,8 +1063,8 @@ async function refreshAssociationLinks(
  * `/api/properties/manual-create` for admin-driven creation. Intentionally
  * contact-agnostic: callers handle association, watermarks, and rollups.
  *
- * Returns `{ status: "failed", reason: "geocode failed" }` on geocode miss —
- * does NOT throw and does NOT log activity (callers decide how to surface).
+ * Returns `{ status: "failed", reason }` on geocode miss, non-US address,
+ * or missing street component. Does NOT throw (callers decide how to surface).
  */
 export async function upsertPropertyFromGeocode(args: {
   street: string;
@@ -1041,7 +1075,7 @@ export async function upsertPropertyFromGeocode(args: {
   country?: string;
 }): Promise<
   | { propertyCacheId: string; hubspotObjectId: string; created: boolean }
-  | { status: "failed"; reason: "geocode failed" }
+  | { status: "failed"; reason: string }
 > {
   const geo = await geocodeAddress({
     street: args.street,
@@ -1053,6 +1087,18 @@ export async function upsertPropertyFromGeocode(args: {
   });
   if (!geo) {
     return { status: "failed", reason: "geocode failed" };
+  }
+
+  // Only create properties for PB's operating states.
+  const ALLOWED_STATES = new Set(["CO", "CA"]);
+  if (!geo.state || !ALLOWED_STATES.has(geo.state.toUpperCase())) {
+    return { status: "failed", reason: `outside operating area: ${geo.state || geo.country || "unknown"}` };
+  }
+
+  // Reject geocode results with no street component — indicates the input
+  // wasn't a real address (placeholder text, company names, etc.)
+  if (!geo.streetAddress) {
+    return { status: "failed", reason: "geocode returned no street component" };
   }
 
   const hash = addressHash({
