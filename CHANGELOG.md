@@ -4,6 +4,69 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-14
+
+### PE Pipeline & Document Tracker (Major)
+- New PE Pipeline Tracker dashboard with construction & inspection status columns
+- Total revenue and per-stage revenue hero cards; "Under Review" hero card on the PE doc tracker
+- PE Raceway API sync replaces the HTML scraper
+- PE action items feed with incremental sync + hourly cron
+- Action items grouped by deal with clickable HubSpot + PE Portal links
+- Collapsible deal groups; action items auto-resolve on document approval
+- PE API sync status accuracy fixes — stops false APPROVED, adds source priority
+- Moved PE doc reviews + action items from the ops pipeline to accounting pe-deals
+- Cross-links between PE Pipeline and Pipeline Tracker pages
+
+### Pipeline Tracker (Major)
+- New general Pipeline Tracker dashboard (M1/M2 removed from the PE tracker)
+- Site Survey, Construction, and Inspection tabs
+- Sortable status columns and per-type status filters
+- Zuper job links on both pipeline trackers
+- Removed Contact column; descriptions updated to include site survey
+- Paginated HubSpot search in pipeline tracker APIs
+
+### Zuper Status Drift (Major)
+- New PM dashboard for Zuper↔HubSpot status drift
+- Per-sub-type evaluation + `install_status` rollup integrity check
+- Drift reconcile cron lookback trimmed 90→14 days to stay under the 60s budget
+
+### IDR Revision Workflow
+- Re-review toggle, auto-appear on revision, and revision reason sync
+- IDR sync completes the linked HubSpot task and shows a RE-REVIEW badge
+- Escalation submitter shown in the IDR detail panel
+- Escalation revisions trigger as-built design status
+- Concatenated revision notes now labeled for clarity
+- `design_status` auto-advance uses the HubSpot internal value
+
+### TV Dashboard
+- Rich deal list with Zuper status, PE flags, and unified layout
+- Readability fixes plus calendar week/day views
+- Deal lists stacked above the compliance block
+- Completed deals, goals labels, and inspections rename
+- Assignees shown on all calendar event types
+- 5-star review goals lowered to 20 base / 25 stretch company-wide
+
+### Operations
+- New Design & Ops Meeting Hub in the Operations Suite
+
+### Scheduling
+- Tentative install scheduling allowed without an assignee
+- Survey lead time relaxed to 1 day for California sales reps
+
+### Property Object
+- Unified timelines + property sync validation
+- Corrected Property association type IDs + cleanup script
+
+### Bug Fixes
+- Catalog: Zuper cross-link IDs written via `meta_data`, not `custom_fields`
+- Service: `pb_location` read directly from service tickets
+- AI design review no longer flags utility meters as production meters
+- Shared inbox OAuth connect requests `openid` + `email` scopes
+- HubSpot properties type corrected to accept null values
+- Corrected email addresses for Nathan and Nick
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
