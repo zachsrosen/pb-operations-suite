@@ -31,6 +31,7 @@ import { withRetry } from "../src/lib/hubspot-custom-objects";
 import { prisma } from "../src/lib/db";
 
 const DRY_RUN = process.env.DRY_RUN === "true";
+const MIGRATE_ONLY = process.env.MIGRATE_ONLY === "true";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -431,6 +432,14 @@ async function main() {
     console.log(`  Bare records checked: ${migStats.totalBareChecked}`);
     console.log(`  Associations migrated: ${migStats.associationsMigrated}`);
     console.log(`  Migration errors: ${migStats.migrationErrors}`);
+  }
+
+  if (MIGRATE_ONLY) {
+    console.log("\n=== MIGRATE_ONLY — stopping before archive ===");
+    console.log(`Ready to archive: ${toArchive.length} records`);
+    console.log(`Rerun without MIGRATE_ONLY=true to proceed with archiving.`);
+    await prisma.$disconnect();
+    process.exit(0);
   }
 
   // Step 5: Archive bare duplicates
