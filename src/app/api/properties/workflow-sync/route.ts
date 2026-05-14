@@ -61,8 +61,10 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
+  console.log("[workflow-sync] raw payload:", JSON.stringify(body));
   const parsed = WorkflowSyncSchema.safeParse(body);
   if (!parsed.success) {
+    console.log("[workflow-sync] validation failed:", JSON.stringify(parsed.error.flatten()));
     return NextResponse.json(
       { error: "Invalid payload", details: parsed.error.flatten() },
       { status: 400 },
