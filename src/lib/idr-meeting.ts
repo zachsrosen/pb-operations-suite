@@ -394,15 +394,17 @@ interface PropertyFields {
   opsRevisionNotes?: string | null;
 }
 
-/** Concatenate revision-related notes, skipping empty/null values. */
+/** Concatenate revision-related notes with labels, skipping empty/null values. */
 function buildCombinedRevisionReason(
   designRevisionReason: string | null,
   designNotes: string | null | undefined,
   opsRevisionNotes: string | null | undefined,
 ): string {
-  return [designRevisionReason, designNotes, opsRevisionNotes]
-    .filter((s): s is string => !!s?.trim())
-    .join(" | ");
+  const parts: string[] = [];
+  if (designRevisionReason?.trim()) parts.push(`Revision Reason: ${designRevisionReason.trim()}`);
+  if (designNotes?.trim()) parts.push(`Design Notes: ${designNotes.trim()}`);
+  if (opsRevisionNotes?.trim()) parts.push(`Ops Notes: ${opsRevisionNotes.trim()}`);
+  return parts.join(" | ");
 }
 
 /** Map item fields to HubSpot deal property key-value pairs. Only includes non-null fields. */
