@@ -145,11 +145,21 @@ async function fetchAssociationsFromProperty(
   return ids;
 }
 
+// Portal-specific unlabeled association type IDs for the Property custom object
+const PROPERTY_ASSOC_TYPE_IDS: Record<string, number> = {
+  contacts: 399,
+  deals: 403,
+  tickets: 401,
+  companies: 397,
+};
+
 async function associatePropertyTo(
   propertyId: string,
   toObjectType: string,
   toObjectId: string
 ): Promise<void> {
+  const typeId = PROPERTY_ASSOC_TYPE_IDS[toObjectType];
+  if (!typeId) throw new Error(`No association type ID for ${toObjectType}`);
   await withRetry(() =>
     hubspotClient.crm.associations.v4.basicApi.create(
       PROPERTY_OBJECT_TYPE!,
@@ -158,8 +168,8 @@ async function associatePropertyTo(
       toObjectId,
       [
         {
-          associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined,
-          associationTypeId: 1,
+          associationCategory: AssociationSpecAssociationCategoryEnum.UserDefined,
+          associationTypeId: typeId,
         },
       ]
     )
