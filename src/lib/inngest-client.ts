@@ -36,6 +36,20 @@ export const bomDesignCompleteRequested = eventType(
 );
 
 // ---------------------------------------------------------------------------
+// Property Sync (workflow-driven queue)
+// ---------------------------------------------------------------------------
+
+export const propertySyncRequested = eventType(
+  "property/sync.requested",
+  {
+    schema: z.object({
+      objectType: z.enum(["contact", "deal", "ticket"]),
+      objectId: z.string(),
+    }),
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Admin Workflows (Phase 1)
 // ---------------------------------------------------------------------------
 
@@ -66,4 +80,8 @@ export function isInngestBomEnabled(): boolean {
 
 export function isAdminWorkflowsEnabled(): boolean {
   return process.env.ADMIN_WORKFLOWS_ENABLED === "true";
+}
+
+export function isInngestPropertySyncEnabled(): boolean {
+  return process.env.INNGEST_PROPERTY_SYNC_ENABLED === "true";
 }
