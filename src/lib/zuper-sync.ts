@@ -288,5 +288,68 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Third pass: backfill hubspotDealId via PROJ-number matching.
+  //
+  // Inspection jobs (and others) created directly in Zuper rarely have the
+  // HubSpot Deal ID custom field set. But their titles typically contain a
+  // PROJ number (e.g. "New Inspection for PROJ-8972 | …"). We match that
+  // against other cached jobs (Survey, Construction) that already have a
+  // hubspotDealId linked.
+  // -------------------------------------------------------------------------
+  if (prisma) {
+    try {
+      const unlinked = await prisma.$queryRaw<{ jobUid: string; jobTitle: string }[]>`
+        SELECT "jobUid", "jobTitle" FROM "ZuperJobCache"
+        WHERE "hubspotDealId" IS NULL
+          AND "jobStatus" NOT IN ('Cancelled', 'CANCELLED')
+      `;
+
+      if (unlinked.length > 0) {
+        const projPattern = /PROJ-\d+/i;
+        const needsLookup: { jobUid: string; projNumber: string }[] = [];
+        for (const row of unlinked) {
+          const match = row.jobTitle.match(projPattern);
+          if (match) needsLookup.push({ jobUid: row.jobUid, projNumber: match[0].toUpperCase() });
+        }
+
+        if (needsLookup.length > 0) {
+          const linked = await prisma.$queryRaw<{ jobTitle: string; hubspotDealId: string }[]>`
+            SELECT DISTINCT ON ("hubspotDealId") "jobTitle", "hubspotDealId"
+            FROM "ZuperJobCache"
+            WHERE "hubspotDealId" IS NOT NULL
+          `;
+
+          const projToDealId = new Map<string, string>();
+          for (const row of linked) {
+            const match = row.jobTitle.match(projPattern);
+            if (match) projToDealId.set(match[0].toUpperCase(), row.hubspotDealId);
+          }
+
+          let projBackfilled = 0;
+          for (const { jobUid, projNumber } of needsLookup) {
+            const dealId = projToDealId.get(projNumber);
+            if (!dealId) continue;
+            try {
+              await prisma.zuperJobCache.update({
+                where: { jobUid },
+                data: { hubspotDealId: dealId },
+              });
+              projBackfilled++;
+            } catch {
+              // Non-fatal
+            }
+          }
+
+          if (projBackfilled > 0) {
+            console.log(`[ZuperSync] Backfilled hubspotDealId via PROJ number: ${projBackfilled}/${needsLookup.length} jobs`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[ZuperSync] hubspotDealId PROJ-number backfill failed:", err);
+    }
+  }
+
   return { synced, errors };
 }
