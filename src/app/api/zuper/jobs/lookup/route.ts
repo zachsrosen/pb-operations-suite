@@ -555,7 +555,10 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
           }
 
           // Check name match (with PROJ number disambiguation)
-          if (pName) {
+          // Skip fuzzy matching if the job already has an explicit deal ID pointing
+          // to a DIFFERENT deal — prevents cross-deal bleed on same-customer projects
+          // (e.g. a separate EV-only deal for the same homeowner).
+          if (pName && !(hubspotDealId && hubspotDealId !== projectId)) {
             const customerName = extractCustomerName(pName);
             const projectAddress = extractAddress(pName);
             const projNumber = extractProjectNumber(pName);
