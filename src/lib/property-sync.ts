@@ -725,7 +725,7 @@ export async function onDealOrTicketCreated(
   const addressProps =
     kind === "deal"
       ? ["address", "city", "state", "zip"]
-      : ["hs_address", "hs_city", "hs_state", "hs_zip"];
+      : ["street_address", "city", "state", "zip"];
 
   const object =
     kind === "deal"
@@ -776,10 +776,10 @@ export async function onDealOrTicketCreated(
     chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
   } else if (candidates.length > 1) {
     const addr = object?.properties ?? {};
-    const street = kind === "deal" ? addr.address : addr.hs_address;
-    const city = kind === "deal" ? addr.city : addr.hs_city;
-    const state = kind === "deal" ? addr.state : addr.hs_state;
-    const zip = kind === "deal" ? addr.zip : addr.hs_zip;
+    const street = kind === "deal" ? addr.address : addr.street_address;
+    const city = addr.city;
+    const state = addr.state;
+    const zip = addr.zip;
 
     if (street && city && state && zip) {
       const geo = await geocodeAddress({
