@@ -269,16 +269,22 @@ async function fetchWithRetry(
 /**
  * List all PE projects with cursor-based pagination.
  * Returns projects from the list endpoint (no actionItems).
+ *
+ * @param options.since - Only return projects updated after this ISO date string.
+ *                        Used for incremental sync — omit for full initial sync.
  */
-export async function listAllProjects(): Promise<PeProjectListItem[]> {
+export async function listAllProjects(options?: {
+  since?: string;
+}): Promise<PeProjectListItem[]> {
   const { apiKey, baseUrl } = getConfig();
   const projects: PeProjectListItem[] = [];
   let cursor: string | undefined;
 
   do {
     const url = new URL("/v1/projects", baseUrl);
-    url.searchParams.set("limit", "100");
+    url.searchParams.set("pageSize", "100");
     if (cursor) url.searchParams.set("cursor", cursor);
+    if (options?.since) url.searchParams.set("since", options.since);
 
     const response = await fetchWithRetry(url.toString(), {
       headers: {
@@ -347,16 +353,33 @@ export async function getProjectDetail(
 /**
  * Batch-fetch project details for action items.
  * Fetches in parallel with concurrency limit to avoid overwhelming the API.
+ *
+ * @param internalIds - Firestore doc IDs to fetch
+ * @param concurrency - Max parallel fetches (default 10)
+ * @param deadlineMs - Epoch timestamp deadline. If set, stops fetching new
+ *                     batches when within 30s of the deadline to leave time
+ *                     for DB upserts. Already-inflight requests are awaited.
  */
 export async function getProjectDetails(
   internalIds: string[],
-  concurrency = 5,
+  concurrency = 10,
+  deadlineMs?: number,
 ): Promise<Map<string, PeProjectDetail>> {
   const results = new Map<string, PeProjectDetail>();
   const errors: string[] = [];
+  let skippedDueToDeadline = 0;
 
   // Process in chunks of `concurrency`
   for (let i = 0; i < internalIds.length; i += concurrency) {
+    // Check deadline before starting a new batch — leave 30s for DB work
+    if (deadlineMs && Date.now() > deadlineMs - 30_000) {
+      skippedDueToDeadline = internalIds.length - i;
+      console.warn(
+        `[pe-api] Deadline approaching, skipping ${skippedDueToDeadline} remaining detail fetches`,
+      );
+      break;
+    }
+
     const batch = internalIds.slice(i, i + concurrency);
     const settled = await Promise.allSettled(
       batch.map((id) => getProjectDetail(id)),
@@ -376,6 +399,9 @@ export async function getProjectDetails(
 
   if (errors.length > 0) {
     console.warn(`[pe-api] ${errors.length} project detail fetch errors:`, errors.slice(0, 5));
+  }
+  if (skippedDueToDeadline > 0) {
+    console.warn(`[pe-api] ${skippedDueToDeadline} projects skipped due to time budget`);
   }
 
   return results;

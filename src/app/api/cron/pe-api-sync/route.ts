@@ -27,12 +27,19 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await syncFromPeApi();
+    // Support ?full=true to force a full sync (skips incremental)
+    const fullSync = request.nextUrl.searchParams.get("full") === "true";
+
+    const result = await syncFromPeApi({ fullSync });
     return NextResponse.json({
       success: true,
+      incremental: result.incremental,
+      since: result.since,
       projectsFetched: result.projectsFetched,
+      projectsMatched: result.projectsMatched,
       docsUpserted: result.docsUpserted,
       actionItemsUpserted: result.actionItemsUpserted,
+      durationMs: result.durationMs,
       errors: result.errors.length > 0 ? result.errors : undefined,
     });
   } catch (error) {
