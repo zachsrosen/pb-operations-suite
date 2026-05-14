@@ -389,6 +389,20 @@ interface PropertyFields {
   designRevisionReason: string | null;
   needsReReview: boolean;
   reviewed: boolean;
+  itemType?: "IDR" | "ESCALATION";
+  designNotes?: string | null;
+  opsRevisionNotes?: string | null;
+}
+
+/** Concatenate revision-related notes, skipping empty/null values. */
+function buildCombinedRevisionReason(
+  designRevisionReason: string | null,
+  designNotes: string | null | undefined,
+  opsRevisionNotes: string | null | undefined,
+): string {
+  return [designRevisionReason, designNotes, opsRevisionNotes]
+    .filter((s): s is string => !!s?.trim())
+    .join(" | ");
 }
 
 /** Map item fields to HubSpot deal property key-value pairs. Only includes non-null fields. */
@@ -431,8 +445,17 @@ export function buildHubSpotPropertyUpdates(
   // or by the post-task override (revision flagged).
   if (fields.designRevisionNeeded) {
     updates.idr_re_review_needed = fields.needsReReview ? "true" : "false";
-    if (fields.designRevisionReason) {
-      updates.idr_revision_reason = fields.designRevisionReason;
+    const combinedReason = buildCombinedRevisionReason(
+      fields.designRevisionReason,
+      fields.designNotes,
+      fields.opsRevisionNotes,
+    );
+    if (fields.itemType === "ESCALATION") {
+      // Escalation revisions → as-built revision reason
+      if (combinedReason) updates.inspection_rejection_reason = combinedReason;
+    } else {
+      // IDR / re-review revisions → IDR revision reason
+      if (combinedReason) updates.idr_revision_reason = combinedReason;
     }
   } else if (fields.reviewed) {
     // Clear the re-review flag when a deal is reviewed (normal or re-review).
@@ -794,6 +817,7 @@ export async function syncItemToHubSpot(
     id: string;
     dealId: string;
     dealName: string;
+    type: "IDR" | "ESCALATION";
     difficulty: number | null;
     installerCount: number | null;
     installerDays: number | null;
@@ -858,6 +882,9 @@ export async function syncItemToHubSpot(
       designRevisionReason: item.designRevisionReason,
       needsReReview: item.needsReReview,
       reviewed: item.reviewed,
+      itemType: item.type,
+      designNotes: item.designNotes,
+      opsRevisionNotes: item.opsRevisionNotes,
     });
 
     if (Object.keys(properties).length > 0) {
@@ -880,13 +907,17 @@ export async function syncItemToHubSpot(
         } else if (item.designRevisionNeeded) {
           // Task completed → workflow will set "Draft Complete" async.
           // Fire a detached delayed override: wait 2 minutes for the workflow,
-          // then set design_status to "IDR Revision Needed". Detached so it
-          // doesn't block the sync loop (other items continue immediately).
+          // then set design_status. Escalations get "Revision Needed - Rejected"
+          // (As-Built), regular IDR items get "IDR Revision Needed". Detached so
+          // it doesn't block the sync loop (other items continue immediately).
           const revDealId = item.dealId;
+          const revisionStatus = item.type === "ESCALATION"
+            ? "Revision Needed - Rejected"   // label: "Revision Needed - As-Built"
+            : "IDR Revision Needed";
           setTimeout(async () => {
             try {
-              await pushDealProperties(revDealId, { design_status: "IDR Revision Needed" });
-              console.log(`[idr-meeting] Delayed revision status override applied for deal ${revDealId}`);
+              await pushDealProperties(revDealId, { design_status: revisionStatus });
+              console.log(`[idr-meeting] Delayed revision status override (${revisionStatus}) applied for deal ${revDealId}`);
             } catch (err) {
               console.error(`[idr-meeting] Delayed revision status override failed for deal ${revDealId}:`, err);
             }
