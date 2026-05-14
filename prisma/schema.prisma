@@ -4161,6 +4161,41 @@ model PeDocumentReview {
   @@index([dealId])
 }
 
+model PeActionItem {
+  id            String    @id @default(cuid())
+  peProjectId   String    // PE project ID e.g. "CO2602-KRAF2"
+  dealId        String?   // linked HubSpot deal (nullable until matched)
+  peInternalId  String    // Raceway internal ID (the UUID-like id)
+  actionItemId  String    @unique // PE's action item ID — idempotency key
+  docType       String    // e.g. "design_plan", "countersigned_ppa_esa"
+  docLabel      String    // e.g. "Design Plan", "Customer Agreement (PPA/ESA)"
+  errorCode     String?   // e.g. "H106", "H045" — extracted from notes
+  pageNumber    Int?      // extracted from notes prefix "Page N —"
+  reviewer      String    // e.g. "Mean Hernandez"
+  notes         String?   @db.Text // full reviewer note text
+  actionDate    DateTime  // when PE reviewer created the action item
+  resolvedAt    DateTime? // null = still open
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dealId])
+  @@index([peProjectId])
+  @@index([errorCode])
+}
+
+// Track PE API sync runs for observability
+model PeApiSyncRun {
+  id              String   @id @default(cuid())
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  projectsFetched Int      @default(0)
+  docsUpserted    Int      @default(0)
+  actionItems     Int      @default(0)
+  errors          String[] // array of error messages
+  status          String   @default("running") // running | completed | failed
+}
+
 // ---------------------------------------------------------------------------
 // Zuper ↔ HubSpot status drift — PM-facing flag list
 // ---------------------------------------------------------------------------
