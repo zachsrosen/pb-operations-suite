@@ -2118,9 +2118,17 @@ export default function InspectionSchedulerPage() {
                   <button
                     onClick={confirmSchedule}
                     disabled={syncingToZuper || !scheduleModal.slot}
-                    className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 rounded-lg font-medium disabled:opacity-50"
+                    className={`px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50 ${
+                      syncToZuper
+                        ? "bg-purple-600 hover:bg-purple-700"
+                        : "bg-amber-600 hover:bg-amber-700"
+                    }`}
                   >
-                    {syncingToZuper ? "Syncing..." : scheduleModal.isRescheduling ? "Confirm Reschedule" : "Confirm Schedule"}
+                    {syncingToZuper
+                      ? "Syncing..."
+                      : syncToZuper
+                        ? (scheduleModal.isRescheduling ? "Confirm Reschedule & Sync" : "Confirm & Sync")
+                        : "Save Tentative"}
                   </button>
                 </>
               )}
