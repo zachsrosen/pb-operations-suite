@@ -13,6 +13,7 @@ import type { PropertyDetail } from "@/lib/property-detail";
  */
 interface Props {
   contactIds: string[];
+  contacts: { id: string; name: string }[];
   primaryLabel: PropertyDetail["ownershipLabel"];
   primaryAssociatedAt: Date;
 }
@@ -29,6 +30,7 @@ function formatDate(d: Date): string {
 
 export default function PropertyOwnershipList({
   contactIds,
+  contacts,
   primaryLabel,
   primaryAssociatedAt,
 }: Props) {
@@ -37,6 +39,9 @@ export default function PropertyOwnershipList({
     portalId
       ? `https://app.hubspot.com/contacts/${portalId}/contact/${id}`
       : `#`;
+
+  const nameMap = new Map(contacts.map((c) => [c.id, c.name]));
+  const contactName = (id: string) => nameMap.get(id) ?? `Contact ${id}`;
 
   if (contactIds.length === 0) {
     return (
@@ -60,7 +65,7 @@ export default function PropertyOwnershipList({
               rel="noopener noreferrer"
               className="text-xs text-cyan-400 hover:underline"
             >
-              {primaryId}
+              {contactName(primaryId)}
             </a>
           </div>
           <div className="text-xs text-muted whitespace-nowrap">
@@ -81,7 +86,7 @@ export default function PropertyOwnershipList({
                 rel="noopener noreferrer"
                 className="text-xs text-cyan-400 hover:underline"
               >
-                {id}
+                {contactName(id)}
               </a>
             </div>
             <div className="text-xs text-muted whitespace-nowrap">—</div>

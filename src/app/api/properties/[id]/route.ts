@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Client } from "@hubspot/api-client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getUserByEmail } from "@/lib/db";
 import { isPathAllowedByAccess, resolveUserAccess } from "@/lib/user-access";
+import { withRetry } from "@/lib/hubspot-custom-objects";
 import {
   computeEquipmentSummary,
   createEmptySummary,
@@ -10,6 +12,34 @@ import {
   type PropertyDetail,
   type EquipmentSummary,
 } from "@/lib/property-detail";
+
+const hubspotClient = new Client({
+  accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
+  numberOfApiCallRetries: 2,
+});
+
+async function resolveContactNames(
+  contactIds: string[],
+): Promise<{ id: string; name: string }[]> {
+  if (!contactIds.length) return [];
+  try {
+    const response = await withRetry(() =>
+      hubspotClient.crm.contacts.batchApi.read({
+        inputs: contactIds.map((id) => ({ id })),
+        properties: ["firstname", "lastname"],
+        propertiesWithHistory: [],
+      }),
+    );
+    return response.results.map((r) => {
+      const first = (r.properties as Record<string, string>).firstname ?? "";
+      const last = (r.properties as Record<string, string>).lastname ?? "";
+      const name = [first, last].filter(Boolean).join(" ") || `Contact ${r.id}`;
+      return { id: r.id, name };
+    });
+  } catch {
+    return contactIds.map((id) => ({ id, name: `Contact ${id}` }));
+  }
+}
 
 /**
  * GET /api/properties/[id]
@@ -75,7 +105,9 @@ export async function GET(
       equipmentSummary = createEmptySummary();
     }
 
-    const detail: PropertyDetail = { ...base, equipmentSummary };
+    const contacts = await resolveContactNames(base.contactIds);
+
+    const detail: PropertyDetail = { ...base, equipmentSummary, contacts };
 
     return NextResponse.json(detail);
   } catch (error) {
