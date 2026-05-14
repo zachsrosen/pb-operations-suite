@@ -342,11 +342,20 @@ export async function updateProperty(
   );
 }
 
+// Portal-specific association type IDs for the Property custom object.
+// All are USER_DEFINED (custom objects never use HUBSPOT_DEFINED type 1).
+const PROPERTY_ASSOC_TYPE_IDS: Record<string, number> = {
+  contacts: 399,
+  deals: 403,
+  tickets: 401,
+  companies: 397,
+};
+
 /**
  * Associate a Property record with another HubSpot object (deal / contact /
- * ticket / company). When `labelAssociationTypeId` is provided, a USER_DEFINED
- * (labeled) association is created — otherwise the default unlabeled
- * HUBSPOT_DEFINED association (typeId 1) is used.
+ * ticket / company). When `labelAssociationTypeId` is provided, that labeled
+ * association type is used — otherwise the default unlabeled USER_DEFINED
+ * association for the target object type is used.
  */
 export async function associateProperty(
   propertyId: string,
@@ -354,21 +363,16 @@ export async function associateProperty(
   toObjectId: string,
   labelAssociationTypeId?: number
 ): Promise<void> {
-  const associationSpec = labelAssociationTypeId
-    ? [
-        {
-          associationCategory:
-            AssociationSpecAssociationCategoryEnum.UserDefined,
-          associationTypeId: labelAssociationTypeId,
-        },
-      ]
-    : [
-        {
-          associationCategory:
-            AssociationSpecAssociationCategoryEnum.HubspotDefined,
-          associationTypeId: 1,
-        },
-      ];
+  const typeId = labelAssociationTypeId ?? PROPERTY_ASSOC_TYPE_IDS[toObjectType];
+  if (!typeId) {
+    throw new Error(`No association type ID for Property → ${toObjectType}`);
+  }
+  const associationSpec = [
+    {
+      associationCategory: AssociationSpecAssociationCategoryEnum.UserDefined,
+      associationTypeId: typeId,
+    },
+  ];
 
   await withRetry(() =>
     hubspotClient.crm.associations.v4.basicApi.create(

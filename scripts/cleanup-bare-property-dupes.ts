@@ -31,6 +31,7 @@ import { withRetry } from "../src/lib/hubspot-custom-objects";
 import { prisma } from "../src/lib/db";
 
 const DRY_RUN = process.env.DRY_RUN === "true";
+const MIGRATE_ONLY = process.env.MIGRATE_ONLY === "true";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -145,11 +146,21 @@ async function fetchAssociationsFromProperty(
   return ids;
 }
 
+// Portal-specific unlabeled association type IDs for the Property custom object
+const PROPERTY_ASSOC_TYPE_IDS: Record<string, number> = {
+  contacts: 399,
+  deals: 403,
+  tickets: 401,
+  companies: 397,
+};
+
 async function associatePropertyTo(
   propertyId: string,
   toObjectType: string,
   toObjectId: string
 ): Promise<void> {
+  const typeId = PROPERTY_ASSOC_TYPE_IDS[toObjectType];
+  if (!typeId) throw new Error(`No association type ID for ${toObjectType}`);
   await withRetry(() =>
     hubspotClient.crm.associations.v4.basicApi.create(
       PROPERTY_OBJECT_TYPE!,
@@ -158,8 +169,8 @@ async function associatePropertyTo(
       toObjectId,
       [
         {
-          associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined,
-          associationTypeId: 1,
+          associationCategory: AssociationSpecAssociationCategoryEnum.UserDefined,
+          associationTypeId: typeId,
         },
       ]
     )
@@ -421,6 +432,14 @@ async function main() {
     console.log(`  Bare records checked: ${migStats.totalBareChecked}`);
     console.log(`  Associations migrated: ${migStats.associationsMigrated}`);
     console.log(`  Migration errors: ${migStats.migrationErrors}`);
+  }
+
+  if (MIGRATE_ONLY) {
+    console.log("\n=== MIGRATE_ONLY — stopping before archive ===");
+    console.log(`Ready to archive: ${toArchive.length} records`);
+    console.log(`Rerun without MIGRATE_ONLY=true to proceed with archiving.`);
+    await prisma.$disconnect();
+    process.exit(0);
   }
 
   // Step 5: Archive bare duplicates
