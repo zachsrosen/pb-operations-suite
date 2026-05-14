@@ -192,6 +192,11 @@ export const queryKeys = {
     events: (dealId: string) =>
       ["dealTimeline", "events", dealId] as const,
   },
+  propertyTimeline: {
+    root: ["propertyTimeline"] as const,
+    events: (hubspotObjectId: string) =>
+      ["propertyTimeline", "events", hubspotObjectId] as const,
+  },
   dealCommunications: {
     root: ["dealCommunications"] as const,
     list: (dealId: string) =>
@@ -256,5 +261,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("powerhub"))
     return [queryKeys.powerhub.root];
   if (serverKey.startsWith("crew-schedule")) return [queryKeys.crewSchedule.root];
+  if (serverKey.startsWith("property-timeline")) return [queryKeys.propertyTimeline.root];
+  if (serverKey.startsWith("ticket-engagements")) return [queryKeys.serviceTickets.root];
   return [];
 }

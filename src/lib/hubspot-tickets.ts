@@ -14,10 +14,11 @@ import type { PriorityItem } from "@/lib/service-priority";
 import { chunk } from "@/lib/utils";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/tickets";
 import {
-  FilterOperatorEnum as NotesFilterOperatorEnum,
   AssociationSpecAssociationCategoryEnum,
 } from "@hubspot/api-client/lib/codegen/crm/objects/notes";
-import { FilterOperatorEnum as EmailsFilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/emails";
+import { getObjectEngagements } from "@/lib/hubspot-engagements";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
+import type { Engagement } from "@/components/deal-detail/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -523,6 +524,40 @@ export async function resolveTicketAddresses(
   return addressMap;
 }
 
+// ---------------------------------------------------------------------------
+// Ticket engagement timeline (expanded to associated contacts)
+// ---------------------------------------------------------------------------
+
+async function getTicketEngagements(ticketId: string): Promise<Engagement[]> {
+  const result = await appCache.getOrFetch(
+    CACHE_KEYS.TICKET_ENGAGEMENTS(ticketId),
+    () => getObjectEngagements(ticketId, "tickets", { expandContacts: true }),
+  );
+  return result.data;
+}
+
+function engagementToTimelineEntry(e: Engagement): TimelineEntry {
+  let body = e.body ?? "";
+  if (e.type === "email") {
+    const direction = e.from && e.to ? (e.from.includes("@photonbrothers.com") ? "Sent" : "Received") : "Email";
+    const subject = e.subject ?? "No subject";
+    body = `[${direction}] ${subject}`;
+  } else if (e.type === "call") {
+    const durationStr = e.duration ? ` (${Math.round(e.duration / 1000)}s)` : "";
+    body = (e.body ?? "Call") + durationStr;
+  } else if (e.type === "meeting") {
+    body = e.subject ?? e.body ?? "Meeting";
+  } else if (e.type === "task") {
+    body = e.subject ?? e.body ?? "Task";
+  }
+  return {
+    type: e.type,
+    timestamp: e.timestamp,
+    body,
+    createdBy: e.createdBy ?? null,
+  };
+}
+
 /**
  * Get a single ticket with full detail + associations.
  */
@@ -606,62 +641,12 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       }
     }
 
-    // Fetch timeline: notes, emails associated with this ticket
-    const timeline: TimelineEntry[] = [];
+    // Fetch timeline: expanded to include associated contacts + all engagement types
+    let timeline: TimelineEntry[] = [];
     try {
-      // Fetch notes associated with the ticket via search
-      const notesResponse = await hubspotClient.crm.objects.notes.searchApi.doSearch({
-        filterGroups: [{
-          filters: [{
-            propertyName: "associations.ticket",
-            operator: NotesFilterOperatorEnum.Eq,
-            value: ticketId,
-          }],
-        }],
-        properties: ["hs_note_body", "hs_timestamp", "hubspot_owner_id", "hs_created_by"],
-        limit: 50,
-        // API accepts object-form sorts but TS types expect string[] — cast to get newest first
-        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }] as unknown as string[],
-      });
-
-      for (const note of notesResponse.results || []) {
-        timeline.push({
-          type: "note",
-          timestamp: note.properties.hs_timestamp || note.properties.hs_createdate || "",
-          body: note.properties.hs_note_body || "",
-          createdBy: note.properties.hs_created_by || null,
-        });
-      }
-
-      // Fetch emails associated with the ticket
-      const emailsResponse = await hubspotClient.crm.objects.emails.searchApi.doSearch({
-        filterGroups: [{
-          filters: [{
-            propertyName: "associations.ticket",
-            operator: EmailsFilterOperatorEnum.Eq,
-            value: ticketId,
-          }],
-        }],
-        properties: ["hs_email_subject", "hs_email_text", "hs_timestamp", "hs_email_direction"],
-        limit: 50,
-        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }] as unknown as string[],
-      });
-
-      for (const email of emailsResponse.results || []) {
-        const direction = email.properties.hs_email_direction === "INCOMING_EMAIL" ? "Received" : "Sent";
-        const subject = email.properties.hs_email_subject || "No subject";
-        timeline.push({
-          type: "email",
-          timestamp: email.properties.hs_timestamp || "",
-          body: `[${direction}] ${subject}`,
-          createdBy: null,
-        });
-      }
-
-      // Sort timeline by timestamp descending (most recent first)
-      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const engagements = await getTicketEngagements(ticketId);
+      timeline = engagements.map(engagementToTimelineEntry);
     } catch (timelineError) {
-      // Timeline is best-effort — don't fail the whole detail request
       console.warn("[HubSpotTickets] Failed to fetch timeline:", timelineError);
     }
 
