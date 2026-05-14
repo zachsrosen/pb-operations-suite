@@ -340,6 +340,22 @@ function DealSection({
                 const sections = dealDocSections(deal.dealStageLabel);
                 const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
                 const approvedCount = docs.filter((d) => docMap.get(`${deal.dealId}:${d.name}`)?.status === "APPROVED").length;
+                const actionCount = docs.filter((d) => {
+                  const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
+                  return s === "ACTION_REQUIRED" || s === "REJECTED";
+                }).length;
+                const uploadedCount = docs.filter((d) => {
+                  const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
+                  return s === "UPLOADED" || s === "UNDER_REVIEW";
+                }).length;
+                const notUploadedCount = docs.length - approvedCount - actionCount - uploadedCount;
+
+                // Build tooltip with breakdown of remaining docs
+                const remainderParts: string[] = [];
+                if (actionCount > 0) remainderParts.push(`${actionCount} action req`);
+                if (uploadedCount > 0) remainderParts.push(`${uploadedCount} under review`);
+                if (notUploadedCount > 0) remainderParts.push(`${notUploadedCount} not uploaded`);
+                const docTooltip = `${approvedCount}/${docs.length} approved${remainderParts.length ? ` · ${remainderParts.join(" · ")}` : ""}`;
 
                 return (
                   <React.Fragment key={deal.dealId}>
@@ -373,10 +389,12 @@ function DealSection({
                               </svg>
                             </a>
                           )}
-                          {/* Doc progress indicator */}
+                          {/* Doc progress indicator with remainder breakdown */}
                           {docs.length > 0 && (
-                            <span className={`text-[9px] ml-0.5 ${approvedCount === docs.length ? "text-green-400" : "text-muted/50"}`} title={`${approvedCount}/${docs.length} docs approved`}>
+                            <span className={`text-[9px] ml-0.5 ${approvedCount === docs.length ? "text-green-400" : actionCount > 0 ? "text-orange-400" : "text-muted/50"}`} title={docTooltip}>
                               {approvedCount}/{docs.length}
+                              {actionCount > 0 && <span className="text-red-400 ml-0.5">⚠{actionCount}</span>}
+                              {notUploadedCount > 0 && approvedCount < docs.length && <span className="text-zinc-500 ml-0.5">◌{notUploadedCount}</span>}
                             </span>
                           )}
                         </div>
