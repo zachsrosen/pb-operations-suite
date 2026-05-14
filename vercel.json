@@ -60,7 +60,8 @@
     "src/app/api/cron/powerhub-alerts/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/goals-digest/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/pe-invoice-audit/route.ts": { "maxDuration": 120 },
-    "src/app/api/cron/pe-email-sync/route.ts": { "maxDuration": 120 }
+    "src/app/api/cron/pe-email-sync/route.ts": { "maxDuration": 120 },
+    "src/app/api/cron/pe-api-sync/route.ts": { "maxDuration": 300 }
   },
   "crons": [
     {
@@ -180,7 +181,8 @@
     { "path": "/api/cron/powerhub-alerts", "schedule": "4,9,14,19,24,29,34,39,44,49,54,59 * * * *" },
     { "path": "/api/cron/goals-digest", "schedule": "0 14 * * 1,2" },
     { "path": "/api/cron/pe-invoice-audit", "schedule": "7 * * * *" },
-    { "path": "/api/cron/pe-email-sync", "schedule": "*/30 * * * *" }
+    { "path": "/api/cron/pe-email-sync", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/pe-api-sync", "schedule": "0 6 * * *" }
   ],
   "redirects": [
     {

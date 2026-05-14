@@ -121,6 +121,18 @@ interface DocReview {
   notes: string | null;
 }
 
+interface PeActionItem {
+  id: string;
+  dealId: string | null;
+  docLabel: string;
+  errorCode: string | null;
+  pageNumber: number | null;
+  reviewer: string;
+  notes: string | null;
+  actionDate: string;
+  resolvedAt: string | null;
+}
+
 interface DocRequirement {
   name: string;
   section: "onboarding" | "ic" | "pc";
@@ -260,6 +272,7 @@ function DealSection({
   onStatusChange,
   savingDeals,
   docMap,
+  actionItemsByDeal,
 }: {
   title: string;
   subtitle: string;
@@ -272,6 +285,7 @@ function DealSection({
   onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
   savingDeals: Set<string>;
   docMap: Map<string, DocReview>;
+  actionItemsByDeal: Map<string, PeActionItem[]>;
 }) {
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
 
@@ -471,6 +485,44 @@ function DealSection({
                               </div>
                             );
                           })()}
+                          {/* PE Action Items (from PE Raceway API) */}
+                          {(() => {
+                            const items = actionItemsByDeal.get(deal.dealId) ?? [];
+                            if (!items.length) return null;
+                            return (
+                              <div className="mt-3 pt-2 border-t border-border/30">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className="text-[10px] font-medium text-orange-400">Action Items ({items.length})</span>
+                                  <span className="text-[9px] text-muted">from PE reviewer</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                                  {items.map((item) => (
+                                    <div key={item.id} className="flex items-start gap-1.5 bg-surface rounded px-2 py-1.5 border border-border/30">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1 flex-shrink-0" />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[11px] font-medium text-foreground truncate">{item.docLabel}</span>
+                                          {item.errorCode && (
+                                            <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
+                                          )}
+                                          {item.pageNumber && (
+                                            <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
+                                          )}
+                                        </div>
+                                        {item.notes && (
+                                          <p className="text-[10px] text-muted mt-0.5 leading-tight">{item.notes}</p>
+                                        )}
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                          <span className="text-[9px] text-muted/60">{item.reviewer}</span>
+                                          <span className="text-[9px] text-muted/40">{new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     )}
@@ -501,8 +553,8 @@ export default function PeDealsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch PE document reviews for inline doc breakdown
-  const { data: docsData } = useQuery<{ docs: DocReview[] }>({
+  // Fetch PE document reviews + action items for inline doc breakdown
+  const { data: docsData } = useQuery<{ docs: DocReview[]; actionItems: PeActionItem[] }>({
     queryKey: ["peDocReviews"],
     queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
     staleTime: 60 * 1000,
@@ -512,6 +564,17 @@ export default function PeDealsPage() {
     const m = new Map<string, DocReview>();
     for (const d of docsData?.docs ?? []) {
       m.set(`${d.dealId}:${d.docName}`, d);
+    }
+    return m;
+  }, [docsData]);
+
+  const actionItemsByDeal = useMemo(() => {
+    const m = new Map<string, PeActionItem[]>();
+    for (const item of docsData?.actionItems ?? []) {
+      if (!item.dealId) continue;
+      const list = m.get(item.dealId) ?? [];
+      list.push(item);
+      m.set(item.dealId, list);
     }
     return m;
   }, [docsData]);
@@ -918,6 +981,7 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
             docMap={docMap}
+            actionItemsByDeal={actionItemsByDeal}
           />
           {partiallyPaidDeals.length > 0 && (
             <DealSection
@@ -932,6 +996,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {fullyApprovedDeals.length > 0 && (
@@ -947,6 +1012,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {partiallyApprovedDeals.length > 0 && (
@@ -962,6 +1028,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {m2Deals.length > 0 && (
@@ -977,6 +1044,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {m1Deals.length > 0 && (
@@ -992,6 +1060,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           <DealSection
@@ -1005,6 +1074,7 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
             docMap={docMap}
+            actionItemsByDeal={actionItemsByDeal}
           />
         </div>
       )}
