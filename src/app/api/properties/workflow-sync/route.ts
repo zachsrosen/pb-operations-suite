@@ -1,21 +1,24 @@
 /**
  * POST /api/properties/workflow-sync
  *
- * Entry point for HubSpot workflow webhook actions. Each of the three
- * property-sync workflows (Contact address change, Deal created, Ticket
- * created) POSTs here with the enrolled record's ID.
+ * Entry point for HubSpot workflow webhook actions. Accepts two payload
+ * formats:
+ *
+ * 1. HubSpot native — the default body HubSpot sends from a workflow
+ *    webhook action: `{ objectId, objectType, ... }`. The objectType is
+ *    mapped from HubSpot type IDs (0-1=contact, 0-3=deal, 0-5=ticket)
+ *    or string names (CONTACT, DEAL, TICKET).
+ *
+ * 2. Explicit — `{ type: "ticket", ticketId: "123" }` for manual/curl
+ *    testing.
  *
  * When INNGEST_PROPERTY_SYNC_ENABLED=true, the work is queued via Inngest
- * with a global concurrency limit of 3. This prevents HubSpot API rate
- * limiting when thousands of records are re-enrolled at once — the direct
- * path silently fails ~90% of records under bulk enrollment.
- *
- * When the flag is off, falls back to direct in-process execution (fine for
- * single-record webhooks but breaks under bulk re-enrollment).
+ * with a global concurrency limit of 3, preventing HubSpot API rate
+ * limiting when thousands of records re-enroll at once.
  *
  * Auth: Public route (no middleware auth) — gated by PROPERTY_SYNC_ENABLED
- * feature flag + strict Zod payload validation. Follows the same pattern as
- * all other HubSpot webhook endpoints in PUBLIC_API_ROUTES.
+ * feature flag. Follows the same pattern as all other HubSpot webhook
+ * endpoints in PUBLIC_API_ROUTES.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -32,27 +35,49 @@ import {
 
 export const maxDuration = 120;
 
-const WorkflowSyncSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("contact"),
-    contactId: z.coerce.string().min(1),
-  }),
-  z.object({
-    type: z.literal("deal"),
-    dealId: z.coerce.string().min(1),
-  }),
-  z.object({
-    type: z.literal("ticket"),
-    ticketId: z.coerce.string().min(1),
-  }),
+// Format 1: Explicit type + ID (manual testing, curl)
+const ExplicitSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("contact"), contactId: z.coerce.string().min(1) }),
+  z.object({ type: z.literal("deal"), dealId: z.coerce.string().min(1) }),
+  z.object({ type: z.literal("ticket"), ticketId: z.coerce.string().min(1) }),
 ]);
 
-function extractObjectId(data: z.infer<typeof WorkflowSyncSchema>): string {
-  switch (data.type) {
-    case "contact": return data.contactId;
-    case "deal":    return data.dealId;
-    case "ticket":  return data.ticketId;
+// Format 2: HubSpot native webhook payload
+const OBJECT_TYPE_MAP: Record<string, "contact" | "deal" | "ticket"> = {
+  "0-1": "contact", CONTACT: "contact", contact: "contact",
+  "0-3": "deal",    DEAL: "deal",       deal: "deal",
+  "0-5": "ticket",  TICKET: "ticket",   ticket: "ticket",
+};
+
+const HubSpotNativeSchema = z.object({
+  objectId: z.coerce.string().min(1),
+  objectType: z.string().optional(),
+  objectTypeId: z.string().optional(),
+}).passthrough();
+
+type NormalizedPayload = { objectType: "contact" | "deal" | "ticket"; objectId: string };
+
+function normalizePayload(body: unknown): NormalizedPayload | null {
+  // Try explicit format first
+  const explicit = ExplicitSchema.safeParse(body);
+  if (explicit.success) {
+    const d = explicit.data;
+    switch (d.type) {
+      case "contact": return { objectType: "contact", objectId: d.contactId };
+      case "deal":    return { objectType: "deal",    objectId: d.dealId };
+      case "ticket":  return { objectType: "ticket",  objectId: d.ticketId };
+    }
   }
+
+  // Try HubSpot native format
+  const native = HubSpotNativeSchema.safeParse(body);
+  if (native.success) {
+    const { objectId, objectType, objectTypeId } = native.data;
+    const resolved = OBJECT_TYPE_MAP[objectTypeId ?? ""] ?? OBJECT_TYPE_MAP[objectType ?? ""];
+    if (resolved) return { objectType: resolved, objectId };
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -61,25 +86,19 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
-  console.log("[workflow-sync] raw payload:", JSON.stringify(body));
-  const parsed = WorkflowSyncSchema.safeParse(body);
-  if (!parsed.success) {
-    console.log("[workflow-sync] validation failed:", JSON.stringify(parsed.error.flatten()));
+  const payload = normalizePayload(body);
+  if (!payload) {
+    console.log("[workflow-sync] unrecognized payload:", JSON.stringify(body));
     return NextResponse.json(
-      { error: "Invalid payload", details: parsed.error.flatten() },
+      { error: "Invalid payload — expected {type,contactId/dealId/ticketId} or HubSpot native {objectId,objectType/objectTypeId}" },
       { status: 400 },
     );
   }
 
-  const data = parsed.data;
-
   if (isInngestPropertySyncEnabled()) {
     try {
       await inngest.send(
-        propertySyncRequested.create({
-          objectType: data.type,
-          objectId: extractObjectId(data),
-        }),
+        propertySyncRequested.create(payload),
       );
       return NextResponse.json({ ok: true, queued: true });
     } catch (err) {
@@ -89,15 +108,15 @@ export async function POST(req: NextRequest) {
 
   try {
     let outcome;
-    switch (data.type) {
+    switch (payload.objectType) {
       case "contact":
-        outcome = await onContactAddressChange(data.contactId);
+        outcome = await onContactAddressChange(payload.objectId);
         break;
       case "deal":
-        outcome = await onDealOrTicketCreated("deal", data.dealId);
+        outcome = await onDealOrTicketCreated("deal", payload.objectId);
         break;
       case "ticket":
-        outcome = await onDealOrTicketCreated("ticket", data.ticketId);
+        outcome = await onDealOrTicketCreated("ticket", payload.objectId);
         break;
     }
 
