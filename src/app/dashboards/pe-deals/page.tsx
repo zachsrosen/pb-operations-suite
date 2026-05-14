@@ -124,6 +124,7 @@ interface DocReview {
 interface PeActionItem {
   id: string;
   dealId: string | null;
+  peProjectId: string;
   docLabel: string;
   errorCode: string | null;
   pageNumber: number | null;
@@ -131,6 +132,7 @@ interface PeActionItem {
   notes: string | null;
   actionDate: string;
   resolvedAt: string | null;
+  createdAt: string;
 }
 
 interface DocRequirement {
@@ -572,7 +574,7 @@ export default function PeDealsPage() {
   });
 
   // Fetch PE document reviews + action items for inline doc breakdown
-  const { data: docsData } = useQuery<{ docs: DocReview[]; actionItems: PeActionItem[] }>({
+  const { data: docsData } = useQuery<{ docs: DocReview[]; actionItems: PeActionItem[]; lastSync: string | null }>({
     queryKey: ["peDocReviews"],
     queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
     staleTime: 60 * 1000,
@@ -595,6 +597,21 @@ export default function PeDealsPage() {
       m.set(item.dealId, list);
     }
     return m;
+  }, [docsData]);
+
+  // Action items feed
+  const [actionFeedOpen, setActionFeedOpen] = useState(true);
+  const dealNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of data?.deals ?? []) m.set(d.dealId, d.dealName);
+    return m;
+  }, [data]);
+
+  // All open action items, sorted newest first (by actionDate)
+  const openActionItems = useMemo(() => {
+    return (docsData?.actionItems ?? [])
+      .filter((item) => !item.resolvedAt)
+      .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
   }, [docsData]);
 
   const [search, setSearch] = useState("");
@@ -946,6 +963,89 @@ export default function PeDealsPage() {
           <span className="text-xs text-muted">— shareable overview for ownership</span>
         </Link>
       </div>
+
+      {/* Action Items Feed */}
+      {openActionItems.length > 0 && (
+        <div className="mb-5 bg-surface rounded-lg border border-orange-500/30 shadow-card overflow-hidden">
+          <button
+            onClick={() => setActionFeedOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-2 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+              <span className="text-sm font-medium text-foreground">
+                Action Items
+              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-medium">
+                {openActionItems.length}
+              </span>
+              <span className="text-xs text-muted">
+                — PE reviewer feedback requiring response
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {docsData?.lastSync && (
+                <span className="text-[10px] text-muted" title={`Last PE API sync: ${new Date(docsData.lastSync).toLocaleString()}`}>
+                  synced {(() => {
+                    const mins = Math.round((Date.now() - new Date(docsData.lastSync).getTime()) / 60000);
+                    if (mins < 1) return "just now";
+                    if (mins < 60) return `${mins}m ago`;
+                    const hrs = Math.round(mins / 60);
+                    if (hrs < 24) return `${hrs}h ago`;
+                    return `${Math.round(hrs / 24)}d ago`;
+                  })()}
+                </span>
+              )}
+              <span className={`text-xs text-muted transition-transform ${actionFeedOpen ? "rotate-180" : ""}`}>
+                ▼
+              </span>
+            </div>
+          </button>
+          {actionFeedOpen && (
+            <div className="px-4 pb-4 border-t border-border/30">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mt-3">
+                {openActionItems.map((item) => {
+                  const dealName = item.dealId ? dealNameMap.get(item.dealId) : null;
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-start gap-2 bg-surface-2 rounded-lg px-3 py-2.5 border border-border/30 hover:border-orange-500/30 transition-colors"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                          <span className="text-xs font-medium text-foreground truncate max-w-[180px]" title={dealName ?? item.peProjectId}>
+                            {dealName ? truncateName(dealName, 24) : item.peProjectId}
+                          </span>
+                          <span className="text-[10px] text-muted">·</span>
+                          <span className="text-[10px] text-orange-400 truncate max-w-[140px]">{item.docLabel}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {item.errorCode && (
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
+                          )}
+                          {item.pageNumber && (
+                            <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
+                          )}
+                        </div>
+                        {item.notes && (
+                          <p className="text-[10px] text-muted leading-tight line-clamp-2">{item.notes}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[9px] text-muted/60">{item.reviewer}</span>
+                          <span className="text-[9px] text-muted/40">
+                            {new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">

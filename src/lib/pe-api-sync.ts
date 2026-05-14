@@ -50,6 +50,8 @@ export interface PeApiSyncResult {
   errors: string[];
   unmatchedProjects: string[];
   durationMs: number;
+  incremental: boolean;
+  since?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,18 +193,35 @@ function apiProjectToParsed(project: PeProjectListItem): ParsedProject {
 // ---------------------------------------------------------------------------
 
 /**
- * Run a full PE API sync: fetch all projects, derive document statuses,
- * fetch action items, and upsert everything into the database.
+ * Run a PE API sync: fetch projects (incrementally if possible), derive
+ * document statuses, fetch action items, and upsert into the database.
  *
- * @param options.skipActionItems - Skip fetching project details for action items (faster, doc-only sync)
- * @param options.concurrency - Max parallel detail fetches (default 5)
+ * Incremental sync: uses the `since` API parameter to only fetch projects
+ * modified since the last successful sync. Falls back to a full sync if
+ * no prior successful run exists.
+ *
+ * Time budget: detail fetches stop 30s before the deadline (default 280s)
+ * to leave room for DB upserts. Partial results are still saved.
+ *
+ * @param options.skipActionItems - Skip fetching project details (faster, doc-only sync)
+ * @param options.concurrency - Max parallel detail fetches (default 10)
+ * @param options.fullSync - Force a full sync ignoring last run timestamp
+ * @param options.timeBudgetMs - Total time budget in ms (default 280_000, ~4m40s)
  */
 export async function syncFromPeApi(options?: {
   skipActionItems?: boolean;
   concurrency?: number;
+  fullSync?: boolean;
+  timeBudgetMs?: number;
 }): Promise<PeApiSyncResult> {
   const startTime = Date.now();
-  const { skipActionItems = false, concurrency = 5 } = options ?? {};
+  const {
+    skipActionItems = false,
+    concurrency = 10,
+    fullSync = false,
+    timeBudgetMs = 280_000,
+  } = options ?? {};
+  const deadlineMs = startTime + timeBudgetMs;
 
   // Create run record
   const run = await prisma.peApiSyncRun.create({
@@ -218,14 +237,37 @@ export async function syncFromPeApi(options?: {
     errors: [],
     unmatchedProjects: [],
     durationMs: 0,
+    incremental: false,
+    since: undefined,
   };
 
   try {
     // -----------------------------------------------------------------------
-    // Step 1: Fetch all projects from PE API
+    // Step 1: Fetch projects from PE API (incremental if possible)
     // -----------------------------------------------------------------------
-    console.warn("[pe-api-sync] Fetching all PE projects...");
-    const projects = await listAllProjects();
+    let sinceDate: string | undefined;
+    if (!fullSync) {
+      const lastRun = await prisma.peApiSyncRun.findFirst({
+        where: { status: { in: ["completed", "completed_with_errors"] } },
+        orderBy: { startedAt: "desc" },
+        select: { startedAt: true },
+      });
+      if (lastRun?.startedAt) {
+        // Back up 1 hour from last run start to catch any in-flight updates
+        const since = new Date(lastRun.startedAt.getTime() - 60 * 60 * 1000);
+        sinceDate = since.toISOString();
+      }
+    }
+
+    result.incremental = !!sinceDate;
+    result.since = sinceDate;
+
+    console.warn(
+      sinceDate
+        ? `[pe-api-sync] Incremental sync since ${sinceDate}`
+        : "[pe-api-sync] Full sync (no prior run or fullSync=true)",
+    );
+    const projects = await listAllProjects(sinceDate ? { since: sinceDate } : undefined);
     result.projectsFetched = projects.length;
     console.warn(`[pe-api-sync] Fetched ${projects.length} projects`);
 
@@ -238,14 +280,31 @@ export async function syncFromPeApi(options?: {
 
     // -----------------------------------------------------------------------
     // Step 3: Fetch project details (for action items + review passes)
+    //
+    // Optimization: only fetch details for projects that have at least one
+    // document marked present — no point checking action items for projects
+    // where every doc is absent.
     // -----------------------------------------------------------------------
 
     let detailMap = new Map<string, PeProjectDetail>();
 
     if (!skipActionItems) {
-      console.warn("[pe-api-sync] Fetching project details for action items...");
-      const allIds = projects.map((p) => p.id);
-      detailMap = await getProjectDetails(allIds, concurrency);
+      const idsNeedingDetail = projects
+        .filter((p) => {
+          // Check if any document in this project is present
+          for (const docKey of Object.keys(PE_API_DOC_MAP)) {
+            const docInfo = p.documents[docKey];
+            if (docInfo?.present) return true;
+          }
+          return false;
+        })
+        .map((p) => p.id);
+
+      console.warn(
+        `[pe-api-sync] Fetching details for ${idsNeedingDetail.length}/${projects.length} ` +
+          `projects with present docs (concurrency=${concurrency})...`,
+      );
+      detailMap = await getProjectDetails(idsNeedingDetail, concurrency, deadlineMs);
       console.warn(`[pe-api-sync] Fetched details for ${detailMap.size} projects`);
     }
 
