@@ -11,11 +11,12 @@
 // Strategy:
 //   1. Fetch ALL Property records from HubSpot (paged)
 //   2. Partition into "bare" (no placeId AND no normalizedAddress) vs "enriched"
-//   3. For each bare record with a matching enriched record (same street+city+state+zip),
-//      archive the bare one
-//   4. Bare records with NO enriched counterpart are kept (they're unique addresses
+//   3. For each bare duplicate, migrate its associations (contacts, deals,
+//      tickets, companies) to the enriched counterpart so nothing is lost
+//   4. Archive the bare duplicates
+//   5. Bare records with NO enriched counterpart are kept (unique addresses
 //      that only the workflow created — our webhook never saw them)
-//   5. Clean up orphaned HubSpotPropertyCache rows pointing to archived records
+//   6. Clean up orphaned HubSpotPropertyCache rows pointing to archived records
 //
 // Usage:
 //   DRY_RUN=true tsx scripts/cleanup-bare-property-dupes.ts      # preview
@@ -25,6 +26,7 @@
 
 import "dotenv/config";
 import { Client } from "@hubspot/api-client";
+import { AssociationSpecAssociationCategoryEnum } from "@hubspot/api-client/lib/codegen/crm/associations/v4";
 import { withRetry } from "../src/lib/hubspot-custom-objects";
 import { prisma } from "../src/lib/db";
 
@@ -114,7 +116,123 @@ function isBare(r: PropertyRecord): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3: Batch archive
+// Step 3: Migrate associations from bare → enriched
+// ---------------------------------------------------------------------------
+
+const ASSOCIATION_TYPES = ["contacts", "deals", "tickets", "companies"] as const;
+
+async function fetchAssociationsFromProperty(
+  propertyId: string,
+  toObjectType: "contacts" | "deals" | "tickets" | "companies"
+): Promise<string[]> {
+  const ids: string[] = [];
+  let after: string | undefined;
+
+  do {
+    const associations = await withRetry(() =>
+      hubspotClient.crm.associations.v4.basicApi.getPage(
+        PROPERTY_OBJECT_TYPE!,
+        propertyId,
+        toObjectType,
+        after,
+        undefined
+      )
+    );
+    ids.push(...associations.results.map((a) => a.toObjectId.toString()));
+    after = associations.paging?.next?.after;
+  } while (after);
+
+  return ids;
+}
+
+async function associatePropertyTo(
+  propertyId: string,
+  toObjectType: string,
+  toObjectId: string
+): Promise<void> {
+  await withRetry(() =>
+    hubspotClient.crm.associations.v4.basicApi.create(
+      PROPERTY_OBJECT_TYPE!,
+      propertyId,
+      toObjectType,
+      toObjectId,
+      [
+        {
+          associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined,
+          associationTypeId: 1,
+        },
+      ]
+    )
+  );
+}
+
+interface MigrationStats {
+  totalBareChecked: number;
+  associationsMigrated: number;
+  migrationErrors: number;
+}
+
+async function migrateAssociations(
+  bareToEnrichedMap: Map<string, string>
+): Promise<MigrationStats> {
+  const stats: MigrationStats = {
+    totalBareChecked: 0,
+    associationsMigrated: 0,
+    migrationErrors: 0,
+  };
+
+  const entries = Array.from(bareToEnrichedMap.entries());
+  for (let i = 0; i < entries.length; i++) {
+    const [bareId, enrichedId] = entries[i];
+    stats.totalBareChecked++;
+
+    for (const objType of ASSOCIATION_TYPES) {
+      let bareAssocIds: string[];
+      try {
+        bareAssocIds = await fetchAssociationsFromProperty(bareId, objType);
+      } catch (err) {
+        console.warn(`  Failed to fetch ${objType} associations for bare ${bareId}:`, err);
+        stats.migrationErrors++;
+        continue;
+      }
+
+      if (!bareAssocIds.length) continue;
+
+      // Fetch existing associations on enriched record to avoid duplicates
+      let enrichedAssocIds: string[];
+      try {
+        enrichedAssocIds = await fetchAssociationsFromProperty(enrichedId, objType);
+      } catch {
+        enrichedAssocIds = [];
+      }
+      const enrichedSet = new Set(enrichedAssocIds);
+
+      for (const assocId of bareAssocIds) {
+        if (enrichedSet.has(assocId)) continue;
+        try {
+          await associatePropertyTo(enrichedId, objType, assocId);
+          stats.associationsMigrated++;
+        } catch (err) {
+          console.warn(
+            `  Failed to migrate ${objType} association ${assocId} from bare ${bareId} → enriched ${enrichedId}:`,
+            err
+          );
+          stats.migrationErrors++;
+        }
+      }
+    }
+
+    if ((i + 1) % 100 === 0) {
+      console.log(`  ... checked associations on ${i + 1}/${entries.length} bare records (migrated ${stats.associationsMigrated} so far)`);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+
+  return stats;
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: Batch archive
 // ---------------------------------------------------------------------------
 
 async function batchArchive(ids: string[]): Promise<{ archived: number; failed: number }> {
@@ -235,6 +353,7 @@ async function main() {
   // Step 3: Identify bare records that have enriched counterparts
   console.log("\nStep 3: Identifying bare duplicates with enriched counterparts...");
   const toArchive: string[] = [];
+  const bareToEnrichedMap = new Map<string, string>();
   const uniqueBare: PropertyRecord[] = [];
   const noAddressBare: PropertyRecord[] = [];
 
@@ -248,6 +367,7 @@ async function main() {
     const enrichedMatch = enrichedByAddress.get(key);
     if (enrichedMatch && enrichedMatch.length > 0) {
       toArchive.push(r.id);
+      bareToEnrichedMap.set(r.id, enrichedMatch[0].id);
     } else {
       uniqueBare.push(r);
     }
@@ -262,9 +382,8 @@ async function main() {
     console.log("\n  Sample bare duplicates to archive:");
     for (const id of toArchive.slice(0, 5)) {
       const r = bare.find((b) => b.id === id)!;
-      const key = addressKey(r);
-      const enrichedMatch = key ? enrichedByAddress.get(key) : null;
-      console.log(`    ${id}: "${r.properties.street_address}, ${r.properties.city}" → enriched match: ${enrichedMatch?.[0]?.id}`);
+      const enrichedId = bareToEnrichedMap.get(id);
+      console.log(`    ${id}: "${r.properties.street_address}, ${r.properties.city}" → enriched: ${enrichedId}`);
     }
   }
 
@@ -284,24 +403,34 @@ async function main() {
   if (DRY_RUN) {
     console.log("\n=== DRY RUN — no changes made ===");
     console.log(`Would archive: ${toArchive.length} records`);
+    console.log(`Would migrate associations for: ${bareToEnrichedMap.size} bare→enriched pairs`);
     await prisma.$disconnect();
     process.exit(0);
   }
 
-  // Step 4: Archive
   if (toArchive.length === 0) {
     console.log("\nNothing to archive. Done.");
     await prisma.$disconnect();
     process.exit(0);
   }
 
-  console.log(`\nStep 4: Archiving ${toArchive.length} bare duplicate records...`);
+  // Step 4: Migrate associations from bare records to their enriched counterparts
+  if (bareToEnrichedMap.size > 0) {
+    console.log(`\nStep 4: Migrating associations from ${bareToEnrichedMap.size} bare → enriched records...`);
+    const migStats = await migrateAssociations(bareToEnrichedMap);
+    console.log(`  Bare records checked: ${migStats.totalBareChecked}`);
+    console.log(`  Associations migrated: ${migStats.associationsMigrated}`);
+    console.log(`  Migration errors: ${migStats.migrationErrors}`);
+  }
+
+  // Step 5: Archive bare duplicates
+  console.log(`\nStep 5: Archiving ${toArchive.length} bare duplicate records...`);
   const { archived, failed } = await batchArchive(toArchive);
   console.log(`  Archived: ${archived}`);
   console.log(`  Failed: ${failed}`);
 
-  // Step 5: Clean up orphaned cache rows
-  console.log("\nStep 5: Cleaning up orphaned cache rows...");
+  // Step 6: Clean up orphaned cache rows
+  console.log("\nStep 6: Cleaning up orphaned cache rows...");
   const deletedCacheRows = await cleanupOrphanedCacheRows(toArchive);
   console.log(`  Deleted cache rows: ${deletedCacheRows}`);
 
