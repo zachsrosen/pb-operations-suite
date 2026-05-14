@@ -601,6 +601,15 @@ export default function PeDealsPage() {
 
   // Action items feed
   const [actionFeedOpen, setActionFeedOpen] = useState(true);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const dealLookup = useMemo(() => {
     const m = new Map<string, PeDeal>();
     for (const d of data?.deals ?? []) m.set(d.dealId, d);
@@ -1029,10 +1038,15 @@ export default function PeDealsPage() {
                 {actionItemsGroupedByDeal.map(([groupKey, items]) => {
                   const deal = items[0].dealId ? dealLookup.get(items[0].dealId) : null;
                   const dealName = items[0].dealId ? dealNameMap.get(items[0].dealId) : null;
+                  const isCollapsed = collapsedGroups.has(groupKey);
                   return (
                     <div key={groupKey} className="bg-surface-2/50 rounded-lg border border-border/30 overflow-hidden">
-                      {/* Deal header with links */}
-                      <div className="flex items-center gap-2 px-3 py-2 bg-surface-2/80 border-b border-border/20">
+                      {/* Deal header — clickable to collapse, links open in new tab */}
+                      <div
+                        className={`flex items-center gap-2 px-3 py-2 bg-surface-2/80 cursor-pointer hover:bg-surface-2 transition-colors ${isCollapsed ? "" : "border-b border-border/20"}`}
+                        onClick={() => toggleGroup(groupKey)}
+                      >
+                        <span className={`text-[10px] text-muted transition-transform ${isCollapsed ? "" : "rotate-90"}`}>▶</span>
                         <span className="text-xs font-medium text-foreground truncate" title={dealName ?? groupKey}>
                           {dealName ? truncateName(dealName, 32) : groupKey}
                         </span>
@@ -1047,6 +1061,7 @@ export default function PeDealsPage() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-[10px] text-orange-400 hover:text-orange-300 transition-colors"
                             title="Open in HubSpot"
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
@@ -1061,6 +1076,7 @@ export default function PeDealsPage() {
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors"
                             title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
@@ -1069,34 +1085,36 @@ export default function PeDealsPage() {
                           </a>
                         )}
                       </div>
-                      {/* Action items for this deal */}
-                      <div className="divide-y divide-border/20">
-                        {items.map((item) => (
-                          <div key={item.id} className="flex items-start gap-2 px-3 py-2 hover:bg-surface-2 transition-colors">
-                            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[11px] font-medium text-orange-400 truncate">{item.docLabel}</span>
-                                {item.errorCode && (
-                                  <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
+                      {/* Action items for this deal — collapsible */}
+                      {!isCollapsed && (
+                        <div className="divide-y divide-border/20">
+                          {items.map((item) => (
+                            <div key={item.id} className="flex items-start gap-2 px-3 py-2 hover:bg-surface-2 transition-colors">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-medium text-orange-400 truncate">{item.docLabel}</span>
+                                  {item.errorCode && (
+                                    <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
+                                  )}
+                                  {item.pageNumber && (
+                                    <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
+                                  )}
+                                </div>
+                                {item.notes && (
+                                  <p className="text-[10px] text-muted leading-tight mt-0.5 line-clamp-2">{item.notes}</p>
                                 )}
-                                {item.pageNumber && (
-                                  <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
-                                )}
-                              </div>
-                              {item.notes && (
-                                <p className="text-[10px] text-muted leading-tight mt-0.5 line-clamp-2">{item.notes}</p>
-                              )}
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-[9px] text-muted/60">{item.reviewer}</span>
-                                <span className="text-[9px] text-muted/40">
-                                  {new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                                </span>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[9px] text-muted/60">{item.reviewer}</span>
+                                  <span className="text-[9px] text-muted/40">
+                                    {new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

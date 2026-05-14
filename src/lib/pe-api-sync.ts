@@ -562,6 +562,46 @@ export async function syncFromPeApi(options?: {
           );
         }
       }
+
+      // Auto-resolve action items whose document is now APPROVED.
+      // When PE approves a doc after the installer fixes issues, the prior
+      // action items become historical — they no longer need attention.
+      const approvedDocs = docOps.filter((op) => op.status === PeDocStatus.APPROVED);
+      if (approvedDocs.length > 0) {
+        try {
+          // Build map: dealId → set of approved doc names
+          const approvedByDeal = new Map<string, Set<string>>();
+          for (const op of approvedDocs) {
+            const set = approvedByDeal.get(op.dealId) ?? new Set();
+            set.add(op.docName);
+            approvedByDeal.set(op.dealId, set);
+          }
+
+          // Resolve open action items for approved docs
+          let totalAutoResolved = 0;
+          for (const [dealId, docNames] of approvedByDeal) {
+            const { count } = await prisma.peActionItem.updateMany({
+              where: {
+                dealId,
+                docLabel: { in: [...docNames] },
+                resolvedAt: null,
+              },
+              data: { resolvedAt: new Date() },
+            });
+            totalAutoResolved += count;
+          }
+
+          if (totalAutoResolved > 0) {
+            console.warn(
+              `[pe-api-sync] Auto-resolved ${totalAutoResolved} action items for approved docs`,
+            );
+          }
+        } catch (err) {
+          result.errors.push(
+            `Failed to auto-resolve approved doc items: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
     }
 
     // -----------------------------------------------------------------------
