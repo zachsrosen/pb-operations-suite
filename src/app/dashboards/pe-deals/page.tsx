@@ -601,6 +601,11 @@ export default function PeDealsPage() {
 
   // Action items feed
   const [actionFeedOpen, setActionFeedOpen] = useState(true);
+  const dealLookup = useMemo(() => {
+    const m = new Map<string, PeDeal>();
+    for (const d of data?.deals ?? []) m.set(d.dealId, d);
+    return m;
+  }, [data]);
   const dealNameMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of data?.deals ?? []) m.set(d.dealId, d.dealName);
@@ -613,6 +618,23 @@ export default function PeDealsPage() {
       .filter((item) => !item.resolvedAt)
       .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
   }, [docsData]);
+
+  // Group action items by deal for the feed
+  const actionItemsGroupedByDeal = useMemo(() => {
+    const groups = new Map<string, PeActionItem[]>();
+    for (const item of openActionItems) {
+      const key = item.dealId ?? item.peProjectId;
+      const list = groups.get(key) ?? [];
+      list.push(item);
+      groups.set(key, list);
+    }
+    // Sort groups by most recent action item date (newest first)
+    return [...groups.entries()].sort((a, b) => {
+      const aDate = new Date(a[1][0].actionDate).getTime();
+      const bDate = new Date(b[1][0].actionDate).getTime();
+      return bDate - aDate;
+    });
+  }, [openActionItems]);
 
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -964,7 +986,7 @@ export default function PeDealsPage() {
         </Link>
       </div>
 
-      {/* Action Items Feed */}
+      {/* Action Items Feed — grouped by deal */}
       {openActionItems.length > 0 && (
         <div className="mb-5 bg-surface rounded-lg border border-orange-500/30 shadow-card overflow-hidden">
           <button
@@ -980,7 +1002,7 @@ export default function PeDealsPage() {
                 {openActionItems.length}
               </span>
               <span className="text-xs text-muted">
-                — PE reviewer feedback requiring response
+                across {actionItemsGroupedByDeal.length} deal{actionItemsGroupedByDeal.length !== 1 ? "s" : ""}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -1003,40 +1025,77 @@ export default function PeDealsPage() {
           </button>
           {actionFeedOpen && (
             <div className="px-4 pb-4 border-t border-border/30">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mt-3">
-                {openActionItems.map((item) => {
-                  const dealName = item.dealId ? dealNameMap.get(item.dealId) : null;
+              <div className="space-y-3 mt-3">
+                {actionItemsGroupedByDeal.map(([groupKey, items]) => {
+                  const deal = items[0].dealId ? dealLookup.get(items[0].dealId) : null;
+                  const dealName = items[0].dealId ? dealNameMap.get(items[0].dealId) : null;
                   return (
-                    <div
-                      key={item.id}
-                      className="flex items-start gap-2 bg-surface-2 rounded-lg px-3 py-2.5 border border-border/30 hover:border-orange-500/30 transition-colors"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                          <span className="text-xs font-medium text-foreground truncate max-w-[180px]" title={dealName ?? item.peProjectId}>
-                            {dealName ? truncateName(dealName, 24) : item.peProjectId}
-                          </span>
-                          <span className="text-[10px] text-muted">·</span>
-                          <span className="text-[10px] text-orange-400 truncate max-w-[140px]">{item.docLabel}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                          {item.errorCode && (
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
-                          )}
-                          {item.pageNumber && (
-                            <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
-                          )}
-                        </div>
-                        {item.notes && (
-                          <p className="text-[10px] text-muted leading-tight line-clamp-2">{item.notes}</p>
+                    <div key={groupKey} className="bg-surface-2/50 rounded-lg border border-border/30 overflow-hidden">
+                      {/* Deal header with links */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-surface-2/80 border-b border-border/20">
+                        <span className="text-xs font-medium text-foreground truncate" title={dealName ?? groupKey}>
+                          {dealName ? truncateName(dealName, 32) : groupKey}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-medium">
+                          {items.length}
+                        </span>
+                        <span className="flex-1" />
+                        {deal?.hubspotUrl && (
+                          <a
+                            href={deal.hubspotUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-orange-400 hover:text-orange-300 transition-colors"
+                            title="Open in HubSpot"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            </svg>
+                            HubSpot
+                          </a>
                         )}
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[9px] text-muted/60">{item.reviewer}</span>
-                          <span className="text-[9px] text-muted/40">
-                            {new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                          </span>
-                        </div>
+                        {deal?.pePortalUrl && (
+                          <a
+                            href={deal.pePortalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors"
+                            title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                            </svg>
+                            PE Portal
+                          </a>
+                        )}
+                      </div>
+                      {/* Action items for this deal */}
+                      <div className="divide-y divide-border/20">
+                        {items.map((item) => (
+                          <div key={item.id} className="flex items-start gap-2 px-3 py-2 hover:bg-surface-2 transition-colors">
+                            <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[11px] font-medium text-orange-400 truncate">{item.docLabel}</span>
+                                {item.errorCode && (
+                                  <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
+                                )}
+                                {item.pageNumber && (
+                                  <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
+                                )}
+                              </div>
+                              {item.notes && (
+                                <p className="text-[10px] text-muted leading-tight mt-0.5 line-clamp-2">{item.notes}</p>
+                              )}
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] text-muted/60">{item.reviewer}</span>
+                                <span className="text-[9px] text-muted/40">
+                                  {new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
