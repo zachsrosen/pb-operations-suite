@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, Fragment } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
@@ -19,24 +19,6 @@ interface ZuperJobLink {
   url: string;
 }
 
-interface PeDocReview {
-  docName: string;
-  status: string;
-  notes: string | null;
-  reviewedAt: string;
-}
-
-interface PeActionItemSummary {
-  id: string;
-  docLabel: string;
-  errorCode: string | null;
-  pageNumber: number | null;
-  reviewer: string;
-  notes: string | null;
-  actionDate: string;
-  resolved: boolean;
-}
-
 interface PePipelineDeal {
   dealId: string;
   dealName: string;
@@ -51,11 +33,6 @@ interface PePipelineDeal {
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
   zuperJobs: ZuperJobLink[];
-  docReviews: PeDocReview[];
-  actionItems: PeActionItemSummary[];
-  actionRequired: number;
-  docsApproved: number;
-  totalDocs: number;
 }
 
 interface PePipelineResponse {
@@ -122,43 +99,16 @@ function statusBadge(status: string | null) {
   );
 }
 
-function docStatusColor(status: string): string {
-  switch (status) {
-    case "APPROVED": return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-    case "ACTION_REQUIRED": return "bg-red-500/10 text-red-600 dark:text-red-400";
-    case "UNDER_REVIEW": return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
-    case "UPLOADED": return "bg-amber-500/10 text-amber-600 dark:text-amber-400";
-    case "REJECTED": return "bg-red-500/10 text-red-600 dark:text-red-400";
-    default: return "bg-zinc-500/10 text-zinc-500 dark:text-zinc-400";
-  }
-}
-
-function docStatusLabel(status: string): string {
-  switch (status) {
-    case "APPROVED": return "Approved";
-    case "ACTION_REQUIRED": return "Action Required";
-    case "UNDER_REVIEW": return "Under Review";
-    case "UPLOADED": return "Uploaded";
-    case "NOT_UPLOADED": return "Not Uploaded";
-    case "REJECTED": return "Rejected";
-    default: return status;
-  }
-}
-
 function fmtCurrency(n: number | null): string {
   if (n === null) return "—";
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // ---------------------------------------------------------------------------
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount" | "constructionStatus" | "inspectionStatus" | "actionRequired";
+type SortKey = "daysInStage" | "dealName" | "stage" | "location" | "amount" | "constructionStatus" | "inspectionStatus";
 
 function sortDeals(deals: PePipelineDeal[], key: SortKey, asc: boolean): PePipelineDeal[] {
   return [...deals].sort((a, b) => {
@@ -185,92 +135,9 @@ function sortDeals(deals: PePipelineDeal[], key: SortKey, asc: boolean): PePipel
       case "inspectionStatus":
         cmp = (a.finalInspectionStatus ?? "").localeCompare(b.finalInspectionStatus ?? "");
         break;
-      case "actionRequired":
-        cmp = a.actionRequired - b.actionRequired;
-        break;
     }
     return asc ? cmp : -cmp;
   });
-}
-
-// ---------------------------------------------------------------------------
-// Expandable detail row
-// ---------------------------------------------------------------------------
-
-function DocReviewDetail({ deal }: { deal: PePipelineDeal }) {
-  const openActions = deal.actionItems.filter((a) => !a.resolved);
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 p-4">
-      {/* Document statuses */}
-      <div>
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
-          Document Review ({deal.docsApproved}/{deal.totalDocs} approved)
-        </h4>
-        {deal.docReviews.length === 0 ? (
-          <p className="text-muted text-xs">No document review data yet. Run PE API sync.</p>
-        ) : (
-          <div className="space-y-1">
-            {deal.docReviews.map((doc) => (
-              <div key={doc.docName} className="flex items-center gap-2 text-xs">
-                <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-                  doc.status === "APPROVED" ? "bg-emerald-500" :
-                  doc.status === "ACTION_REQUIRED" ? "bg-red-500" :
-                  doc.status === "UNDER_REVIEW" ? "bg-blue-500" :
-                  doc.status === "UPLOADED" ? "bg-amber-500" :
-                  "bg-zinc-400"
-                }`} />
-                <span className="text-foreground truncate flex-1">{doc.docName}</span>
-                <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[0.6rem] font-semibold ${docStatusColor(doc.status)}`}>
-                  {docStatusLabel(doc.status)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Action items */}
-      <div>
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
-          Action Items ({openActions.length} open)
-        </h4>
-        {deal.actionItems.length === 0 ? (
-          <p className="text-muted text-xs">No action items.</p>
-        ) : (
-          <div className="space-y-2">
-            {deal.actionItems.map((item) => (
-              <div
-                key={item.id}
-                className={`rounded-md border p-2 text-xs ${
-                  item.resolved
-                    ? "border-emerald-500/20 bg-emerald-500/5 opacity-60"
-                    : "border-red-500/20 bg-red-500/5"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-foreground">{item.docLabel}</span>
-                  {item.errorCode && (
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[0.6rem] text-muted">
-                      {item.errorCode}
-                    </span>
-                  )}
-                  {item.pageNumber && (
-                    <span className="text-muted">p.{item.pageNumber}</span>
-                  )}
-                  <span className="ml-auto text-muted">{fmtDate(item.actionDate)}</span>
-                </div>
-                {item.notes && (
-                  <p className="text-muted leading-snug">{item.notes}</p>
-                )}
-                <p className="text-muted mt-0.5">Reviewer: {item.reviewer}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -286,16 +153,6 @@ export default function PePipelinePage() {
   const [activeTab, setActiveTab] = useState<StageTab>("all");
   const [sortKey, setSortKey] = useState<SortKey>("daysInStage");
   const [sortAsc, setSortAsc] = useState(false);
-  const [expandedDealIds, setExpandedDealIds] = useState<Set<string>>(new Set());
-
-  const toggleExpand = useCallback((dealId: string) => {
-    setExpandedDealIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(dealId)) next.delete(dealId);
-      else next.add(dealId);
-      return next;
-    });
-  }, []);
 
   const { data, isLoading } = useQuery<PePipelineResponse>({
     queryKey: queryKeys.pePipeline(),
@@ -349,23 +206,14 @@ export default function PePipelinePage() {
     const totalDays = filtered.reduce((sum, d) => sum + d.daysInStage, 0);
     const avgDays = filtered.length > 0 ? Math.round(totalDays / filtered.length) : 0;
     const stale = filtered.filter((d) => d.daysInStage >= STALE_THRESHOLD).length;
-    const withActions = filtered.filter((d) => d.actionRequired > 0).length;
     const constructionRevenue = filtered
       .filter((d) => d.stage === "Construction")
       .reduce((sum, d) => sum + (d.amount ?? 0), 0);
     const inspectionRevenue = filtered
       .filter((d) => d.stage === "Inspection")
       .reduce((sum, d) => sum + (d.amount ?? 0), 0);
-    return { inConstruction, inInspection, avgDays, stale, withActions, constructionRevenue, inspectionRevenue };
+    return { inConstruction, inInspection, avgDays, stale, constructionRevenue, inspectionRevenue };
   }, [filtered]);
-
-  // Column count for detail row colspan
-  const colCount = useMemo(() => {
-    let count = 6; // deal, location, stage, days, docs, amount
-    if (activeTab !== "Inspection") count++; // construction
-    if (activeTab !== "Construction") count++; // inspection
-    return count;
-  }, [activeTab]);
 
   // Sort handler
   function handleSort(key: SortKey) {
@@ -396,7 +244,7 @@ export default function PePipelinePage() {
       fullWidth
     >
       {/* Hero Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard
           label="In Construction"
           value={isLoading ? null : stats.inConstruction}
@@ -419,12 +267,6 @@ export default function PePipelinePage() {
           label={`Stale (${STALE_THRESHOLD}+ days)`}
           value={isLoading ? null : stats.stale}
           subtitle="need attention"
-          color="red"
-        />
-        <StatCard
-          label="Action Required"
-          value={isLoading ? null : stats.withActions}
-          subtitle="deals with PE issues"
           color="red"
         />
       </div>
@@ -510,80 +352,59 @@ export default function PePipelinePage() {
                 {renderSortHeader("Days in Stage", "daysInStage")}
                 {activeTab !== "Inspection" && renderSortHeader("Construction", "constructionStatus")}
                 {activeTab !== "Construction" && renderSortHeader("Inspection", "inspectionStatus")}
-                {renderSortHeader("PE Docs", "actionRequired")}
+                <th className="px-3 py-2">Zuper</th>
                 {renderSortHeader("Amount", "amount")}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((deal) => {
-                const isExpanded = expandedDealIds.has(deal.dealId);
-                return (
-                  <Fragment key={deal.dealId}><tr
-                      className={`bg-surface rounded-md cursor-pointer transition-colors hover:bg-surface-2 ${isExpanded ? "bg-surface-2" : ""}`}
-                      onClick={() => toggleExpand(deal.dealId)}
+              {filtered.map((deal) => (
+                <tr key={deal.dealId} className="bg-surface rounded-md">
+                  <td className="rounded-l-md px-3 py-3 font-medium">
+                    <a
+                      href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069"}/record/0-3/${deal.dealId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
                     >
-                      <td className="rounded-l-md px-3 py-3 font-medium">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-muted transition-transform text-xs ${isExpanded ? "rotate-90" : ""}`}>▶</span>
+                      {deal.dealName}
+                    </a>
+                  </td>
+                  <td className="px-3 py-3">{deal.location || "—"}</td>
+                  <td className="px-3 py-3">{stageBadge(deal.stage)}</td>
+                  <td className="px-3 py-3">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${daysBg(deal.daysInStage)} ${daysColor(deal.daysInStage)}`}
+                    >
+                      {deal.daysInStage}d
+                    </span>
+                  </td>
+                  {activeTab !== "Inspection" && <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>}
+                  {activeTab !== "Construction" && <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>}
+                  <td className="px-3 py-3">
+                    {deal.zuperJobs.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {deal.zuperJobs.map((job) => (
                           <a
-                            href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069"}/record/0-3/${deal.dealId}`}
+                            key={job.jobUid}
+                            href={job.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="hover:underline"
-                            onClick={(e) => e.stopPropagation()}
+                            title={`${job.category} — ${job.status}`}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors"
                           >
-                            {deal.dealName}
+                            {job.category === "Site Survey" ? "Survey" : job.category}
                           </a>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">{deal.location || "—"}</td>
-                      <td className="px-3 py-3">{stageBadge(deal.stage)}</td>
-                      <td className="px-3 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${daysBg(deal.daysInStage)} ${daysColor(deal.daysInStage)}`}
-                        >
-                          {deal.daysInStage}d
-                        </span>
-                      </td>
-                      {activeTab !== "Inspection" && <td className="px-3 py-3">{statusBadge(deal.constructionStatus)}</td>}
-                      {activeTab !== "Construction" && <td className="px-3 py-3">{statusBadge(deal.finalInspectionStatus)}</td>}
-                      <td className="px-3 py-3">
-                        {deal.totalDocs > 0 ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted">
-                              {deal.docsApproved}/{deal.totalDocs}
-                            </span>
-                            {/* Mini progress bar */}
-                            <div className="h-1.5 w-16 rounded-full bg-surface-2 overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-emerald-500 transition-all"
-                                style={{ width: `${deal.totalDocs > 0 ? (deal.docsApproved / deal.totalDocs) * 100 : 0}%` }}
-                              />
-                            </div>
-                            {deal.actionRequired > 0 && (
-                              <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[0.6rem] font-bold bg-red-500/10 text-red-600 dark:text-red-400">
-                                {deal.actionRequired} issue{deal.actionRequired !== 1 ? "s" : ""}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
-                        {fmtCurrency(deal.amount)}
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr key={`${deal.dealId}-detail`}>
-                        <td colSpan={colCount} className="bg-surface-2 rounded-md px-2 py-1">
-                          <DocReviewDetail deal={deal} />
-                        </td>
-                      </tr>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted">—</span>
                     )}
-                  </Fragment>
-                );
-              })}
+                  </td>
+                  <td className="rounded-r-md px-3 py-3 text-right font-mono text-xs">
+                    {fmtCurrency(deal.amount)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

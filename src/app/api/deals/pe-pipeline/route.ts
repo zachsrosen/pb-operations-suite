@@ -42,24 +42,6 @@ interface ZuperJobLink {
   url: string;
 }
 
-interface PeDocReview {
-  docName: string;
-  status: string;
-  notes: string | null;
-  reviewedAt: string;
-}
-
-interface PeActionItemSummary {
-  id: string;
-  docLabel: string;
-  errorCode: string | null;
-  pageNumber: number | null;
-  reviewer: string;
-  notes: string | null;
-  actionDate: string;
-  resolved: boolean;
-}
-
 interface PePipelineDeal {
   dealId: string;
   dealName: string;
@@ -74,11 +56,6 @@ interface PePipelineDeal {
   constructionStatus: string | null;
   finalInspectionStatus: string | null;
   zuperJobs: ZuperJobLink[];
-  docReviews: PeDocReview[];
-  actionItems: PeActionItemSummary[];
-  actionRequired: number;
-  docsApproved: number;
-  totalDocs: number;
 }
 
 function computeDaysInStage(dateEntered: string | null | undefined): number {
@@ -167,33 +144,12 @@ export async function GET(request: NextRequest) {
         await Promise.allSettled(contactPromises);
 
         const dealIds = results.map((r) => r.id);
-
-        // Parallel fetch: Zuper jobs, PE doc reviews, PE action items
-        const [zuperRows, docReviewRows, actionItemRows] = await Promise.all([
-          dealIds.length > 0
-            ? prisma.zuperJobCache.findMany({
-                where: { hubspotDealId: { in: dealIds } },
-                select: { jobUid: true, jobCategory: true, jobStatus: true, hubspotDealId: true },
-              })
-            : [],
-          dealIds.length > 0
-            ? prisma.peDocumentReview.findMany({
-                where: { dealId: { in: dealIds } },
-                select: { dealId: true, docName: true, status: true, notes: true, reviewedAt: true },
-              })
-            : [],
-          dealIds.length > 0
-            ? prisma.peActionItem.findMany({
-                where: { dealId: { in: dealIds } },
-                select: {
-                  id: true, dealId: true, docLabel: true, errorCode: true,
-                  pageNumber: true, reviewer: true, notes: true, actionDate: true, resolvedAt: true,
-                },
-                orderBy: { actionDate: "desc" },
-              })
-            : [],
-        ]);
-
+        const zuperRows = dealIds.length > 0
+          ? await prisma.zuperJobCache.findMany({
+              where: { hubspotDealId: { in: dealIds } },
+              select: { jobUid: true, jobCategory: true, jobStatus: true, hubspotDealId: true },
+            })
+          : [];
         const zuperByDeal = new Map<string, ZuperJobLink[]>();
         for (const row of zuperRows) {
           if (!row.hubspotDealId) continue;
@@ -204,42 +160,9 @@ export async function GET(request: NextRequest) {
           zuperByDeal.set(row.hubspotDealId, list);
         }
 
-        // Index doc reviews by deal
-        const docsByDeal = new Map<string, PeDocReview[]>();
-        for (const row of docReviewRows) {
-          const list = docsByDeal.get(row.dealId) ?? [];
-          list.push({
-            docName: row.docName,
-            status: row.status,
-            notes: row.notes,
-            reviewedAt: row.reviewedAt.toISOString(),
-          });
-          docsByDeal.set(row.dealId, list);
-        }
-
-        // Index action items by deal
-        const actionsByDeal = new Map<string, PeActionItemSummary[]>();
-        for (const row of actionItemRows) {
-          if (!row.dealId) continue;
-          const list = actionsByDeal.get(row.dealId) ?? [];
-          list.push({
-            id: row.id,
-            docLabel: row.docLabel,
-            errorCode: row.errorCode,
-            pageNumber: row.pageNumber,
-            reviewer: row.reviewer,
-            notes: row.notes,
-            actionDate: row.actionDate.toISOString(),
-            resolved: row.resolvedAt !== null,
-          });
-          actionsByDeal.set(row.dealId, list);
-        }
-
         const deals: PePipelineDeal[] = results.map((deal) => {
           const props = deal.properties;
           const stageId = props.dealstage ?? "";
-          const docs = docsByDeal.get(deal.id) ?? [];
-          const actions = actionsByDeal.get(deal.id) ?? [];
           return {
             dealId: deal.id,
             dealName: props.dealname ?? `Deal ${deal.id}`,
@@ -254,11 +177,6 @@ export async function GET(request: NextRequest) {
             constructionStatus: props.install_status || null,
             finalInspectionStatus: props.final_inspection_status || null,
             zuperJobs: zuperByDeal.get(deal.id) ?? [],
-            docReviews: docs,
-            actionItems: actions,
-            actionRequired: docs.filter((d) => d.status === "ACTION_REQUIRED").length,
-            docsApproved: docs.filter((d) => d.status === "APPROVED").length,
-            totalDocs: docs.length,
           };
         });
 

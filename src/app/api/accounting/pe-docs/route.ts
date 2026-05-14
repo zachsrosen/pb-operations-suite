@@ -11,11 +11,28 @@ export async function GET() {
   if (!user.roles.some((r: string) => ALLOWED_ROLES.includes(r)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const docs = await prisma.peDocumentReview.findMany({
-    orderBy: [{ dealId: "asc" }, { docName: "asc" }],
-  });
+  const [docs, actionItems] = await Promise.all([
+    prisma.peDocumentReview.findMany({
+      orderBy: [{ dealId: "asc" }, { docName: "asc" }],
+    }),
+    prisma.peActionItem.findMany({
+      where: { resolvedAt: null },
+      select: {
+        id: true,
+        dealId: true,
+        docLabel: true,
+        errorCode: true,
+        pageNumber: true,
+        reviewer: true,
+        notes: true,
+        actionDate: true,
+        resolvedAt: true,
+      },
+      orderBy: { actionDate: "desc" },
+    }),
+  ]);
 
-  return NextResponse.json({ docs });
+  return NextResponse.json({ docs, actionItems });
 }
 
 export async function POST(req: NextRequest) {
