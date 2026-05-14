@@ -11,7 +11,7 @@ export async function GET() {
   if (!user.roles.some((r: string) => ALLOWED_ROLES.includes(r)))
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const [docs, actionItems] = await Promise.all([
+  const [docs, actionItems, lastSyncRun] = await Promise.all([
     prisma.peDocumentReview.findMany({
       orderBy: [{ dealId: "asc" }, { docName: "asc" }],
     }),
@@ -20,6 +20,7 @@ export async function GET() {
       select: {
         id: true,
         dealId: true,
+        peProjectId: true,
         docLabel: true,
         errorCode: true,
         pageNumber: true,
@@ -27,12 +28,22 @@ export async function GET() {
         notes: true,
         actionDate: true,
         resolvedAt: true,
+        createdAt: true,
       },
       orderBy: { actionDate: "desc" },
     }),
+    prisma.peApiSyncRun.findFirst({
+      where: { status: { in: ["completed", "completed_with_errors"] } },
+      orderBy: { startedAt: "desc" },
+      select: { completedAt: true, startedAt: true, status: true },
+    }),
   ]);
 
-  return NextResponse.json({ docs, actionItems });
+  return NextResponse.json({
+    docs,
+    actionItems,
+    lastSync: lastSyncRun?.completedAt?.toISOString() ?? null,
+  });
 }
 
 export async function POST(req: NextRequest) {

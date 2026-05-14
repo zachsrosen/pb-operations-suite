@@ -15,10 +15,13 @@
  *   7. Track run in PeApiSyncRun
  *
  * Status derivation (API → PeDocStatus):
- *   - document.present=true  + has active action item  → ACTION_REQUIRED
- *   - document.present=true  + version > 0, no action  → APPROVED
- *   - document.present=true  + version = 0             → UPLOADED
- *   - document.present=false                            → NOT_UPLOADED
+ *   - document.present=true  + has active action item      → ACTION_REQUIRED
+ *   - document.present=true  + has review pass, no action  → APPROVED
+ *   - document.present=true  + no action items at all      → UPLOADED
+ *   - document.present=false                               → NOT_UPLOADED
+ *
+ * Source priority: portal scrape > email sync > API sync.
+ * The API sync never overwrites rows written by higher-authority sources.
  */
 
 import { prisma } from "@/lib/db";
@@ -47,6 +50,8 @@ export interface PeApiSyncResult {
   errors: string[];
   unmatchedProjects: string[];
   durationMs: number;
+  incremental: boolean;
+  since?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +98,46 @@ export function parseActionItemNotes(notes: string): {
 }
 
 // ---------------------------------------------------------------------------
+// Review pass detection — distinguish "no issues" from real action items
+// ---------------------------------------------------------------------------
+
+/**
+ * PE action items are historical activity log entries that never disappear.
+ * They include both review PASSES ("No issues found") and real FAILURES
+ * (error codes, specific issues). This function detects pass entries so
+ * they don't permanently mark a doc as ACTION_REQUIRED.
+ *
+ * Conservative approach: only classify as a pass if the notes match the
+ * known PE pass format EXACTLY — "{DocName}:\n\n  No issues found.\n\n0
+ * issues found." or just "No issues found." If the note contains ANY
+ * other substantive content, error codes, or page references, we treat
+ * it as a real action item (safe default).
+ */
+export function isReviewPass(notes: string | null | undefined): boolean {
+  if (!notes) return false;
+
+  // Normalize: collapse whitespace, trim
+  const normalized = notes.replace(/\s+/g, " ").trim().toLowerCase();
+
+  // Exact match: "no issues found." (simple pass)
+  if (normalized === "no issues found." || normalized === "no issues found") {
+    return true;
+  }
+
+  // Structured pass format: "{DocName}: No issues found. 0 issues found."
+  // e.g. "Conditional Progress Lien Waiver:\n\n  No issues found.\n\n0 issues found."
+  // After normalization: "conditional progress lien waiver: no issues found. 0 issues found."
+  if (/^[a-z][a-z\s()—\-\/]+:\s*no issues found\.?\s*0 issues found\.?$/.test(normalized)) {
+    return true;
+  }
+
+  // Safety: anything else — even if it contains "no issues found" — is NOT
+  // treated as a pass. This avoids false negatives where a reviewer writes
+  // something like "No issues found on X but Y needs fixing."
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Document status derivation
 // ---------------------------------------------------------------------------
 
@@ -100,19 +145,26 @@ export function parseActionItemNotes(notes: string): {
  * Derive PeDocStatus from API document info + action items.
  *
  * Logic:
- *   - Not present (present=false)        → NOT_UPLOADED
- *   - Present + has active action item    → ACTION_REQUIRED
- *   - Present + version > 0, no action   → APPROVED
- *   - Present + version = 0              → UPLOADED (just submitted, not yet reviewed)
+ *   - Not present (present=false)                   → NOT_UPLOADED
+ *   - Present + has active action item              → ACTION_REQUIRED
+ *   - Present + has review pass (no active actions)  → APPROVED
+ *   - Present + no action items at all               → UPLOADED
+ *
+ * Note: The API `version` field never exceeds 1 across the entire dataset,
+ * so it cannot distinguish APPROVED from UNDER_REVIEW. We rely on review
+ * pass action items ("No issues found") as the only API-based proof of
+ * approval. Docs that are present but have no action items at all get
+ * UPLOADED — the portal scrape or email sync can later upgrade to
+ * APPROVED or UNDER_REVIEW with real status data.
  */
 function deriveDocStatus(
   present: boolean,
-  version: number,
   hasActiveActionItem: boolean,
+  hasReviewPass: boolean,
 ): PeDocStatus {
   if (!present) return PeDocStatus.NOT_UPLOADED;
   if (hasActiveActionItem) return PeDocStatus.ACTION_REQUIRED;
-  if (version > 0) return PeDocStatus.APPROVED;
+  if (hasReviewPass) return PeDocStatus.APPROVED;
   return PeDocStatus.UPLOADED;
 }
 
@@ -141,18 +193,35 @@ function apiProjectToParsed(project: PeProjectListItem): ParsedProject {
 // ---------------------------------------------------------------------------
 
 /**
- * Run a full PE API sync: fetch all projects, derive document statuses,
- * fetch action items, and upsert everything into the database.
+ * Run a PE API sync: fetch projects (incrementally if possible), derive
+ * document statuses, fetch action items, and upsert into the database.
  *
- * @param options.skipActionItems - Skip fetching project details for action items (faster, doc-only sync)
- * @param options.concurrency - Max parallel detail fetches (default 5)
+ * Incremental sync: uses the `since` API parameter to only fetch projects
+ * modified since the last successful sync. Falls back to a full sync if
+ * no prior successful run exists.
+ *
+ * Time budget: detail fetches stop 30s before the deadline (default 280s)
+ * to leave room for DB upserts. Partial results are still saved.
+ *
+ * @param options.skipActionItems - Skip fetching project details (faster, doc-only sync)
+ * @param options.concurrency - Max parallel detail fetches (default 10)
+ * @param options.fullSync - Force a full sync ignoring last run timestamp
+ * @param options.timeBudgetMs - Total time budget in ms (default 280_000, ~4m40s)
  */
 export async function syncFromPeApi(options?: {
   skipActionItems?: boolean;
   concurrency?: number;
+  fullSync?: boolean;
+  timeBudgetMs?: number;
 }): Promise<PeApiSyncResult> {
   const startTime = Date.now();
-  const { skipActionItems = false, concurrency = 5 } = options ?? {};
+  const {
+    skipActionItems = false,
+    concurrency = 10,
+    fullSync = false,
+    timeBudgetMs = 280_000,
+  } = options ?? {};
+  const deadlineMs = startTime + timeBudgetMs;
 
   // Create run record
   const run = await prisma.peApiSyncRun.create({
@@ -168,14 +237,37 @@ export async function syncFromPeApi(options?: {
     errors: [],
     unmatchedProjects: [],
     durationMs: 0,
+    incremental: false,
+    since: undefined,
   };
 
   try {
     // -----------------------------------------------------------------------
-    // Step 1: Fetch all projects from PE API
+    // Step 1: Fetch projects from PE API (incremental if possible)
     // -----------------------------------------------------------------------
-    console.warn("[pe-api-sync] Fetching all PE projects...");
-    const projects = await listAllProjects();
+    let sinceDate: string | undefined;
+    if (!fullSync) {
+      const lastRun = await prisma.peApiSyncRun.findFirst({
+        where: { status: { in: ["completed", "completed_with_errors"] } },
+        orderBy: { startedAt: "desc" },
+        select: { startedAt: true },
+      });
+      if (lastRun?.startedAt) {
+        // Back up 1 hour from last run start to catch any in-flight updates
+        const since = new Date(lastRun.startedAt.getTime() - 60 * 60 * 1000);
+        sinceDate = since.toISOString();
+      }
+    }
+
+    result.incremental = !!sinceDate;
+    result.since = sinceDate;
+
+    console.warn(
+      sinceDate
+        ? `[pe-api-sync] Incremental sync since ${sinceDate}`
+        : "[pe-api-sync] Full sync (no prior run or fullSync=true)",
+    );
+    const projects = await listAllProjects(sinceDate ? { since: sinceDate } : undefined);
     result.projectsFetched = projects.length;
     console.warn(`[pe-api-sync] Fetched ${projects.length} projects`);
 
@@ -187,37 +279,57 @@ export async function syncFromPeApi(options?: {
     console.warn(`[pe-api-sync] Deal map has ${dealMap.size} entries`);
 
     // -----------------------------------------------------------------------
-    // Step 3: Match projects → deals & derive document statuses
+    // Step 3: Fetch project details (for action items + review passes)
+    //
+    // Optimization: only fetch details for projects that have at least one
+    // document marked present — no point checking action items for projects
+    // where every doc is absent.
     // -----------------------------------------------------------------------
 
-    // Build set of doc keys that have active action items (populated in step 4)
-    // Key format: "${peInternalId}:${docKey}" e.g. "abc-123:designPlan"
-    const activeActionDocs = new Set<string>();
-
-    // If we're fetching action items, do it now so we can use the data
-    // when deriving document statuses
     let detailMap = new Map<string, PeProjectDetail>();
 
     if (!skipActionItems) {
-      console.warn("[pe-api-sync] Fetching project details for action items...");
-      const allIds = projects.map((p) => p.id);
-      detailMap = await getProjectDetails(allIds, concurrency);
-      console.warn(`[pe-api-sync] Fetched details for ${detailMap.size} projects`);
-
-      // Build active action item doc set
-      for (const [, detail] of detailMap) {
-        for (const item of detail.actionItems ?? []) {
-          if (item.document?.id) {
-            activeActionDocs.add(`${detail.id}:${item.document.id}`);
+      const idsNeedingDetail = projects
+        .filter((p) => {
+          // Check if any document in this project is present
+          for (const docKey of Object.keys(PE_API_DOC_MAP)) {
+            const docInfo = p.documents[docKey];
+            if (docInfo?.present) return true;
           }
-        }
-      }
+          return false;
+        })
+        .map((p) => p.id);
+
+      console.warn(
+        `[pe-api-sync] Fetching details for ${idsNeedingDetail.length}/${projects.length} ` +
+          `projects with present docs (concurrency=${concurrency})...`,
+      );
+      detailMap = await getProjectDetails(idsNeedingDetail, concurrency, deadlineMs);
+      console.warn(`[pe-api-sync] Fetched details for ${detailMap.size} projects`);
     }
 
     // -----------------------------------------------------------------------
     // Step 4: Upsert document statuses into PeDocumentReview
     // -----------------------------------------------------------------------
     console.warn("[pe-api-sync] Upserting document statuses...");
+
+    // Build a set of "protected" doc review keys — rows written by
+    // higher-authority sources (portal scrape, email sync, manual review).
+    // The API sync must NOT overwrite these because the portal/email have
+    // real doc statuses while the API can only infer from action items.
+    const protectedRows = new Set<string>();
+    {
+      const nonApiRows = await prisma.peDocumentReview.findMany({
+        where: { reviewedBy: { not: "pe-api-sync" } },
+        select: { dealId: true, docName: true },
+      });
+      for (const row of nonApiRows) {
+        protectedRows.add(`${row.dealId}::${row.docName}`);
+      }
+      console.warn(
+        `[pe-api-sync] ${protectedRows.size} doc rows protected (portal/email/manual)`,
+      );
+    }
 
     interface DocUpsertOp {
       dealId: string;
@@ -227,6 +339,7 @@ export async function syncFromPeApi(options?: {
     }
 
     const docOps: DocUpsertOp[] = [];
+    let skippedProtected = 0;
 
     for (const project of projects) {
       const parsed = apiProjectToParsed(project);
@@ -241,22 +354,28 @@ export async function syncFromPeApi(options?: {
 
       result.projectsMatched++;
 
+      const detail = detailMap.get(project.id);
+
       // Iterate over the 15 canonical documents
       for (const [docKey, canonicalName] of Object.entries(PE_API_DOC_MAP)) {
         const docInfo = project.documents[docKey];
         if (!docInfo) continue;
 
-        // Check if this doc has an active action item
-        // Action items reference doc IDs in snake_case (e.g. "design_plan")
-        // We need to check all possible action doc IDs that map to this canonical name
-        const hasActiveAction = hasActiveActionForDoc(
-          project.id,
-          canonicalName,
-          activeActionDocs,
-          detailMap.get(project.id),
-        );
+        // Skip docs that have been written by a higher-authority source
+        if (protectedRows.has(`${dealId}::${canonicalName}`)) {
+          skippedProtected++;
+          continue;
+        }
 
-        const status = deriveDocStatus(docInfo.present, docInfo.version, hasActiveAction);
+        // Check action item status for this doc
+        const hasActiveAction = hasActiveActionForDoc(canonicalName, detail);
+        const hasPass = hasReviewPassForDoc(canonicalName, detail);
+
+        const status = deriveDocStatus(
+          docInfo.present,
+          hasActiveAction,
+          hasPass,
+        );
 
         const noteParts: string[] = [
           `Synced from PE API (${project.projectId})`,
@@ -272,6 +391,10 @@ export async function syncFromPeApi(options?: {
         });
       }
     }
+
+    console.warn(
+      `[pe-api-sync] ${docOps.length} doc upserts queued, ${skippedProtected} skipped (protected by portal/email)`,
+    );
 
     // Execute doc upserts in batches of 50
     const BATCH_SIZE = 50;
@@ -413,6 +536,72 @@ export async function syncFromPeApi(options?: {
           }
         }
       }
+
+      // Mark review passes as resolved so the UI can filter them out.
+      // PE API action items are immutable activity entries — review passes
+      // ("No issues found") never disappear, so we set resolvedAt to flag
+      // them as non-actionable.
+      const passIds = actionOps
+        .filter((op) => isReviewPass(op.notes))
+        .map((op) => op.actionItemId);
+      if (passIds.length > 0) {
+        try {
+          const { count: resolvedCount } = await prisma.peActionItem.updateMany({
+            where: {
+              actionItemId: { in: passIds },
+              resolvedAt: null,
+            },
+            data: { resolvedAt: new Date() },
+          });
+          if (resolvedCount > 0) {
+            console.warn(`[pe-api-sync] Marked ${resolvedCount} review passes as resolved`);
+          }
+        } catch (err) {
+          result.errors.push(
+            `Failed to mark review passes: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      // Auto-resolve action items whose document is now APPROVED.
+      // When PE approves a doc after the installer fixes issues, the prior
+      // action items become historical — they no longer need attention.
+      const approvedDocs = docOps.filter((op) => op.status === PeDocStatus.APPROVED);
+      if (approvedDocs.length > 0) {
+        try {
+          // Build map: dealId → set of approved doc names
+          const approvedByDeal = new Map<string, Set<string>>();
+          for (const op of approvedDocs) {
+            const set = approvedByDeal.get(op.dealId) ?? new Set();
+            set.add(op.docName);
+            approvedByDeal.set(op.dealId, set);
+          }
+
+          // Resolve open action items for approved docs
+          let totalAutoResolved = 0;
+          for (const [dealId, docNames] of approvedByDeal) {
+            const { count } = await prisma.peActionItem.updateMany({
+              where: {
+                dealId,
+                docLabel: { in: [...docNames] },
+                resolvedAt: null,
+              },
+              data: { resolvedAt: new Date() },
+            });
+            totalAutoResolved += count;
+          }
+
+          if (totalAutoResolved > 0) {
+            console.warn(
+              `[pe-api-sync] Auto-resolved ${totalAutoResolved} action items for approved docs`,
+            );
+          }
+        } catch (err) {
+          result.errors.push(
+            `Failed to auto-resolve approved doc items: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -469,11 +658,14 @@ export async function syncFromPeApi(options?: {
 /**
  * Check if a document (by canonical name) has an active action item
  * for a given project.
+ *
+ * PE API action items are immutable activity log entries — they include
+ * both review passes ("No issues found") and real failures. We filter
+ * out passes so a doc isn't permanently marked ACTION_REQUIRED after
+ * being reviewed and cleared.
  */
 function hasActiveActionForDoc(
-  peInternalId: string,
   canonicalDocName: string,
-  activeActionDocs: Set<string>,
   detail?: PeProjectDetail,
 ): boolean {
   if (!detail) return false;
@@ -487,6 +679,33 @@ function hasActiveActionForDoc(
       PE_ACTION_DOC_MAP[item.document.id] ?? item.document.label;
 
     if (actionCanonical === canonicalDocName) {
+      // Skip review passes — "No issues found. 0 issues found." etc.
+      if (isReviewPass(item.notes)) continue;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a document (by canonical name) has at least one review pass
+ * action item ("No issues found") — this is our only API-based proof
+ * that a doc was reviewed and approved.
+ */
+function hasReviewPassForDoc(
+  canonicalDocName: string,
+  detail?: PeProjectDetail,
+): boolean {
+  if (!detail) return false;
+
+  for (const item of detail.actionItems ?? []) {
+    if (!item.document?.id) continue;
+
+    const actionCanonical =
+      PE_ACTION_DOC_MAP[item.document.id] ?? item.document.label;
+
+    if (actionCanonical === canonicalDocName && isReviewPass(item.notes)) {
       return true;
     }
   }
