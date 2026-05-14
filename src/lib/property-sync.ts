@@ -25,6 +25,7 @@ import {
   fetchAssociatedIdsFromProperty,
   searchPropertyByPlaceId,
   searchPropertyByNormalizedAddress,
+  searchPropertyByStreetAddress,
   archiveProperty,
   type PropertyRecord,
 } from "@/lib/hubspot-property";
@@ -264,11 +265,11 @@ async function createNewProperty(args: {
     .trim();
 
   // ── HubSpot-side pre-check: don't create a duplicate object ──
-  // When `place_id` is present, that's our canonical dedup key. When it's
-  // not (rural / new-construction), fall back to an exact match on
-  // `normalized_address` — best-effort, not authoritative, but good enough
-  // to avoid spawning a second HubSpot Property for the same address.
+  // Three-tier dedup: placeId (canonical) → normalized_address → street
+  // component match (catches bare records created outside our webhook, e.g.
+  // by a HubSpot workflow "Create custom object" action).
   let hubspotObjectId: string | null = null;
+  let adoptedBareRecord = false;
   if (geo.placeId) {
     const existing = await searchPropertyByPlaceId(geo.placeId);
     if (existing) hubspotObjectId = existing.id;
@@ -278,10 +279,27 @@ async function createNewProperty(args: {
       const existing = await searchPropertyByNormalizedAddress(normalizedAddress);
       if (existing) hubspotObjectId = existing.id;
     } catch (err) {
-      // Search failure is non-fatal — we'll fall through to create. Log so
-      // we notice if the search endpoint is chronically failing.
       console.warn(
-        "[property-sync] searchPropertyByNormalizedAddress failed; falling through to create",
+        "[property-sync] searchPropertyByNormalizedAddress failed; falling through",
+        err,
+      );
+    }
+  }
+  if (!hubspotObjectId && geo.streetAddress && geo.city && geo.state && geo.zip) {
+    try {
+      const existing = await searchPropertyByStreetAddress({
+        streetAddress: geo.streetAddress,
+        city: geo.city,
+        state: geo.state,
+        zip: geo.zip,
+      });
+      if (existing) {
+        hubspotObjectId = existing.id;
+        adoptedBareRecord = true;
+      }
+    } catch (err) {
+      console.warn(
+        "[property-sync] searchPropertyByStreetAddress failed; falling through",
         err,
       );
     }
@@ -295,28 +313,45 @@ async function createNewProperty(args: {
   ]);
   const pbLocation = resolvePbLocationFromAddress(geo.zip, geo.state);
 
-  // Create the HubSpot Property record only if the pre-check found nothing.
-  // `address_hash` is intentionally NOT sent — it lives only in the local
-  // cache.
+  const enrichmentProps = {
+    record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
+    google_place_id: geo.placeId ?? "",
+    normalized_address: normalizedAddress,
+    full_address: geo.formattedAddress,
+    street_address: geo.streetAddress,
+    unit_number: unit ?? "",
+    city: geo.city,
+    state: geo.state,
+    zip: geo.zip,
+    county: geo.county ?? "",
+    latitude: geo.latitude,
+    longitude: geo.longitude,
+    ahj_name: ahj?.name ?? "",
+    utility_name: utility?.name ?? "",
+    pb_location: pbLocation ?? "",
+  };
+
+  // If we adopted a bare record (created outside our webhook), enrich it
+  // with geocode data so it's on par with records we create ourselves.
+  if (adoptedBareRecord && hubspotObjectId) {
+    try {
+      await updateProperty(hubspotObjectId, enrichmentProps);
+      console.log(
+        "[property-sync] enriched adopted bare Property %s",
+        hubspotObjectId,
+      );
+    } catch (err) {
+      console.warn(
+        "[property-sync] failed to enrich adopted bare Property %s",
+        hubspotObjectId,
+        err,
+      );
+    }
+  }
+
   let createdHubspotId: string | null = null;
   if (!hubspotObjectId) {
-    const hs = await createProperty({
-      record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
-      google_place_id: geo.placeId ?? "",
-      normalized_address: normalizedAddress,
-      full_address: geo.formattedAddress,
-      street_address: geo.streetAddress,
-      unit_number: unit ?? "",
-      city: geo.city,
-      state: geo.state,
-      zip: geo.zip,
-      county: geo.county ?? "",
-      latitude: geo.latitude,
-      longitude: geo.longitude,
-      ahj_name: ahj?.name ?? "",
-      utility_name: utility?.name ?? "",
-      pb_location: pbLocation ?? "",
-    });
+    const hs = await createProperty(enrichmentProps);
     hubspotObjectId = hs.id;
     createdHubspotId = hs.id;
   }
@@ -1109,11 +1144,17 @@ export async function upsertPropertyFromGeocode(args: {
     zip: geo.zip,
   });
 
-  const existing = geo.placeId
+  // Two-key local dedup: check placeId first (canonical), then addressHash
+  // as fallback. Previous logic was an exclusive OR that missed cases where
+  // Google returned a different placeId for the same physical address.
+  let existing = geo.placeId
     ? await prisma.hubSpotPropertyCache.findUnique({
         where: { googlePlaceId: geo.placeId },
       })
-    : await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
+    : null;
+  if (!existing) {
+    existing = await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
+  }
 
   if (existing) {
     return {

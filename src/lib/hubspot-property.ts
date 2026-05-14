@@ -506,6 +506,53 @@ export async function searchPropertyByNormalizedAddress(
 }
 
 /**
+ * Fuzzy fallback: search by `street_address` + `city` + `state` + `zip`.
+ *
+ * Catches bare Property records created outside our webhook (e.g. by a HubSpot
+ * workflow's "Create custom object" action) that have no `google_place_id` and
+ * no `normalized_address`. Without this, our dedup pipeline misses them and
+ * creates a second, enriched duplicate.
+ *
+ * Returns the first match (if any). Because this uses four separate EQ filters
+ * (AND), it can false-positive on unit-differentiated addresses — callers
+ * should treat it as "likely same property, adopt and enrich" rather than a
+ * canonical dedup key.
+ */
+export async function searchPropertyByStreetAddress(parts: {
+  streetAddress: string;
+  city: string;
+  state: string;
+  zip: string;
+}): Promise<PropertyRecord | null> {
+  if (!parts.streetAddress || !parts.city || !parts.state || !parts.zip) return null;
+  const response = await withRetry(() =>
+    hubspotClient.crm.objects.searchApi.doSearch(PROPERTY_OBJECT_TYPE(), {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "street_address", operator: FilterOperatorEnum.Eq, value: parts.streetAddress },
+            { propertyName: "city", operator: FilterOperatorEnum.Eq, value: parts.city },
+            { propertyName: "state", operator: FilterOperatorEnum.Eq, value: parts.state },
+            { propertyName: "zip", operator: FilterOperatorEnum.Eq, value: parts.zip },
+          ],
+        },
+      ],
+      properties: [...PROPERTY_PROPERTIES],
+      limit: 1,
+      after: "0",
+      sorts: [],
+      query: "",
+    })
+  );
+  const r = response.results[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    properties: r.properties as Record<string, string | null>,
+  };
+}
+
+/**
  * Archive (soft-delete) a Property record. Used to clean up orphan HubSpot
  * objects produced when our create-side dedup loses a race — see
  * `createNewProperty` in `property-sync.ts`. Best-effort: callers must handle
