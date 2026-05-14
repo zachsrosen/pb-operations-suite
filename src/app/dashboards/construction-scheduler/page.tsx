@@ -2654,9 +2654,17 @@ export default function ConstructionSchedulerPage() {
               <button
                 onClick={confirmSchedule}
                 disabled={syncingToZuper || !locationHasCapacity || selectedAssigneeNames.length === 0}
-                className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 rounded-lg font-medium disabled:opacity-50"
+                className={`px-4 py-2 text-sm rounded-lg font-medium disabled:opacity-50 ${
+                  syncToZuper
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-amber-600 hover:bg-amber-700"
+                }`}
               >
-                {syncingToZuper ? "Syncing..." : "Confirm Schedule"}
+                {syncingToZuper
+                  ? "Syncing..."
+                  : syncToZuper
+                    ? "Confirm & Sync"
+                    : "Save Tentative"}
               </button>
             </div>
           </div>

@@ -611,8 +611,13 @@ export function SubJobScheduleModal({
           >
             <div className="px-5 py-4 border-b border-t-border">
               <h3 id="subjob-confirm-title" className="text-base font-semibold text-foreground">
-                Confirm Schedule
+                {syncToZuper ? "Confirm Schedule" : "Save Tentative Schedule"}
               </h3>
+              <p className={`text-xs mt-1 ${syncToZuper ? "text-cyan-400" : "text-amber-400"}`}>
+                {syncToZuper
+                  ? "This will sync to Zuper — crew and customer will be notified."
+                  : "Tentative only — nothing syncs to Zuper until you confirm later."}
+              </p>
             </div>
             <div className="px-5 py-4 flex flex-col gap-3 max-h-[50vh] overflow-y-auto">
               {schedules.map((s) => (
@@ -659,9 +664,17 @@ export function SubJobScheduleModal({
               <button
                 onClick={handleConfirm}
                 disabled={submitting}
-                className="px-4 py-2 text-sm rounded-lg font-medium text-white bg-orange-500 hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`px-4 py-2 text-sm rounded-lg font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  syncToZuper
+                    ? "bg-orange-500 hover:bg-orange-600"
+                    : "bg-amber-600 hover:bg-amber-700"
+                }`}
               >
-                {submitting ? "Scheduling..." : "Confirm"}
+                {submitting
+                  ? "Scheduling..."
+                  : syncToZuper
+                    ? "Confirm & Sync"
+                    : "Save Tentative"}
               </button>
             </div>
           </div>

@@ -6126,9 +6126,17 @@ export default function SchedulerPage() {
               <button
                 onClick={confirmSchedule}
                 disabled={syncingToZuper}
-                className="px-3.5 py-2 rounded-md bg-orange-500 border border-orange-500 text-black text-[0.75rem] font-semibold cursor-pointer hover:bg-orange-600 transition-colors disabled:opacity-50"
+                className={`px-3.5 py-2 rounded-md border text-black text-[0.75rem] font-semibold cursor-pointer transition-colors disabled:opacity-50 ${
+                  syncToZuper
+                    ? "bg-orange-500 border-orange-500 hover:bg-orange-600"
+                    : "bg-amber-500 border-amber-500 hover:bg-amber-600"
+                }`}
               >
-                {syncingToZuper ? "Syncing..." : "Schedule"}
+                {syncingToZuper
+                  ? "Syncing..."
+                  : syncToZuper
+                    ? "Schedule & Sync"
+                    : "Save Tentative"}
               </button>
             </div>
           </div>
