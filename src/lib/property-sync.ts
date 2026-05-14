@@ -25,6 +25,7 @@ import {
   fetchAssociatedIdsFromProperty,
   searchPropertyByPlaceId,
   searchPropertyByNormalizedAddress,
+  searchPropertyByStreetAddress,
   archiveProperty,
   type PropertyRecord,
 } from "@/lib/hubspot-property";
@@ -130,26 +131,38 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
   if (!contact) return { status: "skipped", reason: "contact not found" };
 
   const p = contact.properties;
-  if (!p.address || !p.city || !p.state || !p.zip) {
+  const street = (p.address ?? "").trim();
+  const city = (p.city ?? "").trim();
+  const state = (p.state ?? "").trim();
+  const zip = (p.zip ?? "").trim();
+  const unit = (p.address2 ?? "").trim() || undefined;
+  const country = (p.country ?? "").trim();
+
+  if (!street || !city || !state || !zip) {
     return { status: "skipped", reason: "address incomplete" };
+  }
+
+  const quality = validateAddressQuality(street);
+  if (quality) {
+    return { status: "skipped", reason: quality };
   }
 
   // 3) Geocode + find-or-create — delegated to `upsertPropertyFromGeocode`
   //    so the admin manual-create route can reuse the exact same path.
   const upsert = await upsertPropertyFromGeocode({
-    street: p.address,
-    unit: p.address2,
-    city: p.city,
-    state: p.state,
-    zip: p.zip,
-    country: p.country ?? "USA",
+    street,
+    unit,
+    city,
+    state,
+    zip,
+    country: country || "USA",
   });
   if ("status" in upsert) {
-    await logActivity("PROPERTY_SYNC_FAILED", "Geocode failed for contact", {
+    await logActivity("PROPERTY_SYNC_FAILED", "Property sync rejected for contact", {
       contactId,
-      reason: "geocode miss",
+      reason: upsert.reason,
     });
-    return { status: "failed", reason: "geocode failed" };
+    return { status: "failed", reason: upsert.reason };
   }
 
   const result = upsert;
@@ -208,6 +221,28 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
 }
 
 // ---------------------------------------------------------------------------
+// Address quality validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a skip-reason string if the street value is obviously not a real
+ * address (email, URL, placeholder text, numeric-only fragment). Returns
+ * null when the address looks plausible.
+ */
+function validateAddressQuality(street: string): string | null {
+  if (street.includes("@")) return "street contains email";
+  if (/^https?:\/\//i.test(street)) return "street is a URL";
+  if (/\.(com|org|net|io|gov)\b/i.test(street)) return "street contains domain";
+  if (/^[0-9]+$/.test(street)) return "street is numeric-only";
+  if (street.length < 5) return "street too short";
+  // Reject strings with no digits — real US addresses almost always have a
+  // street number. Exceptions (e.g. "Main Street") are rare enough that
+  // missing them is better than creating garbage records.
+  if (!/\d/.test(street)) return "street has no number";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
@@ -230,11 +265,11 @@ async function createNewProperty(args: {
     .trim();
 
   // ── HubSpot-side pre-check: don't create a duplicate object ──
-  // When `place_id` is present, that's our canonical dedup key. When it's
-  // not (rural / new-construction), fall back to an exact match on
-  // `normalized_address` — best-effort, not authoritative, but good enough
-  // to avoid spawning a second HubSpot Property for the same address.
+  // Three-tier dedup: placeId (canonical) → normalized_address → street
+  // component match (catches bare records created outside our webhook, e.g.
+  // by a HubSpot workflow "Create custom object" action).
   let hubspotObjectId: string | null = null;
+  let adoptedBareRecord = false;
   if (geo.placeId) {
     const existing = await searchPropertyByPlaceId(geo.placeId);
     if (existing) hubspotObjectId = existing.id;
@@ -244,10 +279,27 @@ async function createNewProperty(args: {
       const existing = await searchPropertyByNormalizedAddress(normalizedAddress);
       if (existing) hubspotObjectId = existing.id;
     } catch (err) {
-      // Search failure is non-fatal — we'll fall through to create. Log so
-      // we notice if the search endpoint is chronically failing.
       console.warn(
-        "[property-sync] searchPropertyByNormalizedAddress failed; falling through to create",
+        "[property-sync] searchPropertyByNormalizedAddress failed; falling through",
+        err,
+      );
+    }
+  }
+  if (!hubspotObjectId && geo.streetAddress && geo.city && geo.state && geo.zip) {
+    try {
+      const existing = await searchPropertyByStreetAddress({
+        streetAddress: geo.streetAddress,
+        city: geo.city,
+        state: geo.state,
+        zip: geo.zip,
+      });
+      if (existing) {
+        hubspotObjectId = existing.id;
+        adoptedBareRecord = true;
+      }
+    } catch (err) {
+      console.warn(
+        "[property-sync] searchPropertyByStreetAddress failed; falling through",
         err,
       );
     }
@@ -261,28 +313,45 @@ async function createNewProperty(args: {
   ]);
   const pbLocation = resolvePbLocationFromAddress(geo.zip, geo.state);
 
-  // Create the HubSpot Property record only if the pre-check found nothing.
-  // `address_hash` is intentionally NOT sent — it lives only in the local
-  // cache.
+  const enrichmentProps = {
+    record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
+    google_place_id: geo.placeId ?? "",
+    normalized_address: normalizedAddress,
+    full_address: geo.formattedAddress,
+    street_address: geo.streetAddress,
+    unit_number: unit ?? "",
+    city: geo.city,
+    state: geo.state,
+    zip: geo.zip,
+    county: geo.county ?? "",
+    latitude: geo.latitude,
+    longitude: geo.longitude,
+    ahj_name: ahj?.name ?? "",
+    utility_name: utility?.name ?? "",
+    pb_location: pbLocation ?? "",
+  };
+
+  // If we adopted a bare record (created outside our webhook), enrich it
+  // with geocode data so it's on par with records we create ourselves.
+  if (adoptedBareRecord && hubspotObjectId) {
+    try {
+      await updateProperty(hubspotObjectId, enrichmentProps);
+      console.log(
+        "[property-sync] enriched adopted bare Property %s",
+        hubspotObjectId,
+      );
+    } catch (err) {
+      console.warn(
+        "[property-sync] failed to enrich adopted bare Property %s",
+        hubspotObjectId,
+        err,
+      );
+    }
+  }
+
   let createdHubspotId: string | null = null;
   if (!hubspotObjectId) {
-    const hs = await createProperty({
-      record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
-      google_place_id: geo.placeId ?? "",
-      normalized_address: normalizedAddress,
-      full_address: geo.formattedAddress,
-      street_address: geo.streetAddress,
-      unit_number: unit ?? "",
-      city: geo.city,
-      state: geo.state,
-      zip: geo.zip,
-      county: geo.county ?? "",
-      latitude: geo.latitude,
-      longitude: geo.longitude,
-      ahj_name: ahj?.name ?? "",
-      utility_name: utility?.name ?? "",
-      pb_location: pbLocation ?? "",
-    });
+    const hs = await createProperty(enrichmentProps);
     hubspotObjectId = hs.id;
     createdHubspotId = hs.id;
   }
@@ -1029,8 +1098,8 @@ async function refreshAssociationLinks(
  * `/api/properties/manual-create` for admin-driven creation. Intentionally
  * contact-agnostic: callers handle association, watermarks, and rollups.
  *
- * Returns `{ status: "failed", reason: "geocode failed" }` on geocode miss —
- * does NOT throw and does NOT log activity (callers decide how to surface).
+ * Returns `{ status: "failed", reason }` on geocode miss, non-US address,
+ * or missing street component. Does NOT throw (callers decide how to surface).
  */
 export async function upsertPropertyFromGeocode(args: {
   street: string;
@@ -1041,7 +1110,7 @@ export async function upsertPropertyFromGeocode(args: {
   country?: string;
 }): Promise<
   | { propertyCacheId: string; hubspotObjectId: string; created: boolean }
-  | { status: "failed"; reason: "geocode failed" }
+  | { status: "failed"; reason: string }
 > {
   const geo = await geocodeAddress({
     street: args.street,
@@ -1055,6 +1124,18 @@ export async function upsertPropertyFromGeocode(args: {
     return { status: "failed", reason: "geocode failed" };
   }
 
+  // Only create properties for PB's operating states.
+  const ALLOWED_STATES = new Set(["CO", "CA"]);
+  if (!geo.state || !ALLOWED_STATES.has(geo.state.toUpperCase())) {
+    return { status: "failed", reason: `outside operating area: ${geo.state || geo.country || "unknown"}` };
+  }
+
+  // Reject geocode results with no street component — indicates the input
+  // wasn't a real address (placeholder text, company names, etc.)
+  if (!geo.streetAddress) {
+    return { status: "failed", reason: "geocode returned no street component" };
+  }
+
   const hash = addressHash({
     street: geo.streetAddress,
     unit: args.unit ?? null,
@@ -1063,11 +1144,17 @@ export async function upsertPropertyFromGeocode(args: {
     zip: geo.zip,
   });
 
-  const existing = geo.placeId
+  // Two-key local dedup: check placeId first (canonical), then addressHash
+  // as fallback. Previous logic was an exclusive OR that missed cases where
+  // Google returned a different placeId for the same physical address.
+  let existing = geo.placeId
     ? await prisma.hubSpotPropertyCache.findUnique({
         where: { googlePlaceId: geo.placeId },
       })
-    : await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
+    : null;
+  if (!existing) {
+    existing = await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
+  }
 
   if (existing) {
     return {

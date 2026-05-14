@@ -16,6 +16,7 @@ import type { PropertyDetail } from "@/lib/property-detail";
 import { getInternalDealUrl } from "@/lib/external-links";
 import PropertyEquipmentList from "./property/PropertyEquipmentList";
 import PropertyOwnershipList from "./property/PropertyOwnershipList";
+import PropertyActivityTimeline from "./property/PropertyActivityTimeline";
 
 const UI_PROPERTY_VIEWS_ENABLED =
   process.env.NEXT_PUBLIC_UI_PROPERTY_VIEWS_ENABLED === "true";
@@ -308,6 +309,16 @@ export default function PropertyDrawer({
                     ))}
                   </ul>
                 )}
+              </section>
+
+              {/* Activity timeline */}
+              <section>
+                <h4 className="mb-2 text-sm font-semibold text-foreground">
+                  Activity
+                </h4>
+                <PropertyActivityTimeline
+                  hubspotObjectId={detail.hubspotObjectId}
+                />
               </section>
 
               {/* Property details placeholder */}
