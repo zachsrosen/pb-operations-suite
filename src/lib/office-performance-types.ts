@@ -166,6 +166,18 @@ export interface InspectionData {
   compliance?: SectionCompliance;
 }
 
+export interface ServiceData {
+  openTickets: number;
+  resolvedMtd: number;
+  avgDaysToResolve: number;
+  dealsByStage: StageCount[];
+  activeDeals: number;
+  compliance?: SectionCompliance;
+  leaderboard: EnrichedPersonStat[];
+  deals: DealRow[];
+  totalCount: number;
+}
+
 /** Per-crew-member YTD stats for Team Results slide */
 export interface CrewMemberStats {
   name: string;
@@ -201,6 +213,7 @@ export interface OfficePerformanceData {
   surveys: SurveyData;
   installs: InstallData;
   inspections: InspectionData;
+  service?: ServiceData;
 }
 
 export type OfficeMetricName =
@@ -210,7 +223,7 @@ export type OfficeMetricName =
   | "projects_completed";
 
 /** Carousel section identifiers */
-export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections" | "allLocations" | "goals" | "pipeline" | "calendar" | "calendarWeek" | "calendarDay";
+export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections" | "service" | "allLocations" | "goals" | "pipeline" | "calendar" | "calendarWeek" | "calendarDay";
 
 export const CAROUSEL_SECTIONS: CarouselSection[] = [
   "teamResults",
@@ -222,6 +235,7 @@ export const CAROUSEL_SECTIONS: CarouselSection[] = [
   "surveys",
   "installs",
   "inspections",
+  "service",
   "allLocations",
 ];
 
@@ -235,6 +249,7 @@ export const SECTION_COLORS: Record<CarouselSection, string> = {
   surveys: "#3b82f6",      // blue
   installs: "#22c55e",     // green
   inspections: "#06b6d4",  // cyan
+  service: "#ef4444",      // red
   allLocations: "#a855f7", // purple
 };
 
@@ -248,6 +263,7 @@ export const SECTION_LABELS: Record<CarouselSection, string> = {
   surveys: "SURVEYS",
   installs: "INSTALLS",
   inspections: "INSPECTIONS",
+  service: "SERVICE",
   allLocations: "ALL LOCATIONS",
 };
 

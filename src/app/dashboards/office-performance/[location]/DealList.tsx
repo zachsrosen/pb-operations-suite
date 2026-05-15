@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DealRow } from "@/lib/office-performance-types";
 
-type DealListVariant = "survey" | "install" | "inspection";
+type DealListVariant = "survey" | "install" | "inspection" | "service";
 
 interface DealListProps {
   deals: DealRow[];
@@ -46,7 +46,7 @@ export default function DealList({ deals, variant = "survey" }: DealListProps) {
 
   if (deals.length === 0) return null;
 
-  const showAmount = variant === "survey";
+  const showAmount = variant === "survey" || variant === "service";
   const showPE = variant === "install" || variant === "inspection";
 
   return (
