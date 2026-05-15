@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getObjectEngagements } from "@/lib/hubspot-engagements";
 import { withRetry } from "@/lib/hubspot-custom-objects";
+import { getStageMaps } from "@/lib/deals-pipeline";
 import { Client } from "@hubspot/api-client";
 import type { Engagement } from "@/components/deal-detail/types";
 import type { PropertyDetail } from "@/lib/property-detail";
@@ -180,8 +181,10 @@ const PIPELINE_NAMES: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 async function loadPropertyWithLinks(propertyId: string) {
+  // Accept either hubspotObjectId (numeric string) or Prisma cuid
+  const isHubSpotId = /^\d+$/.test(propertyId);
   return prisma.hubSpotPropertyCache.findUnique({
-    where: { hubspotObjectId: propertyId },
+    where: isHubSpotId ? { hubspotObjectId: propertyId } : { id: propertyId },
     include: {
       dealLinks: { select: { dealId: true }, orderBy: { associatedAt: "desc" } },
       ticketLinks: { select: { ticketId: true }, orderBy: { associatedAt: "desc" } },
@@ -267,30 +270,42 @@ async function fetchDeals(propertyId: string): Promise<DealsTabData> {
   const dealIds = property.dealLinks.map((l) => l.dealId);
   if (dealIds.length === 0) return { deals: [], total: 0 };
 
-  // Batch-read from HubSpot
+  // Batch-read from HubSpot + resolve stage names in parallel
   try {
-    const response = await withRetry(() =>
-      hubspotClient.crm.deals.batchApi.read({
-        inputs: dealIds.map((id) => ({ id })),
-        properties: [
-          "dealname",
-          "dealstage",
-          "pipeline",
-          "amount",
-          "closedate",
-          "hubspot_owner_id",
-        ],
-        propertiesWithHistory: [],
-      }),
-    );
+    const [response, stageMaps] = await Promise.all([
+      withRetry(() =>
+        hubspotClient.crm.deals.batchApi.read({
+          inputs: dealIds.map((id) => ({ id })),
+          properties: [
+            "dealname",
+            "dealstage",
+            "pipeline",
+            "amount",
+            "closedate",
+            "hubspot_owner_id",
+          ],
+          propertiesWithHistory: [],
+        }),
+      ),
+      getStageMaps(),
+    ]);
+
+    // Build a flat stageId→name lookup from all pipelines
+    const flatStageMap: Record<string, string> = {};
+    for (const pipelineStages of Object.values(stageMaps)) {
+      for (const [stageId, stageName] of Object.entries(pipelineStages)) {
+        flatStageMap[stageId] = stageName;
+      }
+    }
 
     const deals: HubDeal[] = response.results.map((r) => {
       const props = r.properties as Record<string, string>;
+      const stageId = props.dealstage || "";
       return {
         id: r.id,
         name: props.dealname || `Deal ${r.id}`,
-        stage: props.dealstage || "",
-        stageName: props.dealstage || "",
+        stage: stageId,
+        stageName: flatStageMap[stageId] || stageId,
         pipeline: props.pipeline || "",
         pipelineName: PIPELINE_NAMES[props.pipeline] || props.pipeline || "",
         amount: props.amount ? Number(props.amount) : null,

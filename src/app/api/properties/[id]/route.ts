@@ -121,8 +121,10 @@ export async function GET(
 
     const { id } = await params;
 
+    // Accept either hubspotObjectId (numeric string) or Prisma cuid
+    const isHubSpotId = /^\d+$/.test(id);
     const property = await prisma.hubSpotPropertyCache.findUnique({
-      where: { hubspotObjectId: id },
+      where: isHubSpotId ? { hubspotObjectId: id } : { id },
       include: {
         contactLinks: { orderBy: { associatedAt: "desc" } },
         dealLinks: true,
