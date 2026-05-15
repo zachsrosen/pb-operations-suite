@@ -55,17 +55,25 @@ function dealStageToMilestone(stageLabel: string): DealMilestone {
   return "pre-construction";
 }
 
-const M1_COMPLETE_STATUSES = new Set(["Paid"]);
-const M2_COMPLETE_STATUSES = new Set(["Paid"]);
+const M1_PAID = new Set(["Paid"]);
+const M2_PAID = new Set(["Paid"]);
+const DONE_STATUSES = new Set(["Approved", "Paid"]);
+
+/** Both M1 and M2 fully approved or paid — belongs on Complete tab only */
+function isBothDone(d: PeDeal): boolean {
+  return DONE_STATUSES.has(d.peM1Status ?? "") && DONE_STATUSES.has(d.peM2Status ?? "");
+}
 
 // ---------------------------------------------------------------------------
 // Tab types + per-tab helpers
 // ---------------------------------------------------------------------------
 
-type Tab = "preconstruction" | "construction" | "m1" | "m2";
+type Tab = "preconstruction" | "construction" | "m1" | "m2" | "complete";
 
 function getStatus(d: PeDeal, tab: Tab): string | null {
-  return tab === "m2" ? d.peM2Status : d.peM1Status;
+  if (tab === "m2") return d.peM2Status;
+  if (tab === "complete") return d.peM2Status; // show M2 status on complete tab
+  return d.peM1Status;
 }
 
 function getPayment(d: PeDeal, tab: Tab): number | null {
@@ -93,7 +101,9 @@ function tabPaymentLabel(tab: Tab): string {
 }
 
 function tabStatusLabel(tab: Tab): string {
-  return tab === "m2" ? "M2 Status" : "M1 Status";
+  if (tab === "m2") return "M2 Status";
+  if (tab === "complete") return "M2 Status";
+  return "M1 Status";
 }
 
 // ---------------------------------------------------------------------------
@@ -235,21 +245,30 @@ export default function PeSubmissionGapPage() {
     [allDeals],
   );
 
-  // M1 = PTO stage only, not yet approved/paid
+  // M1 = PTO + Close Out stages, M1 not yet paid, excluding fully-done deals
   const m1GapDeals = useMemo(
+    () => allDeals.filter((d) => {
+      const m = dealStageToMilestone(d.dealStageLabel);
+      return (m === "pto" || m === "close-out") &&
+        !M1_PAID.has(d.peM1Status ?? "") &&
+        !isBothDone(d);
+    }),
+    [allDeals],
+  );
+
+  // M2 = Close Out stage, M2 not yet paid, excluding fully-done deals
+  const m2GapDeals = useMemo(
     () => allDeals.filter((d) =>
-      dealStageToMilestone(d.dealStageLabel) === "pto" &&
-      !M1_COMPLETE_STATUSES.has(d.peM1Status ?? ""),
+      dealStageToMilestone(d.dealStageLabel) === "close-out" &&
+      !M2_PAID.has(d.peM2Status ?? "") &&
+      !isBothDone(d),
     ),
     [allDeals],
   );
 
-  // M2 = Close Out stage only, not yet approved/paid
-  const m2GapDeals = useMemo(
-    () => allDeals.filter((d) =>
-      dealStageToMilestone(d.dealStageLabel) === "close-out" &&
-      !M2_COMPLETE_STATUSES.has(d.peM2Status ?? ""),
-    ),
+  // Complete = both M1 and M2 approved or paid (any post-construction stage)
+  const completeDeals = useMemo(
+    () => allDeals.filter((d) => isBothDone(d)),
     [allDeals],
   );
 
@@ -260,13 +279,15 @@ export default function PeSubmissionGapPage() {
     construction: constructionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0),
     m1: m1GapDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0),
     m2: m2GapDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0),
-  }), [preConstructionDeals, constructionDeals, m1GapDeals, m2GapDeals]);
+    complete: completeDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0),
+  }), [preConstructionDeals, constructionDeals, m1GapDeals, m2GapDeals, completeDeals]);
 
   const tabCounts: Record<Tab, number> = {
     preconstruction: preConstructionDeals.length,
     construction: constructionDeals.length,
     m1: m1GapDeals.length,
     m2: m2GapDeals.length,
+    complete: completeDeals.length,
   };
 
   // ---- Active deals based on selected tab ----
@@ -277,8 +298,9 @@ export default function PeSubmissionGapPage() {
       case "construction": return constructionDeals;
       case "m1": return m1GapDeals;
       case "m2": return m2GapDeals;
+      case "complete": return completeDeals;
     }
-  }, [activeTab, preConstructionDeals, constructionDeals, m1GapDeals, m2GapDeals]);
+  }, [activeTab, preConstructionDeals, constructionDeals, m1GapDeals, m2GapDeals, completeDeals]);
 
   // ---- Filter options derived from active set ----
 
@@ -351,18 +373,10 @@ export default function PeSubmissionGapPage() {
 
     const m1Gap = m1GapDeals.length;
     const m2Gap = m2GapDeals.length;
-    // "Fully Submitted" = docs sent to PE (Submitted/Resubmitted/Approved/Paid)
-    const SUBMITTED_STATUSES = new Set(["Submitted", "Resubmitted", "Approved", "Paid"]);
-    const m1Submitted = allDeals.filter((d) =>
-      dealStageToMilestone(d.dealStageLabel) === "pto" &&
-      SUBMITTED_STATUSES.has(d.peM1Status ?? ""),
-    ).length;
-    const m2Submitted = allDeals.filter((d) =>
-      dealStageToMilestone(d.dealStageLabel) === "close-out" &&
-      SUBMITTED_STATUSES.has(d.peM2Status ?? ""),
-    ).length;
+    const done = completeDeals.length;
     const m1GapValue = m1GapDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2GapValue = m2GapDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+    const doneValue = completeDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
     const m1ByStatus = new Map<string, number>();
     for (const d of m1GapDeals) {
@@ -377,12 +391,12 @@ export default function PeSubmissionGapPage() {
 
     return {
       totalPE: allDeals.length,
-      m1Gap, m2Gap, m1Submitted, m2Submitted,
-      m1GapValue, m2GapValue,
+      m1Gap, m2Gap, done,
+      m1GapValue, m2GapValue, doneValue,
       m1ByStatus: [...m1ByStatus.entries()].sort((a, b) => b[1] - a[1]),
       m2ByStatus: [...m2ByStatus.entries()].sort((a, b) => b[1] - a[1]),
     };
-  }, [allDeals, m1GapDeals, m2GapDeals]);
+  }, [allDeals, m1GapDeals, m2GapDeals, completeDeals]);
 
   // ---- Filtered totals ----
 
@@ -399,6 +413,7 @@ export default function PeSubmissionGapPage() {
     { key: "construction", label: "Construction", sublabel: `${tabCounts.construction} · ${fmt(tabTotals.construction)}` },
     { key: "m1", label: "M1 Not Paid", sublabel: `${tabCounts.m1} · ${fmt(tabTotals.m1)}` },
     { key: "m2", label: "M2 Not Paid", sublabel: `${tabCounts.m2} · ${fmt(tabTotals.m2)}` },
+    { key: "complete", label: "Complete", sublabel: `${tabCounts.complete} · ${fmt(tabTotals.complete)}` },
   ];
 
   return (
@@ -429,9 +444,9 @@ export default function PeSubmissionGapPage() {
           color="red"
         />
         <StatCard
-          label="Fully Submitted"
-          value={metrics ? `${metrics.m1Submitted} / ${metrics.m2Submitted}` : null}
-          subtitle="M1 / M2 docs submitted"
+          label="Complete"
+          value={metrics?.done ?? null}
+          subtitle={metrics ? `${fmt(metrics.doneValue)} approved/paid` : undefined}
           color="green"
         />
       </div>
@@ -599,8 +614,9 @@ export default function PeSubmissionGapPage() {
                 ? "No projects match your filters."
                 : activeTab === "preconstruction" ? "No PE deals in pre-construction stages."
                 : activeTab === "construction" ? "No PE deals in construction/inspection stages."
-                : activeTab === "m1" ? "All PTO-stage projects have M1 approved or paid!"
-                : "All Close Out-stage projects have M2 approved or paid!"}
+                : activeTab === "m1" ? "All PTO/Close Out projects have M1 paid!"
+                : activeTab === "m2" ? "All Close Out projects have M2 paid!"
+                : "No projects with both M1 and M2 approved or paid yet."}
             </div>
           )}
         </div>
