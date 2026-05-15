@@ -617,20 +617,9 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
         })[0]?.properties.subject ?? null
     : null;
 
-  // install_age_months and days_since_last_service are HubSpot calculation
-  // properties (time_between) created in the HubSpot UI — NOT pushed from code.
-  // DB columns kept for local cache but HubSpot is the source of truth.
-  const now = new Date();
-  const installAgeMonths = installDates[0]
-    ? Math.floor(
-        (now.getTime() - installDates[0].getTime()) / (1000 * 60 * 60 * 24 * 30.44),
-      )
-    : null;
-  const daysSinceLastService = lastServiceDate
-    ? Math.floor(
-        (now.getTime() - lastServiceDate.getTime()) / (1000 * 60 * 60 * 24),
-      )
-    : null;
+  // NOTE: install_age_months and days_since_last_service are HubSpot calculation
+  // properties (time_between) created in the HubSpot UI — they auto-compute from
+  // first_install_date / last_service_date. No local computation needed.
 
   await prisma.hubSpotPropertyCache.update({
     where: { id: propertyCacheId },
