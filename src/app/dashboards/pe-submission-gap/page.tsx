@@ -89,19 +89,6 @@ function pePhaseLabel(stageLabel: string): string {
   }
 }
 
-function dealStageDisplayLabel(stageLabel: string): string {
-  const m = dealStageToMilestone(stageLabel);
-  const map: Record<DealMilestone, string> = {
-    "pre-construction": "Pre-Construction",
-    construction: "Construction",
-    inspection: "Inspection",
-    pto: "PTO",
-    "close-out": "Close Out",
-    complete: "Complete",
-  };
-  return map[m] ?? stageLabel;
-}
-
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
