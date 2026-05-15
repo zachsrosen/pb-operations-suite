@@ -463,15 +463,7 @@ export default function PeSubmissionGapPage() {
     return total;
   };
 
-  const totalDocsForDeal = (dealId: string): number => {
-    const s = dealDocSummaries.get(dealId);
-    if (!s) return 0;
-    let total = 0;
-    for (const sec of docSectionsForTab) {
-      total += s[sec].total;
-    }
-    return total;
-  };
+
 
   // Filter options
   const filterOptions = useMemo(() => {
