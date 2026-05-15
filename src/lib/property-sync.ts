@@ -551,6 +551,33 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     (byCategory.get(EquipmentCategory.BATTERY_EXPANSION)?.length ?? 0) > 0;
   const hasEvCharger = (byCategory.get(EquipmentCategory.EV_CHARGER)?.length ?? 0) > 0;
 
+  // Equipment summaries — human-readable brand/model × qty strings
+  const equipSummaries = await buildEquipmentSummaries(lineItems);
+
+  // Deal value + latest deal info
+  const totalDealValue = deals.reduce(
+    (sum, d) => sum + (d.amount ? Number(d.amount) : 0),
+    0,
+  );
+  // Most recent deal by close date (if closed) or creation order (fallback)
+  const latestDeal = deals.length
+    ? [...deals].sort((a, b) => {
+        const aDate = a.closeDate ?? a.constructionCompleteDate;
+        const bDate = b.closeDate ?? b.constructionCompleteDate;
+        if (aDate && bDate) return bDate.getTime() - aDate.getTime();
+        if (bDate) return 1;
+        if (aDate) return -1;
+        return 0;
+      })[0]
+    : null;
+  // Fetch deal name + stage from the Deal mirror table
+  const latestDealInfo = latestDeal
+    ? await prisma.deal.findUnique({
+        where: { hubspotDealId: latestDeal.hubspotDealId },
+        select: { dealName: true, stage: true },
+      })
+    : null;
+
   // Ticket fields — tickets live in HubSpot (no ServiceTicketCache model).
   // `getTicketStageMap()` returns `{ map, orderedStageIds }`; we destructure
   // `map` (stageId → label) — `.stageMap` does not exist.
@@ -568,7 +595,9 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     const label = (stageMap[stageId] ?? "").toLowerCase();
     return !["closed", "resolved", "cancelled"].some((needle) => label.includes(needle));
   };
-  const openTicketsCount = tickets.filter((t) => isOpenStage(t.properties.hs_pipeline_stage)).length;
+  const openTickets = tickets.filter((t) => isOpenStage(t.properties.hs_pipeline_stage));
+  const openTicketsCount = openTickets.length;
+  const closedTicketsCount = tickets.length - openTicketsCount;
   const lastServiceDate =
     tickets
       .map((t) => {
@@ -578,6 +607,31 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       .filter((d): d is Date => !!d && !Number.isNaN(d.getTime()))
       .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
+  // Latest open ticket subject — most recently modified open ticket
+  const latestOpenTicketSubject = openTickets.length
+    ? [...openTickets]
+        .sort((a, b) => {
+          const aT = a.properties.hs_lastmodifieddate;
+          const bT = b.properties.hs_lastmodifieddate;
+          return (bT ?? "").localeCompare(aT ?? "");
+        })[0]?.properties.subject ?? null
+    : null;
+
+  // install_age_months and days_since_last_service are HubSpot calculation
+  // properties (time_between) created in the HubSpot UI — NOT pushed from code.
+  // DB columns kept for local cache but HubSpot is the source of truth.
+  const now = new Date();
+  const installAgeMonths = installDates[0]
+    ? Math.floor(
+        (now.getTime() - installDates[0].getTime()) / (1000 * 60 * 60 * 24 * 30.44),
+      )
+    : null;
+  const daysSinceLastService = lastServiceDate
+    ? Math.floor(
+        (now.getTime() - lastServiceDate.getTime()) / (1000 * 60 * 60 * 24),
+      )
+    : null;
+
   await prisma.hubSpotPropertyCache.update({
     where: { id: propertyCacheId },
     data: {
@@ -586,11 +640,25 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       associatedDealsCount: deals.length,
       associatedTicketsCount: tickets.length,
       openTicketsCount,
+      closedTicketsCount,
       systemSizeKwDc,
       hasBattery,
       hasEvCharger,
       lastServiceDate,
       earliestWarrantyExpiry: null, // v1: not yet derivable — see note above.
+      // Extended rollups
+      moduleSummary: equipSummaries.moduleSummary,
+      inverterSummary: equipSummaries.inverterSummary,
+      batterySummary: equipSummaries.batterySummary,
+      evChargerSummary: equipSummaries.evChargerSummary,
+      panelCount: equipSummaries.panelCount,
+      totalDealValue: totalDealValue > 0 ? totalDealValue : null,
+      latestDealName: latestDealInfo?.dealName ?? null,
+      latestDealStage: latestDealInfo?.stage ?? null,
+      latestOpenTicketSubject,
+      // Time-computed rollups (local cache only — HubSpot calc properties handle these)
+      installAgeMonths,
+      daysSinceLastService,
       lastReconciledAt: new Date(),
     },
   });
@@ -601,11 +669,24 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     associated_deals_count: deals.length,
     associated_tickets_count: tickets.length,
     open_tickets_count: openTicketsCount,
+    closed_tickets_count: closedTicketsCount,
     system_size_kw_dc: systemSizeKwDc,
     has_battery: hasBattery,
     has_ev_charger: hasEvCharger,
     last_service_date: toDateString(lastServiceDate),
     earliest_warranty_expiry: "", // v1: not yet derivable.
+    // Extended rollups
+    module_summary: equipSummaries.moduleSummary ?? "",
+    inverter_summary: equipSummaries.inverterSummary ?? "",
+    battery_summary: equipSummaries.batterySummary ?? "",
+    ev_charger_summary: equipSummaries.evChargerSummary ?? "",
+    panel_count: equipSummaries.panelCount,
+    total_deal_value: totalDealValue > 0 ? totalDealValue : null,
+    latest_deal_name: latestDealInfo?.dealName ?? "",
+    latest_deal_stage: latestDealInfo?.stage ?? "",
+    latest_open_ticket_subject: latestOpenTicketSubject ?? "",
+    // NOTE: install_age_months and days_since_last_service are HubSpot calc
+    // properties — they auto-compute from first_install_date / last_service_date.
   });
 }
 
@@ -699,6 +780,96 @@ function toDateString(d: Date | null | undefined): string {
 }
 
 /**
+ * Build human-readable equipment summary strings from line items.
+ * Groups by brand+model, sums quantities, and joins into a single line.
+ * E.g. "REC 400W × 30" or "Enphase IQ8M × 15, SolarEdge SE7600H × 1"
+ */
+async function buildEquipmentSummaries(
+  lineItems: ReadonlyArray<CategorizableLineItem>,
+): Promise<{
+  moduleSummary: string | null;
+  inverterSummary: string | null;
+  batterySummary: string | null;
+  evChargerSummary: string | null;
+  panelCount: number | null;
+}> {
+  const productIds = Array.from(
+    new Set(
+      lineItems
+        .map((li) => li.hubspotProductId)
+        .filter((id): id is string => !!id && id.length > 0),
+    ),
+  );
+  if (productIds.length === 0) {
+    return { moduleSummary: null, inverterSummary: null, batterySummary: null, evChargerSummary: null, panelCount: null };
+  }
+
+  const products = await prisma.internalProduct.findMany({
+    where: { hubspotProductId: { in: productIds } },
+    select: {
+      hubspotProductId: true,
+      category: true,
+      brand: true,
+      model: true,
+      unitSpec: true,
+      unitLabel: true,
+    },
+  });
+
+  const productMap = new Map<string, typeof products[number]>();
+  for (const p of products) {
+    if (p.hubspotProductId) productMap.set(p.hubspotProductId, p);
+  }
+
+  // Group by category → brand+model, summing quantities
+  const groups = new Map<EquipmentCategory, Map<string, { label: string; qty: number }>>();
+  let totalPanels = 0;
+
+  for (const item of lineItems) {
+    if (!item.hubspotProductId) continue;
+    const prod = productMap.get(item.hubspotProductId);
+    if (!prod) continue;
+
+    const catGroups = groups.get(prod.category) ?? new Map();
+    const key = `${prod.brand}|${prod.model}`;
+    const existing = catGroups.get(key);
+
+    // Build display label: "Brand Model [Spec]" e.g. "REC 400W" or "Enphase IQ8M"
+    const specSuffix = prod.unitSpec && prod.unitLabel
+      ? ` ${prod.unitSpec}${prod.unitLabel}`
+      : "";
+    const label = `${prod.brand} ${prod.model}${specSuffix}`;
+
+    if (existing) {
+      existing.qty += item.quantity;
+    } else {
+      catGroups.set(key, { label, qty: item.quantity });
+    }
+    groups.set(prod.category, catGroups);
+
+    if (prod.category === EquipmentCategory.MODULE) {
+      totalPanels += item.quantity;
+    }
+  }
+
+  const summarize = (cat: EquipmentCategory): string | null => {
+    const catGroups = groups.get(cat);
+    if (!catGroups || catGroups.size === 0) return null;
+    return Array.from(catGroups.values())
+      .map((g) => `${g.label} × ${g.qty}`)
+      .join(", ");
+  };
+
+  return {
+    moduleSummary: summarize(EquipmentCategory.MODULE),
+    inverterSummary: summarize(EquipmentCategory.INVERTER),
+    batterySummary: summarize(EquipmentCategory.BATTERY) ?? summarize(EquipmentCategory.BATTERY_EXPANSION),
+    evChargerSummary: summarize(EquipmentCategory.EV_CHARGER),
+    panelCount: totalPanels > 0 ? totalPanels : null,
+  };
+}
+
+/**
  * Associate a freshly-created deal or ticket to the correct Property for its
  * primary contact. Flow per spec §Deal/Ticket creation:
  *   1) Feature-flag gate.
@@ -720,12 +891,13 @@ export async function onDealOrTicketCreated(
   }
 
   // 1) Resolve the primary contact. Pull the object itself so we can read its
-  // address properties later for disambiguation — the extra fetch is cheap and
-  // avoids a second round-trip on the ambiguous-Properties branch.
+  // address properties later for disambiguation and Property creation from
+  // the object's own address. Deal fields: `address_line_1` + `postal_code`.
+  // Ticket fields: `street_address` + `city` + `state` + `zip_code`.
   const addressProps =
     kind === "deal"
-      ? ["address", "city", "state", "zip"]
-      : ["street_address", "city", "state", "zip"];
+      ? ["address_line_1", "city", "state", "postal_code"]
+      : ["street_address", "city", "state", "zip_code"];
 
   const object =
     kind === "deal"
@@ -737,8 +909,84 @@ export async function onDealOrTicketCreated(
       ? await fetchPrimaryContactId(objectId)
       : await fetchPrimaryContactIdForTicket(objectId);
 
+  // Extract the object's own address (if available) for disambiguation and
+  // object-driven Property creation. Deals use `address_line_1` + `postal_code`;
+  // tickets use `street_address` + `city` + `state` + `zip_code`.
+  const addr = object?.properties ?? {};
+  const objectStreet = kind === "deal" ? addr.address_line_1 : addr.street_address;
+  const objectCity = addr.city;
+  const objectState = addr.state;
+  const objectZip = kind === "deal" ? addr.postal_code : addr.zip_code;
+  const hasGeocodableAddress = !!(objectStreet && objectCity && objectState);
+  // zip is optional for geocoding — street + city + state is sufficient
+
+  // --- Object-driven Property creation helper ---
+  // When the contact path can't find a matching Property, try creating one
+  // from the deal/ticket's own address. This covers the gap where a deal or
+  // ticket address differs from all of its contact's addresses.
+  const tryCreatePropertyFromObjectAddress = async (): Promise<
+    { id: string; hubspotObjectId: string } | null
+  > => {
+    if (!hasGeocodableAddress) return null;
+
+    const upsert = await upsertPropertyFromGeocode({
+      street: objectStreet!,
+      city: objectCity!,
+      state: objectState!,
+      zip: objectZip || "", // zip optional — geocoder handles missing zip
+    });
+
+    if ("status" in upsert) {
+      // Geocode failed or outside operating area — nothing we can do
+      return null;
+    }
+
+    // Also associate the contact to this newly found/created Property so
+    // future deal/ticket webhooks for this contact find it via the normal path.
+    if (contactId) {
+      await associateProperty(
+        upsert.hubspotObjectId,
+        "contacts",
+        contactId,
+        CONTACT_LABEL_ASSOCIATION_IDS.CURRENT_OWNER,
+      );
+      await prisma.propertyContactLink.upsert({
+        where: {
+          propertyId_contactId_label: {
+            propertyId: upsert.propertyCacheId,
+            contactId,
+            label: "Current Owner",
+          },
+        },
+        create: {
+          propertyId: upsert.propertyCacheId,
+          contactId,
+          label: "Current Owner",
+        },
+        update: {},
+      });
+    }
+
+    if (upsert.created) {
+      await logActivity("PROPERTY_CREATED", `Property created from ${kind} address`, {
+        kind,
+        objectId,
+        contactId,
+        propertyCacheId: upsert.propertyCacheId,
+      });
+    }
+
+    return { id: upsert.propertyCacheId, hubspotObjectId: upsert.hubspotObjectId };
+  };
+
   if (!contactId) {
-    return { status: "deferred", reason: "no primary contact" };
+    // No contact — try the object's own address
+    const fromObject = await tryCreatePropertyFromObjectAddress();
+    if (!fromObject) {
+      return { status: "deferred", reason: "no primary contact" };
+    }
+    // Skip contact-based lookup, go straight to association
+    return finishAssociation(kind, objectId, fromObject, null);
   }
 
   // 2) Read Properties the contact is already associated to. Single cheap
@@ -751,6 +999,11 @@ export async function onDealOrTicketCreated(
     await onContactAddressChange(contactId);
     links = await prisma.propertyContactLink.findMany({ where: { contactId } });
     if (links.length === 0) {
+      // Contact has no geocodable address — try the object's own address
+      const fromObject = await tryCreatePropertyFromObjectAddress();
+      if (fromObject) {
+        return finishAssociation(kind, objectId, fromObject, contactId);
+      }
       await logActivity("PROPERTY_SYNC_FAILED", "No properties for contact on deal/ticket creation", {
         kind,
         objectId,
@@ -767,26 +1020,17 @@ export async function onDealOrTicketCreated(
 
   // 4) Pick a single Property. One candidate → trivial match. Multiple
   // candidates → disambiguate by geocoding the deal/ticket address and
-  // matching `place_id` against candidate cache rows. If the address is
-  // missing or the geocode doesn't match any candidate, defer rather than
-  // guess — linking to the wrong Property would be harder to unwind than
-  // waiting for the next webhook cycle.
+  // matching `place_id` against candidate cache rows.
   let chosen: { id: string; hubspotObjectId: string } | null = null;
   if (candidates.length === 1) {
     chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
   } else if (candidates.length > 1) {
-    const addr = object?.properties ?? {};
-    const street = kind === "deal" ? addr.address : addr.street_address;
-    const city = addr.city;
-    const state = addr.state;
-    const zip = addr.zip;
-
-    if (street && city && state && zip) {
+    if (hasGeocodableAddress) {
       const geo = await geocodeAddress({
-        street,
-        city,
-        state,
-        zip,
+        street: objectStreet!,
+        city: objectCity!,
+        state: objectState!,
+        zip: objectZip || "",
         country: "USA",
       });
       const placeId = geo?.placeId ?? null;
@@ -795,28 +1039,29 @@ export async function onDealOrTicketCreated(
         if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
       }
       // Fallback: rural / new-construction addresses geocode successfully
-      // but without a placeId. Match by addressHash instead — computed from
-      // the same normalized parts we'd use on any upsert.
-      //
-      // Scope: unitless only. Deal/ticket HubSpot properties don't expose
-      // `unit_number`, so any candidate whose addressHash was computed with
-      // a non-null unit will miss. That's an acceptable v1 tradeoff; proper
-      // unit-aware matching needs richer source data. A miss here still
-      // defers (we'd rather wait for the next webhook cycle than guess).
+      // but without a placeId. Match by addressHash instead.
       if (!chosen && geo && !placeId) {
         const hash = addressHash({
-          street: geo.streetAddress ?? (street as string),
+          street: geo.streetAddress ?? (objectStreet as string),
           unit: null,
-          city: geo.city ?? (city as string),
-          state: geo.state ?? (state as string),
-          zip: geo.zip ?? (zip as string),
+          city: geo.city ?? (objectCity as string),
+          state: geo.state ?? (objectState as string),
+          zip: geo.zip ?? (objectZip as string),
         });
         const match = candidates.find((c) => c.addressHash === hash);
         if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
       }
     }
+
+    // Multi-property contact, no match among existing Properties — the
+    // deal/ticket may be at a NEW address. Try creating a Property from it.
     if (!chosen) {
-      return { status: "deferred", reason: "ambiguous properties, no address match" };
+      const fromObject = await tryCreatePropertyFromObjectAddress();
+      if (fromObject) {
+        chosen = fromObject;
+      } else {
+        return { status: "deferred", reason: "ambiguous properties, no address match" };
+      }
     }
   }
 
@@ -826,7 +1071,20 @@ export async function onDealOrTicketCreated(
     return { status: "deferred", reason: "no properties for contact" };
   }
 
-  // 5) Mirror the association in HubSpot and in the local link table. HubSpot
+  return finishAssociation(kind, objectId, chosen, contactId);
+}
+
+/**
+ * Shared tail for `onDealOrTicketCreated` — associates the deal/ticket to the
+ * chosen Property in HubSpot + DB and refreshes rollups.
+ */
+async function finishAssociation(
+  kind: "deal" | "ticket",
+  objectId: string,
+  chosen: { id: string; hubspotObjectId: string },
+  contactId: string | null,
+): Promise<SyncOutcome> {
+  // Mirror the association in HubSpot and in the local link table. HubSpot
   // has no HUBSPOT_DEFINED (typeId 1) default registered between Property and
   // Deal / Ticket — the portal only has USER_DEFINED labels — so we MUST pass
   // an explicit typeId or the create 400s with an "INVALID_OBJECT_IDS" error.
@@ -851,7 +1109,7 @@ export async function onDealOrTicketCreated(
     });
   }
 
-  // 6) Refresh denormalized rollups so the associated counts and
+  // Refresh denormalized rollups so the associated counts and
   // install/service dates include the new object immediately.
   await computePropertyRollups(chosen.id);
 

@@ -165,7 +165,7 @@ export default function PropertyHubHeader({ property, loading, error }: Props) {
           {property.lat && property.lng && (
             <div className="mt-2 rounded-lg overflow-hidden border border-t-border w-[200px] h-[120px]">
               <img
-                src={`https://maps.googleapis.com/maps/api/staticmap?center=${property.lat},${property.lng}&zoom=18&size=200x120&maptype=satellite&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ""}`}
+                src={`https://maps.googleapis.com/maps/api/staticmap?center=${property.lat},${property.lng}&zoom=18&size=200x120&maptype=satellite&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""}`}
                 alt="Satellite view"
                 className="w-full h-full object-cover"
                 loading="lazy"
