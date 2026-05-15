@@ -55,8 +55,8 @@ function dealStageToMilestone(stageLabel: string): DealMilestone {
   return "pre-construction";
 }
 
-const M1_COMPLETE_STATUSES = new Set(["Approved", "Paid"]);
-const M2_COMPLETE_STATUSES = new Set(["Approved", "Paid"]);
+const M1_COMPLETE_STATUSES = new Set(["Paid"]);
+const M2_COMPLETE_STATUSES = new Set(["Paid"]);
 
 // ---------------------------------------------------------------------------
 // Tab types + per-tab helpers
@@ -351,15 +351,15 @@ export default function PeSubmissionGapPage() {
 
     const m1Gap = m1GapDeals.length;
     const m2Gap = m2GapDeals.length;
-    // M1 complete = PTO stage deals where M1 IS approved/paid
-    const m1Complete = allDeals.filter((d) =>
+    // "Fully Submitted" = docs sent to PE (Submitted/Resubmitted/Approved/Paid)
+    const SUBMITTED_STATUSES = new Set(["Submitted", "Resubmitted", "Approved", "Paid"]);
+    const m1Submitted = allDeals.filter((d) =>
       dealStageToMilestone(d.dealStageLabel) === "pto" &&
-      M1_COMPLETE_STATUSES.has(d.peM1Status ?? ""),
+      SUBMITTED_STATUSES.has(d.peM1Status ?? ""),
     ).length;
-    // M2 complete = Close Out stage deals where M2 IS approved/paid
-    const m2Complete = allDeals.filter((d) =>
+    const m2Submitted = allDeals.filter((d) =>
       dealStageToMilestone(d.dealStageLabel) === "close-out" &&
-      M2_COMPLETE_STATUSES.has(d.peM2Status ?? ""),
+      SUBMITTED_STATUSES.has(d.peM2Status ?? ""),
     ).length;
     const m1GapValue = m1GapDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2GapValue = m2GapDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
@@ -377,7 +377,7 @@ export default function PeSubmissionGapPage() {
 
     return {
       totalPE: allDeals.length,
-      m1Gap, m2Gap, m1Complete, m2Complete,
+      m1Gap, m2Gap, m1Submitted, m2Submitted,
       m1GapValue, m2GapValue,
       m1ByStatus: [...m1ByStatus.entries()].sort((a, b) => b[1] - a[1]),
       m2ByStatus: [...m2ByStatus.entries()].sort((a, b) => b[1] - a[1]),
@@ -430,8 +430,8 @@ export default function PeSubmissionGapPage() {
         />
         <StatCard
           label="Fully Submitted"
-          value={metrics ? `${metrics.m1Complete} / ${metrics.m2Complete}` : null}
-          subtitle="M1 / M2 approved or paid"
+          value={metrics ? `${metrics.m1Submitted} / ${metrics.m2Submitted}` : null}
+          subtitle="M1 / M2 docs submitted"
           color="green"
         />
       </div>
