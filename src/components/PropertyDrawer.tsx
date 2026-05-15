@@ -97,7 +97,18 @@ export default function PropertyDrawer({
       <div className="fixed right-0 top-0 z-50 h-full w-full max-w-lg bg-surface shadow-card-lg flex flex-col">
         {/* Sticky header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-t-border bg-surface-2 flex-shrink-0">
-          <h2 className="text-base font-semibold text-foreground">Property</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-semibold text-foreground">Property</h2>
+            {hubspotObjectId && (
+              <Link
+                href={`/properties/${hubspotObjectId}`}
+                className="text-xs text-blue-400 hover:text-blue-300 hover:underline"
+                onClick={onClose}
+              >
+                View full details &rarr;
+              </Link>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="text-muted hover:text-foreground transition-colors text-lg leading-none"
@@ -238,42 +249,52 @@ export default function PropertyDrawer({
 
               {/* Deals */}
               <section>
-                <h4 className="mb-2 text-sm font-semibold text-foreground">
-                  Deals{" "}
-                  <span className="text-muted font-normal">
-                    ({detail.dealIds.length})
-                  </span>
-                </h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-foreground">
+                    Deals{" "}
+                    <span className="text-muted font-normal">
+                      ({detail.dealIds.length})
+                    </span>
+                  </h4>
+                  {detail.dealIds.length > 0 && (
+                    <Link
+                      href={`/properties/${detail.hubspotObjectId}?tab=deals`}
+                      className="text-xs text-blue-400 hover:underline"
+                      onClick={onClose}
+                    >
+                      See all &rarr;
+                    </Link>
+                  )}
+                </div>
                 {detail.dealIds.length === 0 ? (
                   <div className="text-sm text-muted">No deals linked yet.</div>
                 ) : (
                   <ul className="divide-y divide-t-border rounded-xl border border-t-border bg-surface overflow-hidden">
-                    {detail.dealIds.map((id) => (
+                    {detail.deals.map((deal) => (
                       <li
-                        key={id}
+                        key={deal.id}
                         className="px-4 py-2 flex items-center justify-between gap-3 text-sm"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           <Link
-                            href={getInternalDealUrl(id)}
-                            className="text-purple-400 hover:underline font-medium"
+                            href={getInternalDealUrl(deal.id)}
+                            className="text-purple-400 hover:underline font-medium truncate"
                           >
-                            {id}
+                            {deal.name}
                           </Link>
                           <a
                             href={
                               portalId
-                                ? `https://app.hubspot.com/contacts/${portalId}/deal/${id}`
+                                ? `https://app.hubspot.com/contacts/${portalId}/deal/${deal.id}`
                                 : "#"
                             }
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-orange-400 hover:underline"
+                            className="text-xs text-orange-400 hover:underline shrink-0"
                           >
                             HubSpot ↗
                           </a>
                         </div>
-                        <span className="text-xs text-muted">—</span>
                       </li>
                     ))}
                   </ul>
@@ -282,41 +303,55 @@ export default function PropertyDrawer({
 
               {/* Tickets */}
               <section>
-                <h4 className="mb-2 text-sm font-semibold text-foreground flex items-center gap-2">
-                  <span>
-                    Tickets{" "}
-                    <span className="text-muted font-normal">
-                      ({detail.ticketIds.length})
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <span>
+                      Tickets{" "}
+                      <span className="text-muted font-normal">
+                        ({detail.ticketIds.length})
+                      </span>
                     </span>
-                  </span>
-                  {detail.openTicketsCount > 0 ? (
-                    <span className="inline-flex items-center rounded-md bg-red-500/15 px-1.5 py-0.5 text-xs font-semibold text-red-400 ring-1 ring-red-500/30">
-                      ⚠ {detail.openTicketsCount} open
-                    </span>
-                  ) : null}
-                </h4>
+                    {detail.openTicketsCount > 0 ? (
+                      <span className="inline-flex items-center rounded-md bg-red-500/15 px-1.5 py-0.5 text-xs font-semibold text-red-400 ring-1 ring-red-500/30">
+                        {detail.openTicketsCount} open
+                      </span>
+                    ) : null}
+                  </h4>
+                  {detail.ticketIds.length > 0 && (
+                    <Link
+                      href={`/properties/${detail.hubspotObjectId}?tab=tickets`}
+                      className="text-xs text-blue-400 hover:underline"
+                      onClick={onClose}
+                    >
+                      See all &rarr;
+                    </Link>
+                  )}
+                </div>
                 {detail.ticketIds.length === 0 ? (
                   <div className="text-sm text-muted">
                     No tickets linked yet.
                   </div>
                 ) : (
                   <ul className="divide-y divide-t-border rounded-xl border border-t-border bg-surface overflow-hidden">
-                    {detail.ticketIds.map((id) => (
+                    {detail.tickets.map((ticket) => (
                       <li
-                        key={id}
+                        key={ticket.id}
                         className="px-4 py-2 flex items-center justify-between gap-3 text-sm"
                       >
+                        <span className="text-foreground truncate">
+                          {ticket.subject}
+                        </span>
                         <a
                           href={
                             portalId
-                              ? `https://app.hubspot.com/contacts/${portalId}/ticket/${id}`
+                              ? `https://app.hubspot.com/contacts/${portalId}/ticket/${ticket.id}`
                               : "#"
                           }
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-cyan-400 hover:underline"
+                          className="text-xs text-orange-400 hover:underline shrink-0"
                         >
-                          {id}
+                          HubSpot ↗
                         </a>
                       </li>
                     ))}
