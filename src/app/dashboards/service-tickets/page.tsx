@@ -8,6 +8,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import RmaSection from "@/components/service/RmaSection";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -647,6 +648,13 @@ export default function ServiceTicketBoardPage() {
                     {actionLoading ? "Saving..." : "Add Note"}
                   </button>
                 </div>
+
+                {/* RMA */}
+                <RmaSection
+                  ticketId={selectedTicket.id}
+                  ticketSubject={selectedTicket.subject}
+                  pbLocation={selectedTicket.associations.deals?.[0]?.location ?? null}
+                />
 
                 {/* HubSpot link */}
                 <a
