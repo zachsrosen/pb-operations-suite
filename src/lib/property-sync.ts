@@ -620,17 +620,9 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
   // install_age_months and days_since_last_service are HubSpot calculation
   // properties (time_between) created in the HubSpot UI — NOT pushed from code.
   // DB columns kept for local cache but HubSpot is the source of truth.
-  const now = new Date();
-  const installAgeMonths = installDates[0]
-    ? Math.floor(
-        (now.getTime() - installDates[0].getTime()) / (1000 * 60 * 60 * 24 * 30.44),
-      )
-    : null;
-  const daysSinceLastService = lastServiceDate
-    ? Math.floor(
-        (now.getTime() - lastServiceDate.getTime()) / (1000 * 60 * 60 * 24),
-      )
-    : null;
+  // installAgeMonths and daysSinceLastService are HubSpot calculation
+  // properties now — auto-computed from first_install_date / last_service_date.
+  // Local DB columns will be populated once migration 20260515040000 is applied.
 
   await prisma.hubSpotPropertyCache.update({
     where: { id: propertyCacheId },
@@ -645,19 +637,11 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       hasEvCharger,
       lastServiceDate,
       earliestWarrantyExpiry: null, // v1: not yet derivable — see note above.
-      // Extended rollups
-      moduleSummary: equipSummaries.moduleSummary,
-      inverterSummary: equipSummaries.inverterSummary,
-      batterySummary: equipSummaries.batterySummary,
-      evChargerSummary: equipSummaries.evChargerSummary,
-      panelCount: equipSummaries.panelCount,
-      totalDealValue: totalDealValue > 0 ? totalDealValue : null,
-      latestDealName: latestDealInfo?.dealName ?? null,
-      latestDealStage: latestDealInfo?.stage ?? null,
-      latestOpenTicketSubject,
-      // Time-computed rollups (local cache only — HubSpot calc properties handle these)
-      installAgeMonths,
-      daysSinceLastService,
+      // Extended rollup columns (moduleSummary, inverterSummary, batterySummary,
+      // evChargerSummary, panelCount, totalDealValue, latestDealName, latestDealStage,
+      // latestOpenTicketSubject, installAgeMonths, daysSinceLastService) are NOT yet
+      // in the Prisma schema — migration 20260515040000 must be applied first.
+      // Until then, these values are only pushed to HubSpot (below).
       lastReconciledAt: new Date(),
     },
   });
