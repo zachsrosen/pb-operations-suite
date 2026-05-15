@@ -28,6 +28,8 @@ interface PeDeal {
   peM1Status: string | null;
   peM2Status: string | null;
   milestoneHighlight: "m1" | "m2" | "complete" | null;
+  inspectionPassDate: string | null;
+  ptoGrantedDate: string | null;
   daInvoiceStatus: string | null;
   ccInvoiceStatus: string | null;
   ptoInvoiceStatus: string | null;
@@ -292,9 +294,11 @@ export default function PeSubmissionGapPage() {
           return dir * (mA - mB);
         }
         case "closeDate": {
-          const aD = a.closeDate ?? "";
-          const bD = b.closeDate ?? "";
-          return dir * aD.localeCompare(bD);
+          const dateForTab = (d: PeDeal) =>
+            activeTab === "m1" ? (d.inspectionPassDate ?? "") :
+            activeTab === "m2" ? (d.ptoGrantedDate ?? "") :
+            (d.closeDate ?? "");
+          return dir * dateForTab(a).localeCompare(dateForTab(b));
         }
         case "m1Status": return dir * (a.peM1Status || "").localeCompare(b.peM1Status || "");
         case "m2Status": return dir * (a.peM2Status || "").localeCompare(b.peM2Status || "");
@@ -449,7 +453,10 @@ export default function PeSubmissionGapPage() {
                   {activeTab !== "onboarding" && (
                     <SortHeader label="PE Phase" column="phase" current={sortCol} direction={sortDir} onSort={handleSort} />
                   )}
-                  <SortHeader label="Close Date" column="closeDate" current={sortCol} direction={sortDir} onSort={handleSort} />
+                  <SortHeader
+                    label={activeTab === "m1" ? "Inspection Passed" : activeTab === "m2" ? "PTO Granted" : "Close Date"}
+                    column="closeDate" current={sortCol} direction={sortDir} onSort={handleSort}
+                  />
                   <SortHeader label="M1 Status" column="m1Status" current={sortCol} direction={sortDir} onSort={handleSort} />
                   {activeTab === "m2" && (
                     <SortHeader label="M2 Status" column="m2Status" current={sortCol} direction={sortDir} onSort={handleSort} />
@@ -479,9 +486,11 @@ export default function PeSubmissionGapPage() {
                         <td className="py-2.5 pr-3"><PePhaseBadge stageLabel={d.dealStageLabel} /></td>
                       )}
                       <td className="py-2.5 pr-3 text-xs text-muted tabular-nums whitespace-nowrap">
-                        {d.closeDate
-                          ? new Date(d.closeDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                          : "—"}
+                        {(() => {
+                          const raw = activeTab === "m1" ? d.inspectionPassDate : activeTab === "m2" ? d.ptoGrantedDate : d.closeDate;
+                          if (!raw) return "—";
+                          return new Date(raw.length === 10 ? raw + "T00:00:00" : raw).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                        })()}
                       </td>
                       <td className="py-2.5 pr-3"><StatusBadge status={d.peM1Status} /></td>
                       {activeTab === "m2" && (
