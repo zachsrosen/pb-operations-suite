@@ -4,6 +4,66 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-15
+
+### Property Hub (Major)
+- Full-page property view at `/properties/[id]` with tabbed layout: Activity (unified timeline), Deals, Tickets, Zuper Jobs, Schedule slots, and Equipment/BOM history
+- Single API route with per-tab data loading and fan-out caps to stay within HubSpot rate limits
+- Inngest queue for property sync workflows (`INNGEST_PROPERTY_SYNC_ENABLED`) — global concurrency 3 + 3 retries, eliminates 429 cascade during bulk HubSpot workflow re-enrollment
+- Three-tier dedup (placeId → normalizedAddress → street components) with adopt-and-enrich for bare HubSpot Property records; cleanup script archives ~41K bare duplicates
+- Input validation: CO/CA only, reject streets containing emails/URLs/domains/numeric-only fragments
+- Property drawer now shows resolved deal names, ticket subjects, and contact names with HubSpot deep links
+- Fixed satellite map (corrected env var to `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`), deal stage names via `getStageMaps()`, flexible ID lookup accepting both `hubspotObjectId` and Prisma cuid
+- Correct USER_DEFINED association type IDs for Property object (contacts:399, deals:403, tickets:401, companies:397)
+- Accept HubSpot native webhook payload format in workflow-sync; ticket address fields use `street_address`/`city`/`state`/`zip`
+
+### Pipeline Trackers (Major)
+- New general Pipeline Tracker dashboard (Construction, Inspection, Site Survey tabs) — removed M1/M2 columns from PE-specific tracker
+- Per-stage revenue breakdown in PE Pipeline hero cards + total revenue hero card
+- Status filters split into per-type filters with sortable columns
+- Zuper job links on both trackers, paginated HubSpot search to handle large result sets
+- Cross-linked navigation: Pipeline Tracker ↔ PE Pipeline page
+
+### PE / Accounting
+- PE Raceway API sync replacing fragile HTML scraper — typed client (`pe-api.ts`), cursor pagination, retry with backoff
+- New `PeActionItem` + `PeApiSyncRun` models; hourly cron + incremental sync
+- PE action items feed grouped by deal with clickable HubSpot + PE Portal links; collapsible deal groups; auto-resolve on doc approval
+- Moved PE doc reviews and action items from ops pipeline to accounting `pe-deals` view
+- Sync status accuracy: stopped false APPROVED state with source priority resolution
+- Recurse into subfolders when auditing PE turnover Drive folders
+
+### TV Dashboard / Office Performance
+- Rich deal list with assignees, Zuper status, PE flags, deal amounts; merged in-progress + completed into unified sorted list
+- New Service carousel slide for office performance dashboards
+- Calendar week/day views, improved readability
+- Stacked deal lists above compliance block; fixed goals labels, completed deal counts, "inspections" rename
+- 5-star review goals lowered to 20 base / 25 stretch company-wide
+- Assignees now display on all calendar event types
+
+### Schedulers
+- Tentative vs live mode now visually obvious across all schedulers
+- Allow tentative install scheduling without an assignee
+- Survey lead time relaxed to 1 day for California sales reps
+- Fixed cross-deal sub-job bleed on same-customer projects
+- Renamed legacy sub-job badge "ALL" → "CONST"
+
+### Reviews / Design
+- Escalation revisions now trigger as-built design status
+- IDR sync completes the HubSpot task and adds a RE-REVIEW badge
+- Show escalation submitter in IDR detail panel
+- AI design review no longer flags utility meters as production meters
+- Concatenated revision notes are now labeled for clarity
+
+### Service
+- Service deal BOMs now appear in the Service BOM history page
+- `pb_location` read directly from service tickets (no more deal fallback)
+
+### Bug Fixes
+- Corrected `HubSpotProperties` type to accept null values
+- Fixed email addresses for Nathan and Nick
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
