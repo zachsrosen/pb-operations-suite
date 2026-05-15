@@ -126,12 +126,27 @@ function hasHitCloseOut(stageLabel: string): boolean {
 function pePhaseLabel(stageLabel: string): string {
   const m = dealStageToMilestone(stageLabel);
   switch (m) {
+    case "pre-construction":
+    case "construction":
     case "inspection": return "Onboarding";
     case "pto": return "M1";
     case "close-out": return "M2";
     case "complete": return "Complete";
     default: return stageLabel;
   }
+}
+
+function dealStageDisplayLabel(stageLabel: string): string {
+  const m = dealStageToMilestone(stageLabel);
+  const map: Record<DealMilestone, string> = {
+    "pre-construction": "Pre-Construction",
+    construction: "Construction",
+    inspection: "Inspection",
+    pto: "PTO",
+    "close-out": "Close Out",
+    complete: "Complete",
+  };
+  return map[m] ?? stageLabel;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +341,7 @@ function DocDetailPanel({ summary, sections }: { summary: DealDocSummary; sectio
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortColumn = "deal" | "location" | "phase" | "m1Status" | "m2Status" | "docs" | "amount";
+type SortColumn = "deal" | "location" | "stage" | "phase" | "m1Status" | "m2Status" | "docs" | "amount";
 type SortDirection = "asc" | "desc";
 
 function SortHeader({ label, column, current, direction, onSort, align }: {
@@ -412,8 +427,12 @@ export default function PeSubmissionGapPage() {
     ["onboarding", "ic", "pc"];
 
   // Tab-specific deal lists
+  // Onboarding: all PE deals in the project pipeline before PTO
   const onboardingDeals = useMemo(
-    () => allDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "inspection"),
+    () => allDeals.filter((d) => {
+      const m = dealStageToMilestone(d.dealStageLabel);
+      return MILESTONE_ORDER[m] < MILESTONE_ORDER["pto"];
+    }),
     [allDeals],
   );
   const m1GapDeals = useMemo(
@@ -500,6 +519,7 @@ export default function PeSubmissionGapPage() {
       switch (sortCol) {
         case "deal": return dir * a.dealName.localeCompare(b.dealName);
         case "location": return dir * (a.pbLocation || "").localeCompare(b.pbLocation || "");
+        case "stage":
         case "phase": {
           const mA = MILESTONE_ORDER[dealStageToMilestone(a.dealStageLabel)];
           const mB = MILESTONE_ORDER[dealStageToMilestone(b.dealStageLabel)];
@@ -565,7 +585,7 @@ export default function PeSubmissionGapPage() {
       {/* Hero Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 stagger-grid">
         <StatCard label="Past CC" value={metrics?.totalCC ?? null} subtitle="Inspection or beyond" color="blue" />
-        <StatCard label="Onboarding" value={metrics?.onboardingCount ?? null} subtitle="At inspection stage" color="cyan" />
+        <StatCard label="Onboarding" value={metrics?.onboardingCount ?? null} subtitle="Pre-PTO stages" color="cyan" />
         <StatCard label="M1 Not Paid" value={metrics?.m1Gap ?? null} subtitle={metrics ? `${fmt(metrics.m1GapValue)} outstanding` : undefined} color="orange" />
         <StatCard label="M2 Not Paid" value={metrics?.m2Gap ?? null} subtitle={metrics ? `${fmt(metrics.m2GapValue)} outstanding` : undefined} color="red" />
         <StatCard label="Paid" value={metrics ? `${metrics.m1Paid} / ${metrics.m2Paid}` : null} subtitle="M1 / M2" color="green" />
@@ -672,6 +692,9 @@ export default function PeSubmissionGapPage() {
                 <tr className="text-left text-xs text-muted border-b border-border">
                   <SortHeader label="Deal" column="deal" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label="Location" column="location" current={sortCol} direction={sortDir} onSort={handleSort} />
+                  {activeTab === "onboarding" && (
+                    <SortHeader label="Deal Stage" column="stage" current={sortCol} direction={sortDir} onSort={handleSort} />
+                  )}
                   {activeTab !== "onboarding" && (
                     <SortHeader label="PE Phase" column="phase" current={sortCol} direction={sortDir} onSort={handleSort} />
                   )}
@@ -698,6 +721,11 @@ export default function PeSubmissionGapPage() {
                         </a>
                       </td>
                       <td className="py-2.5 pr-3 text-muted text-xs">{d.pbLocation}</td>
+                      {activeTab === "onboarding" && (
+                        <td className="py-2.5 pr-3">
+                          <span className="text-xs text-muted">{dealStageDisplayLabel(d.dealStageLabel)}</span>
+                        </td>
+                      )}
                       {activeTab !== "onboarding" && (
                         <td className="py-2.5 pr-3"><PePhaseBadge stageLabel={d.dealStageLabel} /></td>
                       )}
