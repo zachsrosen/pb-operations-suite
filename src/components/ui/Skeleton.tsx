@@ -2,6 +2,16 @@
 
 import { memo } from "react";
 
+/** Generic skeleton placeholder — renders an animated pulse bar at the given dimensions. */
+export function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`animate-pulse rounded bg-surface-2 ${className}`}
+      aria-hidden
+    />
+  );
+}
+
 /** Skeleton for a section with bars (stage breakdown, etc.) */
 export const SkeletonSection = memo(function SkeletonSection({
   rows = 5,

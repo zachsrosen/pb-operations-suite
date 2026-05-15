@@ -247,6 +247,9 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/api/pm-flags",
     "/api/powerhub",
     "/dashboards/powerhub",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -436,6 +439,9 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/api/pm-flags",
     "/api/powerhub",
     "/dashboards/powerhub",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flags assigned to you — open, acknowledged, and resolved.", tag: "PM FLAGS", tagColor: "orange" },
@@ -552,6 +558,9 @@ const OPERATIONS: RoleDefinition = {
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
     "/api/powerhub",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -610,6 +619,8 @@ const SERVICE: RoleDefinition = {
     "/api/zuper",
     "/api/map",
     "/api/properties",
+    // Property Hub (full-page property view)
+    "/properties",
     "/api/eagleview",
     "/api/catalog",
     "/api/products",
@@ -791,6 +802,9 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/tsrf-calculator",
     "/api/powerhub",
     "/dashboards/powerhub",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },
@@ -880,6 +894,9 @@ const DESIGN: RoleDefinition = {
     "/dashboards/tsrf-calculator",
     "/api/powerhub",
     "/dashboards/powerhub",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/design", title: "Design & Engineering", description: "Design progress, engineering approvals, and plan sets.", tag: "DESIGN", tagColor: "emerald" },
@@ -949,6 +966,9 @@ const PERMIT: RoleDefinition = {
     "/api/triage",
     "/triage",
     "/dashboards/adders",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/permitting", title: "Permitting", description: "Permit pipeline, action queue, and status tracking.", tag: "PERMIT", tagColor: "sky" },
@@ -1018,6 +1038,9 @@ const INTERCONNECT: RoleDefinition = {
     "/api/triage",
     "/triage",
     "/dashboards/adders",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection status and revisions.", tag: "IC", tagColor: "violet" },
@@ -1090,6 +1113,9 @@ const INTELLIGENCE: RoleDefinition = {
     "/dashboards/adders",
     "/dashboards/on-call",
     "/api/on-call",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/qc", title: "QC Metrics", description: "Time-between-stages analytics by office and utility.", tag: "QC", tagColor: "fuchsia" },
@@ -1152,6 +1178,9 @@ const ROOFING: RoleDefinition = {
     "/api/triage",
     "/triage",
     "/dashboards/adders",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/roofing", title: "Roofing", description: "Roofing job pipeline and scheduling.", tag: "ROOFING", tagColor: "rose" },
@@ -1219,6 +1248,9 @@ const MARKETING: RoleDefinition = {
     "/api/catalog/extract-from-datasheet",
     "/dashboards/on-call",
     "/api/on-call",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/pipeline", title: "Pipeline Overview", description: "Full pipeline with filters and milestone tracking.", tag: "PIPELINE", tagColor: "pink" },
@@ -1309,6 +1341,9 @@ const SALES_MANAGER: RoleDefinition = {
     "/api/catalog/extract-from-datasheet",
     "/dashboards/on-call",
     "/api/on-call",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [],
   scope: "global",
@@ -1371,6 +1406,9 @@ const SALES: RoleDefinition = {
     "/api/catalog/extract-from-datasheet",
     "/dashboards/on-call",
     "/api/on-call",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [
     { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking.", tag: "SALES", tagColor: "cyan" },
@@ -1430,6 +1468,9 @@ const ACCOUNTING: RoleDefinition = {
     "/api/shit-show-meeting",
     "/dashboards/on-call",
     "/api/on-call",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [],
   scope: "global",
@@ -1482,6 +1523,9 @@ const VIEWER: RoleDefinition = {
     // CrewMember row, so non-electricians see an empty state.
     "/dashboards/on-call",
     "/api/on-call",
+    // Property Hub (full-page property view)
+    "/properties",
+    "/api/properties",
   ],
   landingCards: [],
   scope: "location",

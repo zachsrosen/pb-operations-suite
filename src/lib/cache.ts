@@ -290,6 +290,10 @@ export const CACHE_KEYS = {
     `ticket-engagements:${ticketId}` as const,
   PROPERTY_TIMELINE: (propertyId: string) =>
     `property-timeline:${propertyId}` as const,
+  PROPERTY_HUB_ACTIVITY: (propertyId: string) =>
+    `property-hub:activity:${propertyId}` as const,
+  PROPERTY_HUB_DOCUMENTS: (propertyId: string) =>
+    `property-hub:documents:${propertyId}` as const,
   PAYMENT_TRACKING: "accounting:payment-tracking",
   // On-call "tonight" keys are built dynamically per-pool-per-date in
   // src/app/api/on-call/tonight/route.ts so they roll over at each pool's local

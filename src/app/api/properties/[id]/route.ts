@@ -41,6 +41,48 @@ async function resolveContactNames(
   }
 }
 
+async function resolveDealNames(
+  dealIds: string[],
+): Promise<{ id: string; name: string }[]> {
+  if (!dealIds.length) return [];
+  try {
+    const response = await withRetry(() =>
+      hubspotClient.crm.deals.batchApi.read({
+        inputs: dealIds.map((id) => ({ id })),
+        properties: ["dealname"],
+        propertiesWithHistory: [],
+      }),
+    );
+    return response.results.map((r) => {
+      const name = (r.properties as Record<string, string>).dealname || `Deal ${r.id}`;
+      return { id: r.id, name };
+    });
+  } catch {
+    return dealIds.map((id) => ({ id, name: `Deal ${id}` }));
+  }
+}
+
+async function resolveTicketSubjects(
+  ticketIds: string[],
+): Promise<{ id: string; subject: string }[]> {
+  if (!ticketIds.length) return [];
+  try {
+    const response = await withRetry(() =>
+      hubspotClient.crm.tickets.batchApi.read({
+        inputs: ticketIds.map((id) => ({ id })),
+        properties: ["subject"],
+        propertiesWithHistory: [],
+      }),
+    );
+    return response.results.map((r) => {
+      const subject = (r.properties as Record<string, string>).subject || `Ticket ${r.id}`;
+      return { id: r.id, subject };
+    });
+  } catch {
+    return ticketIds.map((id) => ({ id, subject: `Ticket ${id}` }));
+  }
+}
+
 /**
  * GET /api/properties/[id]
  *
@@ -105,9 +147,13 @@ export async function GET(
       equipmentSummary = createEmptySummary();
     }
 
-    const contacts = await resolveContactNames(base.contactIds);
+    const [contacts, deals, tickets] = await Promise.all([
+      resolveContactNames(base.contactIds),
+      resolveDealNames(base.dealIds),
+      resolveTicketSubjects(base.ticketIds),
+    ]);
 
-    const detail: PropertyDetail = { ...base, equipmentSummary, contacts };
+    const detail: PropertyDetail = { ...base, equipmentSummary, contacts, deals, tickets };
 
     return NextResponse.json(detail);
   } catch (error) {
