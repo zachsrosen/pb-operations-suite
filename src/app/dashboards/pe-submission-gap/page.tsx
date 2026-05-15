@@ -40,7 +40,7 @@ interface PeDeal {
 }
 
 // ---------------------------------------------------------------------------
-// Stage → milestone helpers
+// Stage -> milestone helpers
 // ---------------------------------------------------------------------------
 
 type DealMilestone = "pre-construction" | "construction" | "inspection" | "pto" | "close-out" | "complete";
@@ -55,30 +55,8 @@ function dealStageToMilestone(stageLabel: string): DealMilestone {
   return "pre-construction";
 }
 
-const MILESTONE_ORDER: Record<DealMilestone, number> = {
-  "pre-construction": 0,
-  construction: 1,
-  inspection: 2,
-  pto: 3,
-  "close-out": 4,
-  complete: 5,
-};
-
-// CC = Construction Complete threshold: inspection stage and beyond
-function hasHitCC(stageLabel: string): boolean {
-  return MILESTONE_ORDER[dealStageToMilestone(stageLabel)] >= MILESTONE_ORDER["inspection"];
-}
-
-// M1 requires: Inspection Complete + docs → PE reviews → approved → paid
 const M1_COMPLETE_STATUSES = new Set(["Approved", "Paid"]);
 const M2_COMPLETE_STATUSES = new Set(["Approved", "Paid"]);
-
-function m2BlockReason(stageLabel: string): string | null {
-  const m = dealStageToMilestone(stageLabel);
-  if (m === "inspection") return "Waiting on Inspection";
-  if (m === "pto") return "Waiting on PTO";
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // Tab types + per-tab helpers
@@ -184,23 +162,11 @@ function StatusBadge({ status }: { status: string | null }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>{status}</span>;
 }
 
-function BlockReasonBadge({ reason }: { reason: string }) {
-  const isInspection = reason.includes("Inspection");
-  const color = isInspection
-    ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
-    : "bg-purple-500/20 text-purple-400 border-purple-500/30";
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border ${color}`}>
-      {reason}
-    </span>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortColumn = "deal" | "location" | "stage" | "status" | "amount" | "blockReason" | "date";
+type SortColumn = "deal" | "location" | "stage" | "status" | "amount" | "date";
 type SortDirection = "asc" | "desc";
 
 function SortHeader({ label, column, current, direction, onSort, align }: {
@@ -249,13 +215,12 @@ export default function PeSubmissionGapPage() {
   const [search, setSearch] = useState("");
   const [locFilter, setLocFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [blockFilter, setBlockFilter] = useState<string[]>([]);
   const [sortCol, setSortCol] = useState<SortColumn | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
 
   const allDeals = data?.deals ?? [];
 
-  // ---- Deal lists per tab ----
+  // ---- Deal lists per tab (strict, non-overlapping stage buckets) ----
 
   const preConstructionDeals = useMemo(
     () => allDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "pre-construction"),
@@ -270,16 +235,22 @@ export default function PeSubmissionGapPage() {
     [allDeals],
   );
 
-  const ccDeals = useMemo(() => allDeals.filter((d) => hasHitCC(d.dealStageLabel)), [allDeals]);
-
+  // M1 = PTO stage only, not yet approved/paid
   const m1GapDeals = useMemo(
-    () => ccDeals.filter((d) => !M1_COMPLETE_STATUSES.has(d.peM1Status ?? "")),
-    [ccDeals],
+    () => allDeals.filter((d) =>
+      dealStageToMilestone(d.dealStageLabel) === "pto" &&
+      !M1_COMPLETE_STATUSES.has(d.peM1Status ?? ""),
+    ),
+    [allDeals],
   );
 
+  // M2 = Close Out stage only, not yet approved/paid
   const m2GapDeals = useMemo(
-    () => ccDeals.filter((d) => !M2_COMPLETE_STATUSES.has(d.peM2Status ?? "")),
-    [ccDeals],
+    () => allDeals.filter((d) =>
+      dealStageToMilestone(d.dealStageLabel) === "close-out" &&
+      !M2_COMPLETE_STATUSES.has(d.peM2Status ?? ""),
+    ),
+    [allDeals],
   );
 
   // ---- Tab totals for headers ----
@@ -319,15 +290,7 @@ export default function PeSubmissionGapPage() {
       const s = getStatus(d, activeTab) || "Not Started";
       if (!statusSet.has(s)) { statusSet.add(s); statuses.push(s); }
     }
-    const blockReasons: string[] = [];
-    if (activeTab === "m2") {
-      const brSet = new Set<string>();
-      for (const d of activeDeals) {
-        const br = m2BlockReason(d.dealStageLabel);
-        if (br && !brSet.has(br)) { brSet.add(br); blockReasons.push(br); }
-      }
-    }
-    return { locations, statuses, blockReasons };
+    return { locations, statuses };
   }, [activeDeals, activeTab]);
 
   // ---- Apply filters ----
@@ -343,13 +306,9 @@ export default function PeSubmissionGapPage() {
         const s = getStatus(d, activeTab) || "Not Started";
         if (!statusFilter.includes(s)) return false;
       }
-      if (blockFilter.length > 0 && activeTab === "m2") {
-        const br = m2BlockReason(d.dealStageLabel);
-        if (!br || !blockFilter.includes(br)) return false;
-      }
       return true;
     });
-  }, [activeDeals, search, locFilter, statusFilter, blockFilter, activeTab]);
+  }, [activeDeals, search, locFilter, statusFilter, activeTab]);
 
   // ---- Sort ----
 
@@ -380,11 +339,6 @@ export default function PeSubmissionGapPage() {
           const dB = getDate(b, activeTab) ?? "";
           return dir * dA.localeCompare(dB);
         }
-        case "blockReason": {
-          const brA = m2BlockReason(a.dealStageLabel) || "";
-          const brB = m2BlockReason(b.dealStageLabel) || "";
-          return dir * brA.localeCompare(brB);
-        }
         default: return 0;
       }
     });
@@ -397,17 +351,18 @@ export default function PeSubmissionGapPage() {
 
     const m1Gap = m1GapDeals.length;
     const m2Gap = m2GapDeals.length;
-    const m1Complete = ccDeals.filter((d) => M1_COMPLETE_STATUSES.has(d.peM1Status ?? "")).length;
-    const m2Complete = ccDeals.filter((d) => M2_COMPLETE_STATUSES.has(d.peM2Status ?? "")).length;
+    // M1 complete = PTO stage deals where M1 IS approved/paid
+    const m1Complete = allDeals.filter((d) =>
+      dealStageToMilestone(d.dealStageLabel) === "pto" &&
+      M1_COMPLETE_STATUSES.has(d.peM1Status ?? ""),
+    ).length;
+    // M2 complete = Close Out stage deals where M2 IS approved/paid
+    const m2Complete = allDeals.filter((d) =>
+      dealStageToMilestone(d.dealStageLabel) === "close-out" &&
+      M2_COMPLETE_STATUSES.has(d.peM2Status ?? ""),
+    ).length;
     const m1GapValue = m1GapDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2GapValue = m2GapDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-
-    const m2WaitingInspection = m2GapDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "inspection").length;
-    const m2WaitingPTO = m2GapDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "pto").length;
-    const m2PastPTO = m2GapDeals.filter((d) => {
-      const m = dealStageToMilestone(d.dealStageLabel);
-      return m === "close-out" || m === "complete";
-    }).length;
 
     const m1ByStatus = new Map<string, number>();
     for (const d of m1GapDeals) {
@@ -422,14 +377,12 @@ export default function PeSubmissionGapPage() {
 
     return {
       totalPE: allDeals.length,
-      totalCC: ccDeals.length,
       m1Gap, m2Gap, m1Complete, m2Complete,
       m1GapValue, m2GapValue,
-      m2WaitingInspection, m2WaitingPTO, m2PastPTO,
       m1ByStatus: [...m1ByStatus.entries()].sort((a, b) => b[1] - a[1]),
       m2ByStatus: [...m2ByStatus.entries()].sort((a, b) => b[1] - a[1]),
     };
-  }, [allDeals, ccDeals, m1GapDeals, m2GapDeals]);
+  }, [allDeals, m1GapDeals, m2GapDeals]);
 
   // ---- Filtered totals ----
 
@@ -437,7 +390,7 @@ export default function PeSubmissionGapPage() {
     return filtered.reduce((s, d) => s + (getPayment(d, activeTab) ?? 0), 0);
   }, [filtered, activeTab]);
 
-  const hasFilters = search || locFilter.length > 0 || statusFilter.length > 0 || blockFilter.length > 0;
+  const hasFilters = search || locFilter.length > 0 || statusFilter.length > 0;
 
   // ---- Tab config ----
 
@@ -452,7 +405,7 @@ export default function PeSubmissionGapPage() {
     <DashboardShell title="PE Submission Gap" accentColor="orange" lastUpdated={data?.lastUpdated} fullWidth>
       <p className="text-muted text-sm mb-6">
         Participate Energy deal pipeline — pre-construction through close out.
-        M1 and M2 tabs show CC+ deals not yet approved/paid.
+        M1 tab shows PTO-stage deals not yet approved/paid. M2 tab shows Close Out-stage deals not yet approved/paid.
       </p>
 
       {/* Hero Stats */}
@@ -501,32 +454,18 @@ export default function PeSubmissionGapPage() {
             </div>
           </div>
 
-          {/* M2 breakdown by blocker */}
+          {/* M2 breakdown */}
           <div className="bg-surface rounded-xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground mb-3">M2 Gap — Blocked By</h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted">Waiting on Inspection</span>
-                <span className="text-sm font-medium text-amber-400 tabular-nums">{metrics.m2WaitingInspection}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted">Waiting on PTO</span>
-                <span className="text-sm font-medium text-purple-400 tabular-nums">{metrics.m2WaitingPTO}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted">Past PTO — Submission Pending</span>
-                <span className="text-sm font-medium text-orange-400 tabular-nums">{metrics.m2PastPTO}</span>
-              </div>
-              <div className="border-t border-border pt-2 mt-2">
-                <div className="space-y-2">
-                  {metrics.m2ByStatus.map(([status, count]) => (
-                    <div key={status} className="flex items-center justify-between">
-                      <StatusBadge status={status === "Not Started" ? null : status} />
-                      <span className="text-xs font-medium text-muted tabular-nums">{count}</span>
-                    </div>
-                  ))}
+            <h3 className="text-sm font-semibold text-foreground mb-3">M2 Gap — Status Breakdown</h3>
+            <div className="space-y-2">
+              {metrics.m2ByStatus.map(([status, count]) => (
+                <div key={status} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={status === "Not Started" ? null : status} />
+                  </div>
+                  <span className="text-sm font-medium text-foreground tabular-nums">{count}</span>
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
@@ -543,7 +482,7 @@ export default function PeSubmissionGapPage() {
                   ? "text-orange-400 border-b-2 border-orange-400 bg-orange-500/5"
                   : "text-muted hover:text-foreground"
               }`}
-              onClick={() => { setActiveTab(t.key); setStatusFilter([]); setBlockFilter([]); }}
+              onClick={() => { setActiveTab(t.key); setStatusFilter([]); }}
             >
               {t.label}
               <span className="ml-2 text-xs opacity-70">({t.sublabel})</span>
@@ -575,18 +514,9 @@ export default function PeSubmissionGapPage() {
               onChange={setStatusFilter}
               accentColor="orange"
             />
-            {activeTab === "m2" && filterOptions.blockReasons.length > 0 && (
-              <MultiSelectFilter
-                label="Blocked By"
-                options={filterOptions.blockReasons.map((r) => ({ value: r, label: r }))}
-                selected={blockFilter}
-                onChange={setBlockFilter}
-                accentColor="orange"
-              />
-            )}
             {hasFilters && (
               <button
-                onClick={() => { setSearch(""); setLocFilter([]); setStatusFilter([]); setBlockFilter([]); }}
+                onClick={() => { setSearch(""); setLocFilter([]); setStatusFilter([]); }}
                 className="text-xs text-muted hover:text-foreground transition-colors"
               >
                 Clear filters
@@ -612,9 +542,6 @@ export default function PeSubmissionGapPage() {
                   <SortHeader label="Location" column="location" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label="Deal Stage" column="stage" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label={tabStatusLabel(activeTab)} column="status" current={sortCol} direction={sortDir} onSort={handleSort} />
-                  {activeTab === "m2" && (
-                    <SortHeader label="Blocked By" column="blockReason" current={sortCol} direction={sortDir} onSort={handleSort} />
-                  )}
                   <SortHeader label={tabDateLabel(activeTab)} column="date" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label={tabPaymentLabel(activeTab)} column="amount" current={sortCol} direction={sortDir} onSort={handleSort} align="right" />
                   <th className="pb-2 text-right">Links</th>
@@ -625,7 +552,6 @@ export default function PeSubmissionGapPage() {
                   const status = getStatus(d, activeTab);
                   const paymentAmount = getPayment(d, activeTab);
                   const dateValue = getDate(d, activeTab);
-                  const blockReason = activeTab === "m2" ? m2BlockReason(d.dealStageLabel) : null;
 
                   return (
                     <tr key={d.dealId} className="border-b border-border/30 hover:bg-surface-2/50 transition-colors">
@@ -642,11 +568,6 @@ export default function PeSubmissionGapPage() {
                       <td className="py-2.5 pr-3 text-muted text-xs">{d.pbLocation}</td>
                       <td className="py-2.5 pr-3 text-xs text-foreground">{d.dealStageLabel}</td>
                       <td className="py-2.5 pr-3"><StatusBadge status={status} /></td>
-                      {activeTab === "m2" && (
-                        <td className="py-2.5 pr-3">
-                          {blockReason ? <BlockReasonBadge reason={blockReason} /> : <span className="text-xs text-muted">Ready</span>}
-                        </td>
-                      )}
                       <td className="py-2.5 pr-3 text-xs text-muted tabular-nums">{fmtDate(dateValue)}</td>
                       <td className="py-2.5 pr-3 text-right text-foreground font-medium tabular-nums">{fmt(paymentAmount)}</td>
                       <td className="py-2.5 text-right">
@@ -678,8 +599,8 @@ export default function PeSubmissionGapPage() {
                 ? "No projects match your filters."
                 : activeTab === "preconstruction" ? "No PE deals in pre-construction stages."
                 : activeTab === "construction" ? "No PE deals in construction/inspection stages."
-                : activeTab === "m1" ? "All CC projects have M1 approved or paid!"
-                : "All CC projects have M2 approved or paid!"}
+                : activeTab === "m1" ? "All PTO-stage projects have M1 approved or paid!"
+                : "All Close Out-stage projects have M2 approved or paid!"}
             </div>
           )}
         </div>
