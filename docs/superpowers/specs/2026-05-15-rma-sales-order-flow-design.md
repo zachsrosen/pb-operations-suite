@@ -22,7 +22,7 @@ Build an RMA flow that lets a tech select replacement and defective parts from t
 | Capture both outbound + inbound items from day one | Phase 3 needs the defective-return data. Cheaper to capture at creation time than backfill later. |
 | Parts come from `InternalProduct` catalog, not HubSpot quotes | No existing HubSpot quote integration; catalog search already works. Replacement may be a different model than the original. |
 | Warehouse resolved from ticket location | Same pattern as regular BOM SO flow via `pbLocation`. |
-| SO number format: `SO-RMA-T-{ticketId}` | Distinguishes RMA SOs from regular BOM SOs (`SO-PROJ-XXXX`) in Zoho. |
+| SO number format: `SO-RMA-{rmaOrderId}` | Unique per RMA order (not per ticket — a ticket can have multiple RMAs). Distinguishes from regular BOM SOs (`SO-PROJ-XXXX`, `SO-T-XXXX`) in Zoho. |
 
 ---
 
@@ -52,7 +52,7 @@ model RmaOrder {
   // Outbound — replacement parts going to customer
   outboundItems Json      // RmaLineItem[]
   zohoSoId      String?   // Zoho Sales Order ID once created
-  zohoSoNumber  String?   // e.g. "SO-RMA-T-12345"
+  zohoSoNumber  String?   // e.g. "SO-RMA-cm1abc2de" (unique per RMA order)
 
   // Inbound — defective parts being returned (Phase 3 fulfillment)
   inboundItems     Json?     // RmaLineItem[]
@@ -73,6 +73,7 @@ model RmaOrder {
   @@index([ticketId])
   @@index([status])
   @@index([zohoSoId])
+  @@index([powerhubAlertId])
 }
 ```
 
@@ -85,7 +86,7 @@ interface RmaLineItem {
   model: string;
   category: EquipmentCategory;
   quantity: number;
-  unitSpec?: string | null; // e.g. "400W", "13.5kWh"
+  unitSpecLabel?: string | null; // Formatted from InternalProduct.unitSpec (Float) + unitLabel (String), e.g. "400W", "13.5kWh"
   zohoItemId?: string | null; // InternalProduct.zohoItemId for SO creation
   hubspotProductId?: string | null;
   condition?: string | null; // Phase 3: "defective", "damaged", etc.
@@ -105,11 +106,15 @@ enum PowerhubAlertSeverity {
 
 Phase 1 adds the enum value. Phase 2 changes the sync code to use it.
 
+**Phase 2 implementation note:** `powerhub-sync.ts` lines 554–558 have a hardcoded TypeScript annotation `const severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL"` that maps all unknown severities (including `ReturnMerchandiseAuthorization`) to `INFORMATIONAL`. Phase 2 must update this annotation to include `"RMA"` and add the mapping. Phase 1 adds a `// TODO(Phase 2 RMA): map ReturnMerchandiseAuthorization → RMA here` comment at that location.
+
+**Duplicate prevention:** Phase 2 must enforce at the application layer that only one auto-detected `RmaOrder` is created per `powerhubAlertId` (check before insert). The `@@index([powerhubAlertId])` supports this lookup.
+
 ---
 
 ## API Routes
 
-All routes under `/api/service/rma/`. Added to role allowlists for: SERVICE, OPS, OPERATIONS_MANAGER, PROJECT_MANAGER, ADMIN, OWNER.
+All routes under `/api/service/rma/`. No additional `allowedRoutes` changes needed — `/api/service/rma` is covered by the existing `/api/service` prefix already present for SERVICE, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER, ADMIN, and OWNER/EXECUTIVE roles.
 
 ### `POST /api/service/rma`
 
@@ -139,27 +144,30 @@ Create an RMA order in DRAFT status.
 
 Create a Zoho Sales Order from a DRAFT RMA order.
 
-**Request body:**
-```typescript
-{
-  customerId: string; // Zoho customer ID
-}
-```
-
 **Flow:**
 1. Load `RmaOrder` — must be in `DRAFT` status
-2. Build `ZohoSalesOrderPayload`:
-   - `salesorder_number`: `SO-RMA-T-{ticketId}`
-   - `reference_number`: `ticketSubject`
+2. **Idempotency guard:** If `rmaOrder.zohoSoId` is already set, return the existing SO immediately (same pattern as `createTicketSalesOrder` in `bom-so-create.ts` line ~120)
+3. Auto-resolve Zoho customer from ticket → deal → company association (same chain as `bom-so-create.ts` lines 273–291). If `customerId` is provided in the request body, use it as an override; otherwise auto-resolve. If resolution fails and no override provided, return 422 with instructions to provide `customerId`.
+4. Build `ZohoSalesOrderPayload`:
+   - `salesorder_number`: `SO-RMA-{rmaOrder.id}` (unique per RMA order, not per ticket)
+   - `reference_number`: `Ticket ${ticketId} | ${ticketSubject}`.slice(0, 50) (matches existing ticket SO format, respects Zoho's 50-char limit)
    - `notes`: "RMA — Replacing: {inbound item summaries}. Sending: {outbound item summaries}."
    - `custom_fields`: `[{ label: "RMA", value: "true" }, { label: "HubSpot Ticket Record ID", value: ticketId }]`
    - `line_items`: map `outboundItems` → `{ item_id: zohoItemId, name: "brand model", quantity, warehouse_id }`
-   - `warehouse_id`: resolved from `pbLocation` using existing warehouse mapping in `bom-so-create.ts`
-3. Call `zohoInventory.createSalesOrder(payload)`
-4. Update `RmaOrder`: `zohoSoId`, `zohoSoNumber`, `status` → `SO_CREATED`
-5. Log activity: `ActivityType.RMA_SO_CREATED` (new enum value)
+   - `warehouse_id`: resolved from `pbLocation` using existing warehouse mapping
+5. Call `zohoInventory.createSalesOrder(payload)`
+6. **Crash recovery:** If the Zoho call succeeds but the DB update fails (crash between steps 5 and 7), the next retry hits the idempotency guard. If Zoho returns "already exists", recover the SO ID from `zohoInventory.getSalesOrder()` by searching for the SO number (same recovery path as `bom-so-create.ts` lines 649–695).
+7. Update `RmaOrder`: `zohoSoId`, `zohoSoNumber`, `status` → `SO_CREATED`
+8. Log activity: `ActivityType.RMA_SO_CREATED` (new enum value)
 
-**Error handling:** If Zoho call fails, return error but don't change status. Tech can retry.
+**Error handling:** If Zoho call fails for reasons other than "already exists", return error but don't change status. Tech can retry.
+
+**Request body:**
+```typescript
+{
+  customerId?: string; // Optional Zoho customer ID override. Auto-resolved from ticket if omitted.
+}
+```
 
 ### `GET /api/service/rma?ticketId=X`
 
@@ -175,7 +183,7 @@ Single RMA order detail.
 
 Extract reusable Zoho SO plumbing from `bom-so-create.ts` into `lib/zoho-so-helpers.ts`:
 
-- `resolveZohoWarehouse(pbLocation: string): string | undefined` — location → warehouse ID mapping
+- `resolveZohoWarehouse(pbLocation: string | null | undefined): string | undefined` — location → warehouse ID mapping. Logs `console.warn` on unknown locations (consistent with existing behavior).
 - `buildZohoLineItems(items: RmaLineItem[], warehouseId?: string): ZohoSalesOrderLineItem[]` — map product snapshots to Zoho format
 
 The existing `createTicketSalesOrder` and `createSalesOrder` continue to work unchanged. The RMA route calls the helpers directly + `zohoInventory.createSalesOrder()`.
@@ -216,9 +224,8 @@ On the service ticket detail panel in `/dashboards/service-tickets/page.tsx`, ad
 
 **DRAFT state:**
 - Card showing outbound/inbound items summary
-- "Create Sales Order" button
-- Customer picker (same Zoho customer resolution as BOM SO flow) shown on click
-- "Create SO" → `POST /api/service/rma/[id]/create-so`
+- "Create Sales Order" button → `POST /api/service/rma/[id]/create-so`
+- Customer auto-resolved from ticket associations. If resolution fails, shows a customer picker (same Zoho customer list as BOM SO flow via `GET /api/bom/zoho-customers`) before retrying with `customerId` override.
 
 **SO_CREATED state:**
 - Green status badge
@@ -239,32 +246,24 @@ src/components/service/
 
 ## Activity Tracking
 
-New `ActivityType` enum value: `RMA_SO_CREATED`
+Two new `ActivityType` enum values:
 
-Logged when the Zoho SO is successfully created, with metadata: `{ ticketId, rmaOrderId, zohoSoId, zohoSoNumber, itemCount }`.
+- **`RMA_ORDER_CREATED`** — logged when a draft RMA is saved (`POST /api/service/rma`), with metadata: `{ ticketId, rmaOrderId, outboundCount, inboundCount }`
+- **`RMA_SO_CREATED`** — logged when the Zoho SO is created (`POST /api/service/rma/[id]/create-so`), with metadata: `{ ticketId, rmaOrderId, zohoSoId, zohoSoNumber, itemCount }`
 
 ---
 
 ## Role Access
 
-Add `/api/service/rma` to `allowedRoutes` for these roles in `src/lib/roles.ts`:
-
-| Role | Access |
-|------|--------|
-| ADMIN | Yes |
-| OWNER | Yes |
-| PROJECT_MANAGER | Yes |
-| OPERATIONS_MANAGER | Yes |
-| OPERATIONS | Yes |
-| SERVICE | Yes |
-
-Same roles that already have `/api/service` access.
+No `allowedRoutes` changes needed. The middleware uses prefix matching, and `/api/service/rma` is covered by the existing `/api/service` prefix present for: ADMIN, OWNER/EXECUTIVE, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, and SERVICE.
 
 ---
 
 ## Feature Flag
 
 `NEXT_PUBLIC_RMA_ENABLED` — controls UI visibility. API routes return 404 when `RMA_ENABLED` env var is falsy (server-side check).
+
+Add both `NEXT_PUBLIC_RMA_ENABLED` and `RMA_ENABLED` to `.env.example` with default values of `false`.
 
 ---
 
