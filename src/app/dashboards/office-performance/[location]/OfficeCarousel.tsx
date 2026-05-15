@@ -22,6 +22,7 @@ import PipelineBarsSection from "./PipelineBarsSection";
 import CalendarSection from "./CalendarSection";
 import CalendarWeekSection from "./CalendarWeekSection";
 import CalendarDaySection from "./CalendarDaySection";
+import ServiceSection from "./ServiceSection";
 import { CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
 import type { CanonicalLocation } from "@/lib/locations";
 import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";
@@ -207,6 +208,16 @@ export default function OfficeCarousel({
         return <CalendarWeekSection location={data.location} />;
       case "calendarDay":
         return <CalendarDaySection location={data.location} />;
+      case "service":
+        return data.service ? (
+          <ServiceSection data={data.service} />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="text-slate-400 text-sm">No service data available</div>
+            </div>
+          </div>
+        );
       case "allLocations":
         if (!allLocationsData?.locations) {
           return (

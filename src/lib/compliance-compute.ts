@@ -113,6 +113,8 @@ const CATEGORY_NAME_TO_UID: Record<string, string> = {
   "Construction - Battery": JOB_CATEGORY_UIDS.BATTERY_INSTALL,
   "Construction - EV": JOB_CATEGORY_UIDS.EV_INSTALL,
   Inspection: JOB_CATEGORY_UIDS.INSPECTION,
+  "Service Visit": JOB_CATEGORY_UIDS.SERVICE_VISIT,
+  "Service Revisit": JOB_CATEGORY_UIDS.SERVICE_REVISIT,
 };
 
 // ========== Core computation ==========

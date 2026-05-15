@@ -18,8 +18,11 @@ import type {
   TeamResultsData,
   CrewMemberStats,
   RecentWin,
+  ServiceData,
 } from "@/lib/office-performance-types";
 import { computeLocationCompliance } from "@/lib/compliance-compute";
+import { fetchServiceTickets, searchTicketsWithRetry } from "@/lib/hubspot-tickets";
+import { STAGE_MAPS, PIPELINE_IDS, ACTIVE_STAGES } from "@/lib/deals-pipeline";
 
 // ---------- Name Matching ----------
 
@@ -1867,6 +1870,154 @@ async function enrichWithQcMetrics(
   }
 }
 
+// ---------- Service Data ----------
+
+export async function buildServiceData(
+  group: DashboardLocationGroup,
+  now: Date,
+  locationDealIds?: Set<string>,
+): Promise<ServiceData> {
+  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const primaryCanonical = group.canonicals[0];
+  const canonicalSet = new Set(group.canonicals);
+
+  // 1. Open service tickets filtered to this location
+  const allTickets = await fetchServiceTickets();
+  const locationTickets = allTickets.filter((t) => {
+    const loc = normalizeLocation(t.location);
+    return loc !== null && canonicalSet.has(loc);
+  });
+  const openTickets = locationTickets.length;
+
+  // 2. Service-pipeline deals for this location
+  const servicePipelineId = PIPELINE_IDS.service;
+  const stageMap = STAGE_MAPS.service;
+  const activeStages = ACTIVE_STAGES.service;
+  const activeStageIds = Object.entries(stageMap)
+    .filter(([, label]) => activeStages.includes(label))
+    .map(([id]) => id);
+
+  let serviceDeals: Array<{ id: string; properties: Record<string, string> }> = [];
+  let after: string | undefined;
+  do {
+    const response = await searchWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: servicePipelineId },
+          { propertyName: "dealstage", operator: FilterOperatorEnum.In, values: activeStageIds },
+        ],
+      }],
+      properties: [
+        "dealname", "dealstage", "pb_location", "amount",
+        "createdate", "hs_lastmodifieddate",
+      ],
+      sorts: ["createdate"],
+      limit: 100,
+      ...(after ? { after } : {}),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    serviceDeals = serviceDeals.concat(
+      (response.results || []).map((d: any) => ({
+        id: d.id as string,
+        properties: d.properties as Record<string, string>,
+      }))
+    );
+    after = response.paging?.next?.after;
+  } while (after);
+
+  const locationServiceDeals = serviceDeals.filter((d) => {
+    const loc = normalizeLocation(d.properties.pb_location);
+    return loc !== null && canonicalSet.has(loc);
+  });
+
+  // Stage distribution
+  const stageCounts = new Map<string, number>();
+  for (const deal of locationServiceDeals) {
+    const stageName = stageMap[deal.properties.dealstage] || "Unknown";
+    stageCounts.set(stageName, (stageCounts.get(stageName) || 0) + 1);
+  }
+  const dealsByStage = Array.from(stageCounts.entries())
+    .map(([stage, count]) => ({ stage, count }))
+    .sort((a, b) => activeStages.indexOf(a.stage) - activeStages.indexOf(b.stage));
+
+  // 3. Resolved tickets this month
+  let resolvedMtd = 0;
+  let totalResolutionDays = 0;
+  try {
+    const closedResponse = await searchTicketsWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: "hs_pipeline", operator: FilterOperatorEnum.Eq, value: process.env.HUBSPOT_SERVICE_TICKET_PIPELINE_ID || "0" },
+          { propertyName: "closed_date", operator: FilterOperatorEnum.Gte, value: mtdStart.getTime().toString() },
+          { propertyName: "closed_date", operator: FilterOperatorEnum.Lte, value: now.getTime().toString() },
+        ],
+      }],
+      properties: ["closed_date", "createdate", "hs_pipeline_stage"],
+      limit: 100,
+    });
+    // Company-wide count (location filtering would require expensive association resolution)
+    const closedTickets = closedResponse.results || [];
+    resolvedMtd = closedTickets.length;
+    for (const t of closedTickets) {
+      const created = t.properties?.createdate ? new Date(t.properties.createdate).getTime() : 0;
+      const closed = t.properties?.closed_date ? new Date(t.properties.closed_date).getTime() : 0;
+      if (created > 0 && closed > 0) {
+        totalResolutionDays += (closed - created) / (1000 * 60 * 60 * 24);
+      }
+    }
+  } catch (err) {
+    console.warn("[office-performance] Service ticket resolution fetch failed:", err);
+  }
+  const avgDaysToResolve = resolvedMtd > 0 ? Math.round((totalResolutionDays / resolvedMtd) * 10) / 10 : 0;
+
+  // 4. Zuper service job leaderboard (MTD completions)
+  const [mtdVisitJobs, mtdRevisitJobs] = await Promise.all([
+    getZuperJobsByLocation(primaryCanonical, "Service Visit", mtdStart, now, locationDealIds),
+    getZuperJobsByLocation(primaryCanonical, "Service Revisit", mtdStart, now, locationDealIds),
+  ]);
+  const allServiceJobs = [...mtdVisitJobs, ...mtdRevisitJobs];
+
+  const userCounts = new Map<string, UserJobCount>();
+  for (const job of allServiceJobs) {
+    for (const user of extractAssignedUsers(job.assignedUsers)) {
+      const existing = userCounts.get(user.user_uid) || {
+        name: user.user_name,
+        userUid: user.user_uid,
+        count: 0,
+      };
+      existing.count++;
+      userCounts.set(user.user_uid, existing);
+    }
+  }
+  const leaderboard: EnrichedPersonStat[] = Array.from(userCounts.values())
+    .sort((a, b) => b.count - a.count)
+    .map((u) => ({ name: u.name, count: u.count, userUid: u.userUid }));
+
+  // 5. Deal rows
+  const deals: DealRow[] = locationServiceDeals.slice(0, 20).map((d) => ({
+    name: d.properties.dealname || "Untitled",
+    stage: stageMap[d.properties.dealstage] || "Unknown",
+    daysInStage: Math.floor(
+      (now.getTime() - new Date(d.properties.hs_lastmodifieddate || d.properties.createdate).getTime()) /
+      (1000 * 60 * 60 * 24)
+    ),
+    overdue: false,
+    daysOverdue: 0,
+    amount: d.properties.amount ? parseFloat(d.properties.amount) : undefined,
+  }));
+
+  return {
+    openTickets,
+    resolvedMtd,
+    avgDaysToResolve,
+    dealsByStage,
+    activeDeals: locationServiceDeals.length,
+    leaderboard,
+    deals,
+    totalCount: locationServiceDeals.length,
+  };
+}
+
 // ---------- Main Orchestrator ----------
 
 export async function getOfficePerformanceData(
@@ -1949,11 +2100,12 @@ export async function getOfficePerformanceData(
   const assignedUserMap = await resolveZuperAssignedUsers(dealIds, dealNameMap);
 
   // Build all section data in parallel (team results replaces pipeline)
-  const [teamResults, surveys, installs, inspections] = await Promise.all([
+  const [teamResults, surveys, installs, inspections, service] = await Promise.all([
     buildTeamResultsData(group, now, locationProjects, locationDealIds),
     buildSurveyData(group, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
     buildInstallData(group, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
     buildInspectionData(group, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
+    buildServiceData(group, now, locationDealIds),
   ]);
 
   // Enrich with QC metrics and live Zuper compliance in parallel.
@@ -1962,7 +2114,7 @@ export async function getOfficePerformanceData(
   // team filter (LOCATION_TEAM_FILTERS in compliance-compute.ts) maps both
   // canonicals to the same team, so one call returns the right team-level data
   // and dealIds attribute jobs across the combined deal set.
-  const [, surveyCompliance, installCompliance, inspectionCompliance] = await Promise.all([
+  const [, surveyCompliance, installCompliance, inspectionCompliance, serviceVisitCompliance, serviceRevisitCompliance] = await Promise.all([
     enrichWithQcMetrics(group, null, surveys, installs, inspections),
     computeLocationCompliance("Site Survey", primaryCanonical, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Survey compliance fetch failed:", err);
@@ -1974,6 +2126,14 @@ export async function getOfficePerformanceData(
     }),
     computeLocationCompliance("Inspection", primaryCanonical, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Inspection compliance fetch failed:", err);
+      return null;
+    }),
+    computeLocationCompliance("Service Visit", primaryCanonical, 30, locationDealIds).catch((err) => {
+      console.warn("[office-performance] Service Visit compliance fetch failed:", err);
+      return null;
+    }),
+    computeLocationCompliance("Service Revisit", primaryCanonical, 30, locationDealIds).catch((err) => {
+      console.warn("[office-performance] Service Revisit compliance fetch failed:", err);
       return null;
     }),
   ]);
@@ -2028,6 +2188,42 @@ export async function getOfficePerformanceData(
     };
   }
 
+  // Merge Service Visit + Service Revisit compliance into a single SectionCompliance
+  if (service && (serviceVisitCompliance || serviceRevisitCompliance)) {
+    const primary = serviceVisitCompliance || serviceRevisitCompliance;
+    const secondary = serviceVisitCompliance ? serviceRevisitCompliance : null;
+
+    if (primary) {
+      const mergedEmployees = [...primary.byEmployee];
+      if (secondary) {
+        for (const emp of secondary.byEmployee) {
+          const existing = mergedEmployees.find((e) => e.userUid === emp.userUid || e.name === emp.name);
+          if (existing) {
+            existing.totalJobs += emp.totalJobs;
+            existing.completedJobs += emp.completedJobs;
+          } else {
+            mergedEmployees.push(emp);
+          }
+        }
+      }
+
+      service.compliance = {
+        totalJobs: primary.summary.totalJobs + (secondary?.summary.totalJobs || 0),
+        completedJobs: primary.summary.completedJobs + (secondary?.summary.completedJobs || 0),
+        onTimePercent: primary.summary.onTimePercent,
+        stuckJobs: [...primary.stuckJobs, ...(secondary?.stuckJobs || [])],
+        neverStartedCount: primary.summary.neverStartedCount + (secondary?.summary.neverStartedCount || 0),
+        avgDaysToComplete: primary.summary.avgDaysToComplete,
+        avgDaysLate: primary.summary.avgDaysLate,
+        oowUsagePercent: primary.summary.oowUsagePercent,
+        oowOnTimePercent: primary.summary.oowOnTimePercent,
+        aggregateGrade: primary.summary.aggregateGrade,
+        aggregateScore: primary.summary.aggregateScore,
+        byEmployee: mergedEmployees,
+      };
+    }
+  }
+
   return {
     location: group.label,
     lastUpdated: now.toISOString(),
@@ -2035,5 +2231,6 @@ export async function getOfficePerformanceData(
     surveys,
     installs,
     inspections,
+    service,
   };
 }
