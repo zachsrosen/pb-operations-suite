@@ -551,6 +551,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
         if (!siteId) continue;
 
         // Normalize severity to match Prisma enum
+        // TODO(Phase 2 RMA): map ReturnMerchandiseAuthorization → RMA here
         const rawSev = alert.severity?.toUpperCase() || "";
         const severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL" =
           rawSev === "CRITICAL" ? "CRITICAL" :
