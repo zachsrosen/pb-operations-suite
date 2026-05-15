@@ -57,11 +57,10 @@ function dealStageToMilestone(stageLabel: string): DealMilestone {
 
 const M1_PAID = new Set(["Paid"]);
 const M2_PAID = new Set(["Paid"]);
-const DONE_STATUSES = new Set(["Approved", "Paid"]);
 
-/** Both M1 and M2 fully approved or paid — belongs on Complete tab only */
-function isBothDone(d: PeDeal): boolean {
-  return DONE_STATUSES.has(d.peM1Status ?? "") && DONE_STATUSES.has(d.peM2Status ?? "");
+/** Both M1 and M2 fully paid — belongs on Complete tab only */
+function isBothPaid(d: PeDeal): boolean {
+  return d.peM1Status === "Paid" && d.peM2Status === "Paid";
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +250,7 @@ export default function PeSubmissionGapPage() {
       const m = dealStageToMilestone(d.dealStageLabel);
       return (m === "pto" || m === "close-out") &&
         !M1_PAID.has(d.peM1Status ?? "") &&
-        !isBothDone(d);
+        !isBothPaid(d);
     }),
     [allDeals],
   );
@@ -261,14 +260,14 @@ export default function PeSubmissionGapPage() {
     () => allDeals.filter((d) =>
       dealStageToMilestone(d.dealStageLabel) === "close-out" &&
       !M2_PAID.has(d.peM2Status ?? "") &&
-      !isBothDone(d),
+      !isBothPaid(d),
     ),
     [allDeals],
   );
 
   // Complete = both M1 and M2 approved or paid (any post-construction stage)
   const completeDeals = useMemo(
-    () => allDeals.filter((d) => isBothDone(d)),
+    () => allDeals.filter((d) => isBothPaid(d)),
     [allDeals],
   );
 
@@ -413,7 +412,7 @@ export default function PeSubmissionGapPage() {
     { key: "construction", label: "Construction", sublabel: `${tabCounts.construction} · ${fmt(tabTotals.construction)}` },
     { key: "m1", label: "M1 Not Paid", sublabel: `${tabCounts.m1} · ${fmt(tabTotals.m1)}` },
     { key: "m2", label: "M2 Not Paid", sublabel: `${tabCounts.m2} · ${fmt(tabTotals.m2)}` },
-    { key: "complete", label: "Complete", sublabel: `${tabCounts.complete} · ${fmt(tabTotals.complete)}` },
+    { key: "complete", label: "Fully Paid", sublabel: `${tabCounts.complete} · ${fmt(tabTotals.complete)}` },
   ];
 
   return (
@@ -446,7 +445,7 @@ export default function PeSubmissionGapPage() {
         <StatCard
           label="Complete"
           value={metrics?.done ?? null}
-          subtitle={metrics ? `${fmt(metrics.doneValue)} approved/paid` : undefined}
+          subtitle={metrics ? `${fmt(metrics.doneValue)} fully paid` : undefined}
           color="green"
         />
       </div>
@@ -556,7 +555,14 @@ export default function PeSubmissionGapPage() {
                   <SortHeader label="Deal" column="deal" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label="Location" column="location" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label="Deal Stage" column="stage" current={sortCol} direction={sortDir} onSort={handleSort} />
-                  <SortHeader label={tabStatusLabel(activeTab)} column="status" current={sortCol} direction={sortDir} onSort={handleSort} />
+                  {activeTab === "complete" ? (
+                    <>
+                      <th className="pb-2 pr-3">M1 Status</th>
+                      <th className="pb-2 pr-3">M2 Status</th>
+                    </>
+                  ) : (
+                    <SortHeader label={tabStatusLabel(activeTab)} column="status" current={sortCol} direction={sortDir} onSort={handleSort} />
+                  )}
                   <SortHeader label={tabDateLabel(activeTab)} column="date" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label={tabPaymentLabel(activeTab)} column="amount" current={sortCol} direction={sortDir} onSort={handleSort} align="right" />
                   <th className="pb-2 text-right">Links</th>
@@ -582,7 +588,14 @@ export default function PeSubmissionGapPage() {
                       </td>
                       <td className="py-2.5 pr-3 text-muted text-xs">{d.pbLocation}</td>
                       <td className="py-2.5 pr-3 text-xs text-foreground">{d.dealStageLabel}</td>
-                      <td className="py-2.5 pr-3"><StatusBadge status={status} /></td>
+                      {activeTab === "complete" ? (
+                        <>
+                          <td className="py-2.5 pr-3"><StatusBadge status={d.peM1Status} /></td>
+                          <td className="py-2.5 pr-3"><StatusBadge status={d.peM2Status} /></td>
+                        </>
+                      ) : (
+                        <td className="py-2.5 pr-3"><StatusBadge status={status} /></td>
+                      )}
                       <td className="py-2.5 pr-3 text-xs text-muted tabular-nums">{fmtDate(dateValue)}</td>
                       <td className="py-2.5 pr-3 text-right text-foreground font-medium tabular-nums">{fmt(paymentAmount)}</td>
                       <td className="py-2.5 text-right">
@@ -616,7 +629,7 @@ export default function PeSubmissionGapPage() {
                 : activeTab === "construction" ? "No PE deals in construction/inspection stages."
                 : activeTab === "m1" ? "All PTO/Close Out projects have M1 paid!"
                 : activeTab === "m2" ? "All Close Out projects have M2 paid!"
-                : "No projects with both M1 and M2 approved or paid yet."}
+                : "No projects with both M1 and M2 fully paid yet."}
             </div>
           )}
         </div>
