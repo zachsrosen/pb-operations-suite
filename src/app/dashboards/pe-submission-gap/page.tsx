@@ -8,7 +8,7 @@ import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — reuses the PeDeal shape from /api/accounting/pe-deals
 // ---------------------------------------------------------------------------
 
 interface PeDeal {
@@ -36,55 +36,6 @@ interface PeDeal {
   pePortalUrl: string | null;
   peProjectId: string | null;
 }
-
-interface DocReview {
-  id: string;
-  dealId: string;
-  docName: string;
-  status: PeDocStatusValue;
-  notes: string | null;
-  reviewedAt: string;
-  reviewedBy: string | null;
-}
-
-type PeDocStatusValue =
-  | "NOT_UPLOADED"
-  | "UPLOADED"
-  | "UNDER_REVIEW"
-  | "ACTION_REQUIRED"
-  | "REJECTED"
-  | "APPROVED";
-
-// ---------------------------------------------------------------------------
-// PE document requirements (mirrors pe-docs page)
-// ---------------------------------------------------------------------------
-
-interface DocRequirement {
-  name: string;
-  section: "onboarding" | "ic" | "pc";
-}
-
-const PE_DOCUMENTS: DocRequirement[] = [
-  { name: "Customer Agreement (PPA/ESA)", section: "onboarding" },
-  { name: "Installation Order", section: "onboarding" },
-  { name: "State Disclosures", section: "onboarding" },
-  { name: "Utility Bill", section: "onboarding" },
-  { name: "Signed Proposal", section: "ic" },
-  { name: "Design Plan", section: "ic" },
-  { name: "Photos per Policy", section: "ic" },
-  { name: "Signed Final Permit", section: "ic" },
-  { name: "Access to Monitoring", section: "ic" },
-  { name: "Certificate of Acceptance", section: "ic" },
-  { name: "Attestation of Customer Payment", section: "ic" },
-  { name: "Conditional Progress Lien Waiver", section: "ic" },
-  { name: "Signed Interconnection Agreement", section: "pc" },
-  { name: "Conditional Waiver — Final Payment", section: "pc" },
-  { name: "Permission to Operate (PTO)", section: "pc" },
-];
-
-const ONBOARDING_DOCS = PE_DOCUMENTS.filter((d) => d.section === "onboarding");
-const IC_DOCS = PE_DOCUMENTS.filter((d) => d.section === "ic");
-const PC_DOCS = PE_DOCUMENTS.filter((d) => d.section === "pc");
 
 // ---------------------------------------------------------------------------
 // Stage helpers
@@ -150,60 +101,6 @@ function dealStageDisplayLabel(stageLabel: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Document summary per deal
-// ---------------------------------------------------------------------------
-
-interface DocSectionSummary {
-  total: number;
-  approved: number;
-  rejected: number;
-  actionRequired: number;
-  notUploaded: number;
-  noData: number;
-}
-
-interface DealDocSummary {
-  onboarding: DocSectionSummary;
-  ic: DocSectionSummary;
-  pc: DocSectionSummary;
-  /** Individual doc statuses for the expanded row */
-  docs: { name: string; section: string; status: PeDocStatusValue | null; notes: string | null }[];
-}
-
-function computeSectionSummary(
-  dealId: string,
-  docs: DocRequirement[],
-  docMap: Map<string, DocReview>,
-): DocSectionSummary {
-  let approved = 0, rejected = 0, actionRequired = 0, notUploaded = 0, noData = 0;
-  for (const doc of docs) {
-    const review = docMap.get(`${dealId}:${doc.name}`);
-    if (!review) { noData++; continue; }
-    switch (review.status) {
-      case "APPROVED": approved++; break;
-      case "REJECTED": rejected++; break;
-      case "ACTION_REQUIRED": actionRequired++; break;
-      case "NOT_UPLOADED": notUploaded++; break;
-      default: break; // UPLOADED, UNDER_REVIEW count as in-progress
-    }
-  }
-  return { total: docs.length, approved, rejected, actionRequired, notUploaded, noData };
-}
-
-function computeDealDocSummary(dealId: string, docMap: Map<string, DocReview>): DealDocSummary {
-  const docs = PE_DOCUMENTS.map((d) => {
-    const review = docMap.get(`${dealId}:${d.name}`);
-    return { name: d.name, section: d.section, status: review?.status ?? null, notes: review?.notes ?? null };
-  });
-  return {
-    onboarding: computeSectionSummary(dealId, ONBOARDING_DOCS, docMap),
-    ic: computeSectionSummary(dealId, IC_DOCS, docMap),
-    pc: computeSectionSummary(dealId, PC_DOCS, docMap),
-    docs,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
 
@@ -256,92 +153,11 @@ function PePhaseBadge({ stageLabel }: { stageLabel: string }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full border ${cls}`}>{phase}</span>;
 }
 
-const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
-  NOT_UPLOADED: "bg-zinc-500",
-  UPLOADED: "bg-yellow-500",
-  UNDER_REVIEW: "bg-blue-500",
-  ACTION_REQUIRED: "bg-orange-500",
-  REJECTED: "bg-red-500",
-  APPROVED: "bg-green-500",
-};
-
-const DOC_STATUS_LABELS: Record<PeDocStatusValue, string> = {
-  NOT_UPLOADED: "Not Uploaded",
-  UPLOADED: "Uploaded",
-  UNDER_REVIEW: "Under Review",
-  ACTION_REQUIRED: "Action Required",
-  REJECTED: "Rejected",
-  APPROVED: "Approved",
-};
-
-/** Compact progress bar for a document section */
-function DocProgressBar({ summary, label }: { summary: DocSectionSummary; label: string }) {
-  if (summary.total === 0) return null;
-  const pct = Math.round((summary.approved / summary.total) * 100);
-  const hasIssues = summary.rejected > 0 || summary.actionRequired > 0;
-
-  return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="text-[10px] text-muted w-8 shrink-0">{label}</span>
-      <div className="flex-1 flex gap-px h-1.5 rounded-full overflow-hidden bg-surface-2 min-w-[60px]">
-        {summary.approved > 0 && (
-          <div className="bg-green-500 h-full" style={{ width: `${(summary.approved / summary.total) * 100}%` }} />
-        )}
-        {summary.rejected > 0 && (
-          <div className="bg-red-500 h-full" style={{ width: `${(summary.rejected / summary.total) * 100}%` }} />
-        )}
-        {summary.actionRequired > 0 && (
-          <div className="bg-orange-500 h-full" style={{ width: `${(summary.actionRequired / summary.total) * 100}%` }} />
-        )}
-        {summary.notUploaded > 0 && (
-          <div className="bg-yellow-500/50 h-full" style={{ width: `${(summary.notUploaded / summary.total) * 100}%` }} />
-        )}
-      </div>
-      <span className={`text-[10px] tabular-nums shrink-0 ${hasIssues ? "text-red-400" : pct === 100 ? "text-green-400" : "text-muted"}`}>
-        {summary.approved}/{summary.total}
-      </span>
-    </div>
-  );
-}
-
-/** Expanded document detail for a deal */
-function DocDetailPanel({ summary, sections }: { summary: DealDocSummary; sections: ("onboarding" | "ic" | "pc")[] }) {
-  const sectionLabels: Record<string, string> = {
-    onboarding: "Onboarding",
-    ic: "IC / M1",
-    pc: "PC / M2",
-  };
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {sections.map((section) => {
-        const sectionDocs = summary.docs.filter((d) => d.section === section);
-        return (
-          <div key={section}>
-            <h4 className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-2">{sectionLabels[section]}</h4>
-            <div className="space-y-1">
-              {sectionDocs.map((doc) => (
-                <div key={doc.name} className="flex items-center gap-2">
-                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${doc.status ? DOC_STATUS_COLORS[doc.status] : "bg-zinc-600"}`} />
-                  <span className="text-[11px] text-muted truncate flex-1" title={doc.name}>{doc.name}</span>
-                  <span className="text-[10px] text-muted shrink-0">
-                    {doc.status ? DOC_STATUS_LABELS[doc.status] : "No Data"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortColumn = "deal" | "location" | "stage" | "phase" | "m1Status" | "m2Status" | "docs" | "amount";
+type SortColumn = "deal" | "location" | "stage" | "phase" | "m1Status" | "m2Status" | "amount";
 type SortDirection = "asc" | "desc";
 
 function SortHeader({ label, column, current, direction, onSort, align }: {
@@ -386,48 +202,16 @@ export default function PeSubmissionGapPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: docData } = useQuery<{ docs: DocReview[] }>({
-    queryKey: queryKeys.peDocs.list(),
-    queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
-    staleTime: 5 * 60 * 1000,
-  });
-
   const [activeTab, setActiveTab] = useState<Tab>("onboarding");
   const [search, setSearch] = useState("");
   const [locFilter, setLocFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
   const [sortCol, setSortCol] = useState<SortColumn | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
 
   const allDeals = data?.deals ?? [];
 
-  // Build doc lookup map
-  const docMap = useMemo(() => {
-    const map = new Map<string, DocReview>();
-    for (const doc of docData?.docs ?? []) {
-      map.set(`${doc.dealId}:${doc.docName}`, doc);
-    }
-    return map;
-  }, [docData]);
-
-  // Compute doc summaries per deal
-  const dealDocSummaries = useMemo(() => {
-    const map = new Map<string, DealDocSummary>();
-    for (const deal of allDeals) {
-      map.set(deal.dealId, computeDealDocSummary(deal.dealId, docMap));
-    }
-    return map;
-  }, [allDeals, docMap]);
-
-  // Which doc sections are relevant per tab
-  const docSectionsForTab: ("onboarding" | "ic" | "pc")[] =
-    activeTab === "onboarding" ? ["onboarding"] :
-    activeTab === "m1" ? ["onboarding", "ic"] :
-    ["onboarding", "ic", "pc"];
-
-  // Tab-specific deal lists
-  // Onboarding: all PE deals in the project pipeline before PTO
+  // Onboarding: all PE deals before PTO
   const onboardingDeals = useMemo(
     () => allDeals.filter((d) => {
       const m = dealStageToMilestone(d.dealStageLabel);
@@ -435,10 +219,14 @@ export default function PeSubmissionGapPage() {
     }),
     [allDeals],
   );
+
+  // M1 not paid: deals at PTO+ where M1 ≠ Paid
   const m1GapDeals = useMemo(
     () => allDeals.filter((d) => hasHitPTO(d.dealStageLabel) && d.peM1Status !== "Paid"),
     [allDeals],
   );
+
+  // M2 not paid: deals at Close Out+ where M2 ≠ Paid
   const m2GapDeals = useMemo(
     () => allDeals.filter((d) => hasHitCloseOut(d.dealStageLabel) && d.peM2Status !== "Paid"),
     [allDeals],
@@ -446,24 +234,10 @@ export default function PeSubmissionGapPage() {
 
   const activeDeals = activeTab === "onboarding" ? onboardingDeals : activeTab === "m1" ? m1GapDeals : m2GapDeals;
 
-  // Status field accessor per tab
   const statusFieldForTab = (d: PeDeal) => {
     if (activeTab === "m2") return d.peM2Status;
     return d.peM1Status;
   };
-
-  // Total approved docs for a deal within relevant sections
-  const approvedDocsForDeal = (dealId: string): number => {
-    const s = dealDocSummaries.get(dealId);
-    if (!s) return 0;
-    let total = 0;
-    for (const sec of docSectionsForTab) {
-      total += s[sec].approved;
-    }
-    return total;
-  };
-
-
 
   // Filter options
   const filterOptions = useMemo(() => {
@@ -519,7 +293,6 @@ export default function PeSubmissionGapPage() {
         }
         case "m1Status": return dir * (a.peM1Status || "").localeCompare(b.peM1Status || "");
         case "m2Status": return dir * (a.peM2Status || "").localeCompare(b.peM2Status || "");
-        case "docs": return dir * (approvedDocsForDeal(a.dealId) - approvedDocsForDeal(b.dealId));
         case "amount": {
           const aAmt = activeTab === "m2" ? (a.pePaymentPC ?? 0) : (a.pePaymentIC ?? 0);
           const bAmt = activeTab === "m2" ? (b.pePaymentPC ?? 0) : (b.pePaymentIC ?? 0);
@@ -528,8 +301,7 @@ export default function PeSubmissionGapPage() {
         default: return 0;
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sortCol, sortDir, activeTab, dealDocSummaries]);
+  }, [filtered, sortCol, sortDir, activeTab]);
 
   // Metrics
   const ccDeals = useMemo(() => allDeals.filter((d) => hasHitCC(d.dealStageLabel)), [allDeals]);
@@ -541,7 +313,6 @@ export default function PeSubmissionGapPage() {
     const m1GapValue = m1GapDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2GapValue = m2GapDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
 
-    // Status breakdown for active tab
     const byStatus = new Map<string, number>();
     for (const d of activeDeals) {
       const s = statusFieldForTab(d) || "Not Started";
@@ -571,7 +342,7 @@ export default function PeSubmissionGapPage() {
   return (
     <DashboardShell title="PE Submission Gap" accentColor="orange" lastUpdated={data?.lastUpdated} fullWidth>
       <p className="text-muted text-sm mb-6">
-        PE deals by milestone phase — onboarding, M1 (PTO), and M2 (Close Out) — with document progress and payment status.
+        PE deals by milestone phase — onboarding, M1 (PTO), and M2 (Close Out) — with payment status.
       </p>
 
       {/* Hero Stats */}
@@ -599,23 +370,6 @@ export default function PeSubmissionGapPage() {
               ))}
             </div>
           </div>
-
-          {/* Doc progress legend */}
-          <div className="bg-surface rounded-xl border border-border p-5 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Document Status Legend</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.entries(DOC_STATUS_LABELS) as [PeDocStatusValue, string][]).map(([status, label]) => (
-                <div key={status} className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${DOC_STATUS_COLORS[status]}`} />
-                  <span className="text-xs text-muted">{label}</span>
-                </div>
-              ))}
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-zinc-600" />
-                <span className="text-xs text-muted">No Data</span>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -626,7 +380,7 @@ export default function PeSubmissionGapPage() {
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === "onboarding" ? "text-cyan-400 border-b-2 border-cyan-400 bg-cyan-500/5" : "text-muted hover:text-foreground"
             }`}
-            onClick={() => { setActiveTab("onboarding"); setStatusFilter([]); setExpandedDeal(null); }}
+            onClick={() => { setActiveTab("onboarding"); setStatusFilter([]); }}
           >
             Onboarding
             <span className="ml-2 text-xs opacity-70">({onboardingDeals.length})</span>
@@ -635,7 +389,7 @@ export default function PeSubmissionGapPage() {
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === "m1" ? "text-orange-400 border-b-2 border-orange-400 bg-orange-500/5" : "text-muted hover:text-foreground"
             }`}
-            onClick={() => { setActiveTab("m1"); setStatusFilter([]); setExpandedDeal(null); }}
+            onClick={() => { setActiveTab("m1"); setStatusFilter([]); }}
           >
             M1 Not Paid
             <span className="ml-2 text-xs opacity-70">({m1GapDeals.length})</span>
@@ -644,7 +398,7 @@ export default function PeSubmissionGapPage() {
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               activeTab === "m2" ? "text-orange-400 border-b-2 border-orange-400 bg-orange-500/5" : "text-muted hover:text-foreground"
             }`}
-            onClick={() => { setActiveTab("m2"); setStatusFilter([]); setExpandedDeal(null); }}
+            onClick={() => { setActiveTab("m2"); setStatusFilter([]); }}
           >
             M2 Not Paid
             <span className="ml-2 text-xs opacity-70">({m2GapDeals.length})</span>
@@ -694,7 +448,6 @@ export default function PeSubmissionGapPage() {
                   {activeTab === "m2" && (
                     <SortHeader label="M2 Status" column="m2Status" current={sortCol} direction={sortDir} onSort={handleSort} />
                   )}
-                  <SortHeader label="Documents" column="docs" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label={tabPaymentLabel} column="amount" current={sortCol} direction={sortDir} onSort={handleSort} align="right" />
                   <th className="pb-2 text-right">Links</th>
                 </tr>
@@ -702,11 +455,9 @@ export default function PeSubmissionGapPage() {
               <tbody>
                 {sorted.map((d) => {
                   const paymentAmount = activeTab === "m2" ? d.pePaymentPC : d.pePaymentIC;
-                  const docSummary = dealDocSummaries.get(d.dealId);
-                  const isExpanded = expandedDeal === d.dealId;
 
                   return (
-                    <tr key={d.dealId} className="group border-b border-border/30 hover:bg-surface-2/50 transition-colors">
+                    <tr key={d.dealId} className="border-b border-border/30 hover:bg-surface-2/50 transition-colors">
                       <td className="py-2.5 pr-3">
                         <a href={d.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-foreground hover:text-orange-400 transition-colors">
                           {d.dealName}
@@ -725,29 +476,6 @@ export default function PeSubmissionGapPage() {
                       {activeTab === "m2" && (
                         <td className="py-2.5 pr-3"><StatusBadge status={d.peM2Status} /></td>
                       )}
-                      <td className="py-2.5 pr-3 min-w-[180px]">
-                        {docSummary ? (
-                          <button
-                            onClick={() => setExpandedDeal(isExpanded ? null : d.dealId)}
-                            className="w-full text-left hover:opacity-80 transition-opacity"
-                            title="Click to expand document details"
-                          >
-                            <div className="space-y-1">
-                              {docSectionsForTab.includes("onboarding") && (
-                                <DocProgressBar summary={docSummary.onboarding} label="OB" />
-                              )}
-                              {docSectionsForTab.includes("ic") && (
-                                <DocProgressBar summary={docSummary.ic} label="IC" />
-                              )}
-                              {docSectionsForTab.includes("pc") && (
-                                <DocProgressBar summary={docSummary.pc} label="PC" />
-                              )}
-                            </div>
-                          </button>
-                        ) : (
-                          <span className="text-xs text-muted">—</span>
-                        )}
-                      </td>
                       <td className="py-2.5 pr-3 text-right text-foreground font-medium tabular-nums">{fmt(paymentAmount)}</td>
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -765,24 +493,7 @@ export default function PeSubmissionGapPage() {
                 })}
               </tbody>
             </table>
-
-            {/* Expanded doc detail panels — rendered outside table for layout */}
-            {sorted.map((d) => {
-              if (expandedDeal !== d.dealId) return null;
-              const docSummary = dealDocSummaries.get(d.dealId);
-              if (!docSummary) return null;
-              return (
-                <div key={`detail-${d.dealId}`} className="border border-border/50 rounded-lg bg-surface-2/30 p-4 mb-2 mt-1">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-xs font-semibold text-foreground">{d.dealName} — Document Status</h4>
-                    <button onClick={() => setExpandedDeal(null)} className="text-xs text-muted hover:text-foreground">✕</button>
-                  </div>
-                  <DocDetailPanel summary={docSummary} sections={docSectionsForTab} />
-                </div>
-              );
-            })}
           </div>
-
           {filtered.length === 0 && !isLoading && (
             <div className="text-center py-8 text-muted text-sm">
               {hasFilters
