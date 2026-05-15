@@ -640,7 +640,6 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       associatedDealsCount: deals.length,
       associatedTicketsCount: tickets.length,
       openTicketsCount,
-      closedTicketsCount,
       systemSizeKwDc,
       hasBattery,
       hasEvCharger,
