@@ -400,6 +400,52 @@ export default function CustomerHistoryPage() {
                     </section>
                   ) : null}
 
+                  {/* Revenue Summary */}
+                  {(() => {
+                    const totalRevenue = detail.deals.reduce(
+                      (sum, d) => sum + (d.amount ? Number(d.amount) : 0),
+                      0,
+                    );
+                    const closeDates = detail.deals
+                      .map((d) => d.closeDate)
+                      .filter(Boolean)
+                      .sort();
+                    const customerSince = closeDates[0];
+                    return (
+                      <section className="mb-4 flex items-center gap-4 rounded-xl bg-surface-2 px-4 py-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-muted uppercase tracking-wider mb-0.5">
+                            Total Revenue
+                          </p>
+                          <p className="text-lg font-bold text-emerald-400">
+                            ${totalRevenue.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-muted uppercase tracking-wider mb-0.5">
+                            Deals
+                          </p>
+                          <p className="text-lg font-bold text-foreground">
+                            {detail.deals.length}
+                          </p>
+                        </div>
+                        {customerSince && (
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted uppercase tracking-wider mb-0.5">
+                              Customer Since
+                            </p>
+                            <p className="text-sm font-medium text-foreground">
+                              {new Date(customerSince).toLocaleDateString("en-US", {
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </p>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
                   {/* Properties Section (above Deals/Tickets/Jobs) */}
                   {UI_PROPERTY_VIEWS_ENABLED && detail.properties.length > 0 && (
                     <section className="mb-6">
