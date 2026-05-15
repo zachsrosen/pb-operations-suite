@@ -649,20 +649,32 @@ export async function auditDriveFiles(
     }
   }
 
+  /** Recursively collect all files from a folder and its subfolders */
+  async function getFilesRecursive(
+    folderId: string,
+    maxDepth = 5,
+    currentDepth = 0
+  ): Promise<DriveGenericFile[]> {
+    const files = await getFiles(folderId);
+    if (currentDepth >= maxDepth) return files;
+    const result = [...files];
+    try {
+      const subs = await listDriveSubfolders(folderId);
+      for (const sub of subs.slice(0, 10)) {
+        const subFiles = await getFilesRecursive(sub.id, maxDepth, currentDepth + 1);
+        result.push(...subFiles);
+      }
+    } catch {
+      // skip inaccessible subfolders
+    }
+    return result;
+  }
+
   async function getAllFiles(): Promise<DriveGenericFile[]> {
     const all: DriveGenericFile[] = [];
     for (const folderId of folderMap.allFolderIds) {
-      const files = await getFiles(folderId);
+      const files = await getFilesRecursive(folderId);
       all.push(...files);
-      try {
-        const subs = await listDriveSubfolders(folderId);
-        for (const sub of subs.slice(0, 10)) {
-          const subFiles = await getFiles(sub.id);
-          all.push(...subFiles);
-        }
-      } catch {
-        // skip
-      }
     }
     return all;
   }
@@ -719,7 +731,7 @@ export async function auditDriveFiles(
       for (const prefix of item.driveFolders) {
         const folderId = folderMap.byPrefix.get(prefix);
         if (folderId) {
-          const files = await getFiles(folderId);
+          const files = await getFilesRecursive(folderId);
           candidateFiles.push(...files);
         }
       }
