@@ -41,6 +41,8 @@ interface Metrics {
   byLocation: Record<string, LocationData>;
   byStage: Record<string, StageData>;
   byMonth: Record<string, MonthData>;
+  uniqueCustomers: number;
+  avgRevenuePerCustomer: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -242,6 +244,14 @@ export default function ExecutiveSummaryPage() {
       }
     });
 
+    const customerRevenue = new Map<string, number>();
+    allProjects.forEach((p) => {
+      const customer = p.name.split("|")[0].trim() || "Unknown";
+      customerRevenue.set(customer, (customerRevenue.get(customer) || 0) + (p.amount || 0));
+    });
+    const uniqueCustomers = customerRevenue.size;
+    const avgRevenuePerCustomer = uniqueCustomers > 0 ? totalValue / uniqueCustomers : 0;
+
     return {
       total: allProjects.length,
       totalValue,
@@ -254,6 +264,8 @@ export default function ExecutiveSummaryPage() {
       byLocation,
       byStage,
       byMonth,
+      uniqueCustomers,
+      avgRevenuePerCustomer,
     };
   }, [allProjects]);
 
@@ -349,12 +361,18 @@ export default function ExecutiveSummaryPage() {
       }
     >
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard
           label="Total Pipeline"
           value={formatCurrency(metrics.totalValue)}
           subtitle={`${metrics.total} projects`}
           color="blue"
+        />
+        <StatCard
+          label="Avg Revenue / Customer"
+          value={formatCurrencyCompact(metrics.avgRevenuePerCustomer)}
+          subtitle={`${metrics.uniqueCustomers} customers`}
+          color="purple"
         />
         <StatCard
           label="PTO Overdue"
