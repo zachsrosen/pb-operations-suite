@@ -75,7 +75,6 @@ export interface PropertyDetail {
   associatedAt: Date;
 
   dealIds: string[];
-  deals: { id: string; name: string }[];
   ticketIds: string[];
   contactIds: string[];
   contacts: { id: string; name: string }[];
@@ -344,7 +343,6 @@ export function mapCacheRowToPropertyDetail(
     associatedAt,
 
     dealIds,
-    deals: [],
     ticketIds,
     contactIds,
     contacts: [],
