@@ -157,7 +157,7 @@ function PePhaseBadge({ stageLabel }: { stageLabel: string }) {
 // Sort
 // ---------------------------------------------------------------------------
 
-type SortColumn = "deal" | "location" | "stage" | "phase" | "m1Status" | "m2Status" | "amount";
+type SortColumn = "deal" | "location" | "stage" | "phase" | "closeDate" | "m1Status" | "m2Status" | "amount";
 type SortDirection = "asc" | "desc";
 
 function SortHeader({ label, column, current, direction, onSort, align }: {
@@ -285,11 +285,16 @@ export default function PeSubmissionGapPage() {
       switch (sortCol) {
         case "deal": return dir * a.dealName.localeCompare(b.dealName);
         case "location": return dir * (a.pbLocation || "").localeCompare(b.pbLocation || "");
-        case "stage":
+        case "stage": return dir * a.dealStageLabel.localeCompare(b.dealStageLabel);
         case "phase": {
           const mA = MILESTONE_ORDER[dealStageToMilestone(a.dealStageLabel)];
           const mB = MILESTONE_ORDER[dealStageToMilestone(b.dealStageLabel)];
           return dir * (mA - mB);
+        }
+        case "closeDate": {
+          const aD = a.closeDate ?? "";
+          const bD = b.closeDate ?? "";
+          return dir * aD.localeCompare(bD);
         }
         case "m1Status": return dir * (a.peM1Status || "").localeCompare(b.peM1Status || "");
         case "m2Status": return dir * (a.peM2Status || "").localeCompare(b.peM2Status || "");
@@ -444,6 +449,7 @@ export default function PeSubmissionGapPage() {
                   {activeTab !== "onboarding" && (
                     <SortHeader label="PE Phase" column="phase" current={sortCol} direction={sortDir} onSort={handleSort} />
                   )}
+                  <SortHeader label="Close Date" column="closeDate" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label="M1 Status" column="m1Status" current={sortCol} direction={sortDir} onSort={handleSort} />
                   {activeTab === "m2" && (
                     <SortHeader label="M2 Status" column="m2Status" current={sortCol} direction={sortDir} onSort={handleSort} />
@@ -466,12 +472,17 @@ export default function PeSubmissionGapPage() {
                       <td className="py-2.5 pr-3 text-muted text-xs">{d.pbLocation}</td>
                       {activeTab === "onboarding" && (
                         <td className="py-2.5 pr-3">
-                          <span className="text-xs text-muted">{dealStageDisplayLabel(d.dealStageLabel)}</span>
+                          <span className="text-xs text-muted">{d.dealStageLabel}</span>
                         </td>
                       )}
                       {activeTab !== "onboarding" && (
                         <td className="py-2.5 pr-3"><PePhaseBadge stageLabel={d.dealStageLabel} /></td>
                       )}
+                      <td className="py-2.5 pr-3 text-xs text-muted tabular-nums whitespace-nowrap">
+                        {d.closeDate
+                          ? new Date(d.closeDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          : "—"}
+                      </td>
                       <td className="py-2.5 pr-3"><StatusBadge status={d.peM1Status} /></td>
                       {activeTab === "m2" && (
                         <td className="py-2.5 pr-3"><StatusBadge status={d.peM2Status} /></td>
