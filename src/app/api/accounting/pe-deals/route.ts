@@ -67,6 +67,8 @@ interface PeDeal {
   ccInvoiceStatus: string | null;
   ptoInvoiceStatus: string | null;
   paidInFull: boolean;
+  inspectionPassDate: string | null;
+  ptoGrantedDate: string | null;
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
@@ -114,6 +116,9 @@ const PE_DEAL_PROPERTIES = [
   "cc_invoice_status",
   "pto_invoice_status",
   "paid_in_full",
+  // Milestone completion dates (for PE Submission Gap timeline)
+  "inspections_completion_date",
+  "pto_completion_date",
 ];
 
 // ---------------------------------------------------------------------------
@@ -296,6 +301,8 @@ export async function GET() {
         ccInvoiceStatus: deal.cc_invoice_status ? String(deal.cc_invoice_status) : null,
         ptoInvoiceStatus: deal.pto_invoice_status ? String(deal.pto_invoice_status) : null,
         paidInFull: String(deal.paid_in_full || "").toLowerCase() === "true",
+        inspectionPassDate: deal.inspections_completion_date ? String(deal.inspections_completion_date) : null,
+        ptoGrantedDate: deal.pto_completion_date ? String(deal.pto_completion_date) : null,
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
         pePortalUrl: deal.pe_portal_url ? String(deal.pe_portal_url) : null,
         peProjectId: deal.pe_project_id ? String(deal.pe_project_id) : null,

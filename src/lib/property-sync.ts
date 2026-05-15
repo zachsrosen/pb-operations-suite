@@ -617,20 +617,9 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
         })[0]?.properties.subject ?? null
     : null;
 
-  // install_age_months and days_since_last_service are HubSpot calculation
-  // properties (time_between) created in the HubSpot UI — NOT pushed from code.
-  // DB columns kept for local cache but HubSpot is the source of truth.
-  const now = new Date();
-  const installAgeMonths = installDates[0]
-    ? Math.floor(
-        (now.getTime() - installDates[0].getTime()) / (1000 * 60 * 60 * 24 * 30.44),
-      )
-    : null;
-  const daysSinceLastService = lastServiceDate
-    ? Math.floor(
-        (now.getTime() - lastServiceDate.getTime()) / (1000 * 60 * 60 * 24),
-      )
-    : null;
+  // NOTE: install_age_months and days_since_last_service are HubSpot calculation
+  // properties (time_between) created in the HubSpot UI — they auto-compute from
+  // first_install_date / last_service_date. No local computation needed.
 
   await prisma.hubSpotPropertyCache.update({
     where: { id: propertyCacheId },
@@ -640,25 +629,17 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       associatedDealsCount: deals.length,
       associatedTicketsCount: tickets.length,
       openTicketsCount,
-      closedTicketsCount,
       systemSizeKwDc,
       hasBattery,
       hasEvCharger,
       lastServiceDate,
       earliestWarrantyExpiry: null, // v1: not yet derivable — see note above.
-      // Extended rollups
-      moduleSummary: equipSummaries.moduleSummary,
-      inverterSummary: equipSummaries.inverterSummary,
-      batterySummary: equipSummaries.batterySummary,
-      evChargerSummary: equipSummaries.evChargerSummary,
-      panelCount: equipSummaries.panelCount,
-      totalDealValue: totalDealValue > 0 ? totalDealValue : null,
-      latestDealName: latestDealInfo?.dealName ?? null,
-      latestDealStage: latestDealInfo?.stage ?? null,
-      latestOpenTicketSubject,
-      // Time-computed rollups (local cache only — HubSpot calc properties handle these)
-      installAgeMonths,
-      daysSinceLastService,
+      // NOTE: Extended rollups (moduleSummary, inverterSummary, batterySummary,
+      // evChargerSummary, panelCount, totalDealValue, latestDealName,
+      // latestDealStage, latestOpenTicketSubject, installAgeMonths,
+      // daysSinceLastService) are pushed to HubSpot below but NOT stored in the
+      // local cache — columns don't exist in the schema yet. Add them in a
+      // follow-up migration.
       lastReconciledAt: new Date(),
     },
   });
@@ -1018,50 +999,55 @@ export async function onDealOrTicketCreated(
     where: { id: { in: candidateIds } },
   });
 
-  // 4) Pick a single Property. One candidate → trivial match. Multiple
-  // candidates → disambiguate by geocoding the deal/ticket address and
-  // matching `place_id` against candidate cache rows.
+  // 4) Pick a single Property. Disambiguate by geocoding the deal/ticket
+  // address and matching `place_id` or `addressHash` against candidates.
+  // Even when there's only one candidate, we verify the address matches —
+  // a contact can have deals at multiple addresses, and blindly linking to
+  // the single known Property produces cross-contamination (e.g. D&R jobs
+  // from 10 different addresses all showing on one Property).
   let chosen: { id: string; hubspotObjectId: string } | null = null;
-  if (candidates.length === 1) {
-    chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
-  } else if (candidates.length > 1) {
-    if (hasGeocodableAddress) {
-      const geo = await geocodeAddress({
-        street: objectStreet!,
-        city: objectCity!,
-        state: objectState!,
-        zip: objectZip || "",
-        country: "USA",
-      });
-      const placeId = geo?.placeId ?? null;
-      if (placeId) {
-        const match = candidates.find((c) => c.googlePlaceId === placeId);
-        if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
-      }
-      // Fallback: rural / new-construction addresses geocode successfully
-      // but without a placeId. Match by addressHash instead.
-      if (!chosen && geo && !placeId) {
-        const hash = addressHash({
-          street: geo.streetAddress ?? (objectStreet as string),
-          unit: null,
-          city: geo.city ?? (objectCity as string),
-          state: geo.state ?? (objectState as string),
-          zip: geo.zip ?? (objectZip as string),
-        });
-        const match = candidates.find((c) => c.addressHash === hash);
-        if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
-      }
-    }
 
-    // Multi-property contact, no match among existing Properties — the
-    // deal/ticket may be at a NEW address. Try creating a Property from it.
-    if (!chosen) {
-      const fromObject = await tryCreatePropertyFromObjectAddress();
-      if (fromObject) {
-        chosen = fromObject;
-      } else {
-        return { status: "deferred", reason: "ambiguous properties, no address match" };
-      }
+  if (hasGeocodableAddress) {
+    const geo = await geocodeAddress({
+      street: objectStreet!,
+      city: objectCity!,
+      state: objectState!,
+      zip: objectZip || "",
+      country: "USA",
+    });
+    const placeId = geo?.placeId ?? null;
+    if (placeId) {
+      const match = candidates.find((c) => c.googlePlaceId === placeId);
+      if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
+    }
+    // Fallback: rural / new-construction addresses geocode successfully
+    // but without a placeId. Match by addressHash instead.
+    if (!chosen && geo && !placeId) {
+      const hash = addressHash({
+        street: geo.streetAddress ?? (objectStreet as string),
+        unit: null,
+        city: geo.city ?? (objectCity as string),
+        state: geo.state ?? (objectState as string),
+        zip: geo.zip ?? (objectZip as string),
+      });
+      const match = candidates.find((c) => c.addressHash === hash);
+      if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
+    }
+  }
+
+  // No address match among existing Properties — deal/ticket may be at a
+  // NEW address. Try creating a Property from the object's own address.
+  if (!chosen) {
+    const fromObject = await tryCreatePropertyFromObjectAddress();
+    if (fromObject) {
+      chosen = fromObject;
+    } else if (candidates.length === 1 && !hasGeocodableAddress) {
+      // Last resort: deal has no geocodable address, contact has exactly one
+      // Property — link there (better than orphaning entirely). This is the
+      // only case where we skip address verification.
+      chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
+    } else {
+      return { status: "deferred", reason: "no address match among contact properties" };
     }
   }
 

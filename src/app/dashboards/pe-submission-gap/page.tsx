@@ -28,12 +28,12 @@ interface PeDeal {
   peM1Status: string | null;
   peM2Status: string | null;
   milestoneHighlight: "m1" | "m2" | "complete" | null;
+  inspectionPassDate: string | null;
+  ptoGrantedDate: string | null;
   daInvoiceStatus: string | null;
   ccInvoiceStatus: string | null;
   ptoInvoiceStatus: string | null;
   paidInFull: boolean;
-  inspectionPassDate: string | null;
-  ptoGrantedDate: string | null;
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
@@ -43,9 +43,9 @@ interface PeDeal {
 // Stage → milestone helpers
 // ---------------------------------------------------------------------------
 
-type PeMilestone = "pre-construction" | "construction" | "inspection" | "pto" | "close-out" | "complete";
+type DealMilestone = "pre-construction" | "construction" | "inspection" | "pto" | "close-out" | "complete";
 
-function dealStageToPeMilestone(stageLabel: string): PeMilestone {
+function dealStageToMilestone(stageLabel: string): DealMilestone {
   const s = stageLabel.toLowerCase();
   if (s.includes("complete")) return "complete";
   if (s.includes("close out")) return "close-out";
@@ -55,7 +55,7 @@ function dealStageToPeMilestone(stageLabel: string): PeMilestone {
   return "pre-construction";
 }
 
-const MILESTONE_ORDER: Record<PeMilestone, number> = {
+const MILESTONE_ORDER: Record<DealMilestone, number> = {
   "pre-construction": 0,
   construction: 1,
   inspection: 2,
@@ -66,8 +66,7 @@ const MILESTONE_ORDER: Record<PeMilestone, number> = {
 
 // CC = Construction Complete threshold: inspection stage and beyond
 function hasHitCC(stageLabel: string): boolean {
-  const milestone = dealStageToPeMilestone(stageLabel);
-  return MILESTONE_ORDER[milestone] >= MILESTONE_ORDER["inspection"];
+  return MILESTONE_ORDER[dealStageToMilestone(stageLabel)] >= MILESTONE_ORDER["inspection"];
 }
 
 // M1 requires: Inspection Complete + docs → PE reviews → approved → paid
@@ -75,7 +74,7 @@ const M1_COMPLETE_STATUSES = new Set(["Approved", "Paid"]);
 const M2_COMPLETE_STATUSES = new Set(["Approved", "Paid"]);
 
 function m2BlockReason(stageLabel: string): string | null {
-  const m = dealStageToPeMilestone(stageLabel);
+  const m = dealStageToMilestone(stageLabel);
   if (m === "inspection") return "Waiting on Inspection";
   if (m === "pto") return "Waiting on PTO";
   return null;
@@ -259,13 +258,13 @@ export default function PeSubmissionGapPage() {
   // ---- Deal lists per tab ----
 
   const preConstructionDeals = useMemo(
-    () => allDeals.filter((d) => dealStageToPeMilestone(d.dealStageLabel) === "pre-construction"),
+    () => allDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "pre-construction"),
     [allDeals],
   );
 
   const constructionDeals = useMemo(
     () => allDeals.filter((d) => {
-      const m = dealStageToPeMilestone(d.dealStageLabel);
+      const m = dealStageToMilestone(d.dealStageLabel);
       return m === "construction" || m === "inspection";
     }),
     [allDeals],
@@ -403,10 +402,10 @@ export default function PeSubmissionGapPage() {
     const m1GapValue = m1GapDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2GapValue = m2GapDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
 
-    const m2WaitingInspection = m2GapDeals.filter((d) => dealStageToPeMilestone(d.dealStageLabel) === "inspection").length;
-    const m2WaitingPTO = m2GapDeals.filter((d) => dealStageToPeMilestone(d.dealStageLabel) === "pto").length;
+    const m2WaitingInspection = m2GapDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "inspection").length;
+    const m2WaitingPTO = m2GapDeals.filter((d) => dealStageToMilestone(d.dealStageLabel) === "pto").length;
     const m2PastPTO = m2GapDeals.filter((d) => {
-      const m = dealStageToPeMilestone(d.dealStageLabel);
+      const m = dealStageToMilestone(d.dealStageLabel);
       return m === "close-out" || m === "complete";
     }).length;
 
