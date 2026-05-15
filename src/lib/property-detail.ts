@@ -78,6 +78,10 @@ export interface PropertyDetail {
   ticketIds: string[];
   contactIds: string[];
   contacts: { id: string; name: string }[];
+  /** Resolved deal names for drawer display. Empty until populated by the detail endpoint. */
+  deals: { id: string; name: string }[];
+  /** Resolved ticket subjects for drawer display. Empty until populated by the detail endpoint. */
+  tickets: { id: string; subject: string }[];
   hubspotUrl: string | null;
 
   equipmentSummary: EquipmentSummary;
@@ -342,6 +346,8 @@ export function mapCacheRowToPropertyDetail(
     ticketIds,
     contactIds,
     contacts: [],
+    deals: [],
+    tickets: [],
     hubspotUrl: buildHubSpotPropertyUrl(row.hubspotObjectId),
   };
 }
