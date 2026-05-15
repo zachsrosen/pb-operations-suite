@@ -1450,6 +1450,7 @@ const ACCOUNTING: RoleDefinition = {
     "/dashboards/pe-report",
     "/dashboards/pe-docs",
     "/dashboards/pe-pipeline",
+    "/dashboards/pe-submission-gap",
     "/dashboards/pipeline-tracker",
     "/dashboards/pricing-calculator",
     "/api/accounting",

@@ -63,6 +63,14 @@ const LINKS: SuitePageCard[] = [
     section: "Participate Energy",
   },
   {
+    href: "/dashboards/pe-submission-gap",
+    title: "PE Submission Gap",
+    description: "Projects past CC that aren't fully submitted — M1 and M2 blockers with inspection and PTO status.",
+    tag: "PE",
+    icon: "🔍",
+    section: "Participate Energy",
+  },
+  {
     href: "/dashboards/pipeline-tracker",
     title: "Pipeline Tracker",
     description: "All deals in site survey, construction, and inspection — sorted by days in stage.",
