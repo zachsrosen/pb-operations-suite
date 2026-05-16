@@ -1834,6 +1834,36 @@ model BomPipelineRun {
 }
 
 // ===========================================
+// PE FILE PREPARATION — AUDIT RUNS
+// ===========================================
+
+model PeAuditRun {
+  id            String   @id @default(cuid())
+  dealId        String
+  dealName      String
+  milestone     String
+  systemType    String
+  status        String
+  triggeredBy   String
+
+  results       Json?
+  summary       Json?
+
+  packageFolderId   String?
+  packageFolderUrl  String?
+
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  durationMs    Int?
+
+  visionCallCount  Int    @default(0)
+  pandadocPulled   Int    @default(0)
+
+  @@index([dealId, milestone])
+  @@index([status])
+}
+
+// ===========================================
 // CATALOG REBUILD — MATCH GROUPS
 // ===========================================
 

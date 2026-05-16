@@ -6,6 +6,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
+import { PePrepButton } from "@/components/pe-prep/PePrepButton";
 
 // ---------------------------------------------------------------------------
 // Types — reuses the PeDeal shape from /api/accounting/pe-deals
@@ -565,6 +566,7 @@ export default function PeSubmissionGapPage() {
                   )}
                   <SortHeader label={tabDateLabel(activeTab)} column="date" current={sortCol} direction={sortDir} onSort={handleSort} />
                   <SortHeader label={tabPaymentLabel(activeTab)} column="amount" current={sortCol} direction={sortDir} onSort={handleSort} align="right" />
+                  {activeTab !== "complete" && <th className="pb-2 pr-3">Prep</th>}
                   <th className="pb-2 text-right">Links</th>
                 </tr>
               </thead>
@@ -598,6 +600,11 @@ export default function PeSubmissionGapPage() {
                       )}
                       <td className="py-2.5 pr-3 text-xs text-muted tabular-nums">{fmtDate(dateValue)}</td>
                       <td className="py-2.5 pr-3 text-right text-foreground font-medium tabular-nums">{fmt(paymentAmount)}</td>
+                      {activeTab !== "complete" && (
+                        <td className="py-2.5 pr-3">
+                          <PePrepButton dealId={d.dealId} compact />
+                        </td>
+                      )}
                       <td className="py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2">
                           {d.pePortalUrl && (

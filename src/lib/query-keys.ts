@@ -116,6 +116,11 @@ export const queryKeys = {
     list: () => [...queryKeys.peDocs.root, "list"] as const,
   },
   pePipeline: () => ["pePipeline"] as const,
+  pePrep: {
+    root: ["pePrep"] as const,
+    status: (dealId: string) => [...queryKeys.pePrep.root, "status", dealId] as const,
+    history: (dealId: string) => [...queryKeys.pePrep.root, "history", dealId] as const,
+  },
   pipelineTracker: () => ["pipelineTracker"] as const,
   funnel: {
     root: ["funnel"] as const,
