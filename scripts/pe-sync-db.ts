@@ -189,7 +189,7 @@ async function main() {
         dealId,
         docName: DOC_NAMES[i],
         status: STATUS_MAP[code] || "NOT_UPLOADED",
-        notes: `PE Portal ${peProjectId} | ${milestone} | Synced 2026-05-11`,
+        notes: `PE Portal ${peProjectId} | ${milestone} | Synced ${new Date().toISOString().split("T")[0]}`,
       });
     }
   }
@@ -230,7 +230,7 @@ async function main() {
       const op = batch[j];
       const offset = j * 5;
       values.push(`(gen_random_uuid(), $${offset + 1}, $${offset + 2}, $${offset + 3}::"PeDocStatus", $${offset + 4}, $${offset + 5}, '${now}'::timestamp, '${now}'::timestamp, '${now}'::timestamp)`);
-      params.push(op.dealId, op.docName, op.status, op.notes, "pe-portal-scrape-2026-05-11");
+      params.push(op.dealId, op.docName, op.status, op.notes, `pe-scrape-${new Date().toISOString().split("T")[0]}`);
     }
 
     const query = `

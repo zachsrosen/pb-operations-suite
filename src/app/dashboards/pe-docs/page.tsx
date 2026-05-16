@@ -49,30 +49,76 @@ type PeDocStatusValue =
 // PE document requirements (same as pe-report)
 // ---------------------------------------------------------------------------
 
+type DocTeam = "sales" | "design" | "operations" | "permit" | "interconnection" | "accounting" | "compliance";
+
 interface DocRequirement {
   name: string;
   section: "onboarding" | "ic" | "pc";
   owner: "PB" | "Customer" | "PE";
+  team: DocTeam;
   note?: string;
 }
 
 const PE_DOCUMENTS: DocRequirement[] = [
-  { name: "Customer Agreement (PPA/ESA)", section: "onboarding", owner: "Customer", note: "Signed by customer" },
-  { name: "Installation Order", section: "onboarding", owner: "PB" },
-  { name: "State Disclosures", section: "onboarding", owner: "PB" },
-  { name: "Utility Bill", section: "onboarding", owner: "Customer" },
-  { name: "Signed Proposal", section: "ic", owner: "PB" },
-  { name: "Design Plan", section: "ic", owner: "PB", note: "Common blocker — ensure latest revision" },
-  { name: "Photos per Policy", section: "ic", owner: "PB", note: "#1 rejection reason — follow PE photo guide" },
-  { name: "Signed Final Permit", section: "ic", owner: "PB" },
-  { name: "Access to Monitoring", section: "ic", owner: "PB", note: "Monitoring platform credentials" },
-  { name: "Certificate of Acceptance", section: "ic", owner: "PB" },
-  { name: "Attestation of Customer Payment", section: "ic", owner: "PB" },
-  { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB" },
-  { name: "Signed Interconnection Agreement", section: "pc", owner: "PB" },
-  { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB" },
-  { name: "Permission to Operate (PTO)", section: "pc", owner: "PB" },
+  { name: "Customer Agreement (PPA/ESA)", section: "onboarding", owner: "Customer", team: "sales", note: "Signed by customer" },
+  { name: "Installation Order", section: "onboarding", owner: "PB", team: "sales" },
+  { name: "State Disclosures", section: "onboarding", owner: "PB", team: "sales" },
+  { name: "Utility Bill", section: "onboarding", owner: "Customer", team: "sales" },
+  { name: "Signed Proposal", section: "ic", owner: "PB", team: "sales" },
+  { name: "Design Plan", section: "ic", owner: "PB", team: "design", note: "Common blocker — ensure latest revision" },
+  { name: "Photos per Policy", section: "ic", owner: "PB", team: "operations", note: "#1 rejection reason — follow PE photo guide" },
+  { name: "Signed Final Permit", section: "ic", owner: "PB", team: "permit" },
+  { name: "Access to Monitoring", section: "ic", owner: "PB", team: "operations", note: "Monitoring platform credentials" },
+  { name: "Certificate of Acceptance", section: "ic", owner: "PB", team: "compliance" },
+  { name: "Attestation of Customer Payment", section: "ic", owner: "PB", team: "compliance" },
+  { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB", team: "accounting" },
+  { name: "Signed Interconnection Agreement", section: "pc", owner: "PB", team: "interconnection" },
+  { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB", team: "accounting" },
+  { name: "Permission to Operate (PTO)", section: "pc", owner: "PB", team: "interconnection" },
 ];
+
+const TEAM_LABELS: Record<DocTeam, string> = {
+  sales: "Sales",
+  design: "Design",
+  operations: "Operations",
+  permit: "Permitting",
+  interconnection: "Interconnection",
+  accounting: "Accounting",
+  compliance: "Compliance",
+};
+
+const TEAM_COLORS: Record<DocTeam, string> = {
+  sales: "text-cyan-400",
+  design: "text-purple-400",
+  operations: "text-yellow-400",
+  permit: "text-orange-400",
+  interconnection: "text-blue-400",
+  accounting: "text-emerald-400",
+  compliance: "text-pink-400",
+};
+
+const TEAM_BG: Record<DocTeam, string> = {
+  sales: "bg-cyan-500/10 border-cyan-500/30",
+  design: "bg-purple-500/10 border-purple-500/30",
+  operations: "bg-yellow-500/10 border-yellow-500/30",
+  permit: "bg-orange-500/10 border-orange-500/30",
+  interconnection: "bg-blue-500/10 border-blue-500/30",
+  accounting: "bg-emerald-500/10 border-emerald-500/30",
+  compliance: "bg-pink-500/10 border-pink-500/30",
+};
+
+const TEAM_DOT: Record<DocTeam, string> = {
+  sales: "bg-cyan-400",
+  design: "bg-purple-400",
+  operations: "bg-yellow-400",
+  permit: "bg-orange-400",
+  interconnection: "bg-blue-400",
+  accounting: "bg-emerald-400",
+  compliance: "bg-pink-400",
+};
+
+// Ordered for display priority (teams with most actionable items first)
+const TEAM_ORDER: DocTeam[] = ["sales", "design", "operations", "permit", "interconnection", "accounting", "compliance"];
 
 const SECTION_LABELS: Record<string, string> = {
   onboarding: "Onboarding",
@@ -493,6 +539,96 @@ function DealCard({ summary, docMap, defaultExpanded }: {
 }
 
 // ---------------------------------------------------------------------------
+// Team view — compact deal row showing only that team's docs
+// ---------------------------------------------------------------------------
+
+function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
+  summary: DealDocSummary;
+  team: DocTeam;
+  teamActionCount: number;
+  teamDocs: { doc: DocRequirement; review: DocReview | undefined }[];
+}) {
+  const [expanded, setExpanded] = useState(teamActionCount > 0);
+  const { deal } = summary;
+
+  return (
+    <div className={`rounded-lg border transition-colors ${
+      teamActionCount > 0 ? TEAM_BG[team] : "border-border/30 bg-surface/30"
+    }`}>
+      <button
+        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface/30 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-foreground truncate">{deal.dealName}</span>
+            <MilestoneBadge milestone={summary.milestone} />
+            {teamActionCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+                {teamActionCount} to do
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[10px] text-muted">{deal.pbLocation}</span>
+            {deal.peProjectId && <span className="text-[10px] text-muted/50">{deal.peProjectId}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Quick doc status dots */}
+          {teamDocs.map(({ doc, review }) => {
+            const status = review?.status;
+            return (
+              <span
+                key={doc.name}
+                className={`w-2 h-2 rounded-full ${
+                  status === "APPROVED" ? "bg-green-500" :
+                  status === "REJECTED" || status === "ACTION_REQUIRED" ? "bg-orange-500" :
+                  status === "UNDER_REVIEW" || status === "UPLOADED" ? "bg-blue-500" :
+                  status === "NOT_UPLOADED" ? "bg-zinc-500" : "bg-zinc-700"
+                }`}
+                title={`${doc.name}: ${status ? DOC_STATUS_LABELS[status] : "No data"}`}
+              />
+            );
+          })}
+          <div className="flex items-center gap-1 ml-1">
+            <a href={deal.hubspotUrl} target="_blank" rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-orange-400/60 hover:text-orange-400 transition-colors" title="HubSpot">
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+              </svg>
+            </a>
+            {deal.pePortalUrl && (
+              <a href={deal.pePortalUrl} target="_blank" rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-emerald-500/60 hover:text-emerald-400 transition-colors" title="PE Portal">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                </svg>
+              </a>
+            )}
+          </div>
+          <svg className={`w-3.5 h-3.5 text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2 border-t border-border/20">
+          <div className="divide-y divide-border/20 mt-1">
+            {teamDocs.map(({ doc, review }) => (
+              <DocLine key={doc.name} doc={doc} review={review} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -559,7 +695,7 @@ export default function PeDocsPage() {
   const [locFilter, setLocFilter] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"grouped" | "list">("grouped");
+  const [viewMode, setViewMode] = useState<"grouped" | "list" | "by-team">("grouped");
 
   const filterOptions = useMemo(() => {
     const locations = [...new Set(summaries.map((s) => s.deal.pbLocation).filter(Boolean))].sort();
@@ -610,6 +746,47 @@ export default function PeDocsPage() {
       .filter((cat) => groups.has(cat))
       .map((cat) => ({ category: cat, items: groups.get(cat)! }));
   }, [sorted]);
+
+  // Group by team — for each team, find deals with outstanding docs owned by that team
+  const teamGrouped = useMemo(() => {
+    return TEAM_ORDER.map((team) => {
+      const teamDocs = PE_DOCUMENTS.filter((d) => d.team === team);
+      const dealsWithIssues: { summary: DealDocSummary; teamActionCount: number; teamDocs: { doc: DocRequirement; review: DocReview | undefined }[] }[] = [];
+
+      for (const s of sorted) {
+        const relevantDocs = teamDocs.filter((d) => s.sections.includes(d.section));
+        if (relevantDocs.length === 0) continue;
+
+        let teamActionCount = 0;
+        const docsWithReviews: { doc: DocRequirement; review: DocReview | undefined }[] = [];
+
+        for (const doc of relevantDocs) {
+          const review = docMap.get(`${s.deal.dealId}:${doc.name}`);
+          const status = review?.status;
+          if (status && status !== "APPROVED" && status !== "UNDER_REVIEW" && status !== "UPLOADED") {
+            teamActionCount++;
+          }
+          docsWithReviews.push({ doc, review });
+        }
+
+        dealsWithIssues.push({ summary: s, teamActionCount, teamDocs: docsWithReviews });
+      }
+
+      // Sort: deals with action items first, then by action count desc
+      dealsWithIssues.sort((a, b) => {
+        if (a.teamActionCount !== b.teamActionCount) return b.teamActionCount - a.teamActionCount;
+        return a.summary.deal.dealName.localeCompare(b.summary.deal.dealName);
+      });
+
+      const totalActionable = dealsWithIssues.reduce((sum, d) => sum + d.teamActionCount, 0);
+      const totalApproved = dealsWithIssues.reduce((sum, d) => {
+        return sum + d.teamDocs.filter((td) => td.review?.status === "APPROVED").length;
+      }, 0);
+      const totalDocs = dealsWithIssues.reduce((sum, d) => sum + d.teamDocs.length, 0);
+
+      return { team, dealsWithIssues, totalActionable, totalApproved, totalDocs };
+    }).filter((g) => g.dealsWithIssues.length > 0);
+  }, [sorted, docMap]);
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -743,22 +920,17 @@ export default function PeDocsPage() {
         )}
 
         <div className="ml-auto flex items-center gap-1 bg-surface-2 rounded-lg p-0.5 border border-border">
-          <button
-            onClick={() => setViewMode("grouped")}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              viewMode === "grouped" ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
-            }`}
-          >
-            Grouped
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              viewMode === "list" ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
-            }`}
-          >
-            List
-          </button>
+          {(["grouped", "list", "by-team"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                viewMode === mode ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
+              }`}
+            >
+              {mode === "grouped" ? "Grouped" : mode === "list" ? "List" : "By Team"}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -806,6 +978,41 @@ export default function PeDocsPage() {
         <div className="space-y-2">
           {sorted.map((s) => (
             <DealCard key={s.deal.dealId} summary={s} docMap={docMap} defaultExpanded={false} />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && viewMode === "by-team" && (
+        <div className="space-y-6">
+          {teamGrouped.map(({ team, dealsWithIssues, totalActionable, totalApproved, totalDocs }) => (
+            <div key={team}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`w-2.5 h-2.5 rounded-full ${TEAM_DOT[team]}`} />
+                <h3 className={`text-sm font-semibold ${TEAM_COLORS[team]}`}>{TEAM_LABELS[team]}</h3>
+                <span className="text-xs text-muted">
+                  {dealsWithIssues.length} deals
+                </span>
+                <span className="text-[10px] text-muted/60">
+                  {totalApproved}/{totalDocs} approved
+                </span>
+                {totalActionable > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+                    {totalActionable} to do
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {dealsWithIssues.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
+                  <TeamDealRow
+                    key={s.deal.dealId}
+                    summary={s}
+                    team={team}
+                    teamActionCount={teamActionCount}
+                    teamDocs={tDocs}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

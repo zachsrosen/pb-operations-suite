@@ -16,7 +16,7 @@ import { createShovelsClient } from "@/lib/shovels";
 
 export const maxDuration = 300;
 
-const BATCH_SIZE = 20;
+const BATCH_SIZE = 75;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -92,8 +92,7 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    // 500ms delay between properties
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 100));
   }
 
   return NextResponse.json({
