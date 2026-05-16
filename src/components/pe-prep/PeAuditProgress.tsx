@@ -23,12 +23,14 @@ export function PeAuditProgress({ dealId, milestone, onComplete, onError }: Prop
   const [items, setItems] = useState<ProgressItem[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [pandadocEvents, setPandadocEvents] = useState<Array<{ key: string; status: string; action: string }>>([]);
+  const [diagnostics, setDiagnostics] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const startAudit = useCallback(async () => {
     setRunning(true);
     setItems([]);
     setPandadocEvents([]);
+    setDiagnostics([]);
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -77,6 +79,9 @@ export function PeAuditProgress({ dealId, milestone, onComplete, onError }: Prop
                 break;
               case "pandadoc":
                 setPandadocEvents((prev) => [...prev, event.data]);
+                break;
+              case "diagnostic":
+                setDiagnostics((prev) => [...prev, event.data.message]);
                 break;
               case "completed":
                 onComplete(event.data.auditRunId);
@@ -128,6 +133,14 @@ export function PeAuditProgress({ dealId, milestone, onComplete, onError }: Prop
               style={{ width: `${progressPct}%` }}
             />
           </div>
+
+          {diagnostics.length > 0 && (
+            <div className="text-xs text-yellow-500/80 space-y-0.5">
+              {diagnostics.map((msg, i) => (
+                <p key={i}>{msg}</p>
+              ))}
+            </div>
+          )}
 
           {pandadocEvents.length > 0 && (
             <div className="text-xs text-muted space-y-1">

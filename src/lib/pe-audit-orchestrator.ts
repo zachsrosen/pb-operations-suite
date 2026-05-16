@@ -51,6 +51,7 @@ export type AuditEvent =
   | { type: "started"; data: { milestone: string; systemType: string; totalItems: number } }
   | { type: "progress"; data: { itemId: string; label: string; status: string; file?: string; issues?: string[] } }
   | { type: "pandadoc"; data: { key: string; status: string; action: string } }
+  | { type: "diagnostic"; data: { message: string } }
   | { type: "completed"; data: { auditRunId: string; summary: TurnoverAuditResult["summary"] } }
   | { type: "error"; data: { message: string } };
 
@@ -284,6 +285,17 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       const fm = await buildFolderMap(deal.rootFolderId);
       folderByPrefix = fm.byPrefix;
       allFolderIds = fm.allFolderIds;
+      console.log(`[pe-audit] Folder map: ${folderByPrefix.size} numbered folders, ${allFolderIds.length} total`);
+      if (fm.warnings.length > 0) {
+        console.warn(`[pe-audit] Folder warnings: ${fm.warnings.join("; ")}`);
+      }
+      onEvent?.({ type: "diagnostic", data: { message: `GDrive: ${folderByPrefix.size} numbered folders found (${allFolderIds.length} total)` } });
+      if (folderByPrefix.size === 0) {
+        onEvent?.({ type: "diagnostic", data: { message: `No numbered folders in root ${deal.rootFolderId}. ${fm.warnings.join("; ")}` } });
+      }
+    } else {
+      console.warn(`[pe-audit] Deal ${dealId} has no rootFolderId — all items will be missing`);
+      onEvent?.({ type: "diagnostic", data: { message: "Deal has no GDrive folder — all items will be missing" } });
     }
 
     let pandadocOverrides = new Map<string, ChecklistResult>();
@@ -307,7 +319,13 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           modifiedTime: img.modifiedTime,
           size: img.size,
         }));
-      } catch {}
+        onEvent?.({ type: "diagnostic", data: { message: `Found ${installPhotos.length} install photos in folder 5` } });
+      } catch (err) {
+        console.warn(`[pe-audit] Failed to list install photos: ${err instanceof Error ? err.message : String(err)}`);
+        onEvent?.({ type: "diagnostic", data: { message: `Failed to list install photos: ${err instanceof Error ? err.message : String(err)}` } });
+      }
+    } else {
+      onEvent?.({ type: "diagnostic", data: { message: "No folder 5 (Installation) found — photos will be missing" } });
     }
 
     let referenceExamples = new Map<string, ReferenceExample>();
@@ -351,12 +369,15 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
         const candidates = await collectCandidateFiles(folderByPrefix, allFolderIds, item, installPhotos);
         if (candidates.length === 0) {
+          console.log(`[pe-audit] ${item.id}: 0 candidates (folders: ${item.isPhoto ? "photos" : item.searchAllFolders ? "all" : item.driveFolders.join(",")})`);
           onEvent?.({
             type: "progress",
             data: { itemId: item.id, label: item.label, status: "missing" },
           });
           return { item, status: "missing" as const };
         }
+
+        console.log(`[pe-audit] ${item.id}: ${candidates.length} candidates found`);
 
         if (item.isPhoto) {
           const imageCandidates = candidates
@@ -365,7 +386,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
           for (const candidate of imageCandidates) {
             const input = await downloadFileForVision(candidate);
-            if (!input) continue;
+            if (!input) {
+              console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
+              continue;
+            }
 
             visionCallCount++;
             const photoRef = referenceExamples.get(item.id);
@@ -374,6 +398,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
               referenceMimeType: photoRef.mimeType,
             } : undefined);
             const enriched = visionResultToEnriched(vResult);
+
+            if (vResult.kind === "error") {
+              console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.error}`);
+            }
 
             if (enriched && enriched.status === "pass") {
               onEvent?.({
@@ -404,7 +432,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
         for (const candidate of candidates.slice(0, 8)) {
           const input = await downloadFileForVision(candidate);
-          if (!input) continue;
+          if (!input) {
+            console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
+            continue;
+          }
 
           visionCallCount++;
           const docRef = referenceExamples.get(item.id);
@@ -415,6 +446,11 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           }
           if (avlContext) classifyOpts.avlContext = avlContext;
           const vResult = await classifyDocument(input, checklist, classifyOpts);
+
+          if (vResult.kind === "error") {
+            console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.error}`);
+            continue;
+          }
           if (vResult.kind !== "document") continue;
 
           const matched = vResult.classification.matchedChecklistIds.includes(item.id);
@@ -448,6 +484,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           };
         }
 
+        console.log(`[pe-audit] ${item.id}: checked ${Math.min(candidates.length, 8)} candidates, none matched`);
         onEvent?.({
           type: "progress",
           data: { itemId: item.id, label: item.label, status: "missing" },
@@ -460,6 +497,8 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     }
 
     const resolved = resolveCombinedFiles(results);
+
+    console.log(`[pe-audit] Complete: ${visionCallCount} vision calls, ${pandadocPulled} PandaDocs pulled, ${resolved.filter(r => r.status === "found").length} found, ${resolved.filter(r => r.status === "missing").length} missing`);
 
     const peStatus = milestone === "m1" ? deal.peM1Status : deal.peM2Status;
     const auditResult = buildAuditResult({
