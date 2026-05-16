@@ -12,7 +12,7 @@ Zuper has a native Property module (`/api/property`) that supports custom fields
 
 ### Scope
 
-- **1,605 properties** currently have linked Zuper jobs (via `PropertyDealLink` + `ZuperJobCache`)
+- **~1,998 properties** currently have linked Zuper jobs (via `PropertyDealLink` + `ZuperJobCache`)
 - This number grows as new deals get Zuper jobs created
 - Distinct from the separate product-level Zuper custom fields project (module wattage, inverter specs on individual jobs)
 
@@ -47,7 +47,7 @@ Three components:
 
 1. **`src/lib/zuper-property-sync.ts`** -- Core sync logic. Maps `HubSpotPropertyCache` fields to Zuper Property custom fields, creates or updates Zuper Property records, links jobs.
 2. **`/api/cron/zuper-property-sync` route** -- Cron job (every 15 min). Picks up properties where cache data changed since last sync. Feature-flagged on `ZUPER_PROPERTY_SYNC_ENABLED`.
-3. **`scripts/backfill-zuper-properties.ts`** -- One-time script. Creates Zuper Property objects for all 1,605 properties that have linked Zuper jobs, sets custom fields, links existing jobs.
+3. **`scripts/backfill-zuper-properties.ts`** -- One-time script. Creates Zuper Property objects for all 1,998 properties that have linked Zuper jobs, sets custom fields, links existing jobs.
 
 ### Data Flow
 
@@ -112,16 +112,19 @@ Job linking (backfill only):
 | AHJ | `ahjName` | Authority Having Jurisdiction or "" |
 | Utility | `utilityName` | Utility company name or "" |
 
-**Field coverage for the 1,605 Zuper-linked properties (as of 2026-05-16):**
+**Field coverage for the 1,998 Zuper-linked properties (verified 2026-05-16 after backfill + Zuper address fallback):**
 
 | Field | Coverage | Notes |
 |-------|----------|-------|
-| Address + AHJ + Utility | 100% | From HubSpot geocode |
+| Address | 99.8% (1,994/1,998) | From HubSpot geocode |
+| AHJ + Utility | 100% (1,998/1,998) | From HubSpot geocode |
 | hasBattery / hasEvCharger | 100% | Boolean rollups (default false) |
-| firstInstallDate | 61% | From deal stage dates |
-| pbLocation | 72% | From deal/contact |
-| systemSizeKwDc | 18% | Line item rollup -- low, improves over time |
-| yearBuilt / sqft / stories | <1% | Shovels enrichment in progress (144/18.9K done) |
+| firstInstallDate | 63.8% (1,275/1,998) | From deal stage dates |
+| pbLocation | 72.3% (1,444/1,998) | From deal/contact |
+| systemSizeKwDc | 17.3% (345/1,998) | Line item rollup -- low, improves over time |
+| yearBuilt / sqft / stories | 6.7% (134/1,998) | Shovels enrichment in progress |
+
+**Note**: 46 Zuper deals (2.0%) have no PropertyDealLink because they lack all address sources (no contact, no deal address, no Zuper job address). These deals cannot be linked to properties and will be skipped by the sync. Deal link coverage: 98.0% (2,200/2,246). Rollup accuracy: 100%.
 
 Fields with null values sync as empty string `""` to Zuper. As Shovels enrichment and deal rollups fill in data, the next cron cycle pushes the updates automatically.
 
@@ -172,7 +175,7 @@ Migration is additive-only (no data loss, no column drops). Index on `zuperPrope
 - `--dry-run`: Log what would be created/linked without hitting Zuper API. Validates field mapping and query logic.
 - `--limit N`: Process only N properties (for testing).
 
-**Rate limiting**: 200ms delay between Zuper API calls. Estimated runtime for 1,605 properties + ~3,000 jobs: ~15-20 minutes.
+**Rate limiting**: 200ms delay between Zuper API calls. Estimated runtime for 1,998 properties + ~3,400 jobs: ~20-25 minutes.
 
 ### Job Linking
 
@@ -211,7 +214,7 @@ The new cron route `/api/cron/zuper-property-sync` must be added to the `PUBLIC_
 
 1. **Test properties**: Verify the two test properties created during the spike (`21 Friendship Ln`, `237 Jeffrey Dr`) show correct data in the Zuper web app and mobile app.
 2. **Backfill dry-run**: Run backfill script with a `--dry-run` flag against 10 properties, verify the payloads look correct without hitting Zuper API.
-3. **Backfill execution**: Run full backfill, verify all 1,605 properties created in Zuper with correct custom fields and job links.
+3. **Backfill execution**: Run full backfill, verify all ~1,998 properties created in Zuper with correct custom fields and job links.
 4. **Cron cycle**: Update a property in HubSpot (trigger webhook or reconcile), wait for cron, verify Zuper property updated.
 5. **New job creation**: Schedule a job for a property with `zuperPropertyUid`, verify the job is auto-linked.
 6. **Custom field merge**: Update one field on a synced property, verify other fields preserved (not clobbered).

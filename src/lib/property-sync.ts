@@ -627,8 +627,8 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     data: {
       firstInstallDate: installDates[0] ?? null,
       mostRecentInstallDate: installDates[installDates.length - 1] ?? null,
-      associatedDealsCount: deals.length,
-      associatedTicketsCount: tickets.length,
+      associatedDealsCount: dealIds.length,
+      associatedTicketsCount: ticketIds.length,
       openTicketsCount,
       systemSizeKwDc,
       hasBattery,
@@ -863,6 +863,9 @@ async function buildEquipmentSummaries(
  *   6) If zero → trigger `onContactAddressChange` to create-or-associate a
  *      Property from the contact's own address, retry once, and defer if the
  *      contact-side sync can't produce one (e.g. missing address).
+ *   7) Last-resort: for deals, check ZuperJobCache.customerAddress and use
+ *      that to geocode + create/find a Property (covers service visits with
+ *      no contact and no deal address in HubSpot).
  */
 export async function onDealOrTicketCreated(
   kind: "deal" | "ticket",
@@ -961,14 +964,84 @@ export async function onDealOrTicketCreated(
     return { id: upsert.propertyCacheId, hubspotObjectId: upsert.hubspotObjectId };
   };
 
-  if (!contactId) {
-    // No contact — try the object's own address
-    const fromObject = await tryCreatePropertyFromObjectAddress();
-    if (!fromObject) {
-      return { status: "deferred", reason: "no primary contact" };
+  // --- Zuper job address fallback ---
+  // When a deal has no contact address AND no deal-level address in HubSpot,
+  // the Zuper job almost certainly has an address (techs need to know where
+  // to go). Query ZuperJobCache.customerAddress as a last-resort source.
+  const tryCreatePropertyFromZuperJobAddress = async (): Promise<
+    { id: string; hubspotObjectId: string } | null
+  > => {
+    if (kind !== "deal") return null; // Only deals have Zuper jobs
+
+    const zuperJobs = await prisma.zuperJobCache.findMany({
+      where: { hubspotDealId: objectId },
+      select: { customerAddress: true },
+      take: 1,
+    });
+
+    if (zuperJobs.length === 0) return null;
+
+    const addr = zuperJobs[0].customerAddress as Record<string, string> | null;
+    if (!addr) return null;
+
+    const street = addr.street ?? addr.street_address ?? "";
+    const city = addr.city ?? "";
+    const state = addr.state ?? "";
+    const zip = addr.zip_code ?? addr.zip ?? "";
+
+    if (!street || !city || !state) return null;
+
+    const upsert = await upsertPropertyFromGeocode({ street, city, state, zip });
+
+    if ("status" in upsert) return null;
+
+    if (contactId) {
+      await associateProperty(
+        upsert.hubspotObjectId,
+        "contacts",
+        contactId,
+        CONTACT_LABEL_ASSOCIATION_IDS.CURRENT_OWNER,
+      );
+      await prisma.propertyContactLink.upsert({
+        where: {
+          propertyId_contactId_label: {
+            propertyId: upsert.propertyCacheId,
+            contactId,
+            label: "Current Owner",
+          },
+        },
+        create: {
+          propertyId: upsert.propertyCacheId,
+          contactId,
+          label: "Current Owner",
+        },
+        update: {},
+      });
     }
-    // Skip contact-based lookup, go straight to association
-    return finishAssociation(kind, objectId, fromObject, null);
+
+    if (upsert.created) {
+      await logActivity("PROPERTY_CREATED", `Property created from Zuper job address`, {
+        kind,
+        objectId,
+        contactId,
+        propertyCacheId: upsert.propertyCacheId,
+      });
+    }
+
+    return { id: upsert.propertyCacheId, hubspotObjectId: upsert.hubspotObjectId };
+  };
+
+  if (!contactId) {
+    // No contact — try the object's own address, then Zuper job address
+    const fromObject = await tryCreatePropertyFromObjectAddress();
+    if (fromObject) {
+      return finishAssociation(kind, objectId, fromObject, null);
+    }
+    const fromZuper = await tryCreatePropertyFromZuperJobAddress();
+    if (fromZuper) {
+      return finishAssociation(kind, objectId, fromZuper, null);
+    }
+    return { status: "deferred", reason: "no primary contact and no geocodable address" };
   }
 
   // 2) Read Properties the contact is already associated to. Single cheap
@@ -981,10 +1054,15 @@ export async function onDealOrTicketCreated(
     await onContactAddressChange(contactId);
     links = await prisma.propertyContactLink.findMany({ where: { contactId } });
     if (links.length === 0) {
-      // Contact has no geocodable address — try the object's own address
+      // Contact has no geocodable address — try the object's own address,
+      // then Zuper job address as a last resort.
       const fromObject = await tryCreatePropertyFromObjectAddress();
       if (fromObject) {
         return finishAssociation(kind, objectId, fromObject, contactId);
+      }
+      const fromZuper = await tryCreatePropertyFromZuperJobAddress();
+      if (fromZuper) {
+        return finishAssociation(kind, objectId, fromZuper, contactId);
       }
       await logActivity("PROPERTY_SYNC_FAILED", "No properties for contact on deal/ticket creation", {
         kind,
@@ -1042,13 +1120,19 @@ export async function onDealOrTicketCreated(
     const fromObject = await tryCreatePropertyFromObjectAddress();
     if (fromObject) {
       chosen = fromObject;
-    } else if (candidates.length === 1 && !hasGeocodableAddress) {
-      // Last resort: deal has no geocodable address, contact has exactly one
-      // Property — link there (better than orphaning entirely). This is the
-      // only case where we skip address verification.
-      chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
     } else {
-      return { status: "deferred", reason: "no address match among contact properties" };
+      // Try Zuper job address before falling back to single-candidate heuristic
+      const fromZuper = await tryCreatePropertyFromZuperJobAddress();
+      if (fromZuper) {
+        chosen = fromZuper;
+      } else if (candidates.length === 1 && !hasGeocodableAddress) {
+        // Last resort: deal has no geocodable address, contact has exactly one
+        // Property — link there (better than orphaning entirely). This is the
+        // only case where we skip address verification.
+        chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
+      } else {
+        return { status: "deferred", reason: "no address match among contact properties" };
+      }
     }
   }
 
@@ -1075,12 +1159,34 @@ async function finishAssociation(
   // has no HUBSPOT_DEFINED (typeId 1) default registered between Property and
   // Deal / Ticket — the portal only has USER_DEFINED labels — so we MUST pass
   // an explicit typeId or the create 400s with an "INVALID_OBJECT_IDS" error.
-  await associateProperty(
-    chosen.hubspotObjectId,
-    kind === "deal" ? "deals" : "tickets",
-    objectId,
-    kind === "deal" ? dealAssocTypeId() : ticketAssocTypeId(),
-  );
+  //
+  // If the HubSpot association fails (e.g. archived/deleted deal), we still
+  // create the local DB link. The DB link is what our code uses for all queries
+  // (PropertyDrawer, Zuper sync, rollups). The HubSpot association is a nice-
+  // to-have for the HubSpot UI but not critical for our workflows.
+  let hsAssocFailed = false;
+  try {
+    await associateProperty(
+      chosen.hubspotObjectId,
+      kind === "deal" ? "deals" : "tickets",
+      objectId,
+      kind === "deal" ? dealAssocTypeId() : ticketAssocTypeId(),
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isInvalidObject = msg.includes("INVALID_OBJECT_IDS") || msg.includes("is not valid");
+    if (isInvalidObject) {
+      // Deal/ticket is archived or deleted in HubSpot — log warning and
+      // proceed with the local DB link. Common for old service visits.
+      hsAssocFailed = true;
+      console.warn(
+        `[property-sync] HubSpot association failed for ${kind} ${objectId} ` +
+        `(object may be archived). Creating local DB link only.`,
+      );
+    } else {
+      throw err; // Unexpected error — don't swallow
+    }
+  }
 
   if (kind === "deal") {
     await prisma.propertyDealLink.upsert({
@@ -1097,13 +1203,27 @@ async function finishAssociation(
   }
 
   // Refresh denormalized rollups so the associated counts and
-  // install/service dates include the new object immediately.
-  await computePropertyRollups(chosen.id);
+  // install/service dates include the new object immediately. If the HubSpot
+  // association failed (archived deal), rollups may partially fail too — that's
+  // OK, the property still gets created and linked locally.
+  try {
+    await computePropertyRollups(chosen.id);
+  } catch (err) {
+    if (hsAssocFailed) {
+      // Expected — archived deals can't be fetched for rollup data
+      console.warn(
+        `[property-sync] Rollup computation failed for property ${chosen.id} ` +
+        `(likely due to archived ${kind} ${objectId}). Local link still created.`,
+      );
+    } else {
+      throw err;
+    }
+  }
 
   await logActivity(
     "PROPERTY_ASSOCIATION_ADDED",
-    `Property associated to new ${kind}`,
-    { kind, objectId, contactId, propertyCacheId: chosen.id },
+    `Property associated to new ${kind}${hsAssocFailed ? " (HubSpot assoc failed, local only)" : ""}`,
+    { kind, objectId, contactId, propertyCacheId: chosen.id, hsAssocFailed },
   );
 
   return { status: "associated", propertyCacheId: chosen.id };
