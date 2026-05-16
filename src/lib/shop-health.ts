@@ -115,3 +115,74 @@ function subWeeks(date: Date, n: number): Date {
   d.setDate(d.getDate() - n * 7);
   return d;
 }
+
+// ─── Health Scoring ──────────────────────────────────────────────────────────
+
+/**
+ * Backlog depth scoring: 4-8 weeks is healthy, 3 or 9-10 is caution, else red.
+ */
+export function scoreBacklogWeeks(weeks: number): HealthStatus {
+  if (weeks >= 4 && weeks <= 8) return "green";
+  if (weeks === 3 || (weeks > 8 && weeks <= 10)) return "yellow";
+  return "red";
+}
+
+/**
+ * RTB pool scoring: 2x weekly capacity = green, 1x = yellow, else red.
+ */
+export function scoreReadyToBuild(
+  rtbCount: number,
+  weeklyCapacity: number
+): HealthStatus {
+  if (weeklyCapacity <= 0) return "red";
+  const ratio = rtbCount / weeklyCapacity;
+  if (ratio >= 2) return "green";
+  if (ratio >= 1) return "yellow";
+  return "red";
+}
+
+/**
+ * Scheduled installs scoring: 100%+ of capacity = green, 75%+ = yellow.
+ */
+export function scoreScheduledInstalls(
+  scheduled: number,
+  capacity: number
+): HealthStatus {
+  if (capacity <= 0) return "red";
+  const pct = (scheduled / capacity) * 100;
+  if (pct >= 100) return "green";
+  if (pct >= 75) return "yellow";
+  return "red";
+}
+
+/**
+ * General goal scoring: 100%+ = green, 80%+ = yellow, else red.
+ */
+export function scoreAgainstGoal(
+  actual: number,
+  weeklyGoal: number
+): HealthStatus {
+  if (weeklyGoal <= 0) return "green";
+  const pct = (actual / weeklyGoal) * 100;
+  if (pct >= 100) return "green";
+  if (pct >= 80) return "yellow";
+  return "red";
+}
+
+/**
+ * Constructs a HeroMetric with automatic delta calculation.
+ */
+export function buildHeroMetric(
+  value: number,
+  priorWeek: number | null,
+  health: HealthStatus,
+  target: number | null = null
+): HeroMetric {
+  return {
+    value,
+    priorWeek,
+    delta: priorWeek !== null ? value - priorWeek : null,
+    health,
+    target,
+  };
+}
