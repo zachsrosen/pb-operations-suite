@@ -17,6 +17,27 @@ const PANDADOC_BASE = "https://api.pandadoc.com/public/v1";
 // uses the [Client.LastName]/[Deal.AddressLine1] placeholder pattern.
 export const DA_TEMPLATE_ID = "SfYdCbqDPnZ52Q7wc3YaF4";
 
+// PE template patterns for document discovery
+export const PE_TEMPLATE_PATTERNS = [
+  { key: "attestation", pattern: "PE Installer Attestation" },
+  { key: "acceptance", pattern: "PE Customer Certificate of Acceptance" },
+  { key: "progress_waiver", pattern: "Progress Lien Waiver" },
+  { key: "final_waiver", pattern: "PE Conditional Waiver and Release on Final Payment" },
+] as const;
+
+export type PeTemplateKey = (typeof PE_TEMPLATE_PATTERNS)[number]["key"];
+
+export interface PeTemplateStatus {
+  key: PeTemplateKey;
+  templateId: string | null;
+  document: {
+    id: string;
+    name: string;
+    status: string;
+    dateCompleted: string | null;
+  } | null;
+}
+
 export type PandaDocStatus =
   | "document.uploaded"
   | "document.draft"
@@ -294,4 +315,126 @@ export function pickLatestDocPerDeal(
     }
   }
   return { latest, supersededPandaDocIds };
+}
+
+/**
+ * Search PandaDoc for PE template IDs by name pattern.
+ * Falls back to env vars if search returns ambiguous results.
+ */
+export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, string | null>> {
+  const result: Record<string, string | null> = {};
+
+  const envOverrides: Record<PeTemplateKey, string | undefined> = {
+    attestation: process.env.PANDADOC_PE_ATTESTATION_TEMPLATE_ID,
+    acceptance: process.env.PANDADOC_PE_ACCEPTANCE_TEMPLATE_ID,
+    progress_waiver: process.env.PANDADOC_PE_PROGRESS_WAIVER_TEMPLATE_ID,
+    final_waiver: process.env.PANDADOC_PE_FINAL_WAIVER_TEMPLATE_ID,
+  };
+
+  for (const { key, pattern } of PE_TEMPLATE_PATTERNS) {
+    if (envOverrides[key]) {
+      result[key] = envOverrides[key]!;
+      continue;
+    }
+
+    try {
+      const data = await pandaFetch<{ results: Array<{ id: string; name: string }> }>("/templates", {
+        searchParams: { q: pattern, count: 5 },
+      });
+
+      if (data.results?.length === 1) {
+        result[key] = data.results[0].id;
+      } else if (data.results?.length > 1) {
+        // Ambiguous — prefer exact name match
+        const exact = data.results.find((t) =>
+          t.name.toLowerCase() === pattern.toLowerCase()
+        );
+        result[key] = exact?.id ?? null;
+      } else {
+        result[key] = null;
+      }
+    } catch {
+      result[key] = null;
+    }
+  }
+
+  return result as Record<PeTemplateKey, string | null>;
+}
+
+/**
+ * Find the most recent PandaDoc document for each PE template, linked to a deal.
+ */
+export async function findPeDocsForDeal(
+  dealId: string,
+  templateIds: Record<PeTemplateKey, string | null>,
+): Promise<PeTemplateStatus[]> {
+  const results: PeTemplateStatus[] = [];
+
+  for (const { key } of PE_TEMPLATE_PATTERNS) {
+    const templateId = templateIds[key];
+    if (!templateId) {
+      results.push({ key, templateId: null, document: null });
+      continue;
+    }
+
+    try {
+      const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+        searchParams: {
+          template_id: templateId,
+          "metadata_hubspot.deal_id": dealId,
+          count: 1,
+          order_by: "-date_modified",
+        },
+      });
+
+      const doc = data.results?.[0];
+      results.push({
+        key,
+        templateId,
+        document: doc ? {
+          id: doc.id,
+          name: doc.name,
+          status: doc.status.replace("document.", ""),
+          dateCompleted: doc.date_completed,
+        } : null,
+      });
+    } catch {
+      results.push({ key, templateId, document: null });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Download a completed PandaDoc document as a PDF buffer.
+ * Only works for documents with status "document.completed".
+ */
+export async function downloadPandaDocPdf(documentId: string): Promise<Buffer> {
+  const url = `${PANDADOC_BASE}/documents/${documentId}/download`;
+
+  const maxRetries = 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `API-Key ${getApiKey()}` },
+    });
+
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
+
+    if (res.status === 429 && attempt < maxRetries) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(30_000, Math.pow(2, attempt) * 1000 + Math.random() * 400);
+      await new Promise((r) => setTimeout(r, delayMs));
+      continue;
+    }
+
+    const text = await res.text().catch(() => "");
+    throw new Error(`PandaDoc download ${res.status}: ${text.slice(0, 300)}`);
+  }
+  throw new Error("PandaDoc download retry exhausted");
 }
