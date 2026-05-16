@@ -46,31 +46,60 @@ export type VisionResult =
   | { kind: "photo"; verification: PhotoVerification }
   | { kind: "error"; error: string };
 
+export interface ClassifyOptions {
+  referenceFileId?: string;
+  referenceMimeType?: string;
+  avlContext?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Prompt builders
 // ---------------------------------------------------------------------------
 
-function buildDocumentPrompt(checklistItems: ChecklistItem[]): string {
+function buildDocumentPrompt(
+  checklistItems: ChecklistItem[],
+  options?: { hasReference?: boolean; avlContext?: string },
+): string {
   const itemList = checklistItems
     .filter((i) => !i.isPhoto)
     .map((i) => `- ${i.id}: ${i.label} (category: ${i.category})`)
     .join("\n");
 
-  return `You are a document classification system for Participate Energy (PE) milestone submissions.
+  const sections: string[] = [
+    `You are a document classification system for Participate Energy (PE) milestone submissions.
 
-Analyze this document and classify it against the PE checklist. Return a JSON object.
+Analyze this document and classify it against the PE checklist. Return a JSON object.`,
+  ];
 
-## PE Checklist Items (documents only)
-${itemList}
+  if (options?.hasReference) {
+    sections.push(`## Reference Example
+The first file attached is an APPROVED example from a previously paid PE submission.
+Use it as a baseline for quality, format, and completeness when evaluating the candidate document (the second file).`);
+  }
 
-## Instructions
-1. Identify what type of document this is (contract, proposal, utility bill, permit, lien waiver, etc.)
-2. Match it to one or more checklist IDs from the list above. A single PDF may contain multiple documents (e.g., a contract package with Customer Agreement + Installation Order + Disclosures).
-3. Check for signatures — are they present? How many? Are all required signature fields signed?
-4. Check for date relevance — utility bills should be within 12 months, permits should not be expired.
-5. Flag any issues (unsigned, expired, wrong document type, poor quality, etc.)
+  sections.push(`## PE Checklist Items (documents only)
+${itemList}`);
 
-## Response Format (JSON only, no markdown)
+  if (options?.avlContext) {
+    sections.push(`## Equipment Approved Vendor List (AVL)
+If you can identify equipment brand/model/SKU in this document, cross-check against PE's AVL.
+Flag any equipment NOT on this list as an "avl_mismatch" issue.
+${options.avlContext}`);
+  }
+
+  const instructions = [
+    "1. Identify what type of document this is (contract, proposal, utility bill, permit, lien waiver, etc.)",
+    "2. Match it to one or more checklist IDs from the list above. A single PDF may contain multiple documents.",
+    "3. Check for signatures — are they present? How many? Are all required signature fields signed?",
+    "4. Check for date relevance — utility bills should be within 12 months, permits should not be expired.",
+    "5. Flag any issues (unsigned, expired, wrong document type, poor quality, etc.)",
+  ];
+  if (options?.avlContext) {
+    instructions.push("6. If equipment is identifiable, verify it appears on the AVL. Flag mismatches.");
+  }
+  sections.push(`## Instructions\n${instructions.join("\n")}`);
+
+  sections.push(`## Response Format (JSON only, no markdown)
 {
   "matchedChecklistIds": ["m1.contract.customer_agreement"] or [] if no match,
   "confidence": "high" | "medium" | "low",
@@ -78,10 +107,15 @@ ${itemList}
   "issues": ["Missing signature on page 2"],
   "signatures": { "present": true, "count": 2, "allSigned": false },
   "dateRelevance": { "date": "2025-11-15", "isExpired": false, "expiresIn": 180 } or null
-}`;
+}`);
+
+  return sections.join("\n\n");
 }
 
-function buildPhotoPrompt(item: ChecklistItem): string {
+function buildPhotoPrompt(
+  item: ChecklistItem,
+  options?: { hasReference?: boolean },
+): string {
   const photoDescriptions: Record<number, string> = {
     1: "Site address visible on the home or mailbox, showing the full front of the house",
     2: "Wide-angle photo of the installed PV (solar panel) array on the roof, showing the full array from a distance",
@@ -98,12 +132,18 @@ function buildPhotoPrompt(item: ChecklistItem): string {
 
   const requirement = photoDescriptions[item.pePhotoNumber ?? 0] ?? item.label;
 
+  const referenceNote = options?.hasReference
+    ? `\n## Reference Photo
+The first image is an APPROVED example of this photo type from a previously paid PE submission.
+Compare the candidate photo (the second image) against it for expected content, quality, and angle.\n`
+    : "";
+
   return `You are a photo verification system for Participate Energy (PE) milestone submissions.
 
 ## PE Photo Requirement
 Photo ${item.pePhotoNumber}: ${item.label}
 Requirement: ${requirement}
-
+${referenceNote}
 ## Instructions
 1. Does this image satisfy the PE photo requirement above?
 2. Is the image clear and well-lit enough for PE review?
@@ -136,24 +176,31 @@ async function uploadToAnthropic(buffer: Buffer, fileName: string, mimeType: str
 export async function classifyDocument(
   input: VisionFileInput,
   checklistItems: ChecklistItem[],
+  options?: ClassifyOptions,
 ): Promise<VisionResult> {
   try {
     const client = getAnthropicClient();
     const fileId = await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
-    const prompt = buildDocumentPrompt(checklistItems);
+    const prompt = buildDocumentPrompt(checklistItems, {
+      hasReference: !!options?.referenceFileId,
+      avlContext: options?.avlContext,
+    });
 
     const contentType = input.mimeType.startsWith("image/") ? "image" as const : "document" as const;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contentBlocks: any[] = [];
+    if (options?.referenceFileId) {
+      const refType = options.referenceMimeType?.startsWith("image/") ? "image" : "document";
+      contentBlocks.push({ type: refType, source: { type: "file", file_id: options.referenceFileId } });
+    }
+    contentBlocks.push({ type: contentType, source: { type: "file", file_id: fileId } });
+    contentBlocks.push({ type: "text", text: prompt });
 
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
       max_tokens: 2000,
-      messages: [{
-        role: "user",
-        content: [
-          { type: contentType, source: { type: "file", file_id: fileId } },
-          { type: "text", text: prompt },
-        ],
-      }],
+      messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
 
@@ -171,22 +218,25 @@ export async function classifyDocument(
 export async function verifyPhoto(
   input: VisionFileInput,
   checklistItem: ChecklistItem,
+  options?: Pick<ClassifyOptions, "referenceFileId" | "referenceMimeType">,
 ): Promise<VisionResult> {
   try {
     const client = getAnthropicClient();
     const fileId = await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
-    const prompt = buildPhotoPrompt(checklistItem);
+    const prompt = buildPhotoPrompt(checklistItem, { hasReference: !!options?.referenceFileId });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contentBlocks: any[] = [];
+    if (options?.referenceFileId) {
+      contentBlocks.push({ type: "image", source: { type: "file", file_id: options.referenceFileId } });
+    }
+    contentBlocks.push({ type: "image", source: { type: "file", file_id: fileId } });
+    contentBlocks.push({ type: "text", text: prompt });
 
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
       max_tokens: 1500,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "file", file_id: fileId } },
-          { type: "text", text: prompt },
-        ],
-      }],
+      messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
 
@@ -207,6 +257,7 @@ export async function verifyPhoto(
 
 export interface ClassifyBatchOptions {
   concurrency?: number;
+  classifyOptions?: ClassifyOptions;
   onProgress?: (result: { fileName: string; result: VisionResult }) => void;
 }
 
@@ -228,12 +279,9 @@ export async function classifyBatch(
       let result: VisionResult;
 
       if (isPhoto) {
-        // For photos, we need to know which checklist item to verify against.
-        // This is handled by the orchestrator which calls verifyPhoto directly.
-        // Batch is used for documents only.
-        result = await classifyDocument(file, checklistItems);
+        result = await classifyDocument(file, checklistItems, opts?.classifyOptions);
       } else {
-        result = await classifyDocument(file, checklistItems);
+        result = await classifyDocument(file, checklistItems, opts?.classifyOptions);
       }
 
       results.set(file.fileId, result);

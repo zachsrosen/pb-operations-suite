@@ -17,7 +17,14 @@ import {
   verifyPhoto,
   visionResultToEnriched,
   type VisionFileInput,
+  type ClassifyOptions,
 } from "@/lib/pe-vision-classifier";
+import {
+  populateReferenceLibrary,
+  getReferenceExamples,
+  type ReferenceExample,
+} from "@/lib/pe-reference-library";
+import { getAvl } from "@/lib/pe-avl";
 import {
   discoverPeTemplateIds,
   findPeDocsForDeal,
@@ -303,6 +310,27 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       } catch {}
     }
 
+    let referenceExamples = new Map<string, ReferenceExample>();
+    let avlContext: string | undefined;
+
+    try {
+      await populateReferenceLibrary(milestone);
+      referenceExamples = await getReferenceExamples(milestone, checklist.map((i) => i.id));
+    } catch (err) {
+      console.warn(`[pe-audit] Reference library fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    try {
+      const avl = await getAvl();
+      if (avl.entries.length > 0) {
+        avlContext = avl.entries
+          .map((e) => `${e.manufacturer} ${e.model} (SKU: ${e.sku}, Category: ${e.category})`)
+          .join("\n");
+      }
+    } catch (err) {
+      console.warn(`[pe-audit] AVL fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     const results: ChecklistResult[] = [];
     let visionCallCount = 0;
 
@@ -340,7 +368,11 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
             if (!input) continue;
 
             visionCallCount++;
-            const vResult = await verifyPhoto(input, item);
+            const photoRef = referenceExamples.get(item.id);
+            const vResult = await verifyPhoto(input, item, photoRef ? {
+              referenceFileId: photoRef.anthropicFileId,
+              referenceMimeType: photoRef.mimeType,
+            } : undefined);
             const enriched = visionResultToEnriched(vResult);
 
             if (enriched && enriched.status === "pass") {
@@ -375,7 +407,14 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           if (!input) continue;
 
           visionCallCount++;
-          const vResult = await classifyDocument(input, checklist);
+          const docRef = referenceExamples.get(item.id);
+          const classifyOpts: ClassifyOptions = {};
+          if (docRef) {
+            classifyOpts.referenceFileId = docRef.anthropicFileId;
+            classifyOpts.referenceMimeType = docRef.mimeType;
+          }
+          if (avlContext) classifyOpts.avlContext = avlContext;
+          const vResult = await classifyDocument(input, checklist, classifyOpts);
           if (vResult.kind !== "document") continue;
 
           const matched = vResult.classification.matchedChecklistIds.includes(item.id);
