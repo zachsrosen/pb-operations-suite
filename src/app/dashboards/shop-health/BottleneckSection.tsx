@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useBottleneckMutation } from '@/hooks/useShopHealthData';
 import {
   BOTTLENECK_DIAGNOSTICS,
@@ -34,15 +34,6 @@ export function BottleneckSectionContent({
   const currentWeek = getWeekStart(new Date());
   const weekDate = new Date(weekStart + 'T00:00:00');
   const isPastWeek = weekDate.getTime() < currentWeek.getTime();
-
-  // Sync form when bottleneck prop changes (e.g., location/week switch)
-  useEffect(() => {
-    setConstraint(bottleneck?.constraint ?? '');
-    setRootCause(bottleneck?.rootCause ?? '');
-    setActionPlan(bottleneck?.actionPlan ?? '');
-    setOwner(bottleneck?.owner ?? '');
-    setSaved(false);
-  }, [bottleneck]);
 
   const autoSave = useCallback(
     (fields: { constraint: string; rootCause: string; actionPlan: string; owner: string }) => {

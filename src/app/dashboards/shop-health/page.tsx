@@ -167,6 +167,7 @@ export default function ShopHealthDashboard() {
           {/* Bottleneck */}
           <SectionCard title="Bottleneck of the Week" defaultOpen={true}>
             <BottleneckSectionContent
+              key={`${activeTab}-${weekParam}`}
               location={activeTab}
               weekStart={weekParam}
               bottleneck={data.bottleneck}
