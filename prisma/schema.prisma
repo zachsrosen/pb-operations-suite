@@ -1864,6 +1864,37 @@ model PeAuditRun {
 }
 
 // ===========================================
+// PE REFERENCE LIBRARY — approved exemplars for vision classifier
+// ===========================================
+
+model PeReferenceDoc {
+  id              String   @id @default(cuid())
+  checklistItemId String
+  sourceDealId    String
+  sourceDealName  String
+  driveFileId     String
+  driveFileName   String
+  mimeType        String
+  anthropicFileId String?
+  anthropicFileExpiry DateTime?
+  milestone       String
+  category        String
+  isPhoto         Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([checklistItemId, milestone])
+  @@index([milestone])
+}
+
+model PeAvlCache {
+  id        String   @id @default(cuid())
+  data      Json
+  fetchedAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+// ===========================================
 // CATALOG REBUILD — MATCH GROUPS
 // ===========================================
 
