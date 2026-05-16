@@ -85,6 +85,15 @@ export interface PropertyDetail {
   hubspotUrl: string | null;
 
   equipmentSummary: EquipmentSummary;
+
+  // Enrichment fields (Shovels / ATTOM — null until integration populates them)
+  yearBuilt: number | null;
+  squareFootage: number | null;
+  lotSizeSqft: number | null;
+  stories: number | null;
+  propertyType: string | null;
+  assessedValue: number | null;
+  publicRecordOwnerName: string | null;
 }
 
 export function createEmptySummary(): EquipmentSummary {
@@ -349,5 +358,14 @@ export function mapCacheRowToPropertyDetail(
     deals: [],
     tickets: [],
     hubspotUrl: buildHubSpotPropertyUrl(row.hubspotObjectId),
+
+    // Enrichment fields
+    yearBuilt: row.yearBuilt,
+    squareFootage: row.squareFootage,
+    lotSizeSqft: row.lotSizeSqft,
+    stories: row.stories,
+    propertyType: row.propertyType,
+    assessedValue: row.assessedValue,
+    publicRecordOwnerName: row.publicRecordOwnerName,
   };
 }
