@@ -148,6 +148,14 @@ const LINKS: SuitePageCard[] = [
     icon: "🏢",
     section: "Office Performance",
   },
+  {
+    href: "/dashboards/shop-health",
+    title: "Shop Health",
+    description: "Weekly per-location health metrics for Shop Directors — pipeline, scheduling, operations, inspections, and bottleneck tracking.",
+    tag: "WEEKLY",
+    icon: "🏪",
+    section: "Shop Health",
+  },
 ];
 
 export default async function ExecutiveSuitePage() {
