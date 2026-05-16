@@ -26,8 +26,21 @@ export interface DrivePdfFile {
 // Auth
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-request Drive token override. Set before calling Drive functions
+ * to use a user's OAuth token instead of the service account.
+ * Cleared after the request completes.
+ */
+let _driveTokenOverride: string | null = null;
+
+export function setDriveTokenOverride(token: string | null): void {
+  _driveTokenOverride = token;
+}
+
 /** Get a Drive-scoped token, preferring domain-wide delegation (impersonation). */
 export async function getDriveToken(): Promise<string> {
+  if (_driveTokenOverride) return _driveTokenOverride;
+
   const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
   if (impersonateEmail) {
     try {
@@ -44,6 +57,8 @@ export async function getDriveToken(): Promise<string> {
 
 /** Get a Drive-scoped token with write access (for creating folders, copying files). */
 export async function getDriveWriteToken(): Promise<string> {
+  if (_driveTokenOverride) return _driveTokenOverride;
+
   const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
   if (impersonateEmail) {
     try {
