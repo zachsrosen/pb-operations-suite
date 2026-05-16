@@ -207,6 +207,14 @@ export const queryKeys = {
     tab: (propertyId: string, tab: string) =>
       ["propertyHub", propertyId, tab] as const,
   },
+  propertyPermits: {
+    root: ["propertyPermits"] as const,
+    list: (propertyId: string) => ["propertyPermits", propertyId] as const,
+  },
+  propertyResidents: {
+    root: ["propertyResidents"] as const,
+    list: (propertyId: string) => ["propertyResidents", propertyId] as const,
+  },
   paymentTracking: {
     root: ["paymentTracking"] as const,
     list: () => ["paymentTracking", "list"] as const,
@@ -267,6 +275,8 @@ export function cacheKeyToQueryKeys(
     return [queryKeys.powerhub.root];
   if (serverKey.startsWith("crew-schedule")) return [queryKeys.crewSchedule.root];
   if (serverKey.startsWith("property-timeline")) return [queryKeys.propertyTimeline.root];
+  if (serverKey.startsWith("property:permits")) return [queryKeys.propertyPermits.root];
+  if (serverKey.startsWith("property:residents")) return [queryKeys.propertyResidents.root];
   if (serverKey.startsWith("property-hub")) return [queryKeys.propertyHub.root];
   if (serverKey.startsWith("ticket-engagements")) return [queryKeys.serviceTickets.root];
   return [];
