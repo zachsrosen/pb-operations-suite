@@ -294,6 +294,10 @@ export const CACHE_KEYS = {
     `property-hub:activity:${propertyId}` as const,
   PROPERTY_HUB_DOCUMENTS: (propertyId: string) =>
     `property-hub:documents:${propertyId}` as const,
+  PROPERTY_PERMITS: (propertyId: string) =>
+    `property:permits:${propertyId}` as const,
+  PROPERTY_RESIDENTS: (propertyId: string) =>
+    `property:residents:${propertyId}` as const,
   PAYMENT_TRACKING: "accounting:payment-tracking",
   // On-call "tonight" keys are built dynamically per-pool-per-date in
   // src/app/api/on-call/tonight/route.ts so they roll over at each pool's local

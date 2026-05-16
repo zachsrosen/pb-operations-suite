@@ -82,9 +82,62 @@ const SUBMITTED_STATUSES = new Set(["Submitted", "Resubmitted", "Approved"]);
 // Load scraped data
 // ---------------------------------------------------------------------------
 
-const jsonPath = path.join(__dirname, "..", "pe-portal-scrape-2026-05-11.json");
+const DOC_NAMES = [
+  "Customer Agreement (PPA/ESA)", "Installation Order", "State Disclosures",
+  "Utility Bill", "Signed Proposal", "Design Plan", "Photos per Policy",
+  "Signed Final Permit", "Access to Monitoring", "Certificate of Acceptance",
+  "Attestation of Customer Payment", "Conditional Progress Lien Waiver",
+  "Signed Interconnection Agreement", "Conditional Waiver — Final Payment",
+  "Permission to Operate (PTO)",
+];
+const STATUS_MAP: Record<string, string> = {
+  A: "APPROVED", R: "ACTION REQUIRED", U: "UNDER REVIEW",
+  N: "NOT YET EXPECTED", X: "UPLOADED", D: "UPLOADED", F: "NOT YET EXPECTED", K: "NOT YET EXPECTED",
+};
+
+function findLatestScrape(): string {
+  const downloads = path.join(process.env.HOME || "~", "Downloads");
+  const candidates = fs.readdirSync(downloads)
+    .filter((f: string) => f.startsWith("pe-portal-scrape-") && f.endsWith(".json"))
+    // Prefer dated files (YYYY-MM-DD) over "fresh" etc.
+    .sort((a: string, b: string) => {
+      const dateA = a.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || "0000-00-00";
+      const dateB = b.match(/(\d{4}-\d{2}-\d{2})/)?.[1] || "0000-00-00";
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
+      // Prefer "merged" over others on same date
+      if (a.includes("merged")) return -1;
+      if (b.includes("merged")) return 1;
+      return b.localeCompare(a);
+    });
+  if (candidates.length > 0) return path.join(downloads, candidates[0]);
+  return path.join(__dirname, "..", "pe-portal-scrape-2026-05-11.json");
+}
+
+const jsonPath = findLatestScrape();
 const data = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
-const scraped: ScrapedProject[] = data.projects;
+console.log(`📂 Using scrape: ${path.basename(jsonPath)}`);
+
+// Normalize: support both nested-document format and compact docCodes/statuses format
+const scraped: ScrapedProject[] = data.projects.map((p: any) => {
+  if (p.documents) return p; // Already in full format
+  // Convert compact codes to nested format
+  const codes: string = p.docCodes || p.statuses || "";
+  const makeDocs = (indices: number[]): Doc[] =>
+    indices.map(i => ({ name: DOC_NAMES[i], status: STATUS_MAP[codes[i]] || "NOT YET EXPECTED" }));
+  return {
+    projectId: p.projectId,
+    customerName: p.customerName,
+    milestone: p.milestone,
+    docReview: "",
+    documents: {
+      onboarding: makeDocs([0, 1, 2, 3, 4]),
+      inspectionComplete: makeDocs([5, 6, 7, 8]),
+      projectComplete: makeDocs([9, 10, 11, 12, 13, 14]),
+    },
+    portalUrl: p.portalUrl,
+    firestoreId: p.firestoreId,
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

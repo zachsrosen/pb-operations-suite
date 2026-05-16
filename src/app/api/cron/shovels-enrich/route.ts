@@ -1,0 +1,104 @@
+/**
+ * GET /api/cron/shovels-enrich
+ *
+ * Picks up HubSpotPropertyCache records with shovelsEnrichmentStatus
+ * IN ('PENDING', 'ERROR') AND shovelsRetryCount < 3, enriches them
+ * from the Shovels API. Runs every 15 minutes via Vercel Cron.
+ *
+ * Auth: CRON_SECRET bearer token (same as other cron routes).
+ * Feature flag: SHOVELS_ENRICHMENT_ENABLED must be "true".
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { enrichPropertyFromShovels } from "@/lib/shovels-enrichment";
+import { createShovelsClient } from "@/lib/shovels";
+
+export const maxDuration = 300;
+
+const BATCH_SIZE = 75;
+
+export async function GET(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (process.env.SHOVELS_ENRICHMENT_ENABLED !== "true") {
+    return NextResponse.json({ status: "disabled" });
+  }
+
+  // Check credit budget before starting
+  try {
+    const client = createShovelsClient();
+    const usage = await client.getUsage();
+    const remaining = (usage.credit_limit ?? 25000) - usage.credits_used;
+    if (usage.is_over_limit || remaining < 500) {
+      return NextResponse.json({
+        status: "skipped",
+        reason: "credit budget low",
+        credits_remaining: remaining,
+      });
+    }
+  } catch (err) {
+    console.error("[shovels-cron] usage check failed:", err);
+    // Continue anyway — credit guard in enrichment function is a fallback
+  }
+
+  // Fetch PENDING first, then ERROR with retries left
+  const properties = await prisma.hubSpotPropertyCache.findMany({
+    where: {
+      OR: [
+        { shovelsEnrichmentStatus: "PENDING" },
+        {
+          shovelsEnrichmentStatus: "ERROR",
+          shovelsRetryCount: { lt: 3 },
+        },
+      ],
+    },
+    select: { id: true, shovelsEnrichmentStatus: true },
+    orderBy: [
+      // PENDING before ERROR (alphabetical sort works here)
+      { shovelsEnrichmentStatus: "asc" },
+      { createdAt: "asc" },
+    ],
+    take: BATCH_SIZE,
+  });
+
+  if (properties.length === 0) {
+    return NextResponse.json({ status: "idle", message: "no pending properties" });
+  }
+
+  const results = { enriched: 0, noMatch: 0, rejected: 0, errors: 0, skipped: 0 };
+
+  for (const prop of properties) {
+    const result = await enrichPropertyFromShovels(prop.id);
+    switch (result.status) {
+      case "enriched":
+        results.enriched++;
+        break;
+      case "no-match":
+        results.noMatch++;
+        break;
+      case "rejected":
+      case "low-confidence":
+        results.rejected++;
+        break;
+      case "error":
+        results.errors++;
+        break;
+      case "skipped":
+        results.skipped++;
+        break;
+    }
+
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  return NextResponse.json({
+    status: "ok",
+    processed: properties.length,
+    ...results,
+    timestamp: new Date().toISOString(),
+  });
+}
