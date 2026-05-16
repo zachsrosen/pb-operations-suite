@@ -131,6 +131,18 @@ export const queryKeys = {
     location: (slug: string) =>
       [...queryKeys.officePerformance.root, slug] as const,
   },
+  shopHealth: {
+    root: ["shop-health"] as const,
+    location: (location: string, weekStart: string) =>
+      [...queryKeys.shopHealth.root, location, weekStart] as const,
+    overview: (weekStart: string) =>
+      [...queryKeys.shopHealth.root, "overview", weekStart] as const,
+  },
+  shopHealthBottleneck: {
+    root: ["shop-health-bottleneck"] as const,
+    location: (location: string, weeks?: number) =>
+      [...queryKeys.shopHealthBottleneck.root, location, weeks] as const,
+  },
   goalsPipeline: {
     root: ["goals-pipeline"] as const,
     location: (slug: string) =>
@@ -259,6 +271,9 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("funnel")) return [queryKeys.funnel.root];
   if (serverKey.startsWith("territory-map")) return [queryKeys.territoryMap.root];
   if (serverKey.startsWith("office-performance")) return [queryKeys.officePerformance.root];
+  if (serverKey.startsWith("shop-health")) {
+    return [queryKeys.shopHealth.root];
+  }
   if (serverKey.startsWith("idr-meeting")) return [queryKeys.idrMeeting.root];
   if (serverKey.startsWith("deals:permit")) return [queryKeys.permitHub.root];
   if (serverKey.startsWith("deals:ic") || serverKey.startsWith("deals:interconnection"))
