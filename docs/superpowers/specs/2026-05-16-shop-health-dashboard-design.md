@@ -64,7 +64,7 @@ Sourced from HubSpot project pipeline deals filtered to the selected location.
 | Contracts Signed (weekly) | Deals with `closedate` in selected week |
 | Total Backlog (# jobs, $) | Deals in stages: Site Survey through RTB-Blocked |
 | Backlog in Weeks | Backlog count / trailing 8-week avg completions per week |
-| Avg System Margin at Sale | Mean of `system_margin` property on deals closed this week |
+| Avg System Margin at Sale | Deferred — `system_margin` property not confirmed in HubSpot. Show placeholder. |
 | Cancellation Rate | Deals moved to "Cancelled" or "Lost" this week / total active deals |
 
 Visual: backlog-in-weeks gauge with 4-8 week target band highlighted.
@@ -156,7 +156,8 @@ model ShopHealthBottleneck {
   rootCause   String?  // root cause text
   actionPlan  String?  // action plan text
   owner       String?  // owner name or user ID
-  createdBy   String   // user ID who created/last edited
+  userId      String   // user who created/last edited
+  user        User     @relation(fields: [userId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -261,7 +262,7 @@ function useShopHealthData(location: string, weekStart: Date) {
 
 ## Role & Route Configuration
 
-- Add `/dashboards/shop-health` to `allowedRoutes` for ADMIN, OWNER, OPERATIONS_MANAGER in `src/lib/roles.ts`
+- Add `/dashboards/shop-health` AND `/api/shop-health` to `allowedRoutes` for OPERATIONS_MANAGER in `src/lib/roles.ts` (ADMIN/OWNER use wildcard `"*"` — no change needed)
 - Add dashboard card to Executive Suite page (`src/app/suites/executive/page.tsx`)
 - Add to suite-nav links for Executive Suite in `src/lib/suite-nav.ts`
 
