@@ -17,6 +17,8 @@ import { getInternalDealUrl } from "@/lib/external-links";
 import PropertyEquipmentList from "./property/PropertyEquipmentList";
 import PropertyOwnershipList from "./property/PropertyOwnershipList";
 import PropertyActivityTimeline from "./property/PropertyActivityTimeline";
+import PropertyPermitHistory from "./property/PropertyPermitHistory";
+import PropertyResidents from "./property/PropertyResidents";
 
 const UI_PROPERTY_VIEWS_ENABLED =
   process.env.NEXT_PUBLIC_UI_PROPERTY_VIEWS_ENABLED === "true";
@@ -247,6 +249,12 @@ export default function PropertyDrawer({
                 />
               </section>
 
+              {/* Permit History (Shovels) */}
+              <PropertyPermitHistory propertyId={detail.id} />
+
+              {/* Residents (Shovels, admin/owner only) */}
+              <PropertyResidents propertyId={detail.id} />
+
               {/* Deals */}
               <section>
                 <div className="flex items-center justify-between mb-2">
@@ -369,18 +377,58 @@ export default function PropertyDrawer({
                 />
               </section>
 
-              {/* Property details placeholder */}
-              <section>
-                <details className="rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm">
-                  <summary className="cursor-pointer select-none font-medium text-foreground">
-                    Property data enrichment
-                  </summary>
-                  <p className="mt-2 text-muted">
-                    Coming soon — integration with property-data provider will
-                    surface year built, square footage, roof material, etc.
-                  </p>
-                </details>
-              </section>
+              {/* Property details (Shovels enrichment) */}
+              {(detail.yearBuilt || detail.squareFootage || detail.propertyType || detail.assessedValue || detail.lotSizeSqft || detail.stories || detail.publicRecordOwnerName) && (
+                <section>
+                  <h4 className="mb-2 text-sm font-semibold text-foreground">
+                    Property Details
+                  </h4>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm rounded-xl border border-t-border bg-surface p-3">
+                    {detail.yearBuilt && (
+                      <div>
+                        <div className="text-muted text-xs">Year Built</div>
+                        <div className="text-foreground">{detail.yearBuilt}</div>
+                      </div>
+                    )}
+                    {detail.squareFootage && (
+                      <div>
+                        <div className="text-muted text-xs">Square Footage</div>
+                        <div className="text-foreground">{detail.squareFootage.toLocaleString()} sqft</div>
+                      </div>
+                    )}
+                    {detail.lotSizeSqft && (
+                      <div>
+                        <div className="text-muted text-xs">Lot Size</div>
+                        <div className="text-foreground">{detail.lotSizeSqft.toLocaleString()} sqft</div>
+                      </div>
+                    )}
+                    {detail.stories && (
+                      <div>
+                        <div className="text-muted text-xs">Stories</div>
+                        <div className="text-foreground">{detail.stories}</div>
+                      </div>
+                    )}
+                    {detail.propertyType && (
+                      <div>
+                        <div className="text-muted text-xs">Property Type</div>
+                        <div className="text-foreground">{detail.propertyType}</div>
+                      </div>
+                    )}
+                    {detail.assessedValue && (
+                      <div>
+                        <div className="text-muted text-xs">Assessed Value</div>
+                        <div className="text-foreground">${detail.assessedValue.toLocaleString()}</div>
+                      </div>
+                    )}
+                    {detail.publicRecordOwnerName && (
+                      <div className="col-span-2">
+                        <div className="text-muted text-xs">Public Record Owner</div>
+                        <div className="text-foreground">{detail.publicRecordOwnerName}</div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
             </div>
           )}
         </div>

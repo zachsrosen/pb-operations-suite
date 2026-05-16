@@ -399,6 +399,7 @@ async function createNewProperty(args: {
         pbLocation: pbLocation ?? null,
         geocodedAt: new Date(),
         lastReconciledAt: new Date(),
+        shovelsEnrichmentStatus: "PENDING",
       },
     });
     return { propertyCacheId: cache.id, hubspotObjectId, created: createdHubspotId !== null };

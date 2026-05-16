@@ -822,6 +822,16 @@ model HubSpotPropertyCache {
   attomLastSyncedAt    DateTime?
   attomSyncStatus      String? // OK | FAILED | PENDING | NO_MATCH
   attomMatchConfidence String? // HIGH | MEDIUM | LOW
+
+  // Shovels enrichment
+  shovelsGeoId              String?   @unique
+  shovelsLastSyncedAt       DateTime?
+  shovelsMatchConfidence    String?   // VERIFIED | LOW_CONFIDENCE | REJECTED
+  shovelsPermitCount        Int?
+  shovelsSolarPermitCount   Int?
+  shovelsEnrichmentStatus   String?   // PENDING | ENRICHED | NO_MATCH | REJECTED | ERROR
+  shovelsRetryCount         Int       @default(0)
+
   lastReconciledAt     DateTime
   updatedAt            DateTime  @updatedAt
   createdAt            DateTime  @default(now())
@@ -832,12 +842,15 @@ model HubSpotPropertyCache {
   ticketLinks   PropertyTicketLink[]
   companyLinks  PropertyCompanyLink[]
   powerhubSites PowerhubSite[]
+  shovelsPermits   ShovelsPermitRecord[]  @relation("ShovelsPermits")
+  shovelsResidents ShovelsResident[]      @relation("ShovelsResidents")
 
   @@index([normalizedAddress])
   @@index([city, state])
   @@index([latitude, longitude])
   @@index([attomSyncStatus])
   @@index([pbLocation])
+  @@index([shovelsEnrichmentStatus])
 }
 
 model PropertyContactLink {
@@ -909,6 +922,84 @@ model PropertyBackfillRun {
 
   @@index([status])
   @@index([heartbeatAt])
+}
+
+// ===========================================
+// SHOVELS ENRICHMENT
+// ===========================================
+
+model ShovelsPermitRecord {
+  id                       String   @id @default(cuid())
+  propertyId               String
+  property                 HubSpotPropertyCache @relation("ShovelsPermits", fields: [propertyId], references: [id])
+  shovelsId                String
+  permitNumber             String?
+  description              String?  @db.Text
+  jurisdiction             String?
+  type                     String?
+  subtype                  String?
+  status                   String?
+  tags                     String[]
+  jobValueCents            Int?
+  feesCents                Int?
+  fileDate                 DateTime?
+  issueDate                DateTime?
+  finalDate                DateTime?
+  contractorId             String?
+  constructionDurationDays Int?
+  approvalDurationDays     Int?
+  inspectionPassRate       Int?
+  createdAt                DateTime @default(now())
+
+  @@unique([propertyId, shovelsId])
+  @@index([propertyId])
+  @@index([tags])
+}
+
+model ShovelsResident {
+  id            String   @id @default(cuid())
+  propertyId    String
+  property      HubSpotPropertyCache @relation("ShovelsResidents", fields: [propertyId], references: [id])
+  name          String?
+  personalEmail String?
+  phone         String?
+  linkedinUrl   String?
+  netWorth      String?
+  incomeRange   String?
+  isHomeowner   Boolean?
+  createdAt     DateTime @default(now())
+
+  @@index([propertyId])
+}
+
+model ShovelsContractor {
+  id                String   @id @default(cuid())
+  shovelsId         String   @unique
+  name              String?
+  phone             String?
+  email             String?
+  website           String?
+  license           String?
+  classification    String?
+  totalPermitsCount Int?
+  avgInspectionRate Int?
+  createdAt         DateTime @default(now())
+}
+
+model ShovelsBackfillRun {
+  id              String    @id @default(cuid())
+  tier            Int
+  cursor          String?
+  totalProcessed  Int       @default(0)
+  totalEnriched   Int       @default(0)
+  totalNoMatch    Int       @default(0)
+  totalRejected   Int       @default(0)
+  totalErrors     Int       @default(0)
+  creditsUsed     Int       @default(0)
+  status          String    @default("RUNNING")
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
 }
 
 // ===========================================
