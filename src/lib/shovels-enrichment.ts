@@ -15,7 +15,7 @@ import {
   type ShovelsPermit,
 } from "@/lib/shovels";
 import { updateProperty } from "@/lib/hubspot-property";
-import { serverCache, CACHE_KEYS } from "@/lib/cache";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 // ─── Match Verification ─────────────────────────────────────────────────────
 
@@ -409,7 +409,7 @@ export async function enrichPropertyFromShovels(
     }
 
     // 11. Invalidate cache
-    serverCache.delete(CACHE_KEYS.PROPERTY_HUB_ACTIVITY(propertyCacheId));
+    appCache.invalidate(CACHE_KEYS.PROPERTY_HUB_ACTIVITY(propertyCacheId));
 
     // 12. Lazy contractor fetch (non-blocking, best-effort)
     if (contractorIds.length > 0) {
