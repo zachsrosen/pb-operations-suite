@@ -298,6 +298,9 @@ New skill at `.claude/skills/pe-file-prep/SKILL.md`.
 | `pe-file-prep` | This feature — vision classification, PandaDoc auto-pull, package assembly |
 | `pe-turnover` | Lightweight alias — redirects to pe-file-prep |
 | `pe-portal-scraping` | Separate — browser-based PE portal interaction |
+| PowerHub screenshot skill | Separate — pulls commissioning/monitoring screenshot from Tesla PowerHub |
+
+**Cross-skill integration**: The M1 checklist item `m1.admin.commissioning` (Access to Monitoring / Commissioning Proof) may be fulfilled by the PowerHub screenshot skill for Tesla systems. When the PE file prep audit runs, if the commissioning screenshot is already in GDrive (placed there by the PowerHub skill), vision classification verifies it normally. If missing, the audit flags it with guidance: "For Tesla systems, use the PowerHub screenshot skill to pull commissioning proof."
 
 ## Cost Model
 
