@@ -399,6 +399,7 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
  * A property is dirty when:
  *   - zuperPropertyUid is null (never synced), OR
  *   - updatedAt > zuperPropertySyncedAt (data changed since last sync)
+ * Requires at least one deal OR ticket link (service-only properties need Zuper visibility too).
  * Excludes poison rows (zuperSyncFailCount >= 5).
  */
 export async function findDirtyProperties(limit: number): Promise<Array<{ id: string }>> {
@@ -406,7 +407,10 @@ export async function findDirtyProperties(limit: number): Promise<Array<{ id: st
     SELECT pc.id
     FROM "HubSpotPropertyCache" pc
     WHERE pc."zuperSyncFailCount" < 5
-      AND EXISTS (SELECT 1 FROM "PropertyDealLink" pdl WHERE pdl."propertyId" = pc.id)
+      AND (
+        EXISTS (SELECT 1 FROM "PropertyDealLink" pdl WHERE pdl."propertyId" = pc.id)
+        OR EXISTS (SELECT 1 FROM "PropertyTicketLink" ptl WHERE ptl."propertyId" = pc.id)
+      )
       AND (
         pc."zuperPropertyUid" IS NULL
         OR pc."zuperPropertySyncedAt" IS NULL
