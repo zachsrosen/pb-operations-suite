@@ -645,11 +645,14 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     }
 
     const docLoop0 = Date.now();
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < checklist.length; i += BATCH_SIZE) {
-      const batch = checklist.slice(i, i + BATCH_SIZE);
-
-      const batchPromises = batch.map(async (item): Promise<ChecklistResult> => {
+    // Run ALL checklist items concurrently. The Promise-based doc classification
+    // cache (`docClassificationCache`) dedups multiple items hitting the same
+    // file, so concurrency is safe — actual vision API calls only happen once
+    // per unique candidate file regardless of how many items share that folder.
+    // Total wall time ≈ max(unique-file classification times) instead of
+    // sum(per-item classification times).
+    {
+      const allItemPromises = checklist.map(async (item): Promise<ChecklistResult> => {
         const override = pandadocOverrides.get(item.id);
         if (override) {
           override.item = item;
@@ -795,10 +798,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         return { item, status: "missing" };
       });
 
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
+      const allResults = await Promise.all(allItemPromises);
+      results.push(...allResults);
     }
-    onEvent?.({ type: "diagnostic", data: { message: `Doc classification loop completed in ${((Date.now() - docLoop0) / 1000).toFixed(1)}s` } });
+    onEvent?.({ type: "diagnostic", data: { message: `Doc classification loop completed in ${((Date.now() - docLoop0) / 1000).toFixed(1)}s (${visionCallCount} vision calls, ${cacheHits} cache hits)` } });
 
     const resolved = resolveCombinedFiles(results);
 

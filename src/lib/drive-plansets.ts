@@ -55,10 +55,20 @@ export async function getDriveToken(): Promise<string> {
   return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
 }
 
-/** Get a Drive-scoped token with write access (for creating folders, copying files). */
+/**
+ * Get a Drive-scoped token with write access (for creating folders, copying
+ * files, uploading PDFs).
+ *
+ * IMPORTANT: this intentionally IGNORES `_driveTokenOverride`. The override
+ * is the calling user's NextAuth OAuth token, which carries `drive.readonly`
+ * scope only (see src/auth.ts). Using it for writes returns 403 "insufficient
+ * authentication scopes" from the Drive API.
+ *
+ * Writes always go through the service account (with the broader `drive`
+ * scope via domain-wide delegation). The SA is the canonical write authority
+ * for all other Drive write flows in this app (BOM pipeline, etc.).
+ */
 export async function getDriveWriteToken(): Promise<string> {
-  if (_driveTokenOverride) return _driveTokenOverride;
-
   const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
   if (impersonateEmail) {
     try {
