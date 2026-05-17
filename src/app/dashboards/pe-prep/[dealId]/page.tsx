@@ -10,7 +10,15 @@ import { PeChecklistCard } from "@/components/pe-prep/PeChecklistCard";
 import { PePhotoGrid } from "@/components/pe-prep/PePhotoGrid";
 import { PePhotoModal } from "@/components/pe-prep/PePhotoModal";
 
+interface DealLinks {
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+  driveFolderUrl: string | null;
+  dealName: string | null;
+}
+
 interface AuditRunData {
+  links?: DealLinks;
   auditRun: {
     id: string;
     dealId: string;
@@ -71,6 +79,7 @@ export default function PePrepPage({ params }: { params: Promise<{ dealId: strin
   });
 
   const auditRun = data?.auditRun;
+  const links = data?.links;
   const hasResults = auditRun?.status === "completed" && auditRun.results;
 
   const handleAuditComplete = useCallback((_auditRunId: string) => {
@@ -109,14 +118,52 @@ export default function PePrepPage({ params }: { params: Promise<{ dealId: strin
     ? `Last audited ${new Date(auditRun.completedAt).toLocaleString()}`
     : auditRun?.status === "running" ? "Audit in progress..." : undefined;
 
+  const displayName = auditRun?.dealName || links?.dealName;
+
   return (
     <DashboardShell
-      title={auditRun?.dealName ? `PE Prep: ${auditRun.dealName}` : "PE File Preparation"}
+      title={displayName ? `PE Prep: ${displayName}` : "PE File Preparation"}
       accentColor="orange"
       lastUpdated={lastAuditLabel}
       fullWidth
     >
       <div className="space-y-6">
+        {links && (
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={links.hubspotUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.16 5.67c-.52-.4-1.18-.62-1.88-.56-.7.06-1.34.4-1.78.94l-4.14 5.08-3.28-2.6c-.44-.34-1-.52-1.58-.52-1.38 0-2.5 1.12-2.5 2.5 0 .58.18 1.14.54 1.58l4.5 5.5c.44.54 1.1.86 1.8.86h.14c.76-.06 1.44-.46 1.84-1.1l6.08-9.5c.62-.98.34-2.28-.64-2.9l-.1-.08z"/></svg>
+              HubSpot Deal
+            </a>
+            {links.pePortalUrl && (
+              <a
+                href={links.pePortalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                PE Portal
+              </a>
+            )}
+            {links.driveFolderUrl && (
+              <a
+                href={links.driveFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                GDrive Folder
+              </a>
+            )}
+          </div>
+        )}
+
         {s && (
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <StatCard label="Ready" value={s.found} color="green" />

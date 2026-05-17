@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
+import { getDealProperties } from "@/lib/hubspot";
 
 export const dynamic = "force-dynamic";
+
+const PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
 export async function GET(
   _req: NextRequest,
@@ -17,14 +20,34 @@ export async function GET(
 
   const { dealId } = await params;
 
-  const latestRun = await prisma.peAuditRun.findFirst({
-    where: { dealId, status: { in: ["completed", "running"] } },
-    orderBy: { startedAt: "desc" },
-  });
+  // Fetch audit run and deal links in parallel
+  const [latestRun, dealProps] = await Promise.all([
+    prisma.peAuditRun.findFirst({
+      where: { dealId, status: { in: ["completed", "running"] } },
+      orderBy: { startedAt: "desc" },
+    }),
+    getDealProperties(dealId, ["pe_portal_url", "pe_project_id", "dealname", "all_document_parent_folder_id"]).catch(() => null),
+  ]);
+
+  const pePortalUrl = dealProps?.pe_portal_url
+    ? String(dealProps.pe_portal_url).trim() || null
+    : null;
+  const driveFolderId = dealProps?.all_document_parent_folder_id
+    ? String(dealProps.all_document_parent_folder_id).trim() || null
+    : null;
+
+  const links = {
+    hubspotUrl: `https://app.hubspot.com/contacts/${PORTAL_ID}/deal/${dealId}`,
+    pePortalUrl,
+    driveFolderUrl: driveFolderId
+      ? `https://drive.google.com/drive/folders/${driveFolderId}`
+      : null,
+    dealName: dealProps?.dealname ? String(dealProps.dealname).trim() : null,
+  };
 
   if (!latestRun) {
-    return NextResponse.json({ auditRun: null });
+    return NextResponse.json({ auditRun: null, links });
   }
 
-  return NextResponse.json({ auditRun: latestRun });
+  return NextResponse.json({ auditRun: latestRun, links });
 }
