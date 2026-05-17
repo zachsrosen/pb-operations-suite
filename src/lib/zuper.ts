@@ -12,6 +12,8 @@
 import * as Sentry from "@sentry/nextjs";
 import { getBusinessEndDateInclusive } from "@/lib/business-days";
 import { getZuperWebBaseUrl } from "@/lib/external-links";
+import { prisma } from "@/lib/db";
+import { linkJobToProperty } from "@/lib/zuper-property-sync";
 
 // Types for Zuper API
 export interface ZuperJobCategory {
@@ -2156,7 +2158,37 @@ export async function createJobFromProject(project: {
   };
 
   console.log(`[createJobFromProject] Creating job with assigned_to:`, job.assigned_to);
-  return zuper.createJob(job);
+  const result = await zuper.createJob(job);
+
+  // Auto-link newly created job to Zuper Property (fire-and-forget)
+  if (
+    result.type === "success" &&
+    result.data?.job_uid &&
+    process.env.ZUPER_PROPERTY_SYNC_ENABLED === "true"
+  ) {
+    const jobUid = result.data.job_uid;
+    const dealId = String(project.id);
+    try {
+      const propertyLink = await prisma.propertyDealLink.findFirst({
+        where: { dealId },
+        select: { property: { select: { zuperPropertyUid: true } } },
+      });
+      if (propertyLink?.property?.zuperPropertyUid) {
+        await linkJobToProperty(jobUid, propertyLink.property.zuperPropertyUid);
+        console.log(
+          `[createJobFromProject] Linked job ${jobUid} to Zuper property ${propertyLink.property.zuperPropertyUid}`
+        );
+      }
+    } catch (err) {
+      // Non-fatal: property link failure should never block job creation
+      console.warn(
+        `[createJobFromProject] Failed to link job ${jobUid} to property:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  return result;
 }
 
 /**
