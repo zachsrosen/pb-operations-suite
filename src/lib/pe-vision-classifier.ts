@@ -103,9 +103,13 @@ const PE_DOCUMENT_DESCRIPTIONS: Record<string, string> = {
   // --- Admin ---
   "m1.admin.commissioning":
     "Screenshot or PDF proving the monitoring system is ONLINE and the homeowner has access. " +
-    "Must show ACTUAL production data or live system status from a monitoring platform " +
-    "(Enphase Enlighten, SolarEdge monitoring portal, Tesla app, Generac PWRview, etc.). " +
-    "A login page alone is NOT sufficient — must show the system is producing power or has production history. " +
+    "Must show the EQUIPMENT/SYSTEM OVERVIEW page from the monitoring platform — NOT just any dashboard page. " +
+    "For Tesla PowerHub: must be the Equipment or System Overview page showing installed hardware (Powerwall model, gateway, solar inverter). " +
+    "A generic energy graph or dashboard without equipment details is NOT sufficient. " +
+    "For Enphase Enlighten: must show system overview with microinverter details. " +
+    "For SolarEdge: must show system dashboard with inverter/optimizer details. " +
+    "Must show the system is ONLINE and producing power (production data or live status visible). " +
+    "A login page alone is NOT sufficient. " +
     "NOT a nameplate photo, invoice, equipment spec sheet, or installation manual.",
   "m1.admin.hoa":
     "HOA (Homeowners Association) approval letter for the solar installation. " +
@@ -209,25 +213,46 @@ ${options.avlContext}`);
 
 **For Plan Sets (m1.design.planset):**
 - Must contain: site plan, electrical single-line diagram, structural details, equipment schedule
-- Equipment schedule must list specific module brand/model/wattage, inverter brand/model, racking type
-- If equipment is identifiable, extract and report: module (brand + model + wattage), inverter (brand + model), battery (brand + model + kWh) if applicable
-- Flag if plan set appears incomplete (missing single-line, missing equipment schedule, missing structural)
+- Equipment schedule must list SPECIFIC module brand/model/wattage, inverter brand/model, battery brand/model if applicable
+- Extract and report ALL equipment with FULL model numbers including variant codes:
+  - Modules: brand + model + wattage + quantity (e.g., "REC Alpha Pure-R 430W × 24")
+  - Inverter: brand + full model (e.g., "Enphase IQ8PLUS-72-2-US")
+  - Battery/storage: brand + FULL model number with variant code (e.g., "Tesla Powerwall 3 1707000-21-Y")
+- CRITICAL for Tesla Powerwall 3: extract the EXACT part number from the electrical line diagram. Flag if it shows:
+  - "1707000-XX-Y" — this is a PLACEHOLDER, not a real model number. PE will reject.
+  - "1707000-11-J" or "1707000-11-M" — these are WRONG variants. PE requires "1707000-21-Y" (or similar 21-series).
+  - Any model containing "XX" is a placeholder that needs revision.
+- Flag if plan set is incomplete (missing single-line diagram, missing equipment schedule, missing structural details)
+- Flag if module brand/model on planset differs from what you'd expect (PE cross-references planset against SO)
 
 **For Proposals (m1.contract.proposal):**
 - Must show system size (kW DC), equipment list, pricing, and production estimates
-- Extract equipment listed: module brand/model/qty, inverter brand/model/qty, battery if applicable
+- Extract equipment listed: module brand/model/qty, inverter brand/model/qty, battery brand/model if applicable
 - Flag if the proposal is unsigned or missing customer acknowledgment
+- Flag if module quantity or brand differs from what the planset shows (if both are visible in this audit)
 
 **For Utility Bills (m1.contract.utility_bill):**
 - Must show 12 months of usage history OR a recent billing period
 - Bill date must be within 12 months of today (${new Date().toISOString().slice(0, 10)})
 - Flag if bill is older than 12 months, if usage data is obscured, or if customer name/address is not visible
 
-**For Commissioning Proof (m1.admin.commissioning):**
-- Must be a screenshot showing the monitoring platform is ONLINE and the homeowner has access
-- Acceptable platforms: Enphase Enlighten, SolarEdge, Tesla, Generac PWRview, etc.
-- Must show actual production data or system status (not just a login page)
-- Flag if it's just a spec sheet, equipment photo, or login screen without production data
+**For Commissioning/Monitoring Proof (m1.admin.commissioning):**
+- Must be a screenshot of the monitoring platform showing the system/equipment overview page
+- For Tesla PowerHub: must show the EQUIPMENT or SYSTEM OVERVIEW page — NOT just any PowerHub page. The page should show installed hardware (Powerwall model, gateway, solar inverter) and system status. A generic dashboard or energy graph alone is NOT sufficient.
+- For Enphase Enlighten: must show the system overview with microinverter details visible
+- For SolarEdge: must show the system dashboard with inverter/optimizer details
+- Must show the system is ONLINE and producing power (production data or live status visible)
+- Flag if it's just a login page, a generic energy graph without equipment details, or a spec sheet
+
+**For Invoice/BOM (seen as Photo 6 but also applies to documents):**
+- Must show the customer's name matching the deal
+- Must list ALL major equipment with specific models and quantities:
+  - Solar modules (brand, model, wattage, qty)
+  - Inverter(s) (brand, model, qty)
+  - Battery/storage (brand, full model with variant code, qty) — for Tesla PW3: must show "1707000-21-Y" not "XX-Y" or "11-J"
+  - Backup switch, sub panels, and electrical components if applicable
+- Flag if major equipment categories are missing (e.g., has PW3 but no backup switch, or has modules but no inverter)
+- Flag if customer name on invoice doesn't match the deal
 
 **For AHJ Permits (m1.inspection.ahj_permit):**
 - Must show inspector signature or "APPROVED"/"PASSED" stamp
@@ -310,8 +335,8 @@ function buildPhotoPrompt(
     },
     6: {
       description: "Invoice or Bill of Materials (BOM) document showing equipment purchased",
-      passReqs: "Invoice/BOM visible, equipment line items readable (brand, model, qty), vendor info present",
-      failReqs: "Just a spreadsheet screenshot, text illegible, proposal not invoice, no vendor info",
+      passReqs: "Invoice/BOM visible, customer name readable, ALL equipment line items readable (brand, FULL model numbers with variant codes, qty). Must include modules, inverter(s), battery/storage with full part number (e.g. Tesla 1707000-21-Y), backup switch, sub panels if applicable",
+      failReqs: "Spreadsheet screenshot with no vendor, text illegible, proposal not invoice, customer name missing. NEEDS_REVIEW if major equipment categories appear missing",
     },
     7: {
       description: "Inverter/microinverter/optimizer nameplate label — must be LEGIBLE",
@@ -330,8 +355,8 @@ function buildPhotoPrompt(
     },
     10: {
       description: "Battery/storage nameplate label — brand, model, serial number, capacity specs must be LEGIBLE",
-      passReqs: "Brand readable, model readable, serial readable, capacity (kWh) readable. Report exact values.",
-      failReqs: "Label blurry, illegible, too far away, partially obstructed",
+      passReqs: "Brand readable, FULL part number readable with variant code, serial readable, capacity (kWh) readable. For Tesla PW3: report full part number (e.g. 1707000-21-Y). Flag 1707000-11-M or 11-J as WRONG variant (PE requires 21-series). Flag 'LEADER' sticker (associated with 11-M units).",
+      failReqs: "Label blurry, illegible, too far away, partially obstructed, obscured by conduit",
     },
     11: {
       description: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
@@ -542,7 +567,7 @@ export async function triagePhotoBatch(
     },
     6: {
       description: "Invoice or Bill of Materials (BOM) document showing equipment purchased",
-      peReqs: "PASS requires: actual invoice/BOM document visible, equipment line items readable (brand, model, quantity), prices or totals visible. FAIL if: this is a screenshot of a spreadsheet with no vendor info, if text is illegible, or if it's a proposal not an invoice. NEEDS_REVIEW if: some line items are readable but others are cut off.",
+      peReqs: "PASS requires: actual invoice/BOM visible, customer name readable, equipment line items readable (brand, FULL model numbers including variant codes, quantity for each). Must include ALL major categories: modules, inverter(s), battery/storage (with full part number e.g. Tesla 1707000-21-Y not XX-Y), backup switch, sub panels if applicable. FAIL if: text illegible, it's a proposal not invoice, customer name missing. NEEDS_REVIEW if: some items readable but major equipment categories appear missing (e.g. has battery but no backup switch, or has modules but no inverter line item).",
     },
     7: {
       description: "Inverter, microinverter, or optimizer nameplate/model label — must be LEGIBLE",
@@ -558,7 +583,7 @@ export async function triagePhotoBatch(
     },
     10: {
       description: "Battery/storage system nameplate label — brand, model, serial number, capacity specs must be LEGIBLE",
-      peReqs: "PASS requires: battery brand readable, model number readable, serial number readable, capacity (kWh) readable. Report the exact brand, model, and capacity. FAIL if: label is blurry, text is illegible, photo is too far away to read, or label is partially obstructed.",
+      peReqs: "PASS requires: battery brand readable, FULL model/part number readable (including variant code), serial number readable, capacity (kWh) readable. For Tesla Powerwall 3: extract the FULL part number (e.g. 1707000-21-Y). CRITICAL: flag if part number shows '1707000-11-M' or '1707000-11-J' — these are wrong/old variants that PE will reject (PE requires 21-series like 1707000-21-Y or 1707000-21-M). Also flag if label shows a 'LEADER' sticker (associated with 11-M units). FAIL if: label blurry, text illegible, too far away, label obscured by conduit or other equipment. Report the exact brand, full part number, and serial number.",
     },
     11: {
       description: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
@@ -596,12 +621,14 @@ ${categoryList}
 
 ## Verification Rules
 - **verdict "pass"**: Photo clearly satisfies ALL PE requirements for its category
-- **verdict "fail"**: Photo is fundamentally wrong (wrong subject, cover still on panel, completely illegible, etc.)
+- **verdict "fail"**: Photo is fundamentally wrong (wrong subject, cover still on panel, completely illegible, wrong hardware variant, etc.)
 - **verdict "needs_review"**: Photo partially meets requirements but has quality concerns (slightly blurry label, partially cut off, etc.)
 - For nameplate/label photos (Photos 3, 7, 10): if you CANNOT read the brand and model number, it MUST fail or needs_review
 - For wide-angle photos (Photos 2, 4, 9): if major equipment is cut off or out of frame, it MUST fail
 - For MSP photo (Photo 5): if the panel cover is still ON, it MUST fail — this is the #1 PE rejection reason for photos
-- List ALL readable equipment in equipmentVisible: brand names, model numbers, serial numbers, wattage/capacity specs
+- For battery nameplate (Photo 10): extract the FULL Tesla Powerwall 3 part number. If it shows "1707000-11-M" or "1707000-11-J", flag as "WRONG PW3 VARIANT — PE requires 21-series (e.g., 1707000-21-Y)". If "LEADER" sticker visible, flag.
+- For invoice/BOM (Photo 6): check for ALL major equipment categories. Flag if battery line item shows "1707000-XX-Y" (placeholder) or "11-J" variant.
+- List ALL readable equipment in equipmentVisible: brand names, FULL model/part numbers (including variant codes like -21-Y), serial numbers, wattage/capacity specs
 
 ## Response Format (JSON only, no markdown)
 {
