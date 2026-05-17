@@ -39,6 +39,8 @@ export type VisionFileInput = {
   fileName: string;
   mimeType: string;
   buffer: Buffer;
+  /** Pre-uploaded Anthropic Files API ID — if set, skips redundant re-upload. */
+  anthropicFileId?: string;
 };
 
 export type VisionResult =
@@ -302,7 +304,7 @@ function sanitizeMatchedIds(ids: string[]): string[] {
 // Classification functions
 // ---------------------------------------------------------------------------
 
-async function uploadToAnthropic(buffer: Buffer, fileName: string, mimeType: string): Promise<string> {
+export async function uploadToAnthropic(buffer: Buffer, fileName: string, mimeType: string): Promise<string> {
   const client = getAnthropicClient();
   const file = await client.beta.files.upload({
     file: new File([new Uint8Array(buffer)], fileName, { type: mimeType }),
@@ -317,7 +319,7 @@ export async function classifyDocument(
 ): Promise<VisionResult> {
   try {
     const client = getAnthropicClient();
-    const fileId = await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
+    const fileId = input.anthropicFileId ?? await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
     const prompt = buildDocumentPrompt(checklistItems, {
       hasReference: !!options?.referenceFileId,
       avlContext: options?.avlContext,
@@ -363,7 +365,7 @@ export async function verifyPhoto(
 ): Promise<VisionResult> {
   try {
     const client = getAnthropicClient();
-    const fileId = await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
+    const fileId = input.anthropicFileId ?? await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
     const prompt = buildPhotoPrompt(checklistItem, { hasReference: !!options?.referenceFileId });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

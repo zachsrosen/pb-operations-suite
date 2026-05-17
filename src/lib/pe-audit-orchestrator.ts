@@ -15,6 +15,7 @@ import {
 import {
   classifyDocument,
   verifyPhoto,
+  uploadToAnthropic,
   visionResultToEnriched,
   type VisionFileInput,
   type VisionResult,
@@ -360,7 +361,39 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     // share the same candidate folder (e.g. all contract items look at folder 0).
     const docClassificationCache = new Map<string, VisionResult>();
 
-    const BATCH_SIZE = 5;
+    // Pre-download + pre-upload install photos to Anthropic Files API.
+    // All 12 photo items share the same candidate pool — uploading once saves
+    // ~5s per photo × 12 items = ~60s.
+    const anthropicFileIdCache = new Map<string, string>(); // driveId → anthropicFileId
+    const downloadCache = new Map<string, VisionFileInput>(); // driveId → downloaded input
+    if (installPhotos.length > 0) {
+      const photoCount = checklist.filter((i) => i.isPhoto).length;
+      if (photoCount > 0) {
+        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${Math.min(installPhotos.length, 20)} photos to vision API...` } });
+        const toPreload = installPhotos
+          .filter((f) => f.mimeType.startsWith("image/"))
+          .slice(0, 20);
+        const preloadResults = await Promise.all(
+          toPreload.map(async (file) => {
+            try {
+              const input = await downloadFileForVision(file);
+              if (!input) return null;
+              downloadCache.set(file.id, input);
+              const anthropicId = await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
+              anthropicFileIdCache.set(file.id, anthropicId);
+              return file.id;
+            } catch (err) {
+              console.warn(`[pe-audit] Pre-upload failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+              return null;
+            }
+          }),
+        );
+        const uploaded = preloadResults.filter(Boolean).length;
+        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploaded ${uploaded}/${toPreload.length} photos` } });
+      }
+    }
+
+    const BATCH_SIZE = 10;
     for (let i = 0; i < checklist.length; i += BATCH_SIZE) {
       const batch = checklist.slice(i, i + BATCH_SIZE);
 
@@ -393,10 +426,16 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
             .slice(0, 3);
 
           for (const candidate of imageCandidates) {
-            const input = await downloadFileForVision(candidate);
+            // Use pre-downloaded + pre-uploaded file if available
+            let input = downloadCache.get(candidate.id) ?? await downloadFileForVision(candidate);
             if (!input) {
               console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
               continue;
+            }
+            // Attach pre-uploaded Anthropic file ID to skip redundant upload
+            const cachedAnthropicId = anthropicFileIdCache.get(candidate.id);
+            if (cachedAnthropicId && !input.anthropicFileId) {
+              input = { ...input, anthropicFileId: cachedAnthropicId };
             }
 
             visionCallCount++;
@@ -444,10 +483,15 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           if (vResult) {
             cacheHits++;
           } else {
-            const input = await downloadFileForVision(candidate);
+            let input = downloadCache.get(candidate.id) ?? await downloadFileForVision(candidate);
             if (!input) {
               console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
               continue;
+            }
+            // Attach pre-uploaded Anthropic file ID if available
+            const cachedAnthropicId = anthropicFileIdCache.get(candidate.id);
+            if (cachedAnthropicId && !input.anthropicFileId) {
+              input = { ...input, anthropicFileId: cachedAnthropicId };
             }
 
             visionCallCount++;
