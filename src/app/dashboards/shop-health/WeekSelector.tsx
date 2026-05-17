@@ -1,6 +1,6 @@
 'use client';
 
-import { getWeekStart } from '@/lib/shop-health';
+import { getWeekStart } from '@/lib/shop-health-utils';
 
 interface WeekSelectorProps {
   weekStart: Date;
