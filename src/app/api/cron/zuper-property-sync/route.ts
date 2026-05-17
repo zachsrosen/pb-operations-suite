@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "idle", message: "no dirty properties" });
   }
 
-  const results = { created: 0, updated: 0, errors: 0, jobsLinked: 0 };
+  const results = { created: 0, updated: 0, errors: 0, jobsLinked: 0, projectsLinked: 0 };
   let processed = 0;
   let timedOut = false;
 
@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
       if (result.action === "created") results.created++;
       else if (result.action === "updated") results.updated++;
       results.jobsLinked += result.jobsLinked;
+      results.projectsLinked += result.projectsLinked;
       processed++;
     } catch (err) {
       results.errors++;

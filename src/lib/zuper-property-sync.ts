@@ -50,6 +50,7 @@ export interface SyncPropertyResult {
   zuperPropertyUid: string;
   action: "created" | "updated" | "skipped";
   jobsLinked: number;
+  projectsLinked: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,6 +212,36 @@ export async function linkJobToProperty(jobUid: string, zuperPropertyUid: string
   });
 }
 
+/**
+ * Link a Zuper project to a Zuper Property.
+ * Uses the `properties` array field: [{ property: "<uid>" }].
+ * Reads existing properties first to avoid overwriting other links.
+ */
+export async function linkProjectToProperty(projectUid: string, zuperPropertyUid: string): Promise<void> {
+  // Read existing project to check current properties
+  const readRes = await zuperFetch(`/projects/${projectUid}`);
+  const readData = await readRes.json();
+  const existingProperties: Array<{ property?: { property_uid?: string } }> =
+    readData?.data?.properties ?? [];
+
+  // Skip if already linked
+  const alreadyLinked = existingProperties.some(
+    (p) => p.property?.property_uid === zuperPropertyUid
+  );
+  if (alreadyLinked) return;
+
+  // Build new properties array preserving existing links
+  const updatedProperties = [
+    ...existingProperties.map((p) => ({ property: p.property?.property_uid })),
+    { property: zuperPropertyUid },
+  ];
+
+  await zuperFetch(`/projects/${projectUid}`, {
+    method: "PUT",
+    body: JSON.stringify({ project: { properties: updatedProperties } }),
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sync Orchestration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,7 +333,9 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
   // Safety: verify job address matches property before linking to prevent
   // stale PropertyDealLink entries from cascading into wrong associations.
   let jobsLinked = 0;
+  let projectsLinked = 0;
   const propStreetNum = (property.streetAddress || "").match(/^(\d+)/)?.[1];
+  const linkedProjectUids = new Set<string>();
 
   if (dealIds.length > 0) {
     const zuperJobs = await prisma.zuperJobCache.findMany({
@@ -312,8 +345,14 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     });
 
     for (const job of zuperJobs) {
-      // Check if job already has a property linked
       const raw = job.rawData as Record<string, unknown> | null;
+
+      // Collect project UIDs from jobs for project linking below
+      const project = raw?.project as Record<string, unknown> | undefined;
+      const projUid = project?.project_uid as string | undefined;
+      if (projUid) linkedProjectUids.add(projUid);
+
+      // Check if job already has a property linked
       const existingProp = raw?.property ?? raw?.property_uid;
       if (existingProp) continue;
 
@@ -341,7 +380,18 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     }
   }
 
-  return { propertyId: propertyCacheId, zuperPropertyUid, action, jobsLinked };
+  // Link related Zuper projects to the property (deduped, cap at 5)
+  for (const projUid of [...linkedProjectUids].slice(0, 5)) {
+    try {
+      await linkProjectToProperty(projUid, zuperPropertyUid);
+      projectsLinked++;
+      await sleep(INTER_OP_DELAY_MS);
+    } catch (err) {
+      console.warn(`[zuper-property-sync] Failed to link project ${projUid}:`, err);
+    }
+  }
+
+  return { propertyId: propertyCacheId, zuperPropertyUid, action, jobsLinked, projectsLinked };
 }
 
 /**
