@@ -521,7 +521,9 @@ export async function classifyDocument(
 
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
-      max_tokens: 3000,
+      // 1500 covers the JSON response (matchedChecklistIds + issues + equipment).
+      // Higher caps just leave latency on the table — Claude streams to max.
+      max_tokens: 1500,
       messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
@@ -724,7 +726,9 @@ For equipmentVisible, include everything you can read: brand, model, serial numb
   try {
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
-      max_tokens: 8000,
+      // 4000 covers ~20 photo verdicts (~150 tokens each) with margin. 8000 was
+      // overkill and added latency (Claude streams to the cap).
+      max_tokens: 4000,
       messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
