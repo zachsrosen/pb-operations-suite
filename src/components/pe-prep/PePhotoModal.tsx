@@ -5,7 +5,13 @@ import type { EnrichedVisionResult } from "@/lib/pe-vision-classifier";
 interface PhotoResult {
   item: { id: string; label: string; pePhotoNumber?: number };
   status: string;
-  foundFile?: { name: string; id: string; url: string };
+  foundFile?: {
+    name: string;
+    id: string;
+    url: string;
+    thumbnailUrl?: string;
+    source?: "drive" | "zuper" | "pandadoc";
+  };
   visionResult?: EnrichedVisionResult;
 }
 
@@ -29,7 +35,10 @@ export function PePhotoModal({ photo, onClose, onOverride }: Props) {
       >
         {photo.foundFile ? (
           <img
-            src={`https://drive.google.com/thumbnail?id=${photo.foundFile.id}&sz=w800`}
+            src={
+              photo.foundFile.thumbnailUrl ??
+              `https://drive.google.com/thumbnail?id=${photo.foundFile.id}&sz=w800`
+            }
             alt={photo.item.label}
             className="w-full max-h-96 object-contain bg-black"
           />

@@ -77,16 +77,20 @@ const PE_DOCUMENT_DESCRIPTIONS: Record<string, string> = {
     "NOT a standalone contract or proposal.",
   "m1.contract.proposal":
     "The sales proposal or quote document showing system design, pricing, equipment, and savings estimates. " +
+    "Must be generated from a PE-approved simulation tool: Aurora, Energy Toolbase, Solargraf, OpenSolar, Solo, or Artemis (PE Policy 08). " +
     "Filename usually starts with 'Proposal' or contains 'quote'. Signed or digitally acknowledged by the customer. " +
     "This is NOT the binding Customer Agreement/contract — it is a pre-sale quote/proposal. " +
-    "A proposal typically includes: system size (kW), equipment list, pricing breakdown, production estimates, and financing terms.",
+    "Must include: system size (kW), equipment list, pricing, expected performance/output, and expected utility bill impact. " +
+    "If Year 1 production exceeds 135% of annual load, a Load Justification Form is required.",
   "m1.contract.utility_bill":
-    "A utility bill showing the customer's electricity usage. Must show 12 months of usage history or a recent billing period. " +
+    "A utility bill showing the customer's electricity usage. Must be dated within the last 3 months. " +
+    "Should show 12 months of usage history if available. " +
     "From the local electric utility (Xcel Energy, PG&E, SCE, SDG&E, etc.). " +
     "NOT a proposal, contract, or invoice.",
   "m1.contract.loan_docs":
-    "Loan or financing documents from a third-party lender (Sunraise, Mosaic, GoodLeap, etc.). " +
-    "NOT a solar proposal or contract.",
+    "Loan or financing documents from a third-party lender. " +
+    "PE-approved lenders: Credit Human, Honolulu Credit Union, Wheelhouse Credit Union (PE Policy 10). " +
+    "Flag if lender is not on this approved list. NOT a solar proposal or contract.",
   "m1.contract.incentive_forms":
     "Incentive application forms (3CE, Xcel rebate, state incentive). " +
     "NOT a utility bill, proposal, or contract.",
@@ -102,14 +106,16 @@ const PE_DOCUMENT_DESCRIPTIONS: Record<string, string> = {
 
   // --- Admin ---
   "m1.admin.commissioning":
-    "Screenshot or PDF proving the monitoring system is ONLINE and the homeowner has access. " +
+    "Screenshot or PDF proving the monitoring system is ONLINE and the System Owner (PE) has access. " +
     "Must show the EQUIPMENT/SYSTEM OVERVIEW page from the monitoring platform — NOT just any dashboard page. " +
+    "PE Policy 01 requires: revenue grade meter (RGM) installed, cell kits for ALL projects, home load metering. " +
+    "Monitoring site ID must be visible. System Owner (PE) must have site access (site owner designation). " +
     "For Tesla PowerHub: must be the Equipment or System Overview page showing installed hardware (Powerwall model, gateway, solar inverter). " +
     "A generic energy graph or dashboard without equipment details is NOT sufficient. " +
     "For Enphase Enlighten: must show system overview with microinverter details. " +
     "For SolarEdge: must show system dashboard with inverter/optimizer details. " +
     "Must show the system is ONLINE and producing power (production data or live status visible). " +
-    "A login page alone is NOT sufficient. " +
+    "Address shown must match the contract. A login page alone is NOT sufficient. " +
     "NOT a nameplate photo, invoice, equipment spec sheet, or installation manual.",
   "m1.admin.hoa":
     "HOA (Homeowners Association) approval letter for the solar installation. " +
@@ -139,6 +145,14 @@ const PE_DOCUMENT_DESCRIPTIONS: Record<string, string> = {
     "Conditional Progress Lien Waiver — a statutory lien waiver form for progress payment. " +
     "State-specific legal form. Title contains 'Conditional Waiver', 'Progress Waiver', or 'Lien Waiver'. " +
     "NOT an attestation, acceptance certificate, or contract.",
+
+  // --- FEOC Compliance ---
+  "m1.compliance.feoc":
+    "FEOC (Foreign Entity of Concern) compliance documentation. " +
+    "For projects with 2026+ PTO, equipment must comply with FEOC rules per PE Policy 01. " +
+    "May be a Safe Harbor certificate, domestic content attestation, or FEOC compliance letter. " +
+    "Verifies that no critical components are from a Prohibited Foreign Entity (PFE). " +
+    "NOT a contract, proposal, or standard equipment warranty.",
 
   // --- M2 ---
   "m2.pto.pto_letter":
@@ -203,16 +217,26 @@ Use it as a baseline for quality, format, and completeness when evaluating the c
 ${itemList}`);
 
   if (options?.avlContext) {
-    sections.push(`## Equipment Approved Vendor List (AVL)
+    sections.push(`## Equipment Approved Vendor List (AVL) & FEOC Compliance
 If you can identify equipment brand/model/SKU in this document, cross-check against PE's AVL.
 Flag any equipment NOT on this list as an "avl_mismatch" issue.
+
+PE Policy 01 requires FEOC (Foreign Entity of Concern) compliance for all projects with 2026+ PTO.
+Equipment must not be manufactured by or contain critical components from a Prohibited Foreign Entity (PFE).
+Solar and Battery systems must independently meet Domestic Content thresholds (50% for 2026 construction start).
+
+Key AVL brands: BESS: Tesla PW3, Enphase IQ Battery, SolarEdge, Qcells, Generac | Modules: REC, Hyundai, Qcells, Silfab, Tesla | Inverters: SolarEdge HomeHub, Enphase IQ8/IQ9, Tesla, Generac | Racking: IronRidge, SnapNrack, Unirac, Pegasus, K2
+
 ${options.avlContext}`);
   }
 
-  sections.push(`## PE-Specific Verification Requirements
+  sections.push(`## PE-Specific Verification Requirements (from PE Policies 01, 04, 06, 08)
+
+**CROSS-REFERENCING (applies to ALL documents):**
+PE validates that customer name, property address, system size, and equipment match ACROSS all documents in the package. When verifying any document, extract and report: customer name, property address, system size (kW DC), and all equipment brand/model so the PM can cross-reference.
 
 **For Plan Sets (m1.design.planset):**
-- Must contain: site plan, electrical single-line diagram, structural details, equipment schedule
+- Must contain ALL four sections: site plan, electrical single-line diagram, structural details, equipment schedule
 - Equipment schedule must list SPECIFIC module brand/model/wattage, inverter brand/model, battery brand/model if applicable
 - Extract and report ALL equipment with FULL model numbers including variant codes:
   - Modules: brand + model + wattage + quantity (e.g., "REC Alpha Pure-R 430W × 24")
@@ -220,57 +244,90 @@ ${options.avlContext}`);
   - Battery/storage: brand + FULL model number with variant code (e.g., "Tesla Powerwall 3 1707000-21-Y")
 - CRITICAL for Tesla Powerwall 3: extract the EXACT part number from the electrical line diagram. Flag if it shows:
   - "1707000-XX-Y" — this is a PLACEHOLDER, not a real model number. PE will reject.
-  - "1707000-11-J" or "1707000-11-M" — these are WRONG variants. PE requires "1707000-21-Y" (or similar 21-series).
+  - "1707000-11-J" or "1707000-11-M" — these are WRONG variants (old/recalled). PE requires "1707000-21-Y" (or similar 21-series).
   - Any model containing "XX" is a placeholder that needs revision.
+- System size and components must match the Customer Agreement and Installation Order
 - Flag if plan set is incomplete (missing single-line diagram, missing equipment schedule, missing structural details)
-- Flag if module brand/model on planset differs from what you'd expect (PE cross-references planset against SO)
 
 **For Proposals (m1.contract.proposal):**
-- Must show system size (kW DC), equipment list, pricing, and production estimates
+- Must be generated from an approved simulation tool (Aurora, Energy Toolbase, Solargraf, OpenSolar, Solo, or Artemis — per PE Policy 08)
+- Must show: system size (kW DC), equipment list, pricing, expected performance/capacity/output, expected utility bill impact
+- If estimated annual Year 1 production exceeds 135% of historical annual load, a Load Justification Form is required (PE Policy 08)
 - Extract equipment listed: module brand/model/qty, inverter brand/model/qty, battery brand/model if applicable
-- Flag if the proposal is unsigned or missing customer acknowledgment
-- Flag if module quantity or brand differs from what the planset shows (if both are visible in this audit)
+- Flag if unsigned or missing customer acknowledgment
+- Customer name and address must match the contract
 
 **For Utility Bills (m1.contract.utility_bill):**
-- Must show 12 months of usage history OR a recent billing period
-- Bill date must be within 12 months of today (${new Date().toISOString().slice(0, 10)})
-- Flag if bill is older than 12 months, if usage data is obscured, or if customer name/address is not visible
+- Bill date must be within 3 MONTHS of today (${new Date().toISOString().slice(0, 10)}) — PE Policy 06 requires "dated within the last three months"
+- Should show 12 months of usage history if available
+- Customer name and service address must be visible and match the Customer Agreement
+- Flag if bill is older than 3 months, if usage data is obscured, or if customer name/address is not visible or doesn't match the contract
+
+**For Loan Documents (m1.contract.loan_docs):**
+- If financing is through a lender, the lender must be on PE's Approved Lender List: Credit Human, Honolulu Credit Union, or Wheelhouse Credit Union (PE Policy 10)
+- Flag if lender name is not on the approved list
 
 **For Commissioning/Monitoring Proof (m1.admin.commissioning):**
 - Must be a screenshot of the monitoring platform showing the system/equipment overview page
-- For Tesla PowerHub: must show the EQUIPMENT or SYSTEM OVERVIEW page — NOT just any PowerHub page. The page should show installed hardware (Powerwall model, gateway, solar inverter) and system status. A generic dashboard or energy graph alone is NOT sufficient.
-- For Enphase Enlighten: must show the system overview with microinverter details visible
-- For SolarEdge: must show the system dashboard with inverter/optimizer details
+- PE Policy 01 requires: revenue grade meter (RGM) installed, cell kits for ALL projects, home load consumption metering, system properly registered with OEM
+- Monitoring site ID must be visible in the screenshot
+- System Owner (PE) must have site access (site owner designation) — flag if screenshot doesn't show PE/System Owner access
+- For Tesla PowerHub: must show the EQUIPMENT or SYSTEM OVERVIEW page — NOT just any PowerHub page. Must show installed hardware (Powerwall model, gateway, solar inverter) and system status. A generic dashboard or energy graph alone is NOT sufficient.
+- For Enphase Enlighten: must show system overview with microinverter details visible
+- For SolarEdge: must show system dashboard with inverter/optimizer details
 - Must show the system is ONLINE and producing power (production data or live status visible)
-- Flag if it's just a login page, a generic energy graph without equipment details, or a spec sheet
+- Address shown in monitoring must match the contract address
+- Flag if: just a login page, generic energy graph without equipment details, spec sheet, or no site ID visible
 
 **For Invoice/BOM (seen as Photo 6 but also applies to documents):**
-- Must show the customer's name matching the deal
+- Must show the customer's name matching the deal/contract
 - Must list ALL major equipment with specific models and quantities:
   - Solar modules (brand, model, wattage, qty)
   - Inverter(s) (brand, model, qty)
   - Battery/storage (brand, full model with variant code, qty) — for Tesla PW3: must show "1707000-21-Y" not "XX-Y" or "11-J"
   - Backup switch, sub panels, and electrical components if applicable
+- Equipment listed must include domestic content part numbers that correspond with PE's AVL
+- Parts on invoice must correspond with what is shown in installation photos
 - Flag if major equipment categories are missing (e.g., has PW3 but no backup switch, or has modules but no inverter)
-- Flag if customer name on invoice doesn't match the deal
 
 **For AHJ Permits (m1.inspection.ahj_permit):**
-- Must show inspector signature or "APPROVED"/"PASSED" stamp
+- Must show inspector signature AND date (both required)
 - Must be the FINAL inspection (not a rough/framing inspection)
-- Flag if unsigned, if it's an application (not result), or if inspection type is not "final"
+- Homeowner name on permit must match the Customer Agreement
+- Property address on permit must match the Customer Agreement
+- Flag if unsigned, undated, if it's an application (not result), or if inspection type is not "final"
 
 **For Contracts (customer_agreement, installation_order, disclosures):**
-- All signature fields must be signed by both parties (customer + installer)
-- Customer name and property address must be visible
+- Customer Agreement must be initialed AND fully signed by both parties (customer + installer/dealer)
+- Installation Order must show system size and components that match other documents (plan set, proposal)
+- Customer name and property address must be visible and consistent across CA, IO, and Disclosures
+- State-required disclosures must be signed/initialed by the customer
 - Flag any missing signatures, missing initials, or blank signature fields
+
+**For Installer Attestation (m1.post_install.attestation) / Exhibit A:**
+- Must be signed by installer representative
+- Customer name and address must match the contract
+
+**For Customer Certificate of Acceptance (m1.post_install.acceptance) / Exhibit B:**
+- Must be signed by the customer
+- Customer name and address must match the contract
+
+**For Lien Waivers:**
+- Progress/Conditional Lien Waiver (m1.lien.conditional): amount should correspond to installation package fees
+- Final Lien Waiver (m2.lien.final): amount should correspond to interconnection package fees
+- Both must be properly signed
 
 **For PTO Letters (m2.pto.pto_letter):**
 - Must explicitly authorize the system to operate and export power
 - Must be from the utility company (not from the installer)
-- Flag if it's an application or acknowledgment rather than actual permission
+- Must contain BOTH: a date within the letter body AND an issuance date
+- Homeowner name must match the Customer Agreement
+- Property address must match the Customer Agreement
+- Flag if it's an application or acknowledgment rather than actual permission to operate
 
 **For Interconnection Agreements (m2.pto.interconnection):**
 - Must be signed by both utility and customer/installer
+- Customer name and address must match the Customer Agreement
 - Flag if only one party has signed`);
 
   const instructions = [
@@ -279,7 +336,7 @@ ${options.avlContext}`);
     "3. CRITICAL: Do NOT confuse similar-sounding documents. A sales PROPOSAL (pricing/design quote) is NOT a Customer AGREEMENT (binding contract). An inspection CARD is NOT a building PERMIT application. A PTO LETTER is NOT an Interconnection AGREEMENT.",
     "4. If the document doesn't clearly match any checklist item, return an EMPTY matchedChecklistIds array. A wrong match is worse than no match.",
     "5. Check for signatures — are they present? How many? Are all required signature fields signed?",
-    "6. Check for date relevance — utility bills should be within 12 months, permits should not be expired.",
+    "6. Check for date relevance — utility bills must be within 3 MONTHS (PE Policy 06), permits should not be expired.",
     "7. Apply the PE-specific verification requirements above for the matched document type.",
     "8. Extract any visible equipment info (brand, model, wattage/capacity) into the equipmentFound field.",
     "9. Flag ALL issues — PE reviewers will reject submissions for: missing signatures, expired dates, incomplete plan sets, illegible text, wrong document types, name/address mismatches, and missing equipment details.",
@@ -310,58 +367,58 @@ function buildPhotoPrompt(
   const photoReqs: Record<number, { description: string; passReqs: string; failReqs: string }> = {
     1: {
       description: "Site address visible on the home or mailbox, showing the full front of the house",
-      passReqs: "Street number clearly legible, house/building fully visible in frame",
-      failReqs: "Address not readable, only partial house shown, wrong location",
+      passReqs: "Street number clearly legible, house/building fully visible in frame, address matches the deal/contract",
+      failReqs: "Address not readable, only partial house shown, wrong location, photo taken too far away to read numbers",
     },
     2: {
-      description: "Wide-angle photo of the installed PV (solar panel) array on the roof",
-      passReqs: "ENTIRE array visible in frame from sufficient distance, all panels accounted for",
-      failReqs: "Array cut off at edges, only partial array visible, too close (just a few panels)",
+      description: "Wide-angle photo of the ENTIRE installed PV (solar panel) array on the roof",
+      passReqs: "ENTIRE array visible in frame from sufficient distance, all panels accounted for, shows full roof coverage",
+      failReqs: "Array cut off at edges, only partial array visible, too close (just a few panels), taken from inside attic",
     },
     3: {
-      description: "Close-up of a solar module nameplate label — brand, model, serial number, and specs must be LEGIBLE",
-      passReqs: "Brand name readable, model number readable, serial number readable, wattage readable. Report exact values.",
-      failReqs: "Label blurry or illegible, too far away, glare obscures text, label partially covered",
+      description: "Close-up of a solar module nameplate label — brand, model, serial number, wattage, country of origin, and certifications must be LEGIBLE",
+      passReqs: "Brand name readable, model number readable, serial number readable, wattage readable, country of origin visible, certification labels visible (UL, IEC, etc.). Report exact values for all.",
+      failReqs: "Label blurry or illegible, too far away, glare obscures text, label partially covered, country of origin not visible",
     },
     4: {
-      description: "Wide-angle photo showing ALL electrical equipment (inverter, disconnect, meter, conduit runs)",
-      passReqs: "Inverter visible, AC disconnect visible, meter visible, conduit runs visible — all in one frame",
-      failReqs: "Only one component shown, major equipment out of frame, too close for full view",
+      description: "Wide-angle photo showing ALL electrical equipment in a single frame (inverter, disconnect, meter, conduit runs)",
+      passReqs: "Inverter visible, AC disconnect visible, production meter visible (if applicable), conduit runs between equipment visible — all in one frame. NEC-compliant installation visible.",
+      failReqs: "Only one component shown, major equipment out of frame, too close for full view, multiple separate photos instead of one wide shot",
     },
     5: {
       description: "Main service panel (MSP/breaker panel) with the dead-front cover REMOVED, showing breakers and wiring",
-      passReqs: "Panel OPEN with dead-front cover removed, individual breakers visible, wiring visible, solar/backfeed breaker identifiable",
-      failReqs: "Panel cover still ON (only exterior visible), panel door closed, shows sub-panel not MSP. This is the #1 PE rejection.",
+      passReqs: "Panel OPEN with dead-front cover removed, individual breakers visible, wiring visible, solar/backfeed breaker identifiable, NEC-compliant wiring",
+      failReqs: "Panel cover still ON (only exterior visible), panel door closed, shows sub-panel not MSP. This is the #1 PE rejection reason.",
     },
     6: {
-      description: "Invoice or Bill of Materials (BOM) document showing equipment purchased",
-      passReqs: "Invoice/BOM visible, customer name readable, ALL equipment line items readable (brand, FULL model numbers with variant codes, qty). Must include modules, inverter(s), battery/storage with full part number (e.g. Tesla 1707000-21-Y), backup switch, sub panels if applicable",
-      failReqs: "Spreadsheet screenshot with no vendor, text illegible, proposal not invoice, customer name missing. NEEDS_REVIEW if major equipment categories appear missing",
+      description: "Invoice or Bill of Materials (BOM) document showing ALL equipment purchased with domestic content part numbers from PE's AVL",
+      passReqs: "Invoice/BOM visible, customer name readable, ALL equipment line items readable with brand, FULL model numbers (including variant codes), quantity. Must include: modules, inverter(s), battery/storage with full part number (e.g. Tesla 1707000-21-Y), backup switch, sub panels if applicable. Domestic content part numbers should correspond to PE's Approved Vendor List. Parts listed must correspond with what is shown in installation photos.",
+      failReqs: "Spreadsheet screenshot with no vendor, text illegible, proposal not invoice, customer name missing. NEEDS_REVIEW if major equipment categories appear missing or if part numbers don't match AVL format",
     },
     7: {
-      description: "Inverter/microinverter/optimizer nameplate label — must be LEGIBLE",
-      passReqs: "Brand readable, model number readable, serial readable, electrical ratings visible. Report exact values.",
-      failReqs: "Label blurry/illegible, too far away, glare/shadow obscures label",
+      description: "Inverter/microinverter/optimizer nameplate label — brand, model, serial number, and electrical ratings must be LEGIBLE",
+      passReqs: "Brand readable, model number readable, serial readable, electrical ratings visible (voltage, current, power). Report exact values. For microinverters, at least one unit label must be fully legible.",
+      failReqs: "Label blurry/illegible, too far away, glare/shadow obscures label, cannot read brand AND model",
     },
     8: {
-      description: "Racking components with visible part markings (rails, clamps, flashings with brand/model visible)",
-      passReqs: "Racking brand identifiable from markings/labels, part numbers visible if stamped. Report brand and parts.",
-      failReqs: "No markings visible, generic metal with no identification, racking not the subject",
+      description: "Racking parts — TWO things required: (1) packaging/box labels showing brand and part numbers, AND (2) markings on individual installed parts (rails, clamps, flashings)",
+      passReqs: "BOTH visible: racking packaging/box with brand label and part numbers readable, AND markings on installed rails/clamps/flashings showing brand identification. Report brand (IronRidge, Unirac, SnapNrack, Pegasus, K2, etc.) and any part numbers visible.",
+      failReqs: "Only packaging OR only installed parts shown (need both), no markings visible, generic metal with no identification, part numbers not readable",
     },
     9: {
-      description: "Wide-angle photo of the energy storage (battery) system installation",
-      passReqs: "Full battery system visible including mounting, associated electrical equipment visible, installation context clear",
-      failReqs: "Battery partially cut off, too close, battery not the subject of photo",
+      description: "Wide-angle photo of the energy storage (battery) system installation showing full system and mounting context",
+      passReqs: "Full battery system visible including wall mounting, associated electrical equipment visible (gateway, disconnect), installation context clear (conduit runs, wiring)",
+      failReqs: "Battery partially cut off in frame, photo too close to see full installation, battery not the main subject of photo",
     },
     10: {
-      description: "Battery/storage nameplate label — brand, model, serial number, capacity specs must be LEGIBLE",
-      passReqs: "Brand readable, FULL part number readable with variant code, serial readable, capacity (kWh) readable. For Tesla PW3: report full part number (e.g. 1707000-21-Y). Flag 1707000-11-M or 11-J as WRONG variant (PE requires 21-series). Flag 'LEADER' sticker (associated with 11-M units).",
-      failReqs: "Label blurry, illegible, too far away, partially obstructed, obscured by conduit",
+      description: "Battery/storage nameplate label for EACH storage unit — brand, model, serial number, capacity, and country of origin must be LEGIBLE",
+      passReqs: "For EACH storage unit: brand readable, FULL model/part number readable (including variant code), serial number readable, capacity (kWh) readable, country of origin visible. For Tesla PW3: extract full part number (e.g. 1707000-21-Y). CRITICAL: flag '1707000-11-M' or '1707000-11-J' as WRONG variant — PE requires 21-series (1707000-21-Y, 21-M, 21-K, etc.). Flag 'LEADER' sticker (associated with recalled 11-M units). If multiple units, each needs a photo.",
+      failReqs: "Label blurry, illegible, too far away, partially obstructed, obscured by conduit, country of origin not visible, only one unit shown when multiple installed",
     },
     11: {
-      description: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
-      passReqs: "Gateway/controller visible and identifiable (brand/model readable if labeled), disconnect visible",
-      failReqs: "Device not identifiable, no labels readable, wrong equipment shown",
+      description: "Storage controller, gateway, or disconnect switch — serial number must be visible, wiring must be shown in a single clear shot",
+      passReqs: "Gateway/controller device visible and identifiable, brand/model readable, serial number visible, associated wiring/conduit shown in the same frame. For Tesla: Tesla Gateway or Backup Switch visible.",
+      failReqs: "Device not identifiable, no labels/serial readable, wiring not visible in same shot, wrong equipment shown, serial number obscured",
     },
   };
 
@@ -547,47 +604,47 @@ export async function triagePhotoBatch(
   const photoRequirements: Record<number, { description: string; peReqs: string }> = {
     1: {
       description: "Site address visible on the home or mailbox, showing the full front of the house",
-      peReqs: "PASS requires: street number clearly legible, house/building fully visible. FAIL if: address not readable, only partial house shown, photo taken too far away to read numbers, or photo is of the wrong house/location.",
+      peReqs: "PASS requires: street number clearly legible, house/building fully visible, address matches deal. FAIL if: address not readable, only partial house shown, photo taken too far away to read numbers, or wrong house/location.",
     },
     2: {
-      description: "Wide-angle photo of the installed PV (solar panel) array on the roof",
-      peReqs: "PASS requires: ENTIRE array visible in frame, shot from enough distance to see full roof coverage. FAIL if: array is cut off at edges, only partial array visible, photo is too close (just a few panels), or taken from inside the attic. NEEDS_REVIEW if: array is mostly visible but one edge is slightly cut off.",
+      description: "Wide-angle photo of the ENTIRE installed PV (solar panel) array on the roof",
+      peReqs: "PASS requires: ENTIRE array visible in frame from sufficient distance, full roof coverage shown. FAIL if: array cut off at edges, only partial array visible, too close (just a few panels), or taken from inside attic. NEEDS_REVIEW if: mostly visible but one edge slightly cut off.",
     },
     3: {
-      description: "Close-up of a solar module nameplate label — brand, model, serial number, and specs must be LEGIBLE",
-      peReqs: "PASS requires: module brand name readable, model number readable, serial number readable, specs (wattage) readable. FAIL if: label is blurry, text is not legible, photo is taken from too far away, glare obscures text, or label is partially covered. Report the exact brand, model, and wattage you can read.",
+      description: "Close-up of solar module nameplate label — brand, model, serial, wattage, country of origin, and certifications must be LEGIBLE",
+      peReqs: "PASS requires: brand readable, model readable, serial readable, wattage readable, country of origin visible, certification labels visible (UL, IEC). Report exact values. FAIL if: label blurry, text not legible, too far away, glare obscures text, label partially covered, or country of origin not visible.",
     },
     4: {
-      description: "Wide-angle photo showing ALL electrical equipment (inverter, disconnect, meter, conduit runs)",
-      peReqs: "PASS requires: inverter visible, AC disconnect visible, production meter visible (if applicable), conduit runs between equipment visible, all in one frame. FAIL if: photo only shows one component, major equipment is out of frame, or photo is too close to see the full electrical setup.",
+      description: "Wide-angle photo showing ALL electrical equipment in single frame (inverter, disconnect, meter, conduit runs)",
+      peReqs: "PASS requires: inverter visible, AC disconnect visible, production meter visible (if applicable), conduit runs visible, all in one frame. FAIL if: only one component shown, major equipment out of frame, too close for full view, or multiple separate photos needed.",
     },
     5: {
-      description: "Main service panel (MSP/breaker panel) with the dead-front cover REMOVED, showing breakers and wiring",
-      peReqs: "PASS requires: breaker panel OPEN with dead-front cover removed, individual breakers visible, wiring visible, solar breaker or backfeed breaker identifiable. FAIL if: panel cover is still ON (you can only see the outside of the panel), panel door is closed, or photo shows a sub-panel instead of the main service panel. This is a very common rejection — the cover MUST be off.",
+      description: "Main service panel (MSP/breaker panel) with dead-front cover REMOVED showing breakers and wiring",
+      peReqs: "PASS requires: panel OPEN with dead-front cover removed, breakers visible, wiring visible, solar/backfeed breaker identifiable. FAIL if: panel cover still ON (you can only see exterior), panel door closed, or shows sub-panel not MSP. This is the #1 PE rejection — cover MUST be off.",
     },
     6: {
-      description: "Invoice or Bill of Materials (BOM) document showing equipment purchased",
-      peReqs: "PASS requires: actual invoice/BOM visible, customer name readable, equipment line items readable (brand, FULL model numbers including variant codes, quantity for each). Must include ALL major categories: modules, inverter(s), battery/storage (with full part number e.g. Tesla 1707000-21-Y not XX-Y), backup switch, sub panels if applicable. FAIL if: text illegible, it's a proposal not invoice, customer name missing. NEEDS_REVIEW if: some items readable but major equipment categories appear missing (e.g. has battery but no backup switch, or has modules but no inverter line item).",
+      description: "Invoice/BOM showing ALL equipment purchased with domestic content part numbers from PE's AVL",
+      peReqs: "PASS requires: actual invoice/BOM visible, customer name readable, ALL equipment line items with brand, FULL model/part numbers (including variant codes), quantity. Must include modules, inverter(s), battery/storage (full part number e.g. Tesla 1707000-21-Y not XX-Y), backup switch, sub panels. Domestic content part numbers should correspond to PE's AVL. Parts must correspond with install photos. FAIL if: text illegible, proposal not invoice, customer name missing. NEEDS_REVIEW if: major categories missing (battery but no backup switch, modules but no inverter).",
     },
     7: {
-      description: "Inverter, microinverter, or optimizer nameplate/model label — must be LEGIBLE",
-      peReqs: "PASS requires: equipment brand readable, model number readable, serial number readable, electrical ratings visible. Report the exact brand and model. FAIL if: label is blurry/illegible, text cannot be read, photo is from too far away, or glare/shadow obscures the label. For microinverters, the label on at least one unit must be fully legible.",
+      description: "Inverter/microinverter/optimizer nameplate label — brand, model, serial, ratings must be LEGIBLE",
+      peReqs: "PASS requires: brand readable, model readable, serial readable, electrical ratings visible (voltage, current, power). Report exact brand and model. FAIL if: blurry/illegible, cannot read text, too far away, glare/shadow obscures label. For microinverters, at least one unit label must be fully legible.",
     },
     8: {
-      description: "Racking components with visible part markings (rails, clamps, flashings with brand/model visible)",
-      peReqs: "PASS requires: racking brand/manufacturer identifiable from markings or labels on rails/clamps, part numbers visible if stamped/labeled. Report any brand (IronRidge, Unirac, SnapNrack, etc.) and part numbers visible. FAIL if: no markings visible, photo shows generic metal with no identification, or racking is not the subject of the photo.",
+      description: "Racking parts — BOTH packaging/box labels AND markings on installed parts (rails, clamps, flashings) required",
+      peReqs: "PASS requires: BOTH visible: (1) racking packaging/box with brand label and part numbers readable, AND (2) markings on installed rails/clamps/flashings with brand identification. Report brand (IronRidge, Unirac, SnapNrack, Pegasus, K2, etc.) and part numbers. FAIL if: only packaging OR only installed parts (need both), no markings visible, generic metal with no ID. NEEDS_REVIEW if: brand identifiable but part numbers not fully readable.",
     },
     9: {
-      description: "Wide-angle photo of the energy storage (battery) system installation",
-      peReqs: "PASS requires: full battery system visible including mounting, associated electrical equipment visible, installation context clear (wall mount location, conduit runs). FAIL if: battery is partially cut off, photo is too close to see full installation, or battery is not the subject.",
+      description: "Wide-angle photo of the energy storage (battery) system installation showing full system and mounting",
+      peReqs: "PASS requires: full battery system visible with mounting, associated electrical equipment visible (gateway, disconnect), installation context clear (conduit, wiring). FAIL if: battery partially cut off, too close, battery not the main subject.",
     },
     10: {
-      description: "Battery/storage system nameplate label — brand, model, serial number, capacity specs must be LEGIBLE",
-      peReqs: "PASS requires: battery brand readable, FULL model/part number readable (including variant code), serial number readable, capacity (kWh) readable. For Tesla Powerwall 3: extract the FULL part number (e.g. 1707000-21-Y). CRITICAL: flag if part number shows '1707000-11-M' or '1707000-11-J' — these are wrong/old variants that PE will reject (PE requires 21-series like 1707000-21-Y or 1707000-21-M). Also flag if label shows a 'LEADER' sticker (associated with 11-M units). FAIL if: label blurry, text illegible, too far away, label obscured by conduit or other equipment. Report the exact brand, full part number, and serial number.",
+      description: "Battery/storage nameplate label for EACH unit — brand, model, serial, capacity, country of origin must be LEGIBLE",
+      peReqs: "PASS requires: for EACH storage unit: brand readable, FULL part number readable (with variant code), serial readable, capacity (kWh) readable, country of origin visible. For Tesla PW3: extract full part number (e.g. 1707000-21-Y). CRITICAL: flag '1707000-11-M' or '1707000-11-J' as WRONG variant — PE requires 21-series (21-Y, 21-M, 21-K). Flag 'LEADER' sticker (associated with recalled 11-M units). If multiple units installed, each needs a photo. FAIL if: blurry, illegible, too far, obscured, country of origin not visible, only one unit when multiple installed.",
     },
     11: {
-      description: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
-      peReqs: "PASS requires: gateway/controller device visible and identifiable (brand/model readable if labeled), associated disconnect visible. FAIL if: device is not identifiable, no labels readable, or photo shows wrong equipment.",
+      description: "Storage controller/gateway/disconnect — serial number visible, wiring in single clear shot",
+      peReqs: "PASS requires: gateway/controller visible and identifiable, brand/model readable, serial number visible, associated wiring/conduit shown in same frame. For Tesla: Gateway or Backup Switch visible. FAIL if: device not identifiable, no labels/serial readable, wiring not in same shot, wrong equipment.",
     },
   };
 

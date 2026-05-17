@@ -18,6 +18,8 @@ interface ChecklistCardResult {
     name: string;
     id: string;
     url: string;
+    thumbnailUrl?: string;
+    source?: "drive" | "zuper" | "pandadoc";
     modifiedTime: string;
     size: number;
   };

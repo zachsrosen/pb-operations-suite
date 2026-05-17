@@ -63,35 +63,35 @@ Takes a completed audit run ID and:
 
 ## Checklist
 
-### M1 — Inspection Complete (up to 19 items for solar+battery)
+### M1 — Inspection Complete (up to 20 items for solar+battery)
 
 **Contract & Proposal:**
-- Countersigned Customer Agreement (folder 0)
+- Countersigned Customer Agreement — initialed AND fully signed (folder 0)
 - Countersigned Installation Order (folder 0, often combined with CA)
-- Required Disclosures (folder 0, often combined with CA)
-- Signed Proposal (folder 0)
-- Utility Bill — 12mo usage (folder 0)
-- Loan Documents — if applicable (folder 0)
+- Required Disclosures — signed/initialed (folder 0, often combined with CA)
+- Signed Proposal — from approved tool: Aurora, Energy Toolbase, Solargraf, OpenSolar, Solo, Artemis (folder 0)
+- Utility Bill — dated within last 3 months (folder 0)
+- Loan Documents — lender must be on PE Approved Lender List (folder 0)
 - Incentive Forms — if applicable (folders 0, 8)
 
 **Design:**
 - Final Plan Set (folder 2)
 
-**Photos (PE numbered 1-11, system-type dependent):**
+**Photos (PE numbered 1-11, system-type dependent per Policy 04):**
 1. Site address + home
 2. Wide-angle PV array (solar only)
-3. Module nameplate label (solar only)
+3. Module nameplate label + country of origin (solar only)
 4. Wide-angle all electrical (solar only)
 5. Main service panel, cover off (solar only)
-6. Invoice & BOM
+6. Invoice & BOM with domestic content AVL part numbers
 7. Inverter/micro/optimizer model (solar only)
-8. Racking parts + markings (solar only)
+8. Racking packaging labels + installed part markings (solar only)
 9. Storage wide angle (battery only)
-10. Storage nameplate & labels (battery only)
-11. Storage controller/disconnect (battery only)
+10. EACH storage unit nameplate + country of origin (battery only)
+11. Storage controller/disconnect with serial + wiring (battery only)
 
 **Admin:**
-- Commissioning Proof (folders 5, 8)
+- Commissioning Proof — site ID visible, RGM + cell kits, PE site access (folders 5, 8)
 - HOA Approval — if applicable (all folders)
 
 **Post-Install (from PandaDoc):**
@@ -99,10 +99,13 @@ Takes a completed audit run ID and:
 - Customer Certificate of Acceptance / Exhibit B
 
 **Inspection:**
-- AHJ Signed Final Permit (folder 6)
+- AHJ Signed Final Permit — inspector signature AND date (folder 6)
 
 **Lien:**
 - Conditional Progress Lien Waiver (from PandaDoc)
+
+**Compliance:**
+- FEOC Compliance — required for 2026+ PTO projects (folders 0, 8)
 
 ### M2 — Project Complete (5 items)
 
@@ -184,9 +187,13 @@ The audit must complete within Vercel's 5-minute function timeout (`maxDuration 
 
 ## Deep PE Verification
 
-Beyond simple classification, the audit performs PE-specific content verification:
+Beyond simple classification, the audit performs PE-specific content verification aligned with PE's official policies (Policy 01 AVL, Policy 04 Quality & Photo Requirements, Policy 06 Turnover Deliverables, Policy 08 Approved Platforms, Policy 10 Approved Lender List).
 
-### Photo Verification
+### Cross-Referencing
+
+PE validates that customer name, property address, system size, and equipment match ACROSS all documents. The classifier extracts this data from each document so the PM can cross-reference.
+
+### Photo Verification (PE Policy 04)
 
 Each photo category has specific PASS/FAIL criteria matching PE's Quality Standards & Photo Requirements:
 
@@ -194,34 +201,44 @@ Each photo category has specific PASS/FAIL criteria matching PE's Quality Standa
 |-------|-----------------|------------------|
 | 1. Site address | Street number legible, house fully visible | Address not readable |
 | 2. PV array | ENTIRE array in frame from distance | Array cut off at edges |
-| 3. Module nameplate | Brand + model + serial + wattage all legible | Label blurry/illegible |
+| 3. Module nameplate | Brand + model + serial + wattage + **country of origin** + certifications legible | Label blurry/illegible, no country of origin |
 | 4. All electrical | Inverter + disconnect + meter + conduit in one frame | Only one component shown |
 | 5. MSP (breaker panel) | Dead-front cover REMOVED, breakers visible | **Cover still on (top rejection)** |
-| 6. Invoice/BOM | Equipment line items with brand/model/qty readable | Spreadsheet screenshot, no vendor |
+| 6. Invoice/BOM | Equipment line items with **domestic content AVL part numbers**, brand/model/qty readable | Spreadsheet screenshot, no vendor, parts don't match AVL |
 | 7. Inverter nameplate | Brand + model + serial + ratings legible | Label blurry from distance |
-| 8. Racking parts | Brand identifiable from markings/labels | No markings visible |
+| 8. Racking parts | **BOTH** packaging/box labels AND markings on installed parts | Only packaging OR only installed parts (need both) |
 | 9. Battery wide | Full system visible with mounting context | Battery cut off in frame |
-| 10. Battery nameplate | Brand + model + serial + kWh legible | Label obscured or too far |
-| 11. Storage controller | Device identifiable, brand/model if labeled | Wrong equipment shown |
+| 10. Battery nameplate | **EACH unit**: brand + model + serial + kWh + **country of origin** | Label obscured, wrong PW3 variant (11-M/11-J) |
+| 11. Storage controller | Device identifiable, **serial number visible**, wiring in single shot | Wrong equipment, serial not readable |
 
 Equipment found in nameplate photos (brand, model, serial) is extracted and displayed in the UI for cross-referencing against the proposal and plan set.
 
-### Document Verification
+### Document Verification (PE Policy 06)
 
 | Document | Verification Checks |
 |----------|-------------------|
-| Plan Set | Site plan + single-line diagram + structural + equipment schedule present; equipment brand/model extracted |
-| Proposal | System size, equipment list, pricing, production estimates; equipment extracted for cross-reference |
-| Utility Bill | Date within 12 months, 12-month usage history visible, customer name/address visible |
-| Commissioning | Monitoring platform online, production data shown (not just login page) |
-| AHJ Permit | Inspector signature or APPROVED stamp, final inspection (not rough/framing) |
-| Contracts | All signatures present from both parties, customer name and address visible |
-| PTO Letter | From utility (not installer), explicitly authorizes operation |
-| Interconnection | Signed by both utility and customer/installer |
+| Plan Set | Site plan + single-line diagram + structural + equipment schedule present; equipment brand/model extracted; PW3 part number checked for placeholder (XX) or wrong variant (11-M/11-J) |
+| Proposal | Must use approved simulation tool (Aurora, Energy Toolbase, Solargraf, OpenSolar, Solo, Artemis); system size, equipment list, pricing, production estimates; load justification if >135% of annual usage |
+| Utility Bill | **Date within 3 months** (not 12), usage history visible, customer name/address match contract |
+| Loan Docs | Lender must be on PE Approved Lender List (Credit Human, Honolulu CU, Wheelhouse CU) |
+| Commissioning | Monitoring platform online with **site ID visible**, **RGM + cell kits required**, PE has site owner access, address matches contract |
+| AHJ Permit | Inspector signature **AND date**, final inspection, homeowner name/address match contract |
+| Contracts | CA initialed AND fully signed by both parties, IO system size/components match other docs, customer name/address visible |
+| Attestation/Acceptance | Signed, customer name/address match contract |
+| Lien Waivers | Progress: amount = installation package fees; Final: amount = interconnection package fees |
+| PTO Letter | From utility (not installer), authorizes operation, **both dates present** (in letter + issuance), name/address match contract |
+| Interconnection | Signed by both utility and customer/installer, name/address match contract |
+| FEOC Compliance | Equipment complies with FEOC rules for 2026+ PTO projects (PE Policy 01 §3); no Prohibited Foreign Entity components |
 
-### Equipment Cross-Reference
+### Equipment Cross-Reference (PE Policy 01 AVL)
 
-When the AVL (Approved Vendor List) is available, equipment identified in documents and photos is cross-checked against PE's approved list. Mismatches are flagged as issues.
+When the AVL (Approved Vendor List) is available, equipment identified in documents and photos is cross-checked against PE's approved list. Key AVL categories:
+- **BESS**: Tesla PW3 (1707000-21-y), Enphase IQ Battery, SolarEdge HomeHub Battery, Qcells, Generac PWRcell
+- **Modules**: REC Group (Alpha Pure RX), Hyundai (NF/HiN), Qcells (Q.PEAK/Q.TRON), Silfab (PRIME), Tesla (TSP-4xx)
+- **Inverters**: SolarEdge HomeHub, Enphase IQ8/IQ9, Tesla (1538000-xx-y), Generac PWRmicro
+- **Racking**: IronRidge, SnapNrack, Unirac, Pegasus, K2, Tesla, Silfab
+
+FEOC Material Assistance Cost Ratio thresholds for 2026: Solar 40%, Battery 55%. Domestic Content threshold for 2026 construction: 50%.
 
 ## Feature Flags
 
