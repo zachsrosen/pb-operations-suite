@@ -238,18 +238,31 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     utilityName: property.utilityName,
   });
 
-  // Resolve customer UID from linked jobs (use the first job's customer)
+  // Resolve customer UID from linked jobs.
+  // Only associate if ALL jobs agree on the same customer (avoids misassociation
+  // when a property changed owners or has duplicate Zuper customers).
   let customerUid: string | null = null;
   const dealIds = property.dealLinks.map((l) => l.dealId);
   if (dealIds.length > 0) {
-    const jobWithCustomer = await prisma.zuperJobCache.findFirst({
+    const jobsWithCustomer = await prisma.zuperJobCache.findMany({
       where: { hubspotDealId: { in: dealIds } },
       select: { rawData: true },
     });
-    if (jobWithCustomer?.rawData) {
-      const raw = jobWithCustomer.rawData as Record<string, unknown>;
-      const customer = raw.customer as Record<string, unknown> | undefined;
-      customerUid = (customer?.customer_uid as string) ?? null;
+    const customerUids = new Set<string>();
+    for (const j of jobsWithCustomer) {
+      const raw = j.rawData as Record<string, unknown> | null;
+      const customer = raw?.customer as Record<string, unknown> | undefined;
+      const uid = customer?.customer_uid as string | undefined;
+      if (uid) customerUids.add(uid);
+    }
+    // Only associate if unanimous (1 unique customer across all jobs)
+    if (customerUids.size === 1) {
+      customerUid = [...customerUids][0];
+    } else if (customerUids.size > 1) {
+      console.warn(
+        `[zuper-property-sync] Skipping customer association for property ${propertyCacheId}: ` +
+        `${customerUids.size} different customers found across ${jobsWithCustomer.length} jobs`
+      );
     }
   }
 
@@ -286,7 +299,10 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
   });
 
   // Link unlinked jobs (cap at 10 per sync to stay within time budget)
+  // Safety: verify job address matches property before linking to prevent
+  // stale PropertyDealLink entries from cascading into wrong associations.
   let jobsLinked = 0;
+  const propStreetNum = (property.streetAddress || "").match(/^(\d+)/)?.[1];
 
   if (dealIds.length > 0) {
     const zuperJobs = await prisma.zuperJobCache.findMany({
@@ -300,6 +316,20 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
       const raw = job.rawData as Record<string, unknown> | null;
       const existingProp = raw?.property ?? raw?.property_uid;
       if (existingProp) continue;
+
+      // Address sanity check: job's customer address street number should match property
+      if (propStreetNum) {
+        const custAddr = (raw?.customer as Record<string, unknown>)?.customer_address as Record<string, string> | undefined;
+        const jobStreet = custAddr?.street || "";
+        const jobStreetNum = jobStreet.match(/^(\d+)/)?.[1];
+        if (jobStreetNum && jobStreetNum !== propStreetNum) {
+          console.warn(
+            `[zuper-property-sync] Skipping job ${job.jobUid} link: address mismatch ` +
+            `(job: "${jobStreet}" vs property: "${property.streetAddress}")`
+          );
+          continue;
+        }
+      }
 
       try {
         await linkJobToProperty(job.jobUid, zuperPropertyUid);
