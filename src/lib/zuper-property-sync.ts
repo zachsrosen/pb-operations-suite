@@ -1,0 +1,300 @@
+/**
+ * src/lib/zuper-property-sync.ts
+ *
+ * Syncs HubSpotPropertyCache data → Zuper Property module.
+ * Creates/updates Zuper Property objects and links jobs.
+ */
+
+import { prisma } from "@/lib/db";
+import { mergeZuperMetaData, type ZuperMetaDataEntry } from "@/lib/zuper-catalog";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ZUPER_API_URL = process.env.ZUPER_API_URL || "https://us-west-1c.zuperpro.com/api";
+const INTER_OP_DELAY_MS = 200;
+
+export const ZUPER_PROPERTY_FIELD_LABELS = [
+  "System Size (kW)",
+  "Has Battery",
+  "Has EV Charger",
+  "Install Date",
+  "Year Built",
+  "Square Footage",
+  "Stories",
+  "PB Location",
+  "AHJ",
+  "Utility",
+] as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PropertyFieldSource {
+  systemSizeKwDc: number | null;
+  hasBattery: boolean;
+  hasEvCharger: boolean;
+  firstInstallDate: Date | null;
+  yearBuilt: number | null;
+  squareFootage: number | null;
+  stories: number | null;
+  pbLocation: string | null;
+  ahjName: string | null;
+  utilityName: string | null;
+}
+
+export interface SyncPropertyResult {
+  propertyId: string;
+  zuperPropertyUid: string;
+  action: "created" | "updated" | "skipped";
+  jobsLinked: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Field Mapping
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the 10 Zuper custom field entries from a HubSpotPropertyCache record.
+ * All values are stringified per Zuper's meta_data format.
+ */
+export function buildPropertyCustomFields(property: PropertyFieldSource): ZuperMetaDataEntry[] {
+  const str = (v: unknown): string => (v != null && v !== "" ? String(v) : "");
+  const dateStr = (d: Date | null): string => {
+    if (!d) return "";
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  };
+
+  return [
+    { label: "System Size (kW)", value: property.systemSizeKwDc != null ? String(property.systemSizeKwDc) : "N/A", type: "SINGLE_LINE" },
+    { label: "Has Battery", value: property.hasBattery ? "Yes" : "No", type: "SINGLE_LINE" },
+    { label: "Has EV Charger", value: property.hasEvCharger ? "Yes" : "No", type: "SINGLE_LINE" },
+    { label: "Install Date", value: dateStr(property.firstInstallDate), type: "SINGLE_LINE" },
+    { label: "Year Built", value: str(property.yearBuilt), type: "SINGLE_LINE" },
+    { label: "Square Footage", value: str(property.squareFootage), type: "SINGLE_LINE" },
+    { label: "Stories", value: str(property.stories), type: "SINGLE_LINE" },
+    { label: "PB Location", value: str(property.pbLocation), type: "SINGLE_LINE" },
+    { label: "AHJ", value: str(property.ahjName), type: "SINGLE_LINE" },
+    { label: "Utility", value: str(property.utilityName), type: "SINGLE_LINE" },
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Zuper API Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function zuperFetch(path: string, init?: RequestInit): Promise<Response> {
+  const apiKey = process.env.ZUPER_API_KEY;
+  if (!apiKey) throw new Error("ZUPER_API_KEY not set");
+
+  const res = await fetch(`${ZUPER_API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Zuper API ${init?.method ?? "GET"} ${path} failed: ${res.status} ${body.slice(0, 200)}`);
+  }
+
+  return res;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Create / Update Zuper Property
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a new Zuper Property. Returns the created property UID.
+ */
+export async function createZuperProperty(
+  address: { street: string; city: string; state: string; zip: string },
+  customFields: ZuperMetaDataEntry[],
+): Promise<string> {
+  const propertyName = `${address.street}, ${address.city}, ${address.state} ${address.zip}`;
+
+  const res = await zuperFetch("/property", {
+    method: "POST",
+    body: JSON.stringify({
+      property: {
+        property_name: propertyName,
+        property_address: {
+          street: address.street,
+          city: address.city,
+          state: address.state,
+          zip_code: address.zip,
+          country: "US",
+        },
+        custom_fields: customFields,
+      },
+    }),
+  });
+
+  const data = await res.json();
+  const uid = data?.data?.property_uid ?? data?.data?.uid;
+  if (!uid) throw new Error(`Zuper create property returned no UID: ${JSON.stringify(data).slice(0, 200)}`);
+  return uid;
+}
+
+/**
+ * Update an existing Zuper Property's custom fields using read-merge-write.
+ * This preserves any fields we don't manage (e.g. manually added by techs).
+ */
+export async function updateZuperProperty(
+  zuperPropertyUid: string,
+  newFields: ZuperMetaDataEntry[],
+): Promise<void> {
+  // 1. Read existing fields
+  const readRes = await zuperFetch(`/property/${zuperPropertyUid}`);
+  const readData = await readRes.json();
+  const existingFields = readData?.data?.custom_fields ?? readData?.data?.property?.custom_fields ?? [];
+
+  // 2. Merge (preserves fields we don't own, updates ours)
+  const merged = mergeZuperMetaData(existingFields, newFields);
+
+  // 3. Write full array back
+  await zuperFetch(`/property/${zuperPropertyUid}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      property: {
+        custom_fields: merged,
+      },
+    }),
+  });
+}
+
+/**
+ * Link a Zuper job to a Zuper Property by setting the property field on the job.
+ */
+export async function linkJobToProperty(jobUid: string, zuperPropertyUid: string): Promise<void> {
+  await zuperFetch("/jobs", {
+    method: "PUT",
+    body: JSON.stringify({
+      job: {
+        job_uid: jobUid,
+        property: zuperPropertyUid,
+      },
+    }),
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync Orchestration
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sync a single property to Zuper: create or update the Zuper Property,
+ * then link any unlinked jobs. Returns the result.
+ */
+export async function syncPropertyToZuper(propertyCacheId: string): Promise<SyncPropertyResult> {
+  const property = await prisma.hubSpotPropertyCache.findUniqueOrThrow({
+    where: { id: propertyCacheId },
+    include: { dealLinks: true },
+  });
+
+  const fields = buildPropertyCustomFields({
+    systemSizeKwDc: property.systemSizeKwDc,
+    hasBattery: property.hasBattery,
+    hasEvCharger: property.hasEvCharger,
+    firstInstallDate: property.firstInstallDate,
+    yearBuilt: property.yearBuilt,
+    squareFootage: property.squareFootage,
+    stories: property.stories,
+    pbLocation: property.pbLocation,
+    ahjName: property.ahjName,
+    utilityName: property.utilityName,
+  });
+
+  let zuperPropertyUid = property.zuperPropertyUid;
+  let action: "created" | "updated" | "skipped";
+
+  if (!zuperPropertyUid) {
+    // Create new Zuper Property
+    zuperPropertyUid = await createZuperProperty(
+      {
+        street: property.streetAddress,
+        city: property.city,
+        state: property.state,
+        zip: property.zip,
+      },
+      fields,
+    );
+    action = "created";
+  } else {
+    // Update existing
+    await updateZuperProperty(zuperPropertyUid, fields);
+    action = "updated";
+  }
+
+  // Update cache with UID + sync timestamp + reset fail count
+  await prisma.hubSpotPropertyCache.update({
+    where: { id: propertyCacheId },
+    data: {
+      zuperPropertyUid,
+      zuperPropertySyncedAt: new Date(),
+      zuperSyncFailCount: 0,
+    },
+  });
+
+  // Link unlinked jobs (cap at 10 per sync to stay within time budget)
+  const dealIds = property.dealLinks.map((l) => l.dealId);
+  let jobsLinked = 0;
+
+  if (dealIds.length > 0) {
+    const zuperJobs = await prisma.zuperJobCache.findMany({
+      where: { hubspotDealId: { in: dealIds } },
+      select: { jobUid: true, rawData: true },
+      take: 10,
+    });
+
+    for (const job of zuperJobs) {
+      // Check if job already has a property linked
+      const raw = job.rawData as Record<string, unknown> | null;
+      const existingProp = raw?.property ?? raw?.property_uid;
+      if (existingProp) continue;
+
+      try {
+        await linkJobToProperty(job.jobUid, zuperPropertyUid);
+        jobsLinked++;
+        await sleep(INTER_OP_DELAY_MS);
+      } catch (err) {
+        console.warn(`[zuper-property-sync] Failed to link job ${job.jobUid}:`, err);
+      }
+    }
+  }
+
+  return { propertyId: propertyCacheId, zuperPropertyUid, action, jobsLinked };
+}
+
+/**
+ * Find properties that need syncing to Zuper.
+ * A property is dirty when:
+ *   - zuperPropertyUid is null (never synced), OR
+ *   - updatedAt > zuperPropertySyncedAt (data changed since last sync)
+ * Excludes poison rows (zuperSyncFailCount >= 5).
+ */
+export async function findDirtyProperties(limit: number): Promise<Array<{ id: string }>> {
+  return prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT pc.id
+    FROM "HubSpotPropertyCache" pc
+    WHERE pc."zuperSyncFailCount" < 5
+      AND EXISTS (SELECT 1 FROM "PropertyDealLink" pdl WHERE pdl."propertyId" = pc.id)
+      AND (
+        pc."zuperPropertyUid" IS NULL
+        OR pc."zuperPropertySyncedAt" IS NULL
+        OR pc."updatedAt" > pc."zuperPropertySyncedAt"
+      )
+    ORDER BY pc."updatedAt" ASC
+    LIMIT ${limit}
+  `;
+}

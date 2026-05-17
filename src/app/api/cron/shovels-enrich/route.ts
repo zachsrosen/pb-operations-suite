@@ -16,7 +16,8 @@ import { createShovelsClient } from "@/lib/shovels";
 
 export const maxDuration = 300;
 
-const BATCH_SIZE = 75;
+const BATCH_SIZE = 25;
+const TIME_BUDGET_MS = 250_000; // Stop processing 50s before maxDuration
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -42,7 +43,6 @@ export async function GET(request: NextRequest) {
     }
   } catch (err) {
     console.error("[shovels-cron] usage check failed:", err);
-    // Continue anyway — credit guard in enrichment function is a fallback
   }
 
   // Fetch PENDING first, then ERROR with retries left
@@ -58,7 +58,6 @@ export async function GET(request: NextRequest) {
     },
     select: { id: true, shovelsEnrichmentStatus: true },
     orderBy: [
-      // PENDING before ERROR (alphabetical sort works here)
       { shovelsEnrichmentStatus: "asc" },
       { createdAt: "asc" },
     ],
@@ -69,10 +68,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "idle", message: "no pending properties" });
   }
 
+  const startTime = Date.now();
   const results = { enriched: 0, noMatch: 0, rejected: 0, errors: 0, skipped: 0 };
+  let processed = 0;
+  let timedOut = false;
 
   for (const prop of properties) {
+    if (Date.now() - startTime > TIME_BUDGET_MS) {
+      timedOut = true;
+      break;
+    }
+
     const result = await enrichPropertyFromShovels(prop.id);
+    processed++;
     switch (result.status) {
       case "enriched":
         results.enriched++;
@@ -96,9 +104,11 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    status: "ok",
-    processed: properties.length,
+    status: timedOut ? "partial" : "ok",
+    processed,
+    queued: properties.length,
     ...results,
+    elapsed: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
     timestamp: new Date().toISOString(),
   });
 }
