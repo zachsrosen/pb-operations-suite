@@ -374,29 +374,28 @@ export async function findPeDocsForDeal(
 
   for (const { key, pattern } of PE_TEMPLATE_PATTERNS) {
     const templateId = templateIds[key];
-    if (!templateId) {
-      results.push({ key, templateId: null, document: null });
-      continue;
-    }
 
     try {
-      // Strategy 1: Search by template + HubSpot deal metadata
-      const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-        searchParams: {
-          template_id: templateId,
-          "metadata_hubspot.deal_id": dealId,
-          count: 1,
-          order_by: "-date_modified",
-        },
-      });
+      let doc: PandaDocListItem | null = null;
 
-      let doc = data.results?.[0] ?? null;
+      // Strategy 1: Search by template ID + HubSpot deal metadata
+      if (templateId) {
+        const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+          searchParams: {
+            template_id: templateId,
+            "metadata_hubspot.deal_id": dealId,
+            count: 1,
+            order_by: "-date_modified",
+          },
+        });
+        doc = data.results?.[0] ?? null;
+      }
 
-      // Strategy 2: Fallback — search by document name containing the customer name.
+      // Strategy 2: template ID + document name containing customer name.
       // Docs created via HubSpot's native PandaDoc CRM card don't always set
       // metadata_hubspot.deal_id, but they DO include the customer name in the
       // document title (e.g. "PE Installer Attestation - Brownell").
-      if (!doc && customerName) {
+      if (!doc && templateId && customerName) {
         const nameQuery = `${pattern} - ${customerName}`;
         const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
@@ -407,6 +406,26 @@ export async function findPeDocsForDeal(
           },
         });
         doc = fallback.results?.[0] ?? null;
+      }
+
+      // Strategy 3: Name-only search (no template constraint).
+      // Catches docs when template discovery failed (null templateId),
+      // templates were renamed, or docs were created without templates.
+      if (!doc && customerName) {
+        const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+          searchParams: {
+            q: `${pattern} ${customerName}`,
+            count: 3,
+            order_by: "-date_modified",
+          },
+        });
+        // Verify the result name actually contains the pattern keyword
+        // to avoid false positives from broad PandaDoc search
+        const patternKeyword = pattern.split(" ").slice(-1)[0].toLowerCase(); // e.g. "Attestation", "Acceptance", "Waiver", "Payment"
+        doc = nameOnly.results?.find((d) =>
+          d.name.toLowerCase().includes(patternKeyword) &&
+          d.name.toLowerCase().includes(customerName.toLowerCase())
+        ) ?? null;
       }
 
       results.push({

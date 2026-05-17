@@ -119,11 +119,15 @@ async function pullPandaDocs(
   let templateIds: Record<PeTemplateKey, string | null>;
   try {
     templateIds = await discoverPeTemplateIds();
-  } catch {
-    onEvent?.({ type: "pandadoc", data: { key: "all", status: "error", action: "Template discovery failed" } });
+    const found = Object.entries(templateIds).filter(([, v]) => v).length;
+    const missing = Object.entries(templateIds).filter(([, v]) => !v).map(([k]) => k);
+    onEvent?.({ type: "diagnostic", data: { message: `PandaDoc templates: ${found}/4 discovered${missing.length > 0 ? ` (missing: ${missing.join(", ")})` : ""}` } });
+  } catch (err) {
+    onEvent?.({ type: "pandadoc", data: { key: "all", status: "error", action: `Template discovery failed: ${err instanceof Error ? err.message : String(err)}` } });
     return { statuses: [], checklistOverrides, pulled };
   }
 
+  onEvent?.({ type: "diagnostic", data: { message: `PandaDoc search: dealId=${dealId}, customerName=${customerName ?? "none"}` } });
   const statuses = await findPeDocsForDeal(dealId, templateIds, customerName);
 
   for (const status of statuses) {
