@@ -17,12 +17,16 @@ const PANDADOC_BASE = "https://api.pandadoc.com/public/v1";
 // uses the [Client.LastName]/[Deal.AddressLine1] placeholder pattern.
 export const DA_TEMPLATE_ID = "SfYdCbqDPnZ52Q7wc3YaF4";
 
-// PE template patterns for document discovery
+// PE template patterns for document discovery + document name matching.
+// `pattern` is the template name as it actually appears in PandaDoc (verified
+// 2026-05-17 in the "Participate Energy Process" templates folder).
+// `docNamePrefix` is the prefix the actual DOCUMENTS use (always "PE " regardless
+// of template name) for the name-only document fallback search.
 export const PE_TEMPLATE_PATTERNS = [
-  { key: "attestation", pattern: "PE Installer Attestation" },
-  { key: "acceptance", pattern: "PE Customer Certificate of Acceptance" },
-  { key: "progress_waiver", pattern: "Progress Lien Waiver" },
-  { key: "final_waiver", pattern: "PE Conditional Waiver and Release on Final Payment" },
+  { key: "attestation", pattern: "Installer Attestation", docNamePrefix: "PE Installer Attestation" },
+  { key: "acceptance", pattern: "Customer Certificate of Acceptance", docNamePrefix: "PE Customer Certificate of Acceptance" },
+  { key: "progress_waiver", pattern: "PE Conditional Progress Lien Waiver", docNamePrefix: "PE Conditional Progress Lien Waiver" },
+  { key: "final_waiver", pattern: "Conditional Waiver and Release on Final Payment", docNamePrefix: "PE Conditional Waiver and Release on Final Payment" },
 ] as const;
 
 export type PeTemplateKey = (typeof PE_TEMPLATE_PATTERNS)[number]["key"];
@@ -372,7 +376,7 @@ export async function findPeDocsForDeal(
 ): Promise<PeTemplateStatus[]> {
   const results: PeTemplateStatus[] = [];
 
-  for (const { key, pattern } of PE_TEMPLATE_PATTERNS) {
+  for (const { key, docNamePrefix } of PE_TEMPLATE_PATTERNS) {
     const templateId = templateIds[key];
 
     try {
@@ -396,7 +400,7 @@ export async function findPeDocsForDeal(
       // metadata_hubspot.deal_id, but they DO include the customer name in the
       // document title (e.g. "PE Installer Attestation - Brownell").
       if (!doc && templateId && customerName) {
-        const nameQuery = `${pattern} - ${customerName}`;
+        const nameQuery = `${docNamePrefix} - ${customerName}`;
         const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
             template_id: templateId,
@@ -414,14 +418,14 @@ export async function findPeDocsForDeal(
       if (!doc && customerName) {
         const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
-            q: `${pattern} ${customerName}`,
+            q: `${docNamePrefix} ${customerName}`,
             count: 3,
             order_by: "-date_modified",
           },
         });
         // Verify the result name actually contains the pattern keyword
         // to avoid false positives from broad PandaDoc search
-        const patternKeyword = pattern.split(" ").slice(-1)[0].toLowerCase(); // e.g. "Attestation", "Acceptance", "Waiver", "Payment"
+        const patternKeyword = docNamePrefix.split(" ").slice(-1)[0].toLowerCase(); // "Attestation", "Acceptance", "Waiver", "Payment"
         doc = nameOnly.results?.find((d) =>
           d.name.toLowerCase().includes(patternKeyword) &&
           d.name.toLowerCase().includes(customerName.toLowerCase())

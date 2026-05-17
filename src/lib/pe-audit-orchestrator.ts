@@ -510,23 +510,32 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       onEvent?.({ type: "diagnostic", data: { message: `Found ${zuperPhotosRaw.length} install photos in Zuper` } });
     }
 
-    // Unified install-photo pool: Drive photos + Zuper photos. The triage
-    // operates on this combined pool and the assignment lookup resolves
-    // back to either source via the `key` discriminator.
-    const installPhotoPool: InstallPhoto[] = [
-      ...installPhotos
-        .filter((f) => f.mimeType.startsWith("image/"))
-        .map((f): InstallPhoto => ({
-          source: "drive",
-          key: buildDrivePhotoKey(f.id),
-          driveId: f.id,
-          name: f.name,
-          mimeType: f.mimeType,
-          modifiedTime: f.modifiedTime,
-          size: f.size,
-        })),
-      ...zuperPhotosRaw,
-    ];
+    // Install-photo pool: PREFER Zuper as the source of truth (field techs
+    // upload install pics into Zuper service-task forms). GDrive folder 5 is
+    // a downstream sync of the same photos, so using both would just trigger
+    // duplicate downloads + duplicate triage work.
+    //
+    // Fall back to Drive only if Zuper returned nothing (no Zuper jobs linked,
+    // Zuper API down, or this deal predates the Zuper-photo workflow).
+    const installPhotoPool: InstallPhoto[] = zuperPhotosRaw.length > 0
+      ? zuperPhotosRaw
+      : installPhotos
+          .filter((f) => f.mimeType.startsWith("image/"))
+          .map((f): InstallPhoto => ({
+            source: "drive",
+            key: buildDrivePhotoKey(f.id),
+            driveId: f.id,
+            name: f.name,
+            mimeType: f.mimeType,
+            modifiedTime: f.modifiedTime,
+            size: f.size,
+          }));
+
+    if (zuperPhotosRaw.length > 0 && installPhotos.length > 0) {
+      onEvent?.({ type: "diagnostic", data: { message: `Using Zuper photos (skipping ${installPhotos.length} Drive duplicates)` } });
+    } else if (zuperPhotosRaw.length === 0 && installPhotos.length > 0) {
+      onEvent?.({ type: "diagnostic", data: { message: `Falling back to Drive folder 5 (no Zuper photos found)` } });
+    }
 
     let avlContext: string | undefined;
     if (avlResult && avlResult.entries.length > 0) {
@@ -561,9 +570,8 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         // considerably (each photo adds ~3-5s of vision processing). 20 is
         // plenty since we only need 1 best photo per of ~11 PE categories.
         const toPreload = installPhotoPool.slice(0, 20);
-        const driveCount = toPreload.filter((p) => p.source === "drive").length;
-        const zuperCount = toPreload.filter((p) => p.source === "zuper").length;
-        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} photos (${driveCount} Drive + ${zuperCount} Zuper) to vision API...` } });
+        const sourceLabel = toPreload[0]?.source === "zuper" ? "Zuper" : "Drive";
+        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} ${sourceLabel} photos to vision API...` } });
         const preload0 = Date.now();
         const preloadResults = await Promise.all(
           toPreload.map(async (photo) => {
