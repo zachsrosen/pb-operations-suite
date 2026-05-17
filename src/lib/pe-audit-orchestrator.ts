@@ -22,11 +22,9 @@ import {
   type EnrichedVisionResult,
   type ClassifyOptions,
 } from "@/lib/pe-vision-classifier";
-import {
-  populateReferenceLibrary,
-  getReferenceExamples,
-  type ReferenceExample,
-} from "@/lib/pe-reference-library";
+// Reference library disabled — classification cache is per-file (not per-item),
+// so item-specific reference examples don't apply to the dedup'd workflow.
+// import { populateReferenceLibrary, getReferenceExamples, type ReferenceExample } from "@/lib/pe-reference-library";
 import { getAvl } from "@/lib/pe-avl";
 import {
   discoverPeTemplateIds,
@@ -302,59 +300,65 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       onEvent?.({ type: "diagnostic", data: { message: "Deal has no GDrive folder — all items will be missing" } });
     }
 
+    // -------------------------------------------------------------------
+    // Pre-work: run PandaDoc, photo listing, reference library, and AVL
+    // in parallel. These are all independent once we have the folder map.
+    // -------------------------------------------------------------------
+    const installFolderId = folderByPrefix.get("5");
+
+    // Extract customer last name once for PandaDoc name-based search
+    const nameParts = deal.dealName.split("|");
+    const customerName = nameParts.length >= 2 ? nameParts[1].trim().split(",")[0].trim() || undefined : undefined;
+
+    const [pandaResult, installPhotosRaw, avlResult] = await Promise.all([
+      // 1) PandaDoc pull
+      (deal.rootFolderId && process.env.PANDADOC_PE_TEMPLATES_ENABLED === "true")
+        ? findOrCreatePeFolder(deal.rootFolderId).then((peFolderId) =>
+            pullPandaDocs(dealId, peFolderId, customerName, onEvent),
+          )
+        : Promise.resolve(null),
+
+      // 2) List install photos
+      installFolderId
+        ? listDriveImagesRecursive(installFolderId, 3, 50).catch((err) => {
+            console.warn(`[pe-audit] Failed to list install photos: ${err instanceof Error ? err.message : String(err)}`);
+            onEvent?.({ type: "diagnostic", data: { message: `Failed to list install photos: ${err instanceof Error ? err.message : String(err)}` } });
+            return [] as Awaited<ReturnType<typeof listDriveImagesRecursive>>;
+          })
+        : Promise.resolve([] as Awaited<ReturnType<typeof listDriveImagesRecursive>>),
+
+      // 3) AVL
+      getAvl().catch((err) => {
+        console.warn(`[pe-audit] AVL fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      }),
+    ]);
+
     let pandadocOverrides = new Map<string, ChecklistResult>();
     let pandadocPulled = 0;
-    if (deal.rootFolderId && process.env.PANDADOC_PE_TEMPLATES_ENABLED === "true") {
-      const peFolderId = await findOrCreatePeFolder(deal.rootFolderId);
-      // Extract customer last name from deal name for PandaDoc name-based search fallback
-      // Deal name format: "PROJ-9542 | Brownell, Matt | 16578 W 55th Dr, ..."
-      const nameParts = deal.dealName.split("|");
-      const customerName = nameParts.length >= 2 ? nameParts[1].trim().split(",")[0].trim() || undefined : undefined;
-      const pandaResult = await pullPandaDocs(dealId, peFolderId, customerName, onEvent);
+    if (pandaResult) {
       pandadocOverrides = pandaResult.checklistOverrides;
       pandadocPulled = pandaResult.pulled;
     }
 
-    let installPhotos: DriveGenericFile[] = [];
-    const installFolderId = folderByPrefix.get("5");
+    const installPhotos: DriveGenericFile[] = installPhotosRaw.map((img) => ({
+      id: img.id,
+      name: img.name,
+      mimeType: img.mimeType,
+      modifiedTime: img.modifiedTime,
+      size: img.size,
+    }));
     if (installFolderId) {
-      try {
-        const images = await listDriveImagesRecursive(installFolderId, 3, 50);
-        installPhotos = images.map((img) => ({
-          id: img.id,
-          name: img.name,
-          mimeType: img.mimeType,
-          modifiedTime: img.modifiedTime,
-          size: img.size,
-        }));
-        onEvent?.({ type: "diagnostic", data: { message: `Found ${installPhotos.length} install photos in folder 5` } });
-      } catch (err) {
-        console.warn(`[pe-audit] Failed to list install photos: ${err instanceof Error ? err.message : String(err)}`);
-        onEvent?.({ type: "diagnostic", data: { message: `Failed to list install photos: ${err instanceof Error ? err.message : String(err)}` } });
-      }
+      onEvent?.({ type: "diagnostic", data: { message: `Found ${installPhotos.length} install photos in folder 5` } });
     } else {
       onEvent?.({ type: "diagnostic", data: { message: "No folder 5 (Installation) found — photos will be missing" } });
     }
 
-    let referenceExamples = new Map<string, ReferenceExample>();
     let avlContext: string | undefined;
-
-    try {
-      await populateReferenceLibrary(milestone);
-      referenceExamples = await getReferenceExamples(milestone, checklist.map((i) => i.id));
-    } catch (err) {
-      console.warn(`[pe-audit] Reference library fetch failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    try {
-      const avl = await getAvl();
-      if (avl.entries.length > 0) {
-        avlContext = avl.entries
-          .map((e) => `${e.manufacturer} ${e.model} (SKU: ${e.sku}, Category: ${e.category})`)
-          .join("\n");
-      }
-    } catch (err) {
-      console.warn(`[pe-audit] AVL fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (avlResult && avlResult.entries.length > 0) {
+      avlContext = avlResult.entries
+        .map((e) => `${e.manufacturer} ${e.model} (SKU: ${e.sku}, Category: ${e.category})`)
+        .join("\n");
     }
 
     const results: ChecklistResult[] = [];
@@ -362,10 +366,11 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     let cacheHits = 0;
 
     // Cache: classify each Drive file ONCE, reuse results across checklist items.
-    // Key = Drive file ID, Value = VisionResult from classifyDocument().
-    // This eliminates redundant downloads/uploads/API calls when multiple items
-    // share the same candidate folder (e.g. all contract items look at folder 0).
-    const docClassificationCache = new Map<string, VisionResult>();
+    // Key = Drive file ID, Value = Promise<VisionResult> (not resolved value).
+    // Using Promise ensures concurrent batch items that share the same folder
+    // (e.g. 6 contract items all look at folder 0) await the SAME in-flight
+    // classification instead of each firing their own redundant API call.
+    const docClassificationCache = new Map<string, Promise<VisionResult>>();
 
     // Pre-download + pre-upload install photos to Anthropic Files API.
     // All 12 photo items share the same candidate pool — uploading once saves
@@ -527,37 +532,36 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         }
 
         for (const candidate of candidates.slice(0, 8)) {
-          // Check classification cache before downloading/classifying
-          let vResult = docClassificationCache.get(candidate.id);
-          if (vResult) {
+          // Check classification cache — stores Promises (not resolved values)
+          // so concurrent batch items that share the same folder deduplicate
+          // instead of each firing redundant API calls.
+          let vResultPromise = docClassificationCache.get(candidate.id);
+          if (vResultPromise) {
             cacheHits++;
           } else {
-            let input = downloadCache.get(candidate.id) ?? await downloadFileForVision(candidate);
-            if (!input) {
-              console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
-              continue;
-            }
-            // Attach pre-uploaded Anthropic file ID if available
-            const cachedAnthropicId = anthropicFileIdCache.get(candidate.id);
-            if (cachedAnthropicId && !input.anthropicFileId) {
-              input = { ...input, anthropicFileId: cachedAnthropicId };
-            }
-
-            visionCallCount++;
-            const classifyOpts: ClassifyOptions = {};
-            if (avlContext) classifyOpts.avlContext = avlContext;
-            // Use item-specific reference if available
-            const docRef = referenceExamples.get(item.id);
-            if (docRef) {
-              classifyOpts.referenceFileId = docRef.anthropicFileId;
-              classifyOpts.referenceMimeType = docRef.mimeType;
-            }
-            vResult = await classifyDocument(input, checklist, classifyOpts);
-            docClassificationCache.set(candidate.id, vResult);
+            // First requester: store the Promise immediately so concurrent
+            // requesters for the same file await the same in-flight call.
+            vResultPromise = (async () => {
+              let input = downloadCache.get(candidate.id) ?? await downloadFileForVision(candidate);
+              if (!input) {
+                return { kind: "error" as const, error: `Failed to download ${candidate.name}` };
+              }
+              const cachedAnthropicId = anthropicFileIdCache.get(candidate.id);
+              if (cachedAnthropicId && !input.anthropicFileId) {
+                input = { ...input, anthropicFileId: cachedAnthropicId };
+              }
+              visionCallCount++;
+              const classifyOpts: ClassifyOptions = {};
+              if (avlContext) classifyOpts.avlContext = avlContext;
+              return classifyDocument(input, checklist, classifyOpts);
+            })();
+            docClassificationCache.set(candidate.id, vResultPromise);
           }
 
+          const vResult = await vResultPromise;
+
           if (vResult.kind === "error") {
-            console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.kind === "error" ? vResult.error : "unknown"}`);
+            console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.error}`);
             continue;
           }
           if (vResult.kind !== "document") continue;
