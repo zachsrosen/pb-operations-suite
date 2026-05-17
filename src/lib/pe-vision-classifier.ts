@@ -395,6 +395,139 @@ export async function verifyPhoto(
 }
 
 // ---------------------------------------------------------------------------
+// Batch photo triage — classify ALL photos in a single API call
+// ---------------------------------------------------------------------------
+
+export interface PhotoTriageResult {
+  /** Map from photo index → best-matching checklist ID (or null if no match) */
+  assignments: Map<number, { checklistId: string; verdict: "pass" | "fail" | "needs_review"; confidence: "high" | "medium" | "low"; issues: string[]; equipmentVisible: string[] }>;
+}
+
+/**
+ * Classify a batch of photos against all PE photo checklist items in a single
+ * Claude API call. Returns a mapping of photo index → matched checklist item.
+ *
+ * This replaces the O(items × candidates) individual verifyPhoto calls with
+ * a single O(1) call, reducing 36+ API calls to 1.
+ */
+export async function triagePhotoBatch(
+  photos: Array<{ anthropicFileId: string; fileName: string; driveFileId: string }>,
+  photoItems: ChecklistItem[],
+): Promise<PhotoTriageResult> {
+  const result: PhotoTriageResult = { assignments: new Map() };
+  if (photos.length === 0 || photoItems.length === 0) return result;
+
+  const client = getAnthropicClient();
+
+  const photoDescriptions: Record<number, string> = {
+    1: "Site address visible on the home or mailbox, showing the full front of the house",
+    2: "Wide-angle photo of the installed PV (solar panel) array on the roof",
+    3: "Close-up of a solar module nameplate label (brand, model, serial number)",
+    4: "Wide-angle showing ALL electrical equipment (inverter, disconnect, meter, conduit)",
+    5: "Main service panel (MSP/breaker panel) with cover REMOVED showing breakers",
+    6: "Invoice or Bill of Materials document",
+    7: "Inverter/microinverter/optimizer nameplate label — must be legible",
+    8: "Racking components with visible part markings (rails, clamps, flashings)",
+    9: "Wide-angle of energy storage (battery) system installation",
+    10: "Battery/storage nameplate label (brand, model, serial, capacity)",
+    11: "Storage controller, gateway, or disconnect switch",
+  };
+
+  const categoryList = photoItems
+    .map((item) => {
+      const desc = photoDescriptions[item.pePhotoNumber ?? 0] ?? item.label;
+      return `- ${item.id} (Photo ${item.pePhotoNumber}): ${desc}`;
+    })
+    .join("\n");
+
+  const prompt = `You are a photo classification system for Participate Energy (PE) milestone submissions.
+
+## Task
+I'm showing you ${photos.length} installation photos. For each photo, determine which PE photo category it best matches (if any).
+
+## PE Photo Categories
+${categoryList}
+
+## Rules
+- Each photo can match AT MOST one category
+- Each category should have AT MOST one best photo match
+- If a photo doesn't clearly match any category, skip it
+- Prefer clear, well-lit photos with legible labels over blurry ones
+- Be conservative: only assign a match if you're reasonably confident
+
+## Response Format (JSON only, no markdown)
+{
+  "assignments": [
+    {
+      "photoIndex": 0,
+      "fileName": "IMG_1234.jpg",
+      "matchedChecklistId": "m1.photos.1_site_address" | null,
+      "verdict": "pass" | "fail" | "needs_review",
+      "confidence": "high" | "medium" | "low",
+      "issues": [],
+      "equipmentVisible": []
+    }
+  ]
+}
+
+Return one entry per photo. Set matchedChecklistId to null if no category matches.`;
+
+  // Build content blocks: all photos + prompt
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contentBlocks: any[] = [];
+  for (let i = 0; i < photos.length; i++) {
+    contentBlocks.push({
+      type: "text",
+      text: `--- Photo ${i} (${photos[i].fileName}) ---`,
+    });
+    contentBlocks.push({
+      type: "image",
+      source: { type: "file", file_id: photos[i].anthropicFileId },
+    });
+  }
+  contentBlocks.push({ type: "text", text: prompt });
+
+  try {
+    const message = await client.beta.messages.create({
+      model: CLAUDE_MODELS.sonnet,
+      max_tokens: 4000,
+      messages: [{ role: "user", content: contentBlocks }],
+      betas: ["files-api-2025-04-14"],
+    });
+
+    const textBlock = message.content.find((b) => b.type === "text");
+    const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+    const jsonStr = raw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(jsonStr) as {
+      assignments: Array<{
+        photoIndex: number;
+        matchedChecklistId: string | null;
+        verdict: "pass" | "fail" | "needs_review";
+        confidence: "high" | "medium" | "low";
+        issues: string[];
+        equipmentVisible: string[];
+      }>;
+    };
+
+    for (const a of parsed.assignments) {
+      if (a.matchedChecklistId) {
+        result.assignments.set(a.photoIndex, {
+          checklistId: a.matchedChecklistId,
+          verdict: a.verdict,
+          confidence: a.confidence,
+          issues: a.issues ?? [],
+          equipmentVisible: a.equipmentVisible ?? [],
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[pe-triage] Batch photo triage failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Batch classification with concurrency control
 // ---------------------------------------------------------------------------
 
