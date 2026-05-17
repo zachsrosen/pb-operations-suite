@@ -87,7 +87,7 @@ async function getJwtToken(request: NextRequest): Promise<Record<string, unknown
 
   for (const secureCookie of attempts) {
     try {
-      const token = await getToken({ req: request, secret, secureCookie });
+      const token = await getToken({ req: request, secret, secureCookie, cookieName: "pbops.session-token" });
       if (token && typeof token === "object") {
         return token as Record<string, unknown>;
       }

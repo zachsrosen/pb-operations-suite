@@ -8,7 +8,7 @@ import type { Milestone } from "@/lib/pe-turnover";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function resolveUserDriveToken(req: NextRequest): Promise<string | null> {
+async function resolveUserDriveToken(req: NextRequest): Promise<{ token: string; source: string } | null> {
   const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
   if (!secret) return null;
 
@@ -17,17 +17,17 @@ async function resolveUserDriveToken(req: NextRequest): Promise<string | null> {
 
   for (const secureCookie of secureModes) {
     try {
-      const token = await getToken({ req, secret, secureCookie });
-      if (!token) continue;
+      const jwt = await getToken({ req, secret, secureCookie, cookieName: "pbops.session-token" });
+      if (!jwt) continue;
 
-      const accessToken = token.accessToken as string | undefined;
-      const expires = token.accessTokenExpires as number | undefined;
+      const accessToken = jwt.accessToken as string | undefined;
+      const expires = jwt.accessTokenExpires as number | undefined;
 
       if (accessToken && (expires == null || Date.now() < expires - 60_000)) {
-        return accessToken;
+        return { token: accessToken, source: "user_oauth" };
       }
 
-      const refreshToken = token.refreshToken as string | undefined;
+      const refreshToken = jwt.refreshToken as string | undefined;
       if (refreshToken) {
         const clientId = process.env.GOOGLE_CLIENT_ID;
         const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -44,7 +44,7 @@ async function resolveUserDriveToken(req: NextRequest): Promise<string | null> {
           });
           if (res.ok) {
             const data = await res.json() as { access_token?: string };
-            if (data.access_token) return data.access_token;
+            if (data.access_token) return { token: data.access_token, source: "user_oauth_refreshed" };
           }
         }
       }
@@ -71,7 +71,7 @@ export async function POST(
   const body = await req.json().catch(() => ({}));
   const milestone = (body.milestone as Milestone) || "m1";
 
-  const userDriveToken = await resolveUserDriveToken(req);
+  const userDriveResult = await resolveUserDriveToken(req);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -91,8 +91,11 @@ export async function POST(
         controller.close();
       }, 5 * 60 * 1000);
 
-      if (userDriveToken) {
-        setDriveTokenOverride(userDriveToken);
+      if (userDriveResult) {
+        setDriveTokenOverride(userDriveResult.token);
+        send({ type: "diagnostic", data: { message: `Drive auth: ${userDriveResult.source}` } });
+      } else {
+        send({ type: "diagnostic", data: { message: "Drive auth: service_account (no user token resolved)" } });
       }
 
       try {
@@ -108,7 +111,7 @@ export async function POST(
           data: { message: err instanceof Error ? err.message : String(err) },
         });
       } finally {
-        setDriveTokenOverride(null);
+        if (userDriveResult) setDriveTokenOverride(null);
         clearTimeout(timeout);
         controller.close();
       }
