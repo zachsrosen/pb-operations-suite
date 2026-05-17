@@ -116,28 +116,36 @@ async function zuperFetch(path: string, init?: RequestInit): Promise<Response> {
 
 /**
  * Create a new Zuper Property. Returns the created property UID.
+ * Optionally associates the property with a Zuper customer.
  */
 export async function createZuperProperty(
   address: { street: string; city: string; state: string; zip: string },
   customFields: ZuperMetaDataEntry[],
+  customerUid?: string | null,
 ): Promise<string> {
   const propertyName = `${address.street}, ${address.city}, ${address.state} ${address.zip}`;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const propertyPayload: Record<string, any> = {
+    property_name: propertyName,
+    property_address: {
+      street: address.street,
+      city: address.city,
+      state: address.state,
+      zip_code: address.zip,
+      country: "US",
+    },
+    custom_fields: customFields,
+  };
+
+  // Zuper uses { customer: "<uid>" } format inside property_customers array
+  if (customerUid) {
+    propertyPayload.property_customers = [{ customer: customerUid }];
+  }
+
   const res = await zuperFetch("/property", {
     method: "POST",
-    body: JSON.stringify({
-      property: {
-        property_name: propertyName,
-        property_address: {
-          street: address.street,
-          city: address.city,
-          state: address.state,
-          zip_code: address.zip,
-          country: "US",
-        },
-        custom_fields: customFields,
-      },
-    }),
+    body: JSON.stringify({ property: propertyPayload }),
   });
 
   const data = await res.json();
@@ -149,27 +157,42 @@ export async function createZuperProperty(
 /**
  * Update an existing Zuper Property's custom fields using read-merge-write.
  * This preserves any fields we don't manage (e.g. manually added by techs).
+ * Optionally associates the property with a Zuper customer if not already linked.
  */
 export async function updateZuperProperty(
   zuperPropertyUid: string,
   newFields: ZuperMetaDataEntry[],
+  customerUid?: string | null,
 ): Promise<void> {
   // 1. Read existing fields
   const readRes = await zuperFetch(`/property/${zuperPropertyUid}`);
   const readData = await readRes.json();
-  const existingFields = readData?.data?.custom_fields ?? readData?.data?.property?.custom_fields ?? [];
+  const existingProperty = readData?.data ?? {};
+  const existingFields = existingProperty.custom_fields ?? existingProperty.property?.custom_fields ?? [];
 
   // 2. Merge (preserves fields we don't own, updates ours)
   const merged = mergeZuperMetaData(existingFields, newFields);
 
-  // 3. Write full array back
+  // 3. Build update payload
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const updatePayload: Record<string, any> = { custom_fields: merged };
+
+  // Add customer if provided and not already associated
+  if (customerUid) {
+    const existingCustomers: Array<{ customer_uid?: string }> = existingProperty.property_customers ?? [];
+    const alreadyLinked = existingCustomers.some((c) => c.customer_uid === customerUid);
+    if (!alreadyLinked) {
+      updatePayload.property_customers = [
+        ...existingCustomers.map((c) => ({ customer: c.customer_uid })),
+        { customer: customerUid },
+      ];
+    }
+  }
+
+  // 4. Write back
   await zuperFetch(`/property/${zuperPropertyUid}`, {
     method: "PUT",
-    body: JSON.stringify({
-      property: {
-        custom_fields: merged,
-      },
-    }),
+    body: JSON.stringify({ property: updatePayload }),
   });
 }
 
@@ -215,6 +238,21 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     utilityName: property.utilityName,
   });
 
+  // Resolve customer UID from linked jobs (use the first job's customer)
+  let customerUid: string | null = null;
+  const dealIds = property.dealLinks.map((l) => l.dealId);
+  if (dealIds.length > 0) {
+    const jobWithCustomer = await prisma.zuperJobCache.findFirst({
+      where: { hubspotDealId: { in: dealIds } },
+      select: { rawData: true },
+    });
+    if (jobWithCustomer?.rawData) {
+      const raw = jobWithCustomer.rawData as Record<string, unknown>;
+      const customer = raw.customer as Record<string, unknown> | undefined;
+      customerUid = (customer?.customer_uid as string) ?? null;
+    }
+  }
+
   let zuperPropertyUid = property.zuperPropertyUid;
   let action: "created" | "updated" | "skipped";
 
@@ -228,11 +266,12 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
         zip: property.zip,
       },
       fields,
+      customerUid,
     );
     action = "created";
   } else {
     // Update existing
-    await updateZuperProperty(zuperPropertyUid, fields);
+    await updateZuperProperty(zuperPropertyUid, fields, customerUid);
     action = "updated";
   }
 
@@ -247,7 +286,6 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
   });
 
   // Link unlinked jobs (cap at 10 per sync to stay within time budget)
-  const dealIds = property.dealLinks.map((l) => l.dealId);
   let jobsLinked = 0;
 
   if (dealIds.length > 0) {
