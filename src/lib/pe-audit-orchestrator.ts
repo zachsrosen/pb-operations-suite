@@ -17,6 +17,7 @@ import {
   verifyPhoto,
   visionResultToEnriched,
   type VisionFileInput,
+  type VisionResult,
   type ClassifyOptions,
 } from "@/lib/pe-vision-classifier";
 import {
@@ -351,6 +352,13 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
     const results: ChecklistResult[] = [];
     let visionCallCount = 0;
+    let cacheHits = 0;
+
+    // Cache: classify each Drive file ONCE, reuse results across checklist items.
+    // Key = Drive file ID, Value = VisionResult from classifyDocument().
+    // This eliminates redundant downloads/uploads/API calls when multiple items
+    // share the same candidate folder (e.g. all contract items look at folder 0).
+    const docClassificationCache = new Map<string, VisionResult>();
 
     const BATCH_SIZE = 5;
     for (let i = 0; i < checklist.length; i += BATCH_SIZE) {
@@ -431,24 +439,32 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         }
 
         for (const candidate of candidates.slice(0, 8)) {
-          const input = await downloadFileForVision(candidate);
-          if (!input) {
-            console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
-            continue;
-          }
+          // Check classification cache before downloading/classifying
+          let vResult = docClassificationCache.get(candidate.id);
+          if (vResult) {
+            cacheHits++;
+          } else {
+            const input = await downloadFileForVision(candidate);
+            if (!input) {
+              console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
+              continue;
+            }
 
-          visionCallCount++;
-          const docRef = referenceExamples.get(item.id);
-          const classifyOpts: ClassifyOptions = {};
-          if (docRef) {
-            classifyOpts.referenceFileId = docRef.anthropicFileId;
-            classifyOpts.referenceMimeType = docRef.mimeType;
+            visionCallCount++;
+            const classifyOpts: ClassifyOptions = {};
+            if (avlContext) classifyOpts.avlContext = avlContext;
+            // Use item-specific reference if available
+            const docRef = referenceExamples.get(item.id);
+            if (docRef) {
+              classifyOpts.referenceFileId = docRef.anthropicFileId;
+              classifyOpts.referenceMimeType = docRef.mimeType;
+            }
+            vResult = await classifyDocument(input, checklist, classifyOpts);
+            docClassificationCache.set(candidate.id, vResult);
           }
-          if (avlContext) classifyOpts.avlContext = avlContext;
-          const vResult = await classifyDocument(input, checklist, classifyOpts);
 
           if (vResult.kind === "error") {
-            console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.error}`);
+            console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.kind === "error" ? vResult.error : "unknown"}`);
             continue;
           }
           if (vResult.kind !== "document") continue;
@@ -498,7 +514,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
     const resolved = resolveCombinedFiles(results);
 
-    console.log(`[pe-audit] Complete: ${visionCallCount} vision calls, ${pandadocPulled} PandaDocs pulled, ${resolved.filter(r => r.status === "found").length} found, ${resolved.filter(r => r.status === "missing").length} missing`);
+    console.log(`[pe-audit] Complete: ${visionCallCount} vision calls (${cacheHits} cache hits), ${pandadocPulled} PandaDocs pulled, ${resolved.filter(r => r.status === "found").length} found, ${resolved.filter(r => r.status === "missing").length} missing`);
 
     const peStatus = milestone === "m1" ? deal.peM1Status : deal.peM2Status;
     const auditResult = buildAuditResult({
