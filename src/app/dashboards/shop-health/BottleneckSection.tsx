@@ -6,7 +6,7 @@ import {
   BOTTLENECK_DIAGNOSTICS,
   type ShopHealthBottleneckEntry,
 } from '@/lib/shop-health-types';
-import { getWeekStart } from '@/lib/shop-health';
+import { getWeekStart } from '@/lib/shop-health-utils';
 
 interface BottleneckSectionProps {
   location: string;

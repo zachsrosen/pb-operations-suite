@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import DashboardShell from '@/components/DashboardShell';
 import { useSSE } from '@/hooks/useSSE';
 import { useShopHealthData } from '@/hooks/useShopHealthData';
-import { getWeekStart, formatWeekParam } from '@/lib/shop-health';
+import { getWeekStart, formatWeekParam } from '@/lib/shop-health-utils';
 import { DASHBOARD_LOCATION_GROUPS } from '@/lib/dashboard-location-groups';
 
 import { WeekSelector } from './WeekSelector';
