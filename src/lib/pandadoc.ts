@@ -322,11 +322,23 @@ export function pickLatestDocPerDeal(
 }
 
 /**
- * Search PandaDoc for PE template IDs by name pattern.
- * Falls back to env vars if search returns ambiguous results.
+ * Parse a comma-separated env var value into a trimmed, non-empty string list.
+ * Used so each PANDADOC_PE_*_TEMPLATE_ID env var can hold MULTIPLE template
+ * IDs (e.g., when PandaDoc has duplicate "Old" copies of the same template
+ * that some historical docs were created from).
  */
-export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, string | null>> {
-  const result: Record<string, string | null> = {};
+function parseTemplateIdEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Discover PE template IDs. Each key returns a list (possibly empty) of
+ * template IDs to try. Env vars accept comma-separated values so multiple
+ * historical templates can be tried for the same checklist category.
+ */
+export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, string[]>> {
+  const result: Record<string, string[]> = {};
 
   const envOverrides: Record<PeTemplateKey, string | undefined> = {
     attestation: process.env.PANDADOC_PE_ATTESTATION_TEMPLATE_ID,
@@ -336,8 +348,9 @@ export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, str
   };
 
   for (const { key, pattern } of PE_TEMPLATE_PATTERNS) {
-    if (envOverrides[key]) {
-      result[key] = envOverrides[key]!;
+    const envList = parseTemplateIdEnv(envOverrides[key]);
+    if (envList.length > 0) {
+      result[key] = envList;
       continue;
     }
 
@@ -347,44 +360,53 @@ export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, str
       });
 
       if (data.results?.length === 1) {
-        result[key] = data.results[0].id;
+        result[key] = [data.results[0].id];
       } else if (data.results?.length > 1) {
         // Ambiguous — prefer exact name match
         const exact = data.results.find((t) =>
           t.name.toLowerCase() === pattern.toLowerCase()
         );
-        result[key] = exact?.id ?? null;
+        result[key] = exact ? [exact.id] : [];
       } else {
-        result[key] = null;
+        result[key] = [];
       }
     } catch {
-      result[key] = null;
+      result[key] = [];
     }
   }
 
-  return result as Record<PeTemplateKey, string | null>;
+  return result as Record<PeTemplateKey, string[]>;
 }
 
 /**
  * Find the most recent PandaDoc document for each PE template, linked to a deal.
+ * Each template key can have multiple template IDs (e.g. duplicate "Old"
+ * copies). Tries each template ID against strategies 1, 2, and 4; strategy 3
+ * is template-independent and runs once per key.
  */
 export async function findPeDocsForDeal(
   dealId: string,
-  templateIds: Record<PeTemplateKey, string | null>,
+  templateIds: Record<PeTemplateKey, string[]>,
   /** Customer last name for fallback name-based search (e.g. "Brownell") */
   customerName?: string,
 ): Promise<PeTemplateStatus[]> {
   const results: PeTemplateStatus[] = [];
 
   for (const { key, docNamePrefix } of PE_TEMPLATE_PATTERNS) {
-    const templateId = templateIds[key];
+    const ids = templateIds[key] ?? [];
 
     try {
       let doc: PandaDocListItem | null = null;
       let matchedVia: string = "none";
+      let matchedTemplateId: string | null = null;
 
-      // Strategy 1: Search by template ID + HubSpot deal metadata
-      if (templateId) {
+      // Strategy 1: Search by template ID + HubSpot deal metadata.
+      // Iterate each known template ID until one returns a match.
+      if (ids.length === 0) {
+        console.warn(`[pe-pandadoc] ${key}/strategy1 SKIPPED (no templateIds)`);
+      }
+      for (const templateId of ids) {
+        if (doc) break;
         const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
             template_id: templateId,
@@ -395,42 +417,47 @@ export async function findPeDocsForDeal(
         });
         const count = data.results?.length ?? 0;
         console.warn(`[pe-pandadoc] ${key}/strategy1(template+meta): ${count} results for tpl=${templateId.slice(0, 10)} deal=${dealId}`);
-        doc = data.results?.[0] ?? null;
-        if (doc) matchedVia = "template+metadata";
-      } else {
-        console.warn(`[pe-pandadoc] ${key}/strategy1 SKIPPED (no templateId)`);
+        if (data.results?.[0]) {
+          doc = data.results[0];
+          matchedVia = "template+metadata";
+          matchedTemplateId = templateId;
+        }
       }
 
       // Strategy 2: template ID + document name containing customer name.
-      // Docs created via HubSpot's native PandaDoc CRM card don't always set
-      // metadata_hubspot.deal_id, but they DO include the customer name in the
-      // document title (e.g. "PE Installer Attestation - Brownell").
-      if (!doc && templateId && customerName) {
+      if (!doc && customerName) {
         const nameQuery = `${docNamePrefix} - ${customerName}`;
-        const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-          searchParams: {
-            template_id: templateId,
-            q: nameQuery,
-            count: 3,
-            order_by: "-date_modified",
-          },
-        });
-        const count = fallback.results?.length ?? 0;
-        const names = (fallback.results ?? []).map((d) => `"${d.name}"`).join(", ");
-        console.warn(`[pe-pandadoc] ${key}/strategy2(template+name): ${count} results for q="${nameQuery}" tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
-        doc = fallback.results?.[0] ?? null;
-        if (doc) matchedVia = "template+name";
+        for (const templateId of ids) {
+          if (doc) break;
+          const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+            searchParams: {
+              template_id: templateId,
+              q: nameQuery,
+              count: 3,
+              order_by: "-date_modified",
+            },
+          });
+          const count = fallback.results?.length ?? 0;
+          const names = (fallback.results ?? []).map((d) => `"${d.name}"`).join(", ");
+          console.warn(`[pe-pandadoc] ${key}/strategy2(template+name): ${count} results for q="${nameQuery}" tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
+          if (fallback.results?.[0]) {
+            doc = fallback.results[0];
+            matchedVia = "template+name";
+            matchedTemplateId = templateId;
+          }
+        }
       }
 
-      // Strategy 3: Name-only search using JUST the docNamePrefix.
-      // PandaDoc's q= can be picky about punctuation/whitespace in title
-      // matches. Search by prefix alone, then filter results client-side
-      // for the customer name. Returns more candidates, more permissive.
+      // Strategy 3: Name-only search using JUST the docNamePrefix (template-independent).
+      // PandaDoc's q= can be picky about punctuation/whitespace in title matches.
+      // Search by prefix alone, then filter results client-side for the customer name.
+      // count=100: PE templates can have 60+ docs each; lower caps miss older deals
+      // (verified against Brownell — at count=20, Brownell was below the cutoff).
       if (!doc) {
         const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
             q: docNamePrefix,
-            count: 20,
+            count: 100,
             order_by: "-date_modified",
           },
         });
@@ -438,40 +465,47 @@ export async function findPeDocsForDeal(
         const names = (nameOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
         console.warn(`[pe-pandadoc] ${key}/strategy3(prefix-only): ${count} results for q="${docNamePrefix}" → ${names || "(none)"}`);
         if (customerName) {
-          // Match results where the document title contains the customer last name
           doc = nameOnly.results?.find((d) =>
             d.name.toLowerCase().includes(customerName.toLowerCase())
           ) ?? null;
-          if (doc) matchedVia = "prefix+customer-filter";
+          if (doc) {
+            matchedVia = "prefix+customer-filter";
+            matchedTemplateId = doc.template_id ?? null;
+          }
         }
       }
 
-      // Strategy 4: Template-ID-only search, paginated client-side filter.
-      // Last-resort if PandaDoc's q= search isn't finding the doc at all
-      // (e.g. quirks with punctuation or workspace indexing). Pulls recent
-      // docs from this template and looks for the customer name.
-      if (!doc && templateId && customerName) {
-        const tplOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-          searchParams: {
-            template_id: templateId,
-            count: 50,
-            order_by: "-date_modified",
-          },
-        });
-        const count = tplOnly.results?.length ?? 0;
-        const names = (tplOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
-        console.warn(`[pe-pandadoc] ${key}/strategy4(template-only): ${count} results for tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
-        doc = tplOnly.results?.find((d) =>
-          d.name.toLowerCase().includes(customerName.toLowerCase())
-        ) ?? null;
-        if (doc) matchedVia = "template-only+customer-filter";
+      // Strategy 4: Template-ID-only sweep + client-side customer-name filter.
+      // Last-resort. Iterates each known template ID.
+      if (!doc && customerName) {
+        for (const templateId of ids) {
+          if (doc) break;
+          const tplOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+            searchParams: {
+              template_id: templateId,
+              count: 50,
+              order_by: "-date_modified",
+            },
+          });
+          const count = tplOnly.results?.length ?? 0;
+          const names = (tplOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
+          console.warn(`[pe-pandadoc] ${key}/strategy4(template-only): ${count} results for tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
+          const match = tplOnly.results?.find((d) =>
+            d.name.toLowerCase().includes(customerName.toLowerCase())
+          );
+          if (match) {
+            doc = match;
+            matchedVia = "template-only+customer-filter";
+            matchedTemplateId = templateId;
+          }
+        }
       }
 
-      console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} → "${doc.name}" (${doc.status})` : "NO MATCH (all 4 strategies returned empty/filtered)"}`);
+      console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} (tpl=${matchedTemplateId?.slice(0, 10)}) → "${doc.name}" (${doc.status})` : "NO MATCH (all 4 strategies returned empty/filtered)"}`);
 
       results.push({
         key,
-        templateId,
+        templateId: matchedTemplateId ?? ids[0] ?? null,
         document: doc ? {
           id: doc.id,
           name: doc.name,
@@ -481,7 +515,7 @@ export async function findPeDocsForDeal(
       });
     } catch (err) {
       console.warn(`[pe-pandadoc] ${key} fetch threw: ${err instanceof Error ? err.message : String(err)}`);
-      results.push({ key, templateId, document: null });
+      results.push({ key, templateId: ids[0] ?? null, document: null });
     }
   }
 
