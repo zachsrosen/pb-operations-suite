@@ -275,6 +275,30 @@ ${referenceNote}
 }
 
 // ---------------------------------------------------------------------------
+// Post-processing — mutual exclusion rules
+// ---------------------------------------------------------------------------
+
+/** IDs that indicate a contract package (CA + IO + Disclosures combined PDF). */
+const CONTRACT_PACKAGE_IDS = new Set([
+  "m1.contract.customer_agreement",
+  "m1.contract.installation_order",
+  "m1.contract.disclosures",
+]);
+
+/**
+ * Sanitize matchedChecklistIds to remove known false positives.
+ * A contract package (containing CA/IO/Disclosures) is NOT a standalone
+ * sales proposal — if both are present, drop the proposal match.
+ */
+function sanitizeMatchedIds(ids: string[]): string[] {
+  const hasContractPackage = ids.some((id) => CONTRACT_PACKAGE_IDS.has(id));
+  if (hasContractPackage) {
+    return ids.filter((id) => id !== "m1.contract.proposal");
+  }
+  return ids;
+}
+
+// ---------------------------------------------------------------------------
 // Classification functions
 // ---------------------------------------------------------------------------
 
@@ -322,6 +346,9 @@ export async function classifyDocument(
     const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
     const jsonStr = raw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(jsonStr) as VisionClassification;
+
+    // Apply mutual exclusion rules (e.g. contract package ≠ proposal)
+    parsed.matchedChecklistIds = sanitizeMatchedIds(parsed.matchedChecklistIds);
 
     return { kind: "document", classification: parsed };
   } catch (err) {
