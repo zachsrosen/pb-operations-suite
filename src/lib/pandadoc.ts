@@ -422,32 +422,52 @@ export async function findPeDocsForDeal(
         if (doc) matchedVia = "template+name";
       }
 
-      // Strategy 3: Name-only search (no template constraint).
-      // Catches docs when template discovery failed (null templateId),
-      // templates were renamed, or docs were created without templates.
-      if (!doc && customerName) {
-        const nameOnlyQ = `${docNamePrefix} ${customerName}`;
+      // Strategy 3: Name-only search using JUST the docNamePrefix.
+      // PandaDoc's q= can be picky about punctuation/whitespace in title
+      // matches. Search by prefix alone, then filter results client-side
+      // for the customer name. Returns more candidates, more permissive.
+      if (!doc) {
         const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
-            q: nameOnlyQ,
-            count: 3,
+            q: docNamePrefix,
+            count: 20,
             order_by: "-date_modified",
           },
         });
         const count = nameOnly.results?.length ?? 0;
-        const names = (nameOnly.results ?? []).map((d) => `"${d.name}"`).join(", ");
-        console.warn(`[pe-pandadoc] ${key}/strategy3(name-only): ${count} results for q="${nameOnlyQ}" → ${names || "(none)"}`);
-        // Verify the result name actually contains the pattern keyword
-        // to avoid false positives from broad PandaDoc search
-        const patternKeyword = docNamePrefix.split(" ").slice(-1)[0].toLowerCase(); // "Attestation", "Acceptance", "Waiver", "Payment"
-        doc = nameOnly.results?.find((d) =>
-          d.name.toLowerCase().includes(patternKeyword) &&
-          d.name.toLowerCase().includes(customerName.toLowerCase())
-        ) ?? null;
-        if (doc) matchedVia = "name-only";
+        const names = (nameOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
+        console.warn(`[pe-pandadoc] ${key}/strategy3(prefix-only): ${count} results for q="${docNamePrefix}" → ${names || "(none)"}`);
+        if (customerName) {
+          // Match results where the document title contains the customer last name
+          doc = nameOnly.results?.find((d) =>
+            d.name.toLowerCase().includes(customerName.toLowerCase())
+          ) ?? null;
+          if (doc) matchedVia = "prefix+customer-filter";
+        }
       }
 
-      console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} → "${doc.name}" (${doc.status})` : "NO MATCH (all strategies returned empty/filtered)"}`);
+      // Strategy 4: Template-ID-only search, paginated client-side filter.
+      // Last-resort if PandaDoc's q= search isn't finding the doc at all
+      // (e.g. quirks with punctuation or workspace indexing). Pulls recent
+      // docs from this template and looks for the customer name.
+      if (!doc && templateId && customerName) {
+        const tplOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+          searchParams: {
+            template_id: templateId,
+            count: 50,
+            order_by: "-date_modified",
+          },
+        });
+        const count = tplOnly.results?.length ?? 0;
+        const names = (tplOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
+        console.warn(`[pe-pandadoc] ${key}/strategy4(template-only): ${count} results for tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
+        doc = tplOnly.results?.find((d) =>
+          d.name.toLowerCase().includes(customerName.toLowerCase())
+        ) ?? null;
+        if (doc) matchedVia = "template-only+customer-filter";
+      }
+
+      console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} → "${doc.name}" (${doc.status})` : "NO MATCH (all 4 strategies returned empty/filtered)"}`);
 
       results.push({
         key,
