@@ -380,16 +380,19 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     }
   }
 
-  // Link related Zuper projects to the property (deduped, cap at 5)
-  for (const projUid of [...linkedProjectUids].slice(0, 5)) {
-    try {
-      await linkProjectToProperty(projUid, zuperPropertyUid);
-      projectsLinked++;
-      await sleep(INTER_OP_DELAY_MS);
-    } catch (err) {
-      console.warn(`[zuper-property-sync] Failed to link project ${projUid}:`, err);
-    }
-  }
+  // NOTE: Project linking is DISABLED. Zuper has internal workflows (e.g. "Update Team - SLO")
+  // that trigger when a property is added to a project, causing mass team reassignment
+  // notifications. Until those Zuper workflows are adjusted, we skip project linking.
+  // The linkProjectToProperty() function is still exported for manual/selective use.
+  // for (const projUid of [...linkedProjectUids].slice(0, 5)) {
+  //   try {
+  //     await linkProjectToProperty(projUid, zuperPropertyUid);
+  //     projectsLinked++;
+  //     await sleep(INTER_OP_DELAY_MS);
+  //   } catch (err) {
+  //     console.warn(`[zuper-property-sync] Failed to link project ${projUid}:`, err);
+  //   }
+  // }
 
   return { propertyId: propertyCacheId, zuperPropertyUid, action, jobsLinked, projectsLinked };
 }
