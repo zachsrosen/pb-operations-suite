@@ -12,6 +12,7 @@ export interface VisionClassification {
   issues: string[];
   signatures: { present: boolean; count: number; allSigned: boolean };
   dateRelevance?: { date: string; isExpired: boolean; expiresIn?: number };
+  equipmentFound?: string[];
 }
 
 export interface PhotoVerification {
@@ -93,14 +94,19 @@ const PE_DOCUMENT_DESCRIPTIONS: Record<string, string> = {
   // --- Design ---
   "m1.design.planset":
     "The final engineering plan set / design package. " +
-    "Multi-page technical drawings: site plan, electrical single-line diagram, structural details, equipment schedule. " +
+    "Multi-page technical drawings that MUST include: site plan showing panel layout on roof, " +
+    "electrical single-line diagram showing inverter/panel/meter connections, structural attachment details, " +
+    "and an equipment schedule listing specific module brand/model/wattage, inverter brand/model, and racking type. " +
+    "PE will reject incomplete plan sets — all four sections (site plan, single-line, structural, equipment schedule) must be present. " +
     "NOT a proposal, contract, or inspection card.",
 
   // --- Admin ---
   "m1.admin.commissioning":
-    "Screenshot or PDF proving the monitoring system is online and accessible to the homeowner. " +
-    "From Enphase Enlighten, SolarEdge monitoring portal, Tesla app, etc. Shows system production data. " +
-    "NOT a nameplate photo, invoice, or equipment spec sheet.",
+    "Screenshot or PDF proving the monitoring system is ONLINE and the homeowner has access. " +
+    "Must show ACTUAL production data or live system status from a monitoring platform " +
+    "(Enphase Enlighten, SolarEdge monitoring portal, Tesla app, Generac PWRview, etc.). " +
+    "A login page alone is NOT sufficient — must show the system is producing power or has production history. " +
+    "NOT a nameplate photo, invoice, equipment spec sheet, or installation manual.",
   "m1.admin.hoa":
     "HOA (Homeowners Association) approval letter for the solar installation. " +
     "NOT a permit, inspection card, or contract.",
@@ -172,9 +178,8 @@ function buildDocumentPrompt(
     .join("\n");
 
   const sections: string[] = [
-    `You are a document classification system for Participate Energy (PE) milestone submissions in the solar industry.
-
-Analyze this document and classify it against the PE checklist. Return a JSON object.
+    `You are a document verification system for Participate Energy (PE) milestone submissions in the solar industry.
+Your job is to CLASSIFY this document AND deeply verify it meets PE's quality standards.
 Be CONSERVATIVE — only match a checklist ID if the document genuinely IS that type. When in doubt, return an empty matchedChecklistIds array rather than a wrong match.`,
   ];
 
@@ -200,6 +205,49 @@ Flag any equipment NOT on this list as an "avl_mismatch" issue.
 ${options.avlContext}`);
   }
 
+  sections.push(`## PE-Specific Verification Requirements
+
+**For Plan Sets (m1.design.planset):**
+- Must contain: site plan, electrical single-line diagram, structural details, equipment schedule
+- Equipment schedule must list specific module brand/model/wattage, inverter brand/model, racking type
+- If equipment is identifiable, extract and report: module (brand + model + wattage), inverter (brand + model), battery (brand + model + kWh) if applicable
+- Flag if plan set appears incomplete (missing single-line, missing equipment schedule, missing structural)
+
+**For Proposals (m1.contract.proposal):**
+- Must show system size (kW DC), equipment list, pricing, and production estimates
+- Extract equipment listed: module brand/model/qty, inverter brand/model/qty, battery if applicable
+- Flag if the proposal is unsigned or missing customer acknowledgment
+
+**For Utility Bills (m1.contract.utility_bill):**
+- Must show 12 months of usage history OR a recent billing period
+- Bill date must be within 12 months of today (${new Date().toISOString().slice(0, 10)})
+- Flag if bill is older than 12 months, if usage data is obscured, or if customer name/address is not visible
+
+**For Commissioning Proof (m1.admin.commissioning):**
+- Must be a screenshot showing the monitoring platform is ONLINE and the homeowner has access
+- Acceptable platforms: Enphase Enlighten, SolarEdge, Tesla, Generac PWRview, etc.
+- Must show actual production data or system status (not just a login page)
+- Flag if it's just a spec sheet, equipment photo, or login screen without production data
+
+**For AHJ Permits (m1.inspection.ahj_permit):**
+- Must show inspector signature or "APPROVED"/"PASSED" stamp
+- Must be the FINAL inspection (not a rough/framing inspection)
+- Flag if unsigned, if it's an application (not result), or if inspection type is not "final"
+
+**For Contracts (customer_agreement, installation_order, disclosures):**
+- All signature fields must be signed by both parties (customer + installer)
+- Customer name and property address must be visible
+- Flag any missing signatures, missing initials, or blank signature fields
+
+**For PTO Letters (m2.pto.pto_letter):**
+- Must explicitly authorize the system to operate and export power
+- Must be from the utility company (not from the installer)
+- Flag if it's an application or acknowledgment rather than actual permission
+
+**For Interconnection Agreements (m2.pto.interconnection):**
+- Must be signed by both utility and customer/installer
+- Flag if only one party has signed`);
+
   const instructions = [
     "1. Identify what type of document this is (contract, proposal, utility bill, permit, lien waiver, etc.)",
     "2. Match it to one or more checklist IDs from the list above. A single PDF may contain multiple documents (e.g. a contract package containing Customer Agreement + Installation Order + Disclosures).",
@@ -207,10 +255,12 @@ ${options.avlContext}`);
     "4. If the document doesn't clearly match any checklist item, return an EMPTY matchedChecklistIds array. A wrong match is worse than no match.",
     "5. Check for signatures — are they present? How many? Are all required signature fields signed?",
     "6. Check for date relevance — utility bills should be within 12 months, permits should not be expired.",
-    "7. Flag any issues (unsigned, expired, wrong document type, poor quality, etc.)",
+    "7. Apply the PE-specific verification requirements above for the matched document type.",
+    "8. Extract any visible equipment info (brand, model, wattage/capacity) into the equipmentFound field.",
+    "9. Flag ALL issues — PE reviewers will reject submissions for: missing signatures, expired dates, incomplete plan sets, illegible text, wrong document types, name/address mismatches, and missing equipment details.",
   ];
   if (options?.avlContext) {
-    instructions.push("8. If equipment is identifiable, verify it appears on the AVL. Flag mismatches.");
+    instructions.push("10. If equipment is identifiable, verify it appears on the AVL. Flag mismatches.");
   }
   sections.push(`## Instructions\n${instructions.join("\n")}`);
 
@@ -219,9 +269,10 @@ ${options.avlContext}`);
   "matchedChecklistIds": ["m1.contract.customer_agreement"] or [] if no match,
   "confidence": "high" | "medium" | "low",
   "documentType": "Customer Agreement",
-  "issues": ["Missing signature on page 2"],
+  "issues": ["Missing signature on page 2", "Customer address not visible"],
   "signatures": { "present": true, "count": 2, "allSigned": false },
-  "dateRelevance": { "date": "2025-11-15", "isExpired": false, "expiresIn": 180 } or null
+  "dateRelevance": { "date": "2025-11-15", "isExpired": false, "expiresIn": 180 } or null,
+  "equipmentFound": ["REC Alpha Pure-R 430W", "Enphase IQ8+"] or []
 }`);
 
   return sections.join("\n\n");
@@ -231,21 +282,66 @@ function buildPhotoPrompt(
   item: ChecklistItem,
   options?: { hasReference?: boolean },
 ): string {
-  const photoDescriptions: Record<number, string> = {
-    1: "Site address visible on the home or mailbox, showing the full front of the house",
-    2: "Wide-angle photo of the installed PV (solar panel) array on the roof, showing the full array from a distance",
-    3: "Close-up of a solar module nameplate label, text must be legible (brand, model, serial number, specs)",
-    4: "Wide-angle photo showing ALL electrical equipment (inverter, disconnect, meter, conduit runs)",
-    5: "Main service panel (MSP/breaker panel) with the cover REMOVED, showing breakers and wiring",
-    6: "Invoice or Bill of Materials document — must be an actual invoice, not a spreadsheet screenshot",
-    7: "Inverter, microinverter, or optimizer nameplate/model label — must be legible",
-    8: "Racking components with visible part markings (rails, clamps, flashings with brand/model visible)",
-    9: "Wide-angle photo of the energy storage (battery) system installation",
-    10: "Battery/storage nameplate label — must show brand, model, serial number, capacity specs",
-    11: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
+  const photoReqs: Record<number, { description: string; passReqs: string; failReqs: string }> = {
+    1: {
+      description: "Site address visible on the home or mailbox, showing the full front of the house",
+      passReqs: "Street number clearly legible, house/building fully visible in frame",
+      failReqs: "Address not readable, only partial house shown, wrong location",
+    },
+    2: {
+      description: "Wide-angle photo of the installed PV (solar panel) array on the roof",
+      passReqs: "ENTIRE array visible in frame from sufficient distance, all panels accounted for",
+      failReqs: "Array cut off at edges, only partial array visible, too close (just a few panels)",
+    },
+    3: {
+      description: "Close-up of a solar module nameplate label — brand, model, serial number, and specs must be LEGIBLE",
+      passReqs: "Brand name readable, model number readable, serial number readable, wattage readable. Report exact values.",
+      failReqs: "Label blurry or illegible, too far away, glare obscures text, label partially covered",
+    },
+    4: {
+      description: "Wide-angle photo showing ALL electrical equipment (inverter, disconnect, meter, conduit runs)",
+      passReqs: "Inverter visible, AC disconnect visible, meter visible, conduit runs visible — all in one frame",
+      failReqs: "Only one component shown, major equipment out of frame, too close for full view",
+    },
+    5: {
+      description: "Main service panel (MSP/breaker panel) with the dead-front cover REMOVED, showing breakers and wiring",
+      passReqs: "Panel OPEN with dead-front cover removed, individual breakers visible, wiring visible, solar/backfeed breaker identifiable",
+      failReqs: "Panel cover still ON (only exterior visible), panel door closed, shows sub-panel not MSP. This is the #1 PE rejection.",
+    },
+    6: {
+      description: "Invoice or Bill of Materials (BOM) document showing equipment purchased",
+      passReqs: "Invoice/BOM visible, equipment line items readable (brand, model, qty), vendor info present",
+      failReqs: "Just a spreadsheet screenshot, text illegible, proposal not invoice, no vendor info",
+    },
+    7: {
+      description: "Inverter/microinverter/optimizer nameplate label — must be LEGIBLE",
+      passReqs: "Brand readable, model number readable, serial readable, electrical ratings visible. Report exact values.",
+      failReqs: "Label blurry/illegible, too far away, glare/shadow obscures label",
+    },
+    8: {
+      description: "Racking components with visible part markings (rails, clamps, flashings with brand/model visible)",
+      passReqs: "Racking brand identifiable from markings/labels, part numbers visible if stamped. Report brand and parts.",
+      failReqs: "No markings visible, generic metal with no identification, racking not the subject",
+    },
+    9: {
+      description: "Wide-angle photo of the energy storage (battery) system installation",
+      passReqs: "Full battery system visible including mounting, associated electrical equipment visible, installation context clear",
+      failReqs: "Battery partially cut off, too close, battery not the subject of photo",
+    },
+    10: {
+      description: "Battery/storage nameplate label — brand, model, serial number, capacity specs must be LEGIBLE",
+      passReqs: "Brand readable, model readable, serial readable, capacity (kWh) readable. Report exact values.",
+      failReqs: "Label blurry, illegible, too far away, partially obstructed",
+    },
+    11: {
+      description: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
+      passReqs: "Gateway/controller visible and identifiable (brand/model readable if labeled), disconnect visible",
+      failReqs: "Device not identifiable, no labels readable, wrong equipment shown",
+    },
   };
 
-  const requirement = photoDescriptions[item.pePhotoNumber ?? 0] ?? item.label;
+  const req = photoReqs[item.pePhotoNumber ?? 0];
+  const description = req?.description ?? item.label;
 
   const referenceNote = options?.hasReference
     ? `\n## Reference Photo
@@ -257,21 +353,25 @@ Compare the candidate photo (the second image) against it for expected content, 
 
 ## PE Photo Requirement
 Photo ${item.pePhotoNumber}: ${item.label}
-Requirement: ${requirement}
+Description: ${description}
+${req ? `\n**PASS requires:** ${req.passReqs}\n**FAIL if:** ${req.failReqs}` : ""}
 ${referenceNote}
 ## Instructions
-1. Does this image satisfy the PE photo requirement above?
+1. Does this image satisfy the PE photo requirement above? Apply the PASS/FAIL criteria strictly.
 2. Is the image clear and well-lit enough for PE review?
-3. List any visible equipment (brand names, model numbers, labels).
-4. Flag issues: blurry/illegible labels, partial view instead of wide-angle, wrong subject, cover still on panel, etc.
+3. List ALL visible equipment — brand names, model numbers, serial numbers, specs (wattage, kWh, amps).
+4. For nameplate/label photos: if you cannot read the brand AND model number, verdict must be "fail" or "needs_review".
+5. For wide-angle photos: if major equipment is cut off or out of frame, verdict must be "fail".
+6. For MSP (Photo 5): if the panel dead-front cover is still ON, verdict MUST be "fail".
+7. Be SPECIFIC in issues — not "blurry" but "Module nameplate label blurry — brand readable (REC) but model and serial not legible".
 
 ## Response Format (JSON only, no markdown)
 {
   "matchedChecklistId": "${item.id}",
-  "requirement": "${requirement}",
+  "requirement": "${description}",
   "verdict": "pass" | "fail" | "needs_review",
-  "issues": [],
-  "equipmentVisible": ["Enphase IQ8+", "IronRidge XR100"],
+  "issues": ["Specific actionable issue for the PM"],
+  "equipmentVisible": ["REC Alpha Pure-R 430W (S/N: ABC123)", "Enphase IQ8PLUS-72-2-US"],
   "confidence": "high" | "medium" | "low"
 }`;
 }
@@ -339,7 +439,7 @@ export async function classifyDocument(
 
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
-      max_tokens: 2000,
+      max_tokens: 3000,
       messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
@@ -419,41 +519,89 @@ export async function triagePhotoBatch(
 
   const client = getAnthropicClient();
 
-  const photoDescriptions: Record<number, string> = {
-    1: "Site address visible on the home or mailbox, showing the full front of the house",
-    2: "Wide-angle photo of the installed PV (solar panel) array on the roof",
-    3: "Close-up of a solar module nameplate label (brand, model, serial number)",
-    4: "Wide-angle showing ALL electrical equipment (inverter, disconnect, meter, conduit)",
-    5: "Main service panel (MSP/breaker panel) with cover REMOVED showing breakers",
-    6: "Invoice or Bill of Materials document",
-    7: "Inverter/microinverter/optimizer nameplate label — must be legible",
-    8: "Racking components with visible part markings (rails, clamps, flashings)",
-    9: "Wide-angle of energy storage (battery) system installation",
-    10: "Battery/storage nameplate label (brand, model, serial, capacity)",
-    11: "Storage controller, gateway, or disconnect switch",
+  const photoRequirements: Record<number, { description: string; peReqs: string }> = {
+    1: {
+      description: "Site address visible on the home or mailbox, showing the full front of the house",
+      peReqs: "PASS requires: street number clearly legible, house/building fully visible. FAIL if: address not readable, only partial house shown, photo taken too far away to read numbers, or photo is of the wrong house/location.",
+    },
+    2: {
+      description: "Wide-angle photo of the installed PV (solar panel) array on the roof",
+      peReqs: "PASS requires: ENTIRE array visible in frame, shot from enough distance to see full roof coverage. FAIL if: array is cut off at edges, only partial array visible, photo is too close (just a few panels), or taken from inside the attic. NEEDS_REVIEW if: array is mostly visible but one edge is slightly cut off.",
+    },
+    3: {
+      description: "Close-up of a solar module nameplate label — brand, model, serial number, and specs must be LEGIBLE",
+      peReqs: "PASS requires: module brand name readable, model number readable, serial number readable, specs (wattage) readable. FAIL if: label is blurry, text is not legible, photo is taken from too far away, glare obscures text, or label is partially covered. Report the exact brand, model, and wattage you can read.",
+    },
+    4: {
+      description: "Wide-angle photo showing ALL electrical equipment (inverter, disconnect, meter, conduit runs)",
+      peReqs: "PASS requires: inverter visible, AC disconnect visible, production meter visible (if applicable), conduit runs between equipment visible, all in one frame. FAIL if: photo only shows one component, major equipment is out of frame, or photo is too close to see the full electrical setup.",
+    },
+    5: {
+      description: "Main service panel (MSP/breaker panel) with the dead-front cover REMOVED, showing breakers and wiring",
+      peReqs: "PASS requires: breaker panel OPEN with dead-front cover removed, individual breakers visible, wiring visible, solar breaker or backfeed breaker identifiable. FAIL if: panel cover is still ON (you can only see the outside of the panel), panel door is closed, or photo shows a sub-panel instead of the main service panel. This is a very common rejection — the cover MUST be off.",
+    },
+    6: {
+      description: "Invoice or Bill of Materials (BOM) document showing equipment purchased",
+      peReqs: "PASS requires: actual invoice/BOM document visible, equipment line items readable (brand, model, quantity), prices or totals visible. FAIL if: this is a screenshot of a spreadsheet with no vendor info, if text is illegible, or if it's a proposal not an invoice. NEEDS_REVIEW if: some line items are readable but others are cut off.",
+    },
+    7: {
+      description: "Inverter, microinverter, or optimizer nameplate/model label — must be LEGIBLE",
+      peReqs: "PASS requires: equipment brand readable, model number readable, serial number readable, electrical ratings visible. Report the exact brand and model. FAIL if: label is blurry/illegible, text cannot be read, photo is from too far away, or glare/shadow obscures the label. For microinverters, the label on at least one unit must be fully legible.",
+    },
+    8: {
+      description: "Racking components with visible part markings (rails, clamps, flashings with brand/model visible)",
+      peReqs: "PASS requires: racking brand/manufacturer identifiable from markings or labels on rails/clamps, part numbers visible if stamped/labeled. Report any brand (IronRidge, Unirac, SnapNrack, etc.) and part numbers visible. FAIL if: no markings visible, photo shows generic metal with no identification, or racking is not the subject of the photo.",
+    },
+    9: {
+      description: "Wide-angle photo of the energy storage (battery) system installation",
+      peReqs: "PASS requires: full battery system visible including mounting, associated electrical equipment visible, installation context clear (wall mount location, conduit runs). FAIL if: battery is partially cut off, photo is too close to see full installation, or battery is not the subject.",
+    },
+    10: {
+      description: "Battery/storage system nameplate label — brand, model, serial number, capacity specs must be LEGIBLE",
+      peReqs: "PASS requires: battery brand readable, model number readable, serial number readable, capacity (kWh) readable. Report the exact brand, model, and capacity. FAIL if: label is blurry, text is illegible, photo is too far away to read, or label is partially obstructed.",
+    },
+    11: {
+      description: "Storage controller, gateway, or disconnect switch — equipment must be identifiable",
+      peReqs: "PASS requires: gateway/controller device visible and identifiable (brand/model readable if labeled), associated disconnect visible. FAIL if: device is not identifiable, no labels readable, or photo shows wrong equipment.",
+    },
   };
 
   const categoryList = photoItems
     .map((item) => {
-      const desc = photoDescriptions[item.pePhotoNumber ?? 0] ?? item.label;
-      return `- ${item.id} (Photo ${item.pePhotoNumber}): ${desc}`;
+      const req = photoRequirements[item.pePhotoNumber ?? 0];
+      const desc = req?.description ?? item.label;
+      const peReqs = req?.peReqs ?? "";
+      return `- ${item.id} (Photo ${item.pePhotoNumber}): ${desc}\n  PE Requirements: ${peReqs}`;
     })
     .join("\n");
 
-  const prompt = `You are a photo classification system for Participate Energy (PE) milestone submissions.
+  const prompt = `You are a photo verification system for Participate Energy (PE) milestone submissions.
+Your job is to CLASSIFY each photo AND deeply verify it meets PE's specific quality standards for that photo type.
 
 ## Task
-I'm showing you ${photos.length} installation photos. For each photo, determine which PE photo category it best matches (if any).
+I'm showing you ${photos.length} installation photos. For each photo:
+1. Determine which PE photo category it best matches (if any)
+2. Verify it meets PE's quality requirements for that category
+3. Extract any visible equipment information (brand, model, serial numbers)
+4. Flag specific issues that would cause PE to REJECT this photo
 
-## PE Photo Categories
+## PE Photo Categories & Requirements
 ${categoryList}
 
-## Rules
+## Classification Rules
 - Each photo can match AT MOST one category
 - Each category should have AT MOST one best photo match
 - If a photo doesn't clearly match any category, skip it
-- Prefer clear, well-lit photos with legible labels over blurry ones
-- Be conservative: only assign a match if you're reasonably confident
+- If multiple photos could match a category, pick the one that best satisfies PE requirements
+
+## Verification Rules
+- **verdict "pass"**: Photo clearly satisfies ALL PE requirements for its category
+- **verdict "fail"**: Photo is fundamentally wrong (wrong subject, cover still on panel, completely illegible, etc.)
+- **verdict "needs_review"**: Photo partially meets requirements but has quality concerns (slightly blurry label, partially cut off, etc.)
+- For nameplate/label photos (Photos 3, 7, 10): if you CANNOT read the brand and model number, it MUST fail or needs_review
+- For wide-angle photos (Photos 2, 4, 9): if major equipment is cut off or out of frame, it MUST fail
+- For MSP photo (Photo 5): if the panel cover is still ON, it MUST fail — this is the #1 PE rejection reason for photos
+- List ALL readable equipment in equipmentVisible: brand names, model numbers, serial numbers, wattage/capacity specs
 
 ## Response Format (JSON only, no markdown)
 {
@@ -464,13 +612,15 @@ ${categoryList}
       "matchedChecklistId": "m1.photos.1_site_address" | null,
       "verdict": "pass" | "fail" | "needs_review",
       "confidence": "high" | "medium" | "low",
-      "issues": [],
-      "equipmentVisible": []
+      "issues": ["Specific issue description for PM to act on"],
+      "equipmentVisible": ["Enphase IQ8PLUS-72-2-US (S/N: 123456)", "IronRidge XR100"]
     }
   ]
 }
 
-Return one entry per photo. Set matchedChecklistId to null if no category matches.`;
+Return one entry per photo. Set matchedChecklistId to null if no category matches.
+For issues, be SPECIFIC — not "blurry" but "Module nameplate label is blurry — brand readable (REC) but model number and serial are not legible".
+For equipmentVisible, include everything you can read: brand, model, serial numbers, specs (wattage, kWh, amps).`;
 
   // Build content blocks: all photos + prompt
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -490,7 +640,7 @@ Return one entry per photo. Set matchedChecklistId to null if no category matche
   try {
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
-      max_tokens: 4000,
+      max_tokens: 8000,
       messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
@@ -593,13 +743,21 @@ export function visionResultToEnriched(result: VisionResult): EnrichedVisionResu
       hasIssues ? "needs_review" :
       "pass";
 
+    const notesParts: string[] = [];
+    if (hasIssues) notesParts.push(c.issues.join("; "));
+    else notesParts.push(`Classified as ${c.documentType}`);
+    if (c.equipmentFound && c.equipmentFound.length > 0) {
+      notesParts.push(`Equipment: ${c.equipmentFound.join(", ")}`);
+    }
+
     return {
       status,
-      notes: hasIssues ? c.issues.join("; ") : `Classified as ${c.documentType}`,
+      notes: notesParts.join(" | "),
       confidence: c.confidence,
       issues: c.issues,
       signatures: c.signatures,
       dateRelevance: c.dateRelevance,
+      equipmentVisible: c.equipmentFound,
     };
   }
 

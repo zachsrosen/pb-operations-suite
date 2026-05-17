@@ -68,6 +68,13 @@ export function PeChecklistCard({ result }: { result: ChecklistCardResult }) {
               ))}
             </div>
           )}
+          {result.visionResult?.equipmentVisible && result.visionResult.equipmentVisible.length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs text-muted">
+                🔧 {result.visionResult.equipmentVisible.join(" · ")}
+              </p>
+            </div>
+          )}
           {result.statusNote && !result.visionResult?.issues?.length && (
             <p className="text-xs text-muted mt-0.5">{result.statusNote}</p>
           )}

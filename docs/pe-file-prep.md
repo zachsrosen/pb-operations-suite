@@ -176,11 +176,52 @@ The audit must complete within Vercel's 5-minute function timeout (`maxDuration 
 
 2. **Photo pre-upload** — all install photos are downloaded from GDrive and uploaded to the Anthropic Files API in a single parallel batch before any classification begins. Eliminates redundant download/upload work.
 
-3. **Batch photo triage** — instead of calling `verifyPhoto()` individually for each photo item against each candidate (O(items x candidates) = 36+ API calls), all photos are sent to Claude in a single multi-image API call that classifies every photo against every PE photo category simultaneously. This converts ~36 sequential vision calls (~15 min) into 1 call (~30-45s).
+3. **Batch photo triage** — instead of calling `verifyPhoto()` individually for each photo item against each candidate (O(items x candidates) = 36+ API calls), all photos are sent to Claude in a single multi-image API call that classifies AND verifies every photo against every PE photo category simultaneously. This converts ~36 sequential vision calls (~15 min) into 1 call (~30-45s).
 
 4. **Mutual exclusion post-processing** — if a document matches both contract package IDs (CA/IO/Disclosures) and "proposal", the proposal match is dropped. A contract package is definitionally not a standalone sales proposal.
 
 5. **PandaDoc overrides** — items sourced from PandaDoc are resolved before vision classification starts, so the classifier doesn't waste API calls searching for documents that were already pulled.
+
+## Deep PE Verification
+
+Beyond simple classification, the audit performs PE-specific content verification:
+
+### Photo Verification
+
+Each photo category has specific PASS/FAIL criteria matching PE's Quality Standards & Photo Requirements:
+
+| Photo | Key Verification | Common Rejection |
+|-------|-----------------|------------------|
+| 1. Site address | Street number legible, house fully visible | Address not readable |
+| 2. PV array | ENTIRE array in frame from distance | Array cut off at edges |
+| 3. Module nameplate | Brand + model + serial + wattage all legible | Label blurry/illegible |
+| 4. All electrical | Inverter + disconnect + meter + conduit in one frame | Only one component shown |
+| 5. MSP (breaker panel) | Dead-front cover REMOVED, breakers visible | **Cover still on (top rejection)** |
+| 6. Invoice/BOM | Equipment line items with brand/model/qty readable | Spreadsheet screenshot, no vendor |
+| 7. Inverter nameplate | Brand + model + serial + ratings legible | Label blurry from distance |
+| 8. Racking parts | Brand identifiable from markings/labels | No markings visible |
+| 9. Battery wide | Full system visible with mounting context | Battery cut off in frame |
+| 10. Battery nameplate | Brand + model + serial + kWh legible | Label obscured or too far |
+| 11. Storage controller | Device identifiable, brand/model if labeled | Wrong equipment shown |
+
+Equipment found in nameplate photos (brand, model, serial) is extracted and displayed in the UI for cross-referencing against the proposal and plan set.
+
+### Document Verification
+
+| Document | Verification Checks |
+|----------|-------------------|
+| Plan Set | Site plan + single-line diagram + structural + equipment schedule present; equipment brand/model extracted |
+| Proposal | System size, equipment list, pricing, production estimates; equipment extracted for cross-reference |
+| Utility Bill | Date within 12 months, 12-month usage history visible, customer name/address visible |
+| Commissioning | Monitoring platform online, production data shown (not just login page) |
+| AHJ Permit | Inspector signature or APPROVED stamp, final inspection (not rough/framing) |
+| Contracts | All signatures present from both parties, customer name and address visible |
+| PTO Letter | From utility (not installer), explicitly authorizes operation |
+| Interconnection | Signed by both utility and customer/installer |
+
+### Equipment Cross-Reference
+
+When the AVL (Approved Vendor List) is available, equipment identified in documents and photos is cross-checked against PE's approved list. Mismatches are flagged as issues.
 
 ## Feature Flags
 
