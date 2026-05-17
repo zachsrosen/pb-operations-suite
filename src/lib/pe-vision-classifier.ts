@@ -520,11 +520,14 @@ export async function classifyDocument(
     contentBlocks.push({ type: "text", text: prompt });
 
     const message = await client.beta.messages.create({
-      // Haiku is 3-4x faster than Sonnet on this structured-classification
-      // task and the JSON output spec is identical. Sonnet remains for the
-      // multi-image photo triage where category disambiguation across 20
-      // similar photos benefits from the larger model.
-      model: CLAUDE_MODELS.haiku,
+      // Sonnet (not Haiku). Haiku tried as a perf optimization (PR #724) but
+      // returned empty matchedChecklistIds for documents that clearly matched —
+      // it interpreted the "be conservative — only match a checklist ID if the
+      // document genuinely IS that type" instruction too literally and emitted
+      // no matches when ANY verification field was uncertain. With the 6-way
+      // concurrency cap + Promise-dedup cache + lower max_tokens, Sonnet
+      // completes well under the 5-min Vercel timeout anyway.
+      model: CLAUDE_MODELS.sonnet,
       // 1500 covers the JSON response (matchedChecklistIds + issues + equipment).
       // Higher caps just leave latency on the table — Claude streams to max.
       max_tokens: 1500,
