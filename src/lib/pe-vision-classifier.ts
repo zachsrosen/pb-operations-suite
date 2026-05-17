@@ -53,23 +53,134 @@ export interface ClassifyOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Document descriptions — tells the classifier what each item actually IS
+// so it can distinguish similar-looking documents (e.g. proposal vs agreement)
+// ---------------------------------------------------------------------------
+
+const PE_DOCUMENT_DESCRIPTIONS: Record<string, string> = {
+  // --- Contract & Proposal ---
+  "m1.contract.customer_agreement":
+    "The formal PPA/ESA/Lease contract between customer and installer. " +
+    "Countersigned by both parties. Filename usually starts with PE_CON_ or contains 'contract_package'. " +
+    "Often a multi-page contract package that ALSO contains the Installation Order and Disclosures. " +
+    "This is NOT the sales proposal/quote — it is the binding legal agreement.",
+  "m1.contract.installation_order":
+    "The installation order (IO) — a work authorization addendum to the Customer Agreement. " +
+    "Lists equipment, system size, and installation scope. Often combined in the same PDF as the Customer Agreement. " +
+    "NOT a standalone sales proposal or quote.",
+  "m1.contract.disclosures":
+    "State-required disclosures (e.g. CO consumer protection, CA CSLB disclosures). " +
+    "Signed or initialed by customer. Often combined in the same PDF as the Customer Agreement. " +
+    "NOT a standalone contract or proposal.",
+  "m1.contract.proposal":
+    "The sales proposal or quote document showing system design, pricing, equipment, and savings estimates. " +
+    "Filename usually starts with 'Proposal' or contains 'quote'. Signed or digitally acknowledged by the customer. " +
+    "This is NOT the binding Customer Agreement/contract — it is a pre-sale quote/proposal. " +
+    "A proposal typically includes: system size (kW), equipment list, pricing breakdown, production estimates, and financing terms.",
+  "m1.contract.utility_bill":
+    "A utility bill showing the customer's electricity usage. Must show 12 months of usage history or a recent billing period. " +
+    "From the local electric utility (Xcel Energy, PG&E, SCE, SDG&E, etc.). " +
+    "NOT a proposal, contract, or invoice.",
+  "m1.contract.loan_docs":
+    "Loan or financing documents from a third-party lender (Sunraise, Mosaic, GoodLeap, etc.). " +
+    "NOT a solar proposal or contract.",
+  "m1.contract.incentive_forms":
+    "Incentive application forms (3CE, Xcel rebate, state incentive). " +
+    "NOT a utility bill, proposal, or contract.",
+
+  // --- Design ---
+  "m1.design.planset":
+    "The final engineering plan set / design package. " +
+    "Multi-page technical drawings: site plan, electrical single-line diagram, structural details, equipment schedule. " +
+    "NOT a proposal, contract, or inspection card.",
+
+  // --- Admin ---
+  "m1.admin.commissioning":
+    "Screenshot or PDF proving the monitoring system is online and accessible to the homeowner. " +
+    "From Enphase Enlighten, SolarEdge monitoring portal, Tesla app, etc. Shows system production data. " +
+    "NOT a nameplate photo, invoice, or equipment spec sheet.",
+  "m1.admin.hoa":
+    "HOA (Homeowners Association) approval letter for the solar installation. " +
+    "NOT a permit, inspection card, or contract.",
+
+  // --- Post-Install ---
+  "m1.post_install.attestation":
+    "Exhibit A — Installer Attestation of Customer Payment. " +
+    "A PE-specific template document confirming the customer has paid all amounts owed. " +
+    "Generated via PandaDoc. Title contains 'Installer Attestation' or 'Exhibit A'. " +
+    "NOT a contract, proposal, or lien waiver.",
+  "m1.post_install.acceptance":
+    "Exhibit B — Customer Certificate of Acceptance. " +
+    "A PE-specific template document where the customer certifies the installation is satisfactory. " +
+    "Generated via PandaDoc. Title contains 'Certificate of Acceptance' or 'Exhibit B'. " +
+    "NOT a contract, proposal, or attestation.",
+
+  // --- Inspection ---
+  "m1.inspection.ahj_permit":
+    "The AHJ (Authority Having Jurisdiction) signed final inspection card/permit. " +
+    "Proves the local building department inspected and passed the installation. " +
+    "Usually a scanned inspection card with inspector's signature and 'PASSED'/'APPROVED' stamp. " +
+    "NOT a building permit application — this is the SIGNED/APPROVED result.",
+
+  // --- Lien ---
+  "m1.lien.conditional":
+    "Conditional Progress Lien Waiver — a statutory lien waiver form for progress payment. " +
+    "State-specific legal form. Title contains 'Conditional Waiver', 'Progress Waiver', or 'Lien Waiver'. " +
+    "NOT an attestation, acceptance certificate, or contract.",
+
+  // --- M2 ---
+  "m2.pto.pto_letter":
+    "The official Permission to Operate (PTO) letter from the utility company. " +
+    "Authorizes the solar system to connect to the grid and export power. " +
+    "Often a forwarded email PDF from the utility. Contains 'Permission to Operate' or 'PTO'. " +
+    "NOT an interconnection agreement, permit, or inspection card.",
+  "m2.pto.interconnection":
+    "The signed Interconnection Agreement (IA) between the utility and customer/installer. " +
+    "Governs how the solar system connects to the utility grid. Both parties must sign. " +
+    "May be titled 'DER Interconnection Agreement', 'Net Metering Agreement', or 'Renewable Battery Connect Agreement'. " +
+    "NOT the PTO letter — this is a separate agreement document.",
+  "m2.warranty.assignment":
+    "Warranty registration or assignment documentation proving equipment warranties are activated. " +
+    "NOT a proposal, contract, or PTO letter.",
+  "m2.incentives.documentation":
+    "Incentive approval letters or rebate documentation from PE or utility programs. " +
+    "NOT a utility bill, contract, or warranty document.",
+  "m2.lien.final":
+    "Conditional Waiver and Release on Final Payment — the final payment lien waiver. " +
+    "State-specific statutory form. Title contains 'Final Payment', 'Final Waiver', or 'Unconditional Waiver'. " +
+    "NOT the progress/conditional waiver (that's M1) — this is for FINAL payment.",
+};
+
+// ---------------------------------------------------------------------------
 // Prompt builders
 // ---------------------------------------------------------------------------
 
 function buildDocumentPrompt(
   checklistItems: ChecklistItem[],
-  options?: { hasReference?: boolean; avlContext?: string },
+  options?: { hasReference?: boolean; avlContext?: string; candidateFileName?: string },
 ): string {
   const itemList = checklistItems
     .filter((i) => !i.isPhoto)
-    .map((i) => `- ${i.id}: ${i.label} (category: ${i.category})`)
+    .map((i) => {
+      const desc = PE_DOCUMENT_DESCRIPTIONS[i.id];
+      return desc
+        ? `- ${i.id}: ${i.label}\n  ${desc}`
+        : `- ${i.id}: ${i.label} (category: ${i.category})`;
+    })
     .join("\n");
 
   const sections: string[] = [
-    `You are a document classification system for Participate Energy (PE) milestone submissions.
+    `You are a document classification system for Participate Energy (PE) milestone submissions in the solar industry.
 
-Analyze this document and classify it against the PE checklist. Return a JSON object.`,
+Analyze this document and classify it against the PE checklist. Return a JSON object.
+Be CONSERVATIVE — only match a checklist ID if the document genuinely IS that type. When in doubt, return an empty matchedChecklistIds array rather than a wrong match.`,
   ];
+
+  if (options?.candidateFileName) {
+    sections.push(`## Candidate File
+Filename: ${options.candidateFileName}
+Use the filename as a classification signal — but always verify against the actual document content.`);
+  }
 
   if (options?.hasReference) {
     sections.push(`## Reference Example
@@ -89,13 +200,15 @@ ${options.avlContext}`);
 
   const instructions = [
     "1. Identify what type of document this is (contract, proposal, utility bill, permit, lien waiver, etc.)",
-    "2. Match it to one or more checklist IDs from the list above. A single PDF may contain multiple documents.",
-    "3. Check for signatures — are they present? How many? Are all required signature fields signed?",
-    "4. Check for date relevance — utility bills should be within 12 months, permits should not be expired.",
-    "5. Flag any issues (unsigned, expired, wrong document type, poor quality, etc.)",
+    "2. Match it to one or more checklist IDs from the list above. A single PDF may contain multiple documents (e.g. a contract package containing Customer Agreement + Installation Order + Disclosures).",
+    "3. CRITICAL: Do NOT confuse similar-sounding documents. A sales PROPOSAL (pricing/design quote) is NOT a Customer AGREEMENT (binding contract). An inspection CARD is NOT a building PERMIT application. A PTO LETTER is NOT an Interconnection AGREEMENT.",
+    "4. If the document doesn't clearly match any checklist item, return an EMPTY matchedChecklistIds array. A wrong match is worse than no match.",
+    "5. Check for signatures — are they present? How many? Are all required signature fields signed?",
+    "6. Check for date relevance — utility bills should be within 12 months, permits should not be expired.",
+    "7. Flag any issues (unsigned, expired, wrong document type, poor quality, etc.)",
   ];
   if (options?.avlContext) {
-    instructions.push("6. If equipment is identifiable, verify it appears on the AVL. Flag mismatches.");
+    instructions.push("8. If equipment is identifiable, verify it appears on the AVL. Flag mismatches.");
   }
   sections.push(`## Instructions\n${instructions.join("\n")}`);
 
@@ -184,6 +297,7 @@ export async function classifyDocument(
     const prompt = buildDocumentPrompt(checklistItems, {
       hasReference: !!options?.referenceFileId,
       avlContext: options?.avlContext,
+      candidateFileName: input.fileName,
     });
 
     const contentType = input.mimeType.startsWith("image/") ? "image" as const : "document" as const;
