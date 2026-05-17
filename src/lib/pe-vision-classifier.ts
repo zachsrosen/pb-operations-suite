@@ -520,7 +520,11 @@ export async function classifyDocument(
     contentBlocks.push({ type: "text", text: prompt });
 
     const message = await client.beta.messages.create({
-      model: CLAUDE_MODELS.sonnet,
+      // Haiku is 3-4x faster than Sonnet on this structured-classification
+      // task and the JSON output spec is identical. Sonnet remains for the
+      // multi-image photo triage where category disambiguation across 20
+      // similar photos benefits from the larger model.
+      model: CLAUDE_MODELS.haiku,
       // 1500 covers the JSON response (matchedChecklistIds + issues + equipment).
       // Higher caps just leave latency on the table — Claude streams to max.
       max_tokens: 1500,

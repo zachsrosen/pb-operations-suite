@@ -555,6 +555,28 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     // classification instead of each firing their own redundant API call.
     const docClassificationCache = new Map<string, Promise<VisionResult>>();
 
+    // Concurrency limiter for actual classifyDocument vision API calls.
+    // The Promise cache prevents duplicate work but doesn't bound how many
+    // unique-file classifications fire at once. With all 20 checklist items
+    // launching concurrently, a deal with ~10 unique candidate files would
+    // hit Anthropic's per-org rate limits and slow to a crawl. Cap at 6.
+    const VISION_CONCURRENCY = 6;
+    let visionInFlight = 0;
+    const visionQueue: (() => void)[] = [];
+    async function withVisionSlot<T>(fn: () => Promise<T>): Promise<T> {
+      if (visionInFlight >= VISION_CONCURRENCY) {
+        await new Promise<void>((resolve) => visionQueue.push(resolve));
+      }
+      visionInFlight++;
+      try {
+        return await fn();
+      } finally {
+        visionInFlight--;
+        const next = visionQueue.shift();
+        if (next) next();
+      }
+    }
+
     // Pre-download + pre-upload install photos to Anthropic Files API.
     // All 12 photo items share the same candidate pool — uploading once saves
     // ~5s per photo × 12 items = ~60s. Pool includes BOTH Drive + Zuper photos.
@@ -730,7 +752,9 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           } else {
             // First requester: store the Promise immediately so concurrent
             // requesters for the same file await the same in-flight call.
-            vResultPromise = (async () => {
+            // The `withVisionSlot` wrapper bounds concurrent Anthropic API
+            // calls so we don't trip per-org rate limits.
+            vResultPromise = withVisionSlot(async () => {
               let input = downloadCache.get(candidate.id) ?? await downloadFileForVision(candidate);
               if (!input) {
                 return { kind: "error" as const, error: `Failed to download ${candidate.name}` };
@@ -743,7 +767,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
               const classifyOpts: ClassifyOptions = {};
               if (avlContext) classifyOpts.avlContext = avlContext;
               return classifyDocument(input, checklist, classifyOpts);
-            })();
+            });
             docClassificationCache.set(candidate.id, vResultPromise);
           }
 
