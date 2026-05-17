@@ -298,6 +298,60 @@ async function downloadPhotoForVision(photo: InstallPhoto): Promise<VisionFileIn
   }
 }
 
+/**
+ * Enumerate install photos from every Zuper job linked to a deal.
+ *
+ * Pulled in parallel with GDrive folder listing during pre-work. Caps prevent
+ * runaway pools — service-task forms can have 100+ photos; we only need
+ * enough to populate the 11 PE photo categories.
+ */
+const ZUPER_PHOTOS_PER_JOB_CAP = 30;
+const ZUPER_PHOTOS_TOTAL_CAP = 40;
+
+async function enumerateZuperPhotos(
+  dealId: string,
+): Promise<Extract<InstallPhoto, { source: "zuper" }>[]> {
+  if (!zuper.isConfigured()) return [];
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: { hubspotDealId: dealId },
+    select: { jobUid: true, jobCategory: true },
+  });
+  if (jobs.length === 0) return [];
+
+  const out: Extract<InstallPhoto, { source: "zuper" }>[] = [];
+  const photoArrays = await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        const photos = await zuper.getJobPhotos(job.jobUid);
+        return photos.slice(0, ZUPER_PHOTOS_PER_JOB_CAP).map((p) => {
+          const isImage = p.file_type?.startsWith("image/") ?? true;
+          return {
+            source: "zuper" as const,
+            key: buildZuperPhotoKey(job.jobUid, p.attachment_uid),
+            jobUid: job.jobUid,
+            attachmentUid: p.attachment_uid,
+            url: p.url,
+            name: p.file_name ?? `zuper-${p.attachment_uid}.jpg`,
+            mimeType: isImage ? (p.file_type ?? "image/jpeg") : "image/jpeg",
+            createdAt: p.created_at,
+          };
+        });
+      } catch (err) {
+        console.warn(`[pe-audit] Zuper photo fetch failed for job ${job.jobUid}: ${err instanceof Error ? err.message : String(err)}`);
+        return [];
+      }
+    }),
+  );
+  for (const arr of photoArrays) {
+    for (const p of arr) {
+      if (out.length >= ZUPER_PHOTOS_TOTAL_CAP) break;
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 /** Build a ChecklistResult.foundFile shape from an InstallPhoto. */
 function buildFoundFileFromPhoto(photo: InstallPhoto): NonNullable<ChecklistResult["foundFile"]> {
   if (photo.source === "drive") {
@@ -400,7 +454,8 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     const nameParts = deal.dealName.split("|");
     const customerName = nameParts.length >= 2 ? nameParts[1].trim().split(",")[0].trim() || undefined : undefined;
 
-    const [pandaResult, installPhotosRaw, avlResult] = await Promise.all([
+    const prework0 = Date.now();
+    const [pandaResult, installPhotosRaw, avlResult, zuperPhotosRaw] = await Promise.all([
       // 1) PandaDoc pull
       (deal.rootFolderId && process.env.PANDADOC_PE_TEMPLATES_ENABLED === "true")
         ? findOrCreatePeFolder(deal.rootFolderId).then((peFolderId) =>
@@ -422,7 +477,14 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         console.warn(`[pe-audit] AVL fetch failed: ${err instanceof Error ? err.message : String(err)}`);
         return null;
       }),
+
+      // 4) Zuper install photos (attachments + service-task form submissions)
+      enumerateZuperPhotos(dealId).catch((err) => {
+        console.warn(`[pe-audit] Zuper photo enumeration failed: ${err instanceof Error ? err.message : String(err)}`);
+        return [] as Extract<InstallPhoto, { source: "zuper" }>[];
+      }),
     ]);
+    onEvent?.({ type: "diagnostic", data: { message: `Pre-work parallel block: ${((Date.now() - prework0) / 1000).toFixed(1)}s` } });
 
     let pandadocOverrides = new Map<string, ChecklistResult>();
     let pandadocPulled = 0;
@@ -444,47 +506,8 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       onEvent?.({ type: "diagnostic", data: { message: "No folder 5 (Installation) found — photos will be missing" } });
     }
 
-    // ALSO pull photos from Zuper jobs linked to this deal. Field techs upload
-    // most install pics into Zuper service-task form submissions, not GDrive.
-    const zuperPhotoPool: Extract<InstallPhoto, { source: "zuper" }>[] = [];
-    try {
-      if (zuper.isConfigured()) {
-        const jobs = await prisma.zuperJobCache.findMany({
-          where: { hubspotDealId: dealId },
-          select: { jobUid: true, jobCategory: true },
-        });
-        if (jobs.length > 0) {
-          const photoArrays = await Promise.all(
-            jobs.map(async (job) => {
-              try {
-                const photos = await zuper.getJobPhotos(job.jobUid);
-                return photos.map((p) => {
-                  const isImage = p.file_type?.startsWith("image/") ?? true;
-                  return {
-                    source: "zuper" as const,
-                    key: buildZuperPhotoKey(job.jobUid, p.attachment_uid),
-                    jobUid: job.jobUid,
-                    attachmentUid: p.attachment_uid,
-                    url: p.url,
-                    name: p.file_name ?? `zuper-${p.attachment_uid}.jpg`,
-                    mimeType: isImage ? (p.file_type ?? "image/jpeg") : "image/jpeg",
-                    createdAt: p.created_at,
-                  };
-                });
-              } catch (err) {
-                console.warn(`[pe-audit] Zuper photo fetch failed for job ${job.jobUid}: ${err instanceof Error ? err.message : String(err)}`);
-                return [];
-              }
-            }),
-          );
-          for (const arr of photoArrays) zuperPhotoPool.push(...arr);
-          onEvent?.({ type: "diagnostic", data: { message: `Found ${zuperPhotoPool.length} install photos in Zuper (${jobs.length} jobs)` } });
-        } else {
-          onEvent?.({ type: "diagnostic", data: { message: "No Zuper jobs linked to this deal" } });
-        }
-      }
-    } catch (err) {
-      console.warn(`[pe-audit] Zuper photo enumeration failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (zuperPhotosRaw.length > 0) {
+      onEvent?.({ type: "diagnostic", data: { message: `Found ${zuperPhotosRaw.length} install photos in Zuper` } });
     }
 
     // Unified install-photo pool: Drive photos + Zuper photos. The triage
@@ -502,7 +525,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           modifiedTime: f.modifiedTime,
           size: f.size,
         })),
-      ...zuperPhotoPool,
+      ...zuperPhotosRaw,
     ];
 
     let avlContext: string | undefined;
@@ -534,8 +557,14 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     if (installPhotoPool.length > 0) {
       const photoCount = checklist.filter((i) => i.isPhoto).length;
       if (photoCount > 0) {
-        const toPreload = installPhotoPool.slice(0, 25);
-        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} photos to vision API (${installPhotos.length} Drive + ${zuperPhotoPool.length} Zuper)...` } });
+        // Cap at 20 — multi-image triage with too many images slows Claude
+        // considerably (each photo adds ~3-5s of vision processing). 20 is
+        // plenty since we only need 1 best photo per of ~11 PE categories.
+        const toPreload = installPhotoPool.slice(0, 20);
+        const driveCount = toPreload.filter((p) => p.source === "drive").length;
+        const zuperCount = toPreload.filter((p) => p.source === "zuper").length;
+        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} photos (${driveCount} Drive + ${zuperCount} Zuper) to vision API...` } });
+        const preload0 = Date.now();
         const preloadResults = await Promise.all(
           toPreload.map(async (photo) => {
             try {
@@ -552,7 +581,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           }),
         );
         const uploaded = preloadResults.filter(Boolean).length;
-        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploaded ${uploaded}/${toPreload.length} photos` } });
+        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploaded ${uploaded}/${toPreload.length} photos in ${((Date.now() - preload0) / 1000).toFixed(1)}s` } });
       }
     }
 
@@ -584,8 +613,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
       if (preloadedPhotos.length > 0) {
         onEvent?.({ type: "diagnostic", data: { message: `Batch photo triage: ${preloadedPhotos.length} photos × ${photoItems.length} categories in 1 API call...` } });
+        const triage0 = Date.now();
         const triageResult = await triagePhotoBatch(preloadedPhotos, photoItems);
         visionCallCount++; // Single batch call
+        onEvent?.({ type: "diagnostic", data: { message: `Photo triage completed in ${((Date.now() - triage0) / 1000).toFixed(1)}s` } });
 
         // Build reverse map: checklistId → matched photo + verdict
         for (const [photoIndex, assignment] of triageResult.assignments) {
@@ -605,6 +636,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       }
     }
 
+    const docLoop0 = Date.now();
     const BATCH_SIZE = 10;
     for (let i = 0; i < checklist.length; i += BATCH_SIZE) {
       const batch = checklist.slice(i, i + BATCH_SIZE);
@@ -758,6 +790,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
     }
+    onEvent?.({ type: "diagnostic", data: { message: `Doc classification loop completed in ${((Date.now() - docLoop0) / 1000).toFixed(1)}s` } });
 
     const resolved = resolveCombinedFiles(results);
 
