@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { getDealProperties } from "@/lib/hubspot";
+import { discoverPeTemplateIds, findPeDocsForDeal, type PeTemplateStatus } from "@/lib/pandadoc";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,14 @@ export async function GET(
 
   const { dealId } = await params;
 
-  // Fetch audit run and deal links in parallel
-  const [latestRun, dealProps] = await Promise.all([
+  // Fetch audit run, deal links, and PandaDoc statuses in parallel
+  const [latestRun, dealProps, pandadocStatuses] = await Promise.all([
     prisma.peAuditRun.findFirst({
       where: { dealId, status: { in: ["completed", "running"] } },
       orderBy: { startedAt: "desc" },
     }),
     getDealProperties(dealId, ["pe_portal_url", "pe_project_id", "dealname", "all_document_parent_folder_id"]).catch(() => null),
+    fetchPandaDocStatuses(dealId),
   ]);
 
   const pePortalUrl = dealProps?.pe_portal_url
@@ -46,8 +48,19 @@ export async function GET(
   };
 
   if (!latestRun) {
-    return NextResponse.json({ auditRun: null, links });
+    return NextResponse.json({ auditRun: null, links, pandadocStatuses });
   }
 
-  return NextResponse.json({ auditRun: latestRun, links });
+  return NextResponse.json({ auditRun: latestRun, links, pandadocStatuses });
+}
+
+async function fetchPandaDocStatuses(dealId: string): Promise<PeTemplateStatus[]> {
+  if (process.env.PANDADOC_PE_TEMPLATES_ENABLED !== "true") return [];
+  try {
+    const templateIds = await discoverPeTemplateIds();
+    return await findPeDocsForDeal(dealId, templateIds);
+  } catch (err) {
+    console.warn(`[pe-status] PandaDoc fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
 }

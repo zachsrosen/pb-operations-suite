@@ -9,6 +9,7 @@ import { PeAuditProgress } from "@/components/pe-prep/PeAuditProgress";
 import { PeChecklistCard } from "@/components/pe-prep/PeChecklistCard";
 import { PePhotoGrid } from "@/components/pe-prep/PePhotoGrid";
 import { PePhotoModal } from "@/components/pe-prep/PePhotoModal";
+import { PePandaDocSection } from "@/components/pe-prep/PePandaDocSection";
 
 interface DealLinks {
   hubspotUrl: string;
@@ -17,8 +18,20 @@ interface DealLinks {
   dealName: string | null;
 }
 
+interface PandaDocStatus {
+  key: string;
+  templateId: string | null;
+  document: {
+    id: string;
+    name: string;
+    status: string;
+    dateCompleted: string | null;
+  } | null;
+}
+
 interface AuditRunData {
   links?: DealLinks;
+  pandadocStatuses?: PandaDocStatus[];
   auditRun: {
     id: string;
     dealId: string;
@@ -80,6 +93,7 @@ export default function PePrepPage({ params }: { params: Promise<{ dealId: strin
 
   const auditRun = data?.auditRun;
   const links = data?.links;
+  const pandadocStatuses = data?.pandadocStatuses;
   const hasResults = auditRun?.status === "completed" && auditRun.results;
 
   const handleAuditComplete = useCallback((_auditRunId: string) => {
@@ -217,6 +231,10 @@ export default function PePrepPage({ params }: { params: Promise<{ dealId: strin
             </a>
           )}
         </div>
+
+        {pandadocStatuses && pandadocStatuses.length > 0 && (
+          <PePandaDocSection statuses={pandadocStatuses as Parameters<typeof PePandaDocSection>[0]["statuses"]} />
+        )}
 
         {docCategories.map((cat) => (
           <div key={cat.name} className="space-y-2">
