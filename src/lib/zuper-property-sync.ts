@@ -184,7 +184,7 @@ export async function updateZuperProperty(
     const alreadyLinked = existingCustomers.some((c) => c.customer_uid === customerUid);
     if (!alreadyLinked) {
       updatePayload.property_customers = [
-        ...existingCustomers.map((c) => ({ customer: c.customer_uid })),
+        ...existingCustomers.filter((c) => c.customer_uid).map((c) => ({ customer: c.customer_uid })),
         { customer: customerUid },
       ];
     }
