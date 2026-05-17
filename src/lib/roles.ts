@@ -253,6 +253,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
+    "/dashboards/shop-health",
+    "/api/shop-health",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
