@@ -1419,9 +1419,8 @@ async function reconcileSingleProperty(record: PropertyRecord): Promise<boolean>
 }
 
 /**
- * Add-only association refresh: fetch current deals/tickets for a Property
- * from HubSpot and upsert each as a link row. Does not remove stale link
- * rows in v1 (see `reconcileSingleProperty` comment).
+ * Full association refresh: fetch current deals/tickets for a Property
+ * from HubSpot, upsert current links, and remove stale ones.
  *
  * Contact links are intentionally NOT refreshed here. HubSpot's association
  * pager doesn't surface labels cheaply, so this path used to default every
@@ -1439,6 +1438,7 @@ async function refreshAssociationLinks(
     fetchAssociatedIdsFromProperty(hubspotObjectId, "tickets"),
   ]);
 
+  // Upsert current associations
   for (const dealId of dealIds) {
     await prisma.propertyDealLink.upsert({
       where: { propertyId_dealId: { propertyId: propertyCacheId, dealId } },
@@ -1452,6 +1452,36 @@ async function refreshAssociationLinks(
       where: { propertyId_ticketId: { propertyId: propertyCacheId, ticketId } },
       create: { propertyId: propertyCacheId, ticketId },
       update: {},
+    });
+  }
+
+  // Remove stale links that HubSpot no longer reports
+  const dealIdSet = new Set(dealIds);
+  const ticketIdSet = new Set(ticketIds);
+
+  const existingDealLinks = await prisma.propertyDealLink.findMany({
+    where: { propertyId: propertyCacheId },
+    select: { dealId: true },
+  });
+  const staleDealIds = existingDealLinks
+    .filter((l) => !dealIdSet.has(l.dealId))
+    .map((l) => l.dealId);
+  if (staleDealIds.length > 0) {
+    await prisma.propertyDealLink.deleteMany({
+      where: { propertyId: propertyCacheId, dealId: { in: staleDealIds } },
+    });
+  }
+
+  const existingTicketLinks = await prisma.propertyTicketLink.findMany({
+    where: { propertyId: propertyCacheId },
+    select: { ticketId: true },
+  });
+  const staleTicketIds = existingTicketLinks
+    .filter((l) => !ticketIdSet.has(l.ticketId))
+    .map((l) => l.ticketId);
+  if (staleTicketIds.length > 0) {
+    await prisma.propertyTicketLink.deleteMany({
+      where: { propertyId: propertyCacheId, ticketId: { in: staleTicketIds } },
     });
   }
 }
