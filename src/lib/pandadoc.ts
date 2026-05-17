@@ -381,6 +381,7 @@ export async function findPeDocsForDeal(
 
     try {
       let doc: PandaDocListItem | null = null;
+      let matchedVia: string = "none";
 
       // Strategy 1: Search by template ID + HubSpot deal metadata
       if (templateId) {
@@ -392,7 +393,12 @@ export async function findPeDocsForDeal(
             order_by: "-date_modified",
           },
         });
+        const count = data.results?.length ?? 0;
+        console.warn(`[pe-pandadoc] ${key}/strategy1(template+meta): ${count} results for tpl=${templateId.slice(0, 10)} deal=${dealId}`);
         doc = data.results?.[0] ?? null;
+        if (doc) matchedVia = "template+metadata";
+      } else {
+        console.warn(`[pe-pandadoc] ${key}/strategy1 SKIPPED (no templateId)`);
       }
 
       // Strategy 2: template ID + document name containing customer name.
@@ -409,20 +415,28 @@ export async function findPeDocsForDeal(
             order_by: "-date_modified",
           },
         });
+        const count = fallback.results?.length ?? 0;
+        const names = (fallback.results ?? []).map((d) => `"${d.name}"`).join(", ");
+        console.warn(`[pe-pandadoc] ${key}/strategy2(template+name): ${count} results for q="${nameQuery}" tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
         doc = fallback.results?.[0] ?? null;
+        if (doc) matchedVia = "template+name";
       }
 
       // Strategy 3: Name-only search (no template constraint).
       // Catches docs when template discovery failed (null templateId),
       // templates were renamed, or docs were created without templates.
       if (!doc && customerName) {
+        const nameOnlyQ = `${docNamePrefix} ${customerName}`;
         const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
           searchParams: {
-            q: `${docNamePrefix} ${customerName}`,
+            q: nameOnlyQ,
             count: 3,
             order_by: "-date_modified",
           },
         });
+        const count = nameOnly.results?.length ?? 0;
+        const names = (nameOnly.results ?? []).map((d) => `"${d.name}"`).join(", ");
+        console.warn(`[pe-pandadoc] ${key}/strategy3(name-only): ${count} results for q="${nameOnlyQ}" → ${names || "(none)"}`);
         // Verify the result name actually contains the pattern keyword
         // to avoid false positives from broad PandaDoc search
         const patternKeyword = docNamePrefix.split(" ").slice(-1)[0].toLowerCase(); // "Attestation", "Acceptance", "Waiver", "Payment"
@@ -430,7 +444,10 @@ export async function findPeDocsForDeal(
           d.name.toLowerCase().includes(patternKeyword) &&
           d.name.toLowerCase().includes(customerName.toLowerCase())
         ) ?? null;
+        if (doc) matchedVia = "name-only";
       }
+
+      console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} → "${doc.name}" (${doc.status})` : "NO MATCH (all strategies returned empty/filtered)"}`);
 
       results.push({
         key,
@@ -442,7 +459,8 @@ export async function findPeDocsForDeal(
           dateCompleted: doc.date_completed,
         } : null,
       });
-    } catch {
+    } catch (err) {
+      console.warn(`[pe-pandadoc] ${key} fetch threw: ${err instanceof Error ? err.message : String(err)}`);
       results.push({ key, templateId, document: null });
     }
   }
