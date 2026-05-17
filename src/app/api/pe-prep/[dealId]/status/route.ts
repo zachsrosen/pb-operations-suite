@@ -21,15 +21,19 @@ export async function GET(
 
   const { dealId } = await params;
 
-  // Fetch audit run, deal links, and PandaDoc statuses in parallel
-  const [latestRun, dealProps, pandadocStatuses] = await Promise.all([
+  // Fetch audit run and deal links first, then PandaDoc (needs customer name from deal)
+  const [latestRun, dealProps] = await Promise.all([
     prisma.peAuditRun.findFirst({
       where: { dealId, status: { in: ["completed", "running"] } },
       orderBy: { startedAt: "desc" },
     }),
     getDealProperties(dealId, ["pe_portal_url", "pe_project_id", "dealname", "all_document_parent_folder_id"]).catch(() => null),
-    fetchPandaDocStatuses(dealId),
   ]);
+
+  // Extract customer last name from deal name for PandaDoc name-based search.
+  // Deal name format: "PROJ-9542 | Brownell, Matt | 16578 W 55th Dr, ..."
+  const customerName = extractCustomerLastName(dealProps?.dealname ? String(dealProps.dealname) : null);
+  const pandadocStatuses = await fetchPandaDocStatuses(dealId, customerName);
 
   const pePortalUrl = dealProps?.pe_portal_url
     ? String(dealProps.pe_portal_url).trim() || null
@@ -54,11 +58,23 @@ export async function GET(
   return NextResponse.json({ auditRun: latestRun, links, pandadocStatuses });
 }
 
-async function fetchPandaDocStatuses(dealId: string): Promise<PeTemplateStatus[]> {
+function extractCustomerLastName(dealName: string | null): string | undefined {
+  if (!dealName) return undefined;
+  // "PROJ-9542 | Brownell, Matt | 16578 W 55th Dr, ..." → "Brownell"
+  const parts = dealName.split("|");
+  if (parts.length >= 2) {
+    const namePart = parts[1].trim(); // "Brownell, Matt"
+    const lastName = namePart.split(",")[0].trim();
+    if (lastName && lastName.length >= 2) return lastName;
+  }
+  return undefined;
+}
+
+async function fetchPandaDocStatuses(dealId: string, customerName?: string): Promise<PeTemplateStatus[]> {
   if (process.env.PANDADOC_PE_TEMPLATES_ENABLED !== "true") return [];
   try {
     const templateIds = await discoverPeTemplateIds();
-    return await findPeDocsForDeal(dealId, templateIds);
+    return await findPeDocsForDeal(dealId, templateIds, customerName);
   } catch (err) {
     console.warn(`[pe-status] PandaDoc fetch failed: ${err instanceof Error ? err.message : String(err)}`);
     return [];

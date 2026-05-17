@@ -111,6 +111,7 @@ interface PandaDocPullResult {
 async function pullPandaDocs(
   dealId: string,
   peFolderId: string,
+  customerName?: string,
   onEvent?: (event: AuditEvent) => void,
 ): Promise<PandaDocPullResult> {
   const checklistOverrides = new Map<string, ChecklistResult>();
@@ -124,7 +125,7 @@ async function pullPandaDocs(
     return { statuses: [], checklistOverrides, pulled };
   }
 
-  const statuses = await findPeDocsForDeal(dealId, templateIds);
+  const statuses = await findPeDocsForDeal(dealId, templateIds, customerName);
 
   for (const status of statuses) {
     const checklistId = PANDADOC_KEY_TO_CHECKLIST[status.key];
@@ -304,7 +305,11 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     let pandadocPulled = 0;
     if (deal.rootFolderId && process.env.PANDADOC_PE_TEMPLATES_ENABLED === "true") {
       const peFolderId = await findOrCreatePeFolder(deal.rootFolderId);
-      const pandaResult = await pullPandaDocs(dealId, peFolderId, onEvent);
+      // Extract customer last name from deal name for PandaDoc name-based search fallback
+      // Deal name format: "PROJ-9542 | Brownell, Matt | 16578 W 55th Dr, ..."
+      const nameParts = deal.dealName.split("|");
+      const customerName = nameParts.length >= 2 ? nameParts[1].trim().split(",")[0].trim() || undefined : undefined;
+      const pandaResult = await pullPandaDocs(dealId, peFolderId, customerName, onEvent);
       pandadocOverrides = pandaResult.checklistOverrides;
       pandadocPulled = pandaResult.pulled;
     }
