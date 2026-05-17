@@ -14,11 +14,12 @@ import {
 } from "@/lib/pe-turnover";
 import {
   classifyDocument,
-  verifyPhoto,
+  triagePhotoBatch,
   uploadToAnthropic,
   visionResultToEnriched,
   type VisionFileInput,
   type VisionResult,
+  type EnrichedVisionResult,
   type ClassifyOptions,
 } from "@/lib/pe-vision-classifier";
 import {
@@ -398,6 +399,55 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       }
     }
 
+    // -----------------------------------------------------------------------
+    // Batch photo triage — classify ALL photos in ONE Claude API call.
+    // Converts O(photoItems × candidates) individual calls into O(1).
+    // -----------------------------------------------------------------------
+    const photoItems = checklist.filter((i) => i.isPhoto);
+    const photoAssignmentsByChecklist = new Map<string, {
+      driveFileId: string;
+      verdict: "pass" | "fail" | "needs_review";
+      confidence: "high" | "medium" | "low";
+      issues: string[];
+      equipmentVisible: string[];
+    }>();
+
+    if (photoItems.length > 0 && anthropicFileIdCache.size > 0) {
+      const preloadedPhotos: Array<{ anthropicFileId: string; fileName: string; driveFileId: string }> = [];
+      for (const photo of installPhotos) {
+        const anthropicId = anthropicFileIdCache.get(photo.id);
+        if (anthropicId) {
+          preloadedPhotos.push({
+            anthropicFileId: anthropicId,
+            fileName: photo.name,
+            driveFileId: photo.id,
+          });
+        }
+      }
+
+      if (preloadedPhotos.length > 0) {
+        onEvent?.({ type: "diagnostic", data: { message: `Batch photo triage: ${preloadedPhotos.length} photos × ${photoItems.length} categories in 1 API call...` } });
+        const triageResult = await triagePhotoBatch(preloadedPhotos, photoItems);
+        visionCallCount++; // Single batch call
+
+        // Build reverse map: checklistId → matched photo + verdict
+        for (const [photoIndex, assignment] of triageResult.assignments) {
+          const photo = preloadedPhotos[photoIndex];
+          if (photo) {
+            photoAssignmentsByChecklist.set(assignment.checklistId, {
+              driveFileId: photo.driveFileId,
+              verdict: assignment.verdict,
+              confidence: assignment.confidence,
+              issues: assignment.issues,
+              equipmentVisible: assignment.equipmentVisible,
+            });
+          }
+        }
+
+        onEvent?.({ type: "diagnostic", data: { message: `Photo triage matched ${photoAssignmentsByChecklist.size}/${photoItems.length} categories` } });
+      }
+    }
+
     const BATCH_SIZE = 10;
     for (let i = 0; i < checklist.length; i += BATCH_SIZE) {
       const batch = checklist.slice(i, i + BATCH_SIZE);
@@ -426,55 +476,49 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         console.log(`[pe-audit] ${item.id}: ${candidates.length} candidates found`);
 
         if (item.isPhoto) {
-          const imageCandidates = candidates
-            .filter((f) => f.mimeType.startsWith("image/"))
-            .slice(0, 3);
+          // Use batch triage results (single API call already made above)
+          const triageMatch = photoAssignmentsByChecklist.get(item.id);
+          if (triageMatch) {
+            const matchedFile = installPhotos.find((f) => f.id === triageMatch.driveFileId);
+            const enriched: EnrichedVisionResult = {
+              status: triageMatch.verdict,
+              notes: triageMatch.issues.length > 0
+                ? triageMatch.issues.join("; ")
+                : "Photo verified (batch triage)",
+              confidence: triageMatch.confidence,
+              issues: triageMatch.issues,
+              equipmentVisible: triageMatch.equipmentVisible,
+            };
 
-          for (const candidate of imageCandidates) {
-            // Use pre-downloaded + pre-uploaded file if available
-            let input = downloadCache.get(candidate.id) ?? await downloadFileForVision(candidate);
-            if (!input) {
-              console.warn(`[pe-audit] ${item.id}: failed to download ${candidate.name}`);
-              continue;
-            }
-            // Attach pre-uploaded Anthropic file ID to skip redundant upload
-            const cachedAnthropicId = anthropicFileIdCache.get(candidate.id);
-            if (cachedAnthropicId && !input.anthropicFileId) {
-              input = { ...input, anthropicFileId: cachedAnthropicId };
-            }
+            // pass/needs_review → "found" (with issues noted); fail → "needs_review"
+            const status = triageMatch.verdict === "fail" ? "needs_review" as const : "found" as const;
 
-            visionCallCount++;
-            const photoRef = referenceExamples.get(item.id);
-            const vResult = await verifyPhoto(input, item, photoRef ? {
-              referenceFileId: photoRef.anthropicFileId,
-              referenceMimeType: photoRef.mimeType,
-            } : undefined);
-            const enriched = visionResultToEnriched(vResult);
+            onEvent?.({
+              type: "progress",
+              data: {
+                itemId: item.id,
+                label: item.label,
+                status,
+                file: matchedFile?.name,
+                issues: triageMatch.issues.length > 0 ? triageMatch.issues : undefined,
+              },
+            });
 
-            if (vResult.kind === "error") {
-              console.warn(`[pe-audit] ${item.id}: vision error on ${candidate.name}: ${vResult.error}`);
-            }
-
-            if (enriched && enriched.status === "pass") {
-              onEvent?.({
-                type: "progress",
-                data: { itemId: item.id, label: item.label, status: "found", file: candidate.name },
-              });
-              return {
-                item,
-                status: "found",
-                foundFile: {
-                  name: candidate.name,
-                  id: candidate.id,
-                  url: `https://drive.google.com/file/d/${candidate.id}/view`,
-                  modifiedTime: candidate.modifiedTime,
-                  size: parseInt(candidate.size ?? "0", 10),
-                },
-                visionResult: enriched,
-              };
-            }
+            return {
+              item,
+              status,
+              foundFile: matchedFile ? {
+                name: matchedFile.name,
+                id: matchedFile.id,
+                url: `https://drive.google.com/file/d/${matchedFile.id}/view`,
+                modifiedTime: matchedFile.modifiedTime,
+                size: parseInt(matchedFile.size ?? "0", 10),
+              } : undefined,
+              visionResult: enriched,
+            };
           }
 
+          // No triage match for this category
           onEvent?.({
             type: "progress",
             data: { itemId: item.id, label: item.label, status: "missing" },
