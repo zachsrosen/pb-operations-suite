@@ -151,12 +151,13 @@ async function pullPandaDocs(
   const checklistOverrides = new Map<string, ChecklistResult>();
   let pulled = 0;
 
-  let templateIds: Record<PeTemplateKey, string | null>;
+  let templateIds: Record<PeTemplateKey, string[]>;
   try {
     templateIds = await discoverPeTemplateIds();
-    const found = Object.entries(templateIds).filter(([, v]) => v).length;
-    const missing = Object.entries(templateIds).filter(([, v]) => !v).map(([k]) => k);
-    onEvent?.({ type: "diagnostic", data: { message: `PandaDoc templates: ${found}/4 discovered${missing.length > 0 ? ` (missing: ${missing.join(", ")})` : ""}` } });
+    const found = Object.entries(templateIds).filter(([, v]) => v.length > 0).length;
+    const missing = Object.entries(templateIds).filter(([, v]) => v.length === 0).map(([k]) => k);
+    const totalIds = Object.values(templateIds).reduce((sum, v) => sum + v.length, 0);
+    onEvent?.({ type: "diagnostic", data: { message: `PandaDoc templates: ${found}/4 keys discovered (${totalIds} total IDs)${missing.length > 0 ? `, missing: ${missing.join(", ")}` : ""}` } });
   } catch (err) {
     onEvent?.({ type: "pandadoc", data: { key: "all", status: "error", action: `Template discovery failed: ${err instanceof Error ? err.message : String(err)}` } });
     return { statuses: [], checklistOverrides, pulled };
