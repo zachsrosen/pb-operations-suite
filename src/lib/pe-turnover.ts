@@ -13,8 +13,10 @@ import {
   createDriveFolder,
   copyDriveFile,
   uploadDriveTextFile,
+  uploadDriveBinaryFile,
 } from "@/lib/drive-plansets";
 import { getDealProperties, DEAL_STAGE_MAP } from "@/lib/hubspot";
+import { zuper } from "@/lib/zuper";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,7 +47,12 @@ export interface ChecklistResult {
   foundFile?: {
     name: string;
     id: string;
+    /** Link the PM clicks to open the original source. */
     url: string;
+    /** API endpoint that serves the image bytes via authenticated proxy. */
+    thumbnailUrl?: string;
+    /** Discriminator: where this file came from. */
+    source?: "drive" | "zuper" | "pandadoc";
     modifiedTime: string;
     size: number;
   };
@@ -441,6 +448,19 @@ export const PE_M1_CHECKLIST: ChecklistItem[] = [
     driveFolders: [],
     searchAllFolders: true,
     fileHints: ["conditional_waiver", "progress_waiver", "conditional_lien"],
+    isPhoto: false,
+  },
+
+  // --- FEOC Compliance (PE Policy 01 §3) ---
+  {
+    id: "m1.compliance.feoc",
+    label: "FEOC Compliance",
+    category: "compliance",
+    milestone: "m1",
+    appliesTo: ALL,
+    driveFolders: ["0", "8"],
+    searchAllFolders: true,
+    fileHints: ["feoc", "foreign_entity", "domestic_content", "compliance", "safe_harbor"],
     isPhoto: false,
   },
 ];
@@ -1274,10 +1294,35 @@ export async function assemblePackage(
     const destName = buildDestName(r.item, i, r.foundFile.name);
 
     try {
-      await copyDriveFile(r.foundFile.id, folder.id, destName);
-      copiedFileIds.add(r.foundFile.id);
-      copiedFiles.set(r.item.id, destName);
-      copied++;
+      if (r.foundFile.source === "zuper") {
+        // Zuper photo: download bytes from S3 (via Zuper API key) and upload to Drive
+        const proxyMatch = r.foundFile.url.match(
+          /\/api\/(?:zuper\/photos|pe-prep\/photo\/zuper)\/([^/]+)\/([^/?#]+)/,
+        );
+        if (!proxyMatch) {
+          errors.push(`Failed to parse Zuper URL for ${r.item.label}`);
+          continue;
+        }
+        const [, jobUid, attachmentUid] = proxyMatch;
+        const photos = await zuper.getJobPhotos(decodeURIComponent(jobUid));
+        const photo = photos.find((p) => p.attachment_uid === decodeURIComponent(attachmentUid));
+        if (!photo) {
+          errors.push(`Zuper photo not found for ${r.item.label}`);
+          continue;
+        }
+        const buffer = await zuper.downloadFile(photo.url);
+        const mimeType = photo.file_type?.startsWith("image/") ? photo.file_type : "image/jpeg";
+        await uploadDriveBinaryFile(folder.id, destName, buffer, mimeType);
+        copiedFileIds.add(r.foundFile.id);
+        copiedFiles.set(r.item.id, destName);
+        copied++;
+      } else {
+        // Drive (or PandaDoc-already-in-Drive): server-side copy by file ID
+        await copyDriveFile(r.foundFile.id, folder.id, destName);
+        copiedFileIds.add(r.foundFile.id);
+        copiedFiles.set(r.item.id, destName);
+        copied++;
+      }
     } catch (err) {
       errors.push(`Failed to copy ${r.item.label}: ${err instanceof Error ? err.message : String(err)}`);
     }

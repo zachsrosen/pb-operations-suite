@@ -46,7 +46,7 @@ interface AuditRunData {
         item: { id: string; label: string; category: string; isPhoto: boolean; pePhotoNumber?: number };
         status: string;
         statusNote?: string;
-        foundFile?: { name: string; id: string; url: string; modifiedTime: string; size: number };
+        foundFile?: { name: string; id: string; url: string; thumbnailUrl?: string; source?: "drive" | "zuper" | "pandadoc"; modifiedTime: string; size: number };
         combinedFile?: boolean;
         visionResult?: {
           status: "pass" | "fail" | "needs_review";

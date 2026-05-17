@@ -18,6 +18,8 @@ interface ChecklistCardResult {
     name: string;
     id: string;
     url: string;
+    thumbnailUrl?: string;
+    source?: "drive" | "zuper" | "pandadoc";
     modifiedTime: string;
     size: number;
   };
@@ -66,6 +68,13 @@ export function PeChecklistCard({ result }: { result: ChecklistCardResult }) {
               {result.visionResult.issues.map((issue, i) => (
                 <p key={i} className="text-xs text-yellow-700 dark:text-yellow-400">⚠ {issue}</p>
               ))}
+            </div>
+          )}
+          {result.visionResult?.equipmentVisible && result.visionResult.equipmentVisible.length > 0 && (
+            <div className="mt-1">
+              <p className="text-xs text-muted">
+                🔧 {result.visionResult.equipmentVisible.join(" · ")}
+              </p>
             </div>
           )}
           {result.statusNote && !result.visionResult?.issues?.length && (

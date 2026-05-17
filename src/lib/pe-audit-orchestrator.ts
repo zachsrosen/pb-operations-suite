@@ -43,6 +43,41 @@ import {
   createDriveFolder,
   type DriveGenericFile,
 } from "@/lib/drive-plansets";
+import { zuper } from "@/lib/zuper";
+
+// ---------------------------------------------------------------------------
+// Unified install photo source — supports GDrive folder 5 AND Zuper job photos
+// (attachments + form submissions where field techs upload their install pics)
+// ---------------------------------------------------------------------------
+
+export type InstallPhoto =
+  | {
+      source: "drive";
+      key: string; // synthetic photoKey used by triage/lookup
+      driveId: string;
+      name: string;
+      mimeType: string;
+      modifiedTime?: string;
+      size?: string;
+    }
+  | {
+      source: "zuper";
+      key: string;
+      jobUid: string;
+      attachmentUid: string;
+      url: string; // S3 URL — fetched via zuper.downloadFile
+      name: string;
+      mimeType: string;
+      createdAt?: string;
+    };
+
+function buildZuperPhotoKey(jobUid: string, attachmentUid: string): string {
+  return `zuper:${jobUid}:${attachmentUid}`;
+}
+
+function buildDrivePhotoKey(driveId: string): string {
+  return `drive:${driveId}`;
+}
 
 // ---------------------------------------------------------------------------
 // SSE event types
@@ -156,6 +191,7 @@ async function pullPandaDocs(
             name: fileName,
             id: "",
             url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
+            source: "pandadoc",
             modifiedTime: new Date().toISOString(),
             size: pdfBuffer.length,
           },
@@ -234,6 +270,56 @@ async function downloadFileForVision(file: DriveGenericFile): Promise<VisionFile
   } catch {
     return null;
   }
+}
+
+/** Download bytes for either a Drive photo or a Zuper attachment. */
+async function downloadPhotoForVision(photo: InstallPhoto): Promise<VisionFileInput | null> {
+  try {
+    if (photo.source === "drive") {
+      const result = await downloadDriveImage(photo.driveId);
+      return {
+        fileId: photo.key,
+        fileName: photo.name,
+        mimeType: result.mimeType,
+        buffer: result.buffer,
+      };
+    }
+    // Zuper S3 URL — uses the Zuper API key
+    const buffer = await zuper.downloadFile(photo.url);
+    return {
+      fileId: photo.key,
+      fileName: photo.name,
+      mimeType: photo.mimeType,
+      buffer,
+    };
+  } catch (err) {
+    console.warn(`[pe-audit] Failed to download photo ${photo.name}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/** Build a ChecklistResult.foundFile shape from an InstallPhoto. */
+function buildFoundFileFromPhoto(photo: InstallPhoto): NonNullable<ChecklistResult["foundFile"]> {
+  if (photo.source === "drive") {
+    return {
+      name: photo.name,
+      id: photo.driveId,
+      url: `https://drive.google.com/file/d/${photo.driveId}/view`,
+      thumbnailUrl: `/api/pe-prep/photo/drive/${encodeURIComponent(photo.driveId)}`,
+      source: "drive",
+      modifiedTime: photo.modifiedTime ?? "",
+      size: parseInt(photo.size ?? "0", 10),
+    };
+  }
+  return {
+    name: photo.name,
+    id: photo.attachmentUid,
+    url: `/api/pe-prep/photo/zuper/${encodeURIComponent(photo.jobUid)}/${encodeURIComponent(photo.attachmentUid)}`,
+    thumbnailUrl: `/api/pe-prep/photo/zuper/${encodeURIComponent(photo.jobUid)}/${encodeURIComponent(photo.attachmentUid)}`,
+    source: "zuper",
+    modifiedTime: photo.createdAt ?? "",
+    size: 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -358,6 +444,67 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       onEvent?.({ type: "diagnostic", data: { message: "No folder 5 (Installation) found — photos will be missing" } });
     }
 
+    // ALSO pull photos from Zuper jobs linked to this deal. Field techs upload
+    // most install pics into Zuper service-task form submissions, not GDrive.
+    const zuperPhotoPool: Extract<InstallPhoto, { source: "zuper" }>[] = [];
+    try {
+      if (zuper.isConfigured()) {
+        const jobs = await prisma.zuperJobCache.findMany({
+          where: { hubspotDealId: dealId },
+          select: { jobUid: true, jobCategory: true },
+        });
+        if (jobs.length > 0) {
+          const photoArrays = await Promise.all(
+            jobs.map(async (job) => {
+              try {
+                const photos = await zuper.getJobPhotos(job.jobUid);
+                return photos.map((p) => {
+                  const isImage = p.file_type?.startsWith("image/") ?? true;
+                  return {
+                    source: "zuper" as const,
+                    key: buildZuperPhotoKey(job.jobUid, p.attachment_uid),
+                    jobUid: job.jobUid,
+                    attachmentUid: p.attachment_uid,
+                    url: p.url,
+                    name: p.file_name ?? `zuper-${p.attachment_uid}.jpg`,
+                    mimeType: isImage ? (p.file_type ?? "image/jpeg") : "image/jpeg",
+                    createdAt: p.created_at,
+                  };
+                });
+              } catch (err) {
+                console.warn(`[pe-audit] Zuper photo fetch failed for job ${job.jobUid}: ${err instanceof Error ? err.message : String(err)}`);
+                return [];
+              }
+            }),
+          );
+          for (const arr of photoArrays) zuperPhotoPool.push(...arr);
+          onEvent?.({ type: "diagnostic", data: { message: `Found ${zuperPhotoPool.length} install photos in Zuper (${jobs.length} jobs)` } });
+        } else {
+          onEvent?.({ type: "diagnostic", data: { message: "No Zuper jobs linked to this deal" } });
+        }
+      }
+    } catch (err) {
+      console.warn(`[pe-audit] Zuper photo enumeration failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Unified install-photo pool: Drive photos + Zuper photos. The triage
+    // operates on this combined pool and the assignment lookup resolves
+    // back to either source via the `key` discriminator.
+    const installPhotoPool: InstallPhoto[] = [
+      ...installPhotos
+        .filter((f) => f.mimeType.startsWith("image/"))
+        .map((f): InstallPhoto => ({
+          source: "drive",
+          key: buildDrivePhotoKey(f.id),
+          driveId: f.id,
+          name: f.name,
+          mimeType: f.mimeType,
+          modifiedTime: f.modifiedTime,
+          size: f.size,
+        })),
+      ...zuperPhotoPool,
+    ];
+
     let avlContext: string | undefined;
     if (avlResult && avlResult.entries.length > 0) {
       avlContext = avlResult.entries
@@ -378,27 +525,28 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
     // Pre-download + pre-upload install photos to Anthropic Files API.
     // All 12 photo items share the same candidate pool — uploading once saves
-    // ~5s per photo × 12 items = ~60s.
-    const anthropicFileIdCache = new Map<string, string>(); // driveId → anthropicFileId
-    const downloadCache = new Map<string, VisionFileInput>(); // driveId → downloaded input
-    if (installPhotos.length > 0) {
+    // ~5s per photo × 12 items = ~60s. Pool includes BOTH Drive + Zuper photos.
+    const anthropicFileIdCache = new Map<string, string>(); // photoKey → anthropicFileId
+    const downloadCache = new Map<string, VisionFileInput>(); // photoKey → downloaded input
+    const photoByKey = new Map<string, InstallPhoto>();
+    for (const p of installPhotoPool) photoByKey.set(p.key, p);
+
+    if (installPhotoPool.length > 0) {
       const photoCount = checklist.filter((i) => i.isPhoto).length;
       if (photoCount > 0) {
-        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${Math.min(installPhotos.length, 20)} photos to vision API...` } });
-        const toPreload = installPhotos
-          .filter((f) => f.mimeType.startsWith("image/"))
-          .slice(0, 20);
+        const toPreload = installPhotoPool.slice(0, 25);
+        onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} photos to vision API (${installPhotos.length} Drive + ${zuperPhotoPool.length} Zuper)...` } });
         const preloadResults = await Promise.all(
-          toPreload.map(async (file) => {
+          toPreload.map(async (photo) => {
             try {
-              const input = await downloadFileForVision(file);
+              const input = await downloadPhotoForVision(photo);
               if (!input) return null;
-              downloadCache.set(file.id, input);
+              downloadCache.set(photo.key, input);
               const anthropicId = await uploadToAnthropic(input.buffer, input.fileName, input.mimeType);
-              anthropicFileIdCache.set(file.id, anthropicId);
-              return file.id;
+              anthropicFileIdCache.set(photo.key, anthropicId);
+              return photo.key;
             } catch (err) {
-              console.warn(`[pe-audit] Pre-upload failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+              console.warn(`[pe-audit] Pre-upload failed for ${photo.name}: ${err instanceof Error ? err.message : String(err)}`);
               return null;
             }
           }),
@@ -414,7 +562,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     // -----------------------------------------------------------------------
     const photoItems = checklist.filter((i) => i.isPhoto);
     const photoAssignmentsByChecklist = new Map<string, {
-      driveFileId: string;
+      photoKey: string;
       verdict: "pass" | "fail" | "needs_review";
       confidence: "high" | "medium" | "low";
       issues: string[];
@@ -423,13 +571,13 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
     if (photoItems.length > 0 && anthropicFileIdCache.size > 0) {
       const preloadedPhotos: Array<{ anthropicFileId: string; fileName: string; driveFileId: string }> = [];
-      for (const photo of installPhotos) {
-        const anthropicId = anthropicFileIdCache.get(photo.id);
+      for (const photo of installPhotoPool) {
+        const anthropicId = anthropicFileIdCache.get(photo.key);
         if (anthropicId) {
           preloadedPhotos.push({
             anthropicFileId: anthropicId,
             fileName: photo.name,
-            driveFileId: photo.id,
+            driveFileId: photo.key, // triage uses driveFileId field but it's just an opaque key
           });
         }
       }
@@ -444,7 +592,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           const photo = preloadedPhotos[photoIndex];
           if (photo) {
             photoAssignmentsByChecklist.set(assignment.checklistId, {
-              driveFileId: photo.driveFileId,
+              photoKey: photo.driveFileId,
               verdict: assignment.verdict,
               confidence: assignment.confidence,
               issues: assignment.issues,
@@ -488,7 +636,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           // Use batch triage results (single API call already made above)
           const triageMatch = photoAssignmentsByChecklist.get(item.id);
           if (triageMatch) {
-            const matchedFile = installPhotos.find((f) => f.id === triageMatch.driveFileId);
+            const matchedPhoto = photoByKey.get(triageMatch.photoKey);
             const enriched: EnrichedVisionResult = {
               status: triageMatch.verdict,
               notes: triageMatch.issues.length > 0
@@ -508,7 +656,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
                 itemId: item.id,
                 label: item.label,
                 status,
-                file: matchedFile?.name,
+                file: matchedPhoto?.name,
                 issues: triageMatch.issues.length > 0 ? triageMatch.issues : undefined,
               },
             });
@@ -516,13 +664,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
             return {
               item,
               status,
-              foundFile: matchedFile ? {
-                name: matchedFile.name,
-                id: matchedFile.id,
-                url: `https://drive.google.com/file/d/${matchedFile.id}/view`,
-                modifiedTime: matchedFile.modifiedTime,
-                size: parseInt(matchedFile.size ?? "0", 10),
-              } : undefined,
+              foundFile: matchedPhoto ? buildFoundFileFromPhoto(matchedPhoto) : undefined,
               visionResult: enriched,
             };
           }
@@ -594,6 +736,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
               name: candidate.name,
               id: candidate.id,
               url: `https://drive.google.com/file/d/${candidate.id}/view`,
+              thumbnailUrl: candidate.mimeType.startsWith("image/")
+                ? `/api/pe-prep/photo/drive/${encodeURIComponent(candidate.id)}`
+                : undefined,
+              source: "drive",
               modifiedTime: candidate.modifiedTime,
               size: parseInt(candidate.size ?? "0", 10),
             },
