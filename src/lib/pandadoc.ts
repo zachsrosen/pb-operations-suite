@@ -367,10 +367,12 @@ export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, str
 export async function findPeDocsForDeal(
   dealId: string,
   templateIds: Record<PeTemplateKey, string | null>,
+  /** Customer last name for fallback name-based search (e.g. "Brownell") */
+  customerName?: string,
 ): Promise<PeTemplateStatus[]> {
   const results: PeTemplateStatus[] = [];
 
-  for (const { key } of PE_TEMPLATE_PATTERNS) {
+  for (const { key, pattern } of PE_TEMPLATE_PATTERNS) {
     const templateId = templateIds[key];
     if (!templateId) {
       results.push({ key, templateId: null, document: null });
@@ -378,6 +380,7 @@ export async function findPeDocsForDeal(
     }
 
     try {
+      // Strategy 1: Search by template + HubSpot deal metadata
       const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
         searchParams: {
           template_id: templateId,
@@ -387,7 +390,25 @@ export async function findPeDocsForDeal(
         },
       });
 
-      const doc = data.results?.[0];
+      let doc = data.results?.[0] ?? null;
+
+      // Strategy 2: Fallback — search by document name containing the customer name.
+      // Docs created via HubSpot's native PandaDoc CRM card don't always set
+      // metadata_hubspot.deal_id, but they DO include the customer name in the
+      // document title (e.g. "PE Installer Attestation - Brownell").
+      if (!doc && customerName) {
+        const nameQuery = `${pattern} - ${customerName}`;
+        const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+          searchParams: {
+            template_id: templateId,
+            q: nameQuery,
+            count: 3,
+            order_by: "-date_modified",
+          },
+        });
+        doc = fallback.results?.[0] ?? null;
+      }
+
       results.push({
         key,
         templateId,
