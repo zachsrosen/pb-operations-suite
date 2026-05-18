@@ -145,8 +145,8 @@ Expected: `✔ Generated Prisma Client (7.5.0) to ./src/generated/prisma in ...m
 
 - [ ] **Step 4: Verify types compile**
 
-Run: `npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "PeActionTask|CrossRefRun" | head -5`
-Expected: no output (no type errors referencing new models).
+Run: `npx tsc --noEmit -p tsconfig.json 2>&1 | grep "error TS" | head -10`
+Expected: no NEW errors introduced. Compare against `git stash; npx tsc --noEmit ... | grep "error TS" | wc -l; git stash pop` if there are pre-existing test-file errors — total count should be unchanged.
 
 - [ ] **Step 5: Commit**
 
@@ -406,6 +406,16 @@ describe("computeReconcileActions", () => {
     });
     expect(actions.updates).toHaveLength(0);
     expect(actions.autoResolves).toHaveLength(0); // stays RESOLVED_MANUAL — no change
+  });
+
+  it("preserves RESOLVED_AUTO when source still does not flag", () => {
+    const actions = computeReconcileActions({
+      runId: "r2",
+      detected: [],
+      existing: [existing({ status: "RESOLVED_AUTO" })],
+    });
+    expect(actions.updates).toHaveLength(0);
+    expect(actions.autoResolves).toHaveLength(0); // already resolved — no further change
   });
 
   it("preserves DISMISSED even when re-detected", () => {
@@ -1851,40 +1861,46 @@ End-state: Cross-ref reads PowerHub asset state, extracts nameplate model from i
 
 - [ ] **Step 1: Implement extractor that queries PowerHub for the deal's site**
 
+The actual Prisma model is `PowerhubSite` (note: lowercase `h` in `Powerhub`). There is no separate site-link model — `PowerhubSite` has a `dealId` field directly. Devices are stored as a JSON column `devices` (no relation), so PW3 entries are parsed from JSON.
+
 ```ts
 // src/lib/pe-crossref/extractors/powerhub.ts
 import { prisma } from "@/lib/db";
 import type { PowerHubAssetSummary } from "@/lib/pe-crossref/types";
 
+interface PowerhubDeviceJson {
+  device_type?: string;
+  model?: string;
+  serial_number?: string;
+  part_number?: string;
+}
+
 /**
  * Fetch PowerHub asset state for a deal. Returns null if:
  *   - POWERHUB_ENABLED is false
- *   - no PowerHubSite is linked to this deal
- *   - PowerHub API fails (caller logs to extractorResults)
+ *   - no PowerhubSite is linked to this deal
  *
- * Reads from the local PowerHubSite cache (synced by powerhub-sync.ts).
+ * Reads from the local PowerhubSite cache (synced by powerhub-sync.ts).
+ * Devices live in the `devices` JSON column — parse and filter to PW3-ish types.
  */
 export async function fetchPowerHubAsset(dealId: string): Promise<PowerHubAssetSummary | null> {
   if (process.env.POWERHUB_ENABLED !== "true") return null;
 
-  const link = await prisma.powerHubSiteLink.findFirst({
-    where: { hubspotDealId: dealId, status: "linked" },
-    select: { powerhubSiteId: true },
-  });
-  if (!link) return null;
-
-  const site = await prisma.powerHubSite.findUnique({
-    where: { id: link.powerhubSiteId },
-    include: { assets: true },
+  const site = await prisma.powerhubSite.findFirst({
+    where: { dealId },
+    orderBy: { lastSyncedAt: "desc" },
   });
   if (!site) return null;
 
-  return {
-    siteId: site.id,
-    powerwallEntries: site.assets
-      .filter((a) => /powerwall|battery/i.test(a.assetType))
-      .map((a) => ({ model: a.model ?? "unknown", serial: a.serialNumber ?? undefined })),
-  };
+  const devices = Array.isArray(site.devices) ? (site.devices as PowerhubDeviceJson[]) : [];
+  const powerwallEntries = devices
+    .filter((d) => /powerwall|battery/i.test(d.device_type ?? "") || /powerwall|battery/i.test(d.model ?? ""))
+    .map((d) => ({
+      model: d.part_number ?? d.model ?? "unknown",
+      serial: d.serial_number,
+    }));
+
+  return { siteId: site.id, powerwallEntries };
 }
 ```
 
@@ -1896,8 +1912,7 @@ import { fetchPowerHubAsset } from "@/lib/pe-crossref/extractors/powerhub";
 
 jest.mock("@/lib/db", () => ({
   prisma: {
-    powerHubSiteLink: { findFirst: jest.fn() },
-    powerHubSite: { findUnique: jest.fn() },
+    powerhubSite: { findFirst: jest.fn() },
   },
 }));
 import { prisma } from "@/lib/db";
@@ -1911,32 +1926,29 @@ describe("fetchPowerHubAsset", () => {
     expect(await fetchPowerHubAsset("d1")).toBeNull();
   });
 
-  it("returns null when no link exists", async () => {
+  it("returns null when no PowerhubSite exists for the deal", async () => {
     process.env.POWERHUB_ENABLED = "true";
-    (prisma.powerHubSiteLink.findFirst as jest.Mock).mockResolvedValue(null);
+    (prisma.powerhubSite.findFirst as jest.Mock).mockResolvedValue(null);
     expect(await fetchPowerHubAsset("d1")).toBeNull();
   });
 
-  it("filters assets to Powerwall/battery type", async () => {
+  it("filters JSON devices to Powerwall/battery types", async () => {
     process.env.POWERHUB_ENABLED = "true";
-    (prisma.powerHubSiteLink.findFirst as jest.Mock).mockResolvedValue({ powerhubSiteId: "s1" });
-    (prisma.powerHubSite.findUnique as jest.Mock).mockResolvedValue({
+    (prisma.powerhubSite.findFirst as jest.Mock).mockResolvedValue({
       id: "s1",
-      assets: [
-        { assetType: "Powerwall 3", model: "1707000-21-Y", serialNumber: "SN-A" },
-        { assetType: "Solar Inverter", model: "TSI-7.6", serialNumber: "SN-B" }, // filtered out
+      devices: [
+        { device_type: "Powerwall 3", part_number: "1707000-21-Y", serial_number: "TG-A" },
+        { device_type: "Solar Inverter", part_number: "TSI-7.6", serial_number: "SN-B" }, // filtered out
       ],
     });
     const result = await fetchPowerHubAsset("d1");
-    expect(result?.powerwallEntries).toEqual([{ model: "1707000-21-Y", serial: "SN-A" }]);
+    expect(result?.powerwallEntries).toEqual([{ model: "1707000-21-Y", serial: "TG-A" }]);
   });
 });
 ```
 
 Run: `npm test -- extractors/powerhub`
 Expected: all 3 pass.
-
-> **NOTE:** Before this task runs, verify the actual PowerHub Prisma model names with `grep "^model PowerHub" prisma/schema.prisma`. The example above assumes `PowerHubSiteLink` and `PowerHubSite` — adjust to the real model names if different.
 
 - [ ] **Step 3: Commit**
 
@@ -1955,8 +1967,7 @@ git commit -m "feat(pe-crossref): PowerHub asset extractor + tests"
 
 ```ts
 // src/lib/pe-crossref/extractors/nameplate.ts
-import Anthropic from "@anthropic-ai/sdk";
-import { CLAUDE_MODELS } from "@/lib/claude-models";
+import { CLAUDE_MODELS, getAnthropicClient } from "@/lib/anthropic";
 import type { InstallPhotoRef, NameplateData } from "@/lib/pe-crossref/types";
 
 const NAMEPLATE_PROMPT = `You are reading a Tesla Powerwall 3 nameplate label from an installation photo.
@@ -1978,7 +1989,7 @@ export async function extractNameplateFromPhoto(
   photo: InstallPhotoRef,
   fetchPhotoBytes: (photoFileId: string) => Promise<{ buffer: Buffer; mimeType: string }>,
 ): Promise<NameplateData> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = getAnthropicClient();
   const { buffer, mimeType } = await fetchPhotoBytes(photo.fileId);
 
   const message = await client.messages.create({
@@ -2252,9 +2263,11 @@ End-state: Cross-ref reads Zoho SO line items, compares against planset (when av
 
 - [ ] **Step 1: Implement extractor**
 
+`@/lib/zoho-inventory` exports a `zohoInventory` client instance (not bare functions). Use `zohoInventory.getSalesOrderById(id)` and `zohoInventory.listSalesOrders(opts)`. The `ProjectBomSnapshot` model uses `dealId` and `zohoSoId` (not `hubspotDealId` / `zohoSalesOrderId`).
+
 ```ts
 // src/lib/pe-crossref/extractors/sales-order.ts
-import { listZohoSalesOrders, getZohoSalesOrder } from "@/lib/zoho-inventory";
+import { zohoInventory } from "@/lib/zoho-inventory";
 import { prisma } from "@/lib/db";
 import type { NormalizedSalesOrder } from "@/lib/pe-crossref/types";
 
@@ -2262,27 +2275,27 @@ import type { NormalizedSalesOrder } from "@/lib/pe-crossref/types";
  * Resolve a deal's most-recent linked Zoho Sales Order and normalize its line items.
  *
  * Lookup priority:
- *   1. ProjectBomSnapshot.zohoSalesOrderId (recorded by BOM pipeline)
- *   2. Zoho SO matching the deal's HubSpot deal ID custom field
+ *   1. ProjectBomSnapshot.zohoSoId (recorded by BOM pipeline)
+ *   2. Zoho SO list search by deal id / dealname (best-effort)
  *   3. null
  */
 export async function fetchSalesOrder(dealId: string, dealName: string): Promise<NormalizedSalesOrder | null> {
   // Strategy 1 — BOM snapshot
   const bom = await prisma.projectBomSnapshot.findFirst({
-    where: { hubspotDealId: dealId, zohoSalesOrderId: { not: null } },
+    where: { dealId, zohoSoId: { not: null } },
     orderBy: { createdAt: "desc" },
-    select: { zohoSalesOrderId: true },
+    select: { zohoSoId: true },
   });
 
-  let so;
-  if (bom?.zohoSalesOrderId) {
-    so = await getZohoSalesOrder(bom.zohoSalesOrderId).catch(() => null);
+  let so = null;
+  if (bom?.zohoSoId) {
+    so = await zohoInventory.getSalesOrderById(bom.zohoSoId).catch(() => null);
   }
 
-  // Strategy 2 — search by deal id custom field
+  // Strategy 2 — search by deal id (Zoho custom field may contain it)
   if (!so) {
-    const list = await listZohoSalesOrders({ search: dealId, limit: 5 }).catch(() => []);
-    so = list[0] ?? null;
+    const list = await zohoInventory.listSalesOrders({ search_text: dealId, per_page: 5 }).catch(() => null);
+    so = list?.salesorders?.[0] ? await zohoInventory.getSalesOrderById(list.salesorders[0].salesorder_id).catch(() => null) : null;
   }
 
   if (!so) return null;
@@ -2290,7 +2303,7 @@ export async function fetchSalesOrder(dealId: string, dealName: string): Promise
   return {
     soNumber: so.salesorder_number,
     customerName: so.customer_name,
-    lineItems: so.line_items.map((li, idx) => ({
+    lineItems: (so.line_items ?? []).map((li, idx) => ({
       index: idx,
       sku: li.sku ?? null,
       description: li.description ?? li.name ?? "",
@@ -2300,7 +2313,7 @@ export async function fetchSalesOrder(dealId: string, dealName: string): Promise
 }
 ```
 
-> **NOTE:** before this task runs, confirm the actual Zoho client helper names with `grep "export.*function" src/lib/zoho-inventory.ts | head -20`. The example uses `listZohoSalesOrders` + `getZohoSalesOrder` — adjust if names differ.
+> **Verification before coding:** open `src/lib/zoho-inventory.ts` and confirm the exported `zohoInventory` instance has methods `getSalesOrderById(id: string)` and `listSalesOrders(opts)`. Verify return shape of `listSalesOrders` (top-level `{ salesorders: [...] }`).
 
 - [ ] **Step 2: Add unit tests with mocks (skip extractor I/O; just verify normalization)**
 
@@ -2537,8 +2550,7 @@ End-state: Cross-ref vision-extracts structured PV-page data from the planset PD
 
 ```ts
 // src/lib/pe-crossref/extractors/planset.ts
-import Anthropic from "@anthropic-ai/sdk";
-import { CLAUDE_MODELS } from "@/lib/claude-models";
+import { CLAUDE_MODELS, getAnthropicClient } from "@/lib/anthropic";
 import { downloadDriveFile } from "@/lib/drive-plansets";
 import { uploadToAnthropic } from "@/lib/pe-vision-classifier";
 import type { ExtractedPlanset } from "@/lib/pe-crossref/types";
@@ -2570,7 +2582,7 @@ If a field is not visible on this page, return null. The XX-Y vs specific suffix
  * field; empty pages are dropped.
  */
 export async function extractPlansetStructure(plansetFileId: string, plansetFileName: string): Promise<ExtractedPlanset | null> {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = getAnthropicClient();
 
   // Download PDF, upload to Anthropic Files API
   const { buffer } = await downloadDriveFile(plansetFileId);
@@ -2722,7 +2734,7 @@ For each `(photoFileId, expectedCategory)` pair from the latest audit's photo as
 // src/lib/pe-crossref/analyzers/photo-critique.ts
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/db";
-import { CLAUDE_MODELS } from "@/lib/claude-models";
+import { CLAUDE_MODELS, getAnthropicClient } from "@/lib/anthropic";
 import type { Analyzer, DetectedTask, CrossRefContext } from "@/lib/pe-crossref/types";
 
 const VERSION = "v1";
@@ -2735,7 +2747,7 @@ export const PhotoCritiqueAnalyzer: Analyzer = {
     const tasks: DetectedTask[] = [];
     if (!context.latestAuditRun) return tasks;
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const client = getAnthropicClient();
 
     for (const [checklistId, assignment] of context.latestAuditRun.photoAssignments) {
       const cacheKey = `${assignment.photoFileId}:${checklistId}`;
@@ -2777,12 +2789,56 @@ export const PhotoCritiqueAnalyzer: Analyzer = {
   },
 };
 
-async function critiquePhoto(_client: Anthropic, _photoFileId: string, _expectedLabel: string): Promise<{ verdict: "match" | "wrong_subject" | "unknown"; critique: string }> {
-  // TODO: real Sonnet call; for now return "match" so analyzer is safe to register.
-  // Wire up before merging Chunk 7.
-  return { verdict: "match", critique: "" };
+async function critiquePhoto(
+  client: ReturnType<typeof getAnthropicClient>,
+  photoFileId: string,
+  expectedLabel: string,
+  fetchPhotoBytes: (photoFileId: string) => Promise<{ buffer: Buffer; mimeType: string }>,
+): Promise<{ verdict: "match" | "wrong_subject" | "unknown"; critique: string }> {
+  const { buffer, mimeType } = await fetchPhotoBytes(photoFileId);
+
+  const prompt = `You're verifying a Participate Energy installation photo.
+The photo was filed under the category: "${expectedLabel}".
+
+Look at the image and tell me whether it actually depicts that subject.
+
+Return JSON only (no markdown):
+{
+  "verdict": "match" | "wrong_subject" | "unknown",
+  "critique": "one-sentence description of what the photo actually shows, especially if it doesn't match"
+}
+
+"match" = photo clearly shows the expected subject.
+"wrong_subject" = photo shows something different (e.g. house front when storage was expected).
+"unknown" = unclear or partially obscured — can't tell either way.`;
+
+  const message = await client.messages.create({
+    model: CLAUDE_MODELS.sonnet,
+    max_tokens: 400,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: mimeType, data: buffer.toString("base64") } },
+        { type: "text", text: prompt },
+      ],
+    }],
+  });
+
+  const textBlock = message.content.find((b) => b.type === "text");
+  const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+  const jsonStr = raw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+
+  try {
+    const parsed = JSON.parse(jsonStr) as { verdict: "match" | "wrong_subject" | "unknown"; critique: string };
+    return { verdict: parsed.verdict, critique: parsed.critique ?? "" };
+  } catch (err) {
+    console.warn(`[pe-crossref] photo critique parse failed for ${photoFileId}: ${err}`);
+    return { verdict: "unknown", critique: `parse_error: ${raw.slice(0, 200)}` };
+  }
 }
 ```
+
+The analyzer's main loop receives a `fetchPhotoBytes` resolver (parallel to how nameplate.ts is structured) — keeps the analyzer free of direct Drive/Zuper imports so it can be unit-tested with a stub fetcher.
 
 - [ ] **Step 2: Add `PhotoCritiqueCache` Prisma model**
 
@@ -2800,7 +2856,14 @@ model PhotoCritiqueCache {
 }
 ```
 
-Create migration via `npx prisma migrate dev --name photo_critique_cache --create-only`, run `npx prisma generate`, surface migration to user before applying.
+**Migration ordering — hard checkpoint:** Per the `feedback_prisma_migration_before_code` memory note, adding a Prisma model triggers client regeneration on Vercel build. Code that queries the new table breaks if the migration hasn't applied yet.
+
+To avoid breakage:
+1. Open a **migration-only PR** with just the `npx prisma migrate dev --name photo_critique_cache --create-only` artifact and the schema edit. Merge that first.
+2. Apply the migration to production (`npm run db:migrate`) under user supervision.
+3. **Then** open the analyzer PR that references the new table.
+
+Do NOT bundle the analyzer + migration in one PR. Do NOT run `prisma migrate deploy` from a subagent.
 
 - [ ] **Step 3: Implement real `critiquePhoto` call**
 
@@ -2885,11 +2948,13 @@ git commit -m "feat(pe-crossref): /dashboards/pe-action-queue batch view"
 **Files:**
 - Modify: `src/lib/pe-audit-orchestrator.ts`
 
-- [ ] **Step 1: Locate where `auditRun.status` is set to "completed"** (search for `status: "completed"` near the end of `runPeAudit`).
+- [ ] **Step 1: Locate the audit-completion update**
+
+`runPeAudit` (in `src/lib/pe-audit-orchestrator.ts`) is `async (opts): Promise<string>` and returns `auditRun.id` directly. Search for the final `prisma.peAuditRun.update({ ... status: "completed" ... })` call (currently ~line 998–1010). The integration point is **after** that update completes and **before** the final `return auditRun.id` (~line 1016) — NOT before some `return { auditRun, ... }` object.
 
 - [ ] **Step 2: Add fire-and-forget call**
 
-Just before `return { auditRun, ... }`:
+Right after the completion update, before the `return auditRun.id`:
 
 ```ts
 // Auto-trigger PE cross-reference after a successful full/docs audit.
