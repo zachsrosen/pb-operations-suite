@@ -417,7 +417,7 @@ export async function extractBomFromPdf(
 
     try {
       const uploadedFile = await client.beta.files.upload({
-        file: new File([new Uint8Array(uploadBuffer)], filename, { type: "application/pdf" }),
+        file: new File([new Uint8Array(uploadBuffer)], filename.replace(/[|<>:"/\\?*]/g, "_"), { type: "application/pdf" }),
       });
       anthropicFileId = uploadedFile.id;
     } catch (e) {
