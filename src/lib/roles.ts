@@ -1675,6 +1675,7 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/locations",
   "/dashboards/ai",
   "/api/chat",
+  "/dashboards/eagleview-test",
 ];
 
 /**
