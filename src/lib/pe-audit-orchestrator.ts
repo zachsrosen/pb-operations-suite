@@ -349,9 +349,15 @@ async function downloadPhotoForVision(photo: InstallPhoto): Promise<VisionFileIn
  * Pulled in parallel with GDrive folder listing during pre-work. Caps prevent
  * runaway pools — service-task forms can have 100+ photos; we only need
  * enough to populate the 11 PE photo categories.
+ *
+ * Caps bumped 2026-05-18 after a Brownell deal showed 57 install photos in
+ * Zuper but triage saw only the first 20 (storage photos were past the cap
+ * → all 3 storage items marked missing). PE-named photos (`9__Storage_*`)
+ * are surfaced to the top via `prioritizeForPeTriage` before clipping so
+ * they survive the cap regardless of upload order.
  */
-const ZUPER_PHOTOS_PER_JOB_CAP = 30;
-const ZUPER_PHOTOS_TOTAL_CAP = 40;
+const ZUPER_PHOTOS_PER_JOB_CAP = 100;
+const ZUPER_PHOTOS_TOTAL_CAP = 100;
 
 async function enumerateZuperPhotos(
   dealId: string,
@@ -395,6 +401,62 @@ async function enumerateZuperPhotos(
     }
   }
   return out;
+}
+
+/**
+ * Sort a photo pool so PE-relevant shots survive any downstream cap.
+ *
+ * Priority tiers (higher = earlier in returned array):
+ *   1. Filenames starting with `N__` where N is 1-11 (PE-specific naming
+ *      convention used by field techs in the `Participate Energy/` Zuper
+ *      service-task form — these are explicitly tagged to a PE category).
+ *   2. Filenames containing storage/battery/powerwall/tesla/nameplate/
+ *      msp/inverter/array/electrical keywords (likely matches for a PE
+ *      checklist item even if not explicitly numbered).
+ *   3. Everything else, original order preserved.
+ *
+ * Stable within each tier (preserves upload order for ties).
+ */
+const PE_PRIORITY_KEYWORDS = [
+  "storage", "battery", "powerwall", "tesla",
+  "nameplate", "compliance_label", "compliance label",
+  "msp", "main_service_panel", "main service panel",
+  "inverter", "micro", "optimizer",
+  "array", "pv_array", "pv array",
+  "electrical", "wide_angle", "wide angle",
+  "invoice", "bom",
+  "site_address", "site address",
+  "racking", "rail", "module",
+  "disconnect", "controller",
+];
+
+function prioritizeForPeTriage<T extends { name: string }>(photos: readonly T[]): T[] {
+  const tier1: T[] = [];
+  const tier2: T[] = [];
+  const tier3: T[] = [];
+
+  // PE-specific upload pattern from the Zuper "Participate Energy" form:
+  // `{N}__{description}_{uuid}.{ext}` where N is the PE photo number.
+  const peNumberedRe = /(?:^|\/)(\d{1,2})__/i;
+
+  for (const p of photos) {
+    const lower = p.name.toLowerCase();
+    const m = lower.match(peNumberedRe);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n >= 1 && n <= 11) {
+        tier1.push(p);
+        continue;
+      }
+    }
+    if (PE_PRIORITY_KEYWORDS.some((k) => lower.includes(k))) {
+      tier2.push(p);
+      continue;
+    }
+    tier3.push(p);
+  }
+
+  return [...tier1, ...tier2, ...tier3];
 }
 
 /** Build a ChecklistResult.foundFile shape from an InstallPhoto. */
@@ -653,10 +715,19 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     if (includePhotos && installPhotoPool.length > 0) {
       const photoCount = checklist.filter((i) => i.isPhoto).length;
       if (photoCount > 0) {
-        // Cap at 20 — multi-image triage with too many images slows Claude
-        // considerably (each photo adds ~3-5s of vision processing). 20 is
-        // plenty since we only need 1 best photo per of ~11 PE categories.
-        const toPreload = installPhotoPool.slice(0, 20);
+        // Sort PE-named photos to the front. Field techs upload PE-specific
+        // photos with names like `9__Storage_Wide_Angle`, `10__Storage_Nameplate`,
+        // `11__Storage_Controller__Disconnect`, etc. — exactly aligned to the
+        // checklist categories. Sorting these to the top before clipping the
+        // pool means storage/PE-relevant shots always survive the cap, even on
+        // deals with 50+ photos.
+        const prioritizedPool = prioritizeForPeTriage(installPhotoPool);
+        // Cap at 50 — multi-image triage with too many images slows Claude
+        // considerably (each photo adds ~3-5s of vision processing). 50 covers
+        // every Brownell-style deal (57 photos total) while keeping triage
+        // under ~120s wall time. PE-named photos are already sorted to the
+        // front above, so the cap clips photos least likely to be relevant.
+        const toPreload = prioritizedPool.slice(0, 50);
         const sourceLabel = toPreload[0]?.source === "zuper" ? "Zuper" : "Drive";
         onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} ${sourceLabel} photos to vision API...` } });
         const preload0 = Date.now();
