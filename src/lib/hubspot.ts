@@ -76,7 +76,7 @@ function markOwnersApiForbidden(error: unknown): void {
   );
 }
 
-async function getDealPropertyDefinition(
+export async function getDealPropertyDefinition(
   propertyName: string,
   archived = false
 ): Promise<HubSpotDealPropertyDefinition | null> {
