@@ -23,6 +23,25 @@
 import * as Sentry from "@sentry/nextjs";
 
 // ============================================================
+// Key normalization — EagleView returns PascalCase in responses
+// (e.g. ProductId, IsAvailable) despite camelCase in requests.
+// ============================================================
+
+/** Recursively lowercase the first char of every object key. */
+function camelizeKeys(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(camelizeKeys);
+  if (obj !== null && typeof obj === "object") {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([k, v]) => [
+        k.charAt(0).toLowerCase() + k.slice(1),
+        camelizeKeys(v),
+      ]),
+    );
+  }
+  return obj;
+}
+
+// ============================================================
 // Constants
 // ============================================================
 
@@ -467,7 +486,8 @@ export class EagleViewClient {
       );
     }
 
-    return (await response.json()) as T;
+    const raw = await response.json();
+    return camelizeKeys(raw) as T;
   }
 }
 
