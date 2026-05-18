@@ -121,20 +121,6 @@ interface DocReview {
   notes: string | null;
 }
 
-interface PeActionItem {
-  id: string;
-  dealId: string | null;
-  peProjectId: string;
-  docLabel: string;
-  errorCode: string | null;
-  pageNumber: number | null;
-  reviewer: string;
-  notes: string | null;
-  actionDate: string;
-  resolvedAt: string | null;
-  createdAt: string;
-}
-
 interface DocRequirement {
   name: string;
   section: "onboarding" | "ic" | "pc";
@@ -274,7 +260,6 @@ function DealSection({
   onStatusChange,
   savingDeals,
   docMap,
-  actionItemsByDeal,
 }: {
   title: string;
   subtitle: string;
@@ -287,7 +272,6 @@ function DealSection({
   onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
   savingDeals: Set<string>;
   docMap: Map<string, DocReview>;
-  actionItemsByDeal: Map<string, PeActionItem[]>;
 }) {
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
 
@@ -505,37 +489,31 @@ function DealSection({
                               </div>
                             );
                           })()}
-                          {/* PE Action Items (from PE Raceway API) */}
+                          {/* Action items from PE portal scraper approver notes */}
                           {(() => {
-                            const items = actionItemsByDeal.get(deal.dealId) ?? [];
-                            if (!items.length) return null;
+                            const approverItems: { doc: string; note: string }[] = [];
+                            for (const doc of docs) {
+                              const review = docMap.get(`${deal.dealId}:${doc.name}`);
+                              if (!review?.notes) continue;
+                              const match = review.notes.match(/Approver:\s*(.+?)(?:\s*\||$)/);
+                              if (match?.[1]?.trim()) {
+                                approverItems.push({ doc: doc.name, note: match[1].trim() });
+                              }
+                            }
+                            if (!approverItems.length) return null;
                             return (
                               <div className="mt-3 pt-2 border-t border-border/30">
                                 <div className="flex items-center gap-2 mb-1.5">
-                                  <span className="text-[10px] font-medium text-orange-400">Action Items ({items.length})</span>
-                                  <span className="text-[9px] text-muted">from PE reviewer</span>
+                                  <span className="text-[10px] font-medium text-orange-400">Action Items ({approverItems.length})</span>
+                                  <span className="text-[9px] text-muted">from PE portal</span>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
-                                  {items.map((item) => (
-                                    <div key={item.id} className="flex items-start gap-1.5 bg-surface rounded px-2 py-1.5 border border-border/30">
+                                <div className="space-y-1.5">
+                                  {approverItems.map((item) => (
+                                    <div key={item.doc} className="flex items-start gap-1.5 bg-surface rounded px-2 py-1.5 border border-border/30">
                                       <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1 flex-shrink-0" />
                                       <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="text-[11px] font-medium text-foreground truncate">{item.docLabel}</span>
-                                          {item.errorCode && (
-                                            <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
-                                          )}
-                                          {item.pageNumber && (
-                                            <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
-                                          )}
-                                        </div>
-                                        {item.notes && (
-                                          <p className="text-[10px] text-muted mt-0.5 leading-tight">{item.notes}</p>
-                                        )}
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                          <span className="text-[9px] text-muted/60">{item.reviewer}</span>
-                                          <span className="text-[9px] text-muted/40">{new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                                        </div>
+                                        <span className="text-[11px] font-medium text-foreground">{item.doc}</span>
+                                        <p className="text-[10px] text-muted mt-0.5 leading-tight">{item.note}</p>
                                       </div>
                                     </div>
                                   ))}
@@ -573,8 +551,8 @@ export default function PeDealsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch PE document reviews + action items for inline doc breakdown
-  const { data: docsData } = useQuery<{ docs: DocReview[]; actionItems: PeActionItem[]; lastSync: string | null }>({
+  // Fetch PE document reviews for inline doc breakdown
+  const { data: docsData } = useQuery<{ docs: DocReview[]; lastSync: string | null }>({
     queryKey: ["peDocReviews"],
     queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
     staleTime: 60 * 1000,
@@ -587,63 +565,6 @@ export default function PeDealsPage() {
     }
     return m;
   }, [docsData]);
-
-  const actionItemsByDeal = useMemo(() => {
-    const m = new Map<string, PeActionItem[]>();
-    for (const item of docsData?.actionItems ?? []) {
-      if (!item.dealId) continue;
-      const list = m.get(item.dealId) ?? [];
-      list.push(item);
-      m.set(item.dealId, list);
-    }
-    return m;
-  }, [docsData]);
-
-  // Action items feed
-  const [actionFeedOpen, setActionFeedOpen] = useState(true);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const toggleGroup = useCallback((key: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
-  const dealLookup = useMemo(() => {
-    const m = new Map<string, PeDeal>();
-    for (const d of data?.deals ?? []) m.set(d.dealId, d);
-    return m;
-  }, [data]);
-  const dealNameMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const d of data?.deals ?? []) m.set(d.dealId, d.dealName);
-    return m;
-  }, [data]);
-
-  // All open action items, sorted newest first (by actionDate)
-  const openActionItems = useMemo(() => {
-    return (docsData?.actionItems ?? [])
-      .filter((item) => !item.resolvedAt)
-      .sort((a, b) => new Date(b.actionDate).getTime() - new Date(a.actionDate).getTime());
-  }, [docsData]);
-
-  // Group action items by deal for the feed
-  const actionItemsGroupedByDeal = useMemo(() => {
-    const groups = new Map<string, PeActionItem[]>();
-    for (const item of openActionItems) {
-      const key = item.dealId ?? item.peProjectId;
-      const list = groups.get(key) ?? [];
-      list.push(item);
-      groups.set(key, list);
-    }
-    // Sort groups by most recent action item date (newest first)
-    return [...groups.entries()].sort((a, b) => {
-      const aDate = new Date(a[1][0].actionDate).getTime();
-      const bDate = new Date(b[1][0].actionDate).getTime();
-      return bDate - aDate;
-    });
-  }, [openActionItems]);
 
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
@@ -995,135 +916,6 @@ export default function PeDealsPage() {
         </Link>
       </div>
 
-      {/* Action Items Feed — grouped by deal */}
-      {openActionItems.length > 0 && (
-        <div className="mb-5 bg-surface rounded-lg border border-orange-500/30 shadow-card overflow-hidden">
-          <button
-            onClick={() => setActionFeedOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-2 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-              <span className="text-sm font-medium text-foreground">
-                Action Items
-              </span>
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-medium">
-                {openActionItems.length}
-              </span>
-              <span className="text-xs text-muted">
-                across {actionItemsGroupedByDeal.length} deal{actionItemsGroupedByDeal.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              {docsData?.lastSync && (
-                <span className="text-[10px] text-muted" title={`Last PE API sync: ${new Date(docsData.lastSync).toLocaleString()}`}>
-                  synced {(() => {
-                    const mins = Math.round((Date.now() - new Date(docsData.lastSync).getTime()) / 60000);
-                    if (mins < 1) return "just now";
-                    if (mins < 60) return `${mins}m ago`;
-                    const hrs = Math.round(mins / 60);
-                    if (hrs < 24) return `${hrs}h ago`;
-                    return `${Math.round(hrs / 24)}d ago`;
-                  })()}
-                </span>
-              )}
-              <span className={`text-xs text-muted transition-transform ${actionFeedOpen ? "rotate-180" : ""}`}>
-                ▼
-              </span>
-            </div>
-          </button>
-          {actionFeedOpen && (
-            <div className="px-4 pb-4 border-t border-border/30">
-              <div className="space-y-3 mt-3">
-                {actionItemsGroupedByDeal.map(([groupKey, items]) => {
-                  const deal = items[0].dealId ? dealLookup.get(items[0].dealId) : null;
-                  const dealName = items[0].dealId ? dealNameMap.get(items[0].dealId) : null;
-                  const isCollapsed = collapsedGroups.has(groupKey);
-                  return (
-                    <div key={groupKey} className="bg-surface-2/50 rounded-lg border border-border/30 overflow-hidden">
-                      {/* Deal header — clickable to collapse, links open in new tab */}
-                      <div
-                        className={`flex items-center gap-2 px-3 py-2 bg-surface-2/80 cursor-pointer hover:bg-surface-2 transition-colors ${isCollapsed ? "" : "border-b border-border/20"}`}
-                        onClick={() => toggleGroup(groupKey)}
-                      >
-                        <span className={`text-[10px] text-muted transition-transform ${isCollapsed ? "" : "rotate-90"}`}>▶</span>
-                        <span className="text-xs font-medium text-foreground truncate" title={dealName ?? groupKey}>
-                          {dealName ? truncateName(dealName, 32) : groupKey}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 font-medium">
-                          {items.length}
-                        </span>
-                        <span className="flex-1" />
-                        {deal?.hubspotUrl && (
-                          <a
-                            href={deal.hubspotUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] text-orange-400 hover:text-orange-300 transition-colors"
-                            title="Open in HubSpot"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                            </svg>
-                            HubSpot
-                          </a>
-                        )}
-                        {deal?.pePortalUrl && (
-                          <a
-                            href={deal.pePortalUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition-colors"
-                            title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                            </svg>
-                            PE Portal
-                          </a>
-                        )}
-                      </div>
-                      {/* Action items for this deal — collapsible */}
-                      {!isCollapsed && (
-                        <div className="divide-y divide-border/20">
-                          {items.map((item) => (
-                            <div key={item.id} className="flex items-start gap-2 px-3 py-2 hover:bg-surface-2 transition-colors">
-                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[11px] font-medium text-orange-400 truncate">{item.docLabel}</span>
-                                  {item.errorCode && (
-                                    <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/10 text-red-400 font-mono">{item.errorCode}</span>
-                                  )}
-                                  {item.pageNumber && (
-                                    <span className="text-[9px] text-muted">p.{item.pageNumber}</span>
-                                  )}
-                                </div>
-                                {item.notes && (
-                                  <p className="text-[10px] text-muted leading-tight mt-0.5 line-clamp-2">{item.notes}</p>
-                                )}
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[9px] text-muted/60">{item.reviewer}</span>
-                                  <span className="text-[9px] text-muted/40">
-                                    {new Date(item.actionDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
         <input
@@ -1176,7 +968,6 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
             docMap={docMap}
-            actionItemsByDeal={actionItemsByDeal}
           />
           {partiallyPaidDeals.length > 0 && (
             <DealSection
@@ -1191,7 +982,6 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {fullyApprovedDeals.length > 0 && (
@@ -1207,7 +997,6 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {partiallyApprovedDeals.length > 0 && (
@@ -1223,7 +1012,6 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {m2Deals.length > 0 && (
@@ -1239,7 +1027,6 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           {m1Deals.length > 0 && (
@@ -1255,7 +1042,6 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              actionItemsByDeal={actionItemsByDeal}
             />
           )}
           <DealSection
@@ -1269,7 +1055,6 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
             docMap={docMap}
-            actionItemsByDeal={actionItemsByDeal}
           />
         </div>
       )}
