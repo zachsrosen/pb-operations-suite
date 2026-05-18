@@ -1457,6 +1457,15 @@ export async function upsertPropertyFromGeocode(args: {
   | { propertyCacheId: string; hubspotObjectId: string; created: boolean }
   | { status: "failed"; reason: string }
 > {
+  // Validate input address quality BEFORE geocoding — rejects emails, URLs,
+  // placeholder text, and streets with no number. This was previously only
+  // enforced in `onContactAddressChange`; centralizing here catches all
+  // entry points (deal/ticket creation, Zuper fallback, manual-create).
+  const qualityIssue = validateAddressQuality(args.street);
+  if (qualityIssue) {
+    return { status: "failed", reason: qualityIssue };
+  }
+
   const geo = await geocodeAddress({
     street: args.street,
     unit: args.unit,
