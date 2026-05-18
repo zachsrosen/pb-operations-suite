@@ -58,6 +58,14 @@ const LINKS: SuitePageCard[] = [
     icon: "🔍",
     section: "PE Audit & Submission",
   },
+  {
+    href: "/dashboards/pe-avl",
+    title: "PE Approved Vendor List",
+    description: "Searchable list of all equipment approved by Participate Energy — filter by category, manufacturer, or status.",
+    tag: "PE",
+    icon: "📋",
+    section: "PE Audit & Submission",
+  },
 
   // ─────────────────────────────────────────────────────────────
   // Incentives
