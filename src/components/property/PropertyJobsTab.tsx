@@ -127,6 +127,26 @@ export default function PropertyJobsTab({ propertyId }: Props) {
                   </span>
                 </div>
               </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <a
+                  href={`https://web.zuperpro.com/jobs/${job.jobUid}/details`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-400 hover:text-cyan-300 transition-colors text-xs whitespace-nowrap"
+                >
+                  Zuper ↗
+                </a>
+                {job.projectUid && (
+                  <a
+                    href={`https://web.zuperpro.com/projects/${job.projectUid}/details`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cyan-400 hover:text-cyan-300 transition-colors text-xs whitespace-nowrap"
+                  >
+                    Project ↗
+                  </a>
+                )}
+              </div>
             </div>
 
             <div className="mt-3 space-y-1 text-xs text-muted">

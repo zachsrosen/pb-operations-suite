@@ -98,6 +98,7 @@ export interface HubJob {
   crew: { uid: string; name: string }[];
   dealId: string | null;
   dealName: string | null;
+  projectUid: string | null;
 }
 
 export interface JobsTabData {
@@ -416,6 +417,14 @@ async function fetchJobs(propertyId: string): Promise<JobsTabData> {
       );
     }
 
+    // Extract project UID from raw Zuper response if available
+    let projectUid: string | null = null;
+    if (j.rawData && typeof j.rawData === "object") {
+      const raw = j.rawData as Record<string, unknown>;
+      const project = raw.project as { project_uid?: string } | undefined;
+      projectUid = project?.project_uid ?? null;
+    }
+
     return {
       jobUid: j.jobUid,
       title: j.jobTitle,
@@ -427,6 +436,7 @@ async function fetchJobs(propertyId: string): Promise<JobsTabData> {
       crew,
       dealId: j.hubspotDealId,
       dealName: j.projectName,
+      projectUid,
     };
   });
 

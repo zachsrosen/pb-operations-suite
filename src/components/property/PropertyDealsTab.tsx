@@ -36,6 +36,8 @@ const PIPELINE_COLORS: Record<string, string> = {
   Roofing: "bg-rose-500/10 text-rose-400 border-rose-500/20",
 };
 
+const portalId = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID ?? "";
+
 export default function PropertyDealsTab({ propertyId }: Props) {
   const { data, isLoading, error } = useQuery<DealsTabData>({
     queryKey: queryKeys.propertyHub.tab(propertyId, "deals"),
@@ -87,44 +89,64 @@ export default function PropertyDealsTab({ propertyId }: Props) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {deals.map((deal) => (
-        <Link
+        <div
           key={deal.id}
-          href={`/dashboards/deals?dealId=${deal.id}`}
-          className="block rounded-xl bg-surface border border-t-border p-4 hover:border-blue-500/20 transition-colors group"
+          className="rounded-xl bg-surface border border-t-border p-4 hover:border-blue-500/20 transition-colors group"
         >
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-medium text-foreground group-hover:text-blue-400 transition-colors truncate">
+            <Link
+              href={`/dashboards/deals?dealId=${deal.id}`}
+              className="text-sm font-medium text-foreground group-hover:text-blue-400 transition-colors truncate min-w-0"
+            >
               {deal.name}
-            </h3>
-            {deal.pipelineName && (
-              <span
-                className={`shrink-0 inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${
-                  PIPELINE_COLORS[deal.pipelineName] ??
-                  "bg-surface-2 text-muted border-t-border"
-                }`}
-              >
-                {deal.pipelineName}
-              </span>
-            )}
+            </Link>
+            <div className="flex items-center gap-2 shrink-0">
+              {deal.pipelineName && (
+                <span
+                  className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${
+                    PIPELINE_COLORS[deal.pipelineName] ??
+                    "bg-surface-2 text-muted border-t-border"
+                  }`}
+                >
+                  {deal.pipelineName}
+                </span>
+              )}
+              {portalId && (
+                <a
+                  href={`https://app.hubspot.com/contacts/${portalId}/record/0-3/${deal.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-400 hover:text-cyan-300 transition-colors text-xs whitespace-nowrap"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  HubSpot ↗
+                </a>
+              )}
+            </div>
           </div>
 
-          <p className="text-xs text-muted mt-1 truncate">
-            Stage: {deal.stageName}
-          </p>
+          <Link
+            href={`/dashboards/deals?dealId=${deal.id}`}
+            className="block"
+          >
+            <p className="text-xs text-muted mt-1 truncate">
+              Stage: {deal.stageName}
+            </p>
 
-          <div className="flex items-center justify-between mt-3">
-            {deal.amount !== null && (
-              <span className="text-sm font-semibold text-foreground">
-                {formatCurrency(deal.amount)}
-              </span>
-            )}
-            {deal.closeDate && (
-              <span className="text-xs text-muted">
-                Close: {formatDate(deal.closeDate)}
-              </span>
-            )}
-          </div>
-        </Link>
+            <div className="flex items-center justify-between mt-3">
+              {deal.amount !== null && (
+                <span className="text-sm font-semibold text-foreground">
+                  {formatCurrency(deal.amount)}
+                </span>
+              )}
+              {deal.closeDate && (
+                <span className="text-xs text-muted">
+                  Close: {formatDate(deal.closeDate)}
+                </span>
+              )}
+            </div>
+          </Link>
+        </div>
       ))}
     </div>
   );
