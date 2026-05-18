@@ -64,6 +64,12 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "PE deal payments, pricing tools, and financial tracking.",
   },
   {
+    href: "/suites/pe-compliance",
+    title: "PE & Compliance Suite",
+    shortLabel: "PE & Compliance",
+    description: "Participate Energy submission workflow, incentive tracking, and compliance surfaces.",
+  },
+  {
     href: "/suites/sales-marketing",
     title: "Sales & Marketing Suite",
     shortLabel: "Sales & Marketing",
