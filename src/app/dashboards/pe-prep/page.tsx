@@ -46,20 +46,30 @@ interface DealAuditRuns {
 }
 
 // ---------------------------------------------------------------------------
-// Milestone derivation — which audit is the PM most likely to need next?
+// Milestone derivation — based on deal stage (matches pe-submission-gap logic).
+//
+// PE submission milestones map 1:1 to deal stages:
+//   - "Permission to Operate" / PTO  → M1 audit (inspection done, submitting M1)
+//   - "Close Out"                    → M2 audit (PTO granted, submitting M2)
+//   - Anything else                  → excluded from the queue
+//
+// We deliberately ignore peM1Status / peM2Status because those reflect
+// portal state (submitted/approved/paid), not "what audit does this deal
+// need next?". A PM running prep wants the deal lined up with its current
+// pipeline stage.
 // ---------------------------------------------------------------------------
 
-type ActiveMilestone = "m1" | "m2" | "complete";
+type ActiveMilestone = "m1" | "m2" | "out-of-scope";
+
+function dealStageToActiveMilestone(stageLabel: string): ActiveMilestone {
+  const s = (stageLabel ?? "").toLowerCase();
+  if (s.includes("close out")) return "m2";
+  if (s.includes("permission to operate") || s.includes("pto")) return "m1";
+  return "out-of-scope";
+}
 
 function deriveActiveMilestone(deal: PeDeal): ActiveMilestone {
-  // If both M1 and M2 are Paid, the deal is done with PE
-  const m1Paid = deal.peM1Status === "Paid";
-  const m2Paid = deal.peM2Status === "Paid";
-  if (m1Paid && m2Paid) return "complete";
-  // If M1 is paid/submitted, focus on M2
-  if (m1Paid || deal.peM1Status === "Submitted" || deal.peM1Status === "Approved") return "m2";
-  // Default to M1
-  return "m1";
+  return dealStageToActiveMilestone(deal.dealStageLabel);
 }
 
 function statusBadgeColor(status: string | null): string {
@@ -115,10 +125,12 @@ export default function PePrepLandingPage() {
     staleTime: 60_000,
   });
 
-  // Active deals = anything that isn't already fully Paid on both milestones
+  // Active deals = anything currently in PTO or Close Out stage.
+  // Deals in earlier stages (pre-construction, construction, inspection)
+  // can't usefully be audited yet; deals past close-out are already done.
   const activeDeals = useMemo(() => {
     if (!dealsData?.deals) return [];
-    return dealsData.deals.filter((d) => deriveActiveMilestone(d) !== "complete");
+    return dealsData.deals.filter((d) => deriveActiveMilestone(d) !== "out-of-scope");
   }, [dealsData]);
 
   const dealIds = useMemo(() => activeDeals.map((d) => d.dealId), [activeDeals]);
