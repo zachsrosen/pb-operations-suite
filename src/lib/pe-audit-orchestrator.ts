@@ -1013,6 +1013,26 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       data: { auditRunId: auditRun.id, summary: auditResult.summary },
     });
 
+    // Auto-trigger PE Action Tasks cross-reference. Fire-and-forget to a
+    // separate function invocation so the audit isn't blocked and the
+    // cross-ref gets its own 300s budget. Only fires on "full" / "docs"
+    // modes — photo-only re-runs don't unlock new analyzer data.
+    if (mode === "full" || mode === "docs") {
+      const baseUrl = process.env.AUTH_URL ?? "http://localhost:3000";
+      void fetch(`${baseUrl}/api/pe-crossref/${dealId}/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-token": process.env.API_SECRET_TOKEN ?? "",
+        },
+        body: JSON.stringify({ triggeredBy: "audit-completion" }),
+      }).catch((err) => {
+        console.warn(
+          `[pe-audit] cross-ref auto-trigger failed for ${dealId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
+
     return auditRun.id;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
