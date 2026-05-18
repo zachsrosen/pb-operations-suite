@@ -138,14 +138,23 @@ async function findOrCreatePeFolder(rootFolderId: string): Promise<string> {
 // PandaDoc pull — download completed docs into GDrive PE folder
 // ---------------------------------------------------------------------------
 
-const PANDADOC_KEY_TO_CHECKLIST: Record<PeTemplateKey, string> = {
-  attestation: "m1.post_install.attestation",
-  acceptance: "m1.post_install.acceptance",
-  progress_waiver: "m1.lien.conditional",
-  final_waiver: "m2.lien.final",
+// Each PandaDoc template key can override one OR MORE checklist items.
+// The PE_CON contract package, for example, covers customer_agreement,
+// installation_order, and disclosures all in one PDF.
+const PANDADOC_KEY_TO_CHECKLIST: Record<PeTemplateKey, string[]> = {
+  contract: [
+    "m1.contract.customer_agreement",
+    "m1.contract.installation_order",
+    "m1.contract.disclosures",
+  ],
+  attestation: ["m1.post_install.attestation"],
+  acceptance: ["m1.post_install.acceptance"],
+  progress_waiver: ["m1.lien.conditional"],
+  final_waiver: ["m2.lien.final"],
 };
 
 const PANDADOC_FILENAMES: Record<PeTemplateKey, string> = {
+  contract: "PE_Contract_Package.pdf",
   attestation: "PE_Installer_Attestation.pdf",
   acceptance: "PE_Customer_Acceptance.pdf",
   progress_waiver: "PE_Progress_Lien_Waiver.pdf",
@@ -173,7 +182,8 @@ async function pullPandaDocs(
     const found = Object.entries(templateIds).filter(([, v]) => v.length > 0).length;
     const missing = Object.entries(templateIds).filter(([, v]) => v.length === 0).map(([k]) => k);
     const totalIds = Object.values(templateIds).reduce((sum, v) => sum + v.length, 0);
-    onEvent?.({ type: "diagnostic", data: { message: `PandaDoc templates: ${found}/4 keys discovered (${totalIds} total IDs)${missing.length > 0 ? `, missing: ${missing.join(", ")}` : ""}` } });
+    const totalKeys = Object.keys(templateIds).length;
+    onEvent?.({ type: "diagnostic", data: { message: `PandaDoc templates: ${found}/${totalKeys} keys discovered (${totalIds} total IDs)${missing.length > 0 ? `, missing: ${missing.join(", ")}` : ""}` } });
   } catch (err) {
     onEvent?.({ type: "pandadoc", data: { key: "all", status: "error", action: `Template discovery failed: ${err instanceof Error ? err.message : String(err)}` } });
     return { statuses: [], checklistOverrides, pulled };
@@ -183,42 +193,54 @@ async function pullPandaDocs(
   const statuses = await findPeDocsForDeal(dealId, templateIds, customerName);
 
   for (const status of statuses) {
-    const checklistId = PANDADOC_KEY_TO_CHECKLIST[status.key];
-    if (!checklistId) continue;
+    const checklistIds = PANDADOC_KEY_TO_CHECKLIST[status.key];
+    if (!checklistIds || checklistIds.length === 0) continue;
 
     if (!status.document) {
       onEvent?.({ type: "pandadoc", data: { key: status.key, status: "missing", action: "Create PandaDoc from template" } });
       continue;
     }
 
-    if (status.document.status === "completed") {
-      try {
-        const pdfBuffer = await downloadPandaDocPdf(status.document.id);
-        const fileName = PANDADOC_FILENAMES[status.key];
-        await uploadDriveBinaryFile(peFolderId, fileName, pdfBuffer, "application/pdf");
-        pulled++;
+    // Download whatever exists, regardless of status. Not every PandaDoc PE
+    // template gets sent for customer signature — lien waivers, for example,
+    // are completed internally and stay in `draft` forever. If a document
+    // exists at all, that's a strong signal it should be included in the
+    // package. Per-status nuance (signed vs. internal) is handled by the
+    // existing vision verification step downstream.
+    try {
+      const pdfBuffer = await downloadPandaDocPdf(status.document.id);
+      const fileName = PANDADOC_FILENAMES[status.key];
+      await uploadDriveBinaryFile(peFolderId, fileName, pdfBuffer, "application/pdf");
+      pulled++;
 
-        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "downloaded", action: "Downloaded to GDrive" } });
+      const docStatus = status.document.status;
+      const action = docStatus === "completed"
+        ? "Downloaded to GDrive"
+        : `Downloaded to GDrive (status: ${docStatus})`;
+      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "downloaded", action } });
 
-        checklistOverrides.set(checklistId, {
-          item: {} as ChecklistItem,
-          status: "found",
-          statusNote: `PandaDoc (downloaded ${new Date().toISOString().slice(0, 10)})`,
-          foundFile: {
-            name: fileName,
-            id: "",
-            url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
-            source: "pandadoc",
-            modifiedTime: new Date().toISOString(),
-            size: pdfBuffer.length,
-          },
-        });
-      } catch (err) {
-        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "error", action: `Download failed: ${err instanceof Error ? err.message : String(err)}` } });
+      const override: ChecklistResult = {
+        item: {} as ChecklistItem,
+        status: "found",
+        statusNote: `PandaDoc ${docStatus} (downloaded ${new Date().toISOString().slice(0, 10)})`,
+        foundFile: {
+          name: fileName,
+          id: "",
+          url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
+          source: "pandadoc",
+          modifiedTime: new Date().toISOString(),
+          size: pdfBuffer.length,
+        },
+      };
+
+      for (const checklistId of checklistIds) {
+        checklistOverrides.set(checklistId, override);
       }
-    } else {
-      const friendlyStatus = status.document.status === "sent" ? "Sent, awaiting signature" : `Status: ${status.document.status}`;
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "pending", action: friendlyStatus } });
+    } catch (err) {
+      // 400-ish "document_in_invalid_state" can happen for very early
+      // statuses (e.g. `uploaded` before content is rendered). Log and
+      // let the GDrive folder scan have a shot at the same item.
+      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "error", action: `Download failed: ${err instanceof Error ? err.message : String(err)}` } });
     }
   }
 

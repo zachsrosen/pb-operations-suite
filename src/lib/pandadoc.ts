@@ -23,6 +23,12 @@ export const DA_TEMPLATE_ID = "SfYdCbqDPnZ52Q7wc3YaF4";
 // `docNamePrefix` is the prefix the actual DOCUMENTS use (always "PE " regardless
 // of template name) for the name-only document fallback search.
 export const PE_TEMPLATE_PATTERNS = [
+  // PE_CON contract package — combines countersigned Customer Agreement,
+  // Installation Order, and required Disclosures into one PDF. Template
+  // name is state-specific ("Participate Energy - COLORADO Customer
+  // Agreement", "...CALIFORNIA Customer Agreement", etc.) so multiple
+  // template IDs may map to this key. Docs use the `PE_CON_` prefix.
+  { key: "contract", pattern: "Customer Agreement", docNamePrefix: "PE_CON_" },
   { key: "attestation", pattern: "Installer Attestation", docNamePrefix: "PE Installer Attestation" },
   { key: "acceptance", pattern: "Customer Certificate of Acceptance", docNamePrefix: "PE Customer Certificate of Acceptance" },
   { key: "progress_waiver", pattern: "PE Conditional Progress Lien Waiver", docNamePrefix: "PE Conditional Progress Lien Waiver" },
@@ -341,6 +347,7 @@ export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, str
   const result: Record<string, string[]> = {};
 
   const envOverrides: Record<PeTemplateKey, string | undefined> = {
+    contract: process.env.PANDADOC_PE_CONTRACT_TEMPLATE_ID,
     attestation: process.env.PANDADOC_PE_ATTESTATION_TEMPLATE_ID,
     acceptance: process.env.PANDADOC_PE_ACCEPTANCE_TEMPLATE_ID,
     progress_waiver: process.env.PANDADOC_PE_PROGRESS_WAIVER_TEMPLATE_ID,
@@ -523,8 +530,12 @@ export async function findPeDocsForDeal(
 }
 
 /**
- * Download a completed PandaDoc document as a PDF buffer.
- * Only works for documents with status "document.completed".
+ * Download a PandaDoc document as a PDF buffer.
+ *
+ * Works for any document status that has rendered PDF content — verified
+ * 2026-05-17 to work for both `document.draft` (e.g. internally-completed
+ * lien waivers that never get sent for signature) and `document.completed`
+ * (signed docs). Some early statuses like `document.uploaded` may 400.
  */
 export async function downloadPandaDocPdf(documentId: string): Promise<Buffer> {
   const url = `${PANDADOC_BASE}/documents/${documentId}/download`;

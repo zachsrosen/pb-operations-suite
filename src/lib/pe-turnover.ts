@@ -487,7 +487,9 @@ export const PE_M2_CHECKLIST: ChecklistItem[] = [
     category: "pto",
     milestone: "m2",
     appliesTo: ALL,
-    driveFolders: ["7"],
+    // Lives in "4. Interconnections" (not PTO). Keep "7" as a fallback for
+    // older deals where the signed IA was filed under PTO & Closeout.
+    driveFolders: ["4", "7"],
     searchAllFolders: false,
     fileHints: ["interconnection", "ia_signed", "net metering", "interconnection_agreement"],
     isPhoto: false,
