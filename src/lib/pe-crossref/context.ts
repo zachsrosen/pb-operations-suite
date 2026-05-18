@@ -11,6 +11,7 @@
 
 import { resolvePEDeal, buildFolderMap } from "@/lib/pe-turnover";
 import { scanM1MonitoringFolder } from "@/lib/pe-crossref/extractors/monitoring-folder";
+import { fetchLatestAuditRun } from "@/lib/pe-crossref/extractors/latest-audit-run";
 import type { CrossRefContext } from "@/lib/pe-crossref/types";
 
 export interface ContextBuildResult {
@@ -37,7 +38,7 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
 
   // Extractors that have real implementations get called here; the rest stay
   // null. Each is independent — Promise.all parallelism.
-  const [monitoringFolder] = await Promise.all([
+  const [monitoringFolder, latestAuditRun] = await Promise.all([
     scanM1MonitoringFolder(installFolderId)
       .then((r) => {
         extractorResults.monitoringFolder = "ok";
@@ -45,6 +46,19 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
       })
       .catch((err) => {
         extractorResults.monitoringFolder = `error: ${err instanceof Error ? err.message : String(err)}`;
+        return null;
+      }),
+
+    // Latest completed PE audit — used by PlansetAnalyzer (reuses audit's
+    // vision extraction of the planset's specs) and later PhotoCritiqueAnalyzer
+    // (photo-to-checklist assignments).
+    fetchLatestAuditRun(dealId)
+      .then((r) => {
+        extractorResults.latestAuditRun = r ? "ok" : "ok (no completed audit yet)";
+        return r;
+      })
+      .catch((err) => {
+        extractorResults.latestAuditRun = `error: ${err instanceof Error ? err.message : String(err)}`;
         return null;
       }),
   ]);
@@ -59,7 +73,7 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
       installPhotos: [],
       nameplateExtractions: new Map(),
       monitoringFolder,
-      latestAuditRun: null,
+      latestAuditRun,
     },
   };
 }

@@ -100,6 +100,18 @@ export interface MonitoringFolderScan {
 export interface AuditRunSummary {
   runId: string;
   photoAssignments: Map<string, { photoFileId: string; checklistLabel: string }>;
+  /**
+   * The planset checklist item's vision result from the audit, if any.
+   * Re-used by PlansetAnalyzer so we don't pay for a second Sonnet call.
+   */
+  plansetVisionResult: PlansetVisionResult | null;
+}
+
+export interface PlansetVisionResult {
+  plansetFileId: string;
+  plansetFileName: string;
+  issues: string[];
+  equipmentVisible: string[];
 }
 
 /**
