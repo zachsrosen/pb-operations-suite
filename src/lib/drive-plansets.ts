@@ -240,8 +240,10 @@ export async function findStampedPlansFolder(parentFolderId: string): Promise<st
 }
 
 /**
- * List planset PDFs, preferring the "Stamped Plans" subfolder if it exists.
- * Falls back to the parent folder if no subfolder found.
+ * List planset PDFs with recursive subfolder search.
+ *
+ * Priority: "Stamped Plans" subfolder → parent folder → breadth-first
+ * search through all subfolders (up to 3 levels deep, max 30 folders).
  */
 export async function listPlansetPdfs(designFolderId: string): Promise<DrivePdfFile[]> {
   // Try "Stamped Plans" subfolder first
@@ -254,8 +256,52 @@ export async function listPlansetPdfs(designFolderId: string): Promise<DrivePdfF
     }
   }
 
-  // Fallback to parent design folder
-  return listDrivePdfs(designFolderId);
+  // Try parent folder directly
+  const parentFiles = await listDrivePdfs(designFolderId);
+  if (parentFiles.length > 0) return parentFiles;
+
+  // BFS through subfolders (mirrors /api/bom/drive-files recursive search)
+  const token = await getDriveToken();
+  const MAX_DEPTH = 3;
+  const MAX_FOLDERS = 30;
+  const queue: Array<{ id: string; depth: number }> = [{ id: designFolderId, depth: 0 }];
+  const visited = new Set<string>([designFolderId]);
+  if (stampedFolderId) visited.add(stampedFolderId);
+  let scanned = 0;
+
+  while (queue.length > 0 && scanned < MAX_FOLDERS) {
+    const current = queue.shift()!;
+    if (current.depth >= MAX_DEPTH) continue;
+    scanned++;
+
+    const subQuery = `'${current.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const subUrl =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subQuery)}` +
+      `&fields=${encodeURIComponent("files(id,name)")}` +
+      `&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const subRes = await fetch(subUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!subRes.ok) continue;
+
+    const subData = await subRes.json() as { files?: Array<{ id: string; name: string }> };
+    for (const folder of subData.files ?? []) {
+      if (visited.has(folder.id)) continue;
+      visited.add(folder.id);
+
+      const pdfs = await listDrivePdfs(folder.id);
+      if (pdfs.length > 0) {
+        console.log(`[drive-plansets] Found ${pdfs.length} PDFs in subfolder "${folder.name}"`);
+        return pdfs;
+      }
+
+      queue.push({ id: folder.id, depth: current.depth + 1 });
+    }
+  }
+
+  return [];
 }
 
 // ---------------------------------------------------------------------------
