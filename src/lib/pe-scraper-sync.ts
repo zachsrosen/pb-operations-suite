@@ -23,6 +23,7 @@ import { PeDocStatus } from "@/generated/prisma/enums";
 import { searchWithRetry } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { PIPELINE_IDS } from "@/lib/deals-pipeline";
+import { syncPeDocStatusesToHubSpot } from "@/lib/pe-hubspot-sync";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -857,6 +858,18 @@ export async function syncPeDocStatuses(
     }
   }
 
+  // Push updated statuses to HubSpot deal properties (best-effort)
+  const upsertedDealIds = [...new Set(ops.map((op) => op.dealId))];
+  if (upsertedDealIds.length > 0) {
+    try {
+      await syncPeDocStatusesToHubSpot(upsertedDealIds);
+    } catch (err) {
+      console.warn(
+        `[pe-scraper-sync] HubSpot push failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   return result;
 }
 
@@ -1179,6 +1192,18 @@ export async function syncPeCsvStatuses(
           `Failed to upsert CSV status for deal ${op.dealId}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+    }
+  }
+
+  // Push updated statuses to HubSpot deal properties (best-effort)
+  const csvDealIds = [...new Set(ops.map((op) => op.dealId))];
+  if (csvDealIds.length > 0) {
+    try {
+      await syncPeDocStatusesToHubSpot(csvDealIds);
+    } catch (err) {
+      console.warn(
+        `[pe-csv-sync] HubSpot push failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

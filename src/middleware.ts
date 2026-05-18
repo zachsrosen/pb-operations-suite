@@ -74,6 +74,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/pe-api-sync",         // PE Raceway API doc + action item sync — CRON_SECRET validated in route
   "/api/cron/pe-scraper-sync",     // PE GCS scraper report sync — CRON_SECRET validated in route
   "/api/webhooks/pe-scraper",      // PE portal scraper push — API_SECRET_TOKEN validated in route
+  "/api/webhooks/hubspot/pe-doc-status", // PE doc status webhook — HubSpot signature validated in route
   "/api/properties/workflow-sync", // HubSpot workflow webhook → property sync — PROPERTY_SYNC_ENABLED + Zod validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
