@@ -10,6 +10,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getObjectEngagements } from "@/lib/hubspot-engagements";
 import { withRetry } from "@/lib/hubspot-custom-objects";
 import { getStageMaps } from "@/lib/deals-pipeline";
+import { zuper } from "@/lib/zuper";
 import { Client } from "@hubspot/api-client";
 import type { Engagement } from "@/components/deal-detail/types";
 import type { PropertyDetail } from "@/lib/property-detail";
@@ -33,7 +34,8 @@ export type HubTab =
   | "tickets"
   | "jobs"
   | "schedule"
-  | "equipment";
+  | "equipment"
+  | "photos";
 
 export interface HubOptions {
   offset?: number;
@@ -144,6 +146,29 @@ export interface BomSnapshotSummary {
 export interface EquipmentTabData {
   snapshots: BomSnapshotSummary[];
   equipmentSummary: PropertyDetail["equipmentSummary"];
+  /** Human-readable brand/model summary strings (cached from rollups). */
+  moduleSummary: string | null;
+  inverterSummary: string | null;
+  batterySummary: string | null;
+  evChargerSummary: string | null;
+}
+
+// --- Photos tab ---
+
+export interface PhotoGroup {
+  jobTitle: string;
+  jobUid: string;
+  category: string | null;
+  photos: Array<{
+    url: string;
+    fileName: string;
+    createdAt: string | null;
+  }>;
+}
+
+export interface PhotosTabData {
+  groups: PhotoGroup[];
+  totalPhotos: number;
 }
 
 // --- Counts (for drawer badges) ---
@@ -163,7 +188,8 @@ export type HubResponse =
   | { tab: "tickets"; data: TicketsTabData }
   | { tab: "jobs"; data: JobsTabData }
   | { tab: "schedule"; data: ScheduleTabData }
-  | { tab: "equipment"; data: EquipmentTabData };
+  | { tab: "equipment"; data: EquipmentTabData }
+  | { tab: "photos"; data: PhotosTabData };
 
 // ---------------------------------------------------------------------------
 // Pipeline / stage name caches (lightweight, long TTL)
@@ -482,7 +508,14 @@ async function fetchSchedule(propertyId: string): Promise<ScheduleTabData> {
 async function fetchEquipment(propertyId: string): Promise<EquipmentTabData> {
   const property = await loadPropertyWithLinks(propertyId);
   if (!property)
-    return { snapshots: [], equipmentSummary: createEmptySummary() };
+    return {
+      snapshots: [],
+      equipmentSummary: createEmptySummary(),
+      moduleSummary: null,
+      inverterSummary: null,
+      batterySummary: null,
+      evChargerSummary: null,
+    };
 
   const dealIds = property.dealLinks.map((l) => l.dealId);
 
@@ -530,7 +563,87 @@ async function fetchEquipment(propertyId: string): Promise<EquipmentTabData> {
     equipmentSummary = createEmptySummary();
   }
 
-  return { snapshots: summaries, equipmentSummary };
+  return {
+    snapshots: summaries,
+    equipmentSummary,
+    moduleSummary: property.moduleSummary ?? null,
+    inverterSummary: property.inverterSummary ?? null,
+    batterySummary: property.batterySummary ?? null,
+    evChargerSummary: property.evChargerSummary ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tab: Photos
+// ---------------------------------------------------------------------------
+
+async function fetchPhotos(propertyId: string): Promise<PhotosTabData> {
+  const cached = await appCache.getOrFetch<PhotosTabData>(
+    CACHE_KEYS.PROPERTY_PHOTOS(propertyId),
+    async () => {
+      const property = await loadPropertyWithLinks(propertyId);
+      if (!property) return { groups: [], totalPhotos: 0 };
+
+      const dealIds = property.dealLinks.map((l) => l.dealId);
+      if (dealIds.length === 0) return { groups: [], totalPhotos: 0 };
+
+      // Find Zuper jobs linked to these deals
+      const cachedJobs = await prisma.zuperJobCache.findMany({
+        where: { hubspotDealId: { in: dealIds } },
+        orderBy: { scheduledStart: "desc" },
+        select: {
+          jobUid: true,
+          jobTitle: true,
+          jobCategory: true,
+        },
+      });
+
+      if (cachedJobs.length === 0) return { groups: [], totalPhotos: 0 };
+
+      // Cap at 5 jobs to limit API fan-out
+      const jobsToFetch = cachedJobs.slice(0, 5);
+
+      const results = await Promise.allSettled(
+        jobsToFetch.map((job) => zuper.getJobPhotos(job.jobUid)),
+      );
+
+      const groups: PhotoGroup[] = [];
+      let totalPhotos = 0;
+
+      for (let i = 0; i < jobsToFetch.length; i++) {
+        const result = results[i];
+        if (result.status !== "fulfilled" || result.value.length === 0) continue;
+
+        const job = jobsToFetch[i];
+        const seenUrls = new Set<string>();
+        const photos: PhotoGroup["photos"] = [];
+
+        for (const att of result.value) {
+          if (seenUrls.has(att.url)) continue;
+          seenUrls.add(att.url);
+          photos.push({
+            url: att.url,
+            fileName: att.file_name,
+            createdAt: att.created_at ?? null,
+          });
+        }
+
+        if (photos.length > 0) {
+          groups.push({
+            jobTitle: job.jobTitle,
+            jobUid: job.jobUid,
+            category: job.jobCategory,
+            photos,
+          });
+          totalPhotos += photos.length;
+        }
+      }
+
+      return { groups, totalPhotos };
+    },
+  );
+
+  return cached.data;
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +702,8 @@ export async function getPropertyHub(
       return { tab, data: await fetchSchedule(propertyId) };
     case "equipment":
       return { tab, data: await fetchEquipment(propertyId) };
+    case "photos":
+      return { tab, data: await fetchPhotos(propertyId) };
     default: {
       const _exhaustive: never = tab;
       throw new Error(`Unknown tab: ${_exhaustive}`);

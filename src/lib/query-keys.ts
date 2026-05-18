@@ -301,6 +301,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("property-timeline")) return [queryKeys.propertyTimeline.root];
   if (serverKey.startsWith("property:permits")) return [queryKeys.propertyPermits.root];
   if (serverKey.startsWith("property:residents")) return [queryKeys.propertyResidents.root];
+  if (serverKey.startsWith("property-photos")) return [queryKeys.propertyHub.root];
   if (serverKey.startsWith("property-hub")) return [queryKeys.propertyHub.root];
   if (serverKey.startsWith("ticket-engagements")) return [queryKeys.serviceTickets.root];
   return [];

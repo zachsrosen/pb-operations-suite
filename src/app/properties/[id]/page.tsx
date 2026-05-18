@@ -11,6 +11,7 @@ import PropertyTicketsTab from "@/components/property/PropertyTicketsTab";
 import PropertyJobsTab from "@/components/property/PropertyJobsTab";
 import PropertyScheduleTab from "@/components/property/PropertyScheduleTab";
 import PropertyEquipmentTab from "@/components/property/PropertyEquipmentTab";
+import PropertyPhotosTab from "@/components/property/PropertyPhotosTab";
 import type { PropertyDetail } from "@/lib/property-detail";
 import type { HubTab } from "@/lib/property-hub";
 
@@ -21,6 +22,7 @@ const VALID_TABS: HubTab[] = [
   "jobs",
   "schedule",
   "equipment",
+  "photos",
 ];
 
 function isValidTab(t: string | null): t is HubTab {
@@ -91,6 +93,9 @@ export default function PropertyHubPage() {
           )}
           {activeTab === "equipment" && (
             <PropertyEquipmentTab propertyId={id} />
+          )}
+          {activeTab === "photos" && (
+            <PropertyPhotosTab propertyId={id} />
           )}
         </div>
       </div>
