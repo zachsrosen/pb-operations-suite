@@ -1,7 +1,7 @@
 /**
  * /api/eagleview/test
  *
- * GET → Runs a sandbox-only diagnostic: token → availability (product 62) →
+ * GET → Runs a sandbox-only diagnostic: token → availability (TDP, product 91) →
  *       place order → report status. Returns raw EagleView API responses
  *       so they can be captured in the browser Network tab as Go-Live proof.
  *
@@ -46,20 +46,20 @@ export async function GET() {
 
   const steps: Record<string, unknown> = {};
 
-  // Step 1: Availability check (product 62 — Inform Advanced)
+  // Step 1: Availability check (TDP — product 91)
   try {
     const avail = await client.checkSolarAvailability(
       { address: TEST_ADDRESS.address, latitude: TEST_ADDRESS.latitude, longitude: TEST_ADDRESS.longitude },
-      [EAGLEVIEW_PRODUCT_ID.IA],
+      [EAGLEVIEW_PRODUCT_ID.TDP],
     );
     steps.availability = { status: "OK", response: avail };
 
-    const prod62 = avail.availabilityStatus?.find(
-      (s: { productId: number; isAvailable: boolean }) => s.productId === EAGLEVIEW_PRODUCT_ID.IA,
+    const tdp = avail.availabilityStatus?.find(
+      (s: { productId: number; isAvailable: boolean }) => s.productId === EAGLEVIEW_PRODUCT_ID.TDP,
     );
-    if (!prod62?.isAvailable) {
+    if (!tdp?.isAvailable) {
       steps.availability = { status: "UNAVAILABLE", response: avail };
-      return NextResponse.json({ steps, summary: "Product 62 not available at test address." });
+      return NextResponse.json({ steps, summary: "TrueDesign (Product 91) not available at test address." });
     }
   } catch (err) {
     steps.availability = { status: "ERROR", error: err instanceof Error ? err.message : String(err) };
@@ -78,7 +78,7 @@ export async function GET() {
           country: "United States",
         },
       },
-      primaryProductId: EAGLEVIEW_PRODUCT_ID.IA,
+      primaryProductId: EAGLEVIEW_PRODUCT_ID.TDP,
       deliveryProductId: 8,
       measurementInstructionType: 2,
       changesInLast4Years: false,
@@ -105,6 +105,6 @@ export async function GET() {
   return NextResponse.json({
     steps,
     summary: "All steps passed. Integration is functional against sandbox.",
-    note: "Product 91 (TrueDesign for Planning) is not available in sandbox. Production Go-Live required for TDP.",
+    note: "TrueDesign for Planning (Product 91) tested successfully against sandbox.",
   });
 }

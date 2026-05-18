@@ -97,7 +97,7 @@ export default function EagleViewTestPage() {
           <p className="text-muted text-sm mb-4">
             Runs a full end-to-end API flow against the EagleView sandbox
             environment: OAuth2 token exchange, product availability check
-            (Inform Advanced, Product 62), order placement, and report status
+            (TrueDesign for Planning, Product 91), order placement, and report status
             retrieval. All responses are displayed below as raw JSON.
           </p>
           <div className="flex items-center gap-4">
@@ -137,7 +137,7 @@ export default function EagleViewTestPage() {
           <StepCard
             number={2}
             title="Product Availability Check"
-            description="POST /v1/Product/SolarProductAvailability — Product 62 (Inform Advanced)"
+            description="POST /v1/Product/SolarProductAvailability — TrueDesign for Planning (Product 91)"
             state={stepStates.availability}
             response={result?.steps.availability?.response}
             error={result?.steps.availability?.error}
@@ -146,7 +146,7 @@ export default function EagleViewTestPage() {
           <StepCard
             number={3}
             title="Place Order"
-            description="POST /v2/Order/PlaceOrder — Inform Advanced report"
+            description="POST /v2/Order/PlaceOrder — TrueDesign for Planning report"
             state={stepStates.placeOrder}
             response={result?.steps.placeOrder?.response}
             error={result?.steps.placeOrder?.error}
