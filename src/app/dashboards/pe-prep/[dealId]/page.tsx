@@ -10,6 +10,7 @@ import { PeChecklistCard } from "@/components/pe-prep/PeChecklistCard";
 import { PePhotoGrid } from "@/components/pe-prep/PePhotoGrid";
 import { PePhotoModal } from "@/components/pe-prep/PePhotoModal";
 import { PePandaDocSection } from "@/components/pe-prep/PePandaDocSection";
+import { PeActionTasksPanel } from "@/components/pe-prep/PeActionTasksPanel";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 
 interface DealLinks {
@@ -269,6 +270,15 @@ export default function PePrepPage({ params }: { params: Promise<{ dealId: strin
          * verify whether any photo actually exists for that category.
          */}
         <PhotoGalleryCard hubspotDealId={dealId} />
+
+        {/*
+         * PE Cross-Reference action tasks. Surfaces the rich, P-coded action
+         * list (hardware mismatches, SO corrections, planset revisions, photo
+         * critiques, monitoring follow-ups) produced by the pe-crossref
+         * subsystem. Auto-trigger fires after PE audit completion; PM can
+         * also re-run on demand.
+         */}
+        <PeActionTasksPanel dealId={dealId} />
 
         <PePhotoModal
           photo={selectedPhoto}
