@@ -232,7 +232,7 @@ function StepCard({
               {error}
             </pre>
           )}
-          {response && (
+          {response != null && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-muted font-semibold uppercase tracking-wider">
