@@ -4,6 +4,47 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-17
+
+### PE File Preparation Tool (Major)
+- New PE Prep landing page with deal queue filtered by deal stage, plus audit history overlay for re-running and reviewing prior audits
+- Two-pipeline PE audit (docs + photos) with independent timeouts to prevent one slow side from blocking the other
+- Deep PE verification for both photos and documents with cached vision results and Anthropic file IDs to eliminate redundant work
+- Batch photo triage replaces 36+ vision calls with a single API call; triage max_tokens now scales with photo count
+- PandaDoc integration: clickable doc links on PE Prep, draft pulls, PE_CON contract support, name-only search fallback, multi-template-id support, and 4 progressively permissive search strategies for hard-to-find docs
+- Surface all Zuper job photos on the PE Prep detail page, with PE-named photos prioritized in triage
+- Recursive Drive subfolder listing for doc candidates; user OAuth token used for Drive access (with service-account fallback for write)
+- Performance: parallelized Zuper enumeration, parallelized PandaDoc per-key search and per-doc download, 6-way vision concurrency cap, fixed doc classification race condition
+- PE Action Tasks Cross-Reference MVP — spec, plan, chunks 1-3, and dashboard (#741)
+
+### PE & Compliance Suite
+- New suite consolidating PE Prep, PE Deals, PE Action Queue, and existing compliance pages under one roof (#735)
+
+### Weekly Shop Health Dashboard
+- New dashboard summarizing shop-level health metrics by week (#706)
+- Extracted shop-health week utils to a server-only module to fix a client/server boundary violation
+
+### Zuper Property Sync (Write Direction)
+- New write-direction sync: PB Property Object → Zuper customer property record (#709)
+- Associate Zuper properties with the customer on create/update, with safety checks to prevent misassociation
+- Link Zuper projects to properties during sync; include ticket-only properties in the sync set
+- Filter out customers with no UID before updating Zuper property
+- Reconcile cron now removes stale deal/ticket links so Zuper doesn't carry dead associations
+
+### Property Hub Enhancements
+- Header expanded with equipment summaries, revenue, and a direct Zuper link
+- New Photos tab pulling Zuper job photos for the property
+- HubSpot and Zuper external links added to Property Hub tabs
+- Extended rollup fields cached locally on `HubSpotPropertyCache` and exposed in `PropertyDetail`
+- Design spec checked in under `docs/`
+
+### Bug Fixes
+- Drive OAuth: pass correct cookie name to `getToken` so PE audit and other Drive integrations resolve user tokens reliably
+- PE audit: classifier accuracy improvements, correct deal links in the UI, block proposal misclassification
+- PandaDoc: pull drafts (not just sent docs), correct IA folder path, name-only search fallback when template discovery fails
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
