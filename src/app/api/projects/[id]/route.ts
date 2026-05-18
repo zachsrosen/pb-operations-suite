@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { requireApiAuth } from "@/lib/api-auth";
 import { fetchProjectById, updateDealProperty } from "@/lib/hubspot";
+import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -71,6 +72,13 @@ export async function PATCH(
     const success = await updateDealProperty(id, filtered);
     if (!success) {
       return NextResponse.json({ error: "Failed to update deal in HubSpot" }, { status: 502 });
+    }
+
+    if ("system_performance_review" in filtered) {
+      await prisma.deal.updateMany({
+        where: { hubspotDealId: id },
+        data: { systemPerformanceReview: filtered.system_performance_review },
+      });
     }
 
     return NextResponse.json({ success: true, updated: Object.keys(filtered) });
