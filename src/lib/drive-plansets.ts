@@ -640,13 +640,38 @@ export async function listDriveFilesRecursive(
   maxDepth = 3,
   maxFiles = 100,
 ): Promise<DriveGenericFile[]> {
+  const result = await listDriveFilesRecursiveDetailed(folderId, maxDepth, maxFiles);
+  return result.files;
+}
+
+export interface RecursiveListResult {
+  files: DriveGenericFile[];
+  /** Per-folder errors encountered during the walk. Empty when everything succeeded. */
+  errors: Array<{ folderId: string; depth: number; message: string }>;
+}
+
+/**
+ * Same as `listDriveFilesRecursive` but returns BOTH the files AND a structured
+ * list of per-folder errors encountered during the walk. Callers can surface
+ * the errors as audit diagnostics so a Drive flake doesn't silently produce a
+ * "missing" verdict.
+ *
+ * Pre-existing callers calling `listDriveFilesRecursive` see the same shape
+ * (files only) — this is the new richer API for consumers that care.
+ */
+export async function listDriveFilesRecursiveDetailed(
+  folderId: string,
+  maxDepth = 3,
+  maxFiles = 100,
+): Promise<RecursiveListResult> {
   const out: DriveGenericFile[] = [];
   const seen = new Set<string>();
+  const errors: RecursiveListResult["errors"] = [];
 
   async function walk(parentId: string, depth: number) {
     if (depth > maxDepth || out.length >= maxFiles) return;
 
-    // Files at this level
+    // Files at this level — surfaces the error rather than swallowing it.
     try {
       const files = await listDriveFiles(parentId);
       for (const f of files) {
@@ -655,14 +680,16 @@ export async function listDriveFilesRecursive(
         seen.add(f.id);
         out.push(f);
       }
-    } catch {
-      // ignore — keep walking siblings
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[drive] listDriveFilesRecursive: listDriveFiles failed at depth ${depth} for folder ${parentId}: ${message}`);
+      errors.push({ folderId: parentId, depth, message });
+      // Don't `return` — keep walking siblings so a single 429 doesn't lose the whole tree.
     }
 
     if (out.length >= maxFiles) return;
 
-    // Recurse into subfolders
-    const token = await getDriveToken();
+    // Recurse into subfolders — also through the retry wrapper.
     const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
     const fields = "files(id,name)";
     const url =
@@ -671,14 +698,20 @@ export async function listDriveFilesRecursive(
       `&pageSize=50` +
       `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
 
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return;
+    let subfolders: Array<{ id: string; name: string }> = [];
+    try {
+      const data = await driveFetchWithRetry<{ files?: Array<{ id: string; name: string }> }>(
+        url,
+        `listSubfolders(depth=${depth})`,
+      );
+      subfolders = data.files ?? [];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[drive] listDriveFilesRecursive: subfolder list failed at depth ${depth} for folder ${parentId}: ${message}`);
+      errors.push({ folderId: parentId, depth, message });
+      return;
+    }
 
-    const data = (await res.json()) as { files?: Array<{ id: string; name: string }> };
-    const subfolders = data.files ?? [];
     for (const sub of subfolders) {
       if (out.length >= maxFiles) break;
       await walk(sub.id, depth + 1);
@@ -686,13 +719,11 @@ export async function listDriveFilesRecursive(
   }
 
   await walk(folderId, 0);
-  return out;
+  return { files: out, errors };
 }
 
 /** List ALL non-folder files in a Drive folder (any type), sorted by modifiedTime desc. */
 export async function listDriveFiles(folderId: string): Promise<DriveGenericFile[]> {
-  const token = await getDriveToken();
-
   const query = `'${folderId}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`;
   const fields = "files(id,name,mimeType,modifiedTime,size)";
   const orderBy = "modifiedTime desc";
@@ -703,18 +734,68 @@ export async function listDriveFiles(folderId: string): Promise<DriveGenericFile
     `&pageSize=100` +
     `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
+  const data = await driveFetchWithRetry<{ files?: DriveGenericFile[] }>(url, "listDriveFiles");
+  return data.files ?? [];
+}
 
-  if (!res.ok) {
+/**
+ * Drive API fetch with retry on transient errors (429, 5xx, network).
+ * Exponential backoff, max 3 retries. 401 is treated as transient (one
+ * retry) in case the token expired between mint and use — getDriveToken
+ * now caches but a 55-min cache window can still straddle the actual
+ * 60-min Google TTL on slow requests.
+ *
+ * Centralised here so every Drive consumer (listDriveFiles, the inner
+ * subfolder-list inside listDriveFilesRecursive, listDriveSubfolders, etc.)
+ * inherits the same behaviour.
+ */
+async function driveFetchWithRetry<T>(url: string, label: string): Promise<T> {
+  const maxAttempts = 4; // initial + 3 retries
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const token = await getDriveToken();
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxAttempts - 1) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      throw new Error(`[drive] ${label} network failure after ${attempt + 1} attempts: ${lastError.message}`);
+    }
+
+    if (res.ok) {
+      return (await res.json()) as T;
+    }
+
     const body = await res.text().catch(() => "");
-    throw new Error(`Drive API ${res.status}: ${body.slice(0, 200)}`);
+    // Transient → retry. Non-transient → throw immediately.
+    if (res.status === 401 || res.status === 429 || res.status >= 500) {
+      lastError = new Error(`Drive API ${res.status}: ${body.slice(0, 200)}`);
+      if (attempt < maxAttempts - 1) {
+        const retryAfter = Number(res.headers.get("retry-after"));
+        const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoffMs(attempt);
+        console.warn(`[drive] ${label} HTTP ${res.status}; retrying in ${wait}ms (attempt ${attempt + 1}/${maxAttempts})`);
+        await sleep(wait);
+        continue;
+      }
+    }
+    throw new Error(`[drive] ${label} HTTP ${res.status}: ${body.slice(0, 200)}`);
   }
 
-  const data = (await res.json()) as { files?: DriveGenericFile[] };
-  return data.files ?? [];
+  throw lastError ?? new Error(`[drive] ${label} failed without specific error`);
+}
+
+function backoffMs(attempt: number): number {
+  // 250ms, 500ms, 1000ms, 2000ms + jitter
+  return Math.pow(2, attempt) * 250 + Math.floor(Math.random() * 200);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Download any file from Drive as a Buffer. For images, prefer downloadDriveImage() for HEIC support. */
