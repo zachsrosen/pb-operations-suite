@@ -13,6 +13,13 @@ interface SearchItem {
   systemSizeKw: number | null;
   projectType: string | null;
   conclusion: string | null;
+  customerNotes: string | null;
+  operationsNotes: string | null;
+  opsRevisionNotes: string | null;
+  designNotes: string | null;
+  escalationReason: string | null;
+  shitShowFlagged: boolean;
+  designRevisionNeeded: boolean;
   session: { date: string; status: string };
 }
 
@@ -20,6 +27,13 @@ interface SearchResponse {
   items: SearchItem[];
   total: number;
   hasMore: boolean;
+}
+
+interface SessionSummary {
+  date: string;
+  conclusion: string | null;
+  noteSnippets: string[];
+  flags: string[];
 }
 
 export interface DealGroup {
@@ -30,6 +44,7 @@ export interface DealGroup {
   projectType: string | null;
   meetingCount: number;
   conclusions: { date: string; text: string | null }[];
+  sessions: SessionSummary[];
 }
 
 /* ── Grouping helper (exported for testing) ── */
@@ -49,6 +64,7 @@ export function groupItemsByDeal(
       projectType: item.projectType,
       meetingCount: 0,
       conclusions: [],
+      sessions: [],
     };
 
     // Deduplicate by session date
@@ -56,14 +72,39 @@ export function groupItemsByDeal(
     if (!group.conclusions.some((c) => c.date === dateKey)) {
       group.meetingCount += 1;
       group.conclusions.push({ date: dateKey, text: item.conclusion });
+
+      // Build note snippets for this session
+      const snippets: string[] = [];
+      if (item.customerNotes) snippets.push(`Customer: ${truncate(item.customerNotes, 60)}`);
+      if (item.operationsNotes) snippets.push(`Ops: ${truncate(item.operationsNotes, 60)}`);
+      if (item.opsRevisionNotes) snippets.push(`Ops Rev: ${truncate(item.opsRevisionNotes, 60)}`);
+      if (item.designNotes) snippets.push(`Design: ${truncate(item.designNotes, 60)}`);
+
+      const flags: string[] = [];
+      if (item.escalationReason) flags.push("Escalation");
+      if (item.shitShowFlagged) flags.push("Shit Show");
+      if (item.designRevisionNeeded) flags.push("Revision");
+
+      group.sessions.push({
+        date: dateKey,
+        conclusion: item.conclusion,
+        noteSnippets: snippets,
+        flags,
+      });
     }
 
-    // Sort conclusions newest-first
+    // Sort newest-first
     group.conclusions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    group.sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     groups.set(item.dealId, group);
   }
 
   return groups;
+}
+
+function truncate(text: string, maxLen: number): string {
+  const oneLine = text.replace(/\n/g, " ").trim();
+  return oneLine.length > maxLen ? oneLine.slice(0, maxLen) + "..." : oneLine;
 }
 
 /* ── Component ── */
@@ -179,6 +220,12 @@ export function SearchResultsList({ selectedDealId, onSelectDeal, onFiltersChang
           <p className="text-sm text-muted text-center py-8">No deals found matching your search</p>
         )}
 
+        {groups.length > 0 && (
+          <p className="text-[10px] text-muted text-center pb-1">
+            {searchQuery.data?.total ?? groups.length} result{(searchQuery.data?.total ?? groups.length) !== 1 ? "s" : ""} &mdash; click a deal for full history
+          </p>
+        )}
+
         {groups.map((group) => (
           <button
             key={group.dealId}
@@ -197,21 +244,51 @@ export function SearchResultsList({ selectedDealId, onSelectDeal, onFiltersChang
               {[group.region, group.systemSizeKw ? `${group.systemSizeKw} kW` : null, group.projectType].filter(Boolean).join(" \u2022 ")}
             </div>
 
-            {/* Inline conclusion previews */}
-            {group.conclusions.length > 0 && (
-              <div className="mt-2 pl-2 border-l-2 border-orange-500 space-y-1">
-                {group.conclusions.slice(0, 3).map((c) => (
-                  <div key={c.date} className="flex items-start gap-1.5">
-                    <span className="text-[10px] text-orange-500 shrink-0">
-                      {new Date(c.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </span>
-                    <span className="text-[11px] text-muted truncate">
-                      {c.text || "No conclusion recorded"}
-                    </span>
+            {/* Session summaries with notes */}
+            {group.sessions.length > 0 && (
+              <div className="mt-2 pl-2 border-l-2 border-orange-500 space-y-2">
+                {group.sessions.slice(0, 3).map((s) => (
+                  <div key={s.date}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-orange-500 shrink-0 font-medium">
+                        {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                      </span>
+                      {s.flags.map((f) => (
+                        <span
+                          key={f}
+                          className={`rounded-full px-1.5 py-px text-[9px] font-medium ${
+                            f === "Shit Show" ? "bg-red-500/15 text-red-400"
+                              : f === "Escalation" ? "bg-orange-500/15 text-orange-400"
+                              : "bg-yellow-500/15 text-yellow-400"
+                          }`}
+                        >
+                          {f}
+                        </span>
+                      ))}
+                    </div>
+                    {s.conclusion && (
+                      <p className="text-[11px] text-foreground/70 truncate mt-0.5">
+                        <span className="text-emerald-500 text-[10px]">Conclusion:</span>{" "}
+                        {s.conclusion}
+                      </p>
+                    )}
+                    {s.noteSnippets.length > 0 && (
+                      <div className="mt-0.5 space-y-px">
+                        {s.noteSnippets.slice(0, 2).map((snippet, i) => (
+                          <p key={i} className="text-[10px] text-muted truncate">{snippet}</p>
+                        ))}
+                        {s.noteSnippets.length > 2 && (
+                          <p className="text-[10px] text-muted/60">+{s.noteSnippets.length - 2} more note{s.noteSnippets.length - 2 !== 1 ? "s" : ""}</p>
+                        )}
+                      </div>
+                    )}
+                    {!s.conclusion && s.noteSnippets.length === 0 && (
+                      <p className="text-[10px] text-muted/50 italic mt-0.5">No notes recorded</p>
+                    )}
                   </div>
                 ))}
-                {group.conclusions.length > 3 && (
-                  <span className="text-[10px] text-muted">+{group.conclusions.length - 3} more</span>
+                {group.sessions.length > 3 && (
+                  <span className="text-[10px] text-muted">+{group.sessions.length - 3} more session{group.sessions.length - 3 !== 1 ? "s" : ""}</span>
                 )}
               </div>
             )}
