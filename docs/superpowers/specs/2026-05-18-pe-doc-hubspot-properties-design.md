@@ -50,7 +50,7 @@ Property list:
 | `pe_doc_attestation_customer_payment` | PE: Attestation of Customer Payment | Attestation of Customer Payment |
 | `pe_doc_conditional_lien_waiver` | PE: Conditional Progress Lien Waiver | Conditional Progress Lien Waiver |
 | `pe_doc_signed_interconnection` | PE: Signed Interconnection Agreement | Signed Interconnection Agreement |
-| `pe_doc_conditional_waiver_final` | PE: Conditional Waiver &mdash; Final Payment | Conditional Waiver &mdash; Final Payment |
+| `pe_doc_conditional_waiver_final` | PE: Conditional Waiver — Final Payment | Conditional Waiver — Final Payment |
 | `pe_doc_permission_to_operate` | PE: Permission to Operate (PTO) | Permission to Operate (PTO) |
 
 ### 15 Notes Properties (type: `string`, fieldType: `textarea`)
@@ -72,7 +72,7 @@ Same naming pattern with `_notes` suffix:
 | `pe_doc_attestation_customer_payment_notes` | PE: Attestation of Customer Payment Notes |
 | `pe_doc_conditional_lien_waiver_notes` | PE: Conditional Progress Lien Waiver Notes |
 | `pe_doc_signed_interconnection_notes` | PE: Signed Interconnection Agreement Notes |
-| `pe_doc_conditional_waiver_final_notes` | PE: Conditional Waiver &mdash; Final Payment Notes |
+| `pe_doc_conditional_waiver_final_notes` | PE: Conditional Waiver — Final Payment Notes |
 | `pe_doc_permission_to_operate_notes` | PE: Permission to Operate Notes |
 
 ## Sync Architecture
@@ -88,11 +88,11 @@ PE Scraper runs (POST /api/accounting/pe-docs/sync)
        |-- Map PeDocStatus enum -> HubSpot enum value
        |-- Map notes -> pe_doc_*_notes property
        |-- HubSpot batch update API (POST /crm/v3/objects/deals/batch/update)
-       |   Max 100 deals per batch call
+       |   Max 50 deals per batch call (conservative: 30 properties per deal)
        +-- Failures logged, do not fail overall sync (best-effort)
 ```
 
-Called at the end of both `syncPeDocStatuses()` and `syncPeCsvStatuses()` with the list of deal IDs that were upserted.
+Called at the end of both `syncPeDocStatuses()` and `syncPeCsvStatuses()`. The deal IDs are collected internally from the `ops` array (the successful upsert operations already track `dealId`) — no changes to `SyncResult` or `CsvSyncResult` return types needed.
 
 ### Flow 2: HubSpot to DB (webhook for manual changes)
 
@@ -195,7 +195,7 @@ const HUBSPOT_TO_PE_STATUS: Record<string, PeDocStatus> = {
    - Same change at end of `syncPeCsvStatuses()`
 
 5. **`src/middleware.ts`**
-   - Verify `/api/webhooks/hubspot/pe-doc-status` is covered by the existing `/api/webhooks/` public route prefix (likely already handled)
+   - Add `"/api/webhooks/hubspot/pe-doc-status"` to the `PUBLIC_API_ROUTES` array (each webhook route is listed individually — no wildcard prefix match)
 
 ### Not Changing
 
