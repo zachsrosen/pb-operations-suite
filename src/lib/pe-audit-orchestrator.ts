@@ -192,57 +192,63 @@ async function pullPandaDocs(
   onEvent?.({ type: "diagnostic", data: { message: `PandaDoc search: dealId=${dealId}, customerName=${customerName ?? "none"}` } });
   const statuses = await findPeDocsForDeal(dealId, templateIds, customerName);
 
-  for (const status of statuses) {
-    const checklistIds = PANDADOC_KEY_TO_CHECKLIST[status.key];
-    if (!checklistIds || checklistIds.length === 0) continue;
+  // Download + upload each matched PandaDoc in parallel. Each match is an
+  // independent download (PandaDoc) + upload (GDrive) — sequentially this
+  // added 30-60s per matched template, easily pushing docs mode past the
+  // Vercel 300s timeout. Different fileNames + same peFolderId is safe.
+  await Promise.all(
+    statuses.map(async (status) => {
+      const checklistIds = PANDADOC_KEY_TO_CHECKLIST[status.key];
+      if (!checklistIds || checklistIds.length === 0) return;
 
-    if (!status.document) {
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "missing", action: "Create PandaDoc from template" } });
-      continue;
-    }
-
-    // Download whatever exists, regardless of status. Not every PandaDoc PE
-    // template gets sent for customer signature — lien waivers, for example,
-    // are completed internally and stay in `draft` forever. If a document
-    // exists at all, that's a strong signal it should be included in the
-    // package. Per-status nuance (signed vs. internal) is handled by the
-    // existing vision verification step downstream.
-    try {
-      const pdfBuffer = await downloadPandaDocPdf(status.document.id);
-      const fileName = PANDADOC_FILENAMES[status.key];
-      await uploadDriveBinaryFile(peFolderId, fileName, pdfBuffer, "application/pdf");
-      pulled++;
-
-      const docStatus = status.document.status;
-      const action = docStatus === "completed"
-        ? "Downloaded to GDrive"
-        : `Downloaded to GDrive (status: ${docStatus})`;
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "downloaded", action } });
-
-      const override: ChecklistResult = {
-        item: {} as ChecklistItem,
-        status: "found",
-        statusNote: `PandaDoc ${docStatus} (downloaded ${new Date().toISOString().slice(0, 10)})`,
-        foundFile: {
-          name: fileName,
-          id: "",
-          url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
-          source: "pandadoc",
-          modifiedTime: new Date().toISOString(),
-          size: pdfBuffer.length,
-        },
-      };
-
-      for (const checklistId of checklistIds) {
-        checklistOverrides.set(checklistId, override);
+      if (!status.document) {
+        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "missing", action: "Create PandaDoc from template" } });
+        return;
       }
-    } catch (err) {
-      // 400-ish "document_in_invalid_state" can happen for very early
-      // statuses (e.g. `uploaded` before content is rendered). Log and
-      // let the GDrive folder scan have a shot at the same item.
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "error", action: `Download failed: ${err instanceof Error ? err.message : String(err)}` } });
-    }
-  }
+
+      // Download whatever exists, regardless of status. Not every PandaDoc PE
+      // template gets sent for customer signature — lien waivers, for example,
+      // are completed internally and stay in `draft` forever. If a document
+      // exists at all, that's a strong signal it should be included in the
+      // package. Per-status nuance (signed vs. internal) is handled by the
+      // existing vision verification step downstream.
+      try {
+        const pdfBuffer = await downloadPandaDocPdf(status.document.id);
+        const fileName = PANDADOC_FILENAMES[status.key];
+        await uploadDriveBinaryFile(peFolderId, fileName, pdfBuffer, "application/pdf");
+        pulled++;
+
+        const docStatus = status.document.status;
+        const action = docStatus === "completed"
+          ? "Downloaded to GDrive"
+          : `Downloaded to GDrive (status: ${docStatus})`;
+        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "downloaded", action } });
+
+        const override: ChecklistResult = {
+          item: {} as ChecklistItem,
+          status: "found",
+          statusNote: `PandaDoc ${docStatus} (downloaded ${new Date().toISOString().slice(0, 10)})`,
+          foundFile: {
+            name: fileName,
+            id: "",
+            url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
+            source: "pandadoc",
+            modifiedTime: new Date().toISOString(),
+            size: pdfBuffer.length,
+          },
+        };
+
+        for (const checklistId of checklistIds) {
+          checklistOverrides.set(checklistId, override);
+        }
+      } catch (err) {
+        // 400-ish "document_in_invalid_state" can happen for very early
+        // statuses (e.g. `uploaded` before content is rendered). Log and
+        // let the GDrive folder scan have a shot at the same item.
+        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "error", action: `Download failed: ${err instanceof Error ? err.message : String(err)}` } });
+      }
+    }),
+  );
 
   return { statuses, checklistOverrides, pulled };
 }

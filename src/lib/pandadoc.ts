@@ -386,10 +386,148 @@ export async function discoverPeTemplateIds(): Promise<Record<PeTemplateKey, str
 }
 
 /**
+ * Find the most recent PandaDoc document for one template key. Strategies
+ * fall through sequentially within a key (each is a fallback for the prior),
+ * but keys are independent — `findPeDocsForDeal` runs all of them in parallel.
+ */
+async function findPeDocForKey(
+  dealId: string,
+  key: PeTemplateKey,
+  docNamePrefix: string,
+  ids: string[],
+  customerName: string | undefined,
+): Promise<PeTemplateStatus> {
+  try {
+    let doc: PandaDocListItem | null = null;
+    let matchedVia: string = "none";
+    let matchedTemplateId: string | null = null;
+
+    // Strategy 1: Search by template ID + HubSpot deal metadata.
+    if (ids.length === 0) {
+      console.warn(`[pe-pandadoc] ${key}/strategy1 SKIPPED (no templateIds)`);
+    }
+    for (const templateId of ids) {
+      if (doc) break;
+      const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+        searchParams: {
+          template_id: templateId,
+          "metadata_hubspot.deal_id": dealId,
+          count: 1,
+          order_by: "-date_modified",
+        },
+      });
+      const count = data.results?.length ?? 0;
+      console.warn(`[pe-pandadoc] ${key}/strategy1(template+meta): ${count} results for tpl=${templateId.slice(0, 10)} deal=${dealId}`);
+      if (data.results?.[0]) {
+        doc = data.results[0];
+        matchedVia = "template+metadata";
+        matchedTemplateId = templateId;
+      }
+    }
+
+    // Strategy 2: template ID + document name containing customer name.
+    if (!doc && customerName) {
+      const nameQuery = `${docNamePrefix} - ${customerName}`;
+      for (const templateId of ids) {
+        if (doc) break;
+        const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+          searchParams: {
+            template_id: templateId,
+            q: nameQuery,
+            count: 3,
+            order_by: "-date_modified",
+          },
+        });
+        const count = fallback.results?.length ?? 0;
+        const names = (fallback.results ?? []).map((d) => `"${d.name}"`).join(", ");
+        console.warn(`[pe-pandadoc] ${key}/strategy2(template+name): ${count} results for q="${nameQuery}" tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
+        if (fallback.results?.[0]) {
+          doc = fallback.results[0];
+          matchedVia = "template+name";
+          matchedTemplateId = templateId;
+        }
+      }
+    }
+
+    // Strategy 3: Name-only search using JUST the docNamePrefix (template-independent).
+    // PandaDoc's q= can be picky about punctuation/whitespace in title matches.
+    // Search by prefix alone, then filter results client-side for the customer name.
+    // count=100: PE templates can have 60+ docs each; lower caps miss older deals
+    // (verified against Brownell — at count=20, Brownell was below the cutoff).
+    if (!doc) {
+      const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+        searchParams: {
+          q: docNamePrefix,
+          count: 100,
+          order_by: "-date_modified",
+        },
+      });
+      const count = nameOnly.results?.length ?? 0;
+      const names = (nameOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
+      console.warn(`[pe-pandadoc] ${key}/strategy3(prefix-only): ${count} results for q="${docNamePrefix}" → ${names || "(none)"}`);
+      if (customerName) {
+        doc = nameOnly.results?.find((d) =>
+          d.name.toLowerCase().includes(customerName.toLowerCase())
+        ) ?? null;
+        if (doc) {
+          matchedVia = "prefix+customer-filter";
+          matchedTemplateId = doc.template_id ?? null;
+        }
+      }
+    }
+
+    // Strategy 4: Template-ID-only sweep + client-side customer-name filter.
+    // Last-resort. Iterates each known template ID.
+    if (!doc && customerName) {
+      for (const templateId of ids) {
+        if (doc) break;
+        const tplOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
+          searchParams: {
+            template_id: templateId,
+            count: 50,
+            order_by: "-date_modified",
+          },
+        });
+        const count = tplOnly.results?.length ?? 0;
+        const names = (tplOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
+        console.warn(`[pe-pandadoc] ${key}/strategy4(template-only): ${count} results for tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
+        const match = tplOnly.results?.find((d) =>
+          d.name.toLowerCase().includes(customerName.toLowerCase())
+        );
+        if (match) {
+          doc = match;
+          matchedVia = "template-only+customer-filter";
+          matchedTemplateId = templateId;
+        }
+      }
+    }
+
+    console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} (tpl=${matchedTemplateId?.slice(0, 10)}) → "${doc.name}" (${doc.status})` : "NO MATCH (all 4 strategies returned empty/filtered)"}`);
+
+    return {
+      key,
+      templateId: matchedTemplateId ?? ids[0] ?? null,
+      document: doc ? {
+        id: doc.id,
+        name: doc.name,
+        status: doc.status.replace("document.", ""),
+        dateCompleted: doc.date_completed,
+      } : null,
+    };
+  } catch (err) {
+    console.warn(`[pe-pandadoc] ${key} fetch threw: ${err instanceof Error ? err.message : String(err)}`);
+    return { key, templateId: ids[0] ?? null, document: null };
+  }
+}
+
+/**
  * Find the most recent PandaDoc document for each PE template, linked to a deal.
- * Each template key can have multiple template IDs (e.g. duplicate "Old"
- * copies). Tries each template ID against strategies 1, 2, and 4; strategy 3
- * is template-independent and runs once per key.
+ *
+ * Each template key (contract / attestation / acceptance / progress_waiver /
+ * final_waiver) is searched independently in parallel — the 5 keys don't
+ * share state, and each can spend significant time hitting up to 4 fallback
+ * strategies × N template IDs. Sequential, this routinely pushed the audit
+ * past Vercel's 300s timeout.
  */
 export async function findPeDocsForDeal(
   dealId: string,
@@ -397,135 +535,13 @@ export async function findPeDocsForDeal(
   /** Customer last name for fallback name-based search (e.g. "Brownell") */
   customerName?: string,
 ): Promise<PeTemplateStatus[]> {
-  const results: PeTemplateStatus[] = [];
-
-  for (const { key, docNamePrefix } of PE_TEMPLATE_PATTERNS) {
-    const ids = templateIds[key] ?? [];
-
-    try {
-      let doc: PandaDocListItem | null = null;
-      let matchedVia: string = "none";
-      let matchedTemplateId: string | null = null;
-
-      // Strategy 1: Search by template ID + HubSpot deal metadata.
-      // Iterate each known template ID until one returns a match.
-      if (ids.length === 0) {
-        console.warn(`[pe-pandadoc] ${key}/strategy1 SKIPPED (no templateIds)`);
-      }
-      for (const templateId of ids) {
-        if (doc) break;
-        const data = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-          searchParams: {
-            template_id: templateId,
-            "metadata_hubspot.deal_id": dealId,
-            count: 1,
-            order_by: "-date_modified",
-          },
-        });
-        const count = data.results?.length ?? 0;
-        console.warn(`[pe-pandadoc] ${key}/strategy1(template+meta): ${count} results for tpl=${templateId.slice(0, 10)} deal=${dealId}`);
-        if (data.results?.[0]) {
-          doc = data.results[0];
-          matchedVia = "template+metadata";
-          matchedTemplateId = templateId;
-        }
-      }
-
-      // Strategy 2: template ID + document name containing customer name.
-      if (!doc && customerName) {
-        const nameQuery = `${docNamePrefix} - ${customerName}`;
-        for (const templateId of ids) {
-          if (doc) break;
-          const fallback = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-            searchParams: {
-              template_id: templateId,
-              q: nameQuery,
-              count: 3,
-              order_by: "-date_modified",
-            },
-          });
-          const count = fallback.results?.length ?? 0;
-          const names = (fallback.results ?? []).map((d) => `"${d.name}"`).join(", ");
-          console.warn(`[pe-pandadoc] ${key}/strategy2(template+name): ${count} results for q="${nameQuery}" tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
-          if (fallback.results?.[0]) {
-            doc = fallback.results[0];
-            matchedVia = "template+name";
-            matchedTemplateId = templateId;
-          }
-        }
-      }
-
-      // Strategy 3: Name-only search using JUST the docNamePrefix (template-independent).
-      // PandaDoc's q= can be picky about punctuation/whitespace in title matches.
-      // Search by prefix alone, then filter results client-side for the customer name.
-      // count=100: PE templates can have 60+ docs each; lower caps miss older deals
-      // (verified against Brownell — at count=20, Brownell was below the cutoff).
-      if (!doc) {
-        const nameOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-          searchParams: {
-            q: docNamePrefix,
-            count: 100,
-            order_by: "-date_modified",
-          },
-        });
-        const count = nameOnly.results?.length ?? 0;
-        const names = (nameOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
-        console.warn(`[pe-pandadoc] ${key}/strategy3(prefix-only): ${count} results for q="${docNamePrefix}" → ${names || "(none)"}`);
-        if (customerName) {
-          doc = nameOnly.results?.find((d) =>
-            d.name.toLowerCase().includes(customerName.toLowerCase())
-          ) ?? null;
-          if (doc) {
-            matchedVia = "prefix+customer-filter";
-            matchedTemplateId = doc.template_id ?? null;
-          }
-        }
-      }
-
-      // Strategy 4: Template-ID-only sweep + client-side customer-name filter.
-      // Last-resort. Iterates each known template ID.
-      if (!doc && customerName) {
-        for (const templateId of ids) {
-          if (doc) break;
-          const tplOnly = await pandaFetch<{ results: PandaDocListItem[] }>("/documents", {
-            searchParams: {
-              template_id: templateId,
-              count: 50,
-              order_by: "-date_modified",
-            },
-          });
-          const count = tplOnly.results?.length ?? 0;
-          const names = (tplOnly.results ?? []).slice(0, 5).map((d) => `"${d.name}"`).join(", ");
-          console.warn(`[pe-pandadoc] ${key}/strategy4(template-only): ${count} results for tpl=${templateId.slice(0, 10)} → ${names || "(none)"}`);
-          const match = tplOnly.results?.find((d) =>
-            d.name.toLowerCase().includes(customerName.toLowerCase())
-          );
-          if (match) {
-            doc = match;
-            matchedVia = "template-only+customer-filter";
-            matchedTemplateId = templateId;
-          }
-        }
-      }
-
-      console.warn(`[pe-pandadoc] ${key}: ${doc ? `MATCH via ${matchedVia} (tpl=${matchedTemplateId?.slice(0, 10)}) → "${doc.name}" (${doc.status})` : "NO MATCH (all 4 strategies returned empty/filtered)"}`);
-
-      results.push({
-        key,
-        templateId: matchedTemplateId ?? ids[0] ?? null,
-        document: doc ? {
-          id: doc.id,
-          name: doc.name,
-          status: doc.status.replace("document.", ""),
-          dateCompleted: doc.date_completed,
-        } : null,
-      });
-    } catch (err) {
-      console.warn(`[pe-pandadoc] ${key} fetch threw: ${err instanceof Error ? err.message : String(err)}`);
-      results.push({ key, templateId: ids[0] ?? null, document: null });
-    }
-  }
-
+  const t0 = Date.now();
+  const results = await Promise.all(
+    PE_TEMPLATE_PATTERNS.map(({ key, docNamePrefix }) =>
+      findPeDocForKey(dealId, key, docNamePrefix, templateIds[key] ?? [], customerName),
+    ),
+  );
+  console.warn(`[pe-pandadoc] findPeDocsForDeal complete in ${Date.now() - t0}ms (${results.filter((r) => r.document).length}/${results.length} matched)`);
   return results;
 }
 
