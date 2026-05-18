@@ -280,6 +280,30 @@ export async function buildOwnerMap(
 }
 
 // ---------------------------------------------------------------------------
+// Resolve stale numeric IDs in snapshots
+// ---------------------------------------------------------------------------
+
+/** Build a map of numeric owner IDs → resolved names for lead fields in snapshots. */
+export async function buildLeadResolveMap(
+  items: Array<{ designLead?: string | null; permitLead?: string | null }>,
+): Promise<Map<string, string>> {
+  const unresolvedIds = new Set<string>();
+  for (const item of items) {
+    for (const val of [item.designLead, item.permitLead]) {
+      if (val && /^\d+$/.test(val)) unresolvedIds.add(val);
+    }
+  }
+  if (unresolvedIds.size === 0) return new Map();
+
+  const resolved = new Map<string, string>();
+  await Promise.allSettled([...unresolvedIds].map(async (id) => {
+    const contact = await resolveHubSpotOwnerContact(id);
+    if (contact) resolved.set(id, contact.name);
+  }));
+  return resolved;
+}
+
+// ---------------------------------------------------------------------------
 // Readiness badge
 // ---------------------------------------------------------------------------
 
@@ -1127,8 +1151,17 @@ export async function searchMeetingItems(params: {
     prisma.idrMeetingItem.count({ where }),
   ]);
 
+  const leadNames = await buildLeadResolveMap(items);
+  const resolvedItems = leadNames.size > 0
+    ? items.map((item) => ({
+        ...item,
+        designLead: (item.designLead && leadNames.get(item.designLead)) || item.designLead,
+        permitLead: (item.permitLead && leadNames.get(item.permitLead)) || item.permitLead,
+      }))
+    : items;
+
   return {
-    items,
+    items: resolvedItems,
     total,
     hasMore: skip + items.length < total,
   };

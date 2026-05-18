@@ -7,6 +7,7 @@ import {
   computeReadinessBadge,
   getReturningDealIds,
   syncItemToHubSpot,
+  buildLeadResolveMap,
 } from "@/lib/idr-meeting";
 
 export async function GET(
@@ -58,8 +59,12 @@ export async function GET(
     }
   }
 
+  const leadNames = await buildLeadResolveMap(session.items);
+
   const itemsWithBadges = session.items.map((item) => ({
     ...item,
+    designLead: (item.designLead && leadNames.get(item.designLead)) || item.designLead,
+    permitLead: (item.permitLead && leadNames.get(item.permitLead)) || item.permitLead,
     badge: computeReadinessBadge(item.surveyCompleted, item.plansetDate),
     isReturning: returningDealIds.has(item.dealId),
     isReReview: item.designStatus === "IDR Revision Complete",
