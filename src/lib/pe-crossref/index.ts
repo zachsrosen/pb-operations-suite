@@ -116,7 +116,8 @@ export async function runCrossReference(opts: RunCrossReferenceOptions): Promise
 import { MonitoringAnalyzer } from "@/lib/pe-crossref/analyzers/monitoring";
 import { PlansetAnalyzer } from "@/lib/pe-crossref/analyzers/planset";
 import { HardwareAnalyzer } from "@/lib/pe-crossref/analyzers/hardware";
+import { SalesOrderAnalyzer } from "@/lib/pe-crossref/analyzers/sales-order";
 
 function getRegisteredAnalyzers(): Analyzer[] {
-  return [MonitoringAnalyzer, PlansetAnalyzer, HardwareAnalyzer];
+  return [MonitoringAnalyzer, PlansetAnalyzer, HardwareAnalyzer, SalesOrderAnalyzer];
 }

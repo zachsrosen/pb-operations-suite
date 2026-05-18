@@ -13,6 +13,7 @@ import { resolvePEDeal, buildFolderMap } from "@/lib/pe-turnover";
 import { scanM1MonitoringFolder } from "@/lib/pe-crossref/extractors/monitoring-folder";
 import { fetchLatestAuditRun } from "@/lib/pe-crossref/extractors/latest-audit-run";
 import { fetchPowerHubAsset } from "@/lib/pe-crossref/extractors/powerhub";
+import { fetchSalesOrder } from "@/lib/pe-crossref/extractors/sales-order";
 import type { CrossRefContext } from "@/lib/pe-crossref/types";
 
 export interface ContextBuildResult {
@@ -39,7 +40,7 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
 
   // Extractors that have real implementations get called here; the rest stay
   // null. Each is independent — Promise.all parallelism.
-  const [monitoringFolder, latestAuditRunResult, powerHubAsset] = await Promise.all([
+  const [monitoringFolder, latestAuditRunResult, powerHubAsset, salesOrder] = await Promise.all([
     scanM1MonitoringFolder(installFolderId)
       .then((r) => {
         extractorResults.monitoringFolder = "ok";
@@ -78,6 +79,17 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
         extractorResults.powerHubAsset = `error: ${err instanceof Error ? err.message : String(err)}`;
         return null;
       }),
+
+    // Zoho Sales Order line items — used by SalesOrderAnalyzer (P2-P9).
+    fetchSalesOrder(dealId, deal.dealName)
+      .then((r) => {
+        extractorResults.salesOrder = r ? "ok" : "ok (no SO linked)";
+        return r;
+      })
+      .catch((err) => {
+        extractorResults.salesOrder = `error: ${err instanceof Error ? err.message : String(err)}`;
+        return null;
+      }),
   ]);
 
   return {
@@ -85,7 +97,7 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
     context: {
       deal,
       planset: null,
-      salesOrder: null,
+      salesOrder,
       powerHubAsset,
       installPhotos: [],
       nameplateExtractions: latestAuditRunResult?.nameplateExtractions ?? new Map(),
