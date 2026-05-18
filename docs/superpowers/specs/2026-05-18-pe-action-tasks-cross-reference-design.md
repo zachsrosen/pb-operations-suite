@@ -49,6 +49,7 @@ Automate the equipment cross-reference. Produce per-deal action task lists that 
 - Real-time monitoring or alerts (PMs check the dashboard on their cadence)
 - Cross-deal "rollup" insights beyond what filters provide
 - Mobile-first UI tuning (existing desktop responsive patterns suffice)
+- **PE submission gating** — action tasks are advisory. A deal with open critical tasks does NOT block the existing PE Prep "ready to submit" indicator. PMs decide on submission; tasks inform that decision.
 
 ## Architecture
 
@@ -221,7 +222,9 @@ model CrossRefRun {
 | P-code | Identity composition |
 |---|---|
 | P1 wrong hardware | `P1@v1:powerhub:{powerhubModel}:nameplate:{nameplateModel}` |
-| P1 photo missing | `P1@v1:no-nameplate-photo` |
+| P1 photo missing (covers P11 "nameplate photo needed") | `P1@v1:no-nameplate-photo` |
+| P2 SO wrong customer | `P2@v1:so:{soNumber}:wrong-customer:{actualSoCustomerName}` |
+| P2 SO incomplete | `P2@v1:so:{soNumber}:incomplete:{sortedMissingCsv}` |
 | P6 powerhub mixed | `P6@v1:powerhub:mixed:{sortedModels}` |
 | P7 SO PW3 text | `P7@v1:so:{soNumber}:line:{lineIdx}:pw3-text` |
 | P9 SO BS generic | `P9@v1:so:{soNumber}:line:{lineIdx}:bs-generic` |
@@ -231,6 +234,10 @@ model CrossRefRun {
 | ENPHASE | `ENPHASE@v1:account-access` |
 
 Source data changes (e.g. SO line item edited from "1707000-XX-Y" to "1707000-21-Y") → new run no longer emits the prior identity → reconciler auto-resolves it.
+
+**Planset revisions:** Identity keys for P10 / P10B / P10C include the planset `fileId`. When the design team revises and uploads a new planset PDF (new Drive file ID), any prior `OPEN` planset tasks auto-resolve (the old file is no longer the source) and new tasks open against the new file. This is the intended behavior — old tasks shouldn't follow into a different planset version.
+
+**Coverage note on P11:** The source manual report distinguishes "P11 nameplate photo missing" (no Photo_10 exists) from "P11B wrong-subject photo" (Photo_09 shows house front instead of storage). This spec covers the former as a HardwareAnalyzer rule (`P1 NEEDS VERIFICATION` / `no-nameplate-photo` identity) and the latter as PhotoCritiqueAnalyzer's P11B rule. The unified P1 label is intentional — the underlying problem (no nameplate evidence to compare against PowerHub) is identical to a hardware-verification gap.
 
 ## Analyzers
 
@@ -397,7 +404,7 @@ Add `/api/pe-crossref` and `/dashboards/pe-action-queue` to:
 - OPERATIONS_MANAGER
 - ACCOUNTING
 
-ADMIN, EXECUTIVE, OWNER cover them via wildcard `["*"]`.
+ADMIN and EXECUTIVE have wildcard `allowedRoutes: ["*"]`. OWNER inherits `EXECUTIVE.allowedRoutes` (legacy role normalization) so the same wildcard applies. No per-route addition needed for those three.
 
 The PE Action Queue card joins the PE & Compliance suite at `src/app/suites/pe-compliance/page.tsx`.
 
@@ -426,12 +433,12 @@ Caches:
 
 ## Risks & Open Questions
 
-1. **PhotoCritique cost** — naive re-runs across 28 deals × 11 photos = 308 calls. Mitigated by `photoFileId` caching; only changed photos re-critique.
+1. **PhotoCritique cost** — naive re-runs across 28 deals × 11 photos = 308 calls. Mitigated by `(photoFileId, expectedCategory)` caching; only changed photos re-critique. Cold-start (a deal's first cross-ref) still incurs the full ~11 critique calls — steady-state runs are typically ≤2 (only the photos that changed since the last run).
 2. **PowerHub flag** — when `POWERHUB_ENABLED=false`, HardwareAnalyzer's P1 / P6 rules have no comparator. Skip gracefully + diagnostic in `extractorResults.powerhub`.
 3. **Planset OCR scope** — most plansets are 50+ pages but only PV pages (typically 4–8) carry the specs box. PlansetExtractor must locate those pages, not OCR everything.
 4. **Identity drift** — if an analyzer changes how it composes `identityKey`, old OPEN tasks become orphans. Identity prefixed with analyzer version (`P10@v1:...`) — explicit migration when bumping.
 5. **Cross-ref before any audit exists** — PhotoCritique depends on audit triage assignments. If no audit has run, skip P11B detection (other analyzers still work).
-6. **Manual resolve gets re-flagged immediately** — UX risk: PM marks task done, next auto-cross-ref (within a minute) re-detects, task pops back to OPEN before PM has time to act. Mitigation: cross-ref auto-trigger only fires after audit completion (not on every minor save), and the re-flagged badge clarifies what happened.
+6. **Manual resolve gets re-flagged immediately** — UX risk: PM marks task done, next auto-cross-ref (within a minute) re-detects, task pops back to OPEN before PM has time to act. Mitigation: cross-ref auto-trigger only fires after audit completion (not on every minor save), and the re-flagged badge clarifies what happened. The badge is in-scope for the per-deal panel phase (not deferred).
 
 ## Testing Strategy
 
