@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { requireApiAuth } from "@/lib/api-auth";
-import { runPeAudit, type AuditEvent } from "@/lib/pe-audit-orchestrator";
+import { runPeAudit, type AuditEvent, type AuditMode } from "@/lib/pe-audit-orchestrator";
 import { setDriveTokenOverride } from "@/lib/drive-plansets";
 import type { Milestone } from "@/lib/pe-turnover";
 
@@ -70,6 +70,13 @@ export async function POST(
   const { dealId } = await params;
   const body = await req.json().catch(() => ({}));
   const milestone = (body.milestone as Milestone) || "m1";
+  // Mode-driven runs: callers can ask for docs-only or photos-only to stay
+  // safely under the 5-min Vercel function timeout. Defaults to "full".
+  const validModes: AuditMode[] = ["full", "docs", "photos"];
+  const requestedMode = body.mode as string | undefined;
+  const mode: AuditMode = validModes.includes(requestedMode as AuditMode)
+    ? (requestedMode as AuditMode)
+    : "full";
 
   const userDriveResult = await resolveUserDriveToken(req);
 
@@ -102,6 +109,7 @@ export async function POST(
         await runPeAudit({
           dealId,
           milestone,
+          mode,
           triggeredBy: authResult.email,
           onEvent: send,
         });
