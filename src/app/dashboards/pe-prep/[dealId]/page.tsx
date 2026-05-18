@@ -10,6 +10,7 @@ import { PeChecklistCard } from "@/components/pe-prep/PeChecklistCard";
 import { PePhotoGrid } from "@/components/pe-prep/PePhotoGrid";
 import { PePhotoModal } from "@/components/pe-prep/PePhotoModal";
 import { PePandaDocSection } from "@/components/pe-prep/PePandaDocSection";
+import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 
 interface DealLinks {
   hubspotUrl: string;
@@ -258,6 +259,16 @@ export default function PePrepPage({ params }: { params: Promise<{ dealId: strin
             />
           </div>
         )}
+
+        {/*
+         * Site-photo gallery sourced directly from Zuper — same /api/deals/[id]/photos
+         * endpoint the design meeting / deal detail pages use. Shows EVERY photo
+         * attached to the linked Zuper jobs (job attachments + service-task form
+         * submissions), not just the ones the audit auto-matched to a PE checklist
+         * item. Useful when the audit flags a photo as missing and the PM wants to
+         * verify whether any photo actually exists for that category.
+         */}
+        <PhotoGalleryCard hubspotDealId={dealId} />
 
         <PePhotoModal
           photo={selectedPhoto}
