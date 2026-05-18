@@ -45,14 +45,14 @@ export async function getDriveToken(): Promise<string> {
   if (impersonateEmail) {
     try {
       return await getServiceAccountToken(
-        ["https://www.googleapis.com/auth/drive.readonly"],
+        ["https://www.googleapis.com/auth/drive"],
         impersonateEmail,
       );
     } catch {
       // DWD not configured — fall through to plain SA
     }
   }
-  return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive"]);
 }
 
 /**
