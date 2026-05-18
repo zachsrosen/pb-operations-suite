@@ -94,6 +94,8 @@ PE Scraper runs (POST /api/accounting/pe-docs/sync)
 
 Called at the end of both `syncPeDocStatuses()` and `syncPeCsvStatuses()`. The deal IDs are collected internally from the `ops` array (the successful upsert operations already track `dealId`) — no changes to `SyncResult` or `CsvSyncResult` return types needed.
 
+**Any code path that calls `syncPeDocStatuses()`** (including future webhook endpoints like `/api/webhooks/pe-scraper`) will automatically trigger the HubSpot push, since the push is wired into the function itself rather than the route handler.
+
 ### Flow 2: HubSpot to DB (webhook for manual changes)
 
 ```
@@ -102,7 +104,11 @@ User edits pe_doc_* property in HubSpot
   -> POST /api/webhooks/hubspot/pe-doc-status
        |-- Validate HubSpot webhook signature (X-HubSpot-Signature-v3)
        |-- Extract dealId, propertyName, newValue from payload
+       |-- Filter: ignore properties not prefixed with pe_doc_
        |-- Map pe_doc_* -> canonical docName
+       |-- Echo suppression: read existing PeDocumentReview row
+       |   If status matches AND reviewedBy != "hubspot-manual" -> return 200 (no-op)
+       |   (Prevents circular writes when scraper push triggers webhooks back)
        |-- For status properties: upsert PeDocumentReview
        |      reviewedBy: "hubspot-manual"
        |-- For _notes properties: update PeDocumentReview.notes
@@ -110,6 +116,8 @@ User edits pe_doc_* property in HubSpot
 ```
 
 HubSpot webhook subscription: `deal.propertyChange` events. The handler filters to `pe_doc_*` prefixed property names and ignores everything else.
+
+**Echo suppression**: When `syncPeDocStatusesToHubSpot()` pushes statuses to HubSpot, HubSpot fires `deal.propertyChange` webhooks right back. Without suppression, every scraper sync would generate 15+ redundant webhook calls per deal. The webhook handler short-circuits when the incoming value already matches the DB row and the row was not manually set (`reviewedBy !== "hubspot-manual"`).
 
 ### Flow 3: Conflict Resolution
 
@@ -180,8 +188,9 @@ const HUBSPOT_TO_PE_STATUS: Record<string, PeDocStatus> = {
 2. **`src/lib/pe-hubspot-sync.ts`** — Sync module
    - `PE_DOC_HUBSPOT_MAP` constant (canonical name <-> HubSpot property mapping)
    - `PE_STATUS_TO_HUBSPOT` / `HUBSPOT_TO_PE_STATUS` maps
+   - `extractHubSpotNotes(rawNotes: string)` — extracts Approver/Partner segments from pipe-delimited notes blob
    - `syncPeDocStatusesToHubSpot(dealIds: string[])` — batch-pushes DB statuses to HubSpot
-   - `upsertPeDocFromHubSpot(dealId, propertyName, value)` — webhook handler helper
+   - `upsertPeDocFromHubSpot(dealId, propertyName, value)` — webhook handler helper (with echo suppression)
 
 3. **`src/app/api/webhooks/hubspot/pe-doc-status/route.ts`** — Webhook endpoint
    - POST handler: validates signature, filters to `pe_doc_*` properties, upserts DB
@@ -205,7 +214,18 @@ const HUBSPOT_TO_PE_STATUS: Record<string, PeDocStatus> = {
 
 ## Notes Population
 
-The scraper captures two comment fields per document: `approverNotes` and `partnerComments`. The existing `buildNotesString()` function in `pe-scraper-sync.ts` already combines these into the `PeDocumentReview.notes` column. The HubSpot sync reads from this column, so notes properties get populated automatically.
+The scraper captures two comment fields per document: `approverNotes` and `partnerComments`. The existing `buildNotesString()` function in `pe-scraper-sync.ts` combines these into a pipe-delimited blob in `PeDocumentReview.notes`:
+
+```
+Synced from PE portal scraper (PROJ-8708) | Submitted: 2026-04-16 | Approver: The design plan must be stamped... | Responded: 2026-05-15
+```
+
+**Do not push the full blob to HubSpot.** The `syncPeDocStatusesToHubSpot()` function must extract only the human-readable portions for the HubSpot notes property:
+
+- `Approver:` content (PE reviewer feedback — most important)
+- `Partner:` content (partner comments, if present)
+
+Sync metadata (`Synced from PE portal scraper`, `Submitted:`, `Responded:` dates) is omitted. The extraction function `extractHubSpotNotes(rawNotes: string)` parses the pipe-delimited format and returns only the relevant segments joined with a newline.
 
 For the webhook (HubSpot -> DB), manual notes edits write directly to `PeDocumentReview.notes` and are preserved until the scraper brings different notes content.
 
