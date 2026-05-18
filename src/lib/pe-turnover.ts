@@ -432,7 +432,15 @@ export const PE_M1_CHECKLIST: ChecklistItem[] = [
     category: "inspection",
     milestone: "m1",
     appliesTo: ALL,
-    driveFolders: ["6"],
+    // Canonically the signed inspection card belongs in "6. Inspections",
+    // but Photon ops sometimes files it under "3. Permitting" (especially
+    // for AHJs that issue a combined permit+inspection card document).
+    // Verified 2026-05-18 against Brownell — Jefferson County issues a
+    // "Post Inspection Card" that ops filed in folder 3 unsigned, then
+    // the same card gets stamped post-inspection and re-uploaded.
+    // Vision verification still rejects unsigned/un-passed cards, so the
+    // extra folder doesn't create false positives.
+    driveFolders: ["6", "3"],
     searchAllFolders: false,
     fileHints: ["inspection", "permit", "inspection_card", "final_inspection", "passed"],
     isPhoto: false,
