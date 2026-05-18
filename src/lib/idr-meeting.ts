@@ -238,7 +238,7 @@ export async function buildOwnerMap(
 ): Promise<Map<string, string>> {
   const ownerIds = new Set<string>();
   for (const deal of deals) {
-    for (const key of ["hubspot_owner_id", "site_surveyor", "project_manager", "operations_manager"]) {
+    for (const key of ["hubspot_owner_id", "site_surveyor", "project_manager", "operations_manager", "design", "permit_tech", "interconnections_tech"]) {
       const val = deal.properties[key];
       if (val) ownerIds.add(val);
     }
