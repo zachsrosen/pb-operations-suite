@@ -91,9 +91,25 @@ export type AuditEvent =
   | { type: "completed"; data: { auditRunId: string; summary: TurnoverAuditResult["summary"] } }
   | { type: "error"; data: { message: string } };
 
+/**
+ * Audit mode:
+ * - "full": classify both docs and photos (default).
+ * - "docs": skip photo pre-upload + triage. Use when waiting on PandaDoc
+ *   signatures or just refreshing doc statuses. Saves ~30-90s.
+ * - "photos": skip doc classification loop. Use when PM re-uploaded photos
+ *   to Zuper and just wants fresh triage verdicts. Saves ~30-90s.
+ *
+ * Either single mode runs within its own 5-min Vercel budget. The UI's
+ * "Run Full Audit" button fires `mode: "docs"` AND `mode: "photos"` in
+ * parallel as two separate SSE streams for redundancy + max wall-clock
+ * parallelism.
+ */
+export type AuditMode = "full" | "docs" | "photos";
+
 export interface AuditRunOptions {
   dealId: string;
   milestone?: Milestone;
+  mode?: AuditMode;
   triggeredBy: string;
   onEvent?: (event: AuditEvent) => void;
 }
@@ -383,6 +399,9 @@ function buildFoundFileFromPhoto(photo: InstallPhoto): NonNullable<ChecklistResu
 
 export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
   const { dealId, triggeredBy, onEvent } = opts;
+  const mode: AuditMode = opts.mode ?? "full";
+  const includePhotos = mode === "full" || mode === "photos";
+  const includeDocs = mode === "full" || mode === "docs";
   const startTime = Date.now();
 
   const existing = await prisma.peAuditRun.findFirst({
@@ -390,15 +409,22 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     orderBy: { startedAt: "desc" },
   });
 
+  // Allow concurrent runs across modes (e.g. "Run Full" fires `mode=docs`
+  // and `mode=photos` in parallel — neither is the "same run"). Only block
+  // when there's a STILL-FRESH existing run with the SAME mode that hasn't
+  // exceeded the Vercel timeout window. (Mode is stored in summary JSON.)
   if (existing) {
     const age = Date.now() - existing.startedAt.getTime();
-    if (age < 5 * 60 * 1000) {
-      throw new Error(`Audit already running for deal ${dealId} (started ${Math.round(age / 1000)}s ago)`);
+    const existingMode = (existing.summary as { mode?: string } | null)?.mode ?? "full";
+    if (age < 5 * 60 * 1000 && existingMode === (opts.mode ?? "full")) {
+      throw new Error(`Audit already running for deal ${dealId} in ${existingMode} mode (${Math.round(age / 1000)}s ago)`);
     }
-    await prisma.peAuditRun.update({
-      where: { id: existing.id },
-      data: { status: "failed", completedAt: new Date() },
-    });
+    if (age >= 5 * 60 * 1000) {
+      await prisma.peAuditRun.update({
+        where: { id: existing.id },
+        data: { status: "failed", completedAt: new Date() },
+      });
+    }
   }
 
   const deal = await resolvePEDeal(dealId);
@@ -421,10 +447,18 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       deal.systemType,
     );
 
+    // Filter checklist by mode: photo-only run skips doc items entirely
+    // (and vice versa). Means progress events only fire for what we'll
+    // actually classify, so UI shows accurate denominators.
+    const modeFilteredChecklist = checklist.filter((item) =>
+      item.isPhoto ? includePhotos : includeDocs
+    );
+
     onEvent?.({
       type: "started",
-      data: { milestone, systemType: deal.systemType, totalItems: checklist.length },
+      data: { milestone, systemType: deal.systemType, totalItems: modeFilteredChecklist.length },
     });
+    onEvent?.({ type: "diagnostic", data: { message: `Audit mode: ${mode} (${includeDocs ? "docs" : ""}${includeDocs && includePhotos ? "+" : ""}${includePhotos ? "photos" : ""})` } });
 
     let folderByPrefix = new Map<string, string>();
     let allFolderIds: string[] = [];
@@ -586,7 +620,9 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     const photoByKey = new Map<string, InstallPhoto>();
     for (const p of installPhotoPool) photoByKey.set(p.key, p);
 
-    if (installPhotoPool.length > 0) {
+    // Skip the entire photo pipeline when mode === "docs" — caller didn't
+    // ask for photo verdicts. Saves the pre-upload + multi-image triage call.
+    if (includePhotos && installPhotoPool.length > 0) {
       const photoCount = checklist.filter((i) => i.isPhoto).length;
       if (photoCount > 0) {
         // Cap at 20 — multi-image triage with too many images slows Claude
@@ -629,7 +665,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       equipmentVisible: string[];
     }>();
 
-    if (photoItems.length > 0 && anthropicFileIdCache.size > 0) {
+    if (includePhotos && photoItems.length > 0 && anthropicFileIdCache.size > 0) {
       const preloadedPhotos: Array<{ anthropicFileId: string; fileName: string; driveFileId: string }> = [];
       for (const photo of installPhotoPool) {
         const anthropicId = anthropicFileIdCache.get(photo.key);
@@ -675,7 +711,10 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     // Total wall time ≈ max(unique-file classification times) instead of
     // sum(per-item classification times).
     {
-      const allItemPromises = checklist.map(async (item): Promise<ChecklistResult> => {
+      // Iterate only the items relevant to this mode. Photos-only mode skips
+      // every doc item entirely (no folder scan, no vision calls). Docs-only
+      // mode skips photo items (which would just rely on triageResult anyway).
+      const allItemPromises = modeFilteredChecklist.map(async (item): Promise<ChecklistResult> => {
         const override = pandadocOverrides.get(item.id);
         if (override) {
           override.item = item;
@@ -845,6 +884,11 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
     const durationMs = Date.now() - startTime;
 
+    // Tag the run with the audit mode so the UI can distinguish a "photos only"
+    // refresh from a "full" audit. Stored in summary JSON (vs adding a Prisma
+    // column, which would need a migration ordering step).
+    const summaryWithMode = { ...auditResult.summary, mode };
+
     await prisma.peAuditRun.update({
       where: { id: auditRun.id },
       data: {
@@ -854,7 +898,7 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
         visionCallCount,
         pandadocPulled,
         results: JSON.parse(JSON.stringify(auditResult.categories)),
-        summary: JSON.parse(JSON.stringify(auditResult.summary)),
+        summary: JSON.parse(JSON.stringify(summaryWithMode)),
       },
     });
 
