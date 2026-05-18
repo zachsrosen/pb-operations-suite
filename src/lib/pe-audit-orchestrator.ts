@@ -36,7 +36,7 @@ import {
 import {
   downloadDriveFile,
   downloadDriveImage,
-  listDriveFiles,
+  listDriveFilesRecursive,
   listDriveSubfolders,
   listDriveImagesRecursive,
   uploadDriveBinaryFile,
@@ -192,57 +192,63 @@ async function pullPandaDocs(
   onEvent?.({ type: "diagnostic", data: { message: `PandaDoc search: dealId=${dealId}, customerName=${customerName ?? "none"}` } });
   const statuses = await findPeDocsForDeal(dealId, templateIds, customerName);
 
-  for (const status of statuses) {
-    const checklistIds = PANDADOC_KEY_TO_CHECKLIST[status.key];
-    if (!checklistIds || checklistIds.length === 0) continue;
+  // Download + upload each matched PandaDoc in parallel. Each match is an
+  // independent download (PandaDoc) + upload (GDrive) — sequentially this
+  // added 30-60s per matched template, easily pushing docs mode past the
+  // Vercel 300s timeout. Different fileNames + same peFolderId is safe.
+  await Promise.all(
+    statuses.map(async (status) => {
+      const checklistIds = PANDADOC_KEY_TO_CHECKLIST[status.key];
+      if (!checklistIds || checklistIds.length === 0) return;
 
-    if (!status.document) {
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "missing", action: "Create PandaDoc from template" } });
-      continue;
-    }
-
-    // Download whatever exists, regardless of status. Not every PandaDoc PE
-    // template gets sent for customer signature — lien waivers, for example,
-    // are completed internally and stay in `draft` forever. If a document
-    // exists at all, that's a strong signal it should be included in the
-    // package. Per-status nuance (signed vs. internal) is handled by the
-    // existing vision verification step downstream.
-    try {
-      const pdfBuffer = await downloadPandaDocPdf(status.document.id);
-      const fileName = PANDADOC_FILENAMES[status.key];
-      await uploadDriveBinaryFile(peFolderId, fileName, pdfBuffer, "application/pdf");
-      pulled++;
-
-      const docStatus = status.document.status;
-      const action = docStatus === "completed"
-        ? "Downloaded to GDrive"
-        : `Downloaded to GDrive (status: ${docStatus})`;
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "downloaded", action } });
-
-      const override: ChecklistResult = {
-        item: {} as ChecklistItem,
-        status: "found",
-        statusNote: `PandaDoc ${docStatus} (downloaded ${new Date().toISOString().slice(0, 10)})`,
-        foundFile: {
-          name: fileName,
-          id: "",
-          url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
-          source: "pandadoc",
-          modifiedTime: new Date().toISOString(),
-          size: pdfBuffer.length,
-        },
-      };
-
-      for (const checklistId of checklistIds) {
-        checklistOverrides.set(checklistId, override);
+      if (!status.document) {
+        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "missing", action: "Create PandaDoc from template" } });
+        return;
       }
-    } catch (err) {
-      // 400-ish "document_in_invalid_state" can happen for very early
-      // statuses (e.g. `uploaded` before content is rendered). Log and
-      // let the GDrive folder scan have a shot at the same item.
-      onEvent?.({ type: "pandadoc", data: { key: status.key, status: "error", action: `Download failed: ${err instanceof Error ? err.message : String(err)}` } });
-    }
-  }
+
+      // Download whatever exists, regardless of status. Not every PandaDoc PE
+      // template gets sent for customer signature — lien waivers, for example,
+      // are completed internally and stay in `draft` forever. If a document
+      // exists at all, that's a strong signal it should be included in the
+      // package. Per-status nuance (signed vs. internal) is handled by the
+      // existing vision verification step downstream.
+      try {
+        const pdfBuffer = await downloadPandaDocPdf(status.document.id);
+        const fileName = PANDADOC_FILENAMES[status.key];
+        await uploadDriveBinaryFile(peFolderId, fileName, pdfBuffer, "application/pdf");
+        pulled++;
+
+        const docStatus = status.document.status;
+        const action = docStatus === "completed"
+          ? "Downloaded to GDrive"
+          : `Downloaded to GDrive (status: ${docStatus})`;
+        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "downloaded", action } });
+
+        const override: ChecklistResult = {
+          item: {} as ChecklistItem,
+          status: "found",
+          statusNote: `PandaDoc ${docStatus} (downloaded ${new Date().toISOString().slice(0, 10)})`,
+          foundFile: {
+            name: fileName,
+            id: "",
+            url: `https://app.pandadoc.com/a/#/documents/${status.document.id}`,
+            source: "pandadoc",
+            modifiedTime: new Date().toISOString(),
+            size: pdfBuffer.length,
+          },
+        };
+
+        for (const checklistId of checklistIds) {
+          checklistOverrides.set(checklistId, override);
+        }
+      } catch (err) {
+        // 400-ish "document_in_invalid_state" can happen for very early
+        // statuses (e.g. `uploaded` before content is rendered). Log and
+        // let the GDrive folder scan have a shot at the same item.
+        onEvent?.({ type: "pandadoc", data: { key: status.key, status: "error", action: `Download failed: ${err instanceof Error ? err.message : String(err)}` } });
+      }
+    }),
+  );
 
   return { statuses, checklistOverrides, pulled };
 }
@@ -263,7 +269,9 @@ async function collectCandidateFiles(
       for (const prefix of item.driveFolders) {
         const fid = folderMap.get(prefix);
         if (fid) {
-          try { files.push(...await listDriveFiles(fid)); } catch {}
+          // Recursive so the Invoice/BOM photo can be matched whether it
+          // sits at folder 0 top level or inside `0. Sales/Invoices/`.
+          try { files.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
         }
       }
     }
@@ -273,16 +281,21 @@ async function collectCandidateFiles(
   if (item.searchAllFolders) {
     const allFiles: DriveGenericFile[] = [];
     for (const fid of allFolderIds) {
-      try { allFiles.push(...await listDriveFiles(fid)); } catch {}
+      try { allFiles.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
     }
     return allFiles;
   }
 
+  // Recursive listing for doc items — PE source files routinely nest one
+  // or two levels into subfolders (e.g. `2. Design/Stamped Plans/`,
+  // `6. Inspections/Inspection/`, `4. Interconnections/Xcel docs/`).
+  // The previous non-recursive `listDriveFiles` silently dropped these
+  // and flagged them missing even when present.
   const files: DriveGenericFile[] = [];
   for (const prefix of item.driveFolders) {
     const fid = folderMap.get(prefix);
     if (fid) {
-      try { files.push(...await listDriveFiles(fid)); } catch {}
+      try { files.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
     }
   }
   return files;
@@ -343,9 +356,15 @@ async function downloadPhotoForVision(photo: InstallPhoto): Promise<VisionFileIn
  * Pulled in parallel with GDrive folder listing during pre-work. Caps prevent
  * runaway pools — service-task forms can have 100+ photos; we only need
  * enough to populate the 11 PE photo categories.
+ *
+ * Caps bumped 2026-05-18 after a Brownell deal showed 57 install photos in
+ * Zuper but triage saw only the first 20 (storage photos were past the cap
+ * → all 3 storage items marked missing). PE-named photos (`9__Storage_*`)
+ * are surfaced to the top via `prioritizeForPeTriage` before clipping so
+ * they survive the cap regardless of upload order.
  */
-const ZUPER_PHOTOS_PER_JOB_CAP = 30;
-const ZUPER_PHOTOS_TOTAL_CAP = 40;
+const ZUPER_PHOTOS_PER_JOB_CAP = 100;
+const ZUPER_PHOTOS_TOTAL_CAP = 100;
 
 async function enumerateZuperPhotos(
   dealId: string,
@@ -389,6 +408,62 @@ async function enumerateZuperPhotos(
     }
   }
   return out;
+}
+
+/**
+ * Sort a photo pool so PE-relevant shots survive any downstream cap.
+ *
+ * Priority tiers (higher = earlier in returned array):
+ *   1. Filenames starting with `N__` where N is 1-11 (PE-specific naming
+ *      convention used by field techs in the `Participate Energy/` Zuper
+ *      service-task form — these are explicitly tagged to a PE category).
+ *   2. Filenames containing storage/battery/powerwall/tesla/nameplate/
+ *      msp/inverter/array/electrical keywords (likely matches for a PE
+ *      checklist item even if not explicitly numbered).
+ *   3. Everything else, original order preserved.
+ *
+ * Stable within each tier (preserves upload order for ties).
+ */
+const PE_PRIORITY_KEYWORDS = [
+  "storage", "battery", "powerwall", "tesla",
+  "nameplate", "compliance_label", "compliance label",
+  "msp", "main_service_panel", "main service panel",
+  "inverter", "micro", "optimizer",
+  "array", "pv_array", "pv array",
+  "electrical", "wide_angle", "wide angle",
+  "invoice", "bom",
+  "site_address", "site address",
+  "racking", "rail", "module",
+  "disconnect", "controller",
+];
+
+function prioritizeForPeTriage<T extends { name: string }>(photos: readonly T[]): T[] {
+  const tier1: T[] = [];
+  const tier2: T[] = [];
+  const tier3: T[] = [];
+
+  // PE-specific upload pattern from the Zuper "Participate Energy" form:
+  // `{N}__{description}_{uuid}.{ext}` where N is the PE photo number.
+  const peNumberedRe = /(?:^|\/)(\d{1,2})__/i;
+
+  for (const p of photos) {
+    const lower = p.name.toLowerCase();
+    const m = lower.match(peNumberedRe);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n >= 1 && n <= 11) {
+        tier1.push(p);
+        continue;
+      }
+    }
+    if (PE_PRIORITY_KEYWORDS.some((k) => lower.includes(k))) {
+      tier2.push(p);
+      continue;
+    }
+    tier3.push(p);
+  }
+
+  return [...tier1, ...tier2, ...tier3];
 }
 
 /** Build a ChecklistResult.foundFile shape from an InstallPhoto. */
@@ -647,10 +722,19 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
     if (includePhotos && installPhotoPool.length > 0) {
       const photoCount = checklist.filter((i) => i.isPhoto).length;
       if (photoCount > 0) {
-        // Cap at 20 — multi-image triage with too many images slows Claude
-        // considerably (each photo adds ~3-5s of vision processing). 20 is
-        // plenty since we only need 1 best photo per of ~11 PE categories.
-        const toPreload = installPhotoPool.slice(0, 20);
+        // Sort PE-named photos to the front. Field techs upload PE-specific
+        // photos with names like `9__Storage_Wide_Angle`, `10__Storage_Nameplate`,
+        // `11__Storage_Controller__Disconnect`, etc. — exactly aligned to the
+        // checklist categories. Sorting these to the top before clipping the
+        // pool means storage/PE-relevant shots always survive the cap, even on
+        // deals with 50+ photos.
+        const prioritizedPool = prioritizeForPeTriage(installPhotoPool);
+        // Cap at 50 — multi-image triage with too many images slows Claude
+        // considerably (each photo adds ~3-5s of vision processing). 50 covers
+        // every Brownell-style deal (57 photos total) while keeping triage
+        // under ~120s wall time. PE-named photos are already sorted to the
+        // front above, so the cap clips photos least likely to be relevant.
+        const toPreload = prioritizedPool.slice(0, 50);
         const sourceLabel = toPreload[0]?.source === "zuper" ? "Zuper" : "Drive";
         onEvent?.({ type: "diagnostic", data: { message: `Pre-uploading ${toPreload.length} ${sourceLabel} photos to vision API...` } });
         const preload0 = Date.now();

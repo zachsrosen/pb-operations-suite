@@ -240,8 +240,10 @@ export async function findStampedPlansFolder(parentFolderId: string): Promise<st
 }
 
 /**
- * List planset PDFs, preferring the "Stamped Plans" subfolder if it exists.
- * Falls back to the parent folder if no subfolder found.
+ * List planset PDFs with recursive subfolder search.
+ *
+ * Priority: "Stamped Plans" subfolder → parent folder → breadth-first
+ * search through all subfolders (up to 3 levels deep, max 30 folders).
  */
 export async function listPlansetPdfs(designFolderId: string): Promise<DrivePdfFile[]> {
   // Try "Stamped Plans" subfolder first
@@ -254,8 +256,52 @@ export async function listPlansetPdfs(designFolderId: string): Promise<DrivePdfF
     }
   }
 
-  // Fallback to parent design folder
-  return listDrivePdfs(designFolderId);
+  // Try parent folder directly
+  const parentFiles = await listDrivePdfs(designFolderId);
+  if (parentFiles.length > 0) return parentFiles;
+
+  // BFS through subfolders (mirrors /api/bom/drive-files recursive search)
+  const token = await getDriveToken();
+  const MAX_DEPTH = 3;
+  const MAX_FOLDERS = 30;
+  const queue: Array<{ id: string; depth: number }> = [{ id: designFolderId, depth: 0 }];
+  const visited = new Set<string>([designFolderId]);
+  if (stampedFolderId) visited.add(stampedFolderId);
+  let scanned = 0;
+
+  while (queue.length > 0 && scanned < MAX_FOLDERS) {
+    const current = queue.shift()!;
+    if (current.depth >= MAX_DEPTH) continue;
+    scanned++;
+
+    const subQuery = `'${current.id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const subUrl =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(subQuery)}` +
+      `&fields=${encodeURIComponent("files(id,name)")}` +
+      `&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const subRes = await fetch(subUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!subRes.ok) continue;
+
+    const subData = await subRes.json() as { files?: Array<{ id: string; name: string }> };
+    for (const folder of subData.files ?? []) {
+      if (visited.has(folder.id)) continue;
+      visited.add(folder.id);
+
+      const pdfs = await listDrivePdfs(folder.id);
+      if (pdfs.length > 0) {
+        console.log(`[drive-plansets] Found ${pdfs.length} PDFs in subfolder "${folder.name}"`);
+        return pdfs;
+      }
+
+      queue.push({ id: folder.id, depth: current.depth + 1 });
+    }
+  }
+
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +622,71 @@ export interface DriveGenericFile {
   mimeType: string;
   modifiedTime: string;
   size?: string;
+}
+
+/**
+ * Recursively list non-folder files under a Drive folder, walking into
+ * subfolders up to `maxDepth` deep. Bounded by `maxFiles` to avoid
+ * runaway scans (PE deal folders sometimes nest 3-4 deep with hundreds
+ * of files in service-task subfolders).
+ *
+ * Useful for PE checklist items whose source files live in subfolders:
+ *   - `2. Design/Stamped Plans/PROJ-XXXX.pdf` (planset)
+ *   - `6. Inspections/Inspection/inspection_card.pdf` (final permit)
+ *   - `4. Interconnections/Xcel docs/CO DER Interconnection Agreement.pdf`
+ */
+export async function listDriveFilesRecursive(
+  folderId: string,
+  maxDepth = 3,
+  maxFiles = 100,
+): Promise<DriveGenericFile[]> {
+  const out: DriveGenericFile[] = [];
+  const seen = new Set<string>();
+
+  async function walk(parentId: string, depth: number) {
+    if (depth > maxDepth || out.length >= maxFiles) return;
+
+    // Files at this level
+    try {
+      const files = await listDriveFiles(parentId);
+      for (const f of files) {
+        if (out.length >= maxFiles) break;
+        if (seen.has(f.id)) continue;
+        seen.add(f.id);
+        out.push(f);
+      }
+    } catch {
+      // ignore — keep walking siblings
+    }
+
+    if (out.length >= maxFiles) return;
+
+    // Recurse into subfolders
+    const token = await getDriveToken();
+    const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const fields = "files(id,name)";
+    const url =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+      `&fields=${encodeURIComponent(fields)}` +
+      `&pageSize=50` +
+      `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+
+    const data = (await res.json()) as { files?: Array<{ id: string; name: string }> };
+    const subfolders = data.files ?? [];
+    for (const sub of subfolders) {
+      if (out.length >= maxFiles) break;
+      await walk(sub.id, depth + 1);
+    }
+  }
+
+  await walk(folderId, 0);
+  return out;
 }
 
 /** List ALL non-folder files in a Drive folder (any type), sorted by modifiedTime desc. */

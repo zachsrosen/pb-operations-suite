@@ -17,6 +17,15 @@ const LINKS: SuitePageCard[] = [
   // PE Audit & Submission — the core PE Prep workflow
   // ─────────────────────────────────────────────────────────────
   {
+    href: "/dashboards/pe-action-queue",
+    title: "PE Action Queue",
+    description: "Cross-deal action tasks from the equipment cross-reference. Filter by severity, P-code, deal stage.",
+    tag: "ACTION",
+    icon: "🚨",
+    tagColor: "red",
+    section: "PE Audit & Submission",
+  },
+  {
     href: "/dashboards/pe-prep",
     title: "PE Prep Queue",
     description: "All active PE deals with audit readiness, last-run timestamps, and per-deal audit launcher.",

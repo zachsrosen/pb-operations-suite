@@ -76,7 +76,7 @@ function markOwnersApiForbidden(error: unknown): void {
   );
 }
 
-async function getDealPropertyDefinition(
+export async function getDealPropertyDefinition(
   propertyName: string,
   archived = false
 ): Promise<HubSpotDealPropertyDefinition | null> {
@@ -1930,6 +1930,14 @@ async function loadOwnerDirectory(): Promise<OwnerDirectoryCache> {
         const contact: HubSpotOwnerContact = { id, name, email };
 
         byId.set(id, contact);
+        // Also index by userId and userIdIncludingInactive — HubSpot
+        // enumeration properties (design, permit_tech, etc.) store userId
+        // values, not owner.id values.
+        const ownerAny = owner as unknown as Record<string, unknown>;
+        const userId = String(ownerAny.userId || "").trim();
+        const userIdInactive = String(ownerAny.userIdIncludingInactive || "").trim();
+        if (userId) byId.set(userId, contact);
+        if (userIdInactive && userIdInactive !== userId) byId.set(userIdInactive, contact);
         byNormalizedName.set(normalizeLookupKey(name), contact);
         if (email) {
           byNormalizedEmail.set(normalizeLookupKey(email), contact);

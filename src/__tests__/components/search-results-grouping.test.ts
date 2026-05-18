@@ -4,16 +4,24 @@
  * produces one group with the correct meeting count.
  */
 
-import { groupItemsByDeal, type DealGroup } from "@/app/dashboards/idr-meeting/SearchResultsList";
+import { groupItemsByDeal } from "@/app/dashboards/idr-meeting/SearchResultsList";
 
 describe("groupItemsByDeal", () => {
-  const makeItem = (dealId: string, dealName: string, conclusion: string | null, sessionDate: string) => ({
+  const makeItem = (dealId: string, dealName: string, conclusion: string | null, sessionDate: string, extra?: Partial<{ customerNotes: string | null; operationsNotes: string | null; opsRevisionNotes: string | null; designNotes: string | null; escalationReason: string | null; shitShowFlagged: boolean; designRevisionNeeded: boolean }>) => ({
     dealId,
     dealName,
     region: "DTC",
     systemSizeKw: 8,
     projectType: "Solar",
     conclusion,
+    customerNotes: null as string | null,
+    operationsNotes: null as string | null,
+    opsRevisionNotes: null as string | null,
+    designNotes: null as string | null,
+    escalationReason: null as string | null,
+    shitShowFlagged: false,
+    designRevisionNeeded: false,
+    ...extra,
     session: { date: sessionDate, status: "COMPLETED" },
   });
 
@@ -55,5 +63,21 @@ describe("groupItemsByDeal", () => {
     ];
     const groups = groupItemsByDeal(items, new Map());
     expect(groups.get("d1")!.conclusions).toHaveLength(1);
+  });
+
+  it("includes note snippets and flags in sessions", () => {
+    const items = [
+      makeItem("d1", "Smith", "Approved", "2026-04-07", {
+        customerNotes: "Battery backup requested",
+        operationsNotes: "Check panel clearance",
+        shitShowFlagged: true,
+      }),
+    ];
+    const groups = groupItemsByDeal(items, new Map());
+    const session = groups.get("d1")!.sessions[0];
+    expect(session.noteSnippets).toHaveLength(2);
+    expect(session.noteSnippets[0]).toContain("Customer:");
+    expect(session.noteSnippets[1]).toContain("Ops:");
+    expect(session.flags).toContain("Shit Show");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -75,6 +75,48 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     enabled: !!item,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Fetch previous review notes for re-review items
+  const previousReviewQuery = useQuery({
+    queryKey: [...queryKeys.idrMeeting.root, "previousReview", item?.dealId ?? ""],
+    queryFn: async () => {
+      const res = await fetch(`/api/idr-meeting/deal-history/${item!.dealId}`);
+      if (!res.ok) throw new Error("Failed to fetch deal history");
+      return res.json() as Promise<{
+        items: Array<{
+          id: string;
+          customerNotes: string | null;
+          operationsNotes: string | null;
+          opsRevisionNotes: string | null;
+          designNotes: string | null;
+          conclusion: string | null;
+          escalationReason: string | null;
+          designRevisionReason: string | null;
+          shitShowReason: string | null;
+          salesChangeNotes: string | null;
+          opsChangeNotes: string | null;
+          difficulty: number | null;
+          installerCount: number | null;
+          installerDays: number | null;
+          electricianCount: number | null;
+          electricianDays: number | null;
+          session: { date: string; status: string };
+          createdAt: string;
+        }>;
+      }>;
+    },
+    enabled: !!item?.isReReview && !!item?.dealId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const previousItem = useMemo(() => {
+    if (!previousReviewQuery.data || !item) return null;
+    // Find the most recent completed session item that isn't the current one
+    const prior = previousReviewQuery.data.items
+      .filter((i) => i.id !== item.id && i.session.status === "COMPLETED")
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return prior[0] ?? null;
+  }, [previousReviewQuery.data, item]);
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -351,6 +393,9 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               <StatusActionsForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
 
+            {/* Previous review notes (re-reviews only) */}
+            {item.isReReview && <PreviousReviewNotes item={previousItem} loading={previousReviewQuery.isLoading} />}
+
             <Section title="Meeting Notes">
               <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
@@ -452,6 +497,98 @@ function QuickLink({ href, label }: { href: string; label: string }) {
       {label}
       <span className="text-muted">&#8599;</span>
     </a>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Previous review notes (re-reviews only)
+// ---------------------------------------------------------------------------
+
+function PreviousReviewNotes({
+  item,
+  loading,
+}: {
+  item: {
+    customerNotes: string | null;
+    operationsNotes: string | null;
+    opsRevisionNotes: string | null;
+    designNotes: string | null;
+    conclusion: string | null;
+    escalationReason: string | null;
+    designRevisionReason: string | null;
+    shitShowReason: string | null;
+    salesChangeNotes: string | null;
+    opsChangeNotes: string | null;
+    difficulty: number | null;
+    installerCount: number | null;
+    installerDays: number | null;
+    electricianCount: number | null;
+    electricianDays: number | null;
+    session: { date: string };
+  } | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <Section title="Previous Review">
+        <div className="h-12 rounded bg-surface-2 animate-pulse" />
+      </Section>
+    );
+  }
+
+  if (!item) {
+    return (
+      <Section title="Previous Review">
+        <p className="text-xs text-muted italic">No previous review found for this deal.</p>
+      </Section>
+    );
+  }
+
+  const notes: { label: string; value: string; color?: string }[] = [];
+  if (item.conclusion) notes.push({ label: "Conclusion", value: item.conclusion, color: "text-emerald-500" });
+  if (item.customerNotes) notes.push({ label: "Customer Notes", value: item.customerNotes });
+  if (item.operationsNotes) notes.push({ label: "Ops Notes", value: item.operationsNotes });
+  if (item.opsRevisionNotes) notes.push({ label: "Ops Revision Notes", value: item.opsRevisionNotes });
+  if (item.designNotes) notes.push({ label: "Design Notes", value: item.designNotes });
+  if (item.designRevisionReason) notes.push({ label: "Design Revision Reason", value: item.designRevisionReason });
+  if (item.salesChangeNotes) notes.push({ label: "Sales Change Notes", value: item.salesChangeNotes });
+  if (item.opsChangeNotes) notes.push({ label: "Ops Change Reason", value: item.opsChangeNotes });
+  if (item.escalationReason) notes.push({ label: "Escalation", value: item.escalationReason, color: "text-orange-500" });
+  if (item.shitShowReason) notes.push({ label: "Shit Show Reason", value: item.shitShowReason, color: "text-red-400" });
+
+  const planningParts: string[] = [];
+  if (item.difficulty != null) planningParts.push(`Difficulty: ${item.difficulty}/5`);
+  if (item.installerCount != null || item.installerDays != null)
+    planningParts.push(`Roofers: ${item.installerCount ?? "?"} × ${item.installerDays ?? "?"} day${(item.installerDays ?? 0) !== 1 ? "s" : ""}`);
+  if (item.electricianCount != null || item.electricianDays != null)
+    planningParts.push(`Electricians: ${item.electricianCount ?? "?"} × ${item.electricianDays ?? "?"} day${(item.electricianDays ?? 0) !== 1 ? "s" : ""}`);
+
+  return (
+    <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
+          Previous Review
+        </h3>
+        <span className="text-[10px] text-purple-400/60">
+          {new Date(item.session.date).toLocaleDateString()}
+        </span>
+      </div>
+      {planningParts.length > 0 && (
+        <p className="text-xs text-muted mb-2">{planningParts.join(" • ")}</p>
+      )}
+      {notes.length > 0 ? (
+        <div className="space-y-1.5">
+          {notes.map(({ label, value, color }) => (
+            <div key={label}>
+              <p className={`text-[9px] font-semibold uppercase tracking-wider ${color ?? "text-purple-400/60"}`}>{label}</p>
+              <p className="text-xs text-foreground/80 whitespace-pre-wrap">{value}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted italic">No notes recorded in previous session.</p>
+      )}
+    </div>
   );
 }
 

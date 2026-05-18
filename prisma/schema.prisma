@@ -1879,6 +1879,73 @@ model PeAuditRun {
 }
 
 // ===========================================
+// PE ACTION TASKS — cross-reference task list per deal
+// ===========================================
+// See docs/superpowers/specs/2026-05-18-pe-action-tasks-cross-reference-design.md
+// State machine:
+//   OPEN ↔ RESOLVED_AUTO (computed from source data)
+//   OPEN → RESOLVED_MANUAL (PM marks done; re-run can flip back to OPEN if still detected)
+//   OPEN → DISMISSED (PM says N/A; permanent — re-runs do not change)
+
+model PeActionTask {
+  id               String   @id @default(cuid())
+  dealId           String
+
+  // Identity for re-run dedup. Same identityKey across runs = same task.
+  // Versioned (e.g. "P10@v1:...") so analyzer rule changes migrate explicitly.
+  identityKey      String
+
+  pCode            String   // "P1" | "P10B" | "MONITORING" | "ENPHASE"
+  severity         String   // "critical" | "major" | "conditional" | "monitoring"
+  category         String   // "hardware" | "so" | "planset" | "photo" | "monitoring"
+  analyzer         String
+
+  title            String
+  message          String   @db.Text
+  action           String   @db.Text
+  evidence         Json
+
+  status           String   // "OPEN" | "RESOLVED_AUTO" | "RESOLVED_MANUAL" | "DISMISSED"
+  resolvedBy       String?  // "auto" | userEmail
+  resolvedAt       DateTime?
+  manualResolvedAt DateTime?
+  dismissedReason  String?
+
+  firstSeenRunId   String?
+  lastSeenRunId    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([dealId, identityKey])
+  @@index([dealId, status])
+  @@index([severity, status])
+  @@index([category, status])
+  @@index([pCode])
+}
+
+model CrossRefRun {
+  id               String   @id @default(cuid())
+  dealId           String
+  status           String   // "running" | "completed" | "failed"
+  triggeredBy      String
+
+  startedAt        DateTime @default(now())
+  completedAt      DateTime?
+  durationMs       Int?
+
+  detectedCount    Int      @default(0)
+  newCount         Int      @default(0)
+  resolvedCount    Int      @default(0)
+
+  extractorResults Json?
+
+  errorMessage     String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([dealId, startedAt])
+}
+
+// ===========================================
 // PE REFERENCE LIBRARY — approved exemplars for vision classifier
 // ===========================================
 

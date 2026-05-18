@@ -6,7 +6,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { hubspotClient, searchWithRetry, resolveHubSpotOwnerContact } from "@/lib/hubspot";
+import { hubspotClient, searchWithRetry, resolveHubSpotOwnerContact, getDealPropertyDefinition } from "@/lib/hubspot";
 import { normalizeLocation, type CanonicalLocation } from "@/lib/locations";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
@@ -238,18 +238,44 @@ export async function buildOwnerMap(
 ): Promise<Map<string, string>> {
   const ownerIds = new Set<string>();
   for (const deal of deals) {
-    for (const key of ["hubspot_owner_id", "site_surveyor", "project_manager", "operations_manager"]) {
+    for (const key of ["hubspot_owner_id", "site_surveyor", "project_manager", "operations_manager", "design", "permit_tech", "interconnections_tech"]) {
       const val = deal.properties[key];
       if (val) ownerIds.add(val);
     }
   }
 
   const map = new Map<string, string>();
-  const resolvePromises = [...ownerIds].map(async (id) => {
-    const contact = await resolveHubSpotOwnerContact(id);
-    if (contact) map.set(id, contact.name);
-  });
-  await Promise.allSettled(resolvePromises);
+
+  // Resolve owner IDs via Owners API AND enumeration property definitions in parallel.
+  // design, permit_tech, interconnections_tech are HubSpot enumeration properties
+  // (value→label), not owner IDs — the Owners API won't resolve them.
+  const ENUM_PROPS = ["design", "permit_tech", "interconnections_tech"] as const;
+  await Promise.allSettled([
+    // Owners API resolution
+    (async () => {
+      const resolvePromises = [...ownerIds].map(async (id) => {
+        const contact = await resolveHubSpotOwnerContact(id);
+        if (contact) map.set(id, contact.name);
+      });
+      await Promise.allSettled(resolvePromises);
+    })(),
+    // Enumeration property option label resolution
+    ...ENUM_PROPS.map(async (prop) => {
+      const [active, archived] = await Promise.allSettled([
+        getDealPropertyDefinition(prop),
+        getDealPropertyDefinition(prop, true),
+      ]);
+      for (const result of [active, archived]) {
+        if (result.status !== "fulfilled" || !result.value?.options) continue;
+        for (const opt of result.value.options) {
+          const value = String(opt.value || "").trim();
+          const label = String(opt.label || "").trim();
+          if (value && label && !map.has(value)) map.set(value, label);
+        }
+      }
+    }),
+  ]);
+
   return map;
 }
 
