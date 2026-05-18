@@ -122,6 +122,12 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     tag: "ACCOUNTING",
     tagColor: "green",
   },
+  "/suites/pe-compliance": {
+    title: "PE & Compliance Suite",
+    description: "Participate Energy submission workflow, incentive tracking, and compliance surfaces.",
+    tag: "PE & COMPLIANCE",
+    tagColor: "orange",
+  },
   "/suites/sales-marketing": {
     title: "Sales & Marketing Suite",
     description: "Pipeline visibility, revenue tracking, forecasting, and marketing analytics.",
