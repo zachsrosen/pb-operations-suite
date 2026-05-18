@@ -114,7 +114,8 @@ export async function runCrossReference(opts: RunCrossReferenceOptions): Promise
  * Registered analyzers. Populated as each is implemented (Chunks 3–7).
  */
 import { MonitoringAnalyzer } from "@/lib/pe-crossref/analyzers/monitoring";
+import { PlansetAnalyzer } from "@/lib/pe-crossref/analyzers/planset";
 
 function getRegisteredAnalyzers(): Analyzer[] {
-  return [MonitoringAnalyzer];
+  return [MonitoringAnalyzer, PlansetAnalyzer];
 }
