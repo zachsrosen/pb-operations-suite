@@ -730,18 +730,32 @@ For equipmentVisible, include everything you can read: brand, model, serial numb
   }
   contentBlocks.push({ type: "text", text: prompt });
 
+  // Each verdict ~200 tokens worst-case (equipmentVisible can be long for
+  // photos with many readable nameplates). 4000 capped at ~20 photos; bumping
+  // the photo cap to 50 silently truncated responses → all-missing regression.
+  // Scale with photo count + a 2000-token margin, clamped to Sonnet's 16384 cap.
+  const maxTokens = Math.min(16000, Math.max(4000, photos.length * 250 + 2000));
+
   try {
     const message = await client.beta.messages.create({
       model: CLAUDE_MODELS.sonnet,
-      // 4000 covers ~20 photo verdicts (~150 tokens each) with margin. 8000 was
-      // overkill and added latency (Claude streams to the cap).
-      max_tokens: 4000,
+      max_tokens: maxTokens,
       messages: [{ role: "user", content: contentBlocks }],
       betas: ["files-api-2025-04-14"],
     });
 
     const textBlock = message.content.find((b) => b.type === "text");
     const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+
+    // Detect truncation by stop_reason — `max_tokens` means JSON is cut off and
+    // will fail to parse. Surface it loudly rather than returning empty.
+    if (message.stop_reason === "max_tokens") {
+      console.error(
+        `[pe-triage] Response hit max_tokens cap (${maxTokens}) for ${photos.length} photos. ` +
+        `Last 200 chars of partial response: ${raw.slice(-200)}`,
+      );
+    }
+
     const jsonStr = raw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(jsonStr) as {
       assignments: Array<{
@@ -753,6 +767,8 @@ For equipmentVisible, include everything you can read: brand, model, serial numb
         equipmentVisible: string[];
       }>;
     };
+
+    console.warn(`[pe-triage] Parsed ${parsed.assignments?.length ?? 0} assignments for ${photos.length} photos (max_tokens=${maxTokens}, stop=${message.stop_reason})`);
 
     for (const a of parsed.assignments) {
       if (a.matchedChecklistId) {
@@ -766,7 +782,10 @@ For equipmentVisible, include everything you can read: brand, model, serial numb
       }
     }
   } catch (err) {
-    console.error(`[pe-triage] Batch photo triage failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(
+      `[pe-triage] Batch photo triage failed (max_tokens=${maxTokens}, photos=${photos.length}): ` +
+      `${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   return result;
