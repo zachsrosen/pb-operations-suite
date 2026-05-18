@@ -23,6 +23,7 @@ import {
   updateProperty,
   fetchAllProperties,
   fetchAssociatedIdsFromProperty,
+  fetchPropertyById,
   searchPropertyByPlaceId,
   searchPropertyByNormalizedAddress,
   searchPropertyByStreetAddress,
@@ -487,15 +488,22 @@ async function logActivity(
 // ---------------------------------------------------------------------------
 
 /**
- * Recompute denormalized rollups on the cache row and push them back to
- * HubSpot. Reads associated deals + tickets + line items, classifies the
- * line items by `InternalProduct.category`, and writes:
- *   - firstInstallDate / mostRecentInstallDate (min/max of `Deal.constructionCompleteDate`)
+ * Recompute denormalized rollups on the cache row and push server-computed
+ * fields back to HubSpot.
+ *
+ * **Numeric rollups from native HubSpot properties (read-only):**
+ *   - systemSizeKwDc ← `system_size_kwdc_rollup` (Sum of deal system sizes)
+ *   - panelCount ← `total_module_count_rollup` (Sum of deal module counts)
+ *   - hasBattery ← `total_battery_count_rollup` > 0
+ *   - hasEvCharger ← `total_ev_charger_count_rollup` > 0
+ *   - totalDealValue ← `total_deal_value_rollup` (Sum of deal amounts)
+ *
+ * **Server-computed fields (pushed to HubSpot):**
+ *   - firstInstallDate / mostRecentInstallDate (min/max of Deal.constructionCompleteDate)
  *   - associatedDealsCount / associatedTicketsCount / openTicketsCount
- *   - systemSizeKwDc (sum of MODULE wattage × qty / 1000)
- *   - hasBattery (any BATTERY or BATTERY_EXPANSION)
- *   - hasEvCharger (any EV_CHARGER)
- *   - lastServiceDate (max of closed_date ?? hs_lastmodifieddate across tickets)
+ *   - lastServiceDate (max of closed_date across tickets)
+ *   - Text summaries (moduleSummary, inverterSummary, etc. — from line items)
+ *   - latestDealName / latestDealStage / latestOpenTicketSubject
  *   - earliestWarrantyExpiry = null in v1 (see note below)
  */
 export async function computePropertyRollups(propertyCacheId: string): Promise<void> {
@@ -529,7 +537,6 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
           hubspotDealId: true,
           constructionCompleteDate: true,
           closeDate: true,
-          amount: true,
         },
       })
     : [];
@@ -539,27 +546,41 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     .filter((d): d is Date => !!d)
     .sort((a, b) => a.getTime() - b.getTime());
 
-  // Line-item rollup. We classify by `InternalProduct.category` via the
-  // `hubspotProductId` the line item points at — matching the join used by
-  // `bom-hubspot-line-items.ts`. Raw line items are not cached (see decision 8
-  // in the plan); only the rollup lands on the cache row.
-  const lineItems = dealIds.length ? await fetchLineItemsForDeals(dealIds) : [];
-  const byCategory = await categorizeLineItemsByInternalProduct(lineItems);
-  const moduleWatts = sumWattage(byCategory.get(EquipmentCategory.MODULE) ?? []);
-  const systemSizeKwDc = moduleWatts > 0 ? moduleWatts / 1000 : null;
-  const hasBattery =
-    (byCategory.get(EquipmentCategory.BATTERY)?.length ?? 0) > 0 ||
-    (byCategory.get(EquipmentCategory.BATTERY_EXPANSION)?.length ?? 0) > 0;
-  const hasEvCharger = (byCategory.get(EquipmentCategory.EV_CHARGER)?.length ?? 0) > 0;
+  // ---------------------------------------------------------------------------
+  // Native HubSpot rollup values — read from the Property object's auto-computed
+  // rollup properties instead of manually computing from line items / deals.
+  // These rollups are always current because HubSpot recalculates them whenever
+  // the underlying deal data changes. Avoids stale-link-table mismatches and
+  // the double-counting bug that affected server-computed values.
+  // ---------------------------------------------------------------------------
+  const hsProperty = await fetchPropertyById(property.hubspotObjectId);
+  const rollupProps = hsProperty?.properties ?? {};
 
-  // Equipment summaries — human-readable brand/model × qty strings
+  const systemSizeKwDc = rollupProps.system_size_kwdc_rollup
+    ? Number(rollupProps.system_size_kwdc_rollup)
+    : null;
+  const panelCountRollup = rollupProps.total_module_count_rollup
+    ? Math.round(Number(rollupProps.total_module_count_rollup))
+    : null;
+  const batteryCount = rollupProps.total_battery_count_rollup
+    ? Number(rollupProps.total_battery_count_rollup)
+    : 0;
+  const evChargerCount = rollupProps.total_ev_charger_count_rollup
+    ? Number(rollupProps.total_ev_charger_count_rollup)
+    : 0;
+  const hasBattery = batteryCount > 0;
+  const hasEvCharger = evChargerCount > 0;
+  const totalDealValueRollup = rollupProps.total_deal_value_rollup
+    ? Number(rollupProps.total_deal_value_rollup)
+    : null;
+
+  // Equipment summaries — human-readable brand/model × qty strings.
+  // Text summaries still require line items (HubSpot rollups can't concat strings).
+  const lineItems = dealIds.length ? await fetchLineItemsForDeals(dealIds) : [];
   const equipSummaries = await buildEquipmentSummaries(lineItems);
 
-  // Deal value + latest deal info
-  const totalDealValue = deals.reduce(
-    (sum, d) => sum + (d.amount ? Number(d.amount) : 0),
-    0,
-  );
+  // Deal value from native rollup (manual entry, not derived from line items).
+  const totalDealValue = totalDealValueRollup ?? 0;
   // Most recent deal by close date (if closed) or creation order (fallback)
   const latestDeal = deals.length
     ? [...deals].sort((a, b) => {
@@ -643,12 +664,15 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       inverterSummary: equipSummaries.inverterSummary ?? null,
       batterySummary: equipSummaries.batterySummary ?? null,
       evChargerSummary: equipSummaries.evChargerSummary ?? null,
-      panelCount: equipSummaries.panelCount ?? null,
+      panelCount: panelCountRollup,
       totalDealValue: totalDealValue > 0 ? totalDealValue : null,
       lastReconciledAt: new Date(),
     },
   });
 
+  // Push server-computed fields to HubSpot. Native rollup properties
+  // (system_size_kwdc_rollup, total_module_count_rollup, etc.) are read-only
+  // and auto-computed by HubSpot — we only push the fields we still own.
   await updateProperty(property.hubspotObjectId, {
     first_install_date: toDateString(installDates[0] ?? null),
     most_recent_install_date: toDateString(installDates[installDates.length - 1] ?? null),
@@ -656,23 +680,21 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     associated_tickets_count: tickets.length,
     open_tickets_count: openTicketsCount,
     closed_tickets_count: closedTicketsCount,
-    system_size_kw_dc: systemSizeKwDc,
-    has_battery: hasBattery,
-    has_ev_charger: hasEvCharger,
     last_service_date: toDateString(lastServiceDate),
     earliest_warranty_expiry: "", // v1: not yet derivable.
-    // Extended rollups
+    // Text summaries (no native rollup equivalent — HubSpot can't concat strings)
     module_summary: equipSummaries.moduleSummary ?? "",
     inverter_summary: equipSummaries.inverterSummary ?? "",
     battery_summary: equipSummaries.batterySummary ?? "",
     ev_charger_summary: equipSummaries.evChargerSummary ?? "",
-    panel_count: equipSummaries.panelCount,
-    total_deal_value: totalDealValue > 0 ? totalDealValue : null,
     latest_deal_name: latestDealInfo?.dealName ?? "",
     latest_deal_stage: latestDealInfo?.stage ?? "",
     latest_open_ticket_subject: latestOpenTicketSubject ?? "",
     // NOTE: install_age_months and days_since_last_service are HubSpot calc
     // properties — they auto-compute from first_install_date / last_service_date.
+    // NOTE: system_size_kw_dc, has_battery, has_ev_charger, panel_count, and
+    // total_deal_value are now native HubSpot rollup properties — read-only,
+    // no longer pushed from here.
   });
 }
 
@@ -683,82 +705,6 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
 interface CategorizableLineItem {
   hubspotProductId: string | null;
   quantity: number;
-}
-
-interface ModuleLineItem extends CategorizableLineItem {
-  /** Wattage pulled off the joined InternalProduct.moduleSpec.wattage. */
-  _wattage: number;
-}
-
-/**
- * Group line items by the EquipmentCategory of their joined InternalProduct.
- * Line items with no HubSpot product ID or no catalog match are skipped — they
- * cannot be classified and would pollute the rollup (e.g. freeform "Service
- * Call" line items on a service deal).
- */
-async function categorizeLineItemsByInternalProduct(
-  lineItems: ReadonlyArray<CategorizableLineItem>
-): Promise<Map<EquipmentCategory, Array<CategorizableLineItem | ModuleLineItem>>> {
-  const byCategory = new Map<EquipmentCategory, Array<CategorizableLineItem | ModuleLineItem>>();
-  const productIds = Array.from(
-    new Set(
-      lineItems
-        .map((li) => li.hubspotProductId)
-        .filter((id): id is string => !!id && id.length > 0)
-    )
-  );
-  if (productIds.length === 0) return byCategory;
-
-  const products = await prisma.internalProduct.findMany({
-    where: { hubspotProductId: { in: productIds } },
-    select: {
-      id: true,
-      category: true,
-      hubspotProductId: true,
-      moduleSpec: { select: { wattage: true } },
-    },
-  });
-
-  const byHubspotId = new Map<
-    string,
-    { category: EquipmentCategory; wattage: number | null }
-  >();
-  for (const p of products) {
-    if (!p.hubspotProductId) continue;
-    byHubspotId.set(p.hubspotProductId, {
-      category: p.category,
-      wattage: p.moduleSpec?.wattage ?? null,
-    });
-  }
-
-  for (const item of lineItems) {
-    if (!item.hubspotProductId) continue;
-    const match = byHubspotId.get(item.hubspotProductId);
-    if (!match) continue;
-    const bucket = byCategory.get(match.category) ?? [];
-    if (match.category === EquipmentCategory.MODULE) {
-      bucket.push({
-        hubspotProductId: item.hubspotProductId,
-        quantity: item.quantity,
-        _wattage: match.wattage ?? 0,
-      });
-    } else {
-      bucket.push(item);
-    }
-    byCategory.set(match.category, bucket);
-  }
-  return byCategory;
-}
-
-/** Sum wattage × quantity across MODULE line items. Returns watts (not kW). */
-function sumWattage(items: Array<CategorizableLineItem | ModuleLineItem>): number {
-  let total = 0;
-  for (const item of items) {
-    if ("_wattage" in item) {
-      total += (item._wattage ?? 0) * (item.quantity ?? 0);
-    }
-  }
-  return total;
 }
 
 function toDateString(d: Date | null | undefined): string {

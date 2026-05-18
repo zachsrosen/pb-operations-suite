@@ -29,6 +29,7 @@ import {
   type DrivePdfFile,
   getDriveToken,
   listDrivePdfs,
+  listPlansetPdfs,
   pickBestPlanset,
   downloadDrivePdf,
   extractFolderId,
@@ -764,7 +765,7 @@ export async function runDesignCompletePipeline(
     currentStep = "LIST_PDFS";
 
     const { result: pdfFiles } =
-      await withRetry("LIST_PDFS", () => listDrivePdfs(folderId), retryObs);
+      await withRetry("LIST_PDFS", () => listPlansetPdfs(folderId), retryObs);
 
     if (pdfFiles.length === 0) {
       return fail("LIST_PDFS", `No PDF files found in Drive folder ${folderId}`);

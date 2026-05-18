@@ -96,6 +96,12 @@ export const PROPERTY_PROPERTIES = [
   "hoa_name",
   "attom_last_synced_at",
   "attom_match_confidence",
+  // Native rollup properties (auto-computed by HubSpot — read-only)
+  "system_size_kwdc_rollup",
+  "total_module_count_rollup",
+  "total_battery_count_rollup",
+  "total_ev_charger_count_rollup",
+  "total_deal_value_rollup",
 ] as const;
 
 // ---------------------------------------------------------------------------
