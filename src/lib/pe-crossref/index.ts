@@ -112,8 +112,9 @@ export async function runCrossReference(opts: RunCrossReferenceOptions): Promise
 
 /**
  * Registered analyzers. Populated as each is implemented (Chunks 3–7).
- * In Chunk 1 this returns an empty list — runs complete with 0 detected.
  */
+import { MonitoringAnalyzer } from "@/lib/pe-crossref/analyzers/monitoring";
+
 function getRegisteredAnalyzers(): Analyzer[] {
-  return [];
+  return [MonitoringAnalyzer];
 }
