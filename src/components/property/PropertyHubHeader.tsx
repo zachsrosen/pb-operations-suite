@@ -14,6 +14,18 @@ function formatSystemSize(kw: number | null): string {
   return kw >= 1 ? `${kw.toFixed(1)} kW` : `${(kw * 1000).toFixed(0)} W`;
 }
 
+function formatCurrency(value: number | null | undefined): string {
+  if (!value || value <= 0) return "";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+const ZUPER_WEB_BASE = "https://web.zuperpro.com";
+
 export default function PropertyHubHeader({ property, loading, error }: Props) {
   if (error) {
     return (
@@ -70,26 +82,48 @@ export default function PropertyHubHeader({ property, loading, error }: Props) {
             )}
           </div>
 
-          {/* Equipment chips */}
+          {/* Equipment chips — prefer summaries when available */}
           <div className="flex flex-wrap gap-2 mt-3">
-            {systemSize && (
+            {property.moduleSummary ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                {property.moduleSummary}
+              </span>
+            ) : systemSize ? (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
                 {systemSize} System
               </span>
+            ) : null}
+            {property.inverterSummary && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {property.inverterSummary}
+              </span>
             )}
-            {property.hasBattery && (
+            {property.batterySummary ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                {property.batterySummary}
+              </span>
+            ) : property.hasBattery ? (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                 Battery
               </span>
-            )}
-            {property.hasEvCharger && (
+            ) : null}
+            {property.evChargerSummary ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
+                {property.evChargerSummary}
+              </span>
+            ) : property.hasEvCharger ? (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20">
                 EV Charger
               </span>
-            )}
+            ) : null}
             {property.openTicketsCount > 0 && (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
                 {property.openTicketsCount} Open Ticket{property.openTicketsCount !== 1 ? "s" : ""}
+              </span>
+            )}
+            {formatCurrency(property.totalDealValue) && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                {formatCurrency(property.totalDealValue)} Revenue
               </span>
             )}
           </div>
@@ -137,6 +171,29 @@ export default function PropertyHubHeader({ property, loading, error }: Props) {
                 />
               </svg>
               Open in HubSpot
+            </a>
+          )}
+          {property.zuperPropertyUid && (
+            <a
+              href={`${ZUPER_WEB_BASE}/property/${property.zuperPropertyUid}/details`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-surface-2 border border-t-border text-foreground hover:bg-surface-elevated transition-colors"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+              Open in Zuper
             </a>
           )}
           <button

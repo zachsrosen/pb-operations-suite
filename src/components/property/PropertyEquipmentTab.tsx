@@ -52,6 +52,7 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
 
   const summary = data?.equipmentSummary;
   const snapshots = data?.snapshots ?? [];
+  const { moduleSummary, inverterSummary, batterySummary, evChargerSummary } = data ?? {};
 
   const hasEquipment =
     summary &&
@@ -78,6 +79,11 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
                   {formatSystemSize(summary.modules.totalWattage / 1000)} total
                 </p>
               )}
+              {moduleSummary && (
+                <p className="text-xs text-muted mt-1 line-clamp-2">
+                  {moduleSummary}
+                </p>
+              )}
             </div>
           )}
           {summary.inverters.count > 0 && (
@@ -88,6 +94,11 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
               <p className="text-lg font-bold text-foreground mt-1">
                 {summary.inverters.count}
               </p>
+              {inverterSummary && (
+                <p className="text-xs text-muted mt-1 line-clamp-2">
+                  {inverterSummary}
+                </p>
+              )}
             </div>
           )}
           {summary.batteries.count > 0 && (
@@ -103,6 +114,11 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
                   {summary.batteries.totalKwh.toFixed(1)} kWh total
                 </p>
               )}
+              {batterySummary && (
+                <p className="text-xs text-muted mt-1 line-clamp-2">
+                  {batterySummary}
+                </p>
+              )}
             </div>
           )}
           {summary.evChargers.count > 0 && (
@@ -113,6 +129,11 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
               <p className="text-lg font-bold text-foreground mt-1">
                 {summary.evChargers.count}
               </p>
+              {evChargerSummary && (
+                <p className="text-xs text-muted mt-1 line-clamp-2">
+                  {evChargerSummary}
+                </p>
+              )}
             </div>
           )}
         </div>

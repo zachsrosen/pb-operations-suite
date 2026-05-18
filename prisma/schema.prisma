@@ -811,6 +811,14 @@ model HubSpotPropertyCache {
   lastServiceDate        DateTime?
   earliestWarrantyExpiry DateTime?
 
+  // Extended rollups (sync-maintained, also pushed to HubSpot)
+  moduleSummary    String?
+  inverterSummary  String?
+  batterySummary   String?
+  evChargerSummary String?
+  panelCount       Int?
+  totalDealValue   Float?
+
   // Geographic links
   ahjObjectId      String?
   ahjName          String?
