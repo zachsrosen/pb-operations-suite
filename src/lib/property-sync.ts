@@ -635,12 +635,16 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       hasEvCharger,
       lastServiceDate,
       earliestWarrantyExpiry: null, // v1: not yet derivable — see note above.
-      // NOTE: Extended rollups (moduleSummary, inverterSummary, batterySummary,
-      // evChargerSummary, panelCount, totalDealValue, latestDealName,
-      // latestDealStage, latestOpenTicketSubject, installAgeMonths,
-      // daysSinceLastService) are pushed to HubSpot below but NOT stored in the
-      // local cache — columns don't exist in the schema yet. Add them in a
-      // follow-up migration.
+      // Extended rollups — also pushed to HubSpot below. latestDealName,
+      // latestDealStage, latestOpenTicketSubject, installAgeMonths, and
+      // daysSinceLastService are HubSpot-only (calculation props or not yet
+      // cached locally).
+      moduleSummary: equipSummaries.moduleSummary ?? null,
+      inverterSummary: equipSummaries.inverterSummary ?? null,
+      batterySummary: equipSummaries.batterySummary ?? null,
+      evChargerSummary: equipSummaries.evChargerSummary ?? null,
+      panelCount: equipSummaries.panelCount ?? null,
+      totalDealValue: totalDealValue > 0 ? totalDealValue : null,
       lastReconciledAt: new Date(),
     },
   });

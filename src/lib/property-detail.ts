@@ -86,6 +86,15 @@ export interface PropertyDetail {
 
   equipmentSummary: EquipmentSummary;
 
+  // Extended rollups cached locally from computePropertyRollups
+  zuperPropertyUid: string | null;
+  moduleSummary: string | null;
+  inverterSummary: string | null;
+  batterySummary: string | null;
+  evChargerSummary: string | null;
+  panelCount: number | null;
+  totalDealValue: number | null;
+
   // Enrichment fields (Shovels / ATTOM — null until integration populates them)
   yearBuilt: number | null;
   squareFootage: number | null;
@@ -358,6 +367,15 @@ export function mapCacheRowToPropertyDetail(
     deals: [],
     tickets: [],
     hubspotUrl: buildHubSpotPropertyUrl(row.hubspotObjectId),
+
+    // Extended rollups
+    zuperPropertyUid: row.zuperPropertyUid,
+    moduleSummary: row.moduleSummary,
+    inverterSummary: row.inverterSummary,
+    batterySummary: row.batterySummary,
+    evChargerSummary: row.evChargerSummary,
+    panelCount: row.panelCount,
+    totalDealValue: row.totalDealValue,
 
     // Enrichment fields
     yearBuilt: row.yearBuilt,
