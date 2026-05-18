@@ -12,11 +12,11 @@ import { prisma } from "@/lib/db";
 // ---------------------------------------------------------------------------
 
 export interface PeAvlEntry {
+  id: string;
   sku: string;
   manufacturer: string;
-  model: string;
+  description: string | null;
   category: string;
-  status: string;
   [key: string]: unknown;
 }
 
@@ -51,6 +51,7 @@ async function fetchAvlFromApi(): Promise<PeAvlEntry[]> {
   const json = await res.json();
 
   if (Array.isArray(json)) return json as PeAvlEntry[];
+  if (json.data?.items && Array.isArray(json.data.items)) return json.data.items as PeAvlEntry[];
   if (json.data && Array.isArray(json.data)) return json.data as PeAvlEntry[];
   if (json.data?.entries && Array.isArray(json.data.entries)) return json.data.entries as PeAvlEntry[];
 
@@ -115,8 +116,8 @@ export function checkEquipmentAgainstAvl(
     const normalized = sku.toLowerCase().replace(/[\s\-_]/g, "");
     const match = avl.entries.find((e) => {
       const entryNorm = (e.sku || "").toLowerCase().replace(/[\s\-_]/g, "");
-      const modelNorm = (e.model || "").toLowerCase().replace(/[\s\-_]/g, "");
-      return entryNorm === normalized || modelNorm === normalized || entryNorm.includes(normalized) || normalized.includes(entryNorm);
+      const descNorm = (e.description || "").toLowerCase().replace(/[\s\-_]/g, "");
+      return entryNorm === normalized || descNorm === normalized || entryNorm.includes(normalized) || normalized.includes(entryNorm);
     });
 
     results.push({
