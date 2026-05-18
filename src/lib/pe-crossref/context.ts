@@ -12,6 +12,7 @@
 import { resolvePEDeal, buildFolderMap } from "@/lib/pe-turnover";
 import { scanM1MonitoringFolder } from "@/lib/pe-crossref/extractors/monitoring-folder";
 import { fetchLatestAuditRun } from "@/lib/pe-crossref/extractors/latest-audit-run";
+import { fetchPowerHubAsset } from "@/lib/pe-crossref/extractors/powerhub";
 import type { CrossRefContext } from "@/lib/pe-crossref/types";
 
 export interface ContextBuildResult {
@@ -38,7 +39,7 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
 
   // Extractors that have real implementations get called here; the rest stay
   // null. Each is independent — Promise.all parallelism.
-  const [monitoringFolder, latestAuditRun] = await Promise.all([
+  const [monitoringFolder, latestAuditRunResult, powerHubAsset] = await Promise.all([
     scanM1MonitoringFolder(installFolderId)
       .then((r) => {
         extractorResults.monitoringFolder = "ok";
@@ -50,8 +51,8 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
       }),
 
     // Latest completed PE audit — used by PlansetAnalyzer (reuses audit's
-    // vision extraction of the planset's specs) and later PhotoCritiqueAnalyzer
-    // (photo-to-checklist assignments).
+    // vision extraction of the planset's specs) and HardwareAnalyzer
+    // (nameplate part-number extracted from photo equipmentVisible).
     fetchLatestAuditRun(dealId)
       .then((r) => {
         extractorResults.latestAuditRun = r ? "ok" : "ok (no completed audit yet)";
@@ -59,6 +60,22 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
       })
       .catch((err) => {
         extractorResults.latestAuditRun = `error: ${err instanceof Error ? err.message : String(err)}`;
+        return null;
+      }),
+
+    // PowerHub asset state for the deal. Null when POWERHUB_ENABLED=false
+    // or no PowerhubSite is linked to the deal yet.
+    fetchPowerHubAsset(dealId)
+      .then((r) => {
+        extractorResults.powerHubAsset = r
+          ? "ok"
+          : process.env.POWERHUB_ENABLED !== "true"
+            ? "skipped (POWERHUB_ENABLED=false)"
+            : "ok (no linked site)";
+        return r;
+      })
+      .catch((err) => {
+        extractorResults.powerHubAsset = `error: ${err instanceof Error ? err.message : String(err)}`;
         return null;
       }),
   ]);
@@ -69,11 +86,11 @@ export async function buildCrossRefContext(dealId: string): Promise<ContextBuild
       deal,
       planset: null,
       salesOrder: null,
-      powerHubAsset: null,
+      powerHubAsset,
       installPhotos: [],
-      nameplateExtractions: new Map(),
+      nameplateExtractions: latestAuditRunResult?.nameplateExtractions ?? new Map(),
       monitoringFolder,
-      latestAuditRun,
+      latestAuditRun: latestAuditRunResult?.audit ?? null,
     },
   };
 }
