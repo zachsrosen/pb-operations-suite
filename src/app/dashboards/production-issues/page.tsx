@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
+import FlagProjectModal from "@/components/FlagProjectModal";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { RawProject } from "@/lib/types";
@@ -104,7 +105,7 @@ export default function ProductionIssuesPage() {
   // Dedicated endpoint — returns flagged deals across ALL stages, not just active.
   // The generic /api/projects?context=executive excludes PTO'd/closed deals (where
   // most production issues actually live), so this page has its own read path.
-  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
+  const { data: projects, loading, lastUpdated, refetch } = useProjectData<RawProject[]>({
     endpoint: "/api/projects/flagged",
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
@@ -112,6 +113,24 @@ export default function ProductionIssuesPage() {
 
   const { filters, setFilters, clearFilters } = useProductionIssuesFilters();
   const [equipTab, setEquipTab] = useState<"inverter" | "module" | "battery">("inverter");
+  const [flagModalOpen, setFlagModalOpen] = useState(false);
+  const [unflagging, setUnflagging] = useState<string | null>(null);
+
+  const handleUnflag = async (dealId: string) => {
+    setUnflagging(dealId);
+    try {
+      const res = await fetch(`/api/projects/${dealId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          properties: { system_performance_review: "false" },
+        }),
+      });
+      if (res.ok) await refetch();
+    } finally {
+      setUnflagging(null);
+    }
+  };
 
   // Flagged subset — canonical source for every calc on this page.
   const flagged = useMemo(
@@ -326,6 +345,18 @@ export default function ProductionIssuesPage() {
         />
       </div>
 
+      {/* Flag Project button — always visible when data is loaded */}
+      {!loading && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => setFlagModalOpen(true)}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
+          >
+            + Flag Project
+          </button>
+        </div>
+      )}
+
       {/* Filter bar */}
       {!loading && flagged.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -432,7 +463,7 @@ export default function ProductionIssuesPage() {
       {!loading && filteredFlagged.length > 0 && (
         <div className="rounded-xl border border-t-border bg-surface overflow-x-auto mb-6">
           <div className="px-4 py-2 text-xs text-muted border-b border-t-border">
-            Flag is set from the Clipping Analytics page.
+            Flag projects using the button above, or from the Clipping Analytics page.
           </div>
           <table className="w-full text-sm">
             <thead className="bg-surface-2 text-muted">
@@ -446,6 +477,7 @@ export default function ProductionIssuesPage() {
                 <th className="text-left p-3">Battery</th>
                 <th className="text-left p-3">Clipping risk</th>
                 <th className="text-left p-3">Close date</th>
+                <th className="text-left p-3 w-20"></th>
               </tr>
             </thead>
             <tbody>
@@ -486,6 +518,16 @@ export default function ProductionIssuesPage() {
                     </span>
                   </td>
                   <td className="p-3">{formatCloseDate(project.closeDate)}</td>
+                  <td className="p-3">
+                    <button
+                      onClick={() => handleUnflag(String(project.id))}
+                      disabled={unflagging === String(project.id)}
+                      className="text-xs text-muted hover:text-red-400 disabled:opacity-50 transition-colors"
+                      title="Remove from production issues"
+                    >
+                      {unflagging === String(project.id) ? "…" : "Unflag"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -493,6 +535,11 @@ export default function ProductionIssuesPage() {
         </div>
       )}
 
+      <FlagProjectModal
+        open={flagModalOpen}
+        onClose={() => setFlagModalOpen(false)}
+        onFlagged={() => refetch()}
+      />
     </DashboardShell>
   );
 }
