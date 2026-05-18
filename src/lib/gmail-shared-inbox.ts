@@ -167,7 +167,7 @@ interface GmailMessagePart {
   mimeType?: string;
   filename?: string;
   headers?: Array<{ name: string; value: string }>;
-  body?: { size?: number; data?: string };
+  body?: { size?: number; data?: string; attachmentId?: string };
   parts?: GmailMessagePart[];
 }
 
@@ -566,4 +566,157 @@ function extractPlainTextBody(part: GmailMessagePart): string | null {
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Attachment listing + download
+// ---------------------------------------------------------------------------
+
+export interface SharedInboxAttachment {
+  messageId: string;
+  threadId: string;
+  partId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string; // opaque Gmail attachment handle; pass to downloadSharedInboxAttachment
+  /** Headers from the parent message — useful for callers that need date/subject context. */
+  messageSubject: string;
+  messageDate: string; // ISO
+  messageFrom: string;
+}
+
+export interface FetchAttachmentsOpts {
+  mailbox: string;
+  query: string;
+  maxMessages?: number;
+  /** Filter — only return attachments whose mimeType matches this regex. */
+  mimeTypePattern?: RegExp;
+}
+
+export type FetchAttachmentsResult =
+  | { ok: true; attachments: SharedInboxAttachment[] }
+  | { ok: false; error: string };
+
+/**
+ * Search a shared inbox by query and return every attachment matching the
+ * (optional) mime-type filter. Walks the MIME tree of each matched message
+ * so it picks up attachments nested in multipart/alternative or
+ * multipart/related parts.
+ *
+ * Returns attachment metadata only — call `downloadSharedInboxAttachment`
+ * with the (messageId, attachmentId) pair to fetch the actual bytes.
+ */
+export async function fetchSharedInboxAttachments(
+  opts: FetchAttachmentsOpts,
+): Promise<FetchAttachmentsResult> {
+  const { mailbox, query, maxMessages = 25, mimeTypePattern = /application\/pdf/i } = opts;
+
+  const token = await getReadonlyToken(mailbox);
+  if (!token) {
+    return { ok: false, error: `Auth failed for ${mailbox}` };
+  }
+  const encodedMailbox = encodeURIComponent(mailbox);
+
+  // 1. List matching message IDs
+  const listUrl = new URL(`${GMAIL_API_BASE}/users/${encodedMailbox}/messages`);
+  listUrl.searchParams.set("q", query);
+  listUrl.searchParams.set("maxResults", String(maxMessages));
+  const listResp = await fetch(listUrl.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  if (!listResp.ok) {
+    const body = await listResp.text().catch(() => "");
+    return { ok: false, error: `messages.list failed (HTTP ${listResp.status}): ${body.slice(0, 200)}` };
+  }
+  const listBody = (await listResp.json()) as { messages?: Array<{ id: string; threadId: string }> };
+  const messageIds = listBody.messages ?? [];
+  if (messageIds.length === 0) return { ok: true, attachments: [] };
+
+  // 2. Walk each message's MIME tree for attachments
+  const attachments: SharedInboxAttachment[] = [];
+  for (const { id, threadId } of messageIds) {
+    const msgUrl = `${GMAIL_API_BASE}/users/${encodedMailbox}/messages/${id}?format=full`;
+    const msgResp = await fetch(msgUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (!msgResp.ok) continue;
+    const msg = (await msgResp.json()) as GmailMessage;
+    if (!msg.payload) continue;
+
+    const subject = getHeader(msg.payload.headers, "Subject") ?? "(no subject)";
+    const dateHeader = getHeader(msg.payload.headers, "Date");
+    const date = msg.internalDate
+      ? new Date(Number(msg.internalDate)).toISOString()
+      : dateHeader
+        ? new Date(dateHeader).toISOString()
+        : new Date().toISOString();
+    const from = getHeader(msg.payload.headers, "From") ?? "";
+
+    for (const part of walkMimeParts(msg.payload)) {
+      if (!part.body?.attachmentId || !part.filename) continue;
+      if (mimeTypePattern && part.mimeType && !mimeTypePattern.test(part.mimeType)) continue;
+
+      attachments.push({
+        messageId: msg.id,
+        threadId: msg.threadId ?? threadId,
+        partId: part.partId ?? "",
+        filename: part.filename,
+        mimeType: part.mimeType ?? "application/octet-stream",
+        size: part.body.size ?? 0,
+        attachmentId: part.body.attachmentId,
+        messageSubject: subject,
+        messageDate: date,
+        messageFrom: from,
+      });
+    }
+  }
+
+  return { ok: true, attachments };
+}
+
+/**
+ * Download an attachment by its Gmail (messageId, attachmentId) pair.
+ * Returns the raw bytes as a Buffer — caller decodes / processes.
+ */
+export async function downloadSharedInboxAttachment(
+  mailbox: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Buffer | null> {
+  const token = await getReadonlyToken(mailbox);
+  if (!token) return null;
+
+  const url = `${GMAIL_API_BASE}/users/${encodeURIComponent(mailbox)}/messages/${messageId}/attachments/${attachmentId}`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!resp.ok) {
+    console.warn(`[gmail-shared-inbox] attachment download failed (HTTP ${resp.status})`);
+    return null;
+  }
+  const body = (await resp.json()) as { data?: string; size?: number };
+  if (!body.data) return null;
+  // Gmail returns base64url-encoded payload
+  return Buffer.from(body.data, "base64url");
+}
+
+/** Recursively walk a MIME tree, yielding every leaf part. */
+function* walkMimeParts(part: GmailMessagePart): Generator<GmailMessagePart> {
+  yield part;
+  if (part.parts) {
+    for (const child of part.parts) {
+      yield* walkMimeParts(child);
+    }
+  }
+}
+
+/**
+ * Internal helper: prefer the user-stored Gmail token if present (avoids JWT
+ * exchange), fall back to service-account DWD. Returns null on any failure.
+ */
+async function getReadonlyToken(mailbox: string): Promise<string | null> {
+  try {
+    const { getStoredSharedInboxToken } = await import("@/lib/shared-inbox-token");
+    const stored = await getStoredSharedInboxToken(mailbox);
+    if (stored) return stored;
+  } catch {
+    // fall through to service account
+  }
+  const sa = await getReadonlyTokenVerbose(mailbox);
+  return sa.ok ? sa.token : null;
 }

@@ -117,7 +117,8 @@ import { MonitoringAnalyzer } from "@/lib/pe-crossref/analyzers/monitoring";
 import { PlansetAnalyzer } from "@/lib/pe-crossref/analyzers/planset";
 import { HardwareAnalyzer } from "@/lib/pe-crossref/analyzers/hardware";
 import { SalesOrderAnalyzer } from "@/lib/pe-crossref/analyzers/sales-order";
+import { InboxScanAnalyzer } from "@/lib/pe-crossref/analyzers/inbox-scan";
 
 function getRegisteredAnalyzers(): Analyzer[] {
-  return [MonitoringAnalyzer, PlansetAnalyzer, HardwareAnalyzer, SalesOrderAnalyzer];
+  return [MonitoringAnalyzer, PlansetAnalyzer, HardwareAnalyzer, SalesOrderAnalyzer, InboxScanAnalyzer];
 }
