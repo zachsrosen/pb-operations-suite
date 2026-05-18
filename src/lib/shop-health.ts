@@ -204,7 +204,7 @@ export async function getShopHealthData(
   // Fetch office-performance data (for goals) and raw projects in parallel
   const [opData, allProjects] = await Promise.all([
     getOfficePerformanceData(group),
-    fetchAllProjects({ activeOnly: false }),
+    fetchAllProjects({ activeOnly: true }),
   ]);
 
   // Filter to this location group's canonical locations
