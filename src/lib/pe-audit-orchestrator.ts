@@ -36,7 +36,7 @@ import {
 import {
   downloadDriveFile,
   downloadDriveImage,
-  listDriveFiles,
+  listDriveFilesRecursive,
   listDriveSubfolders,
   listDriveImagesRecursive,
   uploadDriveBinaryFile,
@@ -269,7 +269,9 @@ async function collectCandidateFiles(
       for (const prefix of item.driveFolders) {
         const fid = folderMap.get(prefix);
         if (fid) {
-          try { files.push(...await listDriveFiles(fid)); } catch {}
+          // Recursive so the Invoice/BOM photo can be matched whether it
+          // sits at folder 0 top level or inside `0. Sales/Invoices/`.
+          try { files.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
         }
       }
     }
@@ -279,16 +281,21 @@ async function collectCandidateFiles(
   if (item.searchAllFolders) {
     const allFiles: DriveGenericFile[] = [];
     for (const fid of allFolderIds) {
-      try { allFiles.push(...await listDriveFiles(fid)); } catch {}
+      try { allFiles.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
     }
     return allFiles;
   }
 
+  // Recursive listing for doc items — PE source files routinely nest one
+  // or two levels into subfolders (e.g. `2. Design/Stamped Plans/`,
+  // `6. Inspections/Inspection/`, `4. Interconnections/Xcel docs/`).
+  // The previous non-recursive `listDriveFiles` silently dropped these
+  // and flagged them missing even when present.
   const files: DriveGenericFile[] = [];
   for (const prefix of item.driveFolders) {
     const fid = folderMap.get(prefix);
     if (fid) {
-      try { files.push(...await listDriveFiles(fid)); } catch {}
+      try { files.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
     }
   }
   return files;

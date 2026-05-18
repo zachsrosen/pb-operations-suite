@@ -578,6 +578,71 @@ export interface DriveGenericFile {
   size?: string;
 }
 
+/**
+ * Recursively list non-folder files under a Drive folder, walking into
+ * subfolders up to `maxDepth` deep. Bounded by `maxFiles` to avoid
+ * runaway scans (PE deal folders sometimes nest 3-4 deep with hundreds
+ * of files in service-task subfolders).
+ *
+ * Useful for PE checklist items whose source files live in subfolders:
+ *   - `2. Design/Stamped Plans/PROJ-XXXX.pdf` (planset)
+ *   - `6. Inspections/Inspection/inspection_card.pdf` (final permit)
+ *   - `4. Interconnections/Xcel docs/CO DER Interconnection Agreement.pdf`
+ */
+export async function listDriveFilesRecursive(
+  folderId: string,
+  maxDepth = 3,
+  maxFiles = 100,
+): Promise<DriveGenericFile[]> {
+  const out: DriveGenericFile[] = [];
+  const seen = new Set<string>();
+
+  async function walk(parentId: string, depth: number) {
+    if (depth > maxDepth || out.length >= maxFiles) return;
+
+    // Files at this level
+    try {
+      const files = await listDriveFiles(parentId);
+      for (const f of files) {
+        if (out.length >= maxFiles) break;
+        if (seen.has(f.id)) continue;
+        seen.add(f.id);
+        out.push(f);
+      }
+    } catch {
+      // ignore — keep walking siblings
+    }
+
+    if (out.length >= maxFiles) return;
+
+    // Recurse into subfolders
+    const token = await getDriveToken();
+    const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const fields = "files(id,name)";
+    const url =
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+      `&fields=${encodeURIComponent(fields)}` +
+      `&pageSize=50` +
+      `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return;
+
+    const data = (await res.json()) as { files?: Array<{ id: string; name: string }> };
+    const subfolders = data.files ?? [];
+    for (const sub of subfolders) {
+      if (out.length >= maxFiles) break;
+      await walk(sub.id, depth + 1);
+    }
+  }
+
+  await walk(folderId, 0);
+  return out;
+}
+
 /** List ALL non-folder files in a Drive folder (any type), sorted by modifiedTime desc. */
 export async function listDriveFiles(folderId: string): Promise<DriveGenericFile[]> {
   const token = await getDriveToken();
