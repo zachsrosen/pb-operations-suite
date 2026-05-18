@@ -134,7 +134,7 @@ async function getDriveToken(request: NextRequest): Promise<{ token: string; tok
   if (impersonateEmail) {
     try {
       const saTokenDwd = await getServiceAccountToken(
-        ["https://www.googleapis.com/auth/drive.readonly"],
+        ["https://www.googleapis.com/auth/drive"],
         impersonateEmail
       );
       return { token: saTokenDwd, tokenSource: "service_account_dwd" };
