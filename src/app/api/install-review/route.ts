@@ -24,6 +24,7 @@ import {
   downloadDrivePdf,
   listDriveImagesRecursive,
   downloadDriveImage,
+  findPhotosFolder,
 } from "@/lib/drive-plansets";
 import { handleLookup as zuperJobLookup } from "@/app/api/zuper/jobs/lookup/route";
 import {
@@ -221,6 +222,16 @@ function getInstallFolderId(properties: Record<string, string | null>): string |
   const raw = String(
     properties.installation_documents ||
       properties.installation_document_id ||
+      "",
+  ).trim();
+  if (!raw) return null;
+  return extractFolderId(raw);
+}
+
+function getAllDocumentsFolderId(properties: Record<string, string | null>): string | null {
+  const raw = String(
+    properties.all_document_parent_folder_id ||
+      properties.all_document_folder_url ||
       "",
   ).trim();
   if (!raw) return null;
@@ -457,6 +468,55 @@ export async function runInstallReview(
     }
   }
 
+  // 3a-2. Fallback: search the project's all-documents root for an
+  // install/construction/photos subfolder (e.g. "5. Installation", "PV Install").
+  // findPhotosFolder targets install-named subfolders so we don't accidentally
+  // pull design renders or permit screenshots as install photos.
+  if (photoBuffers.length === 0 && properties) {
+    const allDocsRootId = getAllDocumentsFolderId(properties);
+    if (allDocsRootId) {
+      try {
+        const photosFolderId = await findPhotosFolder(allDocsRootId);
+        if (photosFolderId) {
+          const driveImages = await listDriveImagesRecursive(photosFolderId, 3, 30);
+
+          console.log(
+            `[install-review] Found ${driveImages.length} images in all-documents photos subfolder ${photosFolderId} (root ${allDocsRootId})`,
+          );
+
+          if (driveImages.length > 0) {
+            const toDownload = driveImages.slice(0, 10);
+            const downloadResults = await Promise.allSettled(
+              toDownload.map(async (img) => {
+                const { buffer, filename, mimeType } = await downloadDriveImage(img.id);
+                return { buffer, name: filename, mimeType };
+              }),
+            );
+
+            for (const r of downloadResults) {
+              if (r.status === "fulfilled" && r.value.buffer.byteLength <= MAX_IMAGE_SIZE) {
+                photoBuffers.push(r.value);
+              }
+            }
+
+            if (photoBuffers.length > 0) {
+              photoSource = "google_drive_all_docs";
+              console.log(
+                `[install-review] Downloaded ${photoBuffers.length}/${toDownload.length} photos from all-documents fallback`,
+              );
+            }
+          }
+        } else {
+          console.log(
+            `[install-review] No install/photos subfolder found in all-documents root ${allDocsRootId}`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[install-review] Failed to fetch all-documents photos:`, err);
+      }
+    }
+  }
+
   // 3b. Try Zuper job attachments as fallback
   if (photoBuffers.length === 0 && resolvedJobUid) {
     const zuper = new ZuperClient();
@@ -549,6 +609,12 @@ export async function runInstallReview(
     const details = [];
     if (!getInstallFolderId(properties || {}))
       details.push("No installation_documents folder set on deal.");
+    else
+      details.push("installation_documents folder has no images.");
+    if (!getAllDocumentsFolderId(properties || {}))
+      details.push("No all-documents folder set on deal.");
+    else
+      details.push("No install/photos subfolder with images found under all-documents.");
     if (resolvedJobUid)
       details.push(`Zuper job ${resolvedJobUid} has no photo attachments.`);
     else if (!jobUid)
