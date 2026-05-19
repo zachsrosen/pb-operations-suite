@@ -67,14 +67,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "PowerHub disabled" }, { status: 404 });
   }
 
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const currentUser = await getUserByEmail(session.user.email);
-  const roles = currentUser?.roles ?? [];
-  if (!roles.includes("ADMIN") && !roles.includes("OWNER")) {
-    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  // Two auth modes:
+  //   1. NextAuth session — must be ADMIN or OWNER
+  //   2. Machine token (Bearer API_SECRET_TOKEN) — verified by middleware,
+  //      which sets `x-api-token-authenticated: 1` on the request when valid.
+  //      Used for one-shot fleet imports and the future bookmarklet flow.
+  const isMachineAuth =
+    request.headers.get("x-api-token-authenticated") === "1";
+  if (!isMachineAuth) {
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const currentUser = await getUserByEmail(session.user.email);
+    const roles = currentUser?.roles ?? [];
+    if (!roles.includes("ADMIN") && !roles.includes("OWNER")) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
   }
 
   let parsed;
