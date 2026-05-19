@@ -47,7 +47,10 @@ echo
 echo "DATABASE_URL: $MASKED_URL"
 echo
 echo "Pending migrations:"
-npx prisma migrate status 2>&1 | tail -20
+# `prisma migrate status` returns exit 1 when migrations are pending — that's
+# expected, not an error. Suppress via `|| true` so set -e + pipefail don't
+# kill the script before we reach the CONFIRM gate.
+{ npx prisma migrate status 2>&1 || true; } | tail -20
 echo
 
 if [[ "${1:-}" != "CONFIRM" ]]; then
