@@ -700,28 +700,49 @@ async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
     orderBy: { primaryForProperty: "desc" },
   });
 
-  const payload: MonitoringSitePayload[] = sites.map((s) => ({
-    id: s.id,
-    siteId: s.siteId,
-    siteName: s.siteName,
-    portalUrl: s.portalUrl,
-    status: s.status,
-    isPrimary: s.primaryForProperty,
-    lastTelemetryAt: s.lastTelemetryAt,
-    snapshot: s.telemetrySnapshot
-      ? {
-          solarPowerW: s.telemetrySnapshot.solarPowerW,
-          batterySocPercent: s.telemetrySnapshot.batterySocPercent,
-          gridConnectedStatus: s.telemetrySnapshot.gridConnectedStatus,
-        }
-      : null,
-    activeAlerts: s.alerts.map((a) => ({
-      id: a.id,
-      alertName: a.alertName,
-      severity: a.severity,
-      reportedAt: a.reportedAt,
-    })),
-  }));
+  const payload: MonitoringSitePayload[] = sites.map((s) => {
+    // Battery SoC derivation: Tesla's API inconsistently returns
+    // `battery_state_of_energy` (which we map to `batterySocPercent`). For
+    // sites where that signal is missing but `battery_expected_energy_remaining`
+    // and the gateway nameplate capacity (`totalBatteryEnergy`) are both
+    // available, compute SoC = remaining / capacity * 100. Verified with
+    // Brotherton's site (STE20230810-00404): 10509 Wh remaining ÷ 13500 Wh
+    // capacity ≈ 77.8 %, matching the Tesla portal's reported value.
+    let batterySoc = s.telemetrySnapshot?.batterySocPercent ?? null;
+    if (
+      batterySoc === null &&
+      s.telemetrySnapshot?.batteryEnergyRemainingWh != null &&
+      s.totalBatteryEnergy != null &&
+      s.totalBatteryEnergy > 0
+    ) {
+      batterySoc =
+        (s.telemetrySnapshot.batteryEnergyRemainingWh / s.totalBatteryEnergy) *
+        100;
+    }
+
+    return {
+      id: s.id,
+      siteId: s.siteId,
+      siteName: s.siteName,
+      portalUrl: s.portalUrl,
+      status: s.status,
+      isPrimary: s.primaryForProperty,
+      lastTelemetryAt: s.lastTelemetryAt,
+      snapshot: s.telemetrySnapshot
+        ? {
+            solarPowerW: s.telemetrySnapshot.solarPowerW,
+            batterySocPercent: batterySoc,
+            gridConnectedStatus: s.telemetrySnapshot.gridConnectedStatus,
+          }
+        : null,
+      activeAlerts: s.alerts.map((a) => ({
+        id: a.id,
+        alertName: a.alertName,
+        severity: a.severity,
+        reportedAt: a.reportedAt,
+      })),
+    };
+  });
 
   const totalActiveAlerts = payload.reduce(
     (sum, s) => sum + s.activeAlerts.length,
