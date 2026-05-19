@@ -3,7 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { Skeleton } from "@/components/ui/Skeleton";
+import Link from "next/link";
 import type { TicketsTabData } from "@/lib/property-hub";
+
+const portalId = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID ?? "";
 
 interface Props {
   propertyId: string;
@@ -71,11 +74,15 @@ export default function PropertyTicketsTab({ propertyId }: Props) {
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-foreground truncate">
+              <Link
+                href={`/dashboards/service-tickets?ticketId=${ticket.id}`}
+                className="text-sm font-medium text-foreground hover:text-blue-400 transition-colors truncate block"
+              >
                 {ticket.subject}
-              </h3>
+              </Link>
               <p className="text-xs text-muted mt-1">
                 Status: {ticket.statusName}
+                {ticket.category && <> &middot; {ticket.category}</>}
               </p>
             </div>
 
@@ -87,13 +94,24 @@ export default function PropertyTicketsTab({ propertyId }: Props) {
                     "bg-surface-2 text-muted border-t-border"
                   }`}
                 >
-                  {ticket.priority}
+                  {ticket.priority.charAt(0) + ticket.priority.slice(1).toLowerCase()}
                 </span>
+              )}
+              {portalId && (
+                <a
+                  href={`https://app.hubspot.com/contacts/${portalId}/record/0-5/${ticket.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-400 hover:text-cyan-300 transition-colors text-xs whitespace-nowrap"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  HubSpot ↗
+                </a>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-4 mt-2 text-xs text-muted">
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-muted">
             {ticket.createDate && (
               <span>
                 Created:{" "}
@@ -113,6 +131,9 @@ export default function PropertyTicketsTab({ propertyId }: Props) {
                   year: "numeric",
                 })}
               </span>
+            )}
+            {ticket.resolution && (
+              <span>Resolution: {ticket.resolution}</span>
             )}
           </div>
         </div>

@@ -10,6 +10,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getObjectEngagements } from "@/lib/hubspot-engagements";
 import { withRetry } from "@/lib/hubspot-custom-objects";
 import { getStageMaps } from "@/lib/deals-pipeline";
+import { getTicketStageMap } from "@/lib/hubspot-tickets";
 import { zuper } from "@/lib/zuper";
 import { Client } from "@hubspot/api-client";
 import type { Engagement } from "@/components/deal-detail/types";
@@ -78,6 +79,8 @@ export interface HubTicket {
   status: string;
   statusName: string;
   priority: string | null;
+  category: string | null;
+  resolution: string | null;
   createDate: string | null;
   lastModified: string | null;
   owner: string | null;
@@ -257,6 +260,44 @@ const PIPELINE_NAMES: Record<string, string> = {
   "765928545": "Roofing",
 };
 
+// HubSpot ticket enum value → display label maps
+// Sourced from hs_ticket_category and hs_resolution property definitions.
+const TICKET_CATEGORY_LABELS: Record<string, string> = {
+  "System Failure/Underperformance": "System Failure/Underperformance",
+  "Communication Error": "Communication Error",
+  "General question": "General question",
+  "Critter Guard Repair/Damage": "Critter Guard Install/Repair",
+  "Install Correction": "Install Correction",
+  "Site Transfer": "Site Transfer",
+  "Roof Leak": "Roof Leak",
+  "Damaged System": "Damaged System",
+  "Drywall repair": "Drywall repair",
+  "Duplicate": "Duplicate",
+  electrical_work: "Electrical Work",
+  "EV Charger": "EV Charger Install",
+  "Manufacturer Recall": "Manufacturer Recall",
+  "Nelnet Warranty": "Nelnet Warranty",
+  "PB Install System Inspection": "PB Install System Inspection",
+  "Production Guarantee": "Production Guarantee",
+  "PW+ upgrade(s) to PW3(s)": "PW+ upgrade(s) to PW3(s)",
+  "PW2 upgrade(s) to PW3(s)": "PW2 upgrade(s) to PW3(s)",
+  "Snow Guard Install/Repair": "Snow Guard Install/Repair",
+  "Sunpower System": "Sunpower System",
+  "Tesla Remote Energy Meter (TRM) not reporting": "Tesla Remote Meter Failure",
+  "XCEL Smart Meter Issue": "XCEL Smart Meter Issue",
+  "Powerwall Installation": "Powerwall Installation",
+  "Non-PB Maintenance": "Non-PB Maintenance",
+  "Non-PB Install Inspection": "Non-PB Install Inspection",
+  "System Add On": "System Add On",
+};
+
+const TICKET_RESOLUTION_LABELS: Record<string, string> = {
+  ISSUE_FIXED: "Issue fixed",
+  SENT_KNOWLEDGE_DOCUMENT_LINK: "Sent knowledge document link",
+  "No Action Needed": "No Action Needed",
+  "Answered question": "Answered question",
+};
+
 // ---------------------------------------------------------------------------
 // Shared DB fetch: property + links
 // ---------------------------------------------------------------------------
@@ -422,29 +463,40 @@ async function fetchTickets(propertyId: string): Promise<TicketsTabData> {
   if (ticketIds.length === 0) return { tickets: [], total: 0 };
 
   try {
-    const response = await withRetry(() =>
-      hubspotClient.crm.tickets.batchApi.read({
-        inputs: ticketIds.map((id) => ({ id })),
-        properties: [
-          "subject",
-          "hs_pipeline_stage",
-          "hs_ticket_priority",
-          "createdate",
-          "hs_lastmodifieddate",
-          "hubspot_owner_id",
-        ],
-        propertiesWithHistory: [],
-      }),
-    );
+    const [response, { map: stageMap }] = await Promise.all([
+      withRetry(() =>
+        hubspotClient.crm.tickets.batchApi.read({
+          inputs: ticketIds.map((id) => ({ id })),
+          properties: [
+            "subject",
+            "hs_pipeline_stage",
+            "hs_ticket_priority",
+            "hs_ticket_category",
+            "hs_resolution",
+            "createdate",
+            "hs_lastmodifieddate",
+            "hubspot_owner_id",
+          ],
+          propertiesWithHistory: [],
+        }),
+      ),
+      getTicketStageMap(),
+    ]);
 
     const tickets: HubTicket[] = response.results.map((r) => {
       const props = r.properties as Record<string, string>;
+      const stageId = props.hs_pipeline_stage || "";
+      const rawPriority = props.hs_ticket_priority || null;
+      const rawCategory = props.hs_ticket_category || null;
+      const rawResolution = props.hs_resolution || null;
       return {
         id: r.id,
         subject: props.subject || `Ticket ${r.id}`,
-        status: props.hs_pipeline_stage || "",
-        statusName: props.hs_pipeline_stage || "",
-        priority: props.hs_ticket_priority || null,
+        status: stageId,
+        statusName: stageMap[stageId] || stageId || "Unknown",
+        priority: rawPriority,
+        category: rawCategory ? (TICKET_CATEGORY_LABELS[rawCategory] ?? rawCategory) : null,
+        resolution: rawResolution ? (TICKET_RESOLUTION_LABELS[rawResolution] ?? rawResolution) : null,
         createDate: props.createdate || null,
         lastModified: props.hs_lastmodifieddate || null,
         owner: props.hubspot_owner_id || null,
