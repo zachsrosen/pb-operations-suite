@@ -682,8 +682,17 @@ async function fetchPhotos(propertyId: string): Promise<PhotosTabData> {
 // ---------------------------------------------------------------------------
 
 async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
+  // Resolve incoming id (which may be either the HubSpot object id or the
+  // internal Prisma cuid) to the internal id before querying PowerhubSite,
+  // whose `propertyId` foreign key always stores the internal cuid. Without
+  // this step, requests using the HubSpot object id (the form used in the
+  // /properties/[id] URL) returned an empty `sites` array even when the
+  // property had linked PowerhubSite rows.
+  const property = await loadPropertyWithLinks(propertyId);
+  if (!property) return { sites: [], totalActiveAlerts: 0 };
+
   const sites = await prisma.powerhubSite.findMany({
-    where: { propertyId },
+    where: { propertyId: property.id },
     include: {
       telemetrySnapshot: true,
       alerts: { where: { isActive: true }, orderBy: { reportedAt: "desc" } },
