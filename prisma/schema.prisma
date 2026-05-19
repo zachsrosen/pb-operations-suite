@@ -4510,6 +4510,24 @@ model ZuperStatusDrift {
   @@index([category])
 }
 
+// Queued design_status override — replaces unreliable setTimeout in serverless.
+// Created during IDR sync when revision is flagged; cron applies after delay.
+model PendingPropertyOverride {
+  id           String    @id @default(cuid())
+  dealId       String
+  propertyName String
+  value        String
+  reason       String?
+  executeAfter DateTime
+  executedAt   DateTime?
+  error        String?
+  attempts     Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@index([executeAfter])
+  @@index([dealId])
+}
+
 model ShopHealthBottleneck {
   id         String   @id @default(cuid())
   location   String

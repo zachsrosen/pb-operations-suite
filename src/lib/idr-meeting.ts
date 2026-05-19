@@ -983,22 +983,21 @@ export async function syncItemToHubSpot(
           taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
         } else if (item.designRevisionNeeded) {
           // Task completed → workflow will set "Draft Complete" async.
-          // Fire a detached delayed override: wait 2 minutes for the workflow,
-          // then set design_status. Escalations get "Revision Needed - Rejected"
-          // (As-Built), regular IDR items get "IDR Revision Needed". Detached so
-          // it doesn't block the sync loop (other items continue immediately).
-          const revDealId = item.dealId;
+          // We need to override design_status AFTER the workflow fires (~2 min).
+          // Persist the override to DB — a cron picks it up reliably.
+          // (setTimeout doesn't survive Vercel serverless recycling.)
           const revisionStatus = item.type === "ESCALATION"
             ? "Revision Needed - Rejected"   // label: "Revision Needed - As-Built"
             : "IDR Revision Needed";
-          setTimeout(async () => {
-            try {
-              await pushDealProperties(revDealId, { design_status: revisionStatus });
-              console.log(`[idr-meeting] Delayed revision status override (${revisionStatus}) applied for deal ${revDealId}`);
-            } catch (err) {
-              console.error(`[idr-meeting] Delayed revision status override failed for deal ${revDealId}:`, err);
-            }
-          }, 120_000);
+          await prisma.pendingPropertyOverride.create({
+            data: {
+              dealId: item.dealId,
+              propertyName: "design_status",
+              value: revisionStatus,
+              reason: `IDR sync — ${item.type === "ESCALATION" ? "escalation as-built" : "design"} revision flagged`,
+              executeAfter: new Date(Date.now() + 2 * 60 * 1000), // 2 min from now
+            },
+          });
         }
       } catch (err) {
         console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
