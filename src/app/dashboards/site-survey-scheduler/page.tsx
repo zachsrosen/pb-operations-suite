@@ -2465,6 +2465,52 @@ export default function SiteSurveySchedulerPage() {
                               </div>
                             );
                           })}
+                          {/* Show booked pre-sale / external jobs that aren't in the ops project list */}
+                          {dayAvailability?.bookedSlots && (() => {
+                            const eventIds = new Set(events.map(e => e.id));
+                            const unmatchedBookings = dayAvailability.bookedSlots.filter(slot => {
+                              // Skip if this slot matches an ops project already rendered above
+                              if (slot.projectId && eventIds.has(slot.projectId)) return false;
+                              // Only show if the job title indicates a pre-sale or external booking
+                              const title = (slot.projectName || "").toLowerCase();
+                              if (title.includes("pre-sale") || title.includes("pre sale")) return true;
+                              // Also show any booked slot not matched to an ops project
+                              return !events.some(ev =>
+                                findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid) === slot
+                              );
+                            });
+                            // Filter by selected locations
+                            const visibleBookings = unmatchedBookings.filter(slot => {
+                              if (!slotMatchesSelectedLocations(slot.location, selectedLocations)) return false;
+                              return true;
+                            });
+                            return visibleBookings.map((slot, idx) => {
+                              // Extract customer name from job title like "Pre-Sale Site Visit - Babcock, Bryan | 5175..."
+                              const titleParts = (slot.projectName || "").split(" - ");
+                              const nameAndAddr = titleParts.length > 1 ? titleParts.slice(1).join(" - ") : titleParts[0];
+                              const customerName = nameAndAddr.split(" | ")[0] || slot.projectName || "Unknown";
+                              const address = nameAndAddr.split(" | ")[1] || "";
+                              const isPreSale = (slot.projectName || "").toLowerCase().includes("pre-sale");
+                              return (
+                                <div
+                                  key={`ext-${slot.zuperJobUid || idx}`}
+                                  className="text-xs p-1 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300"
+                                  title={`${isPreSale ? "PRE-SALE " : ""}${slot.user_name || "Unassigned"} @ ${slot.display_time || slot.start_time || ""}\n${address || "No address"}`}
+                                >
+                                  <div className="truncate">
+                                    {isPreSale && <span className="text-purple-400 mr-1 text-[0.55rem]">PRE</span>}
+                                    {customerName}
+                                  </div>
+                                  {address && <div className="text-[0.6rem] truncate text-purple-400/50">{address}</div>}
+                                  {slot.user_name && (
+                                    <div className="text-[0.6rem] truncate text-purple-400/60">
+                                      {slot.user_name}{slot.display_time ? ` @ ${slot.display_time}` : ""}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()}
                                                     {/* Show available surveyors with time slots - scrollable list */}
                           {showAvailability && hasAvailability && (() => {
                             // Filter slots by project location if a project is selected;
