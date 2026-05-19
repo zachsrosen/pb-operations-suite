@@ -21,7 +21,8 @@ import type { DashboardLocationGroup } from "./dashboard-location-groups";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
 import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
-import { CREWS_CONFIG } from "./executive-shared";
+import { REVENUE_GROUPS } from "./revenue-groups-config";
+import type { DashboardLocationSlug } from "./dashboard-location-groups";
 import { prisma } from "./db";
 import { appCache, CACHE_KEYS } from "./cache";
 
@@ -217,10 +218,15 @@ export async function getShopHealthData(
     return normalized !== null && canonicalSet.has(normalized);
   });
 
-  // Goals derived from CREWS_CONFIG (actual crew capacity) per the spec.
-  // The OfficeGoal table has unreliable defaults (12/month for every shop);
-  // CREWS_CONFIG has real per-location monthly_capacity values.
-  const goals = computeGoalsFromCrewConfig(group);
+  // Compute average deal size from this location's active projects for
+  // revenue→volume target derivation.
+  const avgDealSize = computeAvgDealSize(locationProjects);
+
+  // Goals derived from REVENUE_GROUPS annual targets (revenue-based).
+  // Install/inspection volume targets are back-calculated from the revenue
+  // target and average deal size so targets reflect what each shop NEEDS
+  // to do to hit revenue goals, not just what crews can handle.
+  const goals = computeGoalsFromRevenue(group, avgDealSize);
 
   // Compute sections for current and prior week
   const pipeline = computePipeline(locationProjects, weekStart);
@@ -281,28 +287,73 @@ export async function getShopHealthData(
 
 // ─── Section Computation Helpers ─────────────────────────────────────────────
 
-/**
- * Derive install/inspection goals from CREWS_CONFIG monthly_capacity.
- * For multi-location groups (e.g. California = SLO + Camarillo), sum capacities.
- * Inspection goals default to ~80% of install capacity (most installs need inspection).
- */
-function computeGoalsFromCrewConfig(group: DashboardLocationGroup): ShopHealthGoals {
-  let monthlyInstalls = 0;
-  for (const canonical of group.canonicals) {
-    const config = CREWS_CONFIG[canonical];
-    if (config) {
-      monthlyInstalls += config.monthly_capacity;
-    }
-  }
-  // Fallback if no CREWS_CONFIG entry exists
-  if (monthlyInstalls === 0) monthlyInstalls = 12;
+/** Maps dashboard location slugs to REVENUE_GROUPS keys */
+const SLUG_TO_REVENUE_KEY: Record<DashboardLocationSlug, string> = {
+  westminster: "westminster",
+  centennial: "dtc",
+  "colorado-springs": "colorado_springs",
+  california: "california",
+};
 
+/**
+ * Compute average deal size from active projects with positive amounts.
+ * Uses all active projects (not just backlog) for a representative sample.
+ * Falls back to $30k if no data is available.
+ */
+function computeAvgDealSize(projects: Project[]): number {
+  const withAmount = projects.filter(
+    (p) => p.isActive && (p.amount || 0) > 0
+  );
+  if (withAmount.length === 0) return 30_000; // reasonable solar install default
+  const total = withAmount.reduce((sum, p) => sum + (p.amount || 0), 0);
+  return total / withAmount.length;
+}
+
+/**
+ * Derive install/inspection goals from REVENUE_GROUPS annual revenue targets.
+ *
+ * Approach:
+ * 1. Look up annual revenue target from REVENUE_GROUPS (e.g. Westminster = $15M)
+ * 2. Compute monthly/weekly revenue targets (÷12, ÷4.3)
+ * 3. Back-calculate required install volume: monthlyRevenue / avgDealSize
+ * 4. Inspection goals default to ~80% of install target
+ *
+ * This means targets reflect what each shop NEEDS to do to hit revenue goals,
+ * not just what crews can handle (crew capacity).
+ */
+function computeGoalsFromRevenue(
+  group: DashboardLocationGroup,
+  avgDealSize: number
+): ShopHealthGoals {
+  const revenueKey = SLUG_TO_REVENUE_KEY[group.slug];
+  const revenueGroup = revenueKey ? REVENUE_GROUPS[revenueKey] : undefined;
+
+  if (!revenueGroup || avgDealSize <= 0) {
+    // Fallback: reasonable defaults if no revenue config
+    return {
+      monthlyInstalls: 12,
+      weeklyInstalls: 3,
+      monthlyInspections: 10,
+      weeklyInspections: 2,
+      monthlyRevenueTarget: 0,
+      weeklyRevenueTarget: 0,
+      avgDealSize: avgDealSize > 0 ? avgDealSize : 30_000,
+    };
+  }
+
+  const monthlyRevenueTarget = revenueGroup.annualTarget / 12;
+  const weeklyRevenueTarget = monthlyRevenueTarget / 4.3;
+  const monthlyInstalls = Math.round(monthlyRevenueTarget / avgDealSize);
   const monthlyInspections = Math.round(monthlyInstalls * 0.8);
+
   return {
     monthlyInstalls,
     weeklyInstalls: Math.round(monthlyInstalls / 4.3),
     monthlyInspections,
     weeklyInspections: Math.round(monthlyInspections / 4.3),
+    monthlyRevenueTarget,
+    weeklyRevenueTarget,
+    avgDealSize,
   };
 }
 

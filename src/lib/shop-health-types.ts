@@ -75,6 +75,12 @@ export interface ShopHealthGoals {
   weeklyInstalls: number;
   monthlyInspections: number;
   weeklyInspections: number;
+  /** Monthly revenue target from REVENUE_GROUPS annual target (÷12) */
+  monthlyRevenueTarget: number;
+  /** Weekly revenue target (monthly ÷ 4.3) */
+  weeklyRevenueTarget: number;
+  /** Average deal size used to derive install targets from revenue */
+  avgDealSize: number;
 }
 
 export interface SectionHealth {
