@@ -834,31 +834,35 @@ model HubSpotPropertyCache {
   attomMatchConfidence String? // HIGH | MEDIUM | LOW
 
   // Shovels enrichment
-  shovelsGeoId              String?   @unique
-  shovelsLastSyncedAt       DateTime?
-  shovelsMatchConfidence    String?   // VERIFIED | LOW_CONFIDENCE | REJECTED
-  shovelsPermitCount        Int?
-  shovelsSolarPermitCount   Int?
-  shovelsEnrichmentStatus   String?   // PENDING | ENRICHED | NO_MATCH | REJECTED | ERROR
-  shovelsRetryCount         Int       @default(0)
+  shovelsGeoId            String?   @unique
+  shovelsLastSyncedAt     DateTime?
+  shovelsMatchConfidence  String? // VERIFIED | LOW_CONFIDENCE | REJECTED
+  shovelsPermitCount      Int?
+  shovelsSolarPermitCount Int?
+  shovelsEnrichmentStatus String? // PENDING | ENRICHED | NO_MATCH | REJECTED | ERROR
+  shovelsRetryCount       Int       @default(0)
 
   // Zuper Property sync (write direction)
   zuperPropertyUid      String?   @unique
   zuperPropertySyncedAt DateTime?
   zuperSyncFailCount    Int       @default(0)
 
-  lastReconciledAt     DateTime
-  updatedAt            DateTime  @updatedAt
-  createdAt            DateTime  @default(now())
+  // Tesla PowerHub denormalized fields (populated from primary PowerhubSite)
+  teslaPortalUrl String?
+  teslaSiteId    String?
+
+  lastReconciledAt DateTime
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
 
   // Relations
-  contactLinks  PropertyContactLink[]
-  dealLinks     PropertyDealLink[]
-  ticketLinks   PropertyTicketLink[]
-  companyLinks  PropertyCompanyLink[]
-  powerhubSites PowerhubSite[]
-  shovelsPermits   ShovelsPermitRecord[]  @relation("ShovelsPermits")
-  shovelsResidents ShovelsResident[]      @relation("ShovelsResidents")
+  contactLinks     PropertyContactLink[]
+  dealLinks        PropertyDealLink[]
+  ticketLinks      PropertyTicketLink[]
+  companyLinks     PropertyCompanyLink[]
+  powerhubSites    PowerhubSite[]
+  shovelsPermits   ShovelsPermitRecord[] @relation("ShovelsPermits")
+  shovelsResidents ShovelsResident[]     @relation("ShovelsResidents")
 
   @@index([normalizedAddress])
   @@index([city, state])
@@ -944,12 +948,12 @@ model PropertyBackfillRun {
 // ===========================================
 
 model ShovelsPermitRecord {
-  id                       String   @id @default(cuid())
+  id                       String               @id @default(cuid())
   propertyId               String
   property                 HubSpotPropertyCache @relation("ShovelsPermits", fields: [propertyId], references: [id])
   shovelsId                String
   permitNumber             String?
-  description              String?  @db.Text
+  description              String?              @db.Text
   jurisdiction             String?
   type                     String?
   subtype                  String?
@@ -964,7 +968,7 @@ model ShovelsPermitRecord {
   constructionDurationDays Int?
   approvalDurationDays     Int?
   inspectionPassRate       Int?
-  createdAt                DateTime @default(now())
+  createdAt                DateTime             @default(now())
 
   @@unique([propertyId, shovelsId])
   @@index([propertyId])
@@ -972,7 +976,7 @@ model ShovelsPermitRecord {
 }
 
 model ShovelsResident {
-  id            String   @id @default(cuid())
+  id            String               @id @default(cuid())
   propertyId    String
   property      HubSpotPropertyCache @relation("ShovelsResidents", fields: [propertyId], references: [id])
   name          String?
@@ -982,7 +986,7 @@ model ShovelsResident {
   netWorth      String?
   incomeRange   String?
   isHomeowner   Boolean?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime             @default(now())
 
   @@index([propertyId])
 }
@@ -1002,19 +1006,19 @@ model ShovelsContractor {
 }
 
 model ShovelsBackfillRun {
-  id              String    @id @default(cuid())
-  tier            Int
-  cursor          String?
-  totalProcessed  Int       @default(0)
-  totalEnriched   Int       @default(0)
-  totalNoMatch    Int       @default(0)
-  totalRejected   Int       @default(0)
-  totalErrors     Int       @default(0)
-  creditsUsed     Int       @default(0)
-  status          String    @default("RUNNING")
-  startedAt       DateTime  @default(now())
-  completedAt     DateTime?
-  createdAt       DateTime  @default(now())
+  id             String    @id @default(cuid())
+  tier           Int
+  cursor         String?
+  totalProcessed Int       @default(0)
+  totalEnriched  Int       @default(0)
+  totalNoMatch   Int       @default(0)
+  totalRejected  Int       @default(0)
+  totalErrors    Int       @default(0)
+  creditsUsed    Int       @default(0)
+  status         String    @default("RUNNING")
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
 }
 
 // ===========================================
@@ -1853,26 +1857,26 @@ model BomPipelineRun {
 // ===========================================
 
 model PeAuditRun {
-  id            String   @id @default(cuid())
-  dealId        String
-  dealName      String
-  milestone     String
-  systemType    String
-  status        String
-  triggeredBy   String
+  id          String @id @default(cuid())
+  dealId      String
+  dealName    String
+  milestone   String
+  systemType  String
+  status      String
+  triggeredBy String
 
-  results       Json?
-  summary       Json?
+  results Json?
+  summary Json?
 
-  packageFolderId   String?
-  packageFolderUrl  String?
+  packageFolderId  String?
+  packageFolderUrl String?
 
-  startedAt     DateTime @default(now())
-  completedAt   DateTime?
-  durationMs    Int?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
 
-  visionCallCount  Int    @default(0)
-  pandadocPulled   Int    @default(0)
+  visionCallCount Int @default(0)
+  pandadocPulled  Int @default(0)
 
   @@index([dealId, milestone])
   @@index([status])
@@ -1950,20 +1954,20 @@ model CrossRefRun {
 // ===========================================
 
 model PeReferenceDoc {
-  id              String   @id @default(cuid())
-  checklistItemId String
-  sourceDealId    String
-  sourceDealName  String
-  driveFileId     String
-  driveFileName   String
-  mimeType        String
-  anthropicFileId String?
+  id                  String    @id @default(cuid())
+  checklistItemId     String
+  sourceDealId        String
+  sourceDealName      String
+  driveFileId         String
+  driveFileName       String
+  mimeType            String
+  anthropicFileId     String?
   anthropicFileExpiry DateTime?
-  milestone       String
-  category        String
-  isPhoto         Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  milestone           String
+  category            String
+  isPhoto             Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@unique([checklistItemId, milestone])
   @@index([milestone])
@@ -2877,9 +2881,9 @@ model IdrEscalationQueue {
   opsRevisionNotes        String?
   designNotes             String?
   conclusion              String?
-  designRevisionNeeded    Boolean @default(false)
+  designRevisionNeeded    Boolean  @default(false)
   designRevisionReason    String?
-  needsReReview           Boolean @default(false)
+  needsReReview           Boolean  @default(false)
 
   // Adder checkboxes (carried over from prep/skip)
   adderTileRoof     Boolean @default(false)
@@ -4234,11 +4238,15 @@ enum PowerhubTelemetrySource {
 }
 
 model PowerhubSite {
-  id         String @id @default(cuid())
-  siteId     String @unique // Tesla site UUID
-  siteName   String
-  instanceId String
+  id               String  @id @default(cuid())
+  siteId           String  @unique // Tesla site UUID
+  siteName         String
+  instanceId       String
   aggregatorSiteId String? // Tesla's aggregator_site_identifier — partner-assigned ID
+
+  // Cross-link fields
+  portalUrl          String? // Computed via TESLA_POWERHUB_PORTAL_URL_TEMPLATE
+  primaryForProperty Boolean @default(false) // At most one true per propertyId (enforced by partial unique index in migration SQL)
 
   // Address
   address     String
@@ -4368,6 +4376,26 @@ model PowerhubAlert {
   @@index([severity, isActive])
 }
 
+model PowerhubCrosslinkBackfillRun {
+  id             String    @id @default(cuid())
+  status         String // "running" | "completed" | "failed" | "paused"
+  cursor         String? // Last processed propertyId (HubSpotPropertyCache.id)
+  totalCount     Int?
+  processedCount Int       @default(0)
+  failedCount    Int       @default(0)
+  startedAt      DateTime  @default(now())
+  heartbeatAt    DateTime  @default(now())
+  completedAt    DateTime?
+  errorMessage   String?
+  // NOTE: A partial unique index — at most one row with status='running' —
+  // is added via raw SQL in the migration (Step 6 below). Prisma's @@unique
+  // cannot express a WHERE clause. The Chunk 6 backfill lock catches the
+  // P2002 raised by that index when a second run tries to acquire while
+  // another is in progress, so this index is REQUIRED for correctness.
+
+  @@index([status])
+}
+
 // ---------------------------------------------------------------------------
 // Participate Energy — per-document status tracking
 // ---------------------------------------------------------------------------
@@ -4398,19 +4426,19 @@ model PeDocumentReview {
 }
 
 model PeActionItem {
-  id            String    @id @default(cuid())
-  peProjectId   String    // PE project ID e.g. "CO2602-KRAF2"
-  dealId        String?   // linked HubSpot deal (nullable until matched)
-  peInternalId  String    // Raceway internal ID (the UUID-like id)
-  actionItemId  String    @unique // PE's action item ID — idempotency key
-  docType       String    // e.g. "design_plan", "countersigned_ppa_esa"
-  docLabel      String    // e.g. "Design Plan", "Customer Agreement (PPA/ESA)"
-  errorCode     String?   // e.g. "H106", "H045" — extracted from notes
-  pageNumber    Int?      // extracted from notes prefix "Page N —"
-  reviewer      String    // e.g. "Mean Hernandez"
-  notes         String?   @db.Text // full reviewer note text
-  actionDate    DateTime  // when PE reviewer created the action item
-  resolvedAt    DateTime? // null = still open
+  id           String    @id @default(cuid())
+  peProjectId  String // PE project ID e.g. "CO2602-KRAF2"
+  dealId       String? // linked HubSpot deal (nullable until matched)
+  peInternalId String // Raceway internal ID (the UUID-like id)
+  actionItemId String    @unique // PE's action item ID — idempotency key
+  docType      String // e.g. "design_plan", "countersigned_ppa_esa"
+  docLabel     String // e.g. "Design Plan", "Customer Agreement (PPA/ESA)"
+  errorCode    String? // e.g. "H106", "H045" — extracted from notes
+  pageNumber   Int? // extracted from notes prefix "Page N —"
+  reviewer     String // e.g. "Mean Hernandez"
+  notes        String?   @db.Text // full reviewer note text
+  actionDate   DateTime // when PE reviewer created the action item
+  resolvedAt   DateTime? // null = still open
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4422,14 +4450,14 @@ model PeActionItem {
 
 // Track PE API sync runs for observability
 model PeApiSyncRun {
-  id              String   @id @default(cuid())
-  startedAt       DateTime @default(now())
+  id              String    @id @default(cuid())
+  startedAt       DateTime  @default(now())
   completedAt     DateTime?
-  projectsFetched Int      @default(0)
-  docsUpserted    Int      @default(0)
-  actionItems     Int      @default(0)
+  projectsFetched Int       @default(0)
+  docsUpserted    Int       @default(0)
+  actionItems     Int       @default(0)
   errors          String[] // array of error messages
-  status          String   @default("running") // running | completed | failed
+  status          String    @default("running") // running | completed | failed
 }
 
 // ---------------------------------------------------------------------------
@@ -4456,13 +4484,13 @@ enum ZuperDriftStatus {
 /// One row per Zuper job uid (any combination of drift types
 /// fires into the same row via the driftTypes array).
 model ZuperStatusDrift {
-  id                  String              @id @default(cuid())
-  zuperJobUid         String              @unique
+  id                  String           @id @default(cuid())
+  zuperJobUid         String           @unique
   hubspotDealId       String?
   projectNumber       String?
   dealName            String?
   pbLocation          String?
-  category            String              // site_survey | construction | solar_install | battery_install | ev_install | inspection
+  category            String // site_survey | construction | solar_install | battery_install | ev_install | inspection
   zuperJobTitle       String?
   zuperStatus         String
   hubspotStatus       String?
@@ -4471,8 +4499,8 @@ model ZuperStatusDrift {
   hubspotCompletionAt DateTime?
   zuperFailedAt       DateTime?
   hubspotFailAt       DateTime?
-  detectedAt          DateTime            @default(now())
-  status              ZuperDriftStatus    @default(OPEN)
+  detectedAt          DateTime         @default(now())
+  status              ZuperDriftStatus @default(OPEN)
   resolvedAt          DateTime?
   resolvedBy          String?
   resolveNote         String?
