@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     const nearlyComplete: NearlyCompleteDeal[] = [];
     for (const [dealId, docs] of dealDocs.entries()) {
       const notUploaded = docs.filter((d) => d.status === "NOT_UPLOADED");
-      if (notUploaded.length >= 1 && notUploaded.length <= 2 && docs.length >= TOTAL_DOCS_PER_DEAL - 2) {
+      if (notUploaded.length >= 1 && notUploaded.length <= 3 && docs.length >= TOTAL_DOCS_PER_DEAL - 3) {
         const approvedCount = docs.filter((d) => d.status === "APPROVED").length;
         nearlyComplete.push({
           dealId,
