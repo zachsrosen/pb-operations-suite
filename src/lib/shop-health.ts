@@ -21,8 +21,7 @@ import type { DashboardLocationGroup } from "./dashboard-location-groups";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
 import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
-import { REVENUE_GROUPS } from "./revenue-groups-config";
-import type { DashboardLocationSlug } from "./dashboard-location-groups";
+import { DEFAULT_TARGETS } from "./goals-pipeline-types";
 import { prisma } from "./db";
 import { appCache, CACHE_KEYS } from "./cache";
 
@@ -222,11 +221,11 @@ export async function getShopHealthData(
   // revenue→volume target derivation.
   const avgDealSize = computeAvgDealSize(locationProjects);
 
-  // Goals derived from REVENUE_GROUPS annual targets (revenue-based).
-  // Install/inspection volume targets are back-calculated from the revenue
-  // target and average deal size so targets reflect what each shop NEEDS
-  // to do to hit revenue goals, not just what crews can handle.
-  const goals = computeGoalsFromRevenue(group, avgDealSize);
+  // Goals sourced from OfficeGoal DB table (same targets as the Monday
+  // weekly digest email). cc_revenue = install revenue target,
+  // inspection_revenue = inspection revenue target. Volume targets are
+  // back-calculated via avgDealSize.
+  const goals = await computeGoalsFromOfficeGoals(group, avgDealSize, weekStart);
 
   // Compute sections for current and prior week
   const pipeline = computePipeline(locationProjects, weekStart);
@@ -297,14 +296,6 @@ export async function getShopHealthData(
 
 // ─── Section Computation Helpers ─────────────────────────────────────────────
 
-/** Maps dashboard location slugs to REVENUE_GROUPS keys */
-const SLUG_TO_REVENUE_KEY: Record<DashboardLocationSlug, string> = {
-  westminster: "westminster",
-  centennial: "dtc",
-  "colorado-springs": "colorado_springs",
-  california: "california",
-};
-
 /**
  * Compute average deal size from active projects with positive amounts.
  * Uses all active projects (not just backlog) for a representative sample.
@@ -320,41 +311,60 @@ function computeAvgDealSize(projects: Project[]): number {
 }
 
 /**
- * Derive install/inspection goals from REVENUE_GROUPS annual revenue targets.
+ * Read goals from OfficeGoal DB table — the same targets used by the Monday
+ * weekly digest email. For multi-location dashboard groups (California =
+ * SLO + Camarillo), targets are summed across canonical locations.
  *
- * Approach:
- * 1. Look up annual revenue target from REVENUE_GROUPS (e.g. Westminster = $15M)
- * 2. Compute monthly/weekly revenue targets (÷12, ÷4.3)
- * 3. Back-calculate required install volume: monthlyRevenue / avgDealSize
- * 4. Inspection goals default to ~80% of install target
- *
- * This means targets reflect what each shop NEEDS to do to hit revenue goals,
- * not just what crews can handle (crew capacity).
+ * Uses cc_revenue for install revenue targets and pto_revenue for inspection
+ * targets. Volume targets are back-calculated via avgDealSize.
  */
-function computeGoalsFromRevenue(
+async function computeGoalsFromOfficeGoals(
   group: DashboardLocationGroup,
-  avgDealSize: number
-): ShopHealthGoals {
-  const revenueKey = SLUG_TO_REVENUE_KEY[group.slug];
-  const revenueGroup = revenueKey ? REVENUE_GROUPS[revenueKey] : undefined;
+  avgDealSize: number,
+  weekStart: Date
+): Promise<ShopHealthGoals> {
+  const month = weekStart.getMonth() + 1; // 1-12
+  const year = weekStart.getFullYear();
 
-  if (!revenueGroup || avgDealSize <= 0) {
-    // Fallback: reasonable defaults if no revenue config
-    return {
-      monthlyInstalls: 12,
-      weeklyInstalls: 3,
-      monthlyInspections: 10,
-      weeklyInspections: 2,
-      monthlyRevenueTarget: 0,
-      weeklyRevenueTarget: 0,
-      avgDealSize: avgDealSize > 0 ? avgDealSize : 30_000,
-    };
+  // Sum targets across all canonical locations in this dashboard group
+  let ccRevenueTarget = 0;
+  let ptoRevenueTarget = 0;
+
+  try {
+    const goalRecords = await prisma.officeGoal.findMany({
+      where: {
+        location: { in: group.canonicals },
+        month,
+        year,
+      },
+    });
+
+    const targetMap = new Map<string, number>();
+    for (const g of goalRecords) {
+      const key = g.metric;
+      targetMap.set(key, (targetMap.get(key) || 0) + g.target);
+    }
+
+    ccRevenueTarget = targetMap.get("cc_revenue") || 0;
+    ptoRevenueTarget = targetMap.get("pto_revenue") || 0;
+  } catch (err) {
+    console.error("[shop-health] Failed to fetch OfficeGoal records, using defaults:", err);
   }
 
-  const monthlyRevenueTarget = revenueGroup.annualTarget / 12;
+  // Fall back to DEFAULT_TARGETS if no DB records found
+  if (ccRevenueTarget === 0) {
+    for (const loc of group.canonicals) {
+      const defaults = DEFAULT_TARGETS[loc] ?? DEFAULT_TARGETS["Westminster"];
+      ccRevenueTarget += defaults.cc_revenue;
+      ptoRevenueTarget += defaults.pto_revenue;
+    }
+  }
+
+  const safeDealSize = avgDealSize > 0 ? avgDealSize : 30_000;
+  const monthlyRevenueTarget = ccRevenueTarget;
   const weeklyRevenueTarget = monthlyRevenueTarget / 4.3;
-  const monthlyInstalls = Math.round(monthlyRevenueTarget / avgDealSize);
-  const monthlyInspections = Math.round(monthlyInstalls * 0.8);
+  const monthlyInstalls = Math.round(monthlyRevenueTarget / safeDealSize);
+  const monthlyInspections = Math.round(ptoRevenueTarget / safeDealSize);
 
   return {
     monthlyInstalls,
@@ -363,7 +373,7 @@ function computeGoalsFromRevenue(
     weeklyInspections: Math.round(monthlyInspections / 4.3),
     monthlyRevenueTarget,
     weeklyRevenueTarget,
-    avgDealSize,
+    avgDealSize: safeDealSize,
   };
 }
 
