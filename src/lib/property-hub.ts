@@ -182,10 +182,33 @@ export interface MonitoringSitePayload {
   status: "ACTIVE" | "OFFLINE" | "ERROR";
   isPrimary: boolean;
   lastTelemetryAt: Date | null;
+
+  /** Hardware summary from the partner-API /v2/asset/sites/{id} payload. */
+  equipment: {
+    gatewayCount: number;
+    batteryCount: number;
+    inverterCount: number;
+    batteryCapacityWh: number | null; // gateway nameplate total
+    batteryMaxPowerW: number | null;  // gateway nameplate max discharge
+  };
+
+  /** Latest telemetry snapshot, expanded with everything Tesla returns. */
   snapshot: {
-    solarPowerW: number | null;
-    batterySocPercent: number | null;
-    gridConnectedStatus: string | null;
+    // Instantaneous power flows (positive/negative directions noted)
+    solarPowerW: number | null;        // + = generating
+    batteryPowerW: number | null;      // + = discharging, − = charging
+    gridPowerW: number | null;         // site meter — + = importing from grid, − = exporting
+    loadPowerW: number | null;         // + = consuming
+    // Battery state
+    batterySocPercent: number | null;  // 0–100, derived if signal missing
+    batteryEnergyRemainingWh: number | null;
+    // Status
+    gridConnectedStatus: string | null; // "1" = connected, "0" = islanded
+    batteryMode: string | null;        // command_real_mode (e.g. "7" = self-powered)
+    // Cumulative lifetime counters (useful for delta calcs in future)
+    solarEnergyExportedLifetimeWh: number | null;
+    gridEnergyImportedLifetimeWh: number | null;
+    gridEnergyExportedLifetimeWh: number | null;
   } | null;
   activeAlerts: Array<{
     id: string;
@@ -728,11 +751,30 @@ async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
       status: s.status,
       isPrimary: s.primaryForProperty,
       lastTelemetryAt: s.lastTelemetryAt,
+      equipment: {
+        gatewayCount: s.totalGateways,
+        batteryCount: s.totalBatteries,
+        inverterCount: s.totalInverters,
+        batteryCapacityWh: s.totalBatteryEnergy,
+        batteryMaxPowerW: s.totalBatteryPower,
+      },
       snapshot: s.telemetrySnapshot
         ? {
             solarPowerW: s.telemetrySnapshot.solarPowerW,
+            batteryPowerW: s.telemetrySnapshot.batteryPowerW,
+            gridPowerW: s.telemetrySnapshot.gridPowerW,
+            loadPowerW: s.telemetrySnapshot.loadPowerW,
             batterySocPercent: batterySoc,
+            batteryEnergyRemainingWh:
+              s.telemetrySnapshot.batteryEnergyRemainingWh,
             gridConnectedStatus: s.telemetrySnapshot.gridConnectedStatus,
+            batteryMode: s.telemetrySnapshot.batteryMode,
+            solarEnergyExportedLifetimeWh:
+              s.telemetrySnapshot.solarEnergyTodayWh,
+            gridEnergyImportedLifetimeWh:
+              s.telemetrySnapshot.gridEnergyImportedWh,
+            gridEnergyExportedLifetimeWh:
+              s.telemetrySnapshot.gridEnergyExportedWh,
           }
         : null,
       activeAlerts: s.alerts.map((a) => ({
