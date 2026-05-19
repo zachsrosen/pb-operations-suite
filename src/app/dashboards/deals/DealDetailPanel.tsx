@@ -9,6 +9,7 @@ import { formatMoney } from "@/lib/format";
 import PropertyLink from "@/components/PropertyLink";
 import { PropertyDrawerProvider } from "@/components/property/PropertyDrawerContext";
 import CreateTaskModal, { type CreateTaskInput } from "@/components/my-tasks/CreateTaskModal";
+import { PowerhubLink } from "@/components/powerhub/PowerhubLink";
 
 // Task 6.4: property address drawer integration. When the flag is off, the
 // address InfoRow falls back to the joined-string render and the provider is
@@ -171,6 +172,17 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
             )}
             {!isProject && deal.daysSinceCreate > 0 && (
               <InfoRow label="Days Since Created" value={`${deal.daysSinceCreate} days`} />
+            )}
+            {deal.teslaPortalUrl && (
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-muted">Tesla PowerHub</span>
+                <PowerhubLink
+                  url={deal.teslaPortalUrl}
+                  siteName={deal.teslaSiteId ?? undefined}
+                  variant="inline"
+                  className="text-xs"
+                />
+              </div>
             )}
           </Section>
 

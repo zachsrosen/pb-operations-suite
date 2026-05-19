@@ -35,7 +35,8 @@ export type HubTab =
   | "jobs"
   | "schedule"
   | "equipment"
-  | "photos";
+  | "photos"
+  | "monitoring";
 
 export interface HubOptions {
   offset?: number;
@@ -171,6 +172,34 @@ export interface PhotosTabData {
   totalPhotos: number;
 }
 
+// --- Monitoring tab ---
+
+export interface MonitoringSitePayload {
+  id: string;
+  siteId: string;
+  siteName: string;
+  portalUrl: string | null;
+  status: "ACTIVE" | "OFFLINE" | "ERROR";
+  isPrimary: boolean;
+  lastTelemetryAt: Date | null;
+  snapshot: {
+    solarPowerW: number | null;
+    batterySocPercent: number | null;
+    gridConnectedStatus: string | null;
+  } | null;
+  activeAlerts: Array<{
+    id: string;
+    alertName: string;
+    severity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL";
+    reportedAt: Date;
+  }>;
+}
+
+export interface MonitoringTabData {
+  sites: MonitoringSitePayload[];
+  totalActiveAlerts: number;
+}
+
 // --- Counts (for drawer badges) ---
 
 export interface HubCounts {
@@ -178,6 +207,7 @@ export interface HubCounts {
   tickets: number;
   jobs: number;
   schedule: number;
+  monitoringAlerts: number;
 }
 
 // --- Union response ---
@@ -189,7 +219,8 @@ export type HubResponse =
   | { tab: "jobs"; data: JobsTabData }
   | { tab: "schedule"; data: ScheduleTabData }
   | { tab: "equipment"; data: EquipmentTabData }
-  | { tab: "photos"; data: PhotosTabData };
+  | { tab: "photos"; data: PhotosTabData }
+  | { tab: "monitoring"; data: MonitoringTabData };
 
 // ---------------------------------------------------------------------------
 // Pipeline / stage name caches (lightweight, long TTL)
@@ -647,6 +678,50 @@ async function fetchPhotos(propertyId: string): Promise<PhotosTabData> {
 }
 
 // ---------------------------------------------------------------------------
+// Tab: Monitoring
+// ---------------------------------------------------------------------------
+
+async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
+  const sites = await prisma.powerhubSite.findMany({
+    where: { propertyId },
+    include: {
+      telemetrySnapshot: true,
+      alerts: { where: { isActive: true }, orderBy: { reportedAt: "desc" } },
+    },
+    orderBy: { primaryForProperty: "desc" },
+  });
+
+  const payload: MonitoringSitePayload[] = sites.map((s) => ({
+    id: s.id,
+    siteId: s.siteId,
+    siteName: s.siteName,
+    portalUrl: s.portalUrl,
+    status: s.status,
+    isPrimary: s.primaryForProperty,
+    lastTelemetryAt: s.lastTelemetryAt,
+    snapshot: s.telemetrySnapshot
+      ? {
+          solarPowerW: s.telemetrySnapshot.solarPowerW,
+          batterySocPercent: s.telemetrySnapshot.batterySocPercent,
+          gridConnectedStatus: s.telemetrySnapshot.gridConnectedStatus,
+        }
+      : null,
+    activeAlerts: s.alerts.map((a) => ({
+      id: a.id,
+      alertName: a.alertName,
+      severity: a.severity,
+      reportedAt: a.reportedAt,
+    })),
+  }));
+
+  const totalActiveAlerts = payload.reduce(
+    (sum, s) => sum + s.activeAlerts.length,
+    0,
+  );
+  return { sites: payload, totalActiveAlerts };
+}
+
+// ---------------------------------------------------------------------------
 // Counts (for drawer badges)
 // ---------------------------------------------------------------------------
 
@@ -654,12 +729,13 @@ export async function getPropertyHubCounts(
   propertyId: string,
 ): Promise<HubCounts> {
   const property = await loadPropertyWithLinks(propertyId);
-  if (!property) return { deals: 0, tickets: 0, jobs: 0, schedule: 0 };
+  if (!property)
+    return { deals: 0, tickets: 0, jobs: 0, schedule: 0, monitoringAlerts: 0 };
 
   const dealIds = property.dealLinks.map((l) => l.dealId);
   const ticketCount = property.ticketLinks.length;
 
-  const [jobCount, slotCount] = await Promise.all([
+  const [jobCount, slotCount, monitoringAlerts] = await Promise.all([
     dealIds.length
       ? prisma.zuperJobCache.count({
           where: { hubspotDealId: { in: dealIds } },
@@ -670,6 +746,9 @@ export async function getPropertyHubCounts(
           where: { projectId: { in: dealIds } },
         })
       : 0,
+    prisma.powerhubAlert.count({
+      where: { isActive: true, site: { propertyId: property.id } },
+    }),
   ]);
 
   return {
@@ -677,6 +756,7 @@ export async function getPropertyHubCounts(
     tickets: ticketCount,
     jobs: jobCount,
     schedule: slotCount,
+    monitoringAlerts,
   };
 }
 
@@ -704,6 +784,8 @@ export async function getPropertyHub(
       return { tab, data: await fetchEquipment(propertyId) };
     case "photos":
       return { tab, data: await fetchPhotos(propertyId) };
+    case "monitoring":
+      return { tab, data: await fetchMonitoring(propertyId) };
     default: {
       const _exhaustive: never = tab;
       throw new Error(`Unknown tab: ${_exhaustive}`);

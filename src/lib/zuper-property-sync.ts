@@ -26,6 +26,9 @@ export const ZUPER_PROPERTY_FIELD_LABELS = [
   "PB Location",
   "AHJ",
   "Utility",
+  // NEW — Tesla PowerHub cross-link
+  "Tesla PowerHub",
+  "Tesla Site ID",
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +46,9 @@ export interface PropertyFieldSource {
   pbLocation: string | null;
   ahjName: string | null;
   utilityName: string | null;
+  // NEW
+  teslaPortalUrl: string | null;
+  teslaSiteId: string | null;
 }
 
 export interface SyncPropertyResult {
@@ -79,6 +85,8 @@ export function buildPropertyCustomFields(property: PropertyFieldSource): ZuperM
     { label: "PB Location", value: str(property.pbLocation), type: "SINGLE_LINE" },
     { label: "AHJ", value: str(property.ahjName), type: "SINGLE_LINE" },
     { label: "Utility", value: str(property.utilityName), type: "SINGLE_LINE" },
+    { label: "Tesla PowerHub", value: str(property.teslaPortalUrl), type: "SINGLE_LINE" },
+    { label: "Tesla Site ID", value: str(property.teslaSiteId), type: "SINGLE_LINE" },
   ];
 }
 
@@ -267,6 +275,8 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     pbLocation: property.pbLocation,
     ahjName: property.ahjName,
     utilityName: property.utilityName,
+    teslaPortalUrl: property.teslaPortalUrl,
+    teslaSiteId: property.teslaSiteId,
   });
 
   // Resolve customer UID from linked jobs.
@@ -391,6 +401,10 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     }
   }
 
+  // Cascade Tesla PowerHub URL + Site ID to linked Zuper jobs.
+  // Independently flagged via POWERHUB_ZUPER_CASCADE_ENABLED; no-op when off.
+  await cascadeUrlToJobs(propertyCacheId);
+
   return { propertyId: propertyCacheId, zuperPropertyUid, action, jobsLinked, projectsLinked };
 }
 
@@ -419,4 +433,98 @@ export async function findDirtyProperties(limit: number): Promise<Array<{ id: st
     ORDER BY pc."updatedAt" ASC
     LIMIT ${limit}
   `;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tesla PowerHub Cascade
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ZUPER_CASCADE_FLAG = "POWERHUB_ZUPER_CASCADE_ENABLED";
+
+function isZuperCascadeEnabled(): boolean {
+  return process.env[ZUPER_CASCADE_FLAG] === "true";
+}
+
+/**
+ * Cascade Tesla PowerHub URL + Site ID to every Zuper job linked to a property.
+ *
+ * Called inline after syncPropertyToZuper. No new cron job — runs as part of
+ * the existing 15-min property sync cycle. Small fan-out (typically 1-3 jobs
+ * per property) processed sequentially; per-job errors are caught inside
+ * updateZuperJobCustomFields so one failure never blocks the rest.
+ *
+ * No-ops if POWERHUB_ZUPER_CASCADE_ENABLED !== "true" (independent flag from
+ * the master POWERHUB_CROSSLINK_ENABLED — lets us validate HubSpot push at
+ * fleet scale before turning on Zuper writes).
+ *
+ * Touches all jobs regardless of jobStatus (active, completed, cancelled) —
+ * idempotent merge means historical jobs benefit when a tech later references
+ * them.
+ */
+export async function cascadeUrlToJobs(propertyCacheId: string): Promise<void> {
+  if (!isZuperCascadeEnabled()) return;
+
+  const property = await prisma.hubSpotPropertyCache.findUnique({
+    where: { id: propertyCacheId },
+    include: { dealLinks: true },
+  });
+  if (!property) return;
+  if (!property.teslaPortalUrl) return;
+
+  const dealIds = property.dealLinks.map((l) => l.dealId);
+  if (dealIds.length === 0) return;
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: { hubspotDealId: { in: dealIds } },
+    select: { jobUid: true },
+  });
+  if (jobs.length === 0) return;
+
+  const newFields: ZuperMetaDataEntry[] = [
+    { label: "Tesla PowerHub", value: property.teslaPortalUrl, type: "SINGLE_LINE" },
+    { label: "Tesla Site ID", value: property.teslaSiteId ?? "", type: "SINGLE_LINE" },
+  ];
+
+  // Sequential fan-out: simpler ordering, predictable rate use against Zuper.
+  // Per-job errors are caught inside updateZuperJobCustomFields so one failure
+  // never blocks the rest.
+  for (const job of jobs) {
+    await updateZuperJobCustomFields(job.jobUid, newFields);
+  }
+}
+
+async function updateZuperJobCustomFields(
+  jobUid: string,
+  newFields: ZuperMetaDataEntry[]
+): Promise<void> {
+  const apiKey = process.env.ZUPER_API_KEY;
+  if (!apiKey) {
+    console.warn(`[cascadeUrlToJobs] ZUPER_API_KEY not configured; skipping ${jobUid}`);
+    return;
+  }
+  try {
+    const getRes = await fetch(`${ZUPER_API_URL}/jobs/${jobUid}`, {
+      method: "GET",
+      headers: { "x-api-key": apiKey },
+    });
+    if (!getRes.ok) {
+      console.warn(`[cascadeUrlToJobs] GET /jobs/${jobUid} failed: ${getRes.status}`);
+      return;
+    }
+    const getJson = (await getRes.json()) as { data?: { custom_fields?: ZuperMetaDataEntry[] } };
+    const existing = getJson.data?.custom_fields ?? [];
+
+    const merged = mergeZuperMetaData(existing, newFields);
+
+    const putRes = await fetch(`${ZUPER_API_URL}/jobs`, {
+      method: "PUT",
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ job: { job_uid: jobUid, custom_fields: merged } }),
+    });
+    if (!putRes.ok) {
+      console.warn(`[cascadeUrlToJobs] PUT /jobs ${jobUid} failed: ${putRes.status}`);
+    }
+  } catch (err) {
+    console.error(`[cascadeUrlToJobs] Unexpected error for ${jobUid}:`, err);
+  }
 }

@@ -8,6 +8,8 @@ interface ExternalLinksCardProps {
 interface LinkItem {
   label: string;
   url: string | null;
+  /** Optional sublabel shown after the label (e.g. Tesla site name). */
+  sublabel?: string | null;
 }
 
 export default function ExternalLinksCard({ deal }: ExternalLinksCardProps) {
@@ -24,6 +26,11 @@ export default function ExternalLinksCard({ deal }: ExternalLinksCardProps) {
     { label: "Google Drive", url: deal.driveUrl },
     { label: "Design Folder", url: designFolderUrl },
     { label: "OpenSolar", url: deal.openSolarUrl },
+    {
+      label: "Tesla PowerHub",
+      url: deal.teslaPortalUrl,
+      sublabel: deal.teslaSiteId,
+    },
   ];
 
   const visibleLinks = links.filter((l) => l.url);
@@ -44,7 +51,12 @@ export default function ExternalLinksCard({ deal }: ExternalLinksCardProps) {
             rel="noopener noreferrer"
             className="flex items-center justify-between rounded px-1.5 py-1 text-xs text-orange-500 transition-colors hover:bg-surface-2/50"
           >
-            {link.label}
+            <span className="flex items-center gap-1.5">
+              {link.label}
+              {link.sublabel && (
+                <span className="text-[10px] text-muted">({link.sublabel})</span>
+              )}
+            </span>
             <span className="text-[10px] text-muted">↗</span>
           </a>
         ))}

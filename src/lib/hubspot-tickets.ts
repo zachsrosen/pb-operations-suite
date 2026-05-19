@@ -67,6 +67,10 @@ export interface TicketDetail {
   url: string;
   /** Google Drive folder URL or bare ID — from ticket_documents / ticket_document_folder_id */
   folderUrl: string | null;
+  /** Tesla PowerHub deep-link URL (from tesla_portal_url) — populated when linked to a Tesla site */
+  teslaPortalUrl: string | null;
+  /** Tesla site ID label (from tesla_site_id) — used as the link's display name */
+  teslaSiteId: string | null;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
     deals: Array<{
@@ -107,6 +111,8 @@ const TICKET_PROPERTIES = [
   "pb_location",
   "ticket_documents",          // Drive folder URL for ticket docs (preferred)
   "ticket_document_folder_id", // bare folder ID fallback
+  "tesla_portal_url",          // Tesla PowerHub deep link (populated by powerhub crosslink)
+  "tesla_site_id",             // Tesla site ID (display label for PowerHub link)
 ];
 
 // ---------------------------------------------------------------------------
@@ -666,6 +672,8 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
       folderUrl:
         String(props.ticket_documents || props.ticket_document_folder_id || "").trim() || null,
+      teslaPortalUrl: props.tesla_portal_url?.trim() || null,
+      teslaSiteId: props.tesla_site_id?.trim() || null,
       associations: { contacts, deals, companies },
       timeline,
     };
@@ -811,6 +819,46 @@ export async function updateTicket(
     return true;
   } catch (error) {
     console.error("[HubSpotTickets] Error updating ticket:", error);
+    return false;
+  }
+}
+
+/**
+ * Update arbitrary properties on a HubSpot ticket.
+ * Used by the powerhub-crosslink module to push tesla_portal_url + tesla_site_id.
+ * Returns true on success OR when the ticket no longer exists (404 = already-gone =
+ * successful no-op for cascade callers). Returns false only for unexpected failures.
+ */
+export async function updateTicketProperties(
+  ticketId: string,
+  properties: Record<string, string | null>
+): Promise<boolean> {
+  try {
+    // Coerce nulls to empty strings (HubSpot pattern)
+    const coerced: Record<string, string> = {};
+    for (const [k, v] of Object.entries(properties)) {
+      coerced[k] = v == null ? "" : String(v);
+    }
+    await hubspotClient.crm.tickets.basicApi.update(ticketId, { properties: coerced });
+    return true;
+  } catch (err) {
+    // HubSpot SDK surfaces HTTP status across several fields — match the
+    // codebase pattern in hubspot.ts:getErrorMessage / extractErrorStatus.
+    const e = err as {
+      statusCode?: number;
+      code?: number;
+      status?: number;
+      response?: { statusCode?: number; status?: number };
+    };
+    const status =
+      e.statusCode ?? e.code ?? e.status ?? e.response?.statusCode ?? e.response?.status;
+    if (status === 404) {
+      console.warn(
+        `[hubspot-tickets] Ticket ${ticketId} not found (404); treating as successful no-op`
+      );
+      return true; // ticket gone = nothing to update = success for the cascade
+    }
+    console.error(`[hubspot-tickets] Failed to update ticket ${ticketId}:`, err);
     return false;
   }
 }

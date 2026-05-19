@@ -18,6 +18,7 @@ const VALID_TABS: HubTab[] = [
   "schedule",
   "equipment",
   "photos",
+  "monitoring",
 ];
 
 /**

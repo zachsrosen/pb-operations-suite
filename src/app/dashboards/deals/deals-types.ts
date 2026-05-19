@@ -22,6 +22,10 @@ export interface SlimDeal {
   url: string;
   isActive: boolean;
   daysSinceCreate: number;
+
+  // Tesla PowerHub (populated by powerhub-crosslink push to deal in HubSpot)
+  teslaPortalUrl?: string | null;
+  teslaSiteId?: string | null;
 }
 
 /** Fields available only on project pipeline deals */
@@ -110,6 +114,8 @@ export function projectToTableDeal(p: Project): TableDeal {
     inspectionPassDate: p.inspectionPassDate,
     ptoSubmitDate: p.ptoSubmitDate,
     ptoGrantedDate: p.ptoGrantedDate,
+    teslaPortalUrl: p.teslaPortalUrl,
+    teslaSiteId: p.teslaSiteId,
   };
 }
 

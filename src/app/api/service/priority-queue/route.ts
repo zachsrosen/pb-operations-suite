@@ -9,6 +9,7 @@ import { hubspotClient } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { fetchServiceTickets } from "@/lib/hubspot-tickets";
 import { enrichServiceItems, type EnrichmentInput, ALL_REASON_CATEGORIES } from "@/lib/service-enrichment";
+import { fetchPowerhubItemSummaries } from "@/lib/powerhub-priority-enrichment";
 import { chunk } from "@/lib/utils";
 
 // Initialize cascade listener at module scope (singleton, process-local)
@@ -189,11 +190,39 @@ export async function GET(request: NextRequest) {
           }))
         );
 
-        const enrichedQueue = queue.map(q => ({
-          ...q,
-          serviceType: enrichments.get(q.item.id)?.serviceType ?? null,
-          lastContactSource: enrichments.get(q.item.id)?.lastContactSource ?? null,
-        }));
+        // PowerHub enrichment: tesla portal URL + active-alert summary per item.
+        // Joined via PropertyDealLink/PropertyTicketLink → HubSpotPropertyCache →
+        // PowerhubSite → PowerhubAlert. Falls back to nulls/0 on any DB error
+        // so the queue still renders.
+        let powerhubByDealId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null }>();
+        let powerhubByTicketId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null }>();
+        try {
+          const result = await fetchPowerhubItemSummaries({
+            dealIds: deals.map(d => d.id),
+            ticketIds: tickets.map(t => t.id),
+          });
+          powerhubByDealId = result.byDealId;
+          powerhubByTicketId = result.byTicketId;
+        } catch (err) {
+          console.warn("[PriorityQueue] PowerHub enrichment failed:", err);
+        }
+
+        const enrichedQueue = queue.map(q => {
+          const phub = q.item.type === "deal"
+            ? powerhubByDealId.get(q.item.id)
+            : powerhubByTicketId.get(q.item.id);
+          return {
+            ...q,
+            serviceType: enrichments.get(q.item.id)?.serviceType ?? null,
+            lastContactSource: enrichments.get(q.item.id)?.lastContactSource ?? null,
+            item: {
+              ...q.item,
+              teslaPortalUrl: phub?.teslaPortalUrl ?? null,
+              activeAlertCount: phub?.activeAlertCount ?? 0,
+              highestAlertSeverity: phub?.highestAlertSeverity ?? null,
+            },
+          };
+        });
 
         return { queue: enrichedQueue, fetchedAt: new Date().toISOString() };
       },

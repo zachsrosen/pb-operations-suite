@@ -376,6 +376,16 @@ export function dealToProject(deal: PrismaDeal): Project {
     // Participate Energy (not in Prisma Deal — populated only from HubSpot)
     pePortalUrl: null,
     peProjectId: null,
+
+    // Tesla PowerHub — read from rawProperties (synced by deal-sync into JSON)
+    teslaPortalUrl:
+      typeof deal.rawProperties === "object" && deal.rawProperties !== null
+        ? ((deal.rawProperties as Record<string, unknown>).tesla_portal_url as string | null) ?? null
+        : null,
+    teslaSiteId:
+      typeof deal.rawProperties === "object" && deal.rawProperties !== null
+        ? ((deal.rawProperties as Record<string, unknown>).tesla_site_id as string | null) ?? null
+        : null,
   };
 }
 

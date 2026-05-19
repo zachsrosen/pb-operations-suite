@@ -85,6 +85,20 @@ export function serializeDeal(deal: PrismaDeal): SerializedDeal {
     }
   }
 
+  // Surface Tesla PowerHub fields from rawProperties (not on the Deal table).
+  // These are populated on the HubSpot deal by the powerhub crosslink push and
+  // flow into rawProperties via DEAL_SYNC_PROPERTIES.
+  const raw = deal.rawProperties as Record<string, unknown> | null;
+  if (raw && typeof raw === "object") {
+    const teslaUrl = typeof raw.tesla_portal_url === "string" ? raw.tesla_portal_url.trim() : "";
+    const teslaSite = typeof raw.tesla_site_id === "string" ? raw.tesla_site_id.trim() : "";
+    result.teslaPortalUrl = teslaUrl || null;
+    result.teslaSiteId = teslaSite || null;
+  } else {
+    result.teslaPortalUrl = null;
+    result.teslaSiteId = null;
+  }
+
   return result as SerializedDeal;
 }
 

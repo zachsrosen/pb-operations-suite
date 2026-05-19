@@ -9,12 +9,13 @@
  * All operations are designed to be called from Vercel Cron handlers.
  */
 
-import { createPowerHubClient, type PowerHubSiteDetail, type PowerHubTelemetrySignal } from "./tesla-powerhub";
+import { computePortalUrl, createPowerHubClient, type PowerHubSiteDetail, type PowerHubTelemetrySignal } from "./tesla-powerhub";
 import {
   normalizeAddress,
   linkSite,
   type DealAddress,
 } from "./powerhub-linkage";
+import { enqueueCrossSystemPush } from "./powerhub-crosslink";
 import { prisma } from "./db";
 import { appCache } from "./cache";
 
@@ -168,7 +169,7 @@ async function upsertSite(
 
   const existing = await prisma.powerhubSite.findUnique({
     where: { siteId: detail.site_id },
-    select: { id: true, linkMethod: true, address: true, city: true, state: true, zip: true, addressHash: true, dealId: true },
+    select: { id: true, linkMethod: true, address: true, city: true, state: true, zip: true, addressHash: true, dealId: true, propertyId: true },
   });
 
   // Build a complete device snapshot for the JSON column
@@ -186,6 +187,7 @@ async function upsertSite(
     // in the JWT — no separate env var needed
     instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID || "",
     aggregatorSiteId: detail.aggregator_site_identifier || null,
+    portalUrl: computePortalUrl(detail.site_id),
     address: existing?.address || "",
     city: existing?.city || "",
     state: existing?.state || "",
@@ -217,6 +219,11 @@ async function upsertSite(
     result.sitesCreated++;
   }
 
+  // Track post-link state so the cross-system cascade at the bottom of this
+  // function sees the freshest propertyId / linkMethod after any link update.
+  let finalPropertyId: string | null = existing?.propertyId ?? null;
+  let finalLinkMethod: string = existing?.linkMethod ?? "UNLINKED";
+
   // Linkage: Tesla API doesn't return addresses, so auto-linkage
   // relies on site_name or manual admin assignment.
   // If address was manually set (e.g. by admin), try linkage.
@@ -238,6 +245,8 @@ async function upsertSite(
         },
       });
       result.sitesLinked++;
+      finalPropertyId = linkResult.propertyId;
+      finalLinkMethod = linkResult.method;
     }
   }
 
@@ -261,6 +270,14 @@ async function upsertSite(
         },
       });
     }
+  }
+
+  // Trigger cross-system propagation (resolve primary site → push to HubSpot
+  // Property/Deals/Tickets; Zuper picks up via cache.updatedAt on next cron).
+  // No-ops when POWERHUB_CROSSLINK_ENABLED !== "true". Errors are caught
+  // internally so this await never throws.
+  if (finalPropertyId && finalLinkMethod !== "UNLINKED") {
+    await enqueueCrossSystemPush(finalPropertyId);
   }
 }
 

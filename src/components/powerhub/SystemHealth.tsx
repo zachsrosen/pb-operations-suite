@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import { PowerhubLink } from "./PowerhubLink";
 
 interface SystemHealthProps {
   siteId: string;
@@ -37,11 +38,14 @@ export default function SystemHealth({ siteId }: SystemHealthProps) {
 
   return (
     <div className="bg-surface rounded-xl p-4 shadow-card">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-cyan-500">⚡</span>
-        <h4 className="text-sm font-medium text-foreground">
-          System Health — {site.siteName}
-        </h4>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-cyan-500">⚡</span>
+          <h4 className="text-sm font-medium text-foreground">
+            System Health — {site.siteName}
+          </h4>
+        </div>
+        <PowerhubLink url={site.portalUrl} siteName={site.siteName} variant="button" />
       </div>
 
       {snapshot ? (

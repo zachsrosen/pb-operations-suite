@@ -85,6 +85,8 @@ interface Deal {
   daysSinceCreate: number;
   companyId: string | null;
   companyName: string | null;
+  teslaPortalUrl: string | null;
+  teslaSiteId: string | null;
 }
 
 function parseDate(value: unknown): string | null {
@@ -131,6 +133,8 @@ function transformDeal(
     daysSinceCreate: createDate ? daysBetween(createDate, now) : 0,
     companyId: null,
     companyName: null,
+    teslaPortalUrl: String(deal.tesla_portal_url || "").trim() || null,
+    teslaSiteId: String(deal.tesla_site_id || "").trim() || null,
   };
 }
 

@@ -102,6 +102,9 @@ export const PROPERTY_PROPERTIES = [
   "total_battery_count_rollup",
   "total_ev_charger_count_rollup",
   "total_deal_value_rollup",
+  // Tesla PowerHub (populated by powerhub-crosslink module)
+  "tesla_portal_url",
+  "tesla_site_id",
 ] as const;
 
 // ---------------------------------------------------------------------------

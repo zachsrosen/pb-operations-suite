@@ -62,6 +62,8 @@ export const queryKeys = {
     site: (siteId: string) =>
       [...queryKeys.powerhub.root, "site", siteId] as const,
     fleet: () => [...queryKeys.powerhub.root, "fleet"] as const,
+    propertySites: (propertyId: string) =>
+      [...queryKeys.powerhub.root, "property", propertyId, "sites"] as const,
   },
   serviceTickets: {
     root: ["serviceTickets"] as const,
@@ -228,6 +230,8 @@ export const queryKeys = {
     root: ["propertyHub"] as const,
     tab: (propertyId: string, tab: string) =>
       ["propertyHub", propertyId, tab] as const,
+    counts: (propertyId: string) =>
+      ["propertyHub", propertyId, "counts"] as const,
   },
   propertyPermits: {
     root: ["propertyPermits"] as const,
