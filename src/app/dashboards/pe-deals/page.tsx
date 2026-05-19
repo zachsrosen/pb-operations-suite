@@ -43,6 +43,13 @@ const M2_OPTIONS = [
   "Paid",
 ] as const;
 
+interface DocReviewFromHS {
+  dealId: string;
+  docName: string;
+  status: string;
+  notes: string | null;
+}
+
 interface PeDeal {
   dealId: string;
   dealName: string;
@@ -69,6 +76,7 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
+  docReviews: DocReviewFromHS[];
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +122,6 @@ function truncateName(name: string, max = 20): string {
 // ---------------------------------------------------------------------------
 
 interface DocReview {
-  id: string;
   dealId: string;
   docName: string;
   status: "NOT_UPLOADED" | "UPLOADED" | "UNDER_REVIEW" | "ACTION_REQUIRED" | "REJECTED" | "APPROVED";
@@ -551,20 +558,21 @@ export default function PeDealsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch PE document reviews for inline doc breakdown
-  const { data: docsData } = useQuery<{ docs: DocReview[]; lastSync: string | null }>({
-    queryKey: ["peDocReviews"],
-    queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
-    staleTime: 60 * 1000,
-  });
-
+  // Build docMap from HubSpot deal properties (no separate DB query needed)
   const docMap = useMemo(() => {
     const m = new Map<string, DocReview>();
-    for (const d of docsData?.docs ?? []) {
-      m.set(`${d.dealId}:${d.docName}`, d);
+    for (const deal of data?.deals ?? []) {
+      for (const dr of deal.docReviews ?? []) {
+        m.set(`${dr.dealId}:${dr.docName}`, {
+          dealId: dr.dealId,
+          docName: dr.docName,
+          status: dr.status as DocReview["status"],
+          notes: dr.notes,
+        });
+      }
     }
     return m;
-  }, [docsData]);
+  }, [data]);
 
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState<string[]>([]);

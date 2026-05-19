@@ -12,6 +12,7 @@ import {
 } from "@/lib/pricing-calculator";
 import { safeWaitUntil } from "@/lib/safe-wait-until";
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
+import { PE_DOC_HUBSPOT_MAP, HUBSPOT_TO_PE_STATUS } from "@/lib/pe-hubspot-sync";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -72,6 +73,14 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
+  docReviews: PeDocReviewFromHS[];
+}
+
+interface PeDocReviewFromHS {
+  dealId: string;
+  docName: string;
+  status: string;
+  notes: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +128,8 @@ const PE_DEAL_PROPERTIES = [
   // Milestone completion dates (for PE Submission Gap timeline)
   "inspections_completion_date",
   "pto_completion_date",
+  // PE per-document status + notes (15 status + 15 notes = 30 properties)
+  ...PE_DOC_HUBSPOT_MAP.flatMap((m) => [m.statusProp, m.notesProp]),
 ];
 
 // ---------------------------------------------------------------------------
@@ -270,6 +281,24 @@ export async function GET() {
         }
       }
 
+      // ------------------------------------------------------------------
+      // PE per-document statuses — read from HubSpot deal properties
+      // ------------------------------------------------------------------
+      const docReviews: PeDocReviewFromHS[] = [];
+      for (const mapping of PE_DOC_HUBSPOT_MAP) {
+        const rawStatus = deal[mapping.statusProp];
+        if (!rawStatus) continue; // skip docs with no status set
+        const statusStr = String(rawStatus);
+        const peStatus = HUBSPOT_TO_PE_STATUS[statusStr];
+        if (!peStatus) continue;
+        docReviews.push({
+          dealId,
+          docName: mapping.docName,
+          status: peStatus,
+          notes: deal[mapping.notesProp] ? String(deal[mapping.notesProp]) : null,
+        });
+      }
+
       return {
         dealId,
         dealName: String(deal.dealname || "Untitled"),
@@ -306,6 +335,7 @@ export async function GET() {
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
         pePortalUrl: deal.pe_portal_url ? String(deal.pe_portal_url) : null,
         peProjectId: deal.pe_project_id ? String(deal.pe_project_id) : null,
+        docReviews,
       };
     });
 
