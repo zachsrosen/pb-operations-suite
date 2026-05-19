@@ -383,3 +383,21 @@ export function createPowerHubClient(): PowerHubClient {
     },
   };
 }
+
+/**
+ * Compute the Tesla GridLogic portal deep-link URL for a site.
+ * Template is configurable via TESLA_POWERHUB_PORTAL_URL_TEMPLATE env var.
+ * Returns null for empty/whitespace siteId.
+ *
+ * The {siteId} placeholder is URL-encoded so the function is safe for any
+ * site identifier shape Tesla might return (even though current UUIDs are
+ * URL-safe).
+ */
+export function computePortalUrl(siteId: string): string | null {
+  const trimmed = siteId?.trim();
+  if (!trimmed) return null;
+  const template =
+    process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE ||
+    "https://gridlogic.tesla.com/sites/{siteId}";
+  return template.replace("{siteId}", encodeURIComponent(trimmed));
+}
