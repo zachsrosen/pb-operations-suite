@@ -21,15 +21,6 @@ export interface PipelineSection {
   cancellationRate: number;
 }
 
-export interface CustomerExperienceMetrics {
-  avgResponseDays: number | null;
-  proactiveUpdatePct: number | null;
-  avgIssueResolutionDays: number | null;
-  changeOrdersPerJob: number | null;
-  escalationCount: number | null;
-  escalationAvgAgeDays: number | null;
-}
-
 export interface PreconstructionSection {
   jobsInDesign: number;
   jobsSubmittedForPermit: number;
@@ -37,7 +28,31 @@ export interface PreconstructionSection {
   avgDaysSaleToPermit: number | null;
   totalReadyJobs: number;
   jobsAgingOver2Weeks: number;
-  customerExperience: CustomerExperienceMetrics;
+}
+
+export interface SentimentBucket {
+  label: string;
+  min: number;
+  max: number;
+  count: number;
+  pct: number;
+  color: string;
+}
+
+export interface CustomerSuccessSection {
+  avgSentimentScore: number | null;
+  fiveStarReviewsMTD: number;
+  fiveStarReviewsTarget: number;
+  npsCsat: null; // Coming soon
+  avgDaysSinceContact: number | null;
+  proactiveUpdatePct: null; // Coming soon
+  openEscalations: null; // Coming soon
+  avgEscalationAge: null; // Coming soon
+  avgResponseTime: null; // Coming soon
+  avgResolutionTime: null; // Coming soon
+  changeOrdersPerJob: null; // Coming soon
+  activeServiceTickets: null; // Coming soon
+  sentimentDistribution: SentimentBucket[];
 }
 
 export interface SchedulingSection {
@@ -63,6 +78,7 @@ export interface InspectionsSection {
 
 export interface ShopHealthHeroes {
   weeklyRevenue: HeroMetric;
+  sentiment: HeroMetric;
   backlogWeeks: HeroMetric;
   readyToBuild: HeroMetric;
   scheduledInstalls: HeroMetric;
@@ -89,6 +105,7 @@ export interface SectionHealth {
   scheduling: HealthStatus;
   operations: HealthStatus;
   inspections: HealthStatus;
+  customerSuccess: HealthStatus;
 }
 
 export interface ShopHealthData {
@@ -101,6 +118,7 @@ export interface ShopHealthData {
   scheduling: SchedulingSection;
   operations: OperationsSection;
   inspections: InspectionsSection;
+  customerSuccess: CustomerSuccessSection;
   sectionHealth: SectionHealth;
   bottleneck: ShopHealthBottleneckEntry | null;
   lastUpdated: string;

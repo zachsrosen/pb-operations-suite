@@ -15,6 +15,7 @@ import { PreconSectionContent } from './PreconSection';
 import { SchedulingSectionContent } from './SchedulingSection';
 import { OperationsSectionContent } from './OperationsSection';
 import { InspectionsSectionContent } from './InspectionsSection';
+import { CustomerSuccessSectionContent } from './CustomerSuccessSection';
 import { BottleneckSectionContent } from './BottleneckSection';
 import { AllLocationsView } from './AllLocationsView';
 
@@ -29,8 +30,8 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-6 animate-pulse">
       {/* Hero skeleton */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
           <div key={i} className="bg-surface rounded-xl border border-border p-5 min-h-[140px] flex flex-col items-center justify-center">
             <div className="h-5 w-5 bg-surface-2 rounded-full mb-2" />
             <div className="h-3 w-16 bg-surface-2 rounded mb-3" />
@@ -39,7 +40,7 @@ function LoadingSkeleton() {
         ))}
       </div>
       {/* Section skeletons */}
-      {[1, 2, 3, 4, 5].map((i) => (
+      {[1, 2, 3, 4, 5, 6].map((i) => (
         <div key={i} className="bg-surface rounded-xl border border-border shadow-card p-6">
           <div className="flex items-center gap-3 mb-5">
             <div className="h-5 w-5 bg-surface-2 rounded" />
@@ -169,6 +170,11 @@ export default function ShopHealthDashboard() {
           {/* Inspections */}
           <SectionCard title="Inspections" icon="🔍" health={data.sectionHealth.inspections}>
             <InspectionsSectionContent data={data.inspections} />
+          </SectionCard>
+
+          {/* Customer Success */}
+          <SectionCard title="Customer Success" icon="🤝" health={data.sectionHealth.customerSuccess}>
+            <CustomerSuccessSectionContent data={data.customerSuccess} />
           </SectionCard>
 
           {/* Bottleneck */}
