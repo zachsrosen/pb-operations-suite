@@ -10,10 +10,26 @@ export interface PeDocChange {
   newStatus: string;
 }
 
+export interface NearlyCompleteDeal {
+  dealId: string;
+  dealName: string | null;
+  approvedCount: number;
+  totalDocs: number;
+  missingDocs: string[]; // doc names not yet approved
+}
+
+export interface AttentionDeal {
+  dealId: string;
+  dealName: string | null;
+  issues: { docName: string; status: string }[];
+}
+
 export interface PeDocDigestProps {
   date: string; // "May 19, 2026"
   changes: PeDocChange[];
   totalDealsTracked: number;
+  nearlyComplete: NearlyCompleteDeal[];
+  needsAttention: AttentionDeal[];
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -49,6 +65,8 @@ export function PeDocDigest({
   date,
   changes,
   totalDealsTracked,
+  nearlyComplete,
+  needsAttention,
 }: PeDocDigestProps) {
   // Group changes by deal
   const byDeal = new Map<string, PeDocChange[]>();
@@ -106,6 +124,61 @@ export function PeDocDigest({
         <Section style={emptyCard}>
           <Text style={emptyText}>No document status changes today.</Text>
         </Section>
+      )}
+
+      {/* Needs Attention — deals with rejected or action-required docs */}
+      {needsAttention.length > 0 && (
+        <>
+          <Section style={sectionHeader}>
+            <Text style={sectionHeaderText}>
+              Needs Attention ({needsAttention.length})
+            </Text>
+          </Section>
+          {needsAttention.map((deal) => (
+            <Section key={deal.dealId} style={attentionCard}>
+              <Text style={dealNameStyle}>
+                {deal.dealName || deal.dealId}
+              </Text>
+              <Hr style={thinDivider} />
+              {deal.issues.map((issue, i) => (
+                <Text key={i} style={issueRow}>
+                  <span style={{ color: statusColor(issue.status) }}>
+                    {statusLabel(issue.status)}
+                  </span>
+                  <span style={{ color: "#71717a" }}>{" — "}</span>
+                  <span style={{ color: "#a1a1aa" }}>{issue.docName}</span>
+                </Text>
+              ))}
+            </Section>
+          ))}
+        </>
+      )}
+
+      {/* Nearly Complete — deals missing only 1-2 docs */}
+      {nearlyComplete.length > 0 && (
+        <>
+          <Section style={sectionHeader}>
+            <Text style={sectionHeaderText}>
+              Nearly Complete ({nearlyComplete.length})
+            </Text>
+          </Section>
+          {nearlyComplete.map((deal) => (
+            <Section key={deal.dealId} style={nearlyCard}>
+              <Text style={dealNameStyle}>
+                {deal.dealName || deal.dealId}
+              </Text>
+              <Text style={progressText}>
+                {deal.approvedCount}/{deal.totalDocs} approved
+              </Text>
+              <Hr style={thinDivider} />
+              {deal.missingDocs.map((doc, i) => (
+                <Text key={i} style={missingDocText}>
+                  {doc}
+                </Text>
+              ))}
+            </Section>
+          ))}
+        </>
       )}
     </EmailShell>
   );
@@ -174,6 +247,61 @@ const docNameText: React.CSSProperties = {
 const statusLine: React.CSSProperties = {
   fontSize: "13px",
   margin: 0,
+};
+
+const sectionHeader: React.CSSProperties = {
+  marginTop: "28px",
+  marginBottom: "12px",
+};
+
+const sectionHeaderText: React.CSSProperties = {
+  color: "#f97316",
+  fontSize: "14px",
+  fontWeight: "bold",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  margin: 0,
+};
+
+const attentionCard: React.CSSProperties = {
+  backgroundColor: "#1a1a2e",
+  border: "1px solid #7f1d1d",
+  borderRadius: "8px",
+  padding: "16px",
+  marginBottom: "12px",
+};
+
+const issueRow: React.CSSProperties = {
+  fontSize: "13px",
+  margin: "2px 0",
+};
+
+const nearlyCard: React.CSSProperties = {
+  backgroundColor: "#1a1a2e",
+  border: "1px solid #14532d",
+  borderRadius: "8px",
+  padding: "16px",
+  marginBottom: "12px",
+};
+
+const progressText: React.CSSProperties = {
+  color: "#22c55e",
+  fontSize: "12px",
+  fontWeight: "bold",
+  margin: "2px 0 0 0",
+};
+
+const missingDocText: React.CSSProperties = {
+  color: "#fbbf24",
+  fontSize: "13px",
+  margin: "2px 0",
+};
+
+const dealNameStyle: React.CSSProperties = {
+  color: "#ffffff",
+  fontSize: "14px",
+  fontWeight: "bold",
+  margin: "0",
 };
 
 const emptyCard: React.CSSProperties = {

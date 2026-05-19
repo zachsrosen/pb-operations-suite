@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendEmailMessage } from "@/lib/email";
 import { render } from "@react-email/render";
-import { PeDocDigest } from "@/emails/PeDocDigest";
+import {
+  PeDocDigest,
+  type NearlyCompleteDeal,
+  type AttentionDeal,
+} from "@/emails/PeDocDigest";
 
 /**
  * GET /api/cron/pe-doc-digest
  *
- * Vercel cron job — sends a daily email digest of PE document status changes.
- * Queries PeDocChangeLog for today's changes and emails a summary.
+ * Vercel cron job — sends a daily email digest of PE document status changes
+ * plus snapshot flags for deals needing attention or nearly complete.
  *
  * Schedule: 21:30 UTC (5:30 PM EST) weekdays
  * Protected by CRON_SECRET.
@@ -16,6 +20,7 @@ import { PeDocDigest } from "@/emails/PeDocDigest";
 export const maxDuration = 30;
 
 const RECIPIENT = "zach@photonbrothers.com";
+const TOTAL_DOCS_PER_DEAL = 15;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -24,7 +29,9 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Query today's changes (UTC day boundaries)
+    // -----------------------------------------------------------------------
+    // 1. Today's changes from PeDocChangeLog
+    // -----------------------------------------------------------------------
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -37,12 +44,84 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "asc" },
     });
 
-    // Get total PE deal count for context
-    const totalDeals = await prisma.peDocumentReview.findMany({
-      select: { dealId: true },
-      distinct: ["dealId"],
+    // -----------------------------------------------------------------------
+    // 2. Current snapshot: all doc statuses grouped by deal
+    // -----------------------------------------------------------------------
+    const allDocs = await prisma.peDocumentReview.findMany({
+      select: { dealId: true, docName: true, status: true },
     });
 
+    // Group by deal
+    const dealDocs = new Map<string, { docName: string; status: string }[]>();
+    for (const doc of allDocs) {
+      if (!dealDocs.has(doc.dealId)) dealDocs.set(doc.dealId, []);
+      dealDocs.get(doc.dealId)!.push({ docName: doc.docName, status: doc.status });
+    }
+
+    // Resolve deal names from change log or recent reviews
+    const dealNameMap = new Map<string, string>();
+    for (const c of changes) {
+      if (c.dealName) dealNameMap.set(c.dealId, c.dealName);
+    }
+    // Also try to get names from the change log history for deals not in today's changes
+    const recentNames = await prisma.peDocChangeLog.findMany({
+      where: { dealName: { not: null } },
+      select: { dealId: true, dealName: true },
+      distinct: ["dealId"],
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    for (const r of recentNames) {
+      if (r.dealName && !dealNameMap.has(r.dealId)) {
+        dealNameMap.set(r.dealId, r.dealName);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Compute "Needs Attention" — deals with REJECTED or ACTION_REQUIRED
+    // -----------------------------------------------------------------------
+    const needsAttention: AttentionDeal[] = [];
+    for (const [dealId, docs] of dealDocs.entries()) {
+      const issues = docs
+        .filter((d) => d.status === "ACTION_REQUIRED" || d.status === "REJECTED")
+        .map((d) => ({ docName: d.docName, status: d.status }));
+      if (issues.length > 0) {
+        needsAttention.push({
+          dealId,
+          dealName: dealNameMap.get(dealId) ?? null,
+          issues,
+        });
+      }
+    }
+    needsAttention.sort((a, b) =>
+      (a.dealName || a.dealId).localeCompare(b.dealName || b.dealId),
+    );
+
+    // -----------------------------------------------------------------------
+    // 4. Compute "Nearly Complete" — deals missing only 1-2 approved docs
+    // -----------------------------------------------------------------------
+    const nearlyComplete: NearlyCompleteDeal[] = [];
+    for (const [dealId, docs] of dealDocs.entries()) {
+      const approvedCount = docs.filter((d) => d.status === "APPROVED").length;
+      const remaining = TOTAL_DOCS_PER_DEAL - approvedCount;
+      if (remaining >= 1 && remaining <= 2 && docs.length >= TOTAL_DOCS_PER_DEAL - 2) {
+        const missingDocs = docs
+          .filter((d) => d.status !== "APPROVED")
+          .map((d) => d.docName);
+        nearlyComplete.push({
+          dealId,
+          dealName: dealNameMap.get(dealId) ?? null,
+          approvedCount,
+          totalDocs: TOTAL_DOCS_PER_DEAL,
+          missingDocs,
+        });
+      }
+    }
+    nearlyComplete.sort((a, b) => b.approvedCount - a.approvedCount);
+
+    // -----------------------------------------------------------------------
+    // 5. Build and send email
+    // -----------------------------------------------------------------------
     const dateStr = todayStart.toLocaleDateString("en-US", {
       month: "long",
       day: "numeric",
@@ -62,10 +141,13 @@ export async function GET(request: NextRequest) {
       PeDocDigest({
         date: dateStr,
         changes: emailChanges,
-        totalDealsTracked: totalDeals.length,
+        totalDealsTracked: dealDocs.size,
+        nearlyComplete,
+        needsAttention,
       }),
     );
 
+    // Plain-text fallback
     const plainLines = [
       `PE Doc Status Changes — ${dateStr}`,
       `${changes.length} change(s) across ${new Set(changes.map((c) => c.dealId)).size} deal(s)`,
@@ -75,14 +157,35 @@ export async function GET(request: NextRequest) {
           `${c.dealName || c.dealId}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`,
       ),
     ];
-
     if (changes.length === 0) {
       plainLines.push("No document status changes today.");
     }
+    if (needsAttention.length > 0) {
+      plainLines.push("", `--- NEEDS ATTENTION (${needsAttention.length}) ---`);
+      for (const deal of needsAttention) {
+        plainLines.push(`${deal.dealName || deal.dealId}:`);
+        for (const issue of deal.issues) {
+          plainLines.push(`  ${issue.status} — ${issue.docName}`);
+        }
+      }
+    }
+    if (nearlyComplete.length > 0) {
+      plainLines.push("", `--- NEARLY COMPLETE (${nearlyComplete.length}) ---`);
+      for (const deal of nearlyComplete) {
+        plainLines.push(
+          `${deal.dealName || deal.dealId}: ${deal.approvedCount}/${deal.totalDocs} — missing: ${deal.missingDocs.join(", ")}`,
+        );
+      }
+    }
+
+    const subjectParts = [`PE Doc Digest — ${dateStr}`];
+    if (changes.length > 0) subjectParts.push(`${changes.length} change${changes.length !== 1 ? "s" : ""}`);
+    if (needsAttention.length > 0) subjectParts.push(`${needsAttention.length} need attention`);
+    if (nearlyComplete.length > 0) subjectParts.push(`${nearlyComplete.length} nearly done`);
 
     const result = await sendEmailMessage({
       to: RECIPIENT,
-      subject: `PE Doc Changes — ${dateStr} (${changes.length} change${changes.length !== 1 ? "s" : ""})`,
+      subject: subjectParts.join(" | "),
       html,
       text: plainLines.join("\n"),
       debugFallbackTitle: "PE Doc Digest",
@@ -90,13 +193,18 @@ export async function GET(request: NextRequest) {
     });
 
     console.warn(
-      `[pe-doc-digest] Sent to ${RECIPIENT}: ${changes.length} changes, email ${result.success ? "delivered" : "failed"}`,
+      `[pe-doc-digest] Sent to ${RECIPIENT}: ${changes.length} changes, ` +
+      `${needsAttention.length} need attention, ${nearlyComplete.length} nearly complete, ` +
+      `email ${result.success ? "delivered" : "failed"}`,
     );
 
     return NextResponse.json({
       sent: result.success,
       changesCount: changes.length,
       dealsAffected: new Set(changes.map((c) => c.dealId)).size,
+      needsAttentionCount: needsAttention.length,
+      nearlyCompleteCount: nearlyComplete.length,
+      totalDealsTracked: dealDocs.size,
       date: dateStr,
     });
   } catch (err) {
