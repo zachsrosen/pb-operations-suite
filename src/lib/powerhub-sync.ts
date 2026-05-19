@@ -9,7 +9,7 @@
  * All operations are designed to be called from Vercel Cron handlers.
  */
 
-import { createPowerHubClient, type PowerHubSiteDetail, type PowerHubTelemetrySignal } from "./tesla-powerhub";
+import { computePortalUrl, createPowerHubClient, type PowerHubSiteDetail, type PowerHubTelemetrySignal } from "./tesla-powerhub";
 import {
   normalizeAddress,
   linkSite,
@@ -186,6 +186,7 @@ async function upsertSite(
     // in the JWT — no separate env var needed
     instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID || "",
     aggregatorSiteId: detail.aggregator_site_identifier || null,
+    portalUrl: computePortalUrl(detail.site_id),
     address: existing?.address || "",
     city: existing?.city || "",
     state: existing?.state || "",
