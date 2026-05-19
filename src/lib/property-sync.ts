@@ -690,6 +690,11 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     latest_deal_name: latestDealInfo?.dealName ?? "",
     latest_deal_stage: latestDealInfo?.stage ?? "",
     latest_open_ticket_subject: latestOpenTicketSubject ?? "",
+    // Tesla PowerHub (populated by powerhub-crosslink module).
+    // Re-pushed here so HubSpot stays in sync with the cache; coerceHubSpotProps
+    // converts null → "" which clears the property if the cache has no value.
+    tesla_portal_url: property.teslaPortalUrl ?? null,
+    tesla_site_id: property.teslaSiteId ?? null,
     // NOTE: install_age_months and days_since_last_service are HubSpot calc
     // properties — they auto-compute from first_install_date / last_service_date.
     // NOTE: system_size_kw_dc, has_battery, has_ev_charger, panel_count, and
