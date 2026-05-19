@@ -77,7 +77,9 @@ function HeroCard({
           }`}
         >
           {metric.delta > 0 ? '▲ ' : metric.delta < 0 ? '▼ ' : ''}
-          {metric.delta !== 0 ? Math.abs(metric.delta) : '–'} vs prior wk
+          {metric.delta !== 0
+            ? (Math.abs(metric.delta) % 1 !== 0 ? Math.abs(metric.delta).toFixed(1) : Math.abs(metric.delta))
+            : '–'} vs prior wk
         </span>
       )}
     </div>
