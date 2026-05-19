@@ -62,6 +62,8 @@ export const queryKeys = {
     site: (siteId: string) =>
       [...queryKeys.powerhub.root, "site", siteId] as const,
     fleet: () => [...queryKeys.powerhub.root, "fleet"] as const,
+    propertySites: (propertyId: string) =>
+      [...queryKeys.powerhub.root, "property", propertyId, "sites"] as const,
   },
   serviceTickets: {
     root: ["serviceTickets"] as const,
