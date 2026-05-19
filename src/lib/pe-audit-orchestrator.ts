@@ -36,7 +36,7 @@ import {
 import {
   downloadDriveFile,
   downloadDriveImage,
-  listDriveFilesRecursive,
+  listDriveFilesRecursiveDetailed,
   listDriveSubfolders,
   listDriveImagesRecursive,
   uploadDriveBinaryFile,
@@ -257,12 +257,20 @@ async function pullPandaDocs(
 // Vision audit — classify files and photos
 // ---------------------------------------------------------------------------
 
+interface CandidateCollectionResult {
+  files: DriveGenericFile[];
+  /** Per-folder errors hit during the recursive walk. Empty when Drive cooperated. */
+  driveErrors: Array<{ folderId: string; depth: number; message: string }>;
+}
+
 async function collectCandidateFiles(
   folderMap: Map<string, string>,
   allFolderIds: string[],
   item: ChecklistItem,
   installPhotos: DriveGenericFile[],
-): Promise<DriveGenericFile[]> {
+): Promise<CandidateCollectionResult> {
+  const driveErrors: CandidateCollectionResult["driveErrors"] = [];
+
   if (item.isPhoto) {
     const files = [...installPhotos];
     if (item.pePhotoNumber === 6) {
@@ -271,19 +279,35 @@ async function collectCandidateFiles(
         if (fid) {
           // Recursive so the Invoice/BOM photo can be matched whether it
           // sits at folder 0 top level or inside `0. Sales/Invoices/`.
-          try { files.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
+          try {
+            const r = await listDriveFilesRecursiveDetailed(fid, 3, 50);
+            files.push(...r.files);
+            driveErrors.push(...r.errors);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`[pe-audit] collectCandidateFiles photo-6 recursive list threw for ${fid}: ${message}`);
+            driveErrors.push({ folderId: fid, depth: 0, message });
+          }
         }
       }
     }
-    return files;
+    return { files, driveErrors };
   }
 
   if (item.searchAllFolders) {
     const allFiles: DriveGenericFile[] = [];
     for (const fid of allFolderIds) {
-      try { allFiles.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
+      try {
+        const r = await listDriveFilesRecursiveDetailed(fid, 3, 50);
+        allFiles.push(...r.files);
+        driveErrors.push(...r.errors);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[pe-audit] collectCandidateFiles searchAllFolders recursive list threw for ${fid}: ${message}`);
+        driveErrors.push({ folderId: fid, depth: 0, message });
+      }
     }
-    return allFiles;
+    return { files: allFiles, driveErrors };
   }
 
   // Recursive listing for doc items — PE source files routinely nest one
@@ -295,10 +319,18 @@ async function collectCandidateFiles(
   for (const prefix of item.driveFolders) {
     const fid = folderMap.get(prefix);
     if (fid) {
-      try { files.push(...await listDriveFilesRecursive(fid, 3, 50)); } catch {}
+      try {
+        const r = await listDriveFilesRecursiveDetailed(fid, 3, 50);
+        files.push(...r.files);
+        driveErrors.push(...r.errors);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[pe-audit] collectCandidateFiles doc-item recursive list threw for ${fid} (prefix=${prefix}, item=${item.id}): ${message}`);
+        driveErrors.push({ folderId: fid, depth: 0, message });
+      }
     }
   }
-  return files;
+  return { files, driveErrors };
 }
 
 async function downloadFileForVision(file: DriveGenericFile): Promise<VisionFileInput | null> {
@@ -831,9 +863,34 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
           return override;
         }
 
-        const candidates = await collectCandidateFiles(folderByPrefix, allFolderIds, item, installPhotos);
+        const { files: candidates, driveErrors } = await collectCandidateFiles(folderByPrefix, allFolderIds, item, installPhotos);
         if (candidates.length === 0) {
-          console.log(`[pe-audit] ${item.id}: 0 candidates (folders: ${item.isPhoto ? "photos" : item.searchAllFolders ? "all" : item.driveFolders.join(",")})`);
+          const folderTag = item.isPhoto ? "photos" : item.searchAllFolders ? "all" : item.driveFolders.join(",");
+          console.log(`[pe-audit] ${item.id}: 0 candidates (folders: ${folderTag})${driveErrors.length > 0 ? ` — ${driveErrors.length} drive errors` : ""}`);
+
+          // Distinguish "genuinely empty folder" from "Drive flaked during the
+          // recursive walk so we got 0 files". Surfacing as needs_review with
+          // an explanatory note prevents the silent-missing-on-flake failure
+          // mode that caused the planset to intermittently disappear.
+          if (driveErrors.length > 0) {
+            const firstError = driveErrors[0];
+            const statusNote = `Drive listing failed (${driveErrors.length} error${driveErrors.length === 1 ? "" : "s"}): ${firstError.message}`;
+            console.warn(`[pe-audit] ${item.id}: needs_review due to drive errors: ${driveErrors.map((e) => `${e.folderId}@${e.depth}: ${e.message}`).join(" | ")}`);
+            onEvent?.({
+              type: "progress",
+              data: { itemId: item.id, label: item.label, status: "needs_review", issues: [statusNote] },
+            });
+            return {
+              item,
+              status: "needs_review" as const,
+              statusNote,
+              visionResult: {
+                status: "needs_review" as const,
+                notes: statusNote,
+              },
+            };
+          }
+
           onEvent?.({
             type: "progress",
             data: { itemId: item.id, label: item.label, status: "missing" },
