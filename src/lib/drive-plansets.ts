@@ -353,6 +353,66 @@ export async function downloadDrivePdf(fileId: string): Promise<{ buffer: Buffer
 }
 
 // ---------------------------------------------------------------------------
+// DA (Design Approval) image lookup — "da" subfolder of the design folder
+// ---------------------------------------------------------------------------
+
+const DA_FOLDER_PATTERNS = [
+  /^da$/i,
+  /^design\s*approval$/i,
+];
+
+/**
+ * Find the "da" subfolder inside the design folder. Returns folder ID or null.
+ */
+export async function findDAFolder(designFolderId: string): Promise<string | null> {
+  const token = await getDriveToken();
+
+  const query = `'${designFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const fields = "files(id,name)";
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&pageSize=50` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as { files?: Array<{ id: string; name: string }> };
+  const folders = data.files ?? [];
+  const da = folders.find((f) => DA_FOLDER_PATTERNS.some((p) => p.test(f.name)));
+  return da?.id ?? null;
+}
+
+/**
+ * Pick the best DA layout file from a folder. Prefers PDFs (typical DA format),
+ * falls back to the largest image. The "panel layout" image is usually the
+ * largest file in the DA folder.
+ */
+export function pickBestDAFile(
+  pdfs: DrivePdfFile[],
+  images: DriveImageFile[],
+): { kind: "pdf"; file: DrivePdfFile } | { kind: "image"; file: DriveImageFile } | null {
+  // Prefer PDF — DA documents are usually 1-2 page PDFs from the design tool
+  if (pdfs.length > 0) {
+    return { kind: "pdf", file: pickLargest(pdfs) };
+  }
+  if (images.length > 0) {
+    const largest = images.reduce((best, f) => {
+      const bestSize = Number(best.size) || 0;
+      const fSize = Number(f.size) || 0;
+      return fSize > bestSize ? f : best;
+    }, images[0]);
+    return { kind: "image", file: largest };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Install / Construction Photos from Drive
 // ---------------------------------------------------------------------------
 
