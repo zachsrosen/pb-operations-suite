@@ -450,8 +450,8 @@ function isZuperCascadeEnabled(): boolean {
  *
  * Called inline after syncPropertyToZuper. No new cron job — runs as part of
  * the existing 15-min property sync cycle. Small fan-out (typically 1-3 jobs
- * per property) wrapped in Promise.allSettled so one job failure doesn't
- * block the rest.
+ * per property) processed sequentially; per-job errors are caught inside
+ * updateZuperJobCustomFields so one failure never blocks the rest.
  *
  * No-ops if POWERHUB_ZUPER_CASCADE_ENABLED !== "true" (independent flag from
  * the master POWERHUB_CROSSLINK_ENABLED — lets us validate HubSpot push at
