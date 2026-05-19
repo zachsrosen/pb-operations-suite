@@ -98,20 +98,20 @@ export async function GET(request: NextRequest) {
     );
 
     // -----------------------------------------------------------------------
-    // 4. Compute "Nearly Complete" — deals where only 1-2 docs are NOT_UPLOADED
-    //    (everything else is approved/uploaded/under review — just needs upload)
+    // 4. Compute "Nearly Complete" — deals where only 1-3 docs are
+    //    NOT_UPLOADED or ACTION_REQUIRED (needs action to finish)
     // -----------------------------------------------------------------------
     const nearlyComplete: NearlyCompleteDeal[] = [];
     for (const [dealId, docs] of dealDocs.entries()) {
-      const notUploaded = docs.filter((d) => d.status === "NOT_UPLOADED");
-      if (notUploaded.length >= 1 && notUploaded.length <= 3 && docs.length >= TOTAL_DOCS_PER_DEAL - 3) {
+      const blocking = docs.filter((d) => d.status === "NOT_UPLOADED" || d.status === "ACTION_REQUIRED");
+      if (blocking.length >= 1 && blocking.length <= 3 && docs.length >= TOTAL_DOCS_PER_DEAL - 3) {
         const approvedCount = docs.filter((d) => d.status === "APPROVED").length;
         nearlyComplete.push({
           dealId,
           dealName: dealNameMap.get(dealId) ?? null,
           approvedCount,
           totalDocs: TOTAL_DOCS_PER_DEAL,
-          missingDocs: notUploaded.map((d) => d.docName),
+          missingDocs: blocking.map((d) => d.docName),
         });
       }
     }
