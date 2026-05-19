@@ -2508,13 +2508,11 @@ export default function SiteSurveySchedulerPage() {
                                 if (seenJobUids.has(slot.zuperJobUid)) return false;
                                 seenJobUids.add(slot.zuperJobUid);
                               }
-                              // Only show if the job title indicates a pre-sale or external booking
+                              // Only show if the job title indicates a pre-sale booking.
+                              // Regular Site Survey jobs are already rendered as cyan cards above
+                              // via the events list — don't duplicate them as purple cards.
                               const title = (slot.projectName || "").toLowerCase();
-                              if (title.includes("pre-sale") || title.includes("pre sale")) return true;
-                              // Also show any booked slot not matched to an ops project
-                              return !events.some(ev =>
-                                ev.zuperJobUid && slot.zuperJobUid && ev.zuperJobUid === slot.zuperJobUid
-                              );
+                              return title.includes("pre-sale") || title.includes("pre sale");
                             });
                             // Filter by selected locations
                             const visibleBookings = unmatchedBookings.filter(slot => {
