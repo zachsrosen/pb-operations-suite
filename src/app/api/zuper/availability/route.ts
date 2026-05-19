@@ -266,6 +266,18 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     ],
     jobTypes: ["survey"],
   },
+  // One-off: Nick covering SLO on Wed 2026-05-20 for Babcock pre-sale (Jemma request)
+  {
+    name: "Nick Scarpellino",
+    location: "San Luis Obispo",
+    reportLocation: "San Luis Obispo",
+    timezone: "America/Los_Angeles",
+    schedule: [
+      { day: 3, startTime: "09:00", endTime: "12:00" }, // Wed 9-12pm PT
+    ],
+    jobTypes: ["survey"],
+    onlyDates: ["2026-05-20"],
+  },
 
   // Samuel Paro — mirrors former DPO slots
   {
