@@ -814,3 +814,32 @@ export async function updateTicket(
     return false;
   }
 }
+
+
+/**
+ * Update arbitrary properties on a HubSpot ticket.
+ * Used by the powerhub-crosslink module to push tesla_portal_url + tesla_site_id.
+ * Returns true on success, false on any failure (logs warning).
+ */
+export async function updateTicketProperties(
+  ticketId: string,
+  properties: Record<string, string | null>
+): Promise<boolean> {
+  try {
+    // Coerce nulls to empty strings (HubSpot pattern)
+    const coerced: Record<string, string> = {};
+    for (const [k, v] of Object.entries(properties)) {
+      coerced[k] = v == null ? "" : String(v);
+    }
+    await hubspotClient.crm.tickets.basicApi.update(ticketId, { properties: coerced });
+    return true;
+  } catch (err) {
+    const status = (err as { code?: number })?.code;
+    if (status === 404) {
+      console.warn(`[hubspot-tickets] Ticket ${ticketId} not found (404); skipping property update`);
+      return false;
+    }
+    console.error(`[hubspot-tickets] Failed to update ticket ${ticketId}:`, err);
+    return false;
+  }
+}

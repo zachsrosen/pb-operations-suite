@@ -1,6 +1,14 @@
 import { computePortalUrl } from "@/lib/tesla-powerhub";
-import { parseSteDateFromName, pickPrimarySite, resolvePrimarySite } from "@/lib/powerhub-crosslink";
+import {
+  parseSteDateFromName,
+  pickPrimarySite,
+  resolvePrimarySite,
+  pushToHubSpotForProperty,
+} from "@/lib/powerhub-crosslink";
 import { prisma } from "@/lib/db";
+import { updateDealProperty } from "@/lib/hubspot";
+import { updateTicketProperties } from "@/lib/hubspot-tickets";
+import { updateProperty as updateHubSpotProperty } from "@/lib/hubspot-property";
 
 jest.mock("@/lib/db", () => ({
   prisma: {
@@ -10,6 +18,16 @@ jest.mock("@/lib/db", () => ({
       update: jest.fn(),
     },
   },
+}));
+
+jest.mock("@/lib/hubspot", () => ({
+  updateDealProperty: jest.fn().mockResolvedValue(true),
+}));
+jest.mock("@/lib/hubspot-tickets", () => ({
+  updateTicketProperties: jest.fn().mockResolvedValue(true),
+}));
+jest.mock("@/lib/hubspot-property", () => ({
+  updateProperty: jest.fn().mockResolvedValue(undefined),
 }));
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
@@ -209,5 +227,95 @@ describe("resolvePrimarySite", () => {
 
     await expect(resolvePrimarySite("prop-1")).rejects.toThrow();
     expect(mockPrisma.powerhubSite.update).toHaveBeenCalledTimes(3); // maxAttempts = 3
+  });
+});
+
+describe("pushToHubSpotForProperty", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.POWERHUB_CROSSLINK_ENABLED = "true";
+  });
+
+  it("no-ops when feature flag is off", async () => {
+    process.env.POWERHUB_CROSSLINK_ENABLED = "false";
+
+    (mockPrisma.hubSpotPropertyCache.findUnique as jest.Mock).mockResolvedValue({
+      id: "prop-1",
+      hubspotObjectId: "hs-prop-1",
+      teslaPortalUrl: "https://x",
+      teslaSiteId: "abc",
+      dealLinks: [{ dealId: "deal-1" }],
+      ticketLinks: [{ ticketId: "ticket-1" }],
+    });
+
+    await pushToHubSpotForProperty("prop-1");
+
+    expect(updateHubSpotProperty).not.toHaveBeenCalled();
+    expect(updateDealProperty).not.toHaveBeenCalled();
+    expect(updateTicketProperties).not.toHaveBeenCalled();
+  });
+
+  it("pushes to Property, all Deals, and all Tickets when flag is on", async () => {
+    (mockPrisma.hubSpotPropertyCache.findUnique as jest.Mock).mockResolvedValue({
+      id: "prop-1",
+      hubspotObjectId: "hs-prop-1",
+      teslaPortalUrl: "https://gridlogic.tesla.com/sites/abc",
+      teslaSiteId: "abc",
+      dealLinks: [{ dealId: "deal-1" }, { dealId: "deal-2" }],
+      ticketLinks: [{ ticketId: "ticket-1" }],
+    });
+
+    await pushToHubSpotForProperty("prop-1");
+
+    expect(updateHubSpotProperty).toHaveBeenCalledWith("hs-prop-1", {
+      tesla_portal_url: "https://gridlogic.tesla.com/sites/abc",
+      tesla_site_id: "abc",
+    });
+    expect(updateDealProperty).toHaveBeenCalledTimes(2);
+    expect(updateDealProperty).toHaveBeenCalledWith("deal-1", {
+      tesla_portal_url: "https://gridlogic.tesla.com/sites/abc",
+      tesla_site_id: "abc",
+    });
+    expect(updateTicketProperties).toHaveBeenCalledWith("ticket-1", {
+      tesla_portal_url: "https://gridlogic.tesla.com/sites/abc",
+      tesla_site_id: "abc",
+    });
+  });
+
+  it("pushes nulls when teslaPortalUrl is cleared", async () => {
+    (mockPrisma.hubSpotPropertyCache.findUnique as jest.Mock).mockResolvedValue({
+      id: "prop-1",
+      hubspotObjectId: "hs-prop-1",
+      teslaPortalUrl: null,
+      teslaSiteId: null,
+      dealLinks: [{ dealId: "deal-1" }],
+      ticketLinks: [],
+    });
+
+    await pushToHubSpotForProperty("prop-1");
+
+    expect(updateHubSpotProperty).toHaveBeenCalledWith("hs-prop-1", {
+      tesla_portal_url: null,
+      tesla_site_id: null,
+    });
+    expect(updateDealProperty).toHaveBeenCalledWith("deal-1", {
+      tesla_portal_url: null,
+      tesla_site_id: null,
+    });
+  });
+
+  it("continues if one deal push fails", async () => {
+    (mockPrisma.hubSpotPropertyCache.findUnique as jest.Mock).mockResolvedValue({
+      id: "prop-1",
+      hubspotObjectId: "hs-prop-1",
+      teslaPortalUrl: "https://x",
+      teslaSiteId: "abc",
+      dealLinks: [{ dealId: "deal-1" }, { dealId: "deal-2" }],
+      ticketLinks: [],
+    });
+    (updateDealProperty as jest.Mock).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    await expect(pushToHubSpotForProperty("prop-1")).resolves.not.toThrow();
+    expect(updateDealProperty).toHaveBeenCalledTimes(2);
   });
 });

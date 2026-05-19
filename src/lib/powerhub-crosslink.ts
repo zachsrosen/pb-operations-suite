@@ -13,6 +13,15 @@
  */
 
 import { prisma } from "@/lib/db";
+import { updateDealProperty } from "@/lib/hubspot";
+import { updateTicketProperties } from "@/lib/hubspot-tickets";
+import { updateProperty as updateHubSpotProperty } from "@/lib/hubspot-property";
+
+const CROSSLINK_FLAG = "POWERHUB_CROSSLINK_ENABLED";
+
+function isCrosslinkEnabled(): boolean {
+  return process.env[CROSSLINK_FLAG] === "true";
+}
 
 export interface PrimarySiteCandidate {
   id: string;
@@ -181,4 +190,70 @@ async function retryOnUniqueConflict<T>(fn: () => Promise<T>, maxAttempts = 3): 
     }
   }
   throw lastErr;
+}
+
+/**
+ * Push tesla_portal_url + tesla_site_id to HubSpot Property + all linked
+ * Deals + all linked Tickets. Reads denormalized fields from
+ * HubSpotPropertyCache (which must be up to date — call resolvePrimarySite
+ * first if needed).
+ *
+ * No-ops if POWERHUB_CROSSLINK_ENABLED !== "true".
+ *
+ * Failures on individual deal/ticket updates are logged but don't stop the
+ * batch — partial-success is preferable to all-or-nothing rollback for
+ * idempotent property writes.
+ */
+export async function pushToHubSpotForProperty(propertyId: string): Promise<void> {
+  if (!isCrosslinkEnabled()) return;
+
+  const cache = await prisma.hubSpotPropertyCache.findUnique({
+    where: { id: propertyId },
+    include: { dealLinks: true, ticketLinks: true },
+  });
+  if (!cache) {
+    console.warn(`[powerhub-crosslink] Property ${propertyId} not found in cache; skipping push`);
+    return;
+  }
+
+  const props = {
+    tesla_portal_url: cache.teslaPortalUrl,
+    tesla_site_id: cache.teslaSiteId,
+  };
+
+  // 1. HubSpot Property object
+  try {
+    await updateHubSpotProperty(cache.hubspotObjectId, props);
+  } catch (err) {
+    console.error(
+      `[powerhub-crosslink] Failed to update HubSpot Property ${cache.hubspotObjectId}:`,
+      err
+    );
+  }
+
+  // 2. Deals — push in parallel with Promise.allSettled
+  const dealResults = await Promise.allSettled(
+    cache.dealLinks.map((link) => updateDealProperty(link.dealId, props))
+  );
+  const dealFailures = dealResults.filter(
+    (r) => r.status === "rejected" || (r.status === "fulfilled" && r.value === false)
+  ).length;
+  if (dealFailures > 0) {
+    console.warn(
+      `[powerhub-crosslink] ${dealFailures}/${cache.dealLinks.length} deal updates failed for property ${propertyId}`
+    );
+  }
+
+  // 3. Tickets — push in parallel with Promise.allSettled
+  const ticketResults = await Promise.allSettled(
+    cache.ticketLinks.map((link) => updateTicketProperties(link.ticketId, props))
+  );
+  const ticketFailures = ticketResults.filter(
+    (r) => r.status === "rejected" || (r.status === "fulfilled" && r.value === false)
+  ).length;
+  if (ticketFailures > 0) {
+    console.warn(
+      `[powerhub-crosslink] ${ticketFailures}/${cache.ticketLinks.length} ticket updates failed for property ${propertyId}`
+    );
+  }
 }
