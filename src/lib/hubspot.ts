@@ -442,6 +442,11 @@ export interface Project {
   openSolarId: string | null;       // os_project_id
   zuperUid: string | null;          // zuper_site_survey_uid
   hubspotContactId: string | null; // Primary associated contact ID (for Zoho customer auto-match)
+
+  // Customer sentiment (from HubSpot deal properties)
+  customerSentimentScore: number | null;
+  mostRecentSentimentScore: number | null;
+  notesLastContacted: string | null;
 }
 
 export interface LineItem {
@@ -726,6 +731,11 @@ const DEAL_PROPERTIES = [
   "disco__reco",
   "interior_access",
   "site_survey_documents",
+
+  // Customer sentiment
+  "customer_sentiment_score",
+  "most_recent_sentiment_score",
+  "notes_last_contacted",
 ];
 
 const MS_PER_DAY = 86_400_000;
@@ -1103,6 +1113,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     openSolarId: String(deal.os_project_id || "").trim() || null,
     zuperUid: String(deal.zuper_site_survey_uid || "").trim() || null,
     hubspotContactId: null, // populated by fetchProjectById after transform
+
+    // Customer sentiment
+    customerSentimentScore: deal.customer_sentiment_score ? parseFloat(String(deal.customer_sentiment_score)) || null : null,
+    mostRecentSentimentScore: deal.most_recent_sentiment_score ? parseFloat(String(deal.most_recent_sentiment_score)) || null : null,
+    notesLastContacted: deal.notes_last_contacted ? String(deal.notes_last_contacted) : null,
   };
 }
 

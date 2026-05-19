@@ -11,6 +11,8 @@ import type {
   SectionHealth,
   PipelineSection,
   PreconstructionSection,
+  CustomerSuccessSection,
+  SentimentBucket,
   SchedulingSection,
   OperationsSection,
   InspectionsSection,
@@ -22,6 +24,10 @@ import { resolveDashboardGroup } from "./dashboard-location-groups";
 import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
 import { DEFAULT_TARGETS } from "./goals-pipeline-types";
+import {
+  fetchFiveStarReviewsForMonth,
+  resolveReviewLocations,
+} from "./hubspot-customer-reviews";
 import { prisma } from "./db";
 import { appCache, CACHE_KEYS } from "./cache";
 
@@ -151,6 +157,15 @@ export function scoreAgainstGoal(
 }
 
 /**
+ * Sentiment score health: >= 75 green, >= 50 yellow, else red.
+ */
+export function scoreSentiment(avgScore: number): HealthStatus {
+  if (avgScore >= 75) return "green";
+  if (avgScore >= 50) return "yellow";
+  return "red";
+}
+
+/**
  * Constructs a HeroMetric with automatic delta calculation.
  */
 export function buildHeroMetric(
@@ -257,6 +272,27 @@ export async function getShopHealthData(
     .filter((p) => isInWeek(p.constructionCompleteDate, priorWeekStart))
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 
+  // ── Customer Success section ──
+  const customerSuccess = await computeCustomerSuccess(
+    locationProjects,
+    group,
+    weekStart
+  );
+
+  // Compute prior-week avg sentiment for hero delta
+  const priorActive = locationProjects.filter((p) => p.isActive);
+  const priorSentimentScores = priorActive
+    .map((p) => p.customerSentimentScore)
+    .filter((s): s is number => s !== null && !isNaN(s));
+  const priorAvgSentiment =
+    priorSentimentScores.length > 0
+      ? Math.round(
+          (priorSentimentScores.reduce((a, b) => a + b, 0) /
+            priorSentimentScores.length) *
+            10
+        ) / 10
+      : null;
+
   const heroes = buildHeroes(
     pipeline,
     operations,
@@ -269,7 +305,9 @@ export async function getShopHealthData(
     priorPreconstruction,
     goals,
     weeklyRevenueActual,
-    priorWeekRevenueActual
+    priorWeekRevenueActual,
+    customerSuccess.avgSentimentScore,
+    priorAvgSentiment
   );
 
   // Compute per-section health indicators (worst-case of key metrics)
@@ -287,6 +325,7 @@ export async function getShopHealthData(
     scheduling,
     operations,
     inspections,
+    customerSuccess,
     sectionHealth,
     bottleneck,
     lastUpdated: new Date().toISOString(),
@@ -460,14 +499,6 @@ function computePreconstruction(
     avgDaysSaleToPermit,
     totalReadyJobs: rtb.length,
     jobsAgingOver2Weeks: agingProjects.length,
-    customerExperience: {
-      avgResponseDays: null, // V1: needs HubSpot engagement timeline API
-      proactiveUpdatePct: null, // V1: needs HubSpot engagement timeline API
-      avgIssueResolutionDays: null,
-      changeOrdersPerJob: null,
-      escalationCount: null,
-      escalationAvgAgeDays: null,
-    },
   };
 }
 
@@ -565,6 +596,150 @@ function computeInspections(
   };
 }
 
+// ─── Sentiment Distribution Buckets ──────────────────────────────────────────
+
+const SENTIMENT_BUCKETS: Omit<SentimentBucket, "count" | "pct">[] = [
+  { label: "At Risk", min: 0, max: 25, color: "bg-red-500" },
+  { label: "Needs Attention", min: 26, max: 50, color: "bg-orange-500" },
+  { label: "Neutral", min: 51, max: 75, color: "bg-amber-400" },
+  { label: "Happy", min: 76, max: 100, color: "bg-emerald-500" },
+];
+
+/**
+ * Compute Customer Success section from deal sentiment data and 5-star reviews.
+ */
+async function computeCustomerSuccess(
+  locationProjects: Project[],
+  group: DashboardLocationGroup,
+  weekStart: Date
+): Promise<CustomerSuccessSection> {
+  const activeDeals = locationProjects.filter((p) => p.isActive);
+
+  // ── Sentiment from deal properties ──
+  const sentimentScores = activeDeals
+    .map((p) => p.customerSentimentScore)
+    .filter((s): s is number => s !== null && !isNaN(s));
+
+  const avgSentimentScore =
+    sentimentScores.length > 0
+      ? Math.round(
+          (sentimentScores.reduce((a, b) => a + b, 0) /
+            sentimentScores.length) *
+            10
+        ) / 10
+      : null;
+
+  // ── Avg days since last contact ──
+  const now = new Date();
+  const daysSinceContact = activeDeals
+    .map((p) => {
+      if (!p.notesLastContacted) return null;
+      const last = new Date(p.notesLastContacted);
+      if (isNaN(last.getTime())) return null;
+      return Math.max(0, Math.round((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)));
+    })
+    .filter((d): d is number => d !== null);
+
+  const avgDaysSinceContact =
+    daysSinceContact.length > 0
+      ? Math.round(
+          (daysSinceContact.reduce((a, b) => a + b, 0) /
+            daysSinceContact.length) *
+            10
+        ) / 10
+      : null;
+
+  // ── Sentiment distribution (most_recent_sentiment_score) ──
+  const recentScores = activeDeals
+    .map((p) => p.mostRecentSentimentScore)
+    .filter((s): s is number => s !== null && !isNaN(s));
+
+  const distribution: SentimentBucket[] = SENTIMENT_BUCKETS.map((bucket) => {
+    const count = recentScores.filter(
+      (s) => s >= bucket.min && s <= bucket.max
+    ).length;
+    return {
+      ...bucket,
+      count,
+      pct:
+        recentScores.length > 0
+          ? Math.round((count / recentScores.length) * 1000) / 10
+          : 0,
+    };
+  });
+
+  // ── 5-star reviews (shared cache with Goals dashboard) ──
+  const month = weekStart.getMonth() + 1;
+  const year = weekStart.getFullYear();
+  let reviewCount = 0;
+  let reviewTarget = 0;
+
+  try {
+    const reviewCacheKey = CACHE_KEYS.FIVE_STAR_REVIEWS(`${year}-${month}`);
+    const { data: reviewLocationCounts } =
+      await appCache.getOrFetch<Record<string, number>>(
+        reviewCacheKey,
+        async () => {
+          const allReviews = await fetchFiveStarReviewsForMonth(month, year);
+          const reviewLocations = await resolveReviewLocations(allReviews);
+          const counts: Record<string, number> = {};
+          for (const loc of reviewLocations.values()) {
+            counts[loc] = (counts[loc] || 0) + 1;
+          }
+          return counts;
+        },
+        false
+      );
+
+    // Sum reviews across all canonical locations in this dashboard group
+    for (const loc of group.canonicals) {
+      reviewCount += reviewLocationCounts[loc] || 0;
+    }
+  } catch (err) {
+    console.error("[shop-health] Failed to fetch 5-star reviews:", err);
+  }
+
+  // Review target: sum across canonical locations from OfficeGoal or defaults
+  try {
+    const goalRecords = await prisma.officeGoal.findMany({
+      where: {
+        location: { in: group.canonicals },
+        metric: "five_star_reviews",
+        month,
+        year: weekStart.getFullYear(),
+      },
+    });
+    if (goalRecords.length > 0) {
+      reviewTarget = goalRecords.reduce((sum, g) => sum + g.target, 0);
+    }
+  } catch {
+    // Fall through to defaults
+  }
+
+  if (reviewTarget === 0) {
+    for (const loc of group.canonicals) {
+      const defaults = DEFAULT_TARGETS[loc] ?? DEFAULT_TARGETS["Westminster"];
+      reviewTarget += defaults.five_star_reviews;
+    }
+  }
+
+  return {
+    avgSentimentScore,
+    fiveStarReviewsMTD: reviewCount,
+    fiveStarReviewsTarget: reviewTarget,
+    npsCsat: null,
+    avgDaysSinceContact,
+    proactiveUpdatePct: null,
+    openEscalations: null,
+    avgEscalationAge: null,
+    avgResponseTime: null,
+    avgResolutionTime: null,
+    changeOrdersPerJob: null,
+    activeServiceTickets: null,
+    sentimentDistribution: distribution,
+  };
+}
+
 // ─── Hero Metric Assembly ────────────────────────────────────────────────────
 
 function buildHeroes(
@@ -579,7 +754,9 @@ function buildHeroes(
   priorPreconstruction: PreconstructionSection,
   goals: ShopHealthGoals,
   weeklyRevenueActual: number,
-  priorWeekRevenueActual: number
+  priorWeekRevenueActual: number,
+  avgSentiment: number | null,
+  priorAvgSentiment: number | null
 ): ShopHealthHeroes {
   return {
     weeklyRevenue: buildHeroMetric(
@@ -590,6 +767,12 @@ function buildHeroes(
         goals.weeklyRevenueTarget
       ),
       Math.round(goals.weeklyRevenueTarget)
+    ),
+    sentiment: buildHeroMetric(
+      avgSentiment ?? 0,
+      priorAvgSentiment,
+      avgSentiment !== null ? scoreSentiment(avgSentiment) : "red",
+      75 // target: 75 out of 100
     ),
     backlogWeeks: buildHeroMetric(
       pipeline.backlogInWeeks,
@@ -668,6 +851,7 @@ function computeSectionHealth(
         operations.crewUtilizationPct >= 80 ? "yellow" : "red"
     ),
     inspections: heroes.ptosReceived.health,
+    customerSuccess: heroes.sentiment.health,
   };
 }
 
