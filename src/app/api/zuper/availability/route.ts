@@ -1060,6 +1060,10 @@ export async function GET(request: NextRequest) {
 
     // Track which slot keys have been accounted for
     const matchedKeys = new Set<string>();
+    // Track Zuper job UIDs already emitted as booked — prevents duplicate cards
+    // when a multi-location surveyor (e.g. Nick covers SLO + Camarillo) has
+    // available slots in BOTH offices at the same time.
+    const emittedJobUids = new Set<string>();
 
     // First pass: check Zuper bookings against available slots
     day.availableSlots = day.availableSlots.filter((slot) => {
@@ -1068,6 +1072,11 @@ export async function GET(request: NextRequest) {
       const zuperBooking = zuperBookings.get(key);
       if (zuperBooking) {
         matchedKeys.add(key);
+        // Skip if this Zuper job was already emitted via another location's slot
+        if (zuperBooking.zuperJobUid && emittedJobUids.has(zuperBooking.zuperJobUid)) {
+          return false; // Remove duplicate slot from available but don't add to booked again
+        }
+        if (zuperBooking.zuperJobUid) emittedJobUids.add(zuperBooking.zuperJobUid);
         booked.push({
           start_time: slot.start_time,
           end_time: slot.end_time,
