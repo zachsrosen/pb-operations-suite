@@ -230,6 +230,8 @@ export const queryKeys = {
     root: ["propertyHub"] as const,
     tab: (propertyId: string, tab: string) =>
       ["propertyHub", propertyId, tab] as const,
+    counts: (propertyId: string) =>
+      ["propertyHub", propertyId, "counts"] as const,
   },
   propertyPermits: {
     root: ["propertyPermits"] as const,

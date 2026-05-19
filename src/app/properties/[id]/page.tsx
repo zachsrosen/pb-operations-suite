@@ -15,6 +15,7 @@ import PropertyPhotosTab from "@/components/property/PropertyPhotosTab";
 import PropertyMonitoringTab from "@/components/property/PropertyMonitoringTab";
 import type { PropertyDetail } from "@/lib/property-detail";
 import type { HubCounts, HubTab } from "@/lib/property-hub";
+import { queryKeys } from "@/lib/query-keys";
 
 const VALID_TABS: HubTab[] = [
   "activity",
@@ -56,7 +57,7 @@ export default function PropertyHubPage() {
 
   // Counts power the tab badges (e.g. monitoring alert badge)
   const { data: counts } = useQuery<HubCounts>({
-    queryKey: ["propertyHubCounts", id],
+    queryKey: queryKeys.propertyHub.counts(id),
     queryFn: async () => {
       const res = await fetch(`/api/properties/${id}/hub?tab=counts`);
       if (!res.ok) throw new Error("Failed to load property counts");
