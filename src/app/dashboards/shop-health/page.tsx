@@ -148,7 +148,7 @@ export default function ShopHealthDashboard() {
 
           {/* Pipeline */}
           <SectionCard title="Pipeline" icon="📊" health={data.sectionHealth.pipeline}>
-            <PipelineSectionContent data={data.pipeline} />
+            <PipelineSectionContent data={data.pipeline} goals={data.goals} />
           </SectionCard>
 
           {/* Preconstruction */}

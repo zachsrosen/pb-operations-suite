@@ -250,6 +250,14 @@ export async function getShopHealthData(
     priorWeekStart
   );
 
+  // Compute weekly revenue = sum of deal amounts for installs completed this week
+  const weeklyRevenueActual = locationProjects
+    .filter((p) => isInWeek(p.constructionCompleteDate, weekStart))
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  const priorWeekRevenueActual = locationProjects
+    .filter((p) => isInWeek(p.constructionCompleteDate, priorWeekStart))
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+
   const heroes = buildHeroes(
     pipeline,
     operations,
@@ -260,7 +268,9 @@ export async function getShopHealthData(
     priorOperations,
     priorInspections,
     priorPreconstruction,
-    goals
+    goals,
+    weeklyRevenueActual,
+    priorWeekRevenueActual
   );
 
   // Compute per-section health indicators (worst-case of key metrics)
@@ -557,10 +567,20 @@ function buildHeroes(
   priorOperations: OperationsSection,
   priorInspections: InspectionsSection,
   priorPreconstruction: PreconstructionSection,
-  goals: ShopHealthGoals
+  goals: ShopHealthGoals,
+  weeklyRevenueActual: number,
+  priorWeekRevenueActual: number
 ): ShopHealthHeroes {
   return {
-    leads: null, // deferred — requires marketing data source
+    weeklyRevenue: buildHeroMetric(
+      weeklyRevenueActual,
+      priorWeekRevenueActual,
+      scoreAgainstGoal(
+        weeklyRevenueActual,
+        goals.weeklyRevenueTarget
+      ),
+      Math.round(goals.weeklyRevenueTarget)
+    ),
     backlogWeeks: buildHeroMetric(
       pipeline.backlogInWeeks,
       priorPipeline.backlogInWeeks,

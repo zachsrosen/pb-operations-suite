@@ -20,26 +20,27 @@ const HEALTH_LABEL: Record<HealthStatus, string> = {
   red: 'text-red-400',
 };
 
+/** Format a number as compact dollars: $291K, $1.3M, etc. */
+function formatCompactDollars(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}K`;
+  return `$${Math.round(value).toLocaleString()}`;
+}
+
 function HeroCard({
   label,
   metric,
-  deferred,
   icon,
+  currency,
 }: {
   label: string;
-  metric: HeroMetric | null;
-  deferred?: boolean;
+  metric: HeroMetric;
   icon: string;
+  /** When true, format value/target/delta as compact dollars */
+  currency?: boolean;
 }) {
-  if (deferred || !metric) {
-    return (
-      <div className="bg-surface rounded-xl border border-border p-5 flex flex-col items-center justify-center min-h-[140px] opacity-40">
-        <span className="text-lg mb-1">{icon}</span>
-        <span className="text-sm text-muted font-medium">{label}</span>
-        <span className="text-xs text-muted mt-1 italic">Coming soon</span>
-      </div>
-    );
-  }
+  const formatVal = (v: number) =>
+    currency ? formatCompactDollars(v) : (v % 1 !== 0 ? v.toFixed(1) : String(v));
 
   return (
     <div
@@ -49,8 +50,8 @@ function HeroCard({
       <span className={`text-xs font-semibold uppercase tracking-wider mb-2 ${HEALTH_LABEL[metric.health]}`}>
         {label}
       </span>
-      <span className="text-4xl font-bold text-foreground tabular-nums tracking-tight">
-        {metric.value % 1 !== 0 ? metric.value.toFixed(1) : metric.value}
+      <span className={`font-bold text-foreground tabular-nums tracking-tight ${currency ? 'text-2xl' : 'text-4xl'}`}>
+        {formatVal(metric.value)}
       </span>
       {metric.target !== null && (
         <div className="flex items-center gap-1 mt-1.5">
@@ -63,7 +64,7 @@ function HeroCard({
               style={{ width: `${Math.min((metric.value / metric.target) * 100, 100)}%` }}
             />
           </div>
-          <span className="text-xs text-muted tabular-nums">/ {metric.target}</span>
+          <span className="text-xs text-muted tabular-nums">/ {formatVal(metric.target)}</span>
         </div>
       )}
       {metric.delta !== null && (
@@ -78,7 +79,7 @@ function HeroCard({
         >
           {metric.delta > 0 ? '▲ ' : metric.delta < 0 ? '▼ ' : ''}
           {metric.delta !== 0
-            ? (Math.abs(metric.delta) % 1 !== 0 ? Math.abs(metric.delta).toFixed(1) : Math.abs(metric.delta))
+            ? (currency ? formatCompactDollars(Math.abs(metric.delta)) : (Math.abs(metric.delta) % 1 !== 0 ? Math.abs(metric.delta).toFixed(1) : String(Math.abs(metric.delta))))
             : '–'} vs prior wk
         </span>
       )}
@@ -89,7 +90,7 @@ function HeroCard({
 export function HeroMetrics({ heroes }: { heroes: ShopHealthHeroes }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-      <HeroCard label="Leads" metric={null} deferred icon="📊" />
+      <HeroCard label="Revenue" metric={heroes.weeklyRevenue} icon="💰" currency />
       <HeroCard label="Backlog" metric={heroes.backlogWeeks} icon="📋" />
       <HeroCard label="Ready to Build" metric={heroes.readyToBuild} icon="🔧" />
       <HeroCard label="Scheduled" metric={heroes.scheduledInstalls} icon="📅" />

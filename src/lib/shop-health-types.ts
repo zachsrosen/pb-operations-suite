@@ -62,7 +62,7 @@ export interface InspectionsSection {
 }
 
 export interface ShopHealthHeroes {
-  leads: HeroMetric | null; // null = deferred
+  weeklyRevenue: HeroMetric;
   backlogWeeks: HeroMetric;
   readyToBuild: HeroMetric;
   scheduledInstalls: HeroMetric;
