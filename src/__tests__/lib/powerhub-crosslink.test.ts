@@ -1,12 +1,17 @@
 import { computePortalUrl } from "@/lib/tesla-powerhub";
 
 describe("computePortalUrl", () => {
-  const originalEnv = process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE;
+  // Capture per-test, not at module load — protects against ordering with
+  // sibling tests that also mutate this env var.
+  let savedTemplate: string | undefined;
+  beforeEach(() => {
+    savedTemplate = process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE;
+  });
   afterEach(() => {
-    if (originalEnv === undefined) {
+    if (savedTemplate === undefined) {
       delete process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE;
     } else {
-      process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE = originalEnv;
+      process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE = savedTemplate;
     }
   });
 

@@ -399,5 +399,5 @@ export function computePortalUrl(siteId: string): string | null {
   const template =
     process.env.TESLA_POWERHUB_PORTAL_URL_TEMPLATE ||
     "https://gridlogic.tesla.com/sites/{siteId}";
-  return template.replace("{siteId}", encodeURIComponent(trimmed));
+  return template.replaceAll("{siteId}", encodeURIComponent(trimmed));
 }
