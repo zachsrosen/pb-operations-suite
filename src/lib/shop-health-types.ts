@@ -22,12 +22,22 @@ export interface PipelineSection {
 }
 
 export interface PreconstructionSection {
+  // Pipeline snapshot (active jobs at each stage)
   jobsInDesign: number;
   jobsSubmittedForPermit: number;
-  permitsApprovedThisWeek: number;
-  avgDaysSaleToPermit: number | null;
   totalReadyJobs: number;
   jobsAgingOver2Weeks: number;
+
+  // Weekly throughput (milestone events this week)
+  surveysCompletedThisWeek: number;
+  dasApprovedThisWeek: number;
+  permitsIssuedThisWeek: number;
+  icApprovedThisWeek: number;
+
+  // Cycle times (averages across recent completions)
+  avgDaysSaleToPermit: number | null;
+  avgDesignTurnaroundDays: number | null;
+  avgPermitTurnaroundDays: number | null;
 }
 
 export interface SentimentBucket {

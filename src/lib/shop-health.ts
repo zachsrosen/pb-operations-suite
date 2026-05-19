@@ -469,20 +469,59 @@ function computePreconstruction(
   );
   const rtb = active.filter((p) => RTB_STAGES.includes(p.stage));
 
-  const permitsApproved = projects.filter(
+  // ── Weekly throughput (milestone events this week) ──
+  const surveysCompletedThisWeek = projects.filter(
+    (p) => isInWeek(p.siteSurveyCompletionDate, weekStart)
+  ).length;
+
+  const dasApprovedThisWeek = projects.filter(
+    (p) => isInWeek(p.designApprovalDate, weekStart)
+  ).length;
+
+  const permitsIssuedThisWeek = projects.filter(
+    (p) => isInWeek(p.permitIssueDate, weekStart)
+  ).length;
+
+  const icApprovedThisWeek = projects.filter(
+    (p) => isInWeek(p.interconnectionApprovalDate, weekStart)
+  ).length;
+
+  // ── Cycle times (averages from recent completions) ──
+  // Avg days from contract close to permit issue
+  const permitsIssued = projects.filter(
     (p) => p.permitIssueDate && isInWeek(p.permitIssueDate, weekStart)
   );
-
-  // Average days from contract close to permit approval
-  const daysToPermit = permitsApproved
+  const daysToPermit = permitsIssued
     .filter((p) => p.closeDate && p.permitIssueDate)
     .map((p) => daysBetween(p.closeDate!, p.permitIssueDate!))
-    .filter((d) => !isNaN(d));
+    .filter((d) => !isNaN(d) && d >= 0);
   const avgDaysSaleToPermit =
     daysToPermit.length > 0
       ? Math.round(
           daysToPermit.reduce((a, b) => a + b, 0) / daysToPermit.length
         )
+      : null;
+
+  // Avg design turnaround (design start → design completion)
+  const designCompleted = projects.filter(
+    (p) => p.designCompletionDate && p.designStartDate
+  );
+  const designDays = designCompleted
+    .map((p) => daysBetween(p.designStartDate!, p.designCompletionDate!))
+    .filter((d) => !isNaN(d) && d >= 0);
+  const avgDesignTurnaroundDays =
+    designDays.length > 0
+      ? Math.round(designDays.reduce((a, b) => a + b, 0) / designDays.length)
+      : null;
+
+  // Avg permit turnaround (permit submit → permit issue)
+  const permitDays = permitsIssued
+    .filter((p) => p.permitSubmitDate && p.permitIssueDate)
+    .map((p) => daysBetween(p.permitSubmitDate!, p.permitIssueDate!))
+    .filter((d) => !isNaN(d) && d >= 0);
+  const avgPermitTurnaroundDays =
+    permitDays.length > 0
+      ? Math.round(permitDays.reduce((a, b) => a + b, 0) / permitDays.length)
       : null;
 
   // Projects stuck in precon stages for >14 days
@@ -495,10 +534,15 @@ function computePreconstruction(
   return {
     jobsInDesign: inDesign.length,
     jobsSubmittedForPermit: inPermitting.length,
-    permitsApprovedThisWeek: permitsApproved.length,
-    avgDaysSaleToPermit,
     totalReadyJobs: rtb.length,
     jobsAgingOver2Weeks: agingProjects.length,
+    surveysCompletedThisWeek,
+    dasApprovedThisWeek,
+    permitsIssuedThisWeek,
+    icApprovedThisWeek,
+    avgDaysSaleToPermit,
+    avgDesignTurnaroundDays,
+    avgPermitTurnaroundDays,
   };
 }
 
