@@ -188,7 +188,8 @@
     { "path": "/api/cron/pe-api-sync", "schedule": "0 0-1,13-23 * * *" },
     { "path": "/api/cron/pe-scraper-sync", "schedule": "30 13,20 * * 1-5" },
     { "path": "/api/cron/shovels-enrich", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/zuper-property-sync", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/zuper-property-sync", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/property-override", "schedule": "*/3 * * * *" }
   ],
   "redirects": [
     {
