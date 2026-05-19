@@ -370,6 +370,7 @@ export class ZuperClient {
       }
 
       if (!response.ok) {
+        console.error(`[zuper] HTTP ${response.status} error for ${endpoint}:`, JSON.stringify(data));
         return {
           type: "error",
           error: data?.message || data?.error || `HTTP ${response.status}`,
@@ -1946,14 +1947,19 @@ export async function createJobFromProject(project: {
   };
 
   // Determine job type based on project
-  let jobType: string = JOB_TYPES.SOLAR;
-  const types = project.projectType?.toLowerCase() || "";
-  if (types.includes("battery") && types.includes("solar")) {
-    jobType = JOB_TYPES.SOLAR_BATTERY;
-  } else if (types.includes("battery")) {
-    jobType = JOB_TYPES.BATTERY;
-  } else if (types.includes("ev") || types.includes("charger")) {
-    jobType = JOB_TYPES.EV_CHARGER;
+  // Pre-sale surveys use a different category that may not have installation
+  // job types configured — omit job_type to let Zuper use the category default.
+  let jobType: string | undefined;
+  if (schedule.type !== "pre-sale-survey") {
+    jobType = JOB_TYPES.SOLAR;
+    const types = project.projectType?.toLowerCase() || "";
+    if (types.includes("battery") && types.includes("solar")) {
+      jobType = JOB_TYPES.SOLAR_BATTERY;
+    } else if (types.includes("battery")) {
+      jobType = JOB_TYPES.BATTERY;
+    } else if (types.includes("ev") || types.includes("charger")) {
+      jobType = JOB_TYPES.EV_CHARGER;
+    }
   }
 
   // Calculate schedule times
@@ -2062,7 +2068,8 @@ export async function createJobFromProject(project: {
   let customerUid: string | undefined;
   try {
     const nameParts = project.name.split(" | ");
-    const rawCustomerName = (project.customerName || (nameParts.length >= 2 ? nameParts[1] : nameParts[0]) || "").trim();
+    // nameParts[0] is the customer name (e.g. "Babcock, Bryan"), nameParts[1] is the address
+    const rawCustomerName = (project.customerName || nameParts[0] || "").trim();
     const { firstName, lastName } = splitCustomerName(rawCustomerName);
     const searchQueries = [...new Set([
       rawCustomerName,
@@ -2119,7 +2126,7 @@ export async function createJobFromProject(project: {
   const job: ZuperJob = {
     job_title: `${categoryNameMap[schedule.type]} - ${project.name}`,
     job_category: categoryUidMap[schedule.type],
-    job_type: jobType,
+    ...(jobType && { job_type: jobType }),
     job_priority: "MEDIUM",
     scheduled_start_time: startDateTime,
     scheduled_end_time: endDateTime,
