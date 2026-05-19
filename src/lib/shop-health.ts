@@ -8,6 +8,7 @@ import type {
   ShopHealthData,
   ShopHealthHeroes,
   ShopHealthGoals,
+  SectionHealth,
   PipelineSection,
   PreconstructionSection,
   SchedulingSection,
@@ -16,10 +17,11 @@ import type {
   ShopHealthBottleneckEntry,
 } from "./shop-health-types";
 import type { Project } from "./hubspot";
-import { getGoalsForGroup } from "./office-performance";
+import type { DashboardLocationGroup } from "./dashboard-location-groups";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
 import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
+import { CREWS_CONFIG } from "./executive-shared";
 import { prisma } from "./db";
 import { appCache, CACHE_KEYS } from "./cache";
 
@@ -201,19 +203,12 @@ export async function getShopHealthData(
   const priorWeekStart = subWeeks(weekStart, 1);
   const weekEndDate = getWeekEnd(weekStart);
 
-  // Fetch goals (lightweight DB query) and raw projects in parallel.
-  // Goals only need 2 numbers from the OfficeGoal table — NOT the full
-  // getOfficePerformanceData which triggers 10+ HubSpot/Zuper API calls.
-  // Projects are cached with request coalescing so concurrent calls from the
-  // overview endpoint (4 location groups in parallel) share a single HubSpot
-  // fetch instead of each hammering the API and triggering 429 rate limits.
-  const now = new Date();
-  const [goalData, { data: allProjects }] = await Promise.all([
-    getGoalsForGroup(group.canonicals, now.getMonth() + 1, now.getFullYear()),
-    appCache.getOrFetch(CACHE_KEYS.PROJECTS_ACTIVE, () =>
-      fetchAllProjects({ activeOnly: true })
-    ),
-  ]);
+  // Fetch raw projects (cached with request coalescing so concurrent calls
+  // from the overview endpoint share a single HubSpot fetch).
+  const { data: allProjects } = await appCache.getOrFetch(
+    CACHE_KEYS.PROJECTS_ACTIVE,
+    () => fetchAllProjects({ activeOnly: true })
+  );
 
   // Filter to this location group's canonical locations
   const canonicalSet = new Set<string>(group.canonicals);
@@ -222,7 +217,10 @@ export async function getShopHealthData(
     return normalized !== null && canonicalSet.has(normalized);
   });
 
-  const goals = computeGoalsFromRaw(goalData);
+  // Goals derived from CREWS_CONFIG (actual crew capacity) per the spec.
+  // The OfficeGoal table has unreliable defaults (12/month for every shop);
+  // CREWS_CONFIG has real per-location monthly_capacity values.
+  const goals = computeGoalsFromCrewConfig(group);
 
   // Compute sections for current and prior week
   const pipeline = computePipeline(locationProjects, weekStart);
@@ -259,6 +257,9 @@ export async function getShopHealthData(
     goals
   );
 
+  // Compute per-section health indicators (worst-case of key metrics)
+  const sectionHealth = computeSectionHealth(heroes, pipeline, scheduling, operations);
+
   const bottleneck = await getBottleneckForWeek(group.label, weekStart);
 
   return {
@@ -271,6 +272,7 @@ export async function getShopHealthData(
     scheduling,
     operations,
     inspections,
+    sectionHealth,
     bottleneck,
     lastUpdated: new Date().toISOString(),
     goals,
@@ -279,9 +281,23 @@ export async function getShopHealthData(
 
 // ─── Section Computation Helpers ─────────────────────────────────────────────
 
-function computeGoalsFromRaw(goalData: Record<string, number>): ShopHealthGoals {
-  const monthlyInstalls = goalData.installs_completed ?? 0;
-  const monthlyInspections = goalData.inspections_completed ?? 0;
+/**
+ * Derive install/inspection goals from CREWS_CONFIG monthly_capacity.
+ * For multi-location groups (e.g. California = SLO + Camarillo), sum capacities.
+ * Inspection goals default to ~80% of install capacity (most installs need inspection).
+ */
+function computeGoalsFromCrewConfig(group: DashboardLocationGroup): ShopHealthGoals {
+  let monthlyInstalls = 0;
+  for (const canonical of group.canonicals) {
+    const config = CREWS_CONFIG[canonical];
+    if (config) {
+      monthlyInstalls += config.monthly_capacity;
+    }
+  }
+  // Fallback if no CREWS_CONFIG entry exists
+  if (monthlyInstalls === 0) monthlyInstalls = 12;
+
+  const monthlyInspections = Math.round(monthlyInstalls * 0.8);
   return {
     monthlyInstalls,
     weeklyInstalls: Math.round(monthlyInstalls / 4.3),
@@ -396,6 +412,9 @@ function computeScheduling(
     isWithinDays(p.constructionScheduleDate, 28)
   ).length;
 
+  // Spec: "% Crew Capacity Filled = Scheduled installs for next 2 weeks /
+  // (crew count × 2 weeks of workdays)". Use weeklyInstalls * 2 as the
+  // 2-week capacity denominator.
   const twoWeekCapacity = goals.weeklyInstalls * 2;
   const crewCapacityFilledPct =
     twoWeekCapacity > 0
@@ -507,10 +526,12 @@ function buildHeroes(
       goals.weeklyInstalls * 2
     ),
     scheduledInstalls: buildHeroMetric(
-      scheduling.scheduledNext2Weeks,
+      // Spec: "Scheduled Installs (2-4 wk)" = deals with install dates in
+      // the 14-28 day window. This is a forward-looking pipeline indicator.
+      scheduling.scheduledNext4Weeks - scheduling.scheduledNext2Weeks,
       null,
       scoreScheduledInstalls(
-        scheduling.scheduledNext2Weeks,
+        scheduling.scheduledNext4Weeks - scheduling.scheduledNext2Weeks,
         goals.weeklyInstalls * 2
       ),
       goals.weeklyInstalls * 2
@@ -530,6 +551,42 @@ function buildHeroes(
       ),
       goals.weeklyInspections
     ),
+  };
+}
+
+// ─── Section Health ─────────────────────────────────────────────────────────
+
+/** Pick the worst health status from a list (red > yellow > green). */
+function worstHealth(...statuses: HealthStatus[]): HealthStatus {
+  if (statuses.includes("red")) return "red";
+  if (statuses.includes("yellow")) return "yellow";
+  return "green";
+}
+
+/**
+ * Derive per-section health from hero metrics and section data.
+ * Each section's health = worst-case of its key indicators.
+ */
+function computeSectionHealth(
+  heroes: ShopHealthHeroes,
+  pipeline: PipelineSection,
+  scheduling: SchedulingSection,
+  operations: OperationsSection,
+): SectionHealth {
+  return {
+    pipeline: heroes.backlogWeeks.health,
+    preconstruction: heroes.readyToBuild.health,
+    scheduling: worstHealth(
+      heroes.scheduledInstalls.health,
+      scheduling.crewCapacityFilledPct >= 100 ? "green" :
+        scheduling.crewCapacityFilledPct >= 75 ? "yellow" : "red"
+    ),
+    operations: worstHealth(
+      heroes.installsCompleted.health,
+      operations.crewUtilizationPct >= 100 ? "green" :
+        operations.crewUtilizationPct >= 80 ? "yellow" : "red"
+    ),
+    inspections: heroes.ptosReceived.health,
   };
 }
 

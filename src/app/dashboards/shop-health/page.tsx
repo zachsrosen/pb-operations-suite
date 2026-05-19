@@ -147,27 +147,27 @@ export default function ShopHealthDashboard() {
           <HeroMetrics heroes={data.heroes} />
 
           {/* Pipeline */}
-          <SectionCard title="Pipeline" icon="📊">
+          <SectionCard title="Pipeline" icon="📊" health={data.sectionHealth.pipeline}>
             <PipelineSectionContent data={data.pipeline} />
           </SectionCard>
 
           {/* Preconstruction */}
-          <SectionCard title="Preconstruction" icon="📐">
+          <SectionCard title="Preconstruction" icon="📐" health={data.sectionHealth.preconstruction}>
             <PreconSectionContent data={data.preconstruction} />
           </SectionCard>
 
           {/* Scheduling */}
-          <SectionCard title="Scheduling" icon="📅">
+          <SectionCard title="Scheduling" icon="📅" health={data.sectionHealth.scheduling}>
             <SchedulingSectionContent data={data.scheduling} />
           </SectionCard>
 
           {/* Operations */}
-          <SectionCard title="Operations" icon="⚡">
+          <SectionCard title="Operations" icon="⚡" health={data.sectionHealth.operations}>
             <OperationsSectionContent data={data.operations} />
           </SectionCard>
 
           {/* Inspections */}
-          <SectionCard title="Inspections" icon="🔍">
+          <SectionCard title="Inspections" icon="🔍" health={data.sectionHealth.inspections}>
             <InspectionsSectionContent data={data.inspections} />
           </SectionCard>
 

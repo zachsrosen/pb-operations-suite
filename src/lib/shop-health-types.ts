@@ -77,6 +77,14 @@ export interface ShopHealthGoals {
   weeklyInspections: number;
 }
 
+export interface SectionHealth {
+  pipeline: HealthStatus;
+  preconstruction: HealthStatus;
+  scheduling: HealthStatus;
+  operations: HealthStatus;
+  inspections: HealthStatus;
+}
+
 export interface ShopHealthData {
   location: string;
   weekStart: string;
@@ -87,6 +95,7 @@ export interface ShopHealthData {
   scheduling: SchedulingSection;
   operations: OperationsSection;
   inspections: InspectionsSection;
+  sectionHealth: SectionHealth;
   bottleneck: ShopHealthBottleneckEntry | null;
   lastUpdated: string;
   goals: ShopHealthGoals;
