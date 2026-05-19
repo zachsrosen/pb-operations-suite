@@ -4246,7 +4246,7 @@ model PowerhubSite {
 
   // Cross-link fields
   portalUrl          String? // Computed via TESLA_POWERHUB_PORTAL_URL_TEMPLATE
-  primaryForProperty Boolean @default(false) // At most one true per propertyId (enforced by partial unique index in migration SQL)
+  primaryForProperty Boolean @default(false) // At most one true per non-null propertyId (enforced by partial unique index in migration SQL: WHERE primaryForProperty AND propertyId IS NOT NULL)
 
   // Address
   address     String
