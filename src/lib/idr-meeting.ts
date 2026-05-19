@@ -280,6 +280,55 @@ export async function buildOwnerMap(
 }
 
 // ---------------------------------------------------------------------------
+// Resolve stale numeric IDs in snapshots
+// ---------------------------------------------------------------------------
+
+/** Build a map of numeric owner IDs → resolved names for lead fields in snapshots. */
+export async function buildLeadResolveMap(
+  items: Array<{ designLead?: string | null; permitLead?: string | null }>,
+): Promise<Map<string, string>> {
+  const unresolvedIds = new Set<string>();
+  for (const item of items) {
+    for (const val of [item.designLead, item.permitLead]) {
+      if (val && /^\d+$/.test(val)) unresolvedIds.add(val);
+    }
+  }
+  if (unresolvedIds.size === 0) return new Map();
+
+  // Try Owners API first (resolves ownerIds and userIds via the indexed directory)
+  const map = new Map<string, string>();
+  const resolvePromises = [...unresolvedIds].map(async (id) => {
+    const contact = await resolveHubSpotOwnerContact(id);
+    if (contact) map.set(id, contact.name);
+  });
+  await Promise.allSettled(resolvePromises);
+
+  // For any still-unresolved IDs, try enumeration property option labels
+  const stillUnresolved = [...unresolvedIds].filter((id) => !map.has(id));
+  if (stillUnresolved.length > 0) {
+    const ENUM_PROPS = ["design", "permit_tech", "interconnections_tech"] as const;
+    await Promise.allSettled(
+      ENUM_PROPS.map(async (prop) => {
+        const [active, archived] = await Promise.allSettled([
+          getDealPropertyDefinition(prop),
+          getDealPropertyDefinition(prop, true),
+        ]);
+        for (const result of [active, archived]) {
+          if (result.status !== "fulfilled" || !result.value?.options) continue;
+          for (const opt of result.value.options) {
+            const value = String(opt.value || "").trim();
+            const label = String(opt.label || "").trim();
+            if (value && label && !map.has(value)) map.set(value, label);
+          }
+        }
+      }),
+    );
+  }
+
+  return map;
+}
+
+// ---------------------------------------------------------------------------
 // Readiness badge
 // ---------------------------------------------------------------------------
 
