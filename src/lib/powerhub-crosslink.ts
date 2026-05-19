@@ -257,3 +257,27 @@ export async function pushToHubSpotForProperty(propertyId: string): Promise<void
     );
   }
 }
+
+/**
+ * Full cross-system cascade for a property:
+ *   1. resolvePrimarySite — pick primary, update flags + denormalized cache fields
+ *      (this updates HubSpotPropertyCache.updatedAt, which is the dirty signal
+ *      for the existing zuper-property-sync cron)
+ *   2. pushToHubSpotForProperty — push URL to HubSpot Property + Deals + Tickets
+ *
+ * The Zuper push happens asynchronously: the cache update from step 1 bumps
+ * updatedAt, which causes findDirtyProperties (in zuper-property-sync.ts) to
+ * pick up this property on the next 15-min cron cycle.
+ *
+ * No-ops when POWERHUB_CROSSLINK_ENABLED !== "true".
+ */
+export async function enqueueCrossSystemPush(propertyId: string): Promise<void> {
+  if (!isCrosslinkEnabled()) return;
+  try {
+    await resolvePrimarySite(propertyId);
+    await pushToHubSpotForProperty(propertyId);
+  } catch (err) {
+    console.error(`[powerhub-crosslink] enqueueCrossSystemPush failed for ${propertyId}:`, err);
+    // Don't re-throw — caller is usually a sync loop that processes many properties
+  }
+}

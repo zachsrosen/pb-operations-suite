@@ -4,6 +4,7 @@ import {
   pickPrimarySite,
   resolvePrimarySite,
   pushToHubSpotForProperty,
+  enqueueCrossSystemPush,
 } from "@/lib/powerhub-crosslink";
 import { prisma } from "@/lib/db";
 import { updateDealProperty } from "@/lib/hubspot";
@@ -317,5 +318,44 @@ describe("pushToHubSpotForProperty", () => {
 
     await expect(pushToHubSpotForProperty("prop-1")).resolves.not.toThrow();
     expect(updateDealProperty).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("enqueueCrossSystemPush", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Reset sticky mock implementations from prior describe blocks
+    (mockPrisma.powerhubSite.update as jest.Mock).mockResolvedValue({});
+    (mockPrisma.powerhubSite.updateMany as jest.Mock).mockResolvedValue({});
+    (mockPrisma.hubSpotPropertyCache.update as jest.Mock).mockResolvedValue({});
+    process.env.POWERHUB_CROSSLINK_ENABLED = "true";
+  });
+
+  it("no-ops when feature flag is off", async () => {
+    process.env.POWERHUB_CROSSLINK_ENABLED = "false";
+    await enqueueCrossSystemPush("prop-1");
+    expect(mockPrisma.powerhubSite.findMany).not.toHaveBeenCalled();
+  });
+
+  it("runs resolve → push → mark dirty in order", async () => {
+    (mockPrisma.powerhubSite.findMany as jest.Mock).mockResolvedValue([
+      { id: "s1", siteId: "tesla-1", siteName: "STE20240105-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false },
+    ]);
+    (mockPrisma.hubSpotPropertyCache.findUnique as jest.Mock).mockResolvedValue({
+      id: "prop-1",
+      hubspotObjectId: "hs-1",
+      teslaPortalUrl: "https://x",
+      teslaSiteId: "tesla-1",
+      dealLinks: [],
+      ticketLinks: [],
+    });
+
+    await enqueueCrossSystemPush("prop-1");
+
+    expect(mockPrisma.powerhubSite.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { propertyId: "prop-1" } })
+    );
+    expect(mockPrisma.hubSpotPropertyCache.findUnique).toHaveBeenCalled();
+    expect(mockPrisma.hubSpotPropertyCache.update).toHaveBeenCalled();
   });
 });
