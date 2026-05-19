@@ -397,6 +397,37 @@ export async function fetchUtilitiesForDeal(
 }
 
 // ---------------------------------------------------------------------------
+// AHJ / Utility Update Helper
+// ---------------------------------------------------------------------------
+
+/**
+ * PATCH an AHJ or Utility custom-object record with one or more property updates.
+ * Wraps `hubspotClient.crm.objects.basicApi.update` with the existing rate-limit
+ * retry. Returns the record id and updatedAt timestamp on success.
+ *
+ * NOTE: The HubSpot API silently ignores property keys that don't exist on the
+ * object schema. Callers should validate `properties` against
+ * `AHJ_PROPERTIES` / `UTILITY_PROPERTIES` before invoking.
+ */
+export async function updateCustomObjectRecord(
+  objectType: typeof AHJ_OBJECT_TYPE | typeof UTILITY_OBJECT_TYPE,
+  recordId: string,
+  properties: Record<string, string>,
+): Promise<{ id: string; updatedAt: string }> {
+  return withRetry(async () => {
+    const res = await hubspotClient.crm.objects.basicApi.update(
+      objectType,
+      recordId,
+      { properties },
+    );
+    return {
+      id: res.id,
+      updatedAt: res.updatedAt instanceof Date ? res.updatedAt.toISOString() : String(res.updatedAt ?? ""),
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Location Fetch Helpers
 // ---------------------------------------------------------------------------
 
