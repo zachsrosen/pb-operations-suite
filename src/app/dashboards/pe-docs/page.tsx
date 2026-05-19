@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -10,6 +10,13 @@ import { queryKeys } from "@/lib/query-keys";
 // ---------------------------------------------------------------------------
 // Types (mirrors pe-report API shape)
 // ---------------------------------------------------------------------------
+
+interface DocReviewFromHS {
+  dealId: string;
+  docName: string;
+  status: string;
+  notes: string | null;
+}
 
 interface PeDeal {
   dealId: string;
@@ -25,16 +32,14 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
+  docReviews: DocReviewFromHS[];
 }
 
 interface DocReview {
-  id: string;
   dealId: string;
   docName: string;
   status: PeDocStatusValue;
   notes: string | null;
-  reviewedAt: string;
-  reviewedBy: string | null;
 }
 
 type PeDocStatusValue =
@@ -639,47 +644,22 @@ export default function PeDocsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: docsData } = useQuery<{ docs: DocReview[] }>({
-    queryKey: ["peDocReviews"],
-    queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
-    staleTime: 60 * 1000,
-  });
-
-  const queryClient = useQueryClient();
-  const [emailSyncing, setEmailSyncing] = useState(false);
-  const [emailSyncResult, setEmailSyncResult] = useState<{
-    upserted: number;
-    matched: number;
-    errors: number;
-    gmailError?: string;
-  } | null>(null);
-
-  const handleEmailSync = useCallback(async () => {
-    setEmailSyncing(true);
-    setEmailSyncResult(null);
-    try {
-      const res = await fetch("/api/accounting/pe-docs/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: "email" }),
-      });
-      const result = await res.json();
-      setEmailSyncResult(result);
-      queryClient.invalidateQueries({ queryKey: ["peDocReviews"] });
-    } catch (err) {
-      setEmailSyncResult({ upserted: 0, matched: 0, errors: 1, gmailError: String(err) });
-    } finally {
-      setEmailSyncing(false);
-    }
-  }, [queryClient]);
-
+  // Build docMap from HubSpot deal properties (no separate DB query needed)
   const docMap = useMemo(() => {
     const m = new Map<string, DocReview>();
-    for (const d of docsData?.docs ?? []) {
-      m.set(`${d.dealId}:${d.docName}`, d);
+    for (const deal of data?.deals ?? []) {
+      for (const dr of deal.docReviews ?? []) {
+        const status = dr.status as PeDocStatusValue;
+        m.set(`${dr.dealId}:${dr.docName}`, {
+          dealId: dr.dealId,
+          docName: dr.docName,
+          status,
+          notes: dr.notes,
+        });
+      }
     }
     return m;
-  }, [docsData]);
+  }, [data]);
 
   // Compute summaries — only deals at milestone stages (PTO+)
   const MILESTONE_STAGES = new Set<PeMilestone>(["pto", "close-out", "complete"]);
@@ -819,24 +799,6 @@ export default function PeDocsPage() {
 
   return (
     <DashboardShell title="PE Document Tracker" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
-      {/* Email sync controls */}
-      <div className="flex items-center gap-3 mb-4">
-        <button
-          onClick={handleEmailSync}
-          disabled={emailSyncing}
-          className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface transition-colors disabled:opacity-50"
-        >
-          {emailSyncing ? "Syncing..." : "Sync from Email"}
-        </button>
-        {emailSyncResult && (
-          <span className="text-xs text-muted">
-            {emailSyncResult.gmailError
-              ? `Error: ${emailSyncResult.gmailError}`
-              : `${emailSyncResult.upserted} updated, ${emailSyncResult.matched} matched`}
-          </span>
-        )}
-      </div>
-
       {/* Summary stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <StatCard label="PE Deals" value={isLoading ? null : stats.total} color="emerald" />

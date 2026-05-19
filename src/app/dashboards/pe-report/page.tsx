@@ -11,6 +11,13 @@ import { queryKeys } from "@/lib/query-keys";
 // Types
 // ---------------------------------------------------------------------------
 
+interface DocReviewFromHS {
+  dealId: string;
+  docName: string;
+  status: string;
+  notes: string | null;
+}
+
 interface PeDeal {
   dealId: string;
   dealName: string;
@@ -35,16 +42,14 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
+  docReviews: DocReviewFromHS[];
 }
 
 interface DocReview {
-  id: string;
   dealId: string;
   docName: string;
   status: PeDocStatusValue;
   notes: string | null;
-  reviewedAt: string;
-  reviewedBy: string | null;
 }
 
 type PeDocStatusValue =
@@ -520,12 +525,6 @@ function DocStatusDisplay({ doc, review }: {
             Note: {review.notes}
           </div>
         )}
-
-        {review && (
-          <div className="text-[10px] text-muted/40 mt-0.5">
-            Reviewed {new Date(review.reviewedAt).toLocaleDateString()}{review.reviewedBy ? ` by ${review.reviewedBy}` : ""}
-          </div>
-        )}
       </div>
 
       {statusLabel ? (
@@ -601,19 +600,21 @@ export default function PeReportPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: docsData } = useQuery<{ docs: DocReview[] }>({
-    queryKey: ["peDocReviews"],
-    queryFn: () => fetch("/api/accounting/pe-docs").then((r) => r.json()),
-    staleTime: 60 * 1000,
-  });
-
+  // Build docMap from HubSpot deal properties (no separate DB query needed)
   const docMap = useMemo(() => {
     const m = new Map<string, DocReview>();
-    for (const d of docsData?.docs ?? []) {
-      m.set(`${d.dealId}:${d.docName}`, d);
+    for (const deal of data?.deals ?? []) {
+      for (const dr of deal.docReviews ?? []) {
+        m.set(`${dr.dealId}:${dr.docName}`, {
+          dealId: dr.dealId,
+          docName: dr.docName,
+          status: dr.status as PeDocStatusValue,
+          notes: dr.notes,
+        });
+      }
     }
     return m;
-  }, [docsData]);
+  }, [data]);
 
   // CSV import mutation
   const [csvImportResult, setCsvImportResult] = useState<{
@@ -640,7 +641,7 @@ export default function PeReportPage() {
     },
     onSuccess: (data) => {
       setCsvImportResult(data);
-      queryClient.invalidateQueries({ queryKey: ["peDocReviews"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.peDeals.list() });
     },
   });
 
