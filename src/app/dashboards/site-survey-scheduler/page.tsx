@@ -2476,7 +2476,7 @@ export default function SiteSurveySchedulerPage() {
                               if (title.includes("pre-sale") || title.includes("pre sale")) return true;
                               // Also show any booked slot not matched to an ops project
                               return !events.some(ev =>
-                                findCurrentSlotForProject(ev.id, dateStr, ev.name, ev.zuperJobUid) === slot
+                                ev.zuperJobUid && slot.zuperJobUid && ev.zuperJobUid === slot.zuperJobUid
                               );
                             });
                             // Filter by selected locations
