@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { Skeleton } from "@/components/ui/Skeleton";
-import type { EquipmentTabData } from "@/lib/property-hub";
+import type { EquipmentTabData, HubLineItem } from "@/lib/property-hub";
 
 interface Props {
   propertyId: string;
@@ -11,6 +11,31 @@ interface Props {
 
 function formatSystemSize(kw: number): string {
   return kw >= 1 ? `${kw.toFixed(1)} kW` : `${(kw * 1000).toFixed(0)} W`;
+}
+
+/** Group line items by name, summing quantities. */
+function groupLineItems(items: HubLineItem[]) {
+  const map = new Map<
+    string,
+    { name: string; quantity: number; manufacturer: string; category: string }
+  >();
+  for (const li of items) {
+    const key = li.name.trim().toLowerCase();
+    const existing = map.get(key);
+    if (existing) {
+      existing.quantity += li.quantity;
+    } else {
+      map.set(key, {
+        name: li.name,
+        quantity: li.quantity,
+        manufacturer: li.manufacturer,
+        category: li.category,
+      });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 }
 
 export default function PropertyEquipmentTab({ propertyId }: Props) {
@@ -52,19 +77,23 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
 
   const summary = data?.equipmentSummary;
   const snapshots = data?.snapshots ?? [];
+  const lineItems = data?.lineItems ?? [];
   const { moduleSummary, inverterSummary, batterySummary, evChargerSummary } = data ?? {};
 
-  const hasEquipment =
+  const hasCatalogEquipment =
     summary &&
     (summary.modules.count > 0 ||
       summary.inverters.count > 0 ||
       summary.batteries.count > 0 ||
       summary.evChargers.count > 0);
 
+  const grouped = groupLineItems(lineItems);
+  const hasLineItems = grouped.length > 0;
+
   return (
     <div className="space-y-6">
-      {/* Equipment summary cards */}
-      {hasEquipment ? (
+      {/* Equipment summary cards (from catalog-matched InternalProducts) */}
+      {hasCatalogEquipment && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {summary.modules.count > 0 && (
             <div className="rounded-xl bg-surface border border-t-border p-4">
@@ -137,7 +166,48 @@ export default function PropertyEquipmentTab({ propertyId }: Props) {
             </div>
           )}
         </div>
-      ) : (
+      )}
+
+      {/* Line items from HubSpot deals — always shown when available */}
+      {hasLineItems && (
+        <div>
+          <h3 className="text-sm font-medium text-foreground mb-3">
+            Line Items ({lineItems.length})
+          </h3>
+          <div className="rounded-xl bg-surface border border-t-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-t-border text-xs text-muted uppercase tracking-wider">
+                  <th className="text-left px-4 py-2 font-medium">Item</th>
+                  <th className="text-left px-4 py-2 font-medium hidden sm:table-cell">Manufacturer</th>
+                  <th className="text-right px-4 py-2 font-medium">Qty</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-t-border">
+                {grouped.map((item) => (
+                  <tr key={item.name} className="text-foreground">
+                    <td className="px-4 py-2">
+                      <span className="block truncate max-w-[280px]">{item.name}</span>
+                      {item.category && (
+                        <span className="text-xs text-muted">{item.category}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-muted hidden sm:table-cell">
+                      {item.manufacturer || "—"}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {item.quantity}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state — no catalog match AND no line items */}
+      {!hasCatalogEquipment && !hasLineItems && snapshots.length === 0 && (
         <div className="text-center py-8 text-muted">
           <svg className="w-10 h-10 mx-auto mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
