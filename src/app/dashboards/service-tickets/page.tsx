@@ -8,6 +8,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { PowerhubLink } from "@/components/powerhub/PowerhubLink";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +52,8 @@ interface TicketDetail {
   ownerId: string | null;
   location: string | null;
   url: string;
+  teslaPortalUrl?: string | null;
+  teslaSiteId?: string | null;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
     deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string; serviceType?: string | null }>;
@@ -597,6 +600,17 @@ export default function ServiceTicketBoardPage() {
                         <div key={co.id} className="text-sm text-muted">{co.name}</div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {selectedTicket.teslaPortalUrl && (
+                  <div className="mb-6 flex items-center justify-between text-sm">
+                    <span className="text-muted">Tesla PowerHub</span>
+                    <PowerhubLink
+                      url={selectedTicket.teslaPortalUrl}
+                      siteName={selectedTicket.teslaSiteId ?? undefined}
+                      variant="inline"
+                    />
                   </div>
                 )}
 

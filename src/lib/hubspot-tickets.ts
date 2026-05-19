@@ -67,6 +67,10 @@ export interface TicketDetail {
   url: string;
   /** Google Drive folder URL or bare ID — from ticket_documents / ticket_document_folder_id */
   folderUrl: string | null;
+  /** Tesla PowerHub deep-link URL (from tesla_portal_url) — populated when linked to a Tesla site */
+  teslaPortalUrl: string | null;
+  /** Tesla site ID label (from tesla_site_id) — used as the link's display name */
+  teslaSiteId: string | null;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
     deals: Array<{
@@ -107,6 +111,8 @@ const TICKET_PROPERTIES = [
   "pb_location",
   "ticket_documents",          // Drive folder URL for ticket docs (preferred)
   "ticket_document_folder_id", // bare folder ID fallback
+  "tesla_portal_url",          // Tesla PowerHub deep link (populated by powerhub crosslink)
+  "tesla_site_id",             // Tesla site ID (display label for PowerHub link)
 ];
 
 // ---------------------------------------------------------------------------
@@ -666,6 +672,8 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
       folderUrl:
         String(props.ticket_documents || props.ticket_document_folder_id || "").trim() || null,
+      teslaPortalUrl: props.tesla_portal_url?.trim() || null,
+      teslaSiteId: props.tesla_site_id?.trim() || null,
       associations: { contacts, deals, companies },
       timeline,
     };
