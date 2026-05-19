@@ -6,6 +6,7 @@ import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { SystemHealthBadge } from "@/components/powerhub/SystemHealthBadge";
 import { useSSE } from "@/hooks/useSSE";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
@@ -29,6 +30,12 @@ interface QueueItem {
   warrantyExpiry?: string | null;
   ownerId?: string | null;
   serviceType?: string | null;
+  /** PowerHub portal URL for the linked property (System Health column). */
+  teslaPortalUrl?: string | null;
+  /** Count of currently-active PowerHub alerts for the linked property. */
+  activeAlertCount?: number;
+  /** Highest-severity active PowerHub alert across linked sites. */
+  highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
 }
 
 interface PriorityScore {
@@ -627,6 +634,13 @@ export default function ServiceOverviewPage() {
                           Overridden
                         </span>
                       )}
+
+                      {/* System health: severity dot + PowerHub portal link */}
+                      <SystemHealthBadge
+                        portalUrl={item.teslaPortalUrl}
+                        activeAlertCount={item.activeAlertCount ?? 0}
+                        highestSeverity={item.highestAlertSeverity}
+                      />
                     </div>
 
                     {/* Stage + location */}

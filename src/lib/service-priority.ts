@@ -22,6 +22,12 @@ export interface PriorityItem {
   ownerId?: string | null;
   serviceType?: string | null;
   powerhubAlertSeverity?: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL" | null;
+  /** Tesla PowerHub portal URL for the associated property (System Health column). */
+  teslaPortalUrl?: string | null;
+  /** Count of currently-active PowerHub alerts across all sites linked to this deal/ticket. */
+  activeAlertCount?: number;
+  /** Highest severity among active PowerHub alerts (JS-side max — Prisma _max would return lexicographic). */
+  highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
 }
 
 export type PriorityTier = "critical" | "high" | "medium" | "low";
@@ -166,6 +172,28 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     reasons,
     reasonCategories: [...categories],
   };
+}
+
+/**
+ * Severity ranking used to compute the highest-severity alert per property
+ * in JavaScript. Prisma's `_max` on the `PowerhubAlertSeverity` enum returns
+ * a lexicographic max, which is WRONG for severity ordering — alphabetically
+ * CRITICAL < INFORMATIONAL < PERFORMANCE, so a CRITICAL alert would lose to
+ * a paired INFORMATIONAL alert. We rank explicitly here.
+ */
+export const POWERHUB_SEVERITY_RANK: Record<"INFORMATIONAL" | "PERFORMANCE" | "CRITICAL", number> = {
+  INFORMATIONAL: 1,
+  PERFORMANCE: 2,
+  CRITICAL: 3,
+};
+
+/**
+ * Compact summary of PowerHub state attributed to a single deal/ticket.
+ */
+export interface PowerhubItemSummary {
+  teslaPortalUrl: string | null;
+  activeAlertCount: number;
+  highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
 }
 
 /**
