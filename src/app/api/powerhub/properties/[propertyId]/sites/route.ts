@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getPropertyHub } from "@/lib/property-hub";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ propertyId: string }> },
 ) {
+  if (process.env.POWERHUB_ENABLED !== "true") {
+    return NextResponse.json({ error: "PowerHub disabled" }, { status: 404 });
+  }
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
