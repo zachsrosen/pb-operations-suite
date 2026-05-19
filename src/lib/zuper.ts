@@ -2157,16 +2157,12 @@ export async function createJobFromProject(project: {
     ]
       .filter(Boolean)
       .join("\n"),
-    // Pre-sale jobs use a different Zuper category that may not have these
-    // custom fields configured — omit to avoid "Error in creating Job".
-    ...(schedule.type !== "pre-sale-survey" && {
-      custom_fields: {
-        hubspot_deal_id: project.id,
-        system_size_kw: project.systemSizeKw,
-        battery_count: project.batteryCount,
-        project_type: project.projectType,
-      },
-    }),
+    custom_fields: {
+      hubspot_deal_id: project.id,
+      system_size_kw: project.systemSizeKw,
+      battery_count: project.batteryCount,
+      project_type: project.projectType,
+    },
   };
 
   console.log(`[createJobFromProject] Creating job with assigned_to:`, job.assigned_to);
