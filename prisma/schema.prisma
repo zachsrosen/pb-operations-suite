@@ -4211,6 +4211,7 @@ enum PowerhubLinkMethod {
   PROPERTY
   ADDRESS_MATCH
   MANUAL
+  GEO
   UNLINKED
 }
 
@@ -4270,6 +4271,11 @@ model PowerhubSite {
   totalBatteries     Int  @default(0)
   totalInverters     Int  @default(0)
 
+  // Geo coordinates (populated by portal-imported assetGetSiteLocations)
+  latitude       Float?
+  longitude      Float?
+  linkDistanceM  Float? // Distance in meters from matched property at link time
+
   // Status
   status PowerhubSiteStatus @default(ACTIVE)
 
@@ -4277,6 +4283,7 @@ model PowerhubSite {
   lastAssetSyncAt  DateTime
   lastTelemetryAt  DateTime?
   lastAlertCheckAt DateTime?
+  lastGeoSyncAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4290,6 +4297,7 @@ model PowerhubSite {
   @@index([propertyId])
   @@index([dealId])
   @@index([status])
+  @@index([latitude, longitude])
 }
 
 model PowerhubTelemetrySnapshot {
