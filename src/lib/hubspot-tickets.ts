@@ -815,11 +815,11 @@ export async function updateTicket(
   }
 }
 
-
 /**
  * Update arbitrary properties on a HubSpot ticket.
  * Used by the powerhub-crosslink module to push tesla_portal_url + tesla_site_id.
- * Returns true on success, false on any failure (logs warning).
+ * Returns true on success OR when the ticket no longer exists (404 = already-gone =
+ * successful no-op for cascade callers). Returns false only for unexpected failures.
  */
 export async function updateTicketProperties(
   ticketId: string,
@@ -834,10 +834,21 @@ export async function updateTicketProperties(
     await hubspotClient.crm.tickets.basicApi.update(ticketId, { properties: coerced });
     return true;
   } catch (err) {
-    const status = (err as { code?: number })?.code;
+    // HubSpot SDK surfaces HTTP status across several fields — match the
+    // codebase pattern in hubspot.ts:getErrorMessage / extractErrorStatus.
+    const e = err as {
+      statusCode?: number;
+      code?: number;
+      status?: number;
+      response?: { statusCode?: number; status?: number };
+    };
+    const status =
+      e.statusCode ?? e.code ?? e.status ?? e.response?.statusCode ?? e.response?.status;
     if (status === 404) {
-      console.warn(`[hubspot-tickets] Ticket ${ticketId} not found (404); skipping property update`);
-      return false;
+      console.warn(
+        `[hubspot-tickets] Ticket ${ticketId} not found (404); treating as successful no-op`
+      );
+      return true; // ticket gone = nothing to update = success for the cascade
     }
     console.error(`[hubspot-tickets] Failed to update ticket ${ticketId}:`, err);
     return false;
