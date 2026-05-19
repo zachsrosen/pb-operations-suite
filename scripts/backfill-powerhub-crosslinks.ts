@@ -46,10 +46,15 @@ async function main() {
 
   try {
     const after = lock.cursor;
+    // Both filters must be applied; the previous spread form had the second
+    // `propertyId` key overwrite the first (`not: null`), letting null-propertyId
+    // sites leak into the resumed batch.
     const properties = await prisma.powerhubSite.findMany({
       where: {
-        propertyId: { not: null },
-        ...(after ? { propertyId: { gt: after } } : {}),
+        AND: [
+          { propertyId: { not: null } },
+          ...(after ? [{ propertyId: { gt: after } }] : []),
+        ],
       },
       distinct: ["propertyId"],
       select: { propertyId: true },

@@ -132,8 +132,11 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
   });
 
   if (sites.length === 0) {
-    // No sites: clear cache + demote any orphaned primary flags (defense in depth)
-    await prisma.hubSpotPropertyCache.update({
+    // No sites: clear cache + demote any orphaned primary flags (defense in depth).
+    // Use updateMany (not update) so a missing HubSpotPropertyCache row is a no-op
+    // instead of P2025 — the backfill iterates from PowerhubSite.propertyId which
+    // can outlive the corresponding cache row.
+    await prisma.hubSpotPropertyCache.updateMany({
       where: { id: propertyId },
       data: { teslaPortalUrl: null, teslaSiteId: null },
     });
@@ -155,8 +158,10 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
     })
   );
 
-  // Update denormalized fields on the property cache
-  await prisma.hubSpotPropertyCache.update({
+  // Update denormalized fields on the property cache.
+  // updateMany makes this resilient to the cache row not existing (same reason
+  // as the no-sites branch above).
+  await prisma.hubSpotPropertyCache.updateMany({
     where: { id: propertyId },
     data: {
       teslaPortalUrl: primary.portalUrl,

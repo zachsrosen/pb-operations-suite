@@ -17,6 +17,7 @@ jest.mock("@/lib/db", () => ({
     hubSpotPropertyCache: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
   },
 }));
@@ -158,7 +159,7 @@ describe("resolvePrimarySite", () => {
     const result = await resolvePrimarySite("prop-1");
 
     expect(result).toBeNull();
-    expect(mockPrisma.hubSpotPropertyCache.update).toHaveBeenCalledWith({
+    expect(mockPrisma.hubSpotPropertyCache.updateMany).toHaveBeenCalledWith({
       where: { id: "prop-1" },
       data: { teslaPortalUrl: null, teslaSiteId: null },
     });
@@ -174,7 +175,7 @@ describe("resolvePrimarySite", () => {
     const result = await resolvePrimarySite("prop-1");
 
     expect(result?.id).toBe("s2");
-    expect(mockPrisma.hubSpotPropertyCache.update).toHaveBeenCalledWith({
+    expect(mockPrisma.hubSpotPropertyCache.updateMany).toHaveBeenCalledWith({
       where: { id: "prop-1" },
       data: {
         teslaPortalUrl: "https://gridlogic.tesla.com/sites/tesla-new",
@@ -356,6 +357,7 @@ describe("enqueueCrossSystemPush", () => {
       expect.objectContaining({ where: { propertyId: "prop-1" } })
     );
     expect(mockPrisma.hubSpotPropertyCache.findUnique).toHaveBeenCalled();
-    expect(mockPrisma.hubSpotPropertyCache.update).toHaveBeenCalled();
+    // resolvePrimarySite now uses updateMany (safer when cache row may not exist)
+    expect(mockPrisma.hubSpotPropertyCache.updateMany).toHaveBeenCalled();
   });
 });

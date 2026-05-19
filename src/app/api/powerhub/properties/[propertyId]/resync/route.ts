@@ -11,6 +11,15 @@ export async function POST(
   if (process.env.POWERHUB_ENABLED !== "true") {
     return NextResponse.json({ error: "PowerHub disabled" }, { status: 404 });
   }
+  // enqueueCrossSystemPush itself no-ops when the crosslink flag is off, but
+  // we surface that explicitly to the caller instead of returning a misleading
+  // "ok: true" — admins hit Resync during rollback scenarios and need real feedback.
+  if (process.env.POWERHUB_CROSSLINK_ENABLED !== "true") {
+    return NextResponse.json(
+      { ok: false, reason: "crosslink_disabled" },
+      { status: 503 },
+    );
+  }
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
