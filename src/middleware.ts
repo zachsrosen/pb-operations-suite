@@ -86,6 +86,10 @@ const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/pm-flags",
   // Office performance cache warmer — cron self-fetches to warm the API lambda.
   "/api/office-performance",
+  // PowerHub geo-coord ingest — used for one-shot fleet imports + future
+  // bookmarklet/admin-UI flow. Route validates payload with Zod + role check
+  // is skipped when machine-authenticated.
+  "/api/powerhub/import-locations",
 ] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
