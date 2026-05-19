@@ -11,6 +11,7 @@ import { getObjectEngagements } from "@/lib/hubspot-engagements";
 import { withRetry } from "@/lib/hubspot-custom-objects";
 import { getStageMaps } from "@/lib/deals-pipeline";
 import { getTicketStageMap } from "@/lib/hubspot-tickets";
+import { fetchLineItemsForDeals } from "@/lib/hubspot";
 import { zuper } from "@/lib/zuper";
 import { Client } from "@hubspot/api-client";
 import type { Engagement } from "@/components/deal-detail/types";
@@ -147,9 +148,21 @@ export interface BomSnapshotSummary {
   itemCount: number;
 }
 
+export interface HubLineItem {
+  id: string;
+  name: string;
+  quantity: number;
+  manufacturer: string;
+  category: string;
+  dealId: string;
+}
+
 export interface EquipmentTabData {
   snapshots: BomSnapshotSummary[];
   equipmentSummary: PropertyDetail["equipmentSummary"];
+  /** Raw HubSpot line items — always included so the UI can show equipment
+   *  even when InternalProduct catalog matching returns nothing. */
+  lineItems: HubLineItem[];
   /** Human-readable brand/model summary strings (cached from rollups). */
   moduleSummary: string | null;
   inverterSummary: string | null;
@@ -617,6 +630,7 @@ async function fetchEquipment(propertyId: string): Promise<EquipmentTabData> {
     return {
       snapshots: [],
       equipmentSummary: createEmptySummary(),
+      lineItems: [],
       moduleSummary: null,
       inverterSummary: null,
       batterySummary: null,
@@ -661,10 +675,23 @@ async function fetchEquipment(propertyId: string): Promise<EquipmentTabData> {
     };
   });
 
-  // Equipment summary from live line items
+  // Equipment summary from live line items + raw line items as fallback
   let equipmentSummary: PropertyDetail["equipmentSummary"];
+  let lineItems: HubLineItem[] = [];
   try {
-    equipmentSummary = await computeEquipmentSummary(dealIds);
+    const [summary, rawItems] = await Promise.all([
+      computeEquipmentSummary(dealIds),
+      dealIds.length ? fetchLineItemsForDeals(dealIds) : Promise.resolve([]),
+    ]);
+    equipmentSummary = summary;
+    lineItems = rawItems.map((li) => ({
+      id: li.id,
+      name: li.name,
+      quantity: li.quantity,
+      manufacturer: li.manufacturer,
+      category: li.productCategory,
+      dealId: li.dealId,
+    }));
   } catch {
     equipmentSummary = createEmptySummary();
   }
@@ -672,6 +699,7 @@ async function fetchEquipment(propertyId: string): Promise<EquipmentTabData> {
   return {
     snapshots: summaries,
     equipmentSummary,
+    lineItems,
     moduleSummary: property.moduleSummary ?? null,
     inverterSummary: property.inverterSummary ?? null,
     batterySummary: property.batterySummary ?? null,
