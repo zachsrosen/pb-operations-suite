@@ -396,7 +396,7 @@ export async function GET(request: NextRequest) {
   // Construction/installation expands to all four sub-category UIDs so
   // we aggregate capacity across Construction + Solar/Battery/EV Install.
   const categoryMap: Record<string, string[]> = {
-    survey: [JOB_CATEGORY_UIDS.SITE_SURVEY],
+    survey: [JOB_CATEGORY_UIDS.SITE_SURVEY, JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT],
     installation: [...CONSTRUCTION_CATEGORY_UIDS],
     construction: [...CONSTRUCTION_CATEGORY_UIDS],
     inspection: [JOB_CATEGORY_UIDS.INSPECTION],
