@@ -29,21 +29,28 @@ function LoadingSkeleton() {
   return (
     <div className="space-y-6 animate-pulse">
       {/* Hero skeleton */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="bg-surface rounded-xl border border-border p-4 min-h-[120px]">
-            <div className="h-4 w-20 bg-surface-2 rounded mx-auto mb-3" />
-            <div className="h-8 w-16 bg-surface-2 rounded mx-auto" />
+          <div key={i} className="bg-surface rounded-xl border border-border p-5 min-h-[140px] flex flex-col items-center justify-center">
+            <div className="h-5 w-5 bg-surface-2 rounded-full mb-2" />
+            <div className="h-3 w-16 bg-surface-2 rounded mb-3" />
+            <div className="h-10 w-14 bg-surface-2 rounded" />
           </div>
         ))}
       </div>
       {/* Section skeletons */}
       {[1, 2, 3, 4, 5].map((i) => (
         <div key={i} className="bg-surface rounded-xl border border-border shadow-card p-6">
-          <div className="h-6 w-40 bg-surface-2 rounded mb-4" />
+          <div className="flex items-center gap-3 mb-5">
+            <div className="h-5 w-5 bg-surface-2 rounded" />
+            <div className="h-6 w-36 bg-surface-2 rounded" />
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((j) => (
-              <div key={j} className="h-24 bg-surface-2 rounded-xl" />
+              <div key={j} className="bg-surface-2 rounded-xl p-5">
+                <div className="h-3 w-20 bg-surface rounded mb-2" />
+                <div className="h-8 w-12 bg-surface rounded" />
+              </div>
             ))}
           </div>
         </div>
@@ -140,32 +147,32 @@ export default function ShopHealthDashboard() {
           <HeroMetrics heroes={data.heroes} />
 
           {/* Pipeline */}
-          <SectionCard title="Pipeline">
+          <SectionCard title="Pipeline" icon="📊">
             <PipelineSectionContent data={data.pipeline} />
           </SectionCard>
 
           {/* Preconstruction */}
-          <SectionCard title="Preconstruction">
+          <SectionCard title="Preconstruction" icon="📐">
             <PreconSectionContent data={data.preconstruction} />
           </SectionCard>
 
           {/* Scheduling */}
-          <SectionCard title="Scheduling">
+          <SectionCard title="Scheduling" icon="📅">
             <SchedulingSectionContent data={data.scheduling} />
           </SectionCard>
 
           {/* Operations */}
-          <SectionCard title="Operations">
+          <SectionCard title="Operations" icon="⚡">
             <OperationsSectionContent data={data.operations} />
           </SectionCard>
 
           {/* Inspections */}
-          <SectionCard title="Inspections">
+          <SectionCard title="Inspections" icon="🔍">
             <InspectionsSectionContent data={data.inspections} />
           </SectionCard>
 
           {/* Bottleneck */}
-          <SectionCard title="Bottleneck of the Week" defaultOpen={true}>
+          <SectionCard title="Bottleneck of the Week" icon="🎯" defaultOpen={true}>
             <BottleneckSectionContent
               key={`${activeTab}-${weekParam}`}
               location={activeTab}

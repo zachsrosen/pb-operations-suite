@@ -22,24 +22,28 @@ export function WeekSelector({ weekStart, onChange }: WeekSelectorProps) {
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 bg-surface-2 rounded-lg p-1">
       <button
         onClick={() => onChange(addWeeks(weekStart, -1))}
-        className="p-1.5 rounded-lg hover:bg-surface-2 text-muted hover:text-foreground transition-colors"
+        className="p-2 rounded-md hover:bg-surface text-muted hover:text-foreground transition-colors"
         title="Previous week"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
       </button>
-      <span className="text-sm font-medium text-foreground min-w-[180px] text-center">
+      <span className="text-sm font-medium text-foreground min-w-[200px] text-center px-2">
         {fmt(weekStart)} &ndash; {fmtYear(weekEnd)}
-        {isCurrentWeek && <span className="ml-2 text-xs text-muted">(current)</span>}
+        {isCurrentWeek && (
+          <span className="ml-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full">
+            Current
+          </span>
+        )}
       </span>
       <button
         onClick={() => onChange(addWeeks(weekStart, 1))}
         disabled={isCurrentWeek}
-        className="p-1.5 rounded-lg hover:bg-surface-2 text-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        className="p-2 rounded-md hover:bg-surface text-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         title="Next week"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

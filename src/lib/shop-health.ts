@@ -15,9 +15,8 @@ import type {
   InspectionsSection,
   ShopHealthBottleneckEntry,
 } from "./shop-health-types";
-import type { OfficePerformanceData } from "./office-performance-types";
 import type { Project } from "./hubspot";
-import { getOfficePerformanceData } from "./office-performance";
+import { getGoalsForGroup } from "./office-performance";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
 import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
@@ -202,12 +201,15 @@ export async function getShopHealthData(
   const priorWeekStart = subWeeks(weekStart, 1);
   const weekEndDate = getWeekEnd(weekStart);
 
-  // Fetch office-performance data (for goals) and raw projects in parallel.
+  // Fetch goals (lightweight DB query) and raw projects in parallel.
+  // Goals only need 2 numbers from the OfficeGoal table — NOT the full
+  // getOfficePerformanceData which triggers 10+ HubSpot/Zuper API calls.
   // Projects are cached with request coalescing so concurrent calls from the
   // overview endpoint (4 location groups in parallel) share a single HubSpot
   // fetch instead of each hammering the API and triggering 429 rate limits.
-  const [opData, { data: allProjects }] = await Promise.all([
-    getOfficePerformanceData(group),
+  const now = new Date();
+  const [goalData, { data: allProjects }] = await Promise.all([
+    getGoalsForGroup(group.canonicals, now.getMonth() + 1, now.getFullYear()),
     appCache.getOrFetch(CACHE_KEYS.PROJECTS_ACTIVE, () =>
       fetchAllProjects({ activeOnly: true })
     ),
@@ -220,7 +222,7 @@ export async function getShopHealthData(
     return normalized !== null && canonicalSet.has(normalized);
   });
 
-  const goals = computeGoals(opData);
+  const goals = computeGoalsFromRaw(goalData);
 
   // Compute sections for current and prior week
   const pipeline = computePipeline(locationProjects, weekStart);
@@ -277,9 +279,9 @@ export async function getShopHealthData(
 
 // ─── Section Computation Helpers ─────────────────────────────────────────────
 
-function computeGoals(opData: OfficePerformanceData): ShopHealthGoals {
-  const monthlyInstalls = opData.installs?.completedGoal ?? 0;
-  const monthlyInspections = opData.inspections?.completedGoal ?? 0;
+function computeGoalsFromRaw(goalData: Record<string, number>): ShopHealthGoals {
+  const monthlyInstalls = goalData.installs_completed ?? 0;
+  const monthlyInspections = goalData.inspections_completed ?? 0;
   return {
     monthlyInstalls,
     weeklyInstalls: Math.round(monthlyInstalls / 4.3),
