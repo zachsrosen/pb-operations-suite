@@ -4,8 +4,12 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import type { PipelineSection as PipelineSectionData, ShopHealthGoals } from '@/lib/shop-health-types';
 
 function formatDollars(value: number): string {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  if (value >= 1_000_000) {
+    const m = value / 1_000_000;
+    // Use 2 decimals when the tenths place would round misleadingly (e.g. 1.25M not 1.3M)
+    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(2).replace(/0$/, '')}M`;
+  }
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}K`;
   return `$${value.toLocaleString()}`;
 }
 
