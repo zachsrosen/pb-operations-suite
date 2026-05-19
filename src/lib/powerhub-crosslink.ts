@@ -12,6 +12,8 @@
  * All entry points no-op when POWERHUB_CROSSLINK_ENABLED !== "true".
  */
 
+import { prisma } from "@/lib/db";
+
 export interface PrimarySiteCandidate {
   id: string;
   siteName: string;
@@ -87,4 +89,96 @@ export function pickPrimarySite<T extends PrimarySiteCandidate>(sites: T[]): T |
     return b.site.id.localeCompare(a.site.id);
   });
   return enriched[0].site;
+}
+
+export interface ResolvedPrimarySite {
+  id: string;
+  siteId: string;
+  siteName: string;
+  portalUrl: string | null;
+}
+
+/**
+ * Look up all PowerhubSite rows for a property, pick the primary, write
+ * the `primaryForProperty` flag, and update the denormalized
+ * teslaPortalUrl + teslaSiteId on HubSpotPropertyCache.
+ *
+ * Returns the primary site (or null if no sites are linked to this property).
+ *
+ * Idempotent: safe to call repeatedly. Race-safe via the partial unique
+ * index — if a concurrent caller flips primaryForProperty on a different
+ * site, this caller's update will hit the index constraint and we retry once.
+ */
+export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPrimarySite | null> {
+  const sites = await prisma.powerhubSite.findMany({
+    where: { propertyId },
+    select: {
+      id: true,
+      siteId: true,
+      siteName: true,
+      portalUrl: true,
+      createdAt: true,
+      primaryForProperty: true,
+    },
+  });
+
+  if (sites.length === 0) {
+    // No sites: clear cache + demote any orphaned primary flags (defense in depth)
+    await prisma.hubSpotPropertyCache.update({
+      where: { id: propertyId },
+      data: { teslaPortalUrl: null, teslaSiteId: null },
+    });
+    return null;
+  }
+
+  const primary = pickPrimarySite(sites)!;
+
+  // Two writes in sequence (NOT a transaction — the demote-then-promote order
+  // avoids the partial unique index conflict naturally).
+  await prisma.powerhubSite.updateMany({
+    where: { propertyId, id: { not: primary.id } },
+    data: { primaryForProperty: false },
+  });
+  await retryOnUniqueConflict(() =>
+    prisma.powerhubSite.update({
+      where: { id: primary.id },
+      data: { primaryForProperty: true },
+    })
+  );
+
+  // Update denormalized fields on the property cache
+  await prisma.hubSpotPropertyCache.update({
+    where: { id: propertyId },
+    data: {
+      teslaPortalUrl: primary.portalUrl,
+      teslaSiteId: primary.siteId,
+    },
+  });
+
+  return {
+    id: primary.id,
+    siteId: primary.siteId,
+    siteName: primary.siteName,
+    portalUrl: primary.portalUrl,
+  };
+}
+
+/**
+ * Retry helper for the partial unique index race: a concurrent caller may
+ * have promoted a different site, so we retry once after re-demoting.
+ */
+async function retryOnUniqueConflict<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      lastErr = err;
+      const code = (err as { code?: string })?.code;
+      if (code !== "P2002") throw err;
+      // Tiny jitter before retry
+      await new Promise((r) => setTimeout(r, 50 * (i + 1)));
+    }
+  }
+  throw lastErr;
 }
