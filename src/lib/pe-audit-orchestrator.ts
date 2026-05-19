@@ -721,20 +721,32 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 
     // Concurrency limiter for actual classifyDocument vision API calls.
     // The Promise cache prevents duplicate work but doesn't bound how many
-    // unique-file classifications fire at once. With all 20 checklist items
-    // launching concurrently, a deal with ~10 unique candidate files would
-    // hit Anthropic's per-org rate limits and slow to a crawl. Cap at 6.
-    const VISION_CONCURRENCY = 6;
+    // unique-file classifications fire at once.
+    //
+    // Bumped 6 → 10 (2026-05-19) after observing docs-mode runs routinely
+    // landing at 270-300s on the 300s Vercel cap. At cap=6 with ~28 unique
+    // classify calls per Brownell-style deal that's 5 sequential batches.
+    // At cap=10 it's 3 batches → ~100s of wall-time saved. Anthropic's
+    // standard-tier per-org RPM (~50) is far above what one concurrent
+    // audit could trip. If we ever see 429s in prod (warning logs from
+    // drive-list-retry would surface them — same fetch retry path doesn't
+    // exist for the SDK yet), drop back to 8.
+    const VISION_CONCURRENCY = 10;
     let visionInFlight = 0;
+    let visionMaxConcurrency = 0;
+    const visionTimings: number[] = [];
     const visionQueue: (() => void)[] = [];
     async function withVisionSlot<T>(fn: () => Promise<T>): Promise<T> {
       if (visionInFlight >= VISION_CONCURRENCY) {
         await new Promise<void>((resolve) => visionQueue.push(resolve));
       }
       visionInFlight++;
+      if (visionInFlight > visionMaxConcurrency) visionMaxConcurrency = visionInFlight;
+      const t0 = Date.now();
       try {
         return await fn();
       } finally {
+        visionTimings.push(Date.now() - t0);
         visionInFlight--;
         const next = visionQueue.shift();
         if (next) next();
@@ -1028,7 +1040,11 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
       const allResults = await Promise.all(allItemPromises);
       results.push(...allResults);
     }
-    onEvent?.({ type: "diagnostic", data: { message: `Doc classification loop completed in ${((Date.now() - docLoop0) / 1000).toFixed(1)}s (${visionCallCount} vision calls, ${cacheHits} cache hits)` } });
+    // Vision-call latency telemetry — surfaces in Vercel logs so we can see
+    // whether the concurrency bump is actually paying off or whether per-call
+    // latency is the real bottleneck on slow runs.
+    const visionStats = summarizeTimings(visionTimings);
+    onEvent?.({ type: "diagnostic", data: { message: `Doc classification loop completed in ${((Date.now() - docLoop0) / 1000).toFixed(1)}s (${visionCallCount} vision calls, ${cacheHits} cache hits, peak concurrency ${visionMaxConcurrency}/${VISION_CONCURRENCY}, per-call p50=${visionStats.p50}s p95=${visionStats.p95}s max=${visionStats.max}s)` } });
 
     const resolved = resolveCombinedFiles(results);
 
@@ -1110,3 +1126,12 @@ export async function runPeAudit(opts: AuditRunOptions): Promise<string> {
 }
 
 export { assemblePackage } from "@/lib/pe-turnover";
+
+/** p50 / p95 / max in seconds (1 decimal) from a list of millisecond timings. */
+function summarizeTimings(timingsMs: number[]): { p50: string; p95: string; max: string } {
+  if (timingsMs.length === 0) return { p50: "0", p95: "0", max: "0" };
+  const sorted = [...timingsMs].sort((a, b) => a - b);
+  const pct = (p: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+  const toS = (ms: number) => (ms / 1000).toFixed(1);
+  return { p50: toS(pct(0.5)), p95: toS(pct(0.95)), max: toS(sorted[sorted.length - 1]) };
+}
