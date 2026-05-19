@@ -22,11 +22,13 @@ describe("buildPropertyCustomFields", () => {
       pbLocation: "DTC",
       ahjName: "El Paso County",
       utilityName: "Colorado Springs Utilities",
+      teslaPortalUrl: null,
+      teslaSiteId: null,
     };
 
     const fields = buildPropertyCustomFields(property);
 
-    expect(fields).toHaveLength(10);
+    expect(fields).toHaveLength(12);
     expect(fields.find((f) => f.label === "System Size (kW)")?.value).toBe("8.4");
     expect(fields.find((f) => f.label === "Has Battery")?.value).toBe("Yes");
     expect(fields.find((f) => f.label === "Has EV Charger")?.value).toBe("No");
@@ -51,11 +53,13 @@ describe("buildPropertyCustomFields", () => {
       pbLocation: null,
       ahjName: null,
       utilityName: null,
+      teslaPortalUrl: null,
+      teslaSiteId: null,
     };
 
     const fields = buildPropertyCustomFields(property);
 
-    expect(fields).toHaveLength(10);
+    expect(fields).toHaveLength(12);
     expect(fields.find((f) => f.label === "System Size (kW)")?.value).toBe("N/A");
     expect(fields.find((f) => f.label === "Has Battery")?.value).toBe("No");
     expect(fields.find((f) => f.label === "Has EV Charger")?.value).toBe("No");
@@ -66,10 +70,12 @@ describe("buildPropertyCustomFields", () => {
     expect(fields.find((f) => f.label === "PB Location")?.value).toBe("");
     expect(fields.find((f) => f.label === "AHJ")?.value).toBe("");
     expect(fields.find((f) => f.label === "Utility")?.value).toBe("");
+    expect(fields.find((f) => f.label === "Tesla PowerHub")?.value).toBe("");
+    expect(fields.find((f) => f.label === "Tesla Site ID")?.value).toBe("");
   });
 
-  it("exports all 10 field labels", () => {
-    expect(ZUPER_PROPERTY_FIELD_LABELS).toHaveLength(10);
+  it("exports all 12 field labels", () => {
+    expect(ZUPER_PROPERTY_FIELD_LABELS).toHaveLength(12);
   });
 
   it("all fields use SINGLE_LINE type", () => {
@@ -84,6 +90,8 @@ describe("buildPropertyCustomFields", () => {
       pbLocation: "Westminster",
       ahjName: "City of Westminster",
       utilityName: "Xcel Energy",
+      teslaPortalUrl: null,
+      teslaSiteId: null,
     };
 
     const fields = buildPropertyCustomFields(property);

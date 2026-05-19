@@ -26,6 +26,9 @@ export const ZUPER_PROPERTY_FIELD_LABELS = [
   "PB Location",
   "AHJ",
   "Utility",
+  // NEW — Tesla PowerHub cross-link
+  "Tesla PowerHub",
+  "Tesla Site ID",
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +46,9 @@ export interface PropertyFieldSource {
   pbLocation: string | null;
   ahjName: string | null;
   utilityName: string | null;
+  // NEW
+  teslaPortalUrl: string | null;
+  teslaSiteId: string | null;
 }
 
 export interface SyncPropertyResult {
@@ -79,6 +85,8 @@ export function buildPropertyCustomFields(property: PropertyFieldSource): ZuperM
     { label: "PB Location", value: str(property.pbLocation), type: "SINGLE_LINE" },
     { label: "AHJ", value: str(property.ahjName), type: "SINGLE_LINE" },
     { label: "Utility", value: str(property.utilityName), type: "SINGLE_LINE" },
+    { label: "Tesla PowerHub", value: str(property.teslaPortalUrl), type: "SINGLE_LINE" },
+    { label: "Tesla Site ID", value: str(property.teslaSiteId), type: "SINGLE_LINE" },
   ];
 }
 
@@ -267,6 +275,8 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     pbLocation: property.pbLocation,
     ahjName: property.ahjName,
     utilityName: property.utilityName,
+    teslaPortalUrl: property.teslaPortalUrl,
+    teslaSiteId: property.teslaSiteId,
   });
 
   // Resolve customer UID from linked jobs.
