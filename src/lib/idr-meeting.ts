@@ -982,22 +982,17 @@ export async function syncItemToHubSpot(
           console.warn(`[idr-meeting] No "Complete Initial Design Review" task found for deal ${item.dealId} — workflow won't fire`);
           taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
         } else if (item.designRevisionNeeded) {
-          // Task completed → workflow will set "Draft Complete" async.
-          // We need to override design_status AFTER the workflow fires (~2 min).
-          // Persist the override to DB — a cron picks it up reliably.
-          // (setTimeout doesn't survive Vercel serverless recycling.)
-          const revisionStatus = item.type === "ESCALATION"
-            ? "Revision Needed - Rejected"   // label: "Revision Needed - As-Built"
-            : "IDR Revision Needed";
-          await prisma.pendingPropertyOverride.create({
-            data: {
-              dealId: item.dealId,
-              propertyName: "design_status",
-              value: revisionStatus,
-              reason: `IDR sync — ${item.type === "ESCALATION" ? "escalation as-built" : "design"} revision flagged`,
-              executeAfter: new Date(Date.now() + 2 * 60 * 1000), // 2 min from now
-            },
+          // Task completed → HubSpot workflow will set "Draft Complete" async.
+          // A SECOND HubSpot workflow watches idr_revision_requested, waits ~3 min,
+          // then overrides design_status to the value in idr_revision_type.
+          const revisionType = item.type === "ESCALATION"
+            ? "escalation"
+            : "design";
+          await pushDealProperties(item.dealId, {
+            idr_revision_requested: "true",
+            idr_revision_type: revisionType,
           });
+          console.log(`[idr-meeting] Set idr_revision_requested=true, type=${revisionType} on deal ${item.dealId}`);
         }
       } catch (err) {
         console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
