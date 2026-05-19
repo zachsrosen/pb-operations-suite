@@ -22,6 +22,7 @@ import { resolveDashboardGroup } from "./dashboard-location-groups";
 import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
 import { prisma } from "./db";
+import { appCache, CACHE_KEYS } from "./cache";
 
 // ─── Week Utilities ──────────────────────────────────────────────────────────
 // Re-exported from shop-health-utils.ts (which has no server deps) so that
@@ -201,10 +202,15 @@ export async function getShopHealthData(
   const priorWeekStart = subWeeks(weekStart, 1);
   const weekEndDate = getWeekEnd(weekStart);
 
-  // Fetch office-performance data (for goals) and raw projects in parallel
-  const [opData, allProjects] = await Promise.all([
+  // Fetch office-performance data (for goals) and raw projects in parallel.
+  // Projects are cached with request coalescing so concurrent calls from the
+  // overview endpoint (4 location groups in parallel) share a single HubSpot
+  // fetch instead of each hammering the API and triggering 429 rate limits.
+  const [opData, { data: allProjects }] = await Promise.all([
     getOfficePerformanceData(group),
-    fetchAllProjects({ activeOnly: true }),
+    appCache.getOrFetch(CACHE_KEYS.PROJECTS_ACTIVE, () =>
+      fetchAllProjects({ activeOnly: true })
+    ),
   ]);
 
   // Filter to this location group's canonical locations
