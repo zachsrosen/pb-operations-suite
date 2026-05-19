@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     }
 
     const dealMap = await buildPeDealMap();
-    const result = await syncPeDocStatuses(projects, dealMap);
+    const result = await syncPeDocStatuses(projects, dealMap, "webhook/pe-scraper");
 
     console.warn(
       `[pe-scraper-webhook] ${result.projectsMatched}/${result.projectsFound} matched, ` +

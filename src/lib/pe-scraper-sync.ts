@@ -786,6 +786,7 @@ function buildNotesString(doc: ParsedDocument, projNumber: string): string {
 export async function syncPeDocStatuses(
   projects: ParsedProject[],
   dealMap: Map<string, string>,
+  syncedBy = "pe-scraper-sync",
 ): Promise<SyncResult> {
   const result: SyncResult = {
     projectsFound: projects.length,
@@ -902,6 +903,35 @@ export async function syncPeDocStatuses(
         );
         result.docsSkipped++;
       }
+    }
+  }
+
+  // Persist change log to DB (best-effort, non-blocking)
+  if (result.changes.length > 0) {
+    try {
+      // Resolve deal names for the change log
+      const changedDealIds = [...new Set(result.changes.map((c) => c.dealId))];
+      const dealNames = new Map<string, string>();
+      for (const [name, id] of dealMap.entries()) {
+        if (changedDealIds.includes(id)) dealNames.set(id, name);
+      }
+
+      await prisma.peDocChangeLog.createMany({
+        data: result.changes.map((c) => ({
+          dealId: c.dealId,
+          dealName: dealNames.get(c.dealId) ?? null,
+          docName: c.docName,
+          oldStatus: c.oldStatus,
+          newStatus: c.newStatus,
+          oldNotes: c.oldNotes,
+          newNotes: c.newNotes,
+          syncedBy,
+        })),
+      });
+    } catch (err) {
+      console.warn(
+        `[pe-scraper-sync] Failed to persist change log (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

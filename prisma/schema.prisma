@@ -4515,6 +4515,22 @@ model PeDocumentReview {
   @@index([dealId])
 }
 
+model PeDocChangeLog {
+  id        String   @id @default(cuid())
+  dealId    String
+  dealName  String?
+  docName   String
+  oldStatus String
+  newStatus String
+  oldNotes  String?
+  newNotes  String?
+  syncedBy  String   @default("pe-scraper-sync") // "webhook/pe-scraper" | "cron/pe-scraper-sync"
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([dealId])
+}
+
 model PeActionItem {
   id           String    @id @default(cuid())
   peProjectId  String // PE project ID e.g. "CO2602-KRAF2"
