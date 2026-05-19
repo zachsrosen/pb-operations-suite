@@ -380,6 +380,7 @@ export class ZuperClient {
       if (data && typeof data === "object") {
         const payloadType = typeof data.type === "string" ? data.type.toLowerCase() : "";
         if (payloadType === "error" || payloadType === "failure" || data.success === false) {
+          console.error(`[zuper] Payload-level error for ${endpoint}:`, JSON.stringify(data));
           return {
             type: "error",
             error: data.message || data.error || `Zuper API returned ${data.type || "error"} for ${endpoint}`,
