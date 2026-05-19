@@ -112,6 +112,11 @@ export function findNearestProperty(
  * Filter a property candidate list down to those within a bounding box around
  * the target lat/lng. Cheap pre-filter for very large candidate sets — the
  * subsequent haversine loop only runs on this narrowed list.
+ *
+ * Note: longitude wrap-around at the ±180° antimeridian is NOT handled. Safe
+ * for any continental-US fleet (PB operates only in CO/CA). If we ever
+ * expand internationally, swap to a normalized longitude comparison or use
+ * PostGIS server-side.
  */
 export function filterByBoundingBox(
   siteLat: number,

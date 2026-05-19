@@ -102,17 +102,21 @@ export async function POST(request: Request) {
     }
   }
 
-  // Index our PowerhubSite rows by siteId for fast lookup
-  const ourSiteIds = new Set(
+  // Index our PowerhubSite rows by siteId. Load existing propertyId so we
+  // can detect + clear stale links when a re-import places the site outside
+  // the LOW radius of its previously-matched property.
+  const ourSites = new Map(
     (
       await prisma.powerhubSite.findMany({
         where: { siteId: { in: parsed.sites.map((s) => s.siteId) } },
-        select: { siteId: true },
+        select: { siteId: true, propertyId: true, linkMethod: true },
       })
-    ).map((s) => s.siteId),
+    ).map((s) => [s.siteId, s] as const),
   );
 
-  let updated = 0;
+  let coordsUpdated = 0;
+  let linksWritten = 0;
+  let linksCleared = 0;
   let skippedUnknown = 0;
   const matchCounts: Record<"HIGH" | "MEDIUM" | "LOW" | "UNMATCHED", number> = {
     HIGH: 0,
@@ -120,10 +124,14 @@ export async function POST(request: Request) {
     LOW: 0,
     UNMATCHED: 0,
   };
+  // Property IDs that need resolvePrimarySite called: any property we just
+  // linked TO, or any property we just unlinked FROM (so its denormalized
+  // teslaPortalUrl/teslaSiteId on HubSpotPropertyCache refreshes correctly).
   const propertyIdsTouched = new Set<string>();
 
   for (const incoming of parsed.sites) {
-    if (!ourSiteIds.has(incoming.siteId)) {
+    const existing = ourSites.get(incoming.siteId);
+    if (!existing) {
       skippedUnknown++;
       continue;
     }
@@ -147,20 +155,31 @@ export async function POST(request: Request) {
     }
 
     if (dryRun) {
-      updated++;
+      coordsUpdated++;
+      if (match) linksWritten++;
+      // If the site is currently linked but wouldn't be after re-import,
+      // dryRun reports that as a cleared link.
+      if (!match && existing.propertyId) linksCleared++;
       continue;
     }
 
-    // Write coords + (optionally) link, in a single update per row
+    // Build the update payload. Three branches:
+    //   (a) match found       → write coords + GEO link
+    //   (b) no match, was linked → clear the stale link (Bug fix from code review:
+    //       silently preserving propertyId here was worse than the over-clustering
+    //       this PR replaces — re-imports would never demote a site away from
+    //       a property it's no longer near.)
+    //   (c) no match, wasn't linked → write coords only, leave UNLINKED
     const data: {
       latitude: number;
       longitude: number;
       lastGeoSyncAt: Date;
-      propertyId?: string;
+      propertyId?: string | null;
       dealId?: null;
-      linkMethod?: "GEO";
+      linkMethod?: "GEO" | "UNLINKED";
       linkConfidence?: "HIGH" | "MEDIUM" | "LOW";
-      linkDistanceM?: number;
+      linkDistanceM?: number | null;
+      primaryForProperty?: false;
     } = {
       latitude: incoming.latitude,
       longitude: incoming.longitude,
@@ -174,13 +193,29 @@ export async function POST(request: Request) {
       data.linkConfidence = match.confidence;
       data.linkDistanceM = match.distanceM;
       propertyIdsTouched.add(match.propertyId);
+      linksWritten++;
+    } else if (existing.propertyId) {
+      // Branch (b) — explicitly clear stale link
+      data.propertyId = null;
+      data.dealId = null;
+      data.linkMethod = "UNLINKED";
+      data.linkDistanceM = null;
+      data.primaryForProperty = false;
+      propertyIdsTouched.add(existing.propertyId);
+      linksCleared++;
     }
 
+    // Race note: two concurrent imports touching the same (siteId, propertyId)
+    // could interleave their primaryForProperty writes here. resolvePrimarySite
+    // calls retryOnUniqueConflict so the worst case is a nondeterministic
+    // primary winner — acceptable for an admin-only, manually-triggered
+    // endpoint. If this becomes a real workflow we'd want a per-property
+    // advisory lock.
     await prisma.powerhubSite.update({
       where: { siteId: incoming.siteId },
       data,
     });
-    updated++;
+    coordsUpdated++;
   }
 
   // Re-resolve primary for every affected property so teslaPortalUrl /
@@ -193,7 +228,9 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     received: parsed.sites.length,
-    updated,
+    coordsUpdated,
+    linksWritten,
+    linksCleared,
     skippedUnknown,
     matched: matchCounts,
     propertiesResolved: dryRun ? 0 : propertyIdsTouched.size,
