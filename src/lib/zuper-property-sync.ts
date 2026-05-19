@@ -401,6 +401,10 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     }
   }
 
+  // Cascade Tesla PowerHub URL + Site ID to linked Zuper jobs.
+  // Independently flagged via POWERHUB_ZUPER_CASCADE_ENABLED; no-op when off.
+  await cascadeUrlToJobs(propertyCacheId);
+
   return { propertyId: propertyCacheId, zuperPropertyUid, action, jobsLinked, projectsLinked };
 }
 
