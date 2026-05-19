@@ -12,8 +12,9 @@ import PropertyJobsTab from "@/components/property/PropertyJobsTab";
 import PropertyScheduleTab from "@/components/property/PropertyScheduleTab";
 import PropertyEquipmentTab from "@/components/property/PropertyEquipmentTab";
 import PropertyPhotosTab from "@/components/property/PropertyPhotosTab";
+import PropertyMonitoringTab from "@/components/property/PropertyMonitoringTab";
 import type { PropertyDetail } from "@/lib/property-detail";
-import type { HubTab } from "@/lib/property-hub";
+import type { HubCounts, HubTab } from "@/lib/property-hub";
 
 const VALID_TABS: HubTab[] = [
   "activity",
@@ -23,6 +24,7 @@ const VALID_TABS: HubTab[] = [
   "schedule",
   "equipment",
   "photos",
+  "monitoring",
 ];
 
 function isValidTab(t: string | null): t is HubTab {
@@ -52,6 +54,17 @@ export default function PropertyHubPage() {
     staleTime: 60_000,
   });
 
+  // Counts power the tab badges (e.g. monitoring alert badge)
+  const { data: counts } = useQuery<HubCounts>({
+    queryKey: ["propertyHubCounts", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/properties/${id}/hub?tab=counts`);
+      if (!res.ok) throw new Error("Failed to load property counts");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
   function setTab(tab: HubTab) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
@@ -73,7 +86,7 @@ export default function PropertyHubPage() {
           error={headerError}
         />
 
-        <PropertyHubTabs activeTab={activeTab} onTabChange={setTab} />
+        <PropertyHubTabs activeTab={activeTab} onTabChange={setTab} counts={counts} />
 
         <div className="min-h-[400px]">
           {activeTab === "activity" && (
@@ -96,6 +109,9 @@ export default function PropertyHubPage() {
           )}
           {activeTab === "photos" && (
             <PropertyPhotosTab propertyId={id} />
+          )}
+          {activeTab === "monitoring" && (
+            <PropertyMonitoringTab propertyId={id} />
           )}
         </div>
       </div>
