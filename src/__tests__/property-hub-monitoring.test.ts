@@ -44,6 +44,11 @@ const POWERHUB_SITE = {
   status: "ACTIVE",
   primaryForProperty: true,
   lastTelemetryAt: null,
+  totalGateways: 1,
+  totalBatteries: 1,
+  totalInverters: 1,
+  totalBatteryEnergy: 13500,
+  totalBatteryPower: 5800,
   telemetrySnapshot: null,
   alerts: [],
 };
@@ -188,6 +193,53 @@ describe("fetchMonitoring battery SoC derivation", () => {
     const res = await getPropertyHub(PROPERTY.hubspotObjectId, "monitoring");
     if (res.tab !== "monitoring") return;
     expect(res.data.sites[0].snapshot?.batterySocPercent).toBeNull();
+  });
+
+  it("surfaces all expanded snapshot signals + equipment summary", async () => {
+    // Real raw snapshot for Brotherton STE20230810-00404 on 2026-05-19 21:17 UTC
+    powerhubFindMany.mockResolvedValue([
+      siteWithSnapshot(
+        {
+          solarPowerW: 6720,
+          batteryPowerW: 0,
+          gridPowerW: -6214,
+          loadPowerW: 506,
+          batterySocPercent: null,
+          batteryEnergyRemainingWh: 10509,
+          gridConnectedStatus: "1",
+          batteryMode: "7",
+          solarEnergyTodayWh: 36927524,
+          gridEnergyImportedWh: 7238858.5,
+          gridEnergyExportedWh: 19476628,
+        },
+        13500,
+      ),
+    ]);
+
+    const res = await getPropertyHub(PROPERTY.hubspotObjectId, "monitoring");
+    if (res.tab !== "monitoring") return;
+
+    const site = res.data.sites[0];
+    expect(site.equipment).toEqual({
+      gatewayCount: 1,
+      batteryCount: 1,
+      inverterCount: 1,
+      batteryCapacityWh: 13500,
+      batteryMaxPowerW: 5800,
+    });
+    expect(site.snapshot).toMatchObject({
+      solarPowerW: 6720,
+      batteryPowerW: 0,
+      gridPowerW: -6214,
+      loadPowerW: 506,
+      batteryEnergyRemainingWh: 10509,
+      gridConnectedStatus: "1",
+      batteryMode: "7",
+      solarEnergyExportedLifetimeWh: 36927524,
+      gridEnergyImportedLifetimeWh: 7238858.5,
+      gridEnergyExportedLifetimeWh: 19476628,
+    });
+    expect(site.snapshot?.batterySocPercent).toBeCloseTo(77.84, 1);
   });
 
   it("returns null when totalBatteryEnergy is zero or missing (avoid divide-by-zero)", async () => {

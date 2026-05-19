@@ -111,24 +111,80 @@ export default function PropertyMonitoringTab({ propertyId }: Props) {
           </div>
 
           {site.snapshot && (
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              <SnapshotStat
-                label="Solar"
-                value={formatPower(site.snapshot.solarPowerW)}
-              />
-              <SnapshotStat
-                label="Battery"
-                value={
-                  site.snapshot.batterySocPercent != null
-                    ? `${site.snapshot.batterySocPercent.toFixed(0)}%`
-                    : "—"
-                }
-              />
-              <SnapshotStat
-                label="Grid"
-                value={site.snapshot.gridConnectedStatus ?? "—"}
-              />
-            </div>
+            <>
+              {/* Row 1: Instantaneous power flows */}
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <SnapshotStat
+                  label="Solar"
+                  value={formatPowerSigned(site.snapshot.solarPowerW)}
+                  arrow={site.snapshot.solarPowerW != null && site.snapshot.solarPowerW > 0 ? "up" : null}
+                  arrowColor="green"
+                />
+                <SnapshotStat
+                  label="Battery"
+                  value={formatBatteryPower(site.snapshot.batteryPowerW)}
+                  subtitle={
+                    site.snapshot.batterySocPercent != null
+                      ? `${site.snapshot.batterySocPercent.toFixed(1)}%`
+                      : undefined
+                  }
+                  arrow={
+                    site.snapshot.batteryPowerW == null
+                      ? null
+                      : site.snapshot.batteryPowerW > 50
+                        ? "up"
+                        : site.snapshot.batteryPowerW < -50
+                          ? "down"
+                          : null
+                  }
+                  arrowColor={(site.snapshot.batteryPowerW ?? 0) > 50 ? "amber" : "blue"}
+                />
+                <SnapshotStat
+                  label="Grid"
+                  value={formatPowerSigned(site.snapshot.gridPowerW)}
+                  subtitle={
+                    site.snapshot.gridConnectedStatus === "0"
+                      ? "Islanded"
+                      : site.snapshot.gridConnectedStatus === "1"
+                        ? "Connected"
+                        : undefined
+                  }
+                  arrow={
+                    site.snapshot.gridPowerW == null
+                      ? null
+                      : site.snapshot.gridPowerW > 50
+                        ? "down"
+                        : site.snapshot.gridPowerW < -50
+                          ? "up"
+                          : null
+                  }
+                  arrowColor={(site.snapshot.gridPowerW ?? 0) < -50 ? "green" : "red"}
+                />
+                <SnapshotStat
+                  label="Load"
+                  value={formatPower(site.snapshot.loadPowerW)}
+                  subtitle="Home"
+                />
+              </div>
+
+              {/* Row 2: Battery + equipment context */}
+              <div className="grid grid-cols-3 gap-3 mb-3 text-xs text-muted">
+                <div>
+                  <span className="font-medium text-foreground">Battery: </span>
+                  {formatEnergyKwh(site.snapshot.batteryEnergyRemainingWh)} /{" "}
+                  {formatEnergyKwh(site.equipment.batteryCapacityWh)}{" "}
+                  {site.equipment.batteryCount > 1 && `(${site.equipment.batteryCount}×)`}
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Mode: </span>
+                  {formatBatteryMode(site.snapshot.batteryMode)}
+                </div>
+                <div>
+                  <span className="font-medium text-foreground">Equipment: </span>
+                  {site.equipment.gatewayCount}× GW · {site.equipment.batteryCount}× PW · {site.equipment.inverterCount}× INV
+                </div>
+              </div>
+            </>
           )}
 
           {site.activeAlerts.length > 0 && (
@@ -183,21 +239,85 @@ function StatusBadge({ status }: { status: "ACTIVE" | "OFFLINE" | "ERROR" }) {
   );
 }
 
-function SnapshotStat({ label, value }: { label: string; value: string }) {
+function SnapshotStat({
+  label,
+  value,
+  subtitle,
+  arrow,
+  arrowColor,
+}: {
+  label: string;
+  value: string;
+  subtitle?: string;
+  arrow?: "up" | "down" | null;
+  arrowColor?: "green" | "amber" | "blue" | "red";
+}) {
+  const colorClass =
+    arrowColor === "green"
+      ? "text-green-500"
+      : arrowColor === "amber"
+        ? "text-amber-500"
+        : arrowColor === "blue"
+          ? "text-blue-500"
+          : arrowColor === "red"
+            ? "text-red-500"
+            : "text-muted";
   return (
     <div className="text-center">
-      <div className="text-xs text-muted uppercase tracking-wide">
-        {label}
+      <div className="text-xs text-muted uppercase tracking-wide">{label}</div>
+      <div className="text-base font-medium text-foreground flex items-center justify-center gap-1">
+        {arrow && (
+          <span className={colorClass} aria-hidden="true">
+            {arrow === "up" ? "↑" : "↓"}
+          </span>
+        )}
+        <span>{value}</span>
       </div>
-      <div className="text-base font-medium text-foreground">{value}</div>
+      {subtitle && <div className="text-xs text-muted mt-0.5">{subtitle}</div>}
     </div>
   );
 }
 
+/** Unsigned power (always positive value). */
 function formatPower(w: number | null): string {
   if (w == null) return "—";
   if (Math.abs(w) >= 1000) return `${(w / 1000).toFixed(1)} kW`;
   return `${w.toFixed(0)} W`;
+}
+
+/** Signed power (preserves sign for direction; magnitude shown). */
+function formatPowerSigned(w: number | null): string {
+  return formatPower(w == null ? null : Math.abs(w));
+}
+
+/** Battery: shows charge/discharge magnitude or "Idle". */
+function formatBatteryPower(w: number | null): string {
+  if (w == null) return "—";
+  if (Math.abs(w) < 50) return "Idle";
+  return formatPower(Math.abs(w));
+}
+
+function formatEnergyKwh(wh: number | null): string {
+  if (wh == null) return "—";
+  return `${(wh / 1000).toFixed(1)} kWh`;
+}
+
+/** command_real_mode → human-readable. Codes from Tesla GridLogic. */
+function formatBatteryMode(code: string | null): string {
+  if (code == null) return "—";
+  const map: Record<string, string> = {
+    "0": "Standby",
+    "1": "Backup",
+    "2": "Self-Consume",
+    "3": "Time-of-Use",
+    "4": "Autonomous",
+    "5": "Sell to Grid",
+    "6": "Site Master",
+    "7": "Self-Powered",
+    "8": "Backup Reserve",
+    "9": "Off-Grid",
+  };
+  return map[code] ?? `Mode ${code}`;
 }
 
 // Simple relative-time formatter; date-fns isn't used in this codebase
