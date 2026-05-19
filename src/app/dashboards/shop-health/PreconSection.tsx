@@ -8,7 +8,7 @@ export function PreconSectionContent({ data }: { data: PreconstructionSection })
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
       <MetricCard label="Jobs in Design" value={data.jobsInDesign} />
       <MetricCard label="Submitted for Permit" value={data.jobsSubmittedForPermit} />
-      <MetricCard label="Permits Approved" value={data.permitsApprovedThisWeek} />
+      <MetricCard label="Permits Issued" value={data.permitsApprovedThisWeek} />
       <MetricCard
         label="Avg Days Sale to Permit"
         value={data.avgDaysSaleToPermit ?? '—'}
