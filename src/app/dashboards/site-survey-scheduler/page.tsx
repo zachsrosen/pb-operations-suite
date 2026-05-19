@@ -2468,9 +2468,16 @@ export default function SiteSurveySchedulerPage() {
                           {/* Show booked pre-sale / external jobs that aren't in the ops project list */}
                           {dayAvailability?.bookedSlots && (() => {
                             const eventIds = new Set(events.map(e => e.id));
+                            const seenJobUids = new Set<string>();
                             const unmatchedBookings = dayAvailability.bookedSlots.filter(slot => {
                               // Skip if this slot matches an ops project already rendered above
                               if (slot.projectId && eventIds.has(slot.projectId)) return false;
+                              // Client-side dedup: skip duplicate zuperJobUid entries
+                              // (multi-location surveyors can have the same job appear for multiple offices)
+                              if (slot.zuperJobUid) {
+                                if (seenJobUids.has(slot.zuperJobUid)) return false;
+                                seenJobUids.add(slot.zuperJobUid);
+                              }
                               // Only show if the job title indicates a pre-sale or external booking
                               const title = (slot.projectName || "").toLowerCase();
                               if (title.includes("pre-sale") || title.includes("pre sale")) return true;
@@ -2491,11 +2498,44 @@ export default function SiteSurveySchedulerPage() {
                               const customerName = nameAndAddr.split(" | ")[0] || slot.projectName || "Unknown";
                               const address = nameAndAddr.split(" | ")[1] || "";
                               const isPreSale = (slot.projectName || "").toLowerCase().includes("pre-sale");
+                              // Construct a minimal SurveyProject so the schedule modal works
+                              const preSaleProject: SurveyProject = {
+                                id: slot.zuperJobUid || `ext-${idx}`,
+                                name: slot.projectName || "Unknown",
+                                address: address || "",
+                                city: "",
+                                state: "",
+                                location: slot.location || "",
+                                amount: 0,
+                                type: "Pre-Sale",
+                                systemSize: 0,
+                                batteries: 0,
+                                evCount: 0,
+                                scheduleDate: dateStr,
+                                surveyStatus: "scheduled",
+                                completionDate: null,
+                                closeDate: null,
+                                hubspotUrl: "",
+                                zuperJobUid: slot.zuperJobUid,
+                                dealOwner: "",
+                                assignedSurveyor: slot.user_name || "",
+                                isPreSale: true,
+                              };
+                              const currentSlot = slot.user_name ? {
+                                userName: slot.user_name,
+                                startTime: slot.start_time || "",
+                                endTime: slot.end_time || "",
+                                displayTime: slot.display_time || slot.start_time || "",
+                              } : undefined;
                               return (
                                 <div
                                   key={`ext-${slot.zuperJobUid || idx}`}
-                                  className="text-xs p-1 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300"
-                                  title={`${isPreSale ? "PRE-SALE " : ""}${slot.user_name || "Unassigned"} @ ${slot.display_time || slot.start_time || ""}\n${address || "No address"}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openScheduleModal({ project: preSaleProject, date: dateStr, currentSlot });
+                                  }}
+                                  className="text-xs p-1 rounded cursor-pointer bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:bg-purple-500/30"
+                                  title={`${isPreSale ? "PRE-SALE " : ""}${slot.user_name || "Unassigned"} @ ${slot.display_time || slot.start_time || ""}\n${address || "No address"} - Click to view`}
                                 >
                                   <div className="truncate">
                                     {isPreSale && <span className="text-purple-400 mr-1 text-[0.55rem]">PRE</span>}
