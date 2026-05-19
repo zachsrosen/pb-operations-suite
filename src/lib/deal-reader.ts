@@ -386,6 +386,13 @@ export function dealToProject(deal: PrismaDeal): Project {
       typeof deal.rawProperties === "object" && deal.rawProperties !== null
         ? ((deal.rawProperties as Record<string, unknown>).tesla_site_id as string | null) ?? null
         : null,
+
+    // Customer sentiment (HubSpot deal properties added in #790; populated
+    // only via the API path that builds Project from deal-sync raw HubSpot
+    // payloads — DB-derived Projects from this reader leave them null).
+    customerSentimentScore: null,
+    mostRecentSentimentScore: null,
+    notesLastContacted: null,
   };
 }
 
