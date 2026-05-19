@@ -68,6 +68,10 @@ export interface SerializedDeal {
   openSolarId: string | null;
   zuperUid: string | null;
 
+  // Tesla PowerHub (extracted from rawProperties; populated by powerhub-crosslink)
+  teslaPortalUrl: string | null;
+  teslaSiteId: string | null;
+
   // Sync
   lastSyncedAt: string | null;
 

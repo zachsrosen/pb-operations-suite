@@ -263,4 +263,7 @@ export const DEAL_PROPERTIES = [
   // D&R specific
   "detach_status",
   "reset_status",
+  // Tesla PowerHub (pushed by powerhub-crosslink to linked deals)
+  "tesla_portal_url",
+  "tesla_site_id",
 ];

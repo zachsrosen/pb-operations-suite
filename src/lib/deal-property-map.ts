@@ -269,6 +269,9 @@ export const DEAL_SYNC_PROPERTIES: string[] = [
   "pipeline",            // pipeline resolution
   "is_participate_energy", // secondary PE check
   "os_project_link",     // openSolarUrl fallback (not in map, consumed in mapHubSpotToDeal)
+  // Tesla PowerHub crosslink (pushed by powerhub-crosslink; surfaced via rawProperties)
+  "tesla_portal_url",
+  "tesla_site_id",
 ];
 
 /** Department lead property keys for building departmentLeads Json */
