@@ -112,3 +112,99 @@ describe("fetchMonitoring id resolution", () => {
     expect(powerhubFindMany).not.toHaveBeenCalled();
   });
 });
+
+describe("fetchMonitoring battery SoC derivation", () => {
+  beforeEach(() => {
+    findUnique.mockReset();
+    powerhubFindMany.mockReset();
+    findUnique.mockImplementation(async ({ where }: { where: { hubspotObjectId?: string; id?: string } }) => {
+      if (where.hubspotObjectId === PROPERTY.hubspotObjectId) return PROPERTY;
+      return null;
+    });
+  });
+
+  function siteWithSnapshot(snapshot: Record<string, unknown> | null, totalBatteryEnergy: number | null) {
+    return {
+      ...POWERHUB_SITE,
+      totalBatteryEnergy,
+      telemetrySnapshot: snapshot,
+    };
+  }
+
+  it("derives SoC from energy-remaining + capacity when battery_state_of_energy is missing", async () => {
+    // Real values from Brotherton STE20230810-00404 on 2026-05-19 21:17 UTC
+    powerhubFindMany.mockResolvedValue([
+      siteWithSnapshot(
+        {
+          solarPowerW: 6720,
+          batterySocPercent: null,             // Tesla didn't return this signal
+          batteryEnergyRemainingWh: 10509,     // but it returned this
+          gridConnectedStatus: "1",
+        },
+        13500, // gateway nameplate capacity
+      ),
+    ]);
+
+    const res = await getPropertyHub(PROPERTY.hubspotObjectId, "monitoring");
+    expect(res.tab).toBe("monitoring");
+    if (res.tab !== "monitoring") return;
+
+    const soc = res.data.sites[0].snapshot?.batterySocPercent;
+    expect(soc).not.toBeNull();
+    expect(soc!).toBeCloseTo(77.84, 1); // 10509/13500*100 ≈ 77.84%
+  });
+
+  it("prefers the direct batterySocPercent signal when it's provided", async () => {
+    powerhubFindMany.mockResolvedValue([
+      siteWithSnapshot(
+        {
+          solarPowerW: null,
+          batterySocPercent: 42,
+          batteryEnergyRemainingWh: 10000, // would compute differently — ignored
+          gridConnectedStatus: null,
+        },
+        20000,
+      ),
+    ]);
+
+    const res = await getPropertyHub(PROPERTY.hubspotObjectId, "monitoring");
+    if (res.tab !== "monitoring") return;
+    expect(res.data.sites[0].snapshot?.batterySocPercent).toBe(42);
+  });
+
+  it("returns null when neither direct SoC nor energy/capacity is available", async () => {
+    powerhubFindMany.mockResolvedValue([
+      siteWithSnapshot(
+        {
+          solarPowerW: null,
+          batterySocPercent: null,
+          batteryEnergyRemainingWh: null,
+          gridConnectedStatus: null,
+        },
+        13500,
+      ),
+    ]);
+
+    const res = await getPropertyHub(PROPERTY.hubspotObjectId, "monitoring");
+    if (res.tab !== "monitoring") return;
+    expect(res.data.sites[0].snapshot?.batterySocPercent).toBeNull();
+  });
+
+  it("returns null when totalBatteryEnergy is zero or missing (avoid divide-by-zero)", async () => {
+    powerhubFindMany.mockResolvedValue([
+      siteWithSnapshot(
+        {
+          solarPowerW: null,
+          batterySocPercent: null,
+          batteryEnergyRemainingWh: 5000,
+          gridConnectedStatus: null,
+        },
+        0, // bad capacity reading
+      ),
+    ]);
+
+    const res = await getPropertyHub(PROPERTY.hubspotObjectId, "monitoring");
+    if (res.tab !== "monitoring") return;
+    expect(res.data.sites[0].snapshot?.batterySocPercent).toBeNull();
+  });
+});
