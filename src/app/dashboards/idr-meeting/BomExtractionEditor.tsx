@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -38,9 +38,9 @@ interface Props {
   readOnly: boolean;
 }
 
-let nextId = 1;
+let globalNextId = 1;
 function assignIds(items: Omit<BomItem, "id" | "confirmed">[]): BomItem[] {
-  return items.map((it) => ({ ...it, id: String(nextId++), confirmed: false }));
+  return items.map((it) => ({ ...it, id: String(globalNextId++), confirmed: false }));
 }
 
 const CATEGORIES = [
@@ -57,6 +57,7 @@ export function BomExtractionEditor({ item, readOnly }: Props) {
   const [saving, setSaving] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [snapshotId, setSnapshotId] = useState<string | null>(null);
+  const nextIdRef = useRef(globalNextId);
 
   // Fetch existing snapshot
   const snapshotQuery = useQuery({
@@ -70,12 +71,14 @@ export function BomExtractionEditor({ item, readOnly }: Props) {
   });
 
   // Load snapshot into editor on first fetch
-  if (snapshotQuery.data?.snapshot && !loaded) {
-    const snap = snapshotQuery.data.snapshot;
-    setBomItems(assignIds(snap.bomData.items));
-    setSnapshotId(snap.id);
-    setLoaded(true);
-  }
+  useEffect(() => {
+    if (snapshotQuery.data?.snapshot && !loaded) {
+      const snap = snapshotQuery.data.snapshot;
+      setBomItems(assignIds(snap.bomData.items));
+      setSnapshotId(snap.id);
+      setLoaded(true);
+    }
+  }, [snapshotQuery.data, loaded]);
 
   // -- Inline editing --
   const updateItem = useCallback((id: string, field: keyof BomItem, value: string | number | null) => {
@@ -95,10 +98,11 @@ export function BomExtractionEditor({ item, readOnly }: Props) {
   }, []);
 
   const addRow = useCallback(() => {
+    const newId = nextIdRef.current++;
     setBomItems((prev) => [
       ...prev,
       {
-        id: String(nextId++),
+        id: String(newId),
         category: "ELECTRICAL_BOS",
         brand: "",
         model: "",

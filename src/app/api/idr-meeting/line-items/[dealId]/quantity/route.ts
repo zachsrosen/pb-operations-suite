@@ -35,6 +35,11 @@ export async function PATCH(
     return NextResponse.json({ error: "quantity must be > 0" }, { status: 400 });
   }
 
-  await updateLineItemQuantity(lineItemId, quantity);
+  try {
+    await updateLineItemQuantity(lineItemId, quantity);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `HubSpot error: ${msg}` }, { status: 502 });
+  }
   return NextResponse.json({ success: true, quantity });
 }

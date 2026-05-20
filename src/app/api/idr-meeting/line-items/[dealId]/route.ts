@@ -88,15 +88,21 @@ export async function POST(
 
   const displayName = product.name || `${product.brand} ${product.model}`.trim();
 
-  const result = await createDealLineItem({
-    dealId,
-    name: displayName,
-    quantity,
-    description: product.description ?? undefined,
-    sku: product.sku ?? undefined,
-    hubspotProductId: product.hubspotProductId,
-    unitPrice: product.sellPrice ?? product.unitCost ?? undefined,
-  });
+  let result;
+  try {
+    result = await createDealLineItem({
+      dealId,
+      name: displayName,
+      quantity,
+      description: product.description ?? undefined,
+      sku: product.sku ?? undefined,
+      hubspotProductId: product.hubspotProductId,
+      unitPrice: product.sellPrice ?? product.unitCost ?? undefined,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: `HubSpot error: ${msg}` }, { status: 502 });
+  }
 
   return NextResponse.json({
     success: true,

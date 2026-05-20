@@ -34,7 +34,7 @@ export function AddLineItemDialog({ dealId, open, onClose }: Props) {
   const [quantity, setQuantity] = useState(1);
   const debounceRef = useRef<NodeJS.Timeout>(undefined);
 
-  // Focus input when dialog opens
+  // Focus input when dialog opens; clear debounce on unmount
   useEffect(() => {
     if (open) {
       setQuery("");
@@ -43,6 +43,9 @@ export function AddLineItemDialog({ dealId, open, onClose }: Props) {
       setQuantity(1);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [open]);
 
   // Debounced search

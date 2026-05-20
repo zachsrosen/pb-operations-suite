@@ -59,12 +59,14 @@ export function LineItemQuickActions({ dealId, lineItems, isLoading, onOpenCatal
     onSettled: () => setAddingPreset(null),
   });
 
-  // Check if a preset's product already exists in the line items
+  // Check if a preset's product already exists in the line items.
+  // Matches on product name containing the label as a whole word to avoid
+  // false positives (e.g. "TRM" matching "Spectrum").
   const isPresetOnDeal = useCallback(
     (preset: LineItemPreset) => {
       if (!lineItems) return false;
-      const label = preset.label.toLowerCase();
-      return lineItems.some((li) => li.name.toLowerCase().includes(label));
+      const pattern = new RegExp(`\\b${preset.label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      return lineItems.some((li) => pattern.test(li.name));
     },
     [lineItems],
   );
