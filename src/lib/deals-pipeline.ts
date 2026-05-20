@@ -266,4 +266,9 @@ export const DEAL_PROPERTIES = [
   // Tesla PowerHub (pushed by powerhub-crosslink to linked deals)
   "tesla_portal_url",
   "tesla_site_id",
+  "tesla_gateway_serial",
+  "tesla_powerwall_serials",
+  "tesla_inverter_serial",
+  "tesla_meter_serial",
+  "tesla_hardware_summary",
 ];

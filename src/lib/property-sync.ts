@@ -695,6 +695,11 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
     // converts null → "" which clears the property if the cache has no value.
     tesla_portal_url: property.teslaPortalUrl ?? null,
     tesla_site_id: property.teslaSiteId ?? null,
+    tesla_gateway_serial: property.teslaGatewaySerial ?? null,
+    tesla_powerwall_serials: property.teslaPowerwallSerials ?? null,
+    tesla_inverter_serial: property.teslaInverterSerial ?? null,
+    tesla_meter_serial: property.teslaMeterSerial ?? null,
+    tesla_hardware_summary: property.teslaHardwareSummary ?? null,
     // NOTE: install_age_months and days_since_last_service are HubSpot calc
     // properties — they auto-compute from first_install_date / last_service_date.
     // NOTE: system_size_kw_dc, has_battery, has_ev_charger, panel_count, and

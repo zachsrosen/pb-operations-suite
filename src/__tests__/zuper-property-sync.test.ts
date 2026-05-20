@@ -24,6 +24,11 @@ describe("buildPropertyCustomFields", () => {
       utilityName: "Colorado Springs Utilities",
       teslaPortalUrl: null,
       teslaSiteId: null,
+      teslaGatewaySerial: null,
+      teslaPowerwallSerials: null,
+      teslaInverterSerial: null,
+      teslaMeterSerial: null,
+      teslaHardwareSummary: null,
     };
 
     const fields = buildPropertyCustomFields(property);
@@ -55,6 +60,11 @@ describe("buildPropertyCustomFields", () => {
       utilityName: null,
       teslaPortalUrl: null,
       teslaSiteId: null,
+      teslaGatewaySerial: null,
+      teslaPowerwallSerials: null,
+      teslaInverterSerial: null,
+      teslaMeterSerial: null,
+      teslaHardwareSummary: null,
     };
 
     const fields = buildPropertyCustomFields(property);
@@ -92,6 +102,11 @@ describe("buildPropertyCustomFields", () => {
       utilityName: "Xcel Energy",
       teslaPortalUrl: null,
       teslaSiteId: null,
+      teslaGatewaySerial: null,
+      teslaPowerwallSerials: null,
+      teslaInverterSerial: null,
+      teslaMeterSerial: null,
+      teslaHardwareSummary: null,
     };
 
     const fields = buildPropertyCustomFields(property);

@@ -105,6 +105,11 @@ export const PROPERTY_PROPERTIES = [
   // Tesla PowerHub (populated by powerhub-crosslink module)
   "tesla_portal_url",
   "tesla_site_id",
+  "tesla_gateway_serial",
+  "tesla_powerwall_serials",
+  "tesla_inverter_serial",
+  "tesla_meter_serial",
+  "tesla_hardware_summary",
 ] as const;
 
 // ---------------------------------------------------------------------------
