@@ -46,11 +46,36 @@ function verifyHubSpotSignature(
   if (!secret) return false;
   const ts = Number(timestampHeader);
   if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW_MS) return false;
-  const message = method + url + body + String(timestampHeader);
-  const expected = createHmac("sha256", secret).update(message).digest("base64");
-  const given = signatureHeader;
-  if (expected.length !== given.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(given));
+
+  // Try multiple URL variations — HubSpot may sign the original proxy URL,
+  // the original-host URL, or with/without query string.
+  const candidates = [
+    url,
+    url.replace("https://www.pbtechops.com", "https://pbtechops.com"),
+    url.replace("https://pbtechops.com", "https://www.pbtechops.com"),
+    new URL(url).pathname,
+    new URL(url).origin + new URL(url).pathname,
+  ];
+
+  for (const candidate of candidates) {
+    const message = method + candidate + body + String(timestampHeader);
+    const expected = createHmac("sha256", secret).update(message).digest("base64");
+    if (expected.length === signatureHeader.length &&
+        timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader))) {
+      return true;
+    }
+  }
+
+  // Diagnostic log (one-time during debug): show what we got
+  console.warn("[hubspot-card] signature mismatch", {
+    incomingUrl: url,
+    bodyLen: body.length,
+    bodyPreview: body.slice(0, 200),
+    sigLen: signatureHeader.length,
+    sigPreview: signatureHeader.slice(0, 20),
+    tsAge: Date.now() - ts,
+  });
+  return false;
 }
 
 const TYPE_DEALS = "0-3";
