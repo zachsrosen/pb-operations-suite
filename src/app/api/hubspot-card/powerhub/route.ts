@@ -33,6 +33,21 @@ const RequestSchema = z.object({
 
 const TIMESTAMP_WINDOW_MS = 5 * 60 * 1000; // 5 min
 
+/**
+ * Verify a HubSpot UI Extension fetch using v3 HMAC-SHA256 signing.
+ *
+ * Canonical-form gotcha: HubSpot's hubspot.fetch proxy auto-injects
+ * `?appId&portalId&userEmail&userId` query params and signs the URL
+ * with those VALUES percent-DECODED (e.g. `userEmail=foo@bar.com`).
+ * The HTTP layer then percent-ENCODES them in transit so my server
+ * receives `userEmail=foo%40bar.com`. We reconstruct the canonical
+ * URL by reading parsedUrl.searchParams (which decodes values) and
+ * re-joining as `key=value` with no re-encoding.
+ *
+ * Reference algorithm (per HubSpot docs + @hubspot/api-client):
+ *   sourceString = method + url + requestBody + timestamp
+ *   signature = base64( HMAC-SHA256(clientSecret, sourceString) )
+ */
 function verifyHubSpotSignature(
   method: string,
   url: string,
@@ -40,107 +55,33 @@ function verifyHubSpotSignature(
   signatureHeader: string | null,
   timestampHeader: string | null,
 ): boolean {
-  const skip = process.env.HUBSPOT_CARD_SKIP_SIG_VERIFY === "true";
+  // Optional escape hatch for local dev only; should be unset in prod.
+  if (process.env.HUBSPOT_CARD_SKIP_SIG_VERIFY === "true") return true;
 
-  if (!signatureHeader || !timestampHeader) return skip;
+  if (!signatureHeader || !timestampHeader) return false;
   const secret = process.env.HUBSPOT_APP_SECRET;
-  if (!secret) return skip;
+  if (!secret) return false;
   const ts = Number(timestampHeader);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW_MS) return skip;
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW_MS) return false;
 
-  // Build URL + body candidates and try each via @hubspot/api-client's
-  // Signature.isValid (canonical reference implementation). Log only the
-  // candidate-NAME that matched, so diagnostic output contains no signature
-  // or HMAC material.
-  const parsedUrl = new URL(url);
-  const pathQuery = parsedUrl.pathname + parsedUrl.search;
-  const urlCandidates: Array<{ name: string; v: string }> = [
-    { name: "full", v: url },
-    { name: "apex", v: url.replace("https://www.pbtechops.com", "https://pbtechops.com") },
-    { name: "www-injected", v: url.replace("https://pbtechops.com", "https://www.pbtechops.com") },
-    { name: "path", v: parsedUrl.pathname },
-    { name: "path+query", v: pathQuery },
-    { name: "origin+path", v: parsedUrl.origin + parsedUrl.pathname },
-  ];
-
-  // Strip HubSpot-injected meta params (appId, portalId, userEmail, userId)
-  // — HubSpot may sign the URL the iframe sent (pre-injection).
-  const meta = new URLSearchParams(parsedUrl.search);
-  ["appId", "portalId", "userEmail", "userId"].forEach((k) => meta.delete(k));
-  const remaining = meta.toString();
-  const userOnlyQuery = remaining ? `?${remaining}` : "";
-  urlCandidates.push({ name: "full-no-meta", v: `${parsedUrl.origin}${parsedUrl.pathname}${userOnlyQuery}` });
-  urlCandidates.push({ name: "path-no-meta", v: `${parsedUrl.pathname}${userOnlyQuery}` });
-
-  // CRITICAL: HubSpot's hubspot.fetch proxy signs the URL with query-param
-  // VALUES decoded (e.g. userEmail=foo@bar.com), but the HTTP layer percent-
-  // encodes them in transit (userEmail=foo%40bar.com). Reconstruct the URL
-  // with each pair's value decoded so the canonical string matches.
-  try {
-    const decodedPairs: string[] = [];
-    for (const [k, v] of parsedUrl.searchParams.entries()) {
-      decodedPairs.push(`${k}=${v}`); // searchParams.entries() returns decoded values
-    }
-    const decodedQuery = decodedPairs.length ? `?${decodedPairs.join("&")}` : "";
-    urlCandidates.push({ name: "full-decoded-query", v: `${parsedUrl.origin}${parsedUrl.pathname}${decodedQuery}` });
-    urlCandidates.push({ name: "path-decoded-query", v: `${parsedUrl.pathname}${decodedQuery}` });
-  } catch {
-    /* ignore */
+  // Canonical URL = origin + pathname + ?k=v&… with VALUES decoded.
+  const parsed = new URL(url);
+  const decodedPairs: string[] = [];
+  for (const [k, v] of parsed.searchParams.entries()) {
+    decodedPairs.push(`${k}=${v}`);
   }
+  const canonicalUrl =
+    parsed.origin + parsed.pathname + (decodedPairs.length ? `?${decodedPairs.join("&")}` : "");
 
-  let parsedJson: unknown = null;
-  try { parsedJson = JSON.parse(body); } catch { /* not JSON */ }
-  const bodyCandidates: Array<{ name: string; v: string }> = [
-    { name: "raw", v: body },
-    { name: "canonical-json", v: parsedJson === null ? body : JSON.stringify(parsedJson) },
-    { name: "sorted-keys", v: parsedJson && typeof parsedJson === "object"
-        ? JSON.stringify(Object.fromEntries(Object.entries(parsedJson).sort()))
-        : body },
-    { name: "empty", v: "" },
-  ];
-
-  for (const u of urlCandidates) {
-    for (const b of bodyCandidates) {
-      const valid = Signature.isValid({
-        signatureVersion: "v3",
-        signature: signatureHeader,
-        method,
-        clientSecret: secret,
-        requestBody: b.v,
-        url: u.v,
-        timestamp: ts as never,
-      } as never);
-      if (valid) {
-        console.warn("[hubspot-card] sig MATCHED", { urlForm: u.name, bodyForm: b.name });
-        return true;
-      }
-    }
-  }
-
-  // No candidate matched — persist diagnostic to DB for offline analysis
-  const diagnostic = {
-    at: new Date().toISOString(),
-    incomingUrl: url,
-    bodyRaw: body,
-    bodyLen: body.length,
-    sigGiven: signatureHeader, // signature can safely be stored; it's the proof
-    sigLen: signatureHeader.length,
-    ts: String(timestampHeader),
-    tsAge: Date.now() - ts,
-    triedUrlForms: urlCandidates.map((c) => ({ name: c.name, len: c.v.length })),
-    triedBodyForms: bodyCandidates.map((c) => ({ name: c.name, len: c.v.length })),
-  };
-  console.warn("[hubspot-card] signature mismatch", diagnostic);
-  // Best-effort DB persist (do not let storage errors break the request).
-  prisma.systemConfig
-    .upsert({
-      where: { key: "hubspot_card_last_sig_mismatch" },
-      create: { key: "hubspot_card_last_sig_mismatch", value: JSON.stringify(diagnostic) },
-      update: { value: JSON.stringify(diagnostic) },
-    })
-    .catch(() => {});
-
-  return skip;
+  return Signature.isValid({
+    signatureVersion: "v3",
+    signature: signatureHeader,
+    method,
+    clientSecret: secret,
+    requestBody: body,
+    url: canonicalUrl,
+    timestamp: ts as never,
+  } as never);
 }
 
 const TYPE_DEALS = "0-3";
