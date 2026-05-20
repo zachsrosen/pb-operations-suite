@@ -240,7 +240,7 @@ export const FORM_CATEGORIES = [
 
 export const MANUFACTURERS = [
   "ChargePoint", "CONNECTDER", "CONXT", "Enphase", "GENER", "Generac",
-  "Hanwha", "Hyundai", "Iron Ridge", "Jinco", "LG", "LG Chem", "Longi",
+  "Hanwha", "Hyundai", "Iron Ridge", "Jinko", "LG", "LG Chem", "Longi",
   "Neurio", "North American Made", "Panasonic", "Photon", "Photon Service",
   "REC", "Rell Power", "Sense", "Silfab", "SMA", "SolarEdge", "Solaria",
   "SONBT", "Sunpower", "Tesla", "Trim-Lock", "Tygo", "URE", "Wallbox",

@@ -341,7 +341,7 @@ export default function CatalogPage() {
   // Fetch SKUs
   const fetchSkus = useCallback(() => {
     setSkuLoading(true);
-    fetch("/api/inventory/products?active=false")
+    fetch("/api/inventory/products?active=false&limit=2000")
       .then((r) => r.json())
       .then((d: { skus?: Sku[]; summary?: SkuSummary; duplicates?: DuplicateGroup[] }) => {
         setSkus(d.skus ?? []);
