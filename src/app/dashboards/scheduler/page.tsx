@@ -535,7 +535,11 @@ const ZUPER_TERMINAL_STATUSES = new Set([
 
 function isZuperStatusTerminal(statusName: string | null | undefined): boolean {
   if (!statusName) return false;
-  return ZUPER_TERMINAL_STATUSES.has(statusName.trim().toLowerCase());
+  const lower = statusName.trim().toLowerCase();
+  if (ZUPER_TERMINAL_STATUSES.has(lower)) return true;
+  // Zuper uses category-specific completion statuses like "Completed - AV",
+  // "Completed - SV", etc. Treat any "completed …" variant as terminal.
+  return lower.startsWith("completed");
 }
 
 function passesCalendarStatusFilters(
