@@ -5,6 +5,7 @@ import {
   syncPeDocStatuses,
   buildPeDealMap,
 } from "@/lib/pe-scraper-sync";
+import { sendPeDocChangeNotification } from "@/lib/pe-doc-notify";
 
 /**
  * GET /api/cron/pe-scraper-sync
@@ -66,12 +67,18 @@ export async function GET(request: NextRequest) {
     }
 
     const dealMap = await buildPeDealMap();
-    const result = await syncPeDocStatuses(projects, dealMap);
+    const result = await syncPeDocStatuses(projects, dealMap, "cron/pe-scraper-sync");
 
-    console.log(
+    console.warn(
       `[pe-scraper-sync] cron: ${result.projectsMatched}/${result.projectsFound} matched, ` +
-      `${result.docsUpserted} upserted, ${result.errors.length} errors`,
+      `${result.docsUpserted} upserted (${result.docsNew} new, ${result.docsChanged} changed), ` +
+      `${result.errors.length} errors`,
     );
+
+    if (result.changes.length > 0) {
+      // Fire-and-forget instant email notification
+      sendPeDocChangeNotification(result.changes, "cron/pe-scraper-sync").catch(() => {});
+    }
 
     return NextResponse.json({
       ...result,
