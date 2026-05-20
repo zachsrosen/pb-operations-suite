@@ -244,7 +244,10 @@ export default function PropertyMonitoringTab({ propertyId }: Props) {
                 </div>
               )}
 
-              {/* Row 7: Lifetime energy flow attribution */}
+              {/* Row 7: Hardware on site — full device list with part #/serial # */}
+              <HardwareSection devices={site.equipment.devices} aggregatorSiteId={site.equipment.aggregatorSiteId} />
+
+              {/* Row 8: Lifetime energy flow attribution */}
               <details className="mb-3 group">
                 <summary className="cursor-pointer text-xs text-muted hover:text-foreground select-none">
                   Show lifetime energy + control details ↓
@@ -410,6 +413,138 @@ function MiniField({ label, value }: { label: string; value: string }) {
       <span className="font-medium text-foreground">{label}: </span>
       <span>{value}</span>
     </div>
+  );
+}
+
+function HardwareSection({
+  devices,
+  aggregatorSiteId,
+}: {
+  devices: NonNullable<
+    import("@/lib/property-hub").MonitoringSitePayload["equipment"]
+  >["devices"];
+  aggregatorSiteId: string | null;
+}) {
+  const total =
+    devices.gateways.length +
+    devices.batteries.length +
+    devices.inverters.length +
+    devices.meters.length +
+    devices.evse.length;
+  if (total === 0) return null;
+
+  function copy(text: string) {
+    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  function DeviceRow({
+    type,
+    partNumber,
+    serialNumber,
+    extra,
+  }: {
+    type: string;
+    partNumber: string;
+    serialNumber: string;
+    extra?: string;
+  }) {
+    return (
+      <tr className="border-t border-t-border first:border-t-0">
+        <td className="py-1.5 pr-3 text-muted whitespace-nowrap">{type}</td>
+        <td className="py-1.5 pr-3 font-mono text-xs truncate">{partNumber || "—"}</td>
+        <td className="py-1.5 pr-3 font-mono text-xs truncate">
+          {serialNumber ? (
+            <button
+              type="button"
+              onClick={() => copy(serialNumber)}
+              className="hover:text-foreground hover:bg-surface-2 rounded px-1 -mx-1 cursor-pointer"
+              title="Click to copy"
+            >
+              {serialNumber}
+            </button>
+          ) : (
+            "—"
+          )}
+        </td>
+        {extra !== undefined && <td className="py-1.5 text-xs text-muted">{extra}</td>}
+      </tr>
+    );
+  }
+
+  return (
+    <details className="mb-3 group" open>
+      <summary className="cursor-pointer text-xs text-muted hover:text-foreground select-none mb-2 uppercase tracking-wide font-medium">
+        Hardware on site ({total} {total === 1 ? "device" : "devices"})
+      </summary>
+      <div className="rounded-lg border border-t-border bg-surface-2 p-3 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-xs text-muted uppercase tracking-wide">
+            <tr>
+              <th className="text-left pb-1.5 pr-3 font-medium">Device</th>
+              <th className="text-left pb-1.5 pr-3 font-medium">Part #</th>
+              <th className="text-left pb-1.5 pr-3 font-medium">Serial # <span className="font-normal normal-case text-[10px]">(click to copy)</span></th>
+              <th className="text-left pb-1.5 font-medium">Nameplate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.gateways.map((d) => (
+              <DeviceRow
+                key={d.din}
+                type="Gateway"
+                partNumber={d.partNumber}
+                serialNumber={d.serialNumber}
+                extra={[
+                  d.nameplateEnergyWh != null && `${(d.nameplateEnergyWh / 1000).toFixed(1)} kWh`,
+                  d.nameplateMaxDischargeW != null && `${(d.nameplateMaxDischargeW / 1000).toFixed(1)} kW max`,
+                ].filter(Boolean).join(" · ") || "—"}
+              />
+            ))}
+            {devices.batteries.map((d) => (
+              <DeviceRow
+                key={d.din}
+                type="Powerwall"
+                partNumber={d.partNumber}
+                serialNumber={d.serialNumber}
+                extra=""
+              />
+            ))}
+            {devices.inverters.map((d) => (
+              <DeviceRow
+                key={d.din}
+                type="Inverter"
+                partNumber={d.partNumber}
+                serialNumber={d.serialNumber}
+                extra=""
+              />
+            ))}
+            {devices.meters.map((d) => (
+              <DeviceRow
+                key={d.din}
+                type="Meter"
+                partNumber={d.partNumber}
+                serialNumber={d.serialNumber}
+                extra=""
+              />
+            ))}
+            {devices.evse.map((d) => (
+              <DeviceRow
+                key={d.din}
+                type="EV Charger"
+                partNumber={d.partNumber}
+                serialNumber={d.serialNumber}
+                extra=""
+              />
+            ))}
+          </tbody>
+        </table>
+        {aggregatorSiteId && (
+          <div className="mt-2 text-xs text-muted">
+            <span className="font-medium text-foreground">Aggregator ID: </span>
+            <span className="font-mono">{aggregatorSiteId}</span>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
