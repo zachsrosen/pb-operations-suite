@@ -11,7 +11,7 @@ import { zuper, type ZuperJob, type ZuperJobCategory } from "@/lib/zuper";
 import { cacheZuperJob, prisma } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (exported so the webhook handler can reuse them for single-job upserts)
 // ---------------------------------------------------------------------------
 
 /**
@@ -21,7 +21,7 @@ import { cacheZuperJob, prisma } from "@/lib/db";
  * instead of just the ID, which breaks joins against HubSpot deal data.
  * Accepts either shape and returns just the numeric ID.
  */
-function normalizeHubspotDealIdValue(raw: string): string | undefined {
+export function normalizeHubspotDealIdValue(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
 
@@ -47,7 +47,7 @@ function normalizeHubspotDealIdValue(raw: string): string | undefined {
  *
  * Tags may contain patterns like "hs:12345" or "deal:12345".
  */
-function extractHubspotDealId(job: ZuperJob): string | undefined {
+export function extractHubspotDealId(job: ZuperJob): string | undefined {
   // 1. Check custom_fields array
   if (Array.isArray(job.custom_fields)) {
     for (const field of job.custom_fields) {
@@ -77,7 +77,7 @@ function extractHubspotDealId(job: ZuperJob): string | undefined {
  * Normalise the job_category field which may be a UID string or a
  * `{ category_name }` object from Zuper GET responses.
  */
-function resolveCategory(cat: ZuperJob["job_category"]): string {
+export function resolveCategory(cat: ZuperJob["job_category"]): string {
   if (!cat) return "Unknown";
   if (typeof cat === "string") return cat;
   return (cat as ZuperJobCategory).category_name || "Unknown";
@@ -87,7 +87,7 @@ function resolveCategory(cat: ZuperJob["job_category"]): string {
  * Normalise the current_job_status field which is typically an object
  * `{ status_name }` but may occasionally be a plain string.
  */
-function resolveStatus(job: ZuperJob): string {
+export function resolveStatus(job: ZuperJob): string {
   const s = job.current_job_status;
   if (!s) return job.status || "Unknown";
   if (typeof s === "string") return s;
@@ -103,7 +103,7 @@ function resolveStatus(job: ZuperJob): string {
  *   human-readable name. Without this, downstream extractAssignedUsers()
  *   would either drop them or show a UID stub.
  */
-function resolveAssignedUsers(
+export function resolveAssignedUsers(
   assignedTo: ZuperJob["assigned_to"],
   userNameCache?: Map<string, string>
 ): { user_uid: string; user_name?: string }[] | undefined {
@@ -289,4 +289,276 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
   }
 
   return { synced, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Targeted recent-job sync (for cron backfill)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sync only Zuper jobs modified within a lookback window. This is much
+ * cheaper than the full `syncZuperServiceJobs()` sweep and is suitable for
+ * a cron that runs every 15–30 minutes to pick up jobs created or modified
+ * directly in Zuper (which the existing sync-cache cron also covers, but
+ * this version respects a time-budget and lookback window).
+ *
+ * Uses Zuper's `from_date`/`to_date` query parameters. These filter on
+ * the job's scheduled date range, not modification time, so we use a
+ * generous lookback to catch recently created jobs that might be scheduled
+ * in the future.
+ *
+ * The function also does a second pass fetching individual job details for
+ * jobs missing assigned crew data (Zuper's list endpoint omits assigned_to).
+ */
+export async function syncRecentZuperJobs(opts: {
+  lookbackDays?: number;
+  timeBudgetMs?: number;
+}): Promise<{ synced: number; errors: number; pages: number; timedOut: boolean }> {
+  const lookbackDays = opts.lookbackDays ?? 7;
+  const timeBudgetMs = opts.timeBudgetMs ?? 100_000;
+  const startTime = Date.now();
+
+  if (!zuper.isConfigured()) {
+    return { synced: 0, errors: 0, pages: 0, timedOut: false };
+  }
+
+  // Pre-load user names
+  let userNameCache: Map<string, string> | undefined;
+  try {
+    const usersResult = await zuper.getUsers();
+    if (usersResult.type === "success" && usersResult.data) {
+      userNameCache = new Map();
+      for (const u of usersResult.data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const user = u as any;
+        const uid = user.user_uid;
+        const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
+        if (uid && name) userNameCache.set(uid, name);
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // Compute date window: [now - lookbackDays, now + 90 days]
+  // We look forward 90 days because newly created jobs may be scheduled
+  // weeks ahead but we still want to capture them immediately.
+  const fromDate = new Date(Date.now() - lookbackDays * 86_400_000);
+  const toDate = new Date(Date.now() + 90 * 86_400_000);
+  const fromStr = fromDate.toISOString().split("T")[0]; // YYYY-MM-DD
+  const toStr = toDate.toISOString().split("T")[0];
+
+  let synced = 0;
+  let errors = 0;
+  let page = 1;
+  let timedOut = false;
+
+  // Paginate through results
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (Date.now() - startTime > timeBudgetMs) {
+      timedOut = true;
+      break;
+    }
+
+    const result = await zuper.searchJobs({
+      from_date: fromStr,
+      to_date: toStr,
+      page,
+      limit: PAGE_SIZE,
+    });
+
+    if (result.type !== "success" || !result.data) {
+      console.error("[ZuperBackfill] Failed to fetch page", page, result.error);
+      break;
+    }
+
+    const { jobs } = result.data;
+    if (!jobs || jobs.length === 0) break;
+
+    for (const job of jobs) {
+      if (Date.now() - startTime > timeBudgetMs) {
+        timedOut = true;
+        break;
+      }
+
+      try {
+        const jobUid = job.job_uid;
+        if (!jobUid) {
+          errors++;
+          continue;
+        }
+
+        const status = resolveStatus(job);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const jobAny = job as any;
+        let completedDate: Date | undefined;
+        const statusUpper = status.toUpperCase();
+        const isTerminal = statusUpper.includes("COMPLETED") ||
+          statusUpper.includes("COMPLETE") ||
+          statusUpper === "PASSED" ||
+          statusUpper === "PARTIAL PASS" ||
+          statusUpper === "FAILED";
+        if (isTerminal) {
+          const rawCompleted =
+            jobAny.completed_time ??
+            jobAny.completed_at ??
+            job.scheduled_end_time;
+          if (rawCompleted) {
+            const d = new Date(rawCompleted as string);
+            if (!isNaN(d.getTime())) completedDate = d;
+          }
+        }
+
+        await cacheZuperJob({
+          jobUid,
+          jobTitle: job.job_title || "Untitled Job",
+          jobCategory: resolveCategory(job.job_category),
+          jobStatus: status,
+          jobPriority: job.job_priority,
+          scheduledStart: job.scheduled_start_time ? new Date(job.scheduled_start_time) : undefined,
+          scheduledEnd: job.scheduled_end_time ? new Date(job.scheduled_end_time) : undefined,
+          completedDate,
+          assignedUsers: resolveAssignedUsers(job.assigned_to, userNameCache),
+          customerAddress: job.customer_address ?? jobAny.job_location,
+          hubspotDealId: extractHubspotDealId(job),
+          projectName: job.job_title,
+          jobTags: job.job_tags,
+          jobNotes: job.job_notes,
+          rawData: job,
+        });
+
+        synced++;
+      } catch (err) {
+        console.warn("[ZuperBackfill] Failed to cache job", job.job_uid, err);
+        errors++;
+      }
+    }
+
+    if (timedOut || jobs.length < PAGE_SIZE) break;
+    page++;
+  }
+
+  // Second pass: backfill assignedUsers from individual job GETs (same as full sync)
+  if (prisma && !timedOut) {
+    try {
+      const cutoff = new Date(Date.now() + 30 * 86_400_000);
+      const missingCrew = await prisma.$queryRaw<{ jobUid: string }[]>`
+        SELECT "jobUid" FROM "ZuperJobCache"
+        WHERE "scheduledStart" >= NOW() - INTERVAL '7 days'
+          AND "scheduledStart" < ${cutoff}
+          AND "assignedUsers" = 'null'::jsonb
+          AND "jobStatus" NOT IN ('CANCELLED')
+        LIMIT 50
+      `;
+
+      let backfilled = 0;
+      for (const { jobUid } of missingCrew) {
+        if (Date.now() - startTime > timeBudgetMs) break;
+        try {
+          const detail = await zuper.getJob(jobUid);
+          if (detail.type !== "success" || !detail.data) continue;
+          const job = detail.data;
+          const users = resolveAssignedUsers(job.assigned_to, userNameCache);
+          if (!users || users.length === 0) continue;
+
+          await prisma.zuperJobCache.update({
+            where: { jobUid },
+            data: { assignedUsers: JSON.parse(JSON.stringify(users)) },
+          });
+          backfilled++;
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      if (missingCrew.length > 0) {
+        console.log(`[ZuperBackfill] Backfilled assignedUsers: ${backfilled}/${missingCrew.length} jobs`);
+      }
+    } catch (err) {
+      console.warn("[ZuperBackfill] assignedUsers backfill failed:", err);
+    }
+  }
+
+  console.log(`[ZuperBackfill] Complete — synced: ${synced}, errors: ${errors}, pages: ${page}, timedOut: ${timedOut}`);
+  return { synced, errors, pages: page, timedOut };
+}
+
+// ---------------------------------------------------------------------------
+// Single-job cache upsert (for webhook path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch a single Zuper job by UID and upsert it into ZuperJobCache.
+ * Designed for the webhook handler — fetches the full job detail (which
+ * includes assigned_to) and uses cacheZuperJob's upsert to safely
+ * create-or-update.
+ *
+ * Returns the cached record, or null if the fetch fails or Zuper is not
+ * configured.
+ */
+export async function fetchAndCacheZuperJob(jobUid: string): Promise<{
+  cached: boolean;
+  hubspotDealId?: string;
+  error?: string;
+}> {
+  if (!zuper.isConfigured()) {
+    return { cached: false, error: "Zuper not configured" };
+  }
+
+  try {
+    const result = await zuper.getJob(jobUid);
+    if (result.type !== "success" || !result.data) {
+      return { cached: false, error: result.error || "Job not found" };
+    }
+
+    const job = result.data;
+    const status = resolveStatus(job);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jobAny = job as any;
+
+    let completedDate: Date | undefined;
+    const statusUpper = status.toUpperCase();
+    const isTerminal = statusUpper.includes("COMPLETED") ||
+      statusUpper.includes("COMPLETE") ||
+      statusUpper === "PASSED" ||
+      statusUpper === "PARTIAL PASS" ||
+      statusUpper === "FAILED";
+    if (isTerminal) {
+      const rawCompleted =
+        jobAny.completed_time ??
+        jobAny.completed_at ??
+        job.scheduled_end_time;
+      if (rawCompleted) {
+        const d = new Date(rawCompleted as string);
+        if (!isNaN(d.getTime())) completedDate = d;
+      }
+    }
+
+    const hubspotDealId = extractHubspotDealId(job);
+
+    await cacheZuperJob({
+      jobUid: job.job_uid || jobUid,
+      jobTitle: job.job_title || "Untitled Job",
+      jobCategory: resolveCategory(job.job_category),
+      jobStatus: status,
+      jobPriority: job.job_priority,
+      scheduledStart: job.scheduled_start_time ? new Date(job.scheduled_start_time) : undefined,
+      scheduledEnd: job.scheduled_end_time ? new Date(job.scheduled_end_time) : undefined,
+      completedDate,
+      assignedUsers: resolveAssignedUsers(job.assigned_to),
+      customerAddress: job.customer_address ?? jobAny.job_location,
+      hubspotDealId,
+      projectName: job.job_title,
+      jobTags: job.job_tags,
+      jobNotes: job.job_notes,
+      rawData: job,
+    });
+
+    return { cached: true, hubspotDealId };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[ZuperSync] fetchAndCacheZuperJob failed for", jobUid, msg);
+    return { cached: false, error: msg };
+  }
 }

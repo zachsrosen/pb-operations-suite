@@ -854,6 +854,10 @@ model HubSpotPropertyCache {
   teslaPowerwallSerials  String?
   teslaInverterSerial    String?
   teslaMeterSerial       String?
+  teslaGatewayModel      String?
+  teslaPowerwallModel    String?
+  teslaInverterModel     String?
+  teslaMeterModel        String?
   teslaHardwareSummary   String?
 
   lastReconciledAt DateTime

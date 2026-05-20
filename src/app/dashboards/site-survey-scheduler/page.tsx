@@ -9,6 +9,7 @@ import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { formatCurrency, formatDateShort, formatShortDate, formatTime12h, formatTimeRange12h } from "@/lib/format";
 import { getTodayStr, isPastDate, toDateStr } from "@/lib/scheduling-utils";
 import { getInternalDealUrl } from "@/lib/external-links";
+import { pbHolidayName } from "@/lib/on-call-holidays";
 import MyAvailability from "./my-availability";
 
 /* ------------------------------------------------------------------ */
@@ -1046,6 +1047,17 @@ export default function SiteSurveySchedulerPage() {
       setDraggedProjectId(null);
       return;
     }
+    if (isWeekend(date)) {
+      showToast("Cannot schedule on weekends", "error");
+      setDraggedProjectId(null);
+      return;
+    }
+    const holiday = pbHolidayName(date);
+    if (holiday) {
+      showToast(`Cannot schedule on ${holiday}`, "error");
+      setDraggedProjectId(null);
+      return;
+    }
     const project = projects.find(p => p.id === draggedProjectId);
     if (userRole === "SALES" && isTomorrow(date) && !isCaliforniaState(project?.state)) {
       showToast("Cannot schedule for tomorrow — surveys need at least 2 days lead time");
@@ -1072,6 +1084,15 @@ export default function SiteSurveySchedulerPage() {
   const handleDateClick = useCallback((date: string, project?: SurveyProject) => {
     if (isPastDate(date)) {
       showToast("Cannot schedule on past dates");
+      return;
+    }
+    if (isWeekend(date)) {
+      showToast("Cannot schedule on weekends", "error");
+      return;
+    }
+    const holiday = pbHolidayName(date);
+    if (holiday) {
+      showToast(`Cannot schedule on ${holiday}`, "error");
       return;
     }
     if (userRole === "SALES" && isTomorrow(date) && !isCaliforniaState(project?.state)) {
@@ -2335,6 +2356,7 @@ export default function SiteSurveySchedulerPage() {
                     const isToday = dateStr === todayStr;
                     const isPast = isPastDate(dateStr);
                     const weekend = isWeekend(dateStr);
+                    const holidayLabel = pbHolidayName(dateStr);
                     const events = eventsForDate(dateStr);
                     const dayAvailability = availabilityByDate[dateStr];
                     const isFullyBooked = dayAvailability?.isFullyBooked;
@@ -2369,6 +2391,8 @@ export default function SiteSurveySchedulerPage() {
                         } ${
                           isCurrentMonth && !isPast ? "" : !isPast ? "opacity-40" : ""
                         } ${weekend && !isPast ? "bg-surface/30" : ""} ${
+                          holidayLabel && !weekend && !isPast ? "bg-red-900/10" : ""
+                        } ${
                           isToday ? "bg-cyan-900/20" : ""
                         } ${!isPast && selectedProject ? "hover:bg-cyan-900/10" : !isPast ? "hover:bg-skeleton" : ""} ${
                           showAvailability && hasAvailability && selectedProject && !isPast
@@ -2382,12 +2406,18 @@ export default function SiteSurveySchedulerPage() {
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className={`text-xs font-medium ${
-                            isToday ? "text-cyan-400" : "text-muted"
+                            isToday ? "text-cyan-400" : holidayLabel ? "text-red-400" : "text-muted"
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
                           </span>
+                          {/* Holiday badge */}
+                          {holidayLabel && (
+                            <span className="text-[0.45rem] font-medium text-red-400 bg-red-500/15 px-1 py-0.5 rounded truncate max-w-[55px]" title={holidayLabel}>
+                              {holidayLabel}
+                            </span>
+                          )}
                           {/* Availability indicator badge */}
-                          {showAvailability && zuperConfigured && isCurrentMonth && !weekend && (
+                          {showAvailability && zuperConfigured && isCurrentMonth && !weekend && !holidayLabel && (
                             <div className="flex items-center">
                               {loadingSlots ? (
                                 <div className="w-2 h-2 bg-zinc-600 rounded-full animate-pulse" />

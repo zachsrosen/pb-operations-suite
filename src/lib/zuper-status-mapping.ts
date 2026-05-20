@@ -131,7 +131,7 @@ export const POST_FAILURE_STATUSES = new Set([
  */
 export function toMappingCategory(category: string): "site_survey" | "construction" | "inspection" {
   if (category === "site_survey") return "site_survey";
-  if (category === "inspection") return "inspection";
+  if (category === "inspection" || category === "fire_inspection") return "inspection";
   // construction | solar_install | battery_install | ev_install → "construction"
   return "construction";
 }

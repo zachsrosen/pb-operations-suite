@@ -24,6 +24,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { waitUntil } from "@vercel/functions";
 
 import { fanoutAdminWorkflows } from "@/lib/admin-workflows/fanout";
+import { fetchAndCacheZuperJob } from "@/lib/zuper-sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -106,6 +107,31 @@ export async function POST(request: NextRequest) {
       }
     })(),
   );
+
+  // ── Upsert ZuperJobCache ──
+  // For any job-related event, fetch the full job from Zuper and upsert it
+  // into ZuperJobCache. This ensures jobs created or modified directly in
+  // Zuper appear in the master schedule immediately (instead of waiting for
+  // the next cron sweep). Runs in waitUntil so it doesn't block the 200.
+  if (eventType.startsWith("job.")) {
+    waitUntil(
+      fetchAndCacheZuperJob(jobUid)
+        .then((result) => {
+          if (result.cached) {
+            console.log(
+              `[zuper-webhook] Cached job ${jobUid} (deal: ${result.hubspotDealId ?? "none"})`,
+            );
+          } else {
+            console.warn(
+              `[zuper-webhook] Failed to cache job ${jobUid}: ${result.error}`,
+            );
+          }
+        })
+        .catch((err) =>
+          console.error("[zuper-webhook] Cache upsert error for job", jobUid, err),
+        ),
+    );
+  }
 
   return NextResponse.json({ received: true, jobUid, changedFields: changedFields.length });
 }

@@ -26,6 +26,7 @@ import {
 } from "@/lib/scheduling-utils";
 import { normalizeLocation as normalizeLocationAlias } from "@/lib/locations";
 import { getInternalDealUrl } from "@/lib/external-links";
+import { isPbHoliday, pbHolidayName } from "@/lib/on-call-holidays";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -301,6 +302,7 @@ const EXCLUDE_OTHER_CATEGORY_UIDS = [
   "aa5a6e00-b1c2-4aeb-b8bc-dcad3a203bc5", // Construction - Battery
   "2009a0c6-738b-4310-a736-9c901d800c61", // Construction - EV
   "b7dc03d2-25d0-40df-a2fc-b1a477b16b65", // Inspection
+  "906c3b52-6799-408c-9a44-2a6f6581769d", // Fire Inspection
   "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
   "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // Service Revisit
   "d9d888a1-efc3-4f01-a8d6-c9e867374d71", // Detach
@@ -2374,6 +2376,11 @@ export default function SchedulerPage() {
         showToast("Cannot schedule on weekends", "error");
         return;
       }
+      const holiday = pbHolidayName(dateStr);
+      if (holiday) {
+        showToast(`Cannot schedule on ${holiday}`, "error");
+        return;
+      }
       openScheduleModal(selectedProject, dateStr);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3358,6 +3365,11 @@ export default function SchedulerPage() {
         showToast("Cannot schedule on weekends", "error");
         return;
       }
+      const holiday = pbHolidayName(dateStr);
+      if (holiday) {
+        showToast(`Cannot schedule on ${holiday}`, "error");
+        return;
+      }
       const projectId = e.dataTransfer.getData("text/plain");
       const project = projects.find((p) => p.id === projectId);
       if (project) {
@@ -3392,6 +3404,11 @@ export default function SchedulerPage() {
       if (!selectedProject) return;
       if (isWeekend(dateStr)) {
         showToast("Cannot schedule on weekends", "error");
+        return;
+      }
+      const holiday = pbHolidayName(dateStr);
+      if (holiday) {
+        showToast(`Cannot schedule on ${holiday}`, "error");
         return;
       }
       const proj = { ...selectedProject, crew: crewName };
@@ -4614,6 +4631,7 @@ export default function SchedulerPage() {
                         calendarData.today.getFullYear() === currentYear;
                       const dayEvents = calendarData.eventsByDate[day] || [];
                       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                      const holidayLabel = pbHolidayName(dateStr);
 
                       return (
                         <div
@@ -4623,7 +4641,9 @@ export default function SchedulerPage() {
                               ? "ring-2 ring-inset ring-orange-500"
                               : ""
                           } ${
-                            canDrop
+                            holidayLabel ? "bg-red-900/10" : ""
+                          } ${
+                            canDrop && !holidayLabel
                               ? "hover:bg-orange-500/10 hover:ring-2 hover:ring-inset hover:ring-orange-500"
                               : ""
                           } cursor-pointer hover:bg-surface-elevated`}
@@ -4631,19 +4651,26 @@ export default function SchedulerPage() {
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => handleDrop(e, dateStr)}
                         >
+                          <div className="flex items-center justify-between mb-0.5">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               openDayView(dateStr);
                             }}
-                            className={`text-[0.7rem] font-semibold mb-0.5 text-left ${
-                              isToday ? "text-orange-400" : "text-muted"
+                            className={`text-[0.7rem] font-semibold text-left ${
+                              isToday ? "text-orange-400" : holidayLabel ? "text-red-400" : "text-muted"
                             }`}
                             title="Open day view"
                           >
                             {day}
                           </button>
+                          {holidayLabel && (
+                            <span className="text-[0.5rem] font-medium text-red-400 bg-red-500/15 px-1 py-0.5 rounded truncate max-w-[60px]" title={holidayLabel}>
+                              {holidayLabel}
+                            </span>
+                          )}
+                          </div>
                           {showOnCall && (
                             <OnCallChips
                               assignments={onCallByDate.get(dateStr) ?? []}
@@ -4978,13 +5005,16 @@ export default function SchedulerPage() {
                     const isToday =
                       d.toDateString() === todayStr.current;
                     const dStr = toDateStr(d);
+                    const weekHoliday = pbHolidayName(dStr);
                     return (
                       <div
                         key={i}
                         className={`p-2.5 text-center text-[0.7rem] font-semibold ${
-                          isToday
-                            ? "text-orange-400 bg-orange-500/10"
-                            : "text-muted bg-surface"
+                          weekHoliday
+                            ? "text-red-400 bg-red-900/10"
+                            : isToday
+                              ? "text-orange-400 bg-orange-500/10"
+                              : "text-muted bg-surface"
                         }`}
                       >
                         {d.toLocaleDateString("en-US", { weekday: "short" })}
@@ -4999,6 +5029,11 @@ export default function SchedulerPage() {
                         >
                           {d.getDate()}
                         </button>
+                        {weekHoliday && (
+                          <span className="text-[0.5rem] text-red-400 bg-red-500/15 px-1 py-0.5 rounded mt-0.5 inline-block" title={weekHoliday}>
+                            {weekHoliday}
+                          </span>
+                        )}
                         {showOnCall && (
                           <OnCallChips
                             assignments={onCallByDate.get(dStr) ?? []}
@@ -5059,11 +5094,14 @@ export default function SchedulerPage() {
                             if (stageDiff !== 0) return stageDiff;
                             return (a.event.isForecast ? 1 : 0) - (b.event.isForecast ? 1 : 0);
                           });
+                          const weekCellHoliday = isPbHoliday(dateStr);
                           return (
                             <div
                               key={di}
                               className={`bg-surface min-h-[70px] p-1 cursor-pointer transition-colors hover:bg-surface-elevated ${
-                                canDrop
+                                weekCellHoliday ? "bg-red-900/10" : ""
+                              } ${
+                                canDrop && !weekCellHoliday
                                   ? "hover:bg-orange-500/10 hover:ring-2 hover:ring-inset hover:ring-orange-500"
                                   : ""
                               }`}

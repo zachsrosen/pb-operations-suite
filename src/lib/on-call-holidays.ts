@@ -45,3 +45,42 @@ export function holidaysInYear(year: number): Array<{ date: string; name: string
   const prefix = `${year}-`;
   return FEDERAL_HOLIDAYS.filter((h) => h.date.startsWith(prefix));
 }
+
+// ---------------------------------------------------------------------------
+// PB company paid holidays — the actual days Photon Brothers is closed.
+// This is a SUBSET of federal holidays plus company-specific days (day after
+// Thanksgiving, Christmas Eve). Used by the scheduler to block scheduling.
+// ---------------------------------------------------------------------------
+
+export const PB_PAID_HOLIDAYS: Array<{ date: string; name: string }> = [
+  // 2026
+  { date: "2026-01-01", name: "New Year's Day" },
+  { date: "2026-05-25", name: "Memorial Day" },
+  { date: "2026-07-03", name: "Independence Day (observed)" },
+  { date: "2026-09-07", name: "Labor Day" },
+  { date: "2026-11-26", name: "Thanksgiving Day" },
+  { date: "2026-11-27", name: "Day after Thanksgiving" },
+  { date: "2026-12-24", name: "Christmas Eve" },
+  { date: "2026-12-25", name: "Christmas Day" },
+
+  // 2027 — update when HR publishes the calendar
+];
+
+const PB_HOLIDAY_SET = new Set(PB_PAID_HOLIDAYS.map((h) => h.date));
+const PB_HOLIDAY_NAMES = new Map(PB_PAID_HOLIDAYS.map((h) => [h.date, h.name]));
+
+/** Returns true if dateStr (YYYY-MM-DD) is a PB paid holiday. */
+export function isPbHoliday(dateStr: string): boolean {
+  return PB_HOLIDAY_SET.has(dateStr);
+}
+
+/** Returns the PB holiday name for dateStr, or null. */
+export function pbHolidayName(dateStr: string): string | null {
+  return PB_HOLIDAY_NAMES.get(dateStr) ?? null;
+}
+
+/** All PB paid holidays in a given year. */
+export function pbHolidaysInYear(year: number): Array<{ date: string; name: string }> {
+  const prefix = `${year}-`;
+  return PB_PAID_HOLIDAYS.filter((h) => h.date.startsWith(prefix));
+}

@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import { Signature } from "@hubspot/api-client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { teslaProductFromPartNumber } from "@/lib/tesla-part-numbers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
