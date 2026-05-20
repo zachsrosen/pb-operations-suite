@@ -54,11 +54,13 @@ async function withHubSpotRetry<T>(label: string, fn: () => Promise<T>): Promise
 const EMAIL_PROPERTIES = [
   "hs_email_subject", "hs_email_text", "hs_email_from_email",
   "hs_email_to_email", "hs_timestamp", "hs_email_direction",
+  "hs_email_cc_email", "hs_email_bcc_email", "hs_email_status",
 ];
 
 const CALL_PROPERTIES = [
   "hs_call_body", "hs_call_duration", "hs_call_disposition",
   "hs_timestamp", "hs_call_from_number", "hs_call_to_number",
+  "hs_call_recording_url", "hs_call_title",
 ];
 
 const NOTE_PROPERTIES = [
@@ -68,6 +70,7 @@ const NOTE_PROPERTIES = [
 const MEETING_PROPERTIES = [
   "hs_meeting_title", "hs_meeting_body", "hs_meeting_start_time",
   "hs_meeting_end_time", "hs_timestamp", "hs_attendee_owner_ids",
+  "hs_meeting_location", "hs_meeting_outcome",
 ];
 
 const TASK_PROPERTIES = [
@@ -156,6 +159,16 @@ function mapEmail(p: Record<string, string | null>, id: string): Engagement {
     disposition: null,
     attendees: null,
     createdBy: null,
+    direction: p.hs_email_direction ?? null,
+    cc: p.hs_email_cc_email ? p.hs_email_cc_email.split(";").map((s) => s.trim()) : null,
+    bcc: p.hs_email_bcc_email ? p.hs_email_bcc_email.split(";").map((s) => s.trim()) : null,
+    emailStatus: p.hs_email_status ?? null,
+    recordingUrl: null,
+    priority: null,
+    taskType: null,
+    meetingEndTime: null,
+    meetingLocation: null,
+    meetingOutcome: null,
   };
 }
 
@@ -164,7 +177,7 @@ function mapCall(p: Record<string, string | null>, id: string): Engagement {
     id: `call-${id}`,
     type: "call",
     timestamp: p.hs_timestamp ?? new Date(0).toISOString(),
-    subject: null,
+    subject: p.hs_call_title ?? null,
     body: p.hs_call_body ?? null,
     from: p.hs_call_from_number ?? null,
     to: p.hs_call_to_number ? [p.hs_call_to_number] : null,
@@ -172,6 +185,16 @@ function mapCall(p: Record<string, string | null>, id: string): Engagement {
     disposition: p.hs_call_disposition ?? null,
     attendees: null,
     createdBy: null,
+    direction: null,
+    cc: null,
+    bcc: null,
+    emailStatus: null,
+    recordingUrl: p.hs_call_recording_url ?? null,
+    priority: null,
+    taskType: null,
+    meetingEndTime: null,
+    meetingLocation: null,
+    meetingOutcome: null,
   };
 }
 
@@ -188,10 +211,23 @@ function mapNote(p: Record<string, string | null>, id: string): Engagement {
     disposition: null,
     attendees: null,
     createdBy: p.hs_created_by ?? null,
+    direction: null,
+    cc: null,
+    bcc: null,
+    emailStatus: null,
+    recordingUrl: null,
+    priority: null,
+    taskType: null,
+    meetingEndTime: null,
+    meetingLocation: null,
+    meetingOutcome: null,
   };
 }
 
 function mapMeeting(p: Record<string, string | null>, id: string): Engagement {
+  const startMs = p.hs_meeting_start_time ? new Date(p.hs_meeting_start_time).getTime() : 0;
+  const endMs = p.hs_meeting_end_time ? new Date(p.hs_meeting_end_time).getTime() : 0;
+  const dur = startMs && endMs && endMs > startMs ? endMs - startMs : null;
   return {
     id: `meeting-${id}`,
     type: "meeting",
@@ -200,12 +236,22 @@ function mapMeeting(p: Record<string, string | null>, id: string): Engagement {
     body: p.hs_meeting_body ?? null,
     from: null,
     to: null,
-    duration: null,
+    duration: dur,
     disposition: null,
     attendees: p.hs_attendee_owner_ids
       ? p.hs_attendee_owner_ids.split(";").map((s) => s.trim())
       : null,
     createdBy: null,
+    direction: null,
+    cc: null,
+    bcc: null,
+    emailStatus: null,
+    recordingUrl: null,
+    priority: null,
+    taskType: null,
+    meetingEndTime: p.hs_meeting_end_time ?? null,
+    meetingLocation: p.hs_meeting_location ?? null,
+    meetingOutcome: p.hs_meeting_outcome ?? null,
   };
 }
 
@@ -222,6 +268,16 @@ function mapTask(p: Record<string, string | null>, id: string): Engagement {
     disposition: p.hs_task_status ?? null,
     attendees: null,
     createdBy: null,
+    direction: null,
+    cc: null,
+    bcc: null,
+    emailStatus: null,
+    recordingUrl: null,
+    priority: p.hs_task_priority ?? null,
+    taskType: p.hs_task_type ?? null,
+    meetingEndTime: null,
+    meetingLocation: null,
+    meetingOutcome: null,
   };
 }
 
@@ -407,4 +463,63 @@ export async function createDealNote(
       },
     ],
   });
+}
+
+// ---------------------------------------------------------------------------
+// Owner ID → Name resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch all HubSpot owners and build an id→name map. Cached in appCache.
+ * Also indexes by email so note createdBy (which is an email) resolves.
+ */
+export async function getOwnerIdToNameMap(): Promise<Map<string, string>> {
+  const cacheKey = "hubspot-owner-map";
+  const cached = appCache.get<Map<string, string>>(cacheKey);
+  if (cached) return cached;
+
+  const map = new Map<string, string>();
+  try {
+    const res = await withHubSpotRetry("owners:getPage", () =>
+      hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false),
+    );
+    for (const owner of res.results ?? []) {
+      const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ") || owner.email || owner.id;
+      map.set(owner.id, name);
+      if (owner.email) map.set(owner.email, name);
+    }
+    // Also fetch archived owners for historical resolution
+    const archived = await withHubSpotRetry("owners:getPage:archived", () =>
+      hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, true),
+    );
+    for (const owner of archived.results ?? []) {
+      const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ") || owner.email || owner.id;
+      if (!map.has(owner.id)) map.set(owner.id, name);
+      if (owner.email && !map.has(owner.email)) map.set(owner.email, name);
+    }
+  } catch (err) {
+    console.warn("[hubspot-engagements] Failed to fetch owners:", err);
+  }
+  appCache.set(cacheKey, map);
+  return map;
+}
+
+/**
+ * Resolve owner IDs / emails to human names in-place.
+ * - note.createdBy (owner email or ID) → resolved name
+ * - meeting.attendees (owner IDs) → resolved names
+ */
+export function resolveEngagementOwners(
+  engagements: Engagement[],
+  ownerMap: Map<string, string>,
+): void {
+  for (const eng of engagements) {
+    if (eng.type === "note" && eng.createdBy) {
+      const resolved = ownerMap.get(eng.createdBy);
+      if (resolved) eng.createdBy = resolved;
+    }
+    if (eng.type === "meeting" && eng.attendees) {
+      eng.attendees = eng.attendees.map((id) => ownerMap.get(id) ?? id);
+    }
+  }
 }

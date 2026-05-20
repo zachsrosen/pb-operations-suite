@@ -93,22 +93,73 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
 }
 
+const DIRECTION_LABELS: Record<string, string> = {
+  INCOMING_EMAIL: "Inbound",
+  FORWARDED_EMAIL: "Forward",
+  FORWARD: "Forward",
+  REPLY: "Reply",
+};
+
+const EMAIL_STATUS_LABELS: Record<string, string> = {
+  BOUNCED: "Bounced",
+  FAILED: "Failed",
+  SCHEDULED: "Scheduled",
+  SENDING: "Sending",
+  SENT: "Sent",
+};
+
+const TASK_PRIORITY_COLORS: Record<string, string> = {
+  HIGH: "bg-red-500/10 text-red-400",
+  MEDIUM: "bg-yellow-500/10 text-yellow-400",
+  LOW: "bg-surface-2 text-muted",
+  NONE: "bg-surface-2 text-muted",
+};
+
+const MEETING_OUTCOME_LABELS: Record<string, string> = {
+  SCHEDULED: "Scheduled",
+  COMPLETED: "Completed",
+  RESCHEDULED: "Rescheduled",
+  NO_SHOW: "No show",
+  CANCELLED: "Cancelled",
+};
+
 function TypeMeta({ eng }: { eng: Engagement }) {
   switch (eng.type) {
     case "email":
       return (
-        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
-          {eng.from && <span>From: {eng.from}</span>}
-          {eng.to && eng.to.length > 0 && (
-            <span className="truncate max-w-[300px]">
-              To: {eng.to.join(", ")}
-            </span>
+        <div className="space-y-0.5 text-xs text-muted mt-1">
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 items-center">
+            {eng.direction && (
+              <span className="inline-flex px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-medium">
+                {DIRECTION_LABELS[eng.direction] ?? eng.direction}
+              </span>
+            )}
+            {eng.emailStatus && eng.emailStatus !== "SENT" && (
+              <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${
+                eng.emailStatus === "BOUNCED" || eng.emailStatus === "FAILED"
+                  ? "bg-red-500/10 text-red-400"
+                  : "bg-surface-2 text-muted"
+              }`}>
+                {EMAIL_STATUS_LABELS[eng.emailStatus] ?? eng.emailStatus}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+            {eng.from && <span>From: {eng.from}</span>}
+            {eng.to && eng.to.length > 0 && (
+              <span className="truncate max-w-[300px]">
+                To: {eng.to.join(", ")}
+              </span>
+            )}
+          </div>
+          {eng.cc && eng.cc.length > 0 && (
+            <span className="truncate max-w-[300px]">CC: {eng.cc.join(", ")}</span>
           )}
         </div>
       );
     case "call":
       return (
-        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1 items-center">
           {eng.from && <span>From: {eng.from}</span>}
           {eng.to && eng.to.length > 0 && (
             <span>To: {eng.to.join(", ")}</span>
@@ -121,6 +172,16 @@ function TypeMeta({ eng }: { eng: Engagement }) {
               Outcome: {DISPOSITION_LABELS[eng.disposition] ?? eng.disposition}
             </span>
           )}
+          {eng.recordingUrl && (
+            <a
+              href={eng.recordingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-0.5"
+            >
+              Recording ↗
+            </a>
+          )}
         </div>
       );
     case "note":
@@ -129,20 +190,37 @@ function TypeMeta({ eng }: { eng: Engagement }) {
       ) : null;
     case "meeting":
       return (
-        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
-          {eng.attendees && eng.attendees.length > 0 && (
-            <span>
-              Attendees: {eng.attendees.length}
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1 items-center">
+          {eng.meetingOutcome && (
+            <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${
+              eng.meetingOutcome === "COMPLETED"
+                ? "bg-green-500/10 text-green-400"
+                : eng.meetingOutcome === "NO_SHOW"
+                  ? "bg-red-500/10 text-red-400"
+                  : "bg-surface-2 text-muted"
+            }`}>
+              {MEETING_OUTCOME_LABELS[eng.meetingOutcome] ?? eng.meetingOutcome}
             </span>
+          )}
+          {eng.duration != null && eng.duration > 0 && (
+            <span>Duration: {formatDuration(eng.duration)}</span>
+          )}
+          {eng.attendees && eng.attendees.length > 0 && (
+            <span className="truncate max-w-[300px]">
+              Attendees: {eng.attendees.join(", ")}
+            </span>
+          )}
+          {eng.meetingLocation && (
+            <span className="truncate max-w-[200px]">📍 {eng.meetingLocation}</span>
           )}
         </div>
       );
     case "task":
       return (
-        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted mt-1 items-center">
           {eng.disposition && (
             <span
-              className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
+              className={`inline-flex px-1.5 py-0.5 rounded font-medium ${
                 eng.disposition === "COMPLETED"
                   ? "bg-green-500/10 text-green-400"
                   : eng.disposition === "IN_PROGRESS"
@@ -152,6 +230,16 @@ function TypeMeta({ eng }: { eng: Engagement }) {
             >
               {TASK_STATUS_LABELS[eng.disposition] ?? eng.disposition}
             </span>
+          )}
+          {eng.priority && eng.priority !== "NONE" && (
+            <span className={`inline-flex px-1.5 py-0.5 rounded font-medium ${
+              TASK_PRIORITY_COLORS[eng.priority] ?? "bg-surface-2 text-muted"
+            }`}>
+              {eng.priority.charAt(0) + eng.priority.slice(1).toLowerCase()} priority
+            </span>
+          )}
+          {eng.taskType && eng.taskType !== "TODO" && (
+            <span>{eng.taskType}</span>
           )}
         </div>
       );
