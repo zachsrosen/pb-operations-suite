@@ -1,0 +1,10 @@
+{
+  "name": "powerhub-card",
+  "version": "1.0.0",
+  "description": "Tesla PowerHub card for HubSpot Property, Deal, and Ticket records.",
+  "main": "PowerhubCard.tsx",
+  "dependencies": {
+    "@hubspot/ui-extensions": "latest",
+    "react": "^18.2.0"
+  }
+}

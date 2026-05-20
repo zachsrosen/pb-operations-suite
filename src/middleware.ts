@@ -76,6 +76,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/pe-scraper",      // PE portal scraper push — API_SECRET_TOKEN validated in route
   "/api/webhooks/hubspot/pe-doc-status", // PE doc status webhook — HubSpot signature validated in route
   "/api/properties/workflow-sync", // HubSpot workflow webhook → property sync — PROPERTY_SYNC_ENABLED + Zod validated in route
+  "/api/hubspot-card/powerhub",    // HubSpot UI Extension data fetch — HubSpot signature v3 validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",

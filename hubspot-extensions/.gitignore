@@ -1,0 +1,4 @@
+hubspot.config.yml
+node_modules
+dist
+.hs-cache

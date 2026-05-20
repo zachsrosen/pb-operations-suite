@@ -1,0 +1,13 @@
+{
+  "type": "card-extension",
+  "uid": "powerhub-card",
+  "title": "Tesla PowerHub",
+  "objectTypes": [
+    { "name": "0-3" },
+    { "name": "0-5" },
+    { "name": "2-60847123" }
+  ],
+  "module": {
+    "file": "PowerhubCard.tsx"
+  }
+}
