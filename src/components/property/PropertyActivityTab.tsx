@@ -35,19 +35,129 @@ const TYPE_FILTERS: Engagement["type"][] = [
   "task",
 ];
 
-function timeAgo(ts: string): string {
-  const diff = Date.now() - new Date(ts).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(ts).toLocaleDateString();
+function formatDate(ts: string): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffHrs = diffMs / 3_600_000;
+
+  // Within last 24h: relative
+  if (diffHrs < 24) {
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 60) return `${mins}m ago`;
+    return `${Math.floor(mins / 60)}h ago`;
+  }
+
+  // Same year: "May 19"
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  // Different year: "May 19, 2025"
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
+
+function formatDuration(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const mins = Math.floor(totalSec / 60);
+  const secs = totalSec % 60;
+  if (mins < 60) return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
+}
+
+const DISPOSITION_LABELS: Record<string, string> = {
+  "9d9162e7-6cf3-4944-bf63-4dff82258764": "Busy",
+  "f240bbac-87c9-4f6e-bf70-924b57d47db7": "Connected",
+  "a4c4c377-d246-4b32-a13b-75a56a4cd0ff": "Left live message",
+  "b2cf5968-551e-4856-9783-52b3da59a7d0": "Left voicemail",
+  "73a0d17f-1163-4015-bdd5-ec830791da20": "No answer",
+  "17b47fee-58de-441e-a44c-c6300d46f273": "Wrong number",
+};
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  NOT_STARTED: "Not started",
+  IN_PROGRESS: "In progress",
+  WAITING: "Waiting",
+  DEFERRED: "Deferred",
+  COMPLETED: "Completed",
+};
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+}
+
+function TypeMeta({ eng }: { eng: Engagement }) {
+  switch (eng.type) {
+    case "email":
+      return (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
+          {eng.from && <span>From: {eng.from}</span>}
+          {eng.to && eng.to.length > 0 && (
+            <span className="truncate max-w-[300px]">
+              To: {eng.to.join(", ")}
+            </span>
+          )}
+        </div>
+      );
+    case "call":
+      return (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
+          {eng.from && <span>From: {eng.from}</span>}
+          {eng.to && eng.to.length > 0 && (
+            <span>To: {eng.to.join(", ")}</span>
+          )}
+          {eng.duration != null && eng.duration > 0 && (
+            <span>Duration: {formatDuration(eng.duration)}</span>
+          )}
+          {eng.disposition && (
+            <span>
+              Outcome: {DISPOSITION_LABELS[eng.disposition] ?? eng.disposition}
+            </span>
+          )}
+        </div>
+      );
+    case "note":
+      return eng.createdBy ? (
+        <p className="text-xs text-muted mt-1">By: {eng.createdBy}</p>
+      ) : null;
+    case "meeting":
+      return (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
+          {eng.attendees && eng.attendees.length > 0 && (
+            <span>
+              Attendees: {eng.attendees.length}
+            </span>
+          )}
+        </div>
+      );
+    case "task":
+      return (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted mt-1">
+          {eng.disposition && (
+            <span
+              className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${
+                eng.disposition === "COMPLETED"
+                  ? "bg-green-500/10 text-green-400"
+                  : eng.disposition === "IN_PROGRESS"
+                    ? "bg-blue-500/10 text-blue-400"
+                    : "bg-surface-2 text-muted"
+              }`}
+            >
+              {TASK_STATUS_LABELS[eng.disposition] ?? eng.disposition}
+            </span>
+          )}
+        </div>
+      );
+    default:
+      return null;
+  }
 }
 
 export default function PropertyActivityTab({ propertyId }: Props) {
@@ -170,7 +280,7 @@ export default function PropertyActivityTab({ propertyId }: Props) {
                     )}
                   </div>
                   <span className="text-xs text-muted whitespace-nowrap shrink-0">
-                    {timeAgo(eng.timestamp)}
+                    {formatDate(eng.timestamp)}
                   </span>
                 </div>
 
@@ -180,11 +290,7 @@ export default function PropertyActivityTab({ propertyId }: Props) {
                   </p>
                 )}
 
-                {eng.from && (
-                  <p className="text-xs text-muted mt-1">
-                    From: {eng.from}
-                  </p>
-                )}
+                <TypeMeta eng={eng} />
               </div>
             </div>
           ))}
