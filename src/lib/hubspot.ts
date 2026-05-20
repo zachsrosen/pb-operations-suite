@@ -3023,6 +3023,39 @@ export async function createDealLineItem(
 }
 
 /**
+ * Update a line item's quantity via PATCH.
+ * Used by the IDR meeting module count adjuster.
+ */
+export async function updateLineItemQuantity(
+  lineItemId: string,
+  quantity: number,
+): Promise<void> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+  if (!lineItemId) throw new Error("lineItemId is required");
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("quantity must be > 0");
+
+  const res = await fetch(
+    `https://api.hubapi.com/crm/v3/objects/line_items/${encodeURIComponent(lineItemId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        properties: { quantity: String(Math.round(quantity * 1000) / 1000) },
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to update line item quantity (${res.status}): ${text.slice(0, 300)}`);
+  }
+}
+
+/**
  * Parse a BOM ownership tag from a line item description.
  * Tags look like [BOM:clxyz123abc] where the ID is a BomHubSpotPushLog row ID.
  */

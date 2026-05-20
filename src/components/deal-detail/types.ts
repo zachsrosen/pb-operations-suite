@@ -201,4 +201,16 @@ export interface Engagement {
   disposition: string | null;
   attendees: string[] | null;
   createdBy: string | null;
+
+  // Extended metadata (Phase 2 enrichment)
+  direction: string | null;
+  cc: string[] | null;
+  bcc: string[] | null;
+  emailStatus: string | null;
+  recordingUrl: string | null;
+  priority: string | null;
+  taskType: string | null;
+  meetingEndTime: string | null;
+  meetingLocation: string | null;
+  meetingOutcome: string | null;
 }
