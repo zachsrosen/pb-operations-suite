@@ -81,7 +81,7 @@ export async function extractBomForDeal(params: {
   }
 
   // Cast the untyped bom record to BomData
-  const bomPayload = bomResult?.bom as BomData | undefined;
+  const bomPayload = bomResult?.bom as unknown as BomData | undefined;
   if (!bomPayload?.items || bomPayload.items.length === 0) {
     return { status: "failed", error: "Extraction returned no items" };
   }

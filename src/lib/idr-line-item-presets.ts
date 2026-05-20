@@ -21,19 +21,19 @@ export interface LineItemPreset {
 export const LINE_ITEM_PRESETS: LineItemPreset[] = [
   {
     label: "Backup Switch",
-    internalProductId: "TODO_POPULATE_FROM_CATALOG",
+    internalProductId: "cmm3k3p1c001n04i9vob5wrea", // Tesla 1624171-XX-Y (200A Backup Switch)
     defaultQty: 1,
     icon: "shield",
   },
   {
     label: "Backup Gateway",
-    internalProductId: "TODO_POPULATE_FROM_CATALOG",
+    internalProductId: "cmm2xea3z01ma04js97gjek5u", // Tesla 1841000-X1-Y (200A Backup Gateway 3)
     defaultQty: 1,
     icon: "server",
   },
   {
     label: "TRM",
-    internalProductId: "TODO_POPULATE_FROM_CATALOG",
+    internalProductId: "cmm4j73w401nybv8ouyy6ssz6", // Tesla 2045796-xx-y (Remote Meter Energy Kit)
     defaultQty: 1,
     icon: "zap",
   },

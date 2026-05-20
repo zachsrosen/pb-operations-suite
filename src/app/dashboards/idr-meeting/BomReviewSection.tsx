@@ -7,6 +7,7 @@ import { AddLineItemDialog } from "./AddLineItemDialog";
 import { BomExtractionEditor } from "./BomExtractionEditor";
 
 interface LineItem {
+  id: string;
   name: string;
   quantity: number;
   manufacturer: string;
@@ -14,8 +15,7 @@ interface LineItem {
   sku: string;
   price: number;
   amount: number;
-  hubspotProductId?: string;
-  id?: string;
+  hubspotProductId: string | null;
 }
 
 interface Props {

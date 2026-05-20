@@ -7,6 +7,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { LINE_ITEM_PRESETS, type LineItemPreset } from "@/lib/idr-line-item-presets";
 
 interface LineItem {
+  id: string;
   name: string;
   quantity: number;
   manufacturer: string;
@@ -14,8 +15,7 @@ interface LineItem {
   sku: string;
   price: number;
   amount: number;
-  hubspotProductId?: string;
-  id?: string;
+  hubspotProductId: string | null;
 }
 
 interface Props {

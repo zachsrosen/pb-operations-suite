@@ -32,7 +32,7 @@ export function AddLineItemDialog({ dealId, open, onClose }: Props) {
   const [searching, setSearching] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const debounceRef = useRef<NodeJS.Timeout>(undefined);
 
   // Focus input when dialog opens
   useEffect(() => {
