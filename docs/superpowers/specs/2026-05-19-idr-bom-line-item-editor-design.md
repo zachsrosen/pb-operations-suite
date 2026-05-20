@@ -144,7 +144,7 @@ When a project is added to an IDR session (not an escalation):
 3. Call `listPlansetPdfs(folderId)` (recursive subfolder search: Stamped Plans → parent → BFS 3 levels) → `pickBestPlanset(files)`
 4. If no planset found, skip (status: `no_planset`)
 5. Download PDF via `downloadDrivePdf()`
-6. Run `extractBomFromPdf(pdfBuffer, filename)` — filename from the Drive file metadata
+6. Run `extractBomFromPdf(pdfBuffer, filename, actor?)` — filename from Drive file metadata, optional `ActorContext` for audit logging
 7. Save result as `ProjectBomSnapshot` via `saveBomSnapshot()` with version auto-increment
 8. Update extraction status: `ready`
 
@@ -187,7 +187,7 @@ Compact editable table matching the BOM dashboard's editing capabilities:
 
 The flow:
 1. Save current editor state as a `ProjectBomSnapshot` (if not already saved)
-2. Call `pushBomToHubSpotLineItems(dealId, snapshotId, userEmail)`
+2. Call `pushBomToHubSpotLineItems(dealId, snapshotId, pushedBy)` — `pushedBy` is the user's email
 3. This handles: catalog matching, lock acquisition, create new tagged line items, delete prior BOM-managed items on success, log to `BomHubSpotPushLog`
 
 **Deduplication with preset-added items**: Preset-added line items (backup switch, gateway, TRM) are created without BOM tags — they're standalone line items. The BOM push only deletes items tagged with a prior `[BOM:...]` push log ID. So preset items are safe from BOM push cleanup.

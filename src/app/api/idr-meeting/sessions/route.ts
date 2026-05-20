@@ -14,6 +14,7 @@ import {
   type LocationBucket,
 } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
+import { extractBomForDeal } from "@/lib/idr-bom-extract";
 
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth();
@@ -263,6 +264,48 @@ export async function POST(req: NextRequest) {
       where: { id: { in: queuedItems.map((q) => q.id) } },
       data: { status: "CONSUMED", consumedBySession: session.id },
     });
+  }
+
+  // ── Fire-and-forget BOM extraction for IDR items ──
+  // Escalation items skip auto-extraction (on-demand only).
+  const idrItemsWithFolder = items.filter(
+    (item) => item.type === "IDR" && item.designFolderUrl,
+  );
+  if (idrItemsWithFolder.length > 0) {
+    const extractionActor = { email: auth.email, name: auth.name ?? auth.email };
+
+    // Import waitUntil lazily for Vercel edge runtime
+    try {
+      const { waitUntil } = await import("@vercel/functions");
+      waitUntil(
+        Promise.allSettled(
+          idrItemsWithFolder.map((item) =>
+            extractBomForDeal({
+              dealId: item.dealId,
+              dealName: item.dealName ?? `Deal ${item.dealId}`,
+              designFolderUrl: item.designFolderUrl,
+              actor: extractionActor,
+            }).catch((err) => {
+              console.error(`[idr-session] BOM extraction failed for deal ${item.dealId}:`, err);
+            }),
+          ),
+        ),
+      );
+    } catch {
+      // waitUntil not available (local dev) — run inline but don't block response
+      Promise.allSettled(
+        idrItemsWithFolder.map((item) =>
+          extractBomForDeal({
+            dealId: item.dealId,
+            dealName: item.dealName ?? `Deal ${item.dealId}`,
+            designFolderUrl: item.designFolderUrl,
+            actor: extractionActor,
+          }).catch((err) => {
+            console.error(`[idr-session] BOM extraction failed for deal ${item.dealId}:`, err);
+          }),
+        ),
+      );
+    }
   }
 
   // Broadcast session creation so other clients see the new meeting

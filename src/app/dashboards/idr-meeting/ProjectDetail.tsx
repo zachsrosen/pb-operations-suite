@@ -14,6 +14,7 @@ import { MeetingNotesForm } from "./MeetingNotesForm";
 import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 import { AddersChecklist } from "./AddersChecklist";
+import { BomReviewSection } from "./BomReviewSection";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -59,7 +60,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     queryFn: async () => {
       const res = await fetch(`/api/idr-meeting/line-items/${item!.dealId}`);
       if (!res.ok) throw new Error("Failed to fetch line items");
-      return res.json() as Promise<{ lineItems: Array<{ name: string; quantity: number; manufacturer: string; productCategory: string; sku: string; price: number; amount: number }> }>;
+      return res.json() as Promise<{ lineItems: Array<{ id: string; name: string; quantity: number; manufacturer: string; productCategory: string; sku: string; price: number; amount: number; hubspotProductId: string | null }> }>;
     },
     enabled: !!item,
     staleTime: 5 * 60 * 1000,
@@ -356,6 +357,14 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               ) : null}
             </Section>
 
+            {/* BOM Review */}
+            <BomReviewSection
+              item={item}
+              lineItems={lineItemsQuery.data?.lineItems}
+              lineItemsLoading={lineItemsQuery.isLoading}
+              readOnly={readOnly}
+            />
+
             {/* Survey Readiness */}
             {readinessQuery.data && (
               <Section title="Survey Readiness">
@@ -406,10 +415,8 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           </div>
         </div>
 
-        {/* ── Site Photos (full width) ── */}
-        <Section title="Site Photos">
-          <PhotoGalleryCard hubspotDealId={item.dealId} />
-        </Section>
+        {/* ── Site Photos (full width, has its own collapse toggle) ── */}
+        <PhotoGalleryCard hubspotDealId={item.dealId} />
       </div>
     </div>
   );
