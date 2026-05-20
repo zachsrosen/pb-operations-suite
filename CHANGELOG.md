@@ -4,6 +4,102 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-20
+
+### PE File Preparation (Major)
+- AI vision audit of PE submission documents with Claude vision classifier
+- Few-shot reference library + AVL (Approved Vendor List) cross-check for classification accuracy
+- PandaDoc auto-pull with template discovery + name-only search fallback when metadata misses
+- Clickable PandaDoc links surfaced on PE prep page
+- `PeAuditRun` Prisma model persists audit runs; vision results cached to prevent timeouts
+- Batched photo triage — single API call replaces 36+ per-photo calls
+- Pre-upload photos + cache Anthropic file IDs to eliminate redundant uploads
+- Parallel pre-work + race-condition fix in document classification
+- User OAuth token used for Google Drive access (replaces service account fallback)
+- `pe-file-prep` skill with full operational context for Claude-driven runs
+
+### PE Submission Gap Dashboard (Major)
+- 4-tab split (M1, M2, Complete, Onboarding) with dollar amounts and date columns
+- Document-level progress per deal with milestone-correct stage scoping
+- Real deal stage + close date shown alongside inspection-pass and PTO-granted dates
+- Complete tab requires Paid (not just Approved); shows both M1/M2 statuses
+- M1 bucket includes Close Out; Onboarding tab includes all pre-PTO project pipeline stages
+- `peDocs` query key added for doc fetching with proper invalidation
+- Doc statuses now read from HubSpot deal properties instead of DB (refactor)
+
+### Tesla PowerHub Monitoring (Major)
+- Full telemetry signal capture + alert metadata per Tesla site
+- Per-device part # and serial # surfaced (every Tesla device on site)
+- Equipment summary view with battery SoC derived from energy-remaining when SoC signal missing
+- Geo-coordinate matching via portal-imported lat/lng
+- `API_SECRET_TOKEN` auth allowed on import-locations route
+- Script to unlink heuristic-only `PowerhubSite` links
+- Prisma schema aligned with prod Tesla device denorm columns
+
+### Tesla PowerHub HubSpot UI Extension (Major)
+- Native HubSpot UI Extension card for Tesla PowerHub data
+- Compact Tesla PowerHub sidebar card variant
+- HubSpot v3 signature verification implemented (signs with decoded URL query-param values)
+- `Button` uses `href` prop instead of `window.open` for in-context navigation
+- Extensive signature-debugging instrumentation persisted to `SystemConfig` for diagnosis
+- `tsconfig` excludes `hubspot-extensions` from Next.js type-check (separate build context)
+
+### Weekly Shop Health Dashboard (Major)
+- Per-location weekly health metrics based on Tracey Mallory's P&L Ownership Framework
+- Customer Success section with sentiment scoring and 5-star review aggregation
+- Preconstruction section expanded with throughput and cycle times
+- "Permits Issued" terminology replaces "Permits Approved"
+- Revenue display rounding fixed ($1.25M no longer shows as $1.3M)
+- `ShopHealthBottleneck` model persists per-location per-week bottleneck entries
+- Refactored to use `OfficeGoal` DB targets instead of hardcoded `REVENUE_GROUPS`
+- Week utils extracted to prevent client/server boundary violation
+
+### Zuper Property Sync — Write Direction (Major)
+- Project-to-property linking during Zuper sync (Zuper jobs now write to `HubSpotPropertyCache`)
+- Customer association on Zuper property create/update
+- Safety checks prevent Zuper property misassociation
+- Ticket-only properties included in sync
+- Filter out customers with no UID when updating Zuper property
+- Stale deal/ticket links removed during property reconcile
+
+### IDR Meeting Tools (Major)
+- BOM Review & Line Item Editor for in-meeting equipment edits (#805)
+- Planset layout vs DA layout comparison in design review (#768)
+- Stale numeric lead IDs resolved in completed snapshots
+- Revision status override fixed on Vercel (now fires reliably)
+
+### Shovels API Property Enrichment
+- Permits, residents, and contractors enriched onto property records (#700)
+- Cron batch size increased to 75 with reduced delay
+
+### Property Hub
+- HubSpot line items surfaced in Equipment tab
+- Activity tab enriched with engagement metadata
+- Ticket enum values resolved to human-readable labels with links
+- Property ID resolved before querying `PowerhubSite` (fixes monitoring lookup)
+- Address match verified for single-candidate property links (#687)
+
+### Pre-Sale Survey Scheduling
+- Pre-sale survey cards rendered on scheduler calendar
+- Dedup logic for pre-sale cards + click-to-open modal
+- Zuper pre-sale job creation: omit `job_type`, fix customer name, skip then restore `custom_fields`
+- One-off SLO slot added for Nick on 2026-05-20
+
+### AHJ / Utility
+- Bulk spreadsheet update script for AHJ and Utility custom objects (#449)
+
+### Refactors
+- `PendingPropertyOverride` cron replaced with HubSpot workflow properties (#789)
+
+### Bug Fixes
+- `deal-reader` Project return type now includes customer-sentiment fields
+- Drive OAuth token resolution passes correct cookie name to `getToken`
+- HubSpot engagements use `appCache.get()` new return shape
+- Removed duplicate `deals` field and stale fields (`closedTicketsCount`, extended rollups) from Prisma updates where columns don't yet exist
+- Unused helpers removed (`totalDocsForDeal`, `dealStageDisplayLabel`, `installAgeMonths`, `daysSinceLastService`)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
