@@ -14,8 +14,9 @@ export interface NearlyCompleteDeal {
   dealId: string;
   dealName: string | null;
   approvedCount: number;
+  inProgressCount: number; // UPLOADED + UNDER_REVIEW (submitted, no action needed)
   totalDocs: number;
-  missingDocs: string[]; // doc names not yet approved
+  missingDocs: string[]; // NOT_UPLOADED or ACTION_REQUIRED — need action
 }
 
 export interface AttentionDeal {
@@ -154,7 +155,7 @@ export function PeDocDigest({
         </>
       )}
 
-      {/* Nearly Complete — deals missing only 1-2 docs */}
+      {/* Nearly Complete — deals where only 1-3 docs need action */}
       {nearlyComplete.length > 0 && (
         <>
           <Section style={sectionHeader}>
@@ -169,6 +170,14 @@ export function PeDocDigest({
               </Text>
               <Text style={progressText}>
                 {deal.approvedCount}/{deal.totalDocs} approved
+                {deal.inProgressCount > 0 && (
+                  <span style={{ color: "#3b82f6" }}>
+                    {" "}· {deal.inProgressCount} in review
+                  </span>
+                )}
+                {" "}· <span style={{ color: "#fbbf24" }}>
+                  {deal.missingDocs.length} need action
+                </span>
               </Text>
               <Hr style={thinDivider} />
               {deal.missingDocs.map((doc, i) => (

@@ -106,10 +106,14 @@ export async function GET(request: NextRequest) {
       const blocking = docs.filter((d) => d.status === "NOT_UPLOADED" || d.status === "ACTION_REQUIRED");
       if (blocking.length >= 1 && blocking.length <= 3 && docs.length >= TOTAL_DOCS_PER_DEAL - 3) {
         const approvedCount = docs.filter((d) => d.status === "APPROVED").length;
+        const inProgressCount = docs.filter(
+          (d) => d.status === "UPLOADED" || d.status === "UNDER_REVIEW",
+        ).length;
         nearlyComplete.push({
           dealId,
           dealName: dealNameMap.get(dealId) ?? null,
           approvedCount,
+          inProgressCount,
           totalDocs: TOTAL_DOCS_PER_DEAL,
           missingDocs: blocking.map((d) => d.docName),
         });
@@ -170,8 +174,11 @@ export async function GET(request: NextRequest) {
     if (nearlyComplete.length > 0) {
       plainLines.push("", `--- NEARLY COMPLETE (${nearlyComplete.length}) ---`);
       for (const deal of nearlyComplete) {
+        const parts = [`${deal.approvedCount}/${deal.totalDocs} approved`];
+        if (deal.inProgressCount > 0) parts.push(`${deal.inProgressCount} in review`);
+        parts.push(`${deal.missingDocs.length} need action`);
         plainLines.push(
-          `${deal.dealName || deal.dealId}: ${deal.approvedCount}/${deal.totalDocs} — missing: ${deal.missingDocs.join(", ")}`,
+          `${deal.dealName || deal.dealId}: ${parts.join(" · ")} — need action: ${deal.missingDocs.join(", ")}`,
         );
       }
     }
