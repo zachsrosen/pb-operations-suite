@@ -48,11 +48,23 @@ export interface ParsedProject {
   documents: ParsedDocument[];
 }
 
+export interface DocChange {
+  dealId: string;
+  docName: string;
+  oldStatus: string;
+  newStatus: string;
+  oldNotes: string | null;
+  newNotes: string | null;
+}
+
 export interface SyncResult {
   projectsFound: number;
   projectsMatched: number;
   docsUpserted: number;
   docsSkipped: number;
+  docsChanged: number;
+  docsNew: number;
+  changes: DocChange[];
   errors: string[];
   unmatchedProjects: string[];
 }
@@ -656,7 +668,7 @@ export async function buildPeDealMap(): Promise<Map<string, string>> {
       ] as unknown as string[],
       limit: 100,
       ...(after ? { after } : {}),
-    } as any;
+    } as unknown as Parameters<typeof searchWithRetry>[0];
 
     const response = await searchWithRetry(searchRequest);
 
@@ -774,12 +786,16 @@ function buildNotesString(doc: ParsedDocument, projNumber: string): string {
 export async function syncPeDocStatuses(
   projects: ParsedProject[],
   dealMap: Map<string, string>,
+  syncedBy = "pe-scraper-sync",
 ): Promise<SyncResult> {
   const result: SyncResult = {
     projectsFound: projects.length,
     projectsMatched: 0,
     docsUpserted: 0,
     docsSkipped: 0,
+    docsChanged: 0,
+    docsNew: 0,
+    changes: [],
     errors: [],
     unmatchedProjects: [],
   };
@@ -816,6 +832,21 @@ export async function syncPeDocStatuses(
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Fetch existing records to diff against (one query, indexed by composite key)
+  // ---------------------------------------------------------------------------
+  const affectedDealIds = [...new Set(ops.map((op) => op.dealId))];
+  const existingRows = affectedDealIds.length > 0
+    ? await prisma.peDocumentReview.findMany({
+        where: { dealId: { in: affectedDealIds } },
+        select: { dealId: true, docName: true, status: true, notes: true },
+      })
+    : [];
+  const existingMap = new Map<string, { status: string; notes: string | null }>();
+  for (const row of existingRows) {
+    existingMap.set(`${row.dealId}:${row.docName}`, { status: row.status, notes: row.notes });
+  }
+
   // Execute upserts in parallel batches of 50 (Neon connection pool friendly)
   const BATCH_SIZE = 50;
   const now = new Date();
@@ -847,6 +878,23 @@ export async function syncPeDocStatuses(
     for (let j = 0; j < results.length; j++) {
       if (results[j].status === "fulfilled") {
         result.docsUpserted++;
+        // Track diff
+        const op = batch[j];
+        const key = `${op.dealId}:${op.docName}`;
+        const prev = existingMap.get(key);
+        if (!prev) {
+          result.docsNew++;
+        } else if (prev.status !== op.status || prev.notes !== op.notes) {
+          result.docsChanged++;
+          result.changes.push({
+            dealId: op.dealId,
+            docName: op.docName,
+            oldStatus: prev.status,
+            newStatus: op.status,
+            oldNotes: prev.notes,
+            newNotes: op.notes,
+          });
+        }
       } else {
         const err = (results[j] as PromiseRejectedResult).reason;
         const op = batch[j];
@@ -855,6 +903,35 @@ export async function syncPeDocStatuses(
         );
         result.docsSkipped++;
       }
+    }
+  }
+
+  // Persist change log to DB (best-effort, non-blocking)
+  if (result.changes.length > 0) {
+    try {
+      // Resolve deal names for the change log
+      const changedDealIds = [...new Set(result.changes.map((c) => c.dealId))];
+      const dealNames = new Map<string, string>();
+      for (const [name, id] of dealMap.entries()) {
+        if (changedDealIds.includes(id)) dealNames.set(id, name);
+      }
+
+      await prisma.peDocChangeLog.createMany({
+        data: result.changes.map((c) => ({
+          dealId: c.dealId,
+          dealName: dealNames.get(c.dealId) ?? null,
+          docName: c.docName,
+          oldStatus: c.oldStatus,
+          newStatus: c.newStatus,
+          oldNotes: c.oldNotes,
+          newNotes: c.newNotes,
+          syncedBy,
+        })),
+      });
+    } catch (err) {
+      console.warn(
+        `[pe-scraper-sync] Failed to persist change log (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

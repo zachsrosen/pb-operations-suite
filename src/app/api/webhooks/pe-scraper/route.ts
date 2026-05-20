@@ -55,12 +55,21 @@ export async function POST(req: NextRequest) {
     }
 
     const dealMap = await buildPeDealMap();
-    const result = await syncPeDocStatuses(projects, dealMap);
+    const result = await syncPeDocStatuses(projects, dealMap, "webhook/pe-scraper");
 
-    console.log(
+    console.warn(
       `[pe-scraper-webhook] ${result.projectsMatched}/${result.projectsFound} matched, ` +
-      `${result.docsUpserted} upserted, ${result.errors.length} errors`,
+      `${result.docsUpserted} upserted (${result.docsNew} new, ${result.docsChanged} changed), ` +
+      `${result.errors.length} errors`,
     );
+
+    if (result.changes.length > 0) {
+      for (const c of result.changes) {
+        console.warn(
+          `[pe-scraper-webhook] CHANGED ${c.dealId} | ${c.docName}: ${c.oldStatus} → ${c.newStatus}`,
+        );
+      }
+    }
 
     return NextResponse.json({
       ...result,
