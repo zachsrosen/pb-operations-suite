@@ -476,7 +476,7 @@ export async function createDealNote(
 export async function getOwnerIdToNameMap(): Promise<Map<string, string>> {
   const cacheKey = "hubspot-owner-map";
   const cached = appCache.get<Map<string, string>>(cacheKey);
-  if (cached) return cached;
+  if (cached.data && !cached.stale) return cached.data;
 
   const map = new Map<string, string>();
   try {
