@@ -1,7 +1,7 @@
 // Compact sidebar card — fast-glance Tesla PowerHub status for Deal, Ticket, Property.
 // Shows: battery SOC + mode, alert count, single CTA to open the full tab/portal.
 // Backend: same POST /api/hubspot-card/powerhub endpoint; rendered with smaller UI.
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Button,
