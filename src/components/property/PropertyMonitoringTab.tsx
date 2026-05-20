@@ -167,23 +167,112 @@ export default function PropertyMonitoringTab({ propertyId }: Props) {
                 />
               </div>
 
-              {/* Row 2: Battery + equipment context */}
-              <div className="grid grid-cols-3 gap-3 mb-3 text-xs text-muted">
+              {/* Row 2: Battery + equipment + reserve context */}
+              <div className="grid grid-cols-4 gap-3 mb-3 text-xs text-muted">
                 <div>
                   <span className="font-medium text-foreground">Battery: </span>
                   {formatEnergyKwh(site.snapshot.batteryEnergyRemainingWh)} /{" "}
-                  {formatEnergyKwh(site.equipment.batteryCapacityWh)}{" "}
-                  {site.equipment.batteryCount > 1 && `(${site.equipment.batteryCount}×)`}
+                  {formatEnergyKwh(
+                    site.snapshot.batteryNominalCapacityWh ??
+                      site.equipment.batteryCapacityWh,
+                  )}
+                  {site.equipment.batteryCount > 1 &&
+                    ` (${site.equipment.batteryCount}×)`}
                 </div>
                 <div>
                   <span className="font-medium text-foreground">Mode: </span>
                   {formatBatteryMode(site.snapshot.batteryMode)}
                 </div>
                 <div>
+                  <span className="font-medium text-foreground">Reserve: </span>
+                  {site.snapshot.backupReservePercent != null
+                    ? `${site.snapshot.backupReservePercent.toFixed(0)}%`
+                    : "—"}
+                </div>
+                <div>
                   <span className="font-medium text-foreground">Equipment: </span>
                   {site.equipment.gatewayCount}× GW · {site.equipment.batteryCount}× PW · {site.equipment.inverterCount}× INV
                 </div>
               </div>
+
+              {/* Row 3: Critical condition flags — only show if any are set */}
+              {hasAnyFlag(site.snapshot) && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {site.snapshot.batteryFault && <FlagBadge tone="red">Battery Fault</FlagBadge>}
+                  {site.snapshot.systemShutdown && <FlagBadge tone="red">System Shutdown</FlagBadge>}
+                  {site.snapshot.loadsDropped && <FlagBadge tone="red">Loads Dropped</FlagBadge>}
+                  {site.snapshot.islanderDisconnected && <FlagBadge tone="red">Islander Disconnected</FlagBadge>}
+                  {site.snapshot.breakerOpenStatus && <FlagBadge tone="amber">Breaker Open</FlagBadge>}
+                  {site.snapshot.islandMode && site.snapshot.islandMode !== "0" && <FlagBadge tone="amber">Island Mode {site.snapshot.islandMode}</FlagBadge>}
+                  {site.snapshot.waitForUserLowSoe && <FlagBadge tone="amber">Waiting: Low SoE</FlagBadge>}
+                  {site.snapshot.waitForUserManualBackup && <FlagBadge tone="amber">Waiting: Manual Backup</FlagBadge>}
+                  {site.snapshot.waitForUserNoInverters && <FlagBadge tone="amber">Waiting: No Inverters</FlagBadge>}
+                  {site.snapshot.waitForUserRetriesDone && <FlagBadge tone="red">Waiting: Retries Exhausted</FlagBadge>}
+                  {site.snapshot.offGridFaultState && site.snapshot.offGridFaultState !== "0" && (
+                    <FlagBadge tone="amber">Off-Grid Fault: {site.snapshot.offGridFaultState}</FlagBadge>
+                  )}
+                </div>
+              )}
+
+              {/* Row 4: Comms health badges */}
+              {hasAnyComms(site.snapshot) && (
+                <div className="flex flex-wrap items-center gap-3 mb-3 text-xs">
+                  <span className="text-muted uppercase tracking-wide font-medium">Comms:</span>
+                  <CommsBadge label="Battery" ok={site.snapshot.commsBattery} />
+                  <CommsBadge label="Battery Meter" ok={site.snapshot.commsBatteryMeter} />
+                  <CommsBadge label="Site Meter" ok={site.snapshot.commsSiteMeter} />
+                  <CommsBadge label="Solar Meter" ok={site.snapshot.commsSolarMeter} />
+                </div>
+              )}
+
+              {/* Row 5: Grid quality strip */}
+              {(site.snapshot.voltageV != null || site.snapshot.frequencyHz != null) && (
+                <div className="grid grid-cols-4 gap-3 mb-3 text-xs text-muted">
+                  <MiniField label="Voltage" value={site.snapshot.voltageV != null ? `${site.snapshot.voltageV.toFixed(1)} V` : "—"} />
+                  <MiniField label="Grid V" value={site.snapshot.gridVoltageV != null ? `${site.snapshot.gridVoltageV.toFixed(1)} V` : "—"} />
+                  <MiniField label="Frequency" value={site.snapshot.frequencyHz != null ? `${site.snapshot.frequencyHz.toFixed(2)} Hz` : "—"} />
+                  <MiniField label="Chassis V" value={site.snapshot.chassisVoltageV != null ? `${site.snapshot.chassisVoltageV.toFixed(1)} V` : "—"} />
+                </div>
+              )}
+
+              {/* Row 6: VPP / Grid Services — only show if site has participated */}
+              {site.snapshot.gridServicesPowerW != null && (
+                <div className="grid grid-cols-3 gap-3 mb-3 text-xs text-muted">
+                  <MiniField label="VPP Power" value={formatPower(site.snapshot.gridServicesPowerW)} />
+                  <MiniField label="VPP In (lifetime)" value={formatEnergyKwh(site.snapshot.gridServicesEnergyInLifetimeWh)} />
+                  <MiniField label="VPP Out (lifetime)" value={formatEnergyKwh(site.snapshot.gridServicesEnergyOutLifetimeWh)} />
+                </div>
+              )}
+
+              {/* Row 7: Lifetime energy flow attribution */}
+              <details className="mb-3 group">
+                <summary className="cursor-pointer text-xs text-muted hover:text-foreground select-none">
+                  Show lifetime energy + control details ↓
+                </summary>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                  <MiniField label="Solar → Load (life)" value={formatEnergyKwh(site.snapshot.solarToLoadEnergyLifetimeWh)} />
+                  <MiniField label="Solar → Battery (life)" value={formatEnergyKwh(site.snapshot.solarToBatteryEnergyLifetimeWh)} />
+                  <MiniField label="Battery → Load (life)" value={formatEnergyKwh(site.snapshot.batteryToLoadEnergyLifetimeWh)} />
+                  <MiniField label="Grid Imported (life)" value={formatEnergyKwh(site.snapshot.gridEnergyImportedLifetimeWh)} />
+                  <MiniField label="Grid Exported (life)" value={formatEnergyKwh(site.snapshot.gridEnergyExportedLifetimeWh)} />
+                  <MiniField label="Load Imported (life)" value={formatEnergyKwh(site.snapshot.loadEnergyImportedLifetimeWh)} />
+                  <MiniField label="Battery Max Charge" value={formatPower(site.snapshot.batteryMaxChargeW)} />
+                  <MiniField label="Battery Max Discharge" value={formatPower(site.snapshot.batteryMaxDischargeW)} />
+                  <MiniField label="Battery Target" value={formatPower(site.snapshot.batteryTargetPowerW)} />
+                  <MiniField label="Next-Period Forecast" value={formatPower(site.snapshot.estimatedBatteryNextPeriodW)} />
+                  <MiniField label="Solar Curtailment" value={formatPower(site.snapshot.solarRealPowerLimitW)} />
+                  <MiniField label="Opticaster Reason" value={site.snapshot.opticasterReasonCode ?? "—"} />
+                  {site.snapshot.energyBuyPrice != null && (
+                    <MiniField label="Buy Price" value={`$${site.snapshot.energyBuyPrice.toFixed(3)}/kWh`} />
+                  )}
+                  {site.snapshot.energySellPrice != null && (
+                    <MiniField label="Sell Price" value={`$${site.snapshot.energySellPrice.toFixed(3)}/kWh`} />
+                  )}
+                  {site.snapshot.isPrimaryGateway != null && (
+                    <MiniField label="Primary Gateway" value={site.snapshot.isPrimaryGateway ? "Yes" : "No"} />
+                  )}
+                </div>
+              </details>
             </>
           )}
 
@@ -192,20 +281,41 @@ export default function PropertyMonitoringTab({ propertyId }: Props) {
               <h4 className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
                 Active Alerts ({site.activeAlerts.length})
               </h4>
-              <ul className="space-y-1">
+              <ul className="space-y-2">
                 {site.activeAlerts.map((alert) => (
                   <li
                     key={alert.id}
-                    className="flex items-center justify-between text-sm gap-2"
+                    className="flex items-start justify-between text-sm gap-2"
                   >
-                    <span className="text-foreground truncate">
-                      {alert.alertName}
-                    </span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded shrink-0 ${SEVERITY_BADGE[alert.severity] ?? ""}`}
-                    >
-                      {alert.severity}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-foreground truncate font-medium">
+                          {alert.alertName}
+                        </span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded shrink-0 ${SEVERITY_BADGE[alert.severity] ?? ""}`}
+                        >
+                          {alert.severity}
+                        </span>
+                      </div>
+                      {(alert.ecuSerial || alert.bcSerial) && (
+                        <div className="text-xs text-muted mt-0.5 font-mono">
+                          {alert.ecuSerial && <span>ECU: {alert.ecuSerial}</span>}
+                          {alert.ecuSerial && alert.bcSerial && <span> · </span>}
+                          {alert.bcSerial && <span>BC: {alert.bcSerial}</span>}
+                        </div>
+                      )}
+                    </div>
+                    {alert.supportAutoTicketUrl && (
+                      <a
+                        href={alert.supportAutoTicketUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 shrink-0 whitespace-nowrap"
+                      >
+                        Tesla Ticket ↗
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -236,6 +346,70 @@ function StatusBadge({ status }: { status: "ACTIVE" | "OFFLINE" | "ERROR" }) {
       title={status}
       aria-label={`Status: ${status}`}
     />
+  );
+}
+
+type Snap = NonNullable<
+  import("@/lib/property-hub").MonitoringSitePayload["snapshot"]
+>;
+
+function hasAnyFlag(s: Snap): boolean {
+  return Boolean(
+    s.batteryFault ||
+      s.systemShutdown ||
+      s.loadsDropped ||
+      s.islanderDisconnected ||
+      s.breakerOpenStatus ||
+      (s.islandMode && s.islandMode !== "0") ||
+      s.waitForUserLowSoe ||
+      s.waitForUserManualBackup ||
+      s.waitForUserNoInverters ||
+      s.waitForUserRetriesDone ||
+      (s.offGridFaultState && s.offGridFaultState !== "0"),
+  );
+}
+
+function hasAnyComms(s: Snap): boolean {
+  return (
+    s.commsBattery != null ||
+    s.commsBatteryMeter != null ||
+    s.commsSiteMeter != null ||
+    s.commsSolarMeter != null
+  );
+}
+
+function FlagBadge({ tone, children }: { tone: "red" | "amber" | "blue"; children: React.ReactNode }) {
+  const color =
+    tone === "red"
+      ? "bg-red-500/15 text-red-400 border-red-500/30"
+      : tone === "amber"
+        ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+        : "bg-blue-500/15 text-blue-400 border-blue-500/30";
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded border ${color}`}>{children}</span>
+  );
+}
+
+function CommsBadge({ label, ok }: { label: string; ok: boolean | null }) {
+  if (ok == null) return null;
+  const dotClass = ok
+    ? "bg-green-500"
+    : "bg-red-500";
+  const textClass = ok ? "text-foreground" : "text-red-400";
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${textClass}`}>
+      <span className={`h-2 w-2 rounded-full ${dotClass}`} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function MiniField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span className="font-medium text-foreground">{label}: </span>
+      <span>{value}</span>
+    </div>
   );
 }
 

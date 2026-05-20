@@ -124,6 +124,19 @@ export interface PowerHubAlert {
   start_time: string;
   end_time?: string | null;
   is_active: boolean;
+
+  // Richer device + support metadata returned by the partner REST API.
+  // (alias, alert_tags, symptom_codes, ecu_serial are GraphQL-only; left
+  // null when ingesting via REST.)
+  support_auto_ticket_url?: string | null;
+  bc_part?: string | null;
+  bc_serial?: string | null;
+  ecu_part?: string | null;
+  ecu_serial?: string | null;
+  toolbox_id?: string | null;
+  alias?: string | null;
+  alert_tags?: Array<{ key: string; values: string[] }> | null;
+  symptom_codes?: string[] | null;
 }
 
 /** Paginated alert response — group-level alerts return up to 100 per page */

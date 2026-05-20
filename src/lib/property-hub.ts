@@ -208,29 +208,99 @@ export interface MonitoringSitePayload {
     batteryMaxPowerW: number | null;  // gateway nameplate max discharge
   };
 
-  /** Latest telemetry snapshot, expanded with everything Tesla returns. */
+  /**
+   * Latest telemetry snapshot — every signal Tesla returns for this site,
+   * organized into logical sub-groups so UI can render them in sections.
+   *
+   * Direction conventions:
+   *   solarPowerW       + generating, 0 idle (never negative)
+   *   batteryPowerW     + discharging, − charging
+   *   gridPowerW        + importing from grid, − exporting (site-meter signal)
+   *   loadPowerW        + consuming (never negative)
+   */
   snapshot: {
-    // Instantaneous power flows (positive/negative directions noted)
-    solarPowerW: number | null;        // + = generating
-    batteryPowerW: number | null;      // + = discharging, − = charging
-    gridPowerW: number | null;         // site meter — + = importing from grid, − = exporting
-    loadPowerW: number | null;         // + = consuming
+    // Live power flows
+    solarPowerW: number | null;
+    batteryPowerW: number | null;
+    gridPowerW: number | null;
+    loadPowerW: number | null;
+    gridServicesPowerW: number | null;
+    batteryChargePowerW: number | null;
+    batteryDischargePowerW: number | null;
+    batteryMaxChargeW: number | null;
+    batteryMaxDischargeW: number | null;
+    batteryTargetPowerW: number | null;
+    estimatedBatteryNextPeriodW: number | null;
+    solarRealPowerLimitW: number | null;
+
     // Battery state
-    batterySocPercent: number | null;  // 0–100, derived if signal missing
+    batterySocPercent: number | null;
     batteryEnergyRemainingWh: number | null;
-    // Status
-    gridConnectedStatus: string | null; // "1" = connected, "0" = islanded
-    batteryMode: string | null;        // command_real_mode (e.g. "7" = self-powered)
-    // Cumulative lifetime counters (useful for delta calcs in future)
+    batteryNominalCapacityWh: number | null;
+    backupReservePercent: number | null;
+    batteryFault: boolean | null;
+
+    // Grid quality
+    voltageV: number | null;
+    gridVoltageV: number | null;
+    chassisVoltageV: number | null;
+    frequencyHz: number | null;
+
+    // Grid / island state
+    gridConnectedStatus: string | null;
+    islandMode: string | null;
+    islanderDisconnected: boolean | null;
+    breakerOpenStatus: boolean | null;
+    gridReadySync: boolean | null;
+    offGridFaultState: string | null;
+    loadsDropped: boolean | null;
+    systemShutdown: boolean | null;
+
+    // Operational / control
+    batteryMode: string | null;
+    opticasterReasonCode: string | null;
+    isPrimaryGateway: boolean | null;
+    waitForUserLowSoe: boolean | null;
+    waitForUserManualBackup: boolean | null;
+    waitForUserNoInverters: boolean | null;
+    waitForUserRetriesDone: boolean | null;
+
+    // Comms health (per device)
+    commsBattery: boolean | null;
+    commsBatteryMeter: boolean | null;
+    commsSiteMeter: boolean | null;
+    commsSolarMeter: boolean | null;
+
+    // Rate plan
+    energyBuyPrice: number | null;
+    energySellPrice: number | null;
+    customerEnergyBuyPrice: number | null;
+    customerEnergySellPrice: number | null;
+
+    // Cumulative lifetime energy counters (Wh; useful for delta math later)
     solarEnergyExportedLifetimeWh: number | null;
+    solarEnergyImportedLifetimeWh: number | null;
     gridEnergyImportedLifetimeWh: number | null;
     gridEnergyExportedLifetimeWh: number | null;
+    batteryEnergyImportedLifetimeWh: number | null;
+    batteryEnergyExportedLifetimeWh: number | null;
+    loadEnergyImportedLifetimeWh: number | null;
+    solarToLoadEnergyLifetimeWh: number | null;
+    solarToBatteryEnergyLifetimeWh: number | null;
+    batteryToLoadEnergyLifetimeWh: number | null;
+    gridServicesEnergyInLifetimeWh: number | null;
+    gridServicesEnergyOutLifetimeWh: number | null;
   } | null;
   activeAlerts: Array<{
     id: string;
     alertName: string;
     severity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL";
     reportedAt: Date;
+    /** Tesla-provided device identifiers (only when alert isn't site-level). */
+    ecuSerial: string | null;
+    bcSerial: string | null;
+    /** Pre-generated Tesla support ticket URL, if Tesla provided one. */
+    supportAutoTicketUrl: string | null;
   }>;
 }
 
@@ -840,21 +910,95 @@ async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
       },
       snapshot: s.telemetrySnapshot
         ? {
+            // Live power
             solarPowerW: s.telemetrySnapshot.solarPowerW,
             batteryPowerW: s.telemetrySnapshot.batteryPowerW,
             gridPowerW: s.telemetrySnapshot.gridPowerW,
             loadPowerW: s.telemetrySnapshot.loadPowerW,
+            gridServicesPowerW: s.telemetrySnapshot.gridServicesPowerW,
+            batteryChargePowerW: s.telemetrySnapshot.batteryChargePowerW,
+            batteryDischargePowerW: s.telemetrySnapshot.batteryDischargePowerW,
+            batteryMaxChargeW: s.telemetrySnapshot.batteryMaxChargeW,
+            batteryMaxDischargeW: s.telemetrySnapshot.batteryMaxDischargeW,
+            batteryTargetPowerW: s.telemetrySnapshot.batteryTargetPowerW,
+            estimatedBatteryNextPeriodW:
+              s.telemetrySnapshot.estimatedBatteryNextPeriodW,
+            solarRealPowerLimitW: s.telemetrySnapshot.solarRealPowerLimitW,
+
+            // Battery state
             batterySocPercent: batterySoc,
             batteryEnergyRemainingWh:
               s.telemetrySnapshot.batteryEnergyRemainingWh,
+            batteryNominalCapacityWh:
+              s.telemetrySnapshot.batteryNominalCapacityWh,
+            backupReservePercent: s.telemetrySnapshot.backupReservePercent,
+            batteryFault: s.telemetrySnapshot.batteryFault,
+
+            // Grid quality
+            voltageV: s.telemetrySnapshot.voltageV,
+            gridVoltageV: s.telemetrySnapshot.gridVoltageV,
+            chassisVoltageV: s.telemetrySnapshot.chassisVoltageV,
+            frequencyHz: s.telemetrySnapshot.frequencyHz,
+
+            // Grid / island state
             gridConnectedStatus: s.telemetrySnapshot.gridConnectedStatus,
+            islandMode: s.telemetrySnapshot.islandMode,
+            islanderDisconnected: s.telemetrySnapshot.islanderDisconnected,
+            breakerOpenStatus: s.telemetrySnapshot.breakerOpenStatus,
+            gridReadySync: s.telemetrySnapshot.gridReadySync,
+            offGridFaultState: s.telemetrySnapshot.offGridFaultState,
+            loadsDropped: s.telemetrySnapshot.loadsDropped,
+            systemShutdown: s.telemetrySnapshot.systemShutdown,
+
+            // Operational / control
             batteryMode: s.telemetrySnapshot.batteryMode,
+            opticasterReasonCode: s.telemetrySnapshot.opticasterReasonCode,
+            isPrimaryGateway: s.telemetrySnapshot.isPrimaryGateway,
+            waitForUserLowSoe: s.telemetrySnapshot.waitForUserLowSoe,
+            waitForUserManualBackup:
+              s.telemetrySnapshot.waitForUserManualBackup,
+            waitForUserNoInverters: s.telemetrySnapshot.waitForUserNoInverters,
+            waitForUserRetriesDone: s.telemetrySnapshot.waitForUserRetriesDone,
+
+            // Comms health
+            commsBattery: s.telemetrySnapshot.commsBattery,
+            commsBatteryMeter: s.telemetrySnapshot.commsBatteryMeter,
+            commsSiteMeter: s.telemetrySnapshot.commsSiteMeter,
+            commsSolarMeter: s.telemetrySnapshot.commsSolarMeter,
+
+            // Rate plan
+            energyBuyPrice: s.telemetrySnapshot.energyBuyPrice,
+            energySellPrice: s.telemetrySnapshot.energySellPrice,
+            customerEnergyBuyPrice:
+              s.telemetrySnapshot.customerEnergyBuyPrice,
+            customerEnergySellPrice:
+              s.telemetrySnapshot.customerEnergySellPrice,
+
+            // Lifetime counters
             solarEnergyExportedLifetimeWh:
               s.telemetrySnapshot.solarEnergyTodayWh,
+            solarEnergyImportedLifetimeWh:
+              s.telemetrySnapshot.solarEnergyImportedWh,
             gridEnergyImportedLifetimeWh:
               s.telemetrySnapshot.gridEnergyImportedWh,
             gridEnergyExportedLifetimeWh:
               s.telemetrySnapshot.gridEnergyExportedWh,
+            batteryEnergyImportedLifetimeWh:
+              s.telemetrySnapshot.batteryEnergyImportedWh,
+            batteryEnergyExportedLifetimeWh:
+              s.telemetrySnapshot.batteryEnergyExportedWh,
+            loadEnergyImportedLifetimeWh:
+              s.telemetrySnapshot.loadEnergyImportedWh,
+            solarToLoadEnergyLifetimeWh:
+              s.telemetrySnapshot.solarToLoadEnergyWh,
+            solarToBatteryEnergyLifetimeWh:
+              s.telemetrySnapshot.solarToBatteryEnergyWh,
+            batteryToLoadEnergyLifetimeWh:
+              s.telemetrySnapshot.batteryToLoadEnergyWh,
+            gridServicesEnergyInLifetimeWh:
+              s.telemetrySnapshot.gridServicesEnergyInWh,
+            gridServicesEnergyOutLifetimeWh:
+              s.telemetrySnapshot.gridServicesEnergyOutWh,
           }
         : null,
       activeAlerts: s.alerts.map((a) => ({
@@ -862,6 +1006,9 @@ async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
         alertName: a.alertName,
         severity: a.severity,
         reportedAt: a.reportedAt,
+        ecuSerial: a.ecuSerial,
+        bcSerial: a.bcSerial,
+        supportAutoTicketUrl: a.supportAutoTicketUrl,
       })),
     };
   });
