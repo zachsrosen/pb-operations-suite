@@ -101,17 +101,28 @@ function verifyHubSpotSignature(
     }
   }
 
-  // No candidate matched — log diagnostic without any secret-derived material
-  console.warn("[hubspot-card] signature mismatch", {
+  // No candidate matched — persist diagnostic to DB for offline analysis
+  const diagnostic = {
+    at: new Date().toISOString(),
     incomingUrl: url,
     bodyRaw: body,
     bodyLen: body.length,
+    sigGiven: signatureHeader, // signature can safely be stored; it's the proof
     sigLen: signatureHeader.length,
     ts: String(timestampHeader),
     tsAge: Date.now() - ts,
-    triedUrlForms: urlCandidates.map((c) => c.name),
-    triedBodyForms: bodyCandidates.map((c) => c.name),
-  });
+    triedUrlForms: urlCandidates.map((c) => ({ name: c.name, len: c.v.length })),
+    triedBodyForms: bodyCandidates.map((c) => ({ name: c.name, len: c.v.length })),
+  };
+  console.warn("[hubspot-card] signature mismatch", diagnostic);
+  // Best-effort DB persist (do not let storage errors break the request).
+  prisma.systemConfig
+    .upsert({
+      where: { key: "hubspot_card_last_sig_mismatch" },
+      create: { key: "hubspot_card_last_sig_mismatch", value: JSON.stringify(diagnostic) },
+      update: { value: JSON.stringify(diagnostic) },
+    })
+    .catch(() => {});
 
   return skip;
 }
