@@ -190,6 +190,56 @@ export interface PhotosTabData {
 
 // --- Monitoring tab ---
 
+/**
+ * Parse the PowerhubSite.devices JSON column (stored verbatim from Tesla's
+ * /v2/asset/sites/{id} payload) into the typed device arrays we expose on
+ * MonitoringSitePayload.equipment.devices. Tesla returns snake_case keys.
+ * Safe against missing / malformed entries — always returns valid (possibly
+ * empty) arrays.
+ */
+function parseDevicesJson(raw: unknown): MonitoringSitePayload["equipment"]["devices"] {
+  const safe = (raw ?? {}) as Record<string, unknown>;
+  const arr = (key: string): Record<string, unknown>[] => {
+    const v = safe[key];
+    return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+  };
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+  const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  const numOrNull = (v: unknown): number | null => (typeof v === "number" ? v : null);
+
+  return {
+    gateways: arr("gateways").map((d) => ({
+      din: str(d.din),
+      partNumber: str(d.part_number),
+      serialNumber: str(d.serial_number),
+      deviceId: strOrNull(d.device_id),
+      nameplateEnergyWh: numOrNull(d.nameplate_energy_watt_hours),
+      nameplateMaxChargeW: numOrNull(d.nameplate_max_charge_power_watts),
+      nameplateMaxDischargeW: numOrNull(d.nameplate_max_discharge_power_watts),
+    })),
+    batteries: arr("batteries").map((d) => ({
+      din: str(d.din),
+      partNumber: str(d.part_number),
+      serialNumber: str(d.serial_number),
+    })),
+    inverters: arr("inverters").map((d) => ({
+      din: str(d.din),
+      partNumber: str(d.part_number),
+      serialNumber: str(d.serial_number),
+    })),
+    meters: arr("meters").map((d) => ({
+      din: str(d.din),
+      partNumber: str(d.part_number),
+      serialNumber: str(d.serial_number),
+    })),
+    evse: arr("evse").map((d) => ({
+      din: str(d.din),
+      partNumber: str(d.part_number),
+      serialNumber: str(d.serial_number),
+    })),
+  };
+}
+
 export interface MonitoringSitePayload {
   id: string;
   siteId: string;
@@ -199,13 +249,34 @@ export interface MonitoringSitePayload {
   isPrimary: boolean;
   lastTelemetryAt: Date | null;
 
-  /** Hardware summary from the partner-API /v2/asset/sites/{id} payload. */
+  /**
+   * Hardware summary from the partner-API /v2/asset/sites/{id} payload.
+   * `devices` carries per-unit detail (part #, serial #, DIN) for everything
+   * Tesla reports for the site — gateway, battery, inverter, meter, EVSE.
+   * Gateways additionally carry nameplate energy/power.
+   */
   equipment: {
     gatewayCount: number;
     batteryCount: number;
     inverterCount: number;
     batteryCapacityWh: number | null; // gateway nameplate total
     batteryMaxPowerW: number | null;  // gateway nameplate max discharge
+    aggregatorSiteId: string | null;  // Tesla aggregator_site_identifier (PB-settable join key)
+    devices: {
+      gateways: Array<{
+        din: string;
+        partNumber: string;
+        serialNumber: string;
+        deviceId: string | null;
+        nameplateEnergyWh: number | null;
+        nameplateMaxChargeW: number | null;
+        nameplateMaxDischargeW: number | null;
+      }>;
+      batteries: Array<{ din: string; partNumber: string; serialNumber: string }>;
+      inverters: Array<{ din: string; partNumber: string; serialNumber: string }>;
+      meters: Array<{ din: string; partNumber: string; serialNumber: string }>;
+      evse: Array<{ din: string; partNumber: string; serialNumber: string }>;
+    };
   };
 
   /**
@@ -907,6 +978,8 @@ async function fetchMonitoring(propertyId: string): Promise<MonitoringTabData> {
         inverterCount: s.totalInverters,
         batteryCapacityWh: s.totalBatteryEnergy,
         batteryMaxPowerW: s.totalBatteryPower,
+        aggregatorSiteId: s.aggregatorSiteId,
+        devices: parseDevicesJson(s.devices),
       },
       snapshot: s.telemetrySnapshot
         ? {
