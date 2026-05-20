@@ -19,7 +19,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { Signature } from "@hubspot/api-client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 
@@ -48,77 +48,69 @@ function verifyHubSpotSignature(
   const ts = Number(timestampHeader);
   if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW_MS) return skip;
 
-  // Try multiple URL + body variations — HubSpot's hubspot.fetch proxy may
-  // sign with various canonical forms (path-only, with proxy URL, etc.) and
-  // body may be raw text or canonical JSON of the parsed object.
-  const urlCandidates = [
-    url,
-    url.replace("https://www.pbtechops.com", "https://pbtechops.com"),
-    url.replace("https://pbtechops.com", "https://www.pbtechops.com"),
-    new URL(url).pathname,
-    new URL(url).origin + new URL(url).pathname,
+  // Build URL + body candidates and try each via @hubspot/api-client's
+  // Signature.isValid (canonical reference implementation). Log only the
+  // candidate-NAME that matched, so diagnostic output contains no signature
+  // or HMAC material.
+  const parsedUrl = new URL(url);
+  const pathQuery = parsedUrl.pathname + parsedUrl.search;
+  const urlCandidates: Array<{ name: string; v: string }> = [
+    { name: "full", v: url },
+    { name: "apex", v: url.replace("https://www.pbtechops.com", "https://pbtechops.com") },
+    { name: "www-injected", v: url.replace("https://pbtechops.com", "https://www.pbtechops.com") },
+    { name: "path", v: parsedUrl.pathname },
+    { name: "path+query", v: pathQuery },
+    { name: "origin+path", v: parsedUrl.origin + parsedUrl.pathname },
   ];
 
+  // Strip HubSpot-injected meta params (appId, portalId, userEmail, userId)
+  // — HubSpot may sign the URL the iframe sent (pre-injection).
+  const meta = new URLSearchParams(parsedUrl.search);
+  ["appId", "portalId", "userEmail", "userId"].forEach((k) => meta.delete(k));
+  const remaining = meta.toString();
+  const userOnlyQuery = remaining ? `?${remaining}` : "";
+  urlCandidates.push({ name: "full-no-meta", v: `${parsedUrl.origin}${parsedUrl.pathname}${userOnlyQuery}` });
+  urlCandidates.push({ name: "path-no-meta", v: `${parsedUrl.pathname}${userOnlyQuery}` });
+
   let parsedJson: unknown = null;
-  try { parsedJson = JSON.parse(body); } catch { /* body not JSON */ }
-  const bodyCandidates = [
-    body,
-    parsedJson === null ? body : JSON.stringify(parsedJson),
-    "",
+  try { parsedJson = JSON.parse(body); } catch { /* not JSON */ }
+  const bodyCandidates: Array<{ name: string; v: string }> = [
+    { name: "raw", v: body },
+    { name: "canonical-json", v: parsedJson === null ? body : JSON.stringify(parsedJson) },
+    { name: "sorted-keys", v: parsedJson && typeof parsedJson === "object"
+        ? JSON.stringify(Object.fromEntries(Object.entries(parsedJson).sort()))
+        : body },
+    { name: "empty", v: "" },
   ];
 
   for (const u of urlCandidates) {
     for (const b of bodyCandidates) {
-      const message = method + u + b + String(timestampHeader);
-      const expected = createHmac("sha256", secret).update(message).digest("base64");
-      if (expected.length === signatureHeader.length &&
-          timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader))) {
-        if (skip) {
-          console.warn("[hubspot-card] sig WOULD have matched", { url: u, bodySource: b === body ? "raw" : b === "" ? "empty" : "canonical-json" });
-        }
+      const valid = Signature.isValid({
+        signatureVersion: "v3",
+        signature: signatureHeader,
+        method,
+        clientSecret: secret,
+        requestBody: b.v,
+        url: u.v,
+        timestamp: ts as never,
+      } as never);
+      if (valid) {
+        console.warn("[hubspot-card] sig MATCHED", { urlForm: u.name, bodyForm: b.name });
         return true;
       }
     }
   }
 
-  // Diagnostic log: include ts so we can reproduce locally + show ALL candidate hashes
-  const parsedUrl = new URL(url);
-  const allCandidates: Array<{ name: string; url: string; body: string }> = [];
-  for (const u of urlCandidates) {
-    for (const b of bodyCandidates) {
-      const bName = b === body ? "raw" : b === "" ? "empty" : "canonical-json";
-      allCandidates.push({ name: `url=${u.length}b body=${bName}`, url: u, body: b });
-    }
-  }
-  // Also try URL without query string + with both schemes
-  const extras = [
-    parsedUrl.origin + parsedUrl.pathname,
-    "https://pbtechops.com" + parsedUrl.pathname,
-    parsedUrl.pathname,
-    parsedUrl.pathname + parsedUrl.search,
-  ];
-  for (const eu of extras) {
-    for (const b of bodyCandidates) {
-      const bName = b === body ? "raw" : b === "" ? "empty" : "canonical-json";
-      allCandidates.push({ name: `extra-url=${eu} body=${bName}`, url: eu, body: b });
-    }
-  }
-  const hashes = allCandidates.map((c) => ({
-    name: c.name,
-    hash: createHmac("sha256", secret).update(method + c.url + c.body + String(timestampHeader)).digest("base64"),
-  }));
-  const match = hashes.find((h) => h.hash === signatureHeader);
-
+  // No candidate matched — log diagnostic without any secret-derived material
   console.warn("[hubspot-card] signature mismatch", {
     incomingUrl: url,
     bodyRaw: body,
     bodyLen: body.length,
-    sigGiven: signatureHeader,
     sigLen: signatureHeader.length,
     ts: String(timestampHeader),
     tsAge: Date.now() - ts,
-    matched: match?.name ?? "NONE",
-    candidates: hashes.slice(0, 6),
+    triedUrlForms: urlCandidates.map((c) => c.name),
+    triedBodyForms: bodyCandidates.map((c) => c.name),
   });
 
   return skip;
