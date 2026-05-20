@@ -1,0 +1,10 @@
+{
+  "uid": "powerhub-card",
+  "type": "card",
+  "config": {
+    "name": "Tesla PowerHub",
+    "location": "crm.record.tab",
+    "entrypoint": "/app/cards/PowerhubCard.tsx",
+    "objectTypes": ["DEAL", "TICKET", "p_property"]
+  }
+}

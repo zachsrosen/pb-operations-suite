@@ -7,7 +7,7 @@
 
 import { prisma } from "@/lib/db";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { getObjectEngagements } from "@/lib/hubspot-engagements";
+import { getObjectEngagements, getOwnerIdToNameMap, resolveEngagementOwners } from "@/lib/hubspot-engagements";
 import { withRetry } from "@/lib/hubspot-custom-objects";
 import { getStageMaps } from "@/lib/deals-pipeline";
 import { getTicketStageMap } from "@/lib/hubspot-tickets";
@@ -526,6 +526,11 @@ async function fetchActivity(
   );
 
   const all = cached.data ?? [];
+
+  // Resolve owner IDs to human-readable names
+  const ownerMap = await getOwnerIdToNameMap();
+  resolveEngagementOwners(all, ownerMap);
+
   const page = all.slice(offset, offset + limit);
 
   return {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -416,7 +416,9 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
         </div>
 
         {/* ── Site Photos (full width) ── */}
-        <PhotoGalleryCard hubspotDealId={item.dealId} />
+        <Section title="Site Photos">
+          <PhotoGalleryCard hubspotDealId={item.dealId} />
+        </Section>
       </div>
     </div>
   );
@@ -475,13 +477,33 @@ function getTagStyle(tag: string): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+  defaultOpen = true,
+  badge,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg border border-t-border bg-surface-2/50 p-3">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">
-        {title}
-      </h3>
-      {children}
+    <div className="rounded-lg border border-t-border bg-surface-2/50">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between p-3"
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+            {title}
+          </h3>
+          {badge}
+        </div>
+        <span className="text-xs text-muted">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && <div className="px-3 pb-3">{children}</div>}
     </div>
   );
 }
@@ -573,29 +595,54 @@ function PreviousReviewNotes({
     planningParts.push(`Electricians: ${item.electricianCount ?? "?"} × ${item.electricianDays ?? "?"} day${(item.electricianDays ?? 0) !== 1 ? "s" : ""}`);
 
   return (
-    <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3">
-      <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
-          Previous Review
-        </h3>
-        <span className="text-[10px] text-purple-400/60">
-          {new Date(item.session.date).toLocaleDateString()}
-        </span>
-      </div>
-      {planningParts.length > 0 && (
-        <p className="text-xs text-muted mb-2">{planningParts.join(" • ")}</p>
-      )}
-      {notes.length > 0 ? (
-        <div className="space-y-1.5">
-          {notes.map(({ label, value, color }) => (
-            <div key={label}>
-              <p className={`text-[9px] font-semibold uppercase tracking-wider ${color ?? "text-purple-400/60"}`}>{label}</p>
-              <p className="text-xs text-foreground/80 whitespace-pre-wrap">{value}</p>
-            </div>
-          ))}
+    <CollapsiblePreviousReview item={item} notes={notes} planningParts={planningParts} />
+  );
+}
+
+function CollapsiblePreviousReview({
+  item,
+  notes,
+  planningParts,
+}: {
+  item: { session: { date: string } };
+  notes: { label: string; value: string; color?: string }[];
+  planningParts: string[];
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-lg border border-purple-500/30 bg-purple-500/5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between p-3"
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-purple-400">
+            Previous Review
+          </h3>
+          <span className="text-[10px] text-purple-400/60">
+            {new Date(item.session.date).toLocaleDateString()}
+          </span>
         </div>
-      ) : (
-        <p className="text-xs text-muted italic">No notes recorded in previous session.</p>
+        <span className="text-xs text-purple-400/60">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3">
+          {planningParts.length > 0 && (
+            <p className="text-xs text-muted mb-2">{planningParts.join(" • ")}</p>
+          )}
+          {notes.length > 0 ? (
+            <div className="space-y-1.5">
+              {notes.map(({ label, value, color }) => (
+                <div key={label}>
+                  <p className={`text-[9px] font-semibold uppercase tracking-wider ${color ?? "text-purple-400/60"}`}>{label}</p>
+                  <p className="text-xs text-foreground/80 whitespace-pre-wrap">{value}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted italic">No notes recorded in previous session.</p>
+          )}
+        </div>
       )}
     </div>
   );
