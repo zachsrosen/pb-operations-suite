@@ -40,16 +40,18 @@ function verifyHubSpotSignature(
   signatureHeader: string | null,
   timestampHeader: string | null,
 ): boolean {
-  if (process.env.HUBSPOT_CARD_SKIP_SIG_VERIFY === "true") return true; // for local dev
-  if (!signatureHeader || !timestampHeader) return false;
-  const secret = process.env.HUBSPOT_APP_SECRET;
-  if (!secret) return false;
-  const ts = Number(timestampHeader);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW_MS) return false;
+  const skip = process.env.HUBSPOT_CARD_SKIP_SIG_VERIFY === "true";
 
-  // Try multiple URL variations — HubSpot may sign the original proxy URL,
-  // the original-host URL, or with/without query string.
-  const candidates = [
+  if (!signatureHeader || !timestampHeader) return skip;
+  const secret = process.env.HUBSPOT_APP_SECRET;
+  if (!secret) return skip;
+  const ts = Number(timestampHeader);
+  if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > TIMESTAMP_WINDOW_MS) return skip;
+
+  // Try multiple URL + body variations — HubSpot's hubspot.fetch proxy may
+  // sign with various canonical forms (path-only, with proxy URL, etc.) and
+  // body may be raw text or canonical JSON of the parsed object.
+  const urlCandidates = [
     url,
     url.replace("https://www.pbtechops.com", "https://pbtechops.com"),
     url.replace("https://pbtechops.com", "https://www.pbtechops.com"),
@@ -57,25 +59,41 @@ function verifyHubSpotSignature(
     new URL(url).origin + new URL(url).pathname,
   ];
 
-  for (const candidate of candidates) {
-    const message = method + candidate + body + String(timestampHeader);
-    const expected = createHmac("sha256", secret).update(message).digest("base64");
-    if (expected.length === signatureHeader.length &&
-        timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader))) {
-      return true;
+  let parsedJson: unknown = null;
+  try { parsedJson = JSON.parse(body); } catch { /* body not JSON */ }
+  const bodyCandidates = [
+    body,
+    parsedJson === null ? body : JSON.stringify(parsedJson),
+    "",
+  ];
+
+  for (const u of urlCandidates) {
+    for (const b of bodyCandidates) {
+      const message = method + u + b + String(timestampHeader);
+      const expected = createHmac("sha256", secret).update(message).digest("base64");
+      if (expected.length === signatureHeader.length &&
+          timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader))) {
+        if (skip) {
+          console.warn("[hubspot-card] sig WOULD have matched", { url: u, bodySource: b === body ? "raw" : b === "" ? "empty" : "canonical-json" });
+        }
+        return true;
+      }
     }
   }
 
-  // Diagnostic log (one-time during debug): show what we got
+  // Diagnostic log: show what we got + what the actual signature looks like
+  // so we can reverse-engineer the canonical string HubSpot signs.
   console.warn("[hubspot-card] signature mismatch", {
     incomingUrl: url,
+    bodyRaw: body,
     bodyLen: body.length,
-    bodyPreview: body.slice(0, 200),
+    sigGiven: signatureHeader,
     sigLen: signatureHeader.length,
-    sigPreview: signatureHeader.slice(0, 20),
     tsAge: Date.now() - ts,
+    expectedForRawUrlAndRawBody: createHmac("sha256", secret).update(method + url + body + String(timestampHeader)).digest("base64"),
   });
-  return false;
+
+  return skip;
 }
 
 const TYPE_DEALS = "0-3";
