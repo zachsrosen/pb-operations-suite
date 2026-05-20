@@ -197,12 +197,19 @@ export async function POST(request: Request) {
       }
     : null;
 
-  // 3. Equipment summary (denorm cols populated by resolvePrimarySite)
+  // 3. Equipment summary — serials from denorm cols, models parsed live from
+  //    PowerhubSite.devices JSON (so card sees model numbers without the
+  //    backfill having to re-run).
+  const deviceModels = extractDeviceModels(primarySite.devices);
   const equipment = {
     gatewaySerial: propertyCache.teslaGatewaySerial,
     powerwallSerials: propertyCache.teslaPowerwallSerials,
     inverterSerial: propertyCache.teslaInverterSerial,
     meterSerial: propertyCache.teslaMeterSerial,
+    gatewayModel: deviceModels.gateway,
+    powerwallModel: deviceModels.powerwall,
+    inverterModel: deviceModels.inverter,
+    meterModel: deviceModels.meter,
     batteryCount: primarySite.totalBatteries,
     batteryCapacityKwh:
       primarySite.totalBatteryEnergy != null
@@ -240,4 +247,34 @@ function severityRank(s: string): number {
   if (s === "CRITICAL") return 0;
   if (s === "PERFORMANCE") return 1;
   return 2;
+}
+
+/**
+ * Extract human-readable model (part_number) for each device class from the
+ * PowerhubSite.devices JSON column. Picks the first non-empty value per
+ * class — multi-pack sites typically share a model across units, but if
+ * they differ we surface only the first to keep the card single-line.
+ */
+function extractDeviceModels(raw: unknown): {
+  gateway: string | null;
+  powerwall: string | null;
+  inverter: string | null;
+  meter: string | null;
+} {
+  const safe = (raw ?? {}) as Record<string, unknown>;
+  const first = (key: string): string | null => {
+    const arr = safe[key];
+    if (!Array.isArray(arr)) return null;
+    for (const item of arr as Record<string, unknown>[]) {
+      const pn = typeof item?.part_number === "string" ? item.part_number.trim() : "";
+      if (pn) return pn;
+    }
+    return null;
+  };
+  return {
+    gateway: first("gateways"),
+    powerwall: first("batteries"),
+    inverter: first("inverters"),
+    meter: first("meters"),
+  };
 }

@@ -34,6 +34,10 @@ interface CardData {
     powerwallSerials: string | null;
     inverterSerial: string | null;
     meterSerial: string | null;
+    gatewayModel: string | null;
+    powerwallModel: string | null;
+    inverterModel: string | null;
+    meterModel: string | null;
     batteryCount: number;
     batteryCapacityKwh: number | null;
   };
@@ -147,6 +151,11 @@ function PowerhubSidebar({ context }: { context: any }) {
       {alertCount > 0 && (
         <Tag variant="danger">{alertCount} active alert{alertCount === 1 ? "" : "s"}</Tag>
       )}
+      {hasAnyModel(data.equipment) && (
+        <Text variant="microcopy" format={{ color: "subdued" }}>
+          {compactHardwareLine(data.equipment)}
+        </Text>
+      )}
       <Divider />
       <Button
         variant="primary"
@@ -168,6 +177,26 @@ function Field({ label, value }: { label: string; value: string }) {
       <Text format={{ fontWeight: "demibold" }}>{value}</Text>
     </Flex>
   );
+}
+
+type EquipmentLike = {
+  gatewayModel: string | null;
+  powerwallModel: string | null;
+  inverterModel: string | null;
+  meterModel: string | null;
+};
+
+function hasAnyModel(e: EquipmentLike): boolean {
+  return !!(e.gatewayModel || e.powerwallModel || e.inverterModel || e.meterModel);
+}
+
+function compactHardwareLine(e: EquipmentLike): string {
+  const parts: string[] = [];
+  if (e.gatewayModel) parts.push(`GW ${e.gatewayModel}`);
+  if (e.powerwallModel) parts.push(`PW ${e.powerwallModel}`);
+  if (e.inverterModel) parts.push(`INV ${e.inverterModel}`);
+  if (e.meterModel) parts.push(`MTR ${e.meterModel}`);
+  return parts.join(" · ");
 }
 
 function formatKW(w: number | null, signed = false): string {

@@ -55,6 +55,10 @@ interface CardData {
     powerwallSerials: string | null;
     inverterSerial: string | null;
     meterSerial: string | null;
+    gatewayModel: string | null;
+    powerwallModel: string | null;
+    inverterModel: string | null;
+    meterModel: string | null;
     batteryCount: number;
     batteryCapacityKwh: number | null;
   } | null;
@@ -200,25 +204,49 @@ function PowerhubCard({ context }: { context: any }) {
           <Divider />
           <Box>
             <Heading variant="h5">Hardware</Heading>
-            {data.equipment.gatewaySerial && (
+            {(data.equipment.gatewayModel || data.equipment.gatewaySerial) && (
               <Text>
-                Gateway: <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.gatewaySerial}</Text>
+                Gateway: {data.equipment.gatewayModel && (
+                  <Text inline format={{ fontWeight: "demibold" }}>{data.equipment.gatewayModel}</Text>
+                )}
+                {data.equipment.gatewayModel && data.equipment.gatewaySerial && " · "}
+                {data.equipment.gatewaySerial && (
+                  <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.gatewaySerial}</Text>
+                )}
               </Text>
             )}
-            {data.equipment.powerwallSerials && (
+            {(data.equipment.powerwallModel || data.equipment.powerwallSerials) && (
               <Text>
-                Powerwall: <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.powerwallSerials}</Text>
+                Powerwall: {data.equipment.powerwallModel && (
+                  <Text inline format={{ fontWeight: "demibold" }}>{data.equipment.powerwallModel}</Text>
+                )}
+                {data.equipment.powerwallModel && data.equipment.powerwallSerials && " · "}
+                {data.equipment.powerwallSerials && (
+                  <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.powerwallSerials}</Text>
+                )}
                 {data.equipment.batteryCount > 1 && ` (${data.equipment.batteryCount}×)`}
               </Text>
             )}
-            {data.equipment.inverterSerial && (
+            {(data.equipment.inverterModel || data.equipment.inverterSerial) && (
               <Text>
-                Inverter: <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.inverterSerial}</Text>
+                Inverter: {data.equipment.inverterModel && (
+                  <Text inline format={{ fontWeight: "demibold" }}>{data.equipment.inverterModel}</Text>
+                )}
+                {data.equipment.inverterModel && data.equipment.inverterSerial && " · "}
+                {data.equipment.inverterSerial && (
+                  <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.inverterSerial}</Text>
+                )}
               </Text>
             )}
-            {data.equipment.meterSerial && (
+            {(data.equipment.meterModel || data.equipment.meterSerial) && (
               <Text>
-                Meter: <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.meterSerial}</Text>
+                Meter: {data.equipment.meterModel && (
+                  <Text inline format={{ fontWeight: "demibold" }}>{data.equipment.meterModel}</Text>
+                )}
+                {data.equipment.meterModel && data.equipment.meterSerial && " · "}
+                {data.equipment.meterSerial && (
+                  <Text inline format={{ fontFamily: "monospace" }}>{data.equipment.meterSerial}</Text>
+                )}
               </Text>
             )}
             {data.equipment.batteryCapacityKwh != null && (
