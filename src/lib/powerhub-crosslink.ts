@@ -224,6 +224,11 @@ export async function pushToHubSpotForProperty(propertyId: string): Promise<void
   const props = {
     tesla_portal_url: cache.teslaPortalUrl,
     tesla_site_id: cache.teslaSiteId,
+    tesla_gateway_serial: cache.teslaGatewaySerial,
+    tesla_powerwall_serials: cache.teslaPowerwallSerials,
+    tesla_inverter_serial: cache.teslaInverterSerial,
+    tesla_meter_serial: cache.teslaMeterSerial,
+    tesla_hardware_summary: cache.teslaHardwareSummary,
   };
 
   // 1. HubSpot Property object
