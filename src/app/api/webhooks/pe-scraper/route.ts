@@ -4,6 +4,7 @@ import {
   syncPeDocStatuses,
   buildPeDealMap,
 } from "@/lib/pe-scraper-sync";
+import { sendPeDocChangeNotification } from "@/lib/pe-doc-notify";
 
 /**
  * POST /api/webhooks/pe-scraper
@@ -69,6 +70,9 @@ export async function POST(req: NextRequest) {
           `[pe-scraper-webhook] CHANGED ${c.dealId} | ${c.docName}: ${c.oldStatus} → ${c.newStatus}`,
         );
       }
+
+      // Fire-and-forget instant email notification
+      sendPeDocChangeNotification(result.changes, "webhook/pe-scraper").catch(() => {});
     }
 
     return NextResponse.json({
