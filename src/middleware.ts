@@ -64,6 +64,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/aircall-sync", // Aircall drift correction sync — CRON_SECRET validated in route
   "/api/cron/pandadoc-da-reconcile", // PandaDoc DA status drift detector — CRON_SECRET validated in route
   "/api/cron/zuper-status-reconcile", // Zuper job status drift detector — CRON_SECRET validated in route
+  "/api/cron/zuper-job-backfill", // Zuper job cache backfill — CRON_SECRET validated in route
   "/api/cron/office-performance-warm", // Office performance cache warmer — CRON_SECRET validated in route
   "/api/cron/powerhub-assets",     // PowerHub asset sync — CRON_SECRET validated in route
   "/api/cron/powerhub-telemetry",  // PowerHub telemetry poll — CRON_SECRET validated in route

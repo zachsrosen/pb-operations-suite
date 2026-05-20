@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { toDateStr } from "@/lib/scheduling-utils";
 import { getInternalDealUrl } from "@/lib/external-links";
+import { isPbHoliday, pbHolidayName } from "@/lib/on-call-holidays";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -965,6 +966,7 @@ export default function ServiceSchedulerPage() {
                   const isCurrentMonth = m === currentMonth + 1;
                   const isToday = dateStr === todayStr;
                   const weekend = isWeekend(dateStr);
+                  const holidayLabel = pbHolidayName(dateStr);
                   const dayJobs = jobsByDate[dateStr] || [];
 
                   return (
@@ -974,13 +976,22 @@ export default function ServiceSchedulerPage() {
                       className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1 border-b border-r border-t-border transition-colors cursor-pointer ${
                         !isCurrentMonth ? "opacity-40" : ""
                       } ${weekend ? "bg-surface/30" : ""} ${
+                        holidayLabel && !weekend ? "bg-red-900/10" : ""
+                      } ${
                         isToday ? "bg-emerald-900/20 ring-2 ring-inset ring-emerald-500" : ""
                       }`}
                     >
-                      <div className={`text-xs font-medium mb-0.5 ${
-                        isToday ? "text-emerald-400" : "text-muted"
-                      }`}>
-                        {parseInt(dateStr.split("-")[2])}
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-xs font-medium ${
+                          isToday ? "text-emerald-400" : holidayLabel ? "text-red-400" : "text-muted"
+                        }`}>
+                          {parseInt(dateStr.split("-")[2])}
+                        </span>
+                        {holidayLabel && (
+                          <span className="text-[0.45rem] font-medium text-red-400 bg-red-500/15 px-1 py-0.5 rounded truncate max-w-[60px]" title={holidayLabel}>
+                            {holidayLabel}
+                          </span>
+                        )}
                       </div>
                       <div className="space-y-0.5">
                         {dayJobs.map(j => {
@@ -1029,20 +1040,26 @@ export default function ServiceSchedulerPage() {
                   const [y, m, d] = dateStr.split("-").map(Number);
                   const dt = new Date(y, m - 1, d);
                   const isToday = dateStr === todayStr;
+                  const weekHoliday = pbHolidayName(dateStr);
                   return (
                     <div
                       key={dateStr}
                       onClick={() => { setAnchorDate(dateStr); setViewMode("day"); }}
                       className={`text-center py-2 border-r border-t-border last:border-r-0 cursor-pointer hover:bg-surface-2 ${
-                        isToday ? "bg-emerald-900/20" : ""
+                        weekHoliday ? "bg-red-900/10" : isToday ? "bg-emerald-900/20" : ""
                       }`}
                     >
                       <div className="text-[0.6rem] text-muted uppercase">
                         {dt.toLocaleDateString("en-US", { weekday: "short" })}
                       </div>
-                      <div className={`text-sm font-semibold ${isToday ? "text-emerald-400" : "text-foreground"}`}>
+                      <div className={`text-sm font-semibold ${weekHoliday ? "text-red-400" : isToday ? "text-emerald-400" : "text-foreground"}`}>
                         {d}
                       </div>
+                      {weekHoliday && (
+                        <span className="text-[0.45rem] text-red-400 bg-red-500/15 px-1 py-0.5 rounded mt-0.5 inline-block" title={weekHoliday}>
+                          {weekHoliday}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -1050,6 +1067,7 @@ export default function ServiceSchedulerPage() {
               <div className="grid grid-cols-7 min-h-full">
                 {weekDays.map((dateStr) => {
                   const weekend = isWeekend(dateStr);
+                  const weekCellHoliday = isPbHoliday(dateStr);
                   const isToday = dateStr === todayStr;
                   const dayJobs = jobsByDate[dateStr] || [];
                   return (
@@ -1057,7 +1075,7 @@ export default function ServiceSchedulerPage() {
                       key={dateStr}
                       className={`p-1.5 border-r border-t-border last:border-r-0 min-h-[400px] ${
                         weekend ? "bg-surface/30" : ""
-                      } ${isToday ? "bg-emerald-900/10" : ""}`}
+                      } ${weekCellHoliday && !weekend ? "bg-red-900/10" : ""} ${isToday ? "bg-emerald-900/10" : ""}`}
                     >
                       <div className="space-y-1">
                         {dayJobs.length === 0 ? (

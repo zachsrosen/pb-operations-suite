@@ -46,6 +46,8 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
     [JOB_CATEGORY_UIDS.CONSTRUCTION.toLowerCase()]: JOB_CATEGORIES.CONSTRUCTION,
     "inspection": JOB_CATEGORIES.INSPECTION,
     [JOB_CATEGORY_UIDS.INSPECTION.toLowerCase()]: JOB_CATEGORIES.INSPECTION,
+    "fire inspection": JOB_CATEGORIES.INSPECTION,
+    [JOB_CATEGORY_UIDS.FIRE_INSPECTION.toLowerCase()]: JOB_CATEGORIES.INSPECTION,
   };
 
   const normalizeCategory = (value: string | null | undefined): string | null => {

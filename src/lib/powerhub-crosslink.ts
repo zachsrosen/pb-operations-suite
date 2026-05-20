@@ -60,6 +60,87 @@ export function parseSteDateFromName(name: string): Date | null {
 }
 
 /**
+ * Build a denormalized device-summary block from a PowerhubSite's `devices`
+ * JSON column. Used by resolvePrimarySite() to populate the cache columns
+ * pushed to HubSpot Property/Deal/Ticket + Zuper Property/Job.
+ *
+ * Tesla's payload uses snake_case; this helper projects into typed fields
+ * (serial + model/part_number per device class) + a formatted multi-line
+ * string suitable for display or copy-paste into Tesla support tickets.
+ */
+export interface DeviceSummary {
+  gatewaySerial: string | null;
+  powerwallSerials: string | null; // Semicolon-joined for multi-Powerwall sites
+  inverterSerial: string | null;
+  meterSerial: string | null;
+  gatewayModel: string | null;
+  powerwallModel: string | null;
+  inverterModel: string | null;
+  meterModel: string | null;
+  formatted: string | null;
+}
+
+export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
+  const root = (devicesJson ?? {}) as Record<string, unknown>;
+  const asArray = (k: string): Record<string, unknown>[] => {
+    const v = root[k];
+    return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+  };
+  const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+  const gateways = asArray("gateways").map((d) => ({
+    sn: str(d.serial_number),
+    pn: str(d.part_number),
+    eWh: typeof d.nameplate_energy_watt_hours === "number" ? d.nameplate_energy_watt_hours : null,
+    pW: typeof d.nameplate_max_discharge_power_watts === "number" ? d.nameplate_max_discharge_power_watts : null,
+  }));
+  const batteries = asArray("batteries").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
+  const inverters = asArray("inverters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
+  const meters = asArray("meters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
+
+  const firstNonEmpty = (arr: { pn: string }[]): string | null => {
+    for (const item of arr) if (item.pn) return item.pn;
+    return null;
+  };
+
+  const gatewaySerial = gateways[0]?.sn || null;
+  const powerwallSerials = batteries.length > 0
+    ? batteries.map((b) => b.sn).filter((s) => s.length > 0).join("; ") || null
+    : null;
+  const inverterSerial = inverters[0]?.sn || null;
+  const meterSerial = meters[0]?.sn || null;
+
+  const gatewayModel = firstNonEmpty(gateways);
+  const powerwallModel = firstNonEmpty(batteries);
+  const inverterModel = firstNonEmpty(inverters);
+  const meterModel = firstNonEmpty(meters);
+
+  const lines: string[] = [];
+  for (const g of gateways) {
+    const tail = g.pn || g.eWh != null || g.pW != null
+      ? " (" + [g.pn, g.eWh != null && `${(g.eWh / 1000).toFixed(1)} kWh`, g.pW != null && `${(g.pW / 1000).toFixed(1)} kW max`].filter(Boolean).join(", ") + ")"
+      : "";
+    lines.push(`Gateway: ${g.sn}${tail}`);
+  }
+  for (const b of batteries) lines.push(`Powerwall: ${b.sn}${b.pn ? ` (${b.pn})` : ""}`);
+  for (const i of inverters) lines.push(`Inverter: ${i.sn}${i.pn ? ` (${i.pn})` : ""}`);
+  for (const m of meters) lines.push(`Meter: ${m.sn}${m.pn ? ` (${m.pn})` : ""}`);
+  const formatted = lines.length > 0 ? lines.join("\n") : null;
+
+  return {
+    gatewaySerial,
+    powerwallSerials,
+    inverterSerial,
+    meterSerial,
+    gatewayModel,
+    powerwallModel,
+    inverterModel,
+    meterModel,
+    formatted,
+  };
+}
+
+/**
  * Choose the primary site from a list of candidates.
  *
  * Rules:
@@ -128,6 +209,7 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
       portalUrl: true,
       createdAt: true,
       primaryForProperty: true,
+      devices: true,
     },
   });
 
@@ -138,7 +220,19 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
     // can outlive the corresponding cache row.
     await prisma.hubSpotPropertyCache.updateMany({
       where: { id: propertyId },
-      data: { teslaPortalUrl: null, teslaSiteId: null },
+      data: {
+        teslaPortalUrl: null,
+        teslaSiteId: null,
+        teslaGatewaySerial: null,
+        teslaPowerwallSerials: null,
+        teslaInverterSerial: null,
+        teslaMeterSerial: null,
+        teslaGatewayModel: null,
+        teslaPowerwallModel: null,
+        teslaInverterModel: null,
+        teslaMeterModel: null,
+        teslaHardwareSummary: null,
+      },
     });
     return null;
   }
@@ -158,14 +252,23 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
     })
   );
 
-  // Update denormalized fields on the property cache.
-  // updateMany makes this resilient to the cache row not existing (same reason
-  // as the no-sites branch above).
+  // Update denormalized fields on the property cache, including device
+  // summary derived from the primary site's `devices` JSON.
+  const summary = buildDeviceSummary(primary.devices);
   await prisma.hubSpotPropertyCache.updateMany({
     where: { id: propertyId },
     data: {
       teslaPortalUrl: primary.portalUrl,
       teslaSiteId: primary.siteId,
+      teslaGatewaySerial: summary.gatewaySerial,
+      teslaPowerwallSerials: summary.powerwallSerials,
+      teslaInverterSerial: summary.inverterSerial,
+      teslaMeterSerial: summary.meterSerial,
+      teslaGatewayModel: summary.gatewayModel,
+      teslaPowerwallModel: summary.powerwallModel,
+      teslaInverterModel: summary.inverterModel,
+      teslaMeterModel: summary.meterModel,
+      teslaHardwareSummary: summary.formatted,
     },
   });
 
@@ -228,6 +331,10 @@ export async function pushToHubSpotForProperty(propertyId: string): Promise<void
     tesla_powerwall_serials: cache.teslaPowerwallSerials,
     tesla_inverter_serial: cache.teslaInverterSerial,
     tesla_meter_serial: cache.teslaMeterSerial,
+    tesla_gateway_model: cache.teslaGatewayModel,
+    tesla_powerwall_model: cache.teslaPowerwallModel,
+    tesla_inverter_model: cache.teslaInverterModel,
+    tesla_meter_model: cache.teslaMeterModel,
     tesla_hardware_summary: cache.teslaHardwareSummary,
   };
 

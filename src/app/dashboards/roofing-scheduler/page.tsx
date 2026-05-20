@@ -7,6 +7,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { toDateStr } from "@/lib/scheduling-utils";
 import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { getInternalDealUrl } from "@/lib/external-links";
+import { pbHolidayName } from "@/lib/on-call-holidays";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -446,6 +447,7 @@ export default function RoofingSchedulerPage() {
                   const isCurrentMonth = m === currentMonth + 1;
                   const isToday = dateStr === todayStr;
                   const weekend = isWeekend(dateStr);
+                  const holidayLabel = pbHolidayName(dateStr);
                   const dayJobs = jobsByDate[dateStr] || [];
 
                   return (
@@ -454,11 +456,20 @@ export default function RoofingSchedulerPage() {
                       className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1 border-b border-r border-t-border transition-colors ${
                         !isCurrentMonth ? "opacity-40" : ""
                       } ${weekend ? "bg-surface/30" : ""} ${
+                        holidayLabel && !weekend ? "bg-red-900/10" : ""
+                      } ${
                         isToday ? "bg-purple-900/20 ring-2 ring-inset ring-purple-500" : ""
                       }`}
                     >
-                      <div className={`text-xs font-medium mb-0.5 ${isToday ? "text-purple-400" : "text-muted"}`}>
-                        {parseInt(dateStr.split("-")[2])}
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-xs font-medium ${isToday ? "text-purple-400" : holidayLabel ? "text-red-400" : "text-muted"}`}>
+                          {parseInt(dateStr.split("-")[2])}
+                        </span>
+                        {holidayLabel && (
+                          <span className="text-[0.45rem] font-medium text-red-400 bg-red-500/15 px-1 py-0.5 rounded truncate max-w-[60px]" title={holidayLabel}>
+                            {holidayLabel}
+                          </span>
+                        )}
                       </div>
                       <div className="space-y-0.5">
                         {dayJobs.map(j => (
