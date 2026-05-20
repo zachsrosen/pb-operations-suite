@@ -191,7 +191,7 @@
     { "path": "/api/cron/pe-doc-digest", "schedule": "30 21 * * 1-5" },
     { "path": "/api/cron/shovels-enrich", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/zuper-property-sync", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/zuper-job-backfill", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/zuper-job-backfill", "schedule": "0 * * * *" }
   ],
   "redirects": [
     {

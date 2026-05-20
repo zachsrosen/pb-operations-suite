@@ -298,7 +298,7 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
 /**
  * Sync only Zuper jobs modified within a lookback window. This is much
  * cheaper than the full `syncZuperServiceJobs()` sweep and is suitable for
- * a cron that runs every 15–30 minutes to pick up jobs created or modified
+ * a cron that runs hourly to pick up jobs created or modified
  * directly in Zuper (which the existing sync-cache cron also covers, but
  * this version respects a time-budget and lookback window).
  *
@@ -344,7 +344,7 @@ export async function syncRecentZuperJobs(opts: {
   // We look forward 90 days because newly created jobs may be scheduled
   // weeks ahead but we still want to capture them immediately.
   const fromDate = new Date(Date.now() - lookbackDays * 86_400_000);
-  const toDate = new Date(Date.now() + 90 * 86_400_000);
+  const toDate = new Date(Date.now() + 30 * 86_400_000);
   const fromStr = fromDate.toISOString().split("T")[0]; // YYYY-MM-DD
   const toStr = toDate.toISOString().split("T")[0];
 
