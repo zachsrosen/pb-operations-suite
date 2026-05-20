@@ -81,16 +81,44 @@ function verifyHubSpotSignature(
     }
   }
 
-  // Diagnostic log: show what we got + what the actual signature looks like
-  // so we can reverse-engineer the canonical string HubSpot signs.
+  // Diagnostic log: include ts so we can reproduce locally + show ALL candidate hashes
+  const parsedUrl = new URL(url);
+  const allCandidates: Array<{ name: string; url: string; body: string }> = [];
+  for (const u of urlCandidates) {
+    for (const b of bodyCandidates) {
+      const bName = b === body ? "raw" : b === "" ? "empty" : "canonical-json";
+      allCandidates.push({ name: `url=${u.length}b body=${bName}`, url: u, body: b });
+    }
+  }
+  // Also try URL without query string + with both schemes
+  const extras = [
+    parsedUrl.origin + parsedUrl.pathname,
+    "https://pbtechops.com" + parsedUrl.pathname,
+    parsedUrl.pathname,
+    parsedUrl.pathname + parsedUrl.search,
+  ];
+  for (const eu of extras) {
+    for (const b of bodyCandidates) {
+      const bName = b === body ? "raw" : b === "" ? "empty" : "canonical-json";
+      allCandidates.push({ name: `extra-url=${eu} body=${bName}`, url: eu, body: b });
+    }
+  }
+  const hashes = allCandidates.map((c) => ({
+    name: c.name,
+    hash: createHmac("sha256", secret).update(method + c.url + c.body + String(timestampHeader)).digest("base64"),
+  }));
+  const match = hashes.find((h) => h.hash === signatureHeader);
+
   console.warn("[hubspot-card] signature mismatch", {
     incomingUrl: url,
     bodyRaw: body,
     bodyLen: body.length,
     sigGiven: signatureHeader,
     sigLen: signatureHeader.length,
+    ts: String(timestampHeader),
     tsAge: Date.now() - ts,
-    expectedForRawUrlAndRawBody: createHmac("sha256", secret).update(method + url + body + String(timestampHeader)).digest("base64"),
+    matched: match?.name ?? "NONE",
+    candidates: hashes.slice(0, 6),
   });
 
   return skip;
