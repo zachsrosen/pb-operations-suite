@@ -72,6 +72,22 @@ function verifyHubSpotSignature(
   urlCandidates.push({ name: "full-no-meta", v: `${parsedUrl.origin}${parsedUrl.pathname}${userOnlyQuery}` });
   urlCandidates.push({ name: "path-no-meta", v: `${parsedUrl.pathname}${userOnlyQuery}` });
 
+  // CRITICAL: HubSpot's hubspot.fetch proxy signs the URL with query-param
+  // VALUES decoded (e.g. userEmail=foo@bar.com), but the HTTP layer percent-
+  // encodes them in transit (userEmail=foo%40bar.com). Reconstruct the URL
+  // with each pair's value decoded so the canonical string matches.
+  try {
+    const decodedPairs: string[] = [];
+    for (const [k, v] of parsedUrl.searchParams.entries()) {
+      decodedPairs.push(`${k}=${v}`); // searchParams.entries() returns decoded values
+    }
+    const decodedQuery = decodedPairs.length ? `?${decodedPairs.join("&")}` : "";
+    urlCandidates.push({ name: "full-decoded-query", v: `${parsedUrl.origin}${parsedUrl.pathname}${decodedQuery}` });
+    urlCandidates.push({ name: "path-decoded-query", v: `${parsedUrl.pathname}${decodedQuery}` });
+  } catch {
+    /* ignore */
+  }
+
   let parsedJson: unknown = null;
   try { parsedJson = JSON.parse(body); } catch { /* not JSON */ }
   const bodyCandidates: Array<{ name: string; v: string }> = [
