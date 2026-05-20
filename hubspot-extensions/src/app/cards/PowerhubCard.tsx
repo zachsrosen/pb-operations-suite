@@ -80,17 +80,27 @@ function PowerhubCard({ context }: { context: any }) {
     const objectType = context.crm.objectTypeId;
 
     hubspot
-      .fetch("https://pbtechops.com/api/hubspot-card/powerhub", {
+      .fetch("https://www.pbtechops.com/api/hubspot-card/powerhub", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ objectType, objectId }),
+        body: { objectType, objectId },
       })
       .then(async (r: Response) => {
         if (r.status === 404) {
           setState({ status: "no-link" });
           return;
         }
-        const json = await r.json();
+        const text = await r.text();
+        if (!text) {
+          setState({ status: "error", error: { error: `empty_response_status_${r.status}` } });
+          return;
+        }
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch (parseErr) {
+          setState({ status: "error", error: { error: "non_json_response", message: `status=${r.status} body=${text.slice(0, 200)}` } });
+          return;
+        }
         if (json.error) {
           setState({ status: "error", error: json });
           return;
@@ -248,18 +258,18 @@ function PowerhubCard({ context }: { context: any }) {
 
       <Divider />
 
-      {/* Action buttons */}
+      {/* Action buttons — UI Extension Button requires href prop for navigation; window.open is sandboxed and crashes the card. */}
       <ButtonRow>
         <Button
           variant="primary"
-          onClick={() => window.open(data.pbTechOpsUrl, "_blank")}
+          href={{ url: data.pbTechOpsUrl, external: true }}
         >
           Open in PB Tech Ops
         </Button>
         {data.teslaPortalUrl && (
           <Button
             variant="secondary"
-            onClick={() => window.open(data.teslaPortalUrl as string, "_blank")}
+            href={{ url: data.teslaPortalUrl as string, external: true }}
           >
             Open Tesla Portal
           </Button>
