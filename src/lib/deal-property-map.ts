@@ -272,6 +272,11 @@ export const DEAL_SYNC_PROPERTIES: string[] = [
   // Tesla PowerHub crosslink (pushed by powerhub-crosslink; surfaced via rawProperties)
   "tesla_portal_url",
   "tesla_site_id",
+  "tesla_gateway_serial",
+  "tesla_powerwall_serials",
+  "tesla_inverter_serial",
+  "tesla_meter_serial",
+  "tesla_hardware_summary",
 ];
 
 /** Department lead property keys for building departmentLeads Json */

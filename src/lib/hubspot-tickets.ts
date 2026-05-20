@@ -113,6 +113,11 @@ const TICKET_PROPERTIES = [
   "ticket_document_folder_id", // bare folder ID fallback
   "tesla_portal_url",          // Tesla PowerHub deep link (populated by powerhub crosslink)
   "tesla_site_id",             // Tesla site ID (display label for PowerHub link)
+  "tesla_gateway_serial",
+  "tesla_powerwall_serials",
+  "tesla_inverter_serial",
+  "tesla_meter_serial",
+  "tesla_hardware_summary",
 ];
 
 // ---------------------------------------------------------------------------

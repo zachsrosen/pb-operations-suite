@@ -848,8 +848,13 @@ model HubSpotPropertyCache {
   zuperSyncFailCount    Int       @default(0)
 
   // Tesla PowerHub denormalized fields (populated from primary PowerhubSite)
-  teslaPortalUrl String?
-  teslaSiteId    String?
+  teslaPortalUrl         String?
+  teslaSiteId            String?
+  teslaGatewaySerial     String?
+  teslaPowerwallSerials  String?
+  teslaInverterSerial    String?
+  teslaMeterSerial       String?
+  teslaHardwareSummary   String? @db.Text
 
   lastReconciledAt DateTime
   updatedAt        DateTime @updatedAt

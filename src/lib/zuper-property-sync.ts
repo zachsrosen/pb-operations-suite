@@ -49,6 +49,11 @@ export interface PropertyFieldSource {
   // NEW
   teslaPortalUrl: string | null;
   teslaSiteId: string | null;
+  teslaGatewaySerial: string | null;
+  teslaPowerwallSerials: string | null;
+  teslaInverterSerial: string | null;
+  teslaMeterSerial: string | null;
+  teslaHardwareSummary: string | null;
 }
 
 export interface SyncPropertyResult {
@@ -277,6 +282,11 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     utilityName: property.utilityName,
     teslaPortalUrl: property.teslaPortalUrl,
     teslaSiteId: property.teslaSiteId,
+    teslaGatewaySerial: property.teslaGatewaySerial,
+    teslaPowerwallSerials: property.teslaPowerwallSerials,
+    teslaInverterSerial: property.teslaInverterSerial,
+    teslaMeterSerial: property.teslaMeterSerial,
+    teslaHardwareSummary: property.teslaHardwareSummary,
   });
 
   // Resolve customer UID from linked jobs.
@@ -483,6 +493,11 @@ export async function cascadeUrlToJobs(propertyCacheId: string): Promise<void> {
   const newFields: ZuperMetaDataEntry[] = [
     { label: "Tesla PowerHub", value: property.teslaPortalUrl, type: "SINGLE_LINE" },
     { label: "Tesla Site ID", value: property.teslaSiteId ?? "", type: "SINGLE_LINE" },
+    { label: "Tesla Gateway Serial", value: property.teslaGatewaySerial ?? "", type: "SINGLE_LINE" },
+    { label: "Tesla Powerwall Serials", value: property.teslaPowerwallSerials ?? "", type: "SINGLE_LINE" },
+    { label: "Tesla Inverter Serial", value: property.teslaInverterSerial ?? "", type: "SINGLE_LINE" },
+    { label: "Tesla Meter Serial", value: property.teslaMeterSerial ?? "", type: "SINGLE_LINE" },
+    { label: "Tesla Hardware Summary", value: property.teslaHardwareSummary ?? "", type: "MULTI_LINE" },
   ];
 
   // Sequential fan-out: simpler ordering, predictable rate use against Zuper.
