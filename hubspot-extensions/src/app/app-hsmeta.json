@@ -1,23 +1,35 @@
 {
-  "uid": "pb-tech-ops-app",
+  "uid": "pb_tech_ops_app",
   "type": "app",
-  "name": "PB Tech Ops",
-  "description": "Surfaces live Tesla PowerHub data, alerts, and quick actions on HubSpot records — Property, Deal, and Ticket.",
-  "scopes": [
-    "crm.objects.contacts.read",
-    "crm.objects.deals.read",
-    "crm.objects.custom.read",
-    "tickets",
-    "crm.schemas.custom.read"
-  ],
-  "public": false,
-  "extensions": {
-    "crm": {
-      "cards": [
-        {
-          "file": "extensions/powerhub-card/powerhub-card-hsmeta.json"
-        }
-      ]
+  "config": {
+    "description": "Surfaces live Tesla PowerHub data, alerts, and quick actions on HubSpot records.",
+    "name": "PB Tech Ops",
+    "distribution": "private",
+    "auth": {
+      "type": "static",
+      "requiredScopes": [
+        "crm.objects.contacts.read",
+        "crm.objects.deals.read",
+        "crm.objects.custom.read",
+        "tickets",
+        "crm.schemas.custom.read"
+      ],
+      "optionalScopes": [],
+      "conditionallyRequiredScopes": []
+    },
+    "permittedUrls": {
+      "fetch": [
+        "https://pbtechops.com",
+        "https://www.pbtechops.com"
+      ],
+      "iframe": [],
+      "img": []
+    },
+    "support": {
+      "supportEmail": "zach@photonbrothers.com",
+      "documentationUrl": "https://pbtechops.com",
+      "supportUrl": "https://pbtechops.com",
+      "supportPhone": "+18005555555"
     }
   }
 }
