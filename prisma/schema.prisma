@@ -4307,17 +4307,82 @@ model PowerhubTelemetrySnapshot {
 
   timestamp DateTime
 
-  solarPowerW              Float?
-  solarEnergyTodayWh       Float?
-  batteryPowerW            Float?
-  batterySocPercent        Float?
-  batteryEnergyRemainingWh Float?
-  gridPowerW               Float?
-  gridEnergyImportedWh     Float?
-  gridEnergyExportedWh     Float?
-  loadPowerW               Float?
-  gridConnectedStatus      String?
-  batteryMode              String?
+  // ── Power flows (instantaneous, W; signed where directional) ──
+  solarPowerW              Float?  // solar_instant_power
+  solarPowerRgmW           Float?  // solar_instant_power_rgm (revenue-grade meter)
+  solarReactivePowerVar    Float?  // solar_reactive_power
+  solarRealPowerLimitW     Float?  // solar_real_power_limit (curtailment ceiling)
+  batteryPowerW            Float?  // battery_instant_power (signed: + discharge, − charge)
+  batteryChargePowerW      Float?  // battery_charge_power (unsigned magnitude)
+  batteryDischargePowerW   Float?  // battery_discharge_power (unsigned magnitude)
+  batteryReactivePowerVar  Float?  // battery_instant_reactive_power
+  batteryTargetPowerW      Float?  // battery_target_power (commanded)
+  batteryTargetReactiveVar Float?  // battery_target_reactive_power
+  batteryMaxChargeW        Float?  // max_charge_power (current limit)
+  batteryMaxDischargeW     Float?  // max_discharge_power
+  estimatedBatteryNextPeriodW Float? // estimated_battery_power_next_period
+  gridPowerW               Float?  // site_instant_power (− export, + import)
+  loadPowerW               Float?  // load_instant_real_power
+  gridServicesPowerW       Float?  // grid_services_instant_power (VPP)
+
+  // ── Battery state ──
+  batterySocPercent        Float?  // battery_state_of_energy or _remaining_percentage
+  batteryEnergyRemainingWh Float?  // battery_expected_energy_remaining
+  batteryNominalCapacityWh Float?  // battery_nominal_full_pack_energy (true capacity)
+  backupReservePercent     Float?  // backup_reserve (customer setting)
+  batteryFault             Boolean? // battery_fault
+
+  // ── Cumulative energy (lifetime Wh counters) ──
+  solarEnergyTodayWh       Float?  // solar_energy_exported (was misnamed; it's lifetime)
+  solarEnergyImportedWh    Float?  // solar_energy_imported
+  solarEnergyExportedRgmWh Float?  // solar_energy_exported_rgm
+  batteryEnergyImportedWh  Float?  // battery_energy_imported
+  batteryEnergyExportedWh  Float?  // battery_energy_exported
+  gridEnergyImportedWh     Float?  // site_energy_imported
+  gridEnergyExportedWh     Float?  // site_energy_exported
+  loadEnergyImportedWh     Float?  // load_energy_imported
+  solarToLoadEnergyWh      Float?  // solar_to_load_energy
+  solarToBatteryEnergyWh   Float?  // solar_to_battery_energy
+  batteryToLoadEnergyWh    Float?  // battery_to_load_energy
+  gridServicesEnergyInWh   Float?  // grid_services_energy_imported
+  gridServicesEnergyOutWh  Float?  // grid_services_energy_exported
+
+  // ── Grid quality ──
+  voltageV                 Float?  // voltage
+  gridVoltageV             Float?  // grid_voltage
+  chassisVoltageV          Float?  // chassis_voltage
+  frequencyHz              Float?  // frequency
+
+  // ── Grid / island state ──
+  gridConnectedStatus      String? // grid_connected_status ("1" connected / "0" islanded)
+  islandMode               String? // island_mode
+  islanderDisconnected     Boolean? // islander_disconnected
+  breakerOpenStatus        Boolean? // breaker_open_status
+  gridReadySync            Boolean? // grid_ready_sync
+  offGridFaultState        String? // off_grid_fault_state
+  loadsDropped             Boolean? // loads_dropped
+  systemShutdown           Boolean? // system_shutdown
+
+  // ── Operational + control ──
+  batteryMode              String? // command_real_mode (0–9 → Standby/Backup/Self-Powered/etc.)
+  opticasterReasonCode     String? // opticaster_control_reason_code
+  isPrimaryGateway         Boolean? // is_primary
+  waitForUserLowSoe        Boolean? // wait_for_user_low_soe
+  waitForUserManualBackup  Boolean? // wait_for_user_manual_backup
+  waitForUserNoInverters   Boolean? // wait_for_user_no_inverters_ready
+  waitForUserRetriesDone   Boolean? // wait_for_user_retries_exhausted
+
+  // ── Comms health (per-component) ──
+  commsBattery             Boolean? // battery_comms
+  commsBatteryMeter        Boolean? // battery_meter_comms
+  commsSiteMeter           Boolean? // site_meter_comms
+  commsSolarMeter          Boolean? // solar_meter_comms
+
+  // ── Rate plan ──
+  energyBuyPrice           Float?  // energy_buy_price
+  energySellPrice          Float?  // energy_sell_price
+  customerEnergyBuyPrice   Float?  // customer_energy_buy_price
+  customerEnergySellPrice  Float?  // customer_energy_sell_price
 
   raw Json?
 
@@ -4375,6 +4440,18 @@ model PowerhubAlert {
   origin      String
   reportedAt  DateTime
   resolvedAt  DateTime?
+
+  // Tesla-provided alert metadata (richer than what we used to capture)
+  teslaAlertId         String? // alert.alert_id — Tesla's stable ID for dedup across syncs
+  alias                String? // Customer-friendly alias if set
+  ecuPart              String? // Engine Control Unit part #
+  ecuSerial            String? // ECU serial #
+  bcPart               String? // Battery Cabinet part #
+  bcSerial             String? // BC serial #
+  toolboxId            String? // Tesla Toolbox internal ID
+  alertTags            Json? // Structured {key, values[]} array from Tesla
+  symptomCodes         Json? // String[] of Tesla symptom codes
+  supportAutoTicketUrl String? // Pre-generated Tesla support ticket URL
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

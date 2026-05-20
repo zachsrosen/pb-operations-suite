@@ -17,23 +17,88 @@ import {
 } from "./powerhub-linkage";
 import { enqueueCrossSystemPush } from "./powerhub-crosslink";
 import { prisma } from "./db";
+import { Prisma } from "@/generated/prisma/client";
 import { appCache } from "./cache";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** Telemetry signals to poll per site */
+// All signals Tesla's /v2/telemetry/last can return per site. We always
+// request the full set — `getAvailableSignals` is called first per site, so
+// we only end up requesting the subset Tesla flagged as available. Adding a
+// signal here is safe: missing signals come back as null in the response and
+// we write null to the snapshot column.
 const TELEMETRY_SIGNALS = [
+  // Power (instantaneous)
   "solar_instant_power",
-  "solar_energy_exported",
+  "solar_instant_power_rgm",
+  "solar_reactive_power",
+  "solar_real_power_limit",
   "battery_instant_power",
-  "battery_state_of_energy",
-  "battery_expected_energy_remaining",
+  "battery_charge_power",
+  "battery_discharge_power",
+  "battery_instant_reactive_power",
+  "battery_target_power",
+  "battery_target_reactive_power",
+  "max_charge_power",
+  "max_discharge_power",
+  "estimated_battery_power_next_period",
   "site_instant_power",
+  "load_instant_real_power",
+  "grid_services_instant_power",
+  // Battery state
+  "battery_state_of_energy",
+  "battery_expected_energy_remaining_percentage",
+  "battery_expected_energy_remaining",
+  "battery_nominal_full_pack_energy",
+  "backup_reserve",
+  "battery_fault",
+  // Cumulative energy
+  "solar_energy_exported",
+  "solar_energy_imported",
+  "solar_energy_exported_rgm",
+  "battery_energy_imported",
+  "battery_energy_exported",
   "site_energy_imported",
   "site_energy_exported",
-  "load_instant_real_power",
+  "load_energy_imported",
+  "solar_to_load_energy",
+  "solar_to_battery_energy",
+  "battery_to_load_energy",
+  "grid_services_energy_imported",
+  "grid_services_energy_exported",
+  // Grid quality
+  "voltage",
+  "grid_voltage",
+  "chassis_voltage",
+  "frequency",
+  // Grid / island state
   "grid_connected_status",
+  "island_mode",
+  "islander_disconnected",
+  "breaker_open_status",
+  "grid_ready_sync",
+  "off_grid_fault_state",
+  "loads_dropped",
+  "system_shutdown",
+  // Operational + control
   "command_real_mode",
+  "opticaster_control_reason_code",
+  "is_primary",
+  "wait_for_user_low_soe",
+  "wait_for_user_manual_backup",
+  "wait_for_user_no_inverters_ready",
+  "wait_for_user_retries_exhausted",
+  // Comms health
+  "battery_comms",
+  "battery_meter_comms",
+  "site_meter_comms",
+  "solar_meter_comms",
+  // Rate plan
+  "energy_buy_price",
+  "energy_sell_price",
+  "customer_energy_buy_price",
+  "customer_energy_sell_price",
 ] as const;
 
 /** Process sites in chunks to respect rate limit (4 req/sec) */
@@ -399,19 +464,84 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
             ? new Date(firstTimestamp)
             : new Date();
 
+          // Prefer the direct SoC percentage signal when available; fall back
+          // to battery_state_of_energy (older Powerwall firmware). The
+          // remaining-percentage signal returns 0–100 directly.
+          const socPctDirect = signalNumericValue(signalMap.get("battery_expected_energy_remaining_percentage"));
+          const socLegacy = signalNumericValue(signalMap.get("battery_state_of_energy"));
+
           const snapshotData = {
             timestamp,
+            // Power flows (instantaneous)
             solarPowerW: signalNumericValue(signalMap.get("solar_instant_power")),
-            solarEnergyTodayWh: signalNumericValue(signalMap.get("solar_energy_exported")),
+            solarPowerRgmW: signalNumericValue(signalMap.get("solar_instant_power_rgm")),
+            solarReactivePowerVar: signalNumericValue(signalMap.get("solar_reactive_power")),
+            solarRealPowerLimitW: signalNumericValue(signalMap.get("solar_real_power_limit")),
             batteryPowerW: signalNumericValue(signalMap.get("battery_instant_power")),
-            batterySocPercent: signalNumericValue(signalMap.get("battery_state_of_energy")),
-            batteryEnergyRemainingWh: signalNumericValue(signalMap.get("battery_expected_energy_remaining")),
+            batteryChargePowerW: signalNumericValue(signalMap.get("battery_charge_power")),
+            batteryDischargePowerW: signalNumericValue(signalMap.get("battery_discharge_power")),
+            batteryReactivePowerVar: signalNumericValue(signalMap.get("battery_instant_reactive_power")),
+            batteryTargetPowerW: signalNumericValue(signalMap.get("battery_target_power")),
+            batteryTargetReactiveVar: signalNumericValue(signalMap.get("battery_target_reactive_power")),
+            batteryMaxChargeW: signalNumericValue(signalMap.get("max_charge_power")),
+            batteryMaxDischargeW: signalNumericValue(signalMap.get("max_discharge_power")),
+            estimatedBatteryNextPeriodW: signalNumericValue(signalMap.get("estimated_battery_power_next_period")),
             gridPowerW: signalNumericValue(signalMap.get("site_instant_power")),
+            loadPowerW: signalNumericValue(signalMap.get("load_instant_real_power")),
+            gridServicesPowerW: signalNumericValue(signalMap.get("grid_services_instant_power")),
+            // Battery state
+            batterySocPercent: socPctDirect ?? socLegacy,
+            batteryEnergyRemainingWh: signalNumericValue(signalMap.get("battery_expected_energy_remaining")),
+            batteryNominalCapacityWh: signalNumericValue(signalMap.get("battery_nominal_full_pack_energy")),
+            backupReservePercent: signalNumericValue(signalMap.get("backup_reserve")),
+            batteryFault: signalBoolValue(signalMap.get("battery_fault")),
+            // Cumulative energy
+            solarEnergyTodayWh: signalNumericValue(signalMap.get("solar_energy_exported")),
+            solarEnergyImportedWh: signalNumericValue(signalMap.get("solar_energy_imported")),
+            solarEnergyExportedRgmWh: signalNumericValue(signalMap.get("solar_energy_exported_rgm")),
+            batteryEnergyImportedWh: signalNumericValue(signalMap.get("battery_energy_imported")),
+            batteryEnergyExportedWh: signalNumericValue(signalMap.get("battery_energy_exported")),
             gridEnergyImportedWh: signalNumericValue(signalMap.get("site_energy_imported")),
             gridEnergyExportedWh: signalNumericValue(signalMap.get("site_energy_exported")),
-            loadPowerW: signalNumericValue(signalMap.get("load_instant_real_power")),
+            loadEnergyImportedWh: signalNumericValue(signalMap.get("load_energy_imported")),
+            solarToLoadEnergyWh: signalNumericValue(signalMap.get("solar_to_load_energy")),
+            solarToBatteryEnergyWh: signalNumericValue(signalMap.get("solar_to_battery_energy")),
+            batteryToLoadEnergyWh: signalNumericValue(signalMap.get("battery_to_load_energy")),
+            gridServicesEnergyInWh: signalNumericValue(signalMap.get("grid_services_energy_imported")),
+            gridServicesEnergyOutWh: signalNumericValue(signalMap.get("grid_services_energy_exported")),
+            // Grid quality
+            voltageV: signalNumericValue(signalMap.get("voltage")),
+            gridVoltageV: signalNumericValue(signalMap.get("grid_voltage")),
+            chassisVoltageV: signalNumericValue(signalMap.get("chassis_voltage")),
+            frequencyHz: signalNumericValue(signalMap.get("frequency")),
+            // Grid / island state
             gridConnectedStatus: signalStringValue(signalMap.get("grid_connected_status")),
+            islandMode: signalStringValue(signalMap.get("island_mode")),
+            islanderDisconnected: signalBoolValue(signalMap.get("islander_disconnected")),
+            breakerOpenStatus: signalBoolValue(signalMap.get("breaker_open_status")),
+            gridReadySync: signalBoolValue(signalMap.get("grid_ready_sync")),
+            offGridFaultState: signalStringValue(signalMap.get("off_grid_fault_state")),
+            loadsDropped: signalBoolValue(signalMap.get("loads_dropped")),
+            systemShutdown: signalBoolValue(signalMap.get("system_shutdown")),
+            // Operational + control
             batteryMode: signalStringValue(signalMap.get("command_real_mode")),
+            opticasterReasonCode: signalStringValue(signalMap.get("opticaster_control_reason_code")),
+            isPrimaryGateway: signalBoolValue(signalMap.get("is_primary")),
+            waitForUserLowSoe: signalBoolValue(signalMap.get("wait_for_user_low_soe")),
+            waitForUserManualBackup: signalBoolValue(signalMap.get("wait_for_user_manual_backup")),
+            waitForUserNoInverters: signalBoolValue(signalMap.get("wait_for_user_no_inverters_ready")),
+            waitForUserRetriesDone: signalBoolValue(signalMap.get("wait_for_user_retries_exhausted")),
+            // Comms health
+            commsBattery: signalBoolValue(signalMap.get("battery_comms")),
+            commsBatteryMeter: signalBoolValue(signalMap.get("battery_meter_comms")),
+            commsSiteMeter: signalBoolValue(signalMap.get("site_meter_comms")),
+            commsSolarMeter: signalBoolValue(signalMap.get("solar_meter_comms")),
+            // Rate plan
+            energyBuyPrice: signalNumericValue(signalMap.get("energy_buy_price")),
+            energySellPrice: signalNumericValue(signalMap.get("energy_sell_price")),
+            customerEnergyBuyPrice: signalNumericValue(signalMap.get("customer_energy_buy_price")),
+            customerEnergySellPrice: signalNumericValue(signalMap.get("customer_energy_sell_price")),
+
             raw: JSON.parse(JSON.stringify(signals)),
           };
 
@@ -544,6 +674,16 @@ export async function pollAlerts(): Promise<AlertPollResult> {
       description: string;
       severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL";
       reportedAt: Date;
+      teslaAlertId: string | null;
+      alias: string | null;
+      ecuPart: string | null;
+      ecuSerial: string | null;
+      bcPart: string | null;
+      bcSerial: string | null;
+      toolboxId: string | null;
+      alertTags: unknown;
+      symptomCodes: unknown;
+      supportAutoTicketUrl: string | null;
     }> = [];
 
     let cursor: string | undefined;
@@ -583,6 +723,16 @@ export async function pollAlerts(): Promise<AlertPollResult> {
           description: alert.description,
           severity,
           reportedAt,
+          teslaAlertId: alert.alert_id || null,
+          alias: alert.alias ?? null,
+          ecuPart: alert.ecu_part ?? null,
+          ecuSerial: alert.ecu_serial ?? null,
+          bcPart: alert.bc_part ?? null,
+          bcSerial: alert.bc_serial ?? null,
+          toolboxId: alert.toolbox_id ?? null,
+          alertTags: alert.alert_tags ?? null,
+          symptomCodes: alert.symptom_codes ?? null,
+          supportAutoTicketUrl: alert.support_auto_ticket_url ?? null,
         });
       }
 
@@ -623,9 +773,38 @@ export async function pollAlerts(): Promise<AlertPollResult> {
             isActive: true,
             origin: "powerhub",
             reportedAt: alert.reportedAt,
+            teslaAlertId: alert.teslaAlertId,
+            alias: alert.alias,
+            ecuPart: alert.ecuPart,
+            ecuSerial: alert.ecuSerial,
+            bcPart: alert.bcPart,
+            bcSerial: alert.bcSerial,
+            toolboxId: alert.toolboxId,
+            // Prisma Json columns accept null + JSON-serializable values
+            alertTags: alert.alertTags as Prisma.InputJsonValue | undefined,
+            symptomCodes: alert.symptomCodes as Prisma.InputJsonValue | undefined,
+            supportAutoTicketUrl: alert.supportAutoTicketUrl,
           },
         });
         result.alertsCreated++;
+      } else {
+        // Backfill richer fields onto pre-existing rows so a one-time
+        // upgrade doesn't require a separate migration script.
+        await prisma.powerhubAlert.update({
+          where: { id: existing.id },
+          data: {
+            teslaAlertId: alert.teslaAlertId,
+            alias: alert.alias,
+            ecuPart: alert.ecuPart,
+            ecuSerial: alert.ecuSerial,
+            bcPart: alert.bcPart,
+            bcSerial: alert.bcSerial,
+            toolboxId: alert.toolboxId,
+            alertTags: alert.alertTags as Prisma.InputJsonValue | undefined,
+            symptomCodes: alert.symptomCodes as Prisma.InputJsonValue | undefined,
+            supportAutoTicketUrl: alert.supportAutoTicketUrl,
+          },
+        });
       }
     }
 
@@ -681,4 +860,20 @@ function signalStringValue(signal: PowerHubTelemetrySignal | undefined): string 
   const v = signal.data_points[0].value;
   if (v === null || v === undefined) return null;
   return String(v);
+}
+
+/**
+ * Extract the latest value as a boolean. Tesla returns booleans as 0/1
+ * numbers or "true"/"false" strings depending on the signal — handle both.
+ */
+function signalBoolValue(signal: PowerHubTelemetrySignal | undefined): boolean | null {
+  if (!signal?.data_points?.length) return null;
+  const v = signal.data_points[0].value;
+  if (v === null || v === undefined) return null;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  const s = String(v).trim().toLowerCase();
+  if (s === "true" || s === "1") return true;
+  if (s === "false" || s === "0") return false;
+  return null;
 }
