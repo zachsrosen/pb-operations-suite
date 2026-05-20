@@ -415,10 +415,8 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           </div>
         </div>
 
-        {/* ── Site Photos (full width) ── */}
-        <Section title="Site Photos">
-          <PhotoGalleryCard hubspotDealId={item.dealId} />
-        </Section>
+        {/* ── Site Photos (full width, has its own collapse toggle) ── */}
+        <PhotoGalleryCard hubspotDealId={item.dealId} />
       </div>
     </div>
   );
