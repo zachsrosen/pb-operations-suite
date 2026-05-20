@@ -1,0 +1,10 @@
+{
+  "uid": "powerhub-sidebar",
+  "type": "card",
+  "config": {
+    "name": "Tesla PowerHub (Sidebar)",
+    "location": "crm.record.sidebar",
+    "entrypoint": "/app/cards/PowerhubSidebar.tsx",
+    "objectTypes": ["DEAL", "TICKET", "p_property"]
+  }
+}
