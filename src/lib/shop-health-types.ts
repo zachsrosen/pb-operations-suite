@@ -156,6 +156,9 @@ export interface ShopHealthDrilldown {
   awaitingInspection: DrilldownDeal[];
   inspectionsPassed: DrilldownDeal[];
   ptosReceived: DrilldownDeal[];
+  // Customer Success
+  daysSinceContact: DrilldownDeal[];
+  noSameDayResponse: DrilldownDeal[];
 }
 
 export interface ShopHealthData {
