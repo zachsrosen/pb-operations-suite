@@ -407,6 +407,7 @@ export interface Project {
   designLead: string;
   permitLead: string;
   interconnectionsLead: string;
+  inspectionsLead: string;
   preconstructionLead: string;
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
@@ -699,6 +700,7 @@ const DEAL_PROPERTIES = [
   "permit_tech",
   "interconnections_tech",
   "rtb_lead",
+  "inspections_lead",
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
   "site_survey_turnaround_time",
@@ -1069,6 +1071,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     })(),
     interconnectionsLead: (() => {
       const raw = String(deal.interconnections_tech || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
+    inspectionsLead: (() => {
+      const raw = String(deal.inspections_lead || "");
       if (!raw) return "";
       return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
     })(),

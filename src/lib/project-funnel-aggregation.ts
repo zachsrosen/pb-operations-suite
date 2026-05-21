@@ -110,6 +110,7 @@ export interface ProjectFunnelDrillDownDeal {
   designLead: string;
   permitLead: string;
   operationsManager: string;
+  inspectionsLead: string;
   interconnectionsLead: string;
 }
 
@@ -192,6 +193,7 @@ function toDrillDown(
     designLead: p.designLead || "",
     permitLead: p.permitLead || "",
     operationsManager: p.operationsManager || "",
+    inspectionsLead: p.inspectionsLead || "",
     interconnectionsLead: p.interconnectionsLead || "",
   };
 }
