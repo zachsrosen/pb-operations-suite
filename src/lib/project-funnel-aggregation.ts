@@ -106,6 +106,7 @@ export interface ProjectFunnelDrillDown {
   awaitingConstructionComplete: ProjectFunnelDrillDownDeal[];
   awaitingInspection: ProjectFunnelDrillDownDeal[];
   awaitingPto: ProjectFunnelDrillDownDeal[];
+  awaitingCloseOut: ProjectFunnelDrillDownDeal[];
 }
 
 export interface ProjectFunnelResponse {
@@ -503,6 +504,7 @@ export function buildProjectFunnelData(
     awaitingConstructionComplete: [],
     awaitingInspection: [],
     awaitingPto: [],
+    awaitingCloseOut: [],
   };
 
   for (const p of filtered) {
@@ -563,6 +565,15 @@ export function buildProjectFunnelData(
       drillDown.awaitingPto.push(
         toDrillDown(p, daysBetween(waitSince, today), p.ptoStatus ?? null)
       );
+    } else {
+      // PTO granted but not yet in Close Out or Project Complete
+      const sp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
+      if (sp < 9) {
+        const waitSince = p.ptoGrantedDate || p.closeDate!;
+        drillDown.awaitingCloseOut.push(
+          toDrillDown(p, daysBetween(waitSince, today), null)
+        );
+      }
     }
   }
 
@@ -579,6 +590,7 @@ export function buildProjectFunnelData(
   drillDown.awaitingConstructionComplete.sort(byWaitDesc);
   drillDown.awaitingInspection.sort(byWaitDesc);
   drillDown.awaitingPto.sort(byWaitDesc);
+  drillDown.awaitingCloseOut.sort(byWaitDesc);
 
   return {
     summary,
