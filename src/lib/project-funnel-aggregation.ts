@@ -138,6 +138,8 @@ const STAGE_PRIORITY_MAP: Record<string, number> = {
   "20461940": 8,  // Permission To Operate
   "24743347": 9,  // Close Out
   "20440343": 10, // Project Complete
+  "68229433": 11, // Cancelled
+  "20440344": 12, // On Hold
 };
 
 function todayStr(): string {
