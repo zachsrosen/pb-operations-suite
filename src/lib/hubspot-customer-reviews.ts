@@ -127,17 +127,22 @@ export async function fetchFiveStarReviewsForMonth(
 // Resolve review → deal → location
 // ---------------------------------------------------------------------------
 
+export interface ResolvedReview {
+  location: string;
+  dealId: string;
+}
+
 /**
  * For each review, resolve the associated deal and read its `pb_location`.
- * Returns a Map of reviewId → canonical location name.
+ * Returns a Map of reviewId → { location, dealId }.
  *
  * Reviews with no deal association are omitted from the result.
  */
 export async function resolveReviewLocations(
   reviews: ReviewWithDeal[]
-): Promise<Map<string, string>> {
-  const locationMap = new Map<string, string>();
-  if (!reviews.length) return locationMap;
+): Promise<Map<string, ResolvedReview>> {
+  const resultMap = new Map<string, ResolvedReview>();
+  if (!reviews.length) return resultMap;
 
   // Step 1: Batch-resolve review → deal associations
   // Process in chunks of 20 to avoid overwhelming the API
@@ -204,13 +209,13 @@ export async function resolveReviewLocations(
     }
   }
 
-  // Step 3: Map review → location via deal
+  // Step 3: Map review → { location, dealId }
   for (const [reviewId, dealId] of dealIds) {
     const loc = dealLocationMap.get(dealId);
     if (loc) {
-      locationMap.set(reviewId, loc);
+      resultMap.set(reviewId, { location: loc, dealId });
     }
   }
 
-  return locationMap;
+  return resultMap;
 }

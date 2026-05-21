@@ -274,23 +274,24 @@ export async function getGoalsPipelineData(
   // ------ Goals: 5-star reviews (cached globally to avoid duplicate fetches across locations) ------
 
   const reviewCacheKey = CACHE_KEYS.FIVE_STAR_REVIEWS(`${year}-${month}`);
-  const { data: reviewLocationCounts } = await appCache.getOrFetch<Record<string, number>>(
+  const { data: reviewLocationDealIds } = await appCache.getOrFetch<Record<string, string[]>>(
     reviewCacheKey,
     async () => {
       const allReviews = await fetchFiveStarReviewsForMonth(month, year);
       const reviewLocations = await resolveReviewLocations(allReviews);
 
-      // Count per location
-      const counts: Record<string, number> = {};
-      for (const loc of reviewLocations.values()) {
-        counts[loc] = (counts[loc] || 0) + 1;
+      // Group deal IDs by location
+      const dealIdsByLocation: Record<string, string[]> = {};
+      for (const resolved of reviewLocations.values()) {
+        if (!dealIdsByLocation[resolved.location]) dealIdsByLocation[resolved.location] = [];
+        dealIdsByLocation[resolved.location].push(resolved.dealId);
       }
-      return counts;
+      return dealIdsByLocation;
     },
     false
   );
 
-  const reviewCount = reviewLocationCounts[location] || 0;
+  const reviewCount = (reviewLocationDealIds[location] || []).length;
 
   // ------ Goal targets from DB (falls back to defaults if DB unavailable) ------
 
