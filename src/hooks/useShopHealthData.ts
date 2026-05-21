@@ -20,7 +20,7 @@ async function fetchOverviewData(weekStart: string): Promise<ShopHealthOverviewD
   return res.json();
 }
 
-async function saveBottleneck(params: {
+async function createBottleneckReq(params: {
   location: string;
   weekStart: string;
   constraint?: string | null;
@@ -33,8 +33,31 @@ async function saveBottleneck(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`Bottleneck save failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Bottleneck create failed: ${res.status}`);
   return res.json();
+}
+
+async function updateBottleneckReq(params: {
+  id: string;
+  constraint?: string | null;
+  rootCause?: string | null;
+  actionPlan?: string | null;
+  owner?: string | null;
+}): Promise<ShopHealthBottleneckEntry> {
+  const res = await fetch('/api/shop-health/bottleneck', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`Bottleneck update failed: ${res.status}`);
+  return res.json();
+}
+
+async function deleteBottleneckReq(id: string): Promise<void> {
+  const res = await fetch(`/api/shop-health/bottleneck?id=${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Bottleneck delete failed: ${res.status}`);
 }
 
 export function useShopHealthData(location: string, weekStart: string) {
@@ -56,14 +79,42 @@ export function useShopHealthOverview(weekStart: string) {
   });
 }
 
-export function useBottleneckMutation(location: string, weekStart: string) {
+function useInvalidateShopHealth(location: string, weekStart: string) {
   const queryClient = useQueryClient();
+  return () => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.shopHealth.location(location, weekStart),
+    });
+  };
+}
+
+export function useBottleneckCreate(location: string, weekStart: string) {
+  const invalidate = useInvalidateShopHealth(location, weekStart);
   return useMutation({
-    mutationFn: saveBottleneck,
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.shopHealth.location(location, weekStart),
-      });
-    },
+    mutationFn: createBottleneckReq,
+    onSuccess: invalidate,
   });
+}
+
+export function useBottleneckUpdate(location: string, weekStart: string) {
+  const invalidate = useInvalidateShopHealth(location, weekStart);
+  return useMutation({
+    mutationFn: updateBottleneckReq,
+    onSuccess: invalidate,
+  });
+}
+
+export function useBottleneckDelete(location: string, weekStart: string) {
+  const invalidate = useInvalidateShopHealth(location, weekStart);
+  return useMutation({
+    mutationFn: deleteBottleneckReq,
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * @deprecated Use useBottleneckCreate instead. Kept for backward compat.
+ */
+export function useBottleneckMutation(location: string, weekStart: string) {
+  return useBottleneckCreate(location, weekStart);
 }

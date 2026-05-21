@@ -5,10 +5,10 @@ import { prisma } from './db';
 import type { ShopHealthBottleneckEntry } from './shop-health-types';
 
 /**
- * Upsert a bottleneck entry for a location + week.
- * Uses the unique constraint on (location, weekStart).
+ * Create a new bottleneck entry for a location + week.
+ * Multiple entries per location per week are allowed.
  */
-export async function upsertBottleneck(params: {
+export async function createBottleneck(params: {
   location: string;
   weekStart: Date;
   constraint?: string | null;
@@ -17,14 +17,8 @@ export async function upsertBottleneck(params: {
   owner?: string | null;
   userId: string;
 }): Promise<ShopHealthBottleneckEntry> {
-  const entry = await prisma.shopHealthBottleneck.upsert({
-    where: {
-      location_weekStart: {
-        location: params.location,
-        weekStart: params.weekStart,
-      },
-    },
-    create: {
+  const entry = await prisma.shopHealthBottleneck.create({
+    data: {
       location: params.location,
       weekStart: params.weekStart,
       constraint: params.constraint ?? null,
@@ -33,7 +27,25 @@ export async function upsertBottleneck(params: {
       owner: params.owner ?? null,
       userId: params.userId,
     },
-    update: {
+  });
+
+  return serializeBottleneck(entry);
+}
+
+/**
+ * Update an existing bottleneck entry by ID.
+ */
+export async function updateBottleneck(params: {
+  id: string;
+  constraint?: string | null;
+  rootCause?: string | null;
+  actionPlan?: string | null;
+  owner?: string | null;
+  userId: string;
+}): Promise<ShopHealthBottleneckEntry> {
+  const entry = await prisma.shopHealthBottleneck.update({
+    where: { id: params.id },
+    data: {
       constraint: params.constraint ?? undefined,
       rootCause: params.rootCause ?? undefined,
       actionPlan: params.actionPlan ?? undefined,
@@ -46,6 +58,28 @@ export async function upsertBottleneck(params: {
 }
 
 /**
+ * Delete a bottleneck entry by ID.
+ */
+export async function deleteBottleneck(id: string): Promise<void> {
+  await prisma.shopHealthBottleneck.delete({ where: { id } });
+}
+
+/**
+ * Get all bottleneck entries for a location + specific week.
+ */
+export async function getBottlenecksForWeek(
+  location: string,
+  weekStart: Date
+): Promise<ShopHealthBottleneckEntry[]> {
+  const entries = await prisma.shopHealthBottleneck.findMany({
+    where: { location, weekStart },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return entries.map(serializeBottleneck);
+}
+
+/**
  * Get bottleneck history for a location (last N weeks).
  */
 export async function getBottleneckHistory(
@@ -54,8 +88,8 @@ export async function getBottleneckHistory(
 ): Promise<ShopHealthBottleneckEntry[]> {
   const entries = await prisma.shopHealthBottleneck.findMany({
     where: { location },
-    orderBy: { weekStart: 'desc' },
-    take: weeks,
+    orderBy: [{ weekStart: 'desc' }, { createdAt: 'asc' }],
+    take: weeks * 5, // Allow up to ~5 entries per week
   });
 
   return entries.map(serializeBottleneck);

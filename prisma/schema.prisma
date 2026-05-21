@@ -4633,7 +4633,7 @@ model ShopHealthBottleneck {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([location, weekStart])
+  @@index([location, weekStart])
   @@index([location])
   @@index([weekStart])
 }

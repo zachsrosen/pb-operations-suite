@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
           scheduledInstalls: data.heroes.scheduledInstalls,
           installsCompleted: data.heroes.installsCompleted,
           ptosReceived: data.heroes.ptosReceived,
-          topBottleneck: data.bottleneck?.constraint ?? null,
+          topBottleneck: data.bottlenecks[0]?.constraint ?? null,
         };
       })
     );

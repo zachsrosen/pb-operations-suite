@@ -131,7 +131,7 @@ export interface ShopHealthData {
   inspections: InspectionsSection;
   customerSuccess: CustomerSuccessSection;
   sectionHealth: SectionHealth;
-  bottleneck: ShopHealthBottleneckEntry | null;
+  bottlenecks: ShopHealthBottleneckEntry[];
   lastUpdated: string;
   goals: ShopHealthGoals;
 }

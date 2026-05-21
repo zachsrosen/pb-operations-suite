@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { useBottleneckMutation } from '@/hooks/useShopHealthData';
+import {
+  useBottleneckCreate,
+  useBottleneckUpdate,
+  useBottleneckDelete,
+} from '@/hooks/useShopHealthData';
 import {
   BOTTLENECK_DIAGNOSTICS,
   type ShopHealthBottleneckEntry,
@@ -11,39 +15,46 @@ import { getWeekStart } from '@/lib/shop-health-utils';
 interface BottleneckSectionProps {
   location: string;
   weekStart: string;
-  bottleneck: ShopHealthBottleneckEntry | null;
+  bottlenecks: ShopHealthBottleneckEntry[];
 }
 
 const AUTOSAVE_DELAY = 1500;
 
-export function BottleneckSectionContent({
+const inputClass =
+  'w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed';
+
+// ─── Individual bottleneck entry card ────────────────────────────────────────
+
+function BottleneckEntryCard({
+  entry,
   location,
   weekStart,
-  bottleneck,
-}: BottleneckSectionProps) {
-  const [constraint, setConstraint] = useState(bottleneck?.constraint ?? '');
-  const [rootCause, setRootCause] = useState(bottleneck?.rootCause ?? '');
-  const [actionPlan, setActionPlan] = useState(bottleneck?.actionPlan ?? '');
-  const [owner, setOwner] = useState(bottleneck?.owner ?? '');
+  isPastWeek,
+}: {
+  entry: ShopHealthBottleneckEntry;
+  location: string;
+  weekStart: string;
+  isPastWeek: boolean;
+}) {
+  const [constraint, setConstraint] = useState(entry.constraint ?? '');
+  const [rootCause, setRootCause] = useState(entry.rootCause ?? '');
+  const [actionPlan, setActionPlan] = useState(entry.actionPlan ?? '');
+  const [owner, setOwner] = useState(entry.owner ?? '');
   const [saved, setSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const mutation = useBottleneckMutation(location, weekStart);
+  const updateMutation = useBottleneckUpdate(location, weekStart);
+  const deleteMutation = useBottleneckDelete(location, weekStart);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Determine if this is a past week (read-only)
-  const currentWeek = getWeekStart(new Date());
-  const weekDate = new Date(weekStart + 'T00:00:00');
-  const isPastWeek = weekDate.getTime() < currentWeek.getTime();
 
   const autoSave = useCallback(
     (fields: { constraint: string; rootCause: string; actionPlan: string; owner: string }) => {
       if (isPastWeek) return;
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        mutation.mutate(
+        updateMutation.mutate(
           {
-            location,
-            weekStart,
+            id: entry.id,
             constraint: fields.constraint || null,
             rootCause: fields.rootCause || null,
             actionPlan: fields.actionPlan || null,
@@ -58,7 +69,7 @@ export function BottleneckSectionContent({
         );
       }, AUTOSAVE_DELAY);
     },
-    [location, weekStart, isPastWeek, mutation]
+    [entry.id, isPastWeek, updateMutation]
   );
 
   function handleChange(
@@ -73,30 +84,31 @@ export function BottleneckSectionContent({
     autoSave(next);
   }
 
-  const inputClass =
-    'w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed';
+  function handleDelete() {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setTimeout(() => setConfirmDelete(false), 3000);
+      return;
+    }
+    deleteMutation.mutate(entry.id);
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Form */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="bg-surface-2 rounded-xl p-4 space-y-3 border border-border/50">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium text-muted mb-1">
-            Primary Constraint
-          </label>
+          <label className="block text-xs font-medium text-muted mb-1">Constraint</label>
           <input
             type="text"
             className={inputClass}
             value={constraint}
             onChange={(e) => handleChange('constraint', e.target.value)}
-            placeholder="What is the #1 bottleneck this week?"
+            placeholder="What is the bottleneck?"
             disabled={isPastWeek}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-muted mb-1">
-            Root Cause
-          </label>
+          <label className="block text-xs font-medium text-muted mb-1">Root Cause</label>
           <input
             type="text"
             className={inputClass}
@@ -107,9 +119,7 @@ export function BottleneckSectionContent({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-muted mb-1">
-            Action Plan
-          </label>
+          <label className="block text-xs font-medium text-muted mb-1">Action Plan</label>
           <input
             type="text"
             className={inputClass}
@@ -120,9 +130,7 @@ export function BottleneckSectionContent({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-muted mb-1">
-            Owner
-          </label>
+          <label className="block text-xs font-medium text-muted mb-1">Owner</label>
           <input
             type="text"
             className={inputClass}
@@ -134,37 +142,205 @@ export function BottleneckSectionContent({
         </div>
       </div>
 
-      {/* Save indicator */}
-      <div className="flex items-center gap-2 min-h-[20px]">
-        {mutation.isPending && (
-          <span className="text-xs text-muted">Saving...</span>
-        )}
-        {saved && (
-          <span className="text-xs text-emerald-500">Saved</span>
-        )}
-        {mutation.isError && (
-          <span className="text-xs text-red-400">Failed to save</span>
-        )}
-        {isPastWeek && (
-          <span className="text-xs text-muted">Read-only (past week)</span>
+      {/* Status row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 min-h-[20px]">
+          {updateMutation.isPending && <span className="text-xs text-muted">Saving...</span>}
+          {saved && <span className="text-xs text-emerald-500">Saved</span>}
+          {updateMutation.isError && <span className="text-xs text-red-400">Failed to save</span>}
+          {isPastWeek && <span className="text-xs text-muted">Read-only (past week)</span>}
+        </div>
+        {!isPastWeek && (
+          <button
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            className={`text-xs px-2 py-1 rounded transition-colors ${
+              confirmDelete
+                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                : 'text-muted hover:text-red-400 hover:bg-red-500/10'
+            }`}
+          >
+            {deleteMutation.isPending
+              ? 'Removing...'
+              : confirmDelete
+                ? 'Confirm remove?'
+                : 'Remove'}
+          </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── New bottleneck form ─────────────────────────────────────────────────────
+
+function NewBottleneckForm({
+  location,
+  weekStart,
+  onComplete,
+}: {
+  location: string;
+  weekStart: string;
+  onComplete: () => void;
+}) {
+  const [constraint, setConstraint] = useState('');
+  const [rootCause, setRootCause] = useState('');
+  const [actionPlan, setActionPlan] = useState('');
+  const [owner, setOwner] = useState('');
+
+  const createMutation = useBottleneckCreate(location, weekStart);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!constraint.trim()) return;
+
+    createMutation.mutate(
+      {
+        location,
+        weekStart,
+        constraint: constraint.trim() || null,
+        rootCause: rootCause.trim() || null,
+        actionPlan: actionPlan.trim() || null,
+        owner: owner.trim() || null,
+      },
+      {
+        onSuccess: () => {
+          setConstraint('');
+          setRootCause('');
+          setActionPlan('');
+          setOwner('');
+          onComplete();
+        },
+      }
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-surface-2/50 rounded-xl p-4 space-y-3 border border-dashed border-border">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Constraint *</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={constraint}
+            onChange={(e) => setConstraint(e.target.value)}
+            placeholder="What is the bottleneck?"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Root Cause</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={rootCause}
+            onChange={(e) => setRootCause(e.target.value)}
+            placeholder="Why is this happening?"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Action Plan</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={actionPlan}
+            onChange={(e) => setActionPlan(e.target.value)}
+            placeholder="What are we doing about it?"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Owner</label>
+          <input
+            type="text"
+            className={inputClass}
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            placeholder="Who is responsible?"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={createMutation.isPending || !constraint.trim()}
+          className="px-4 py-1.5 text-sm font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {createMutation.isPending ? 'Adding...' : 'Add Bottleneck'}
+        </button>
+        {createMutation.isError && (
+          <span className="text-xs text-red-400">Failed to add</span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+// ─── Main section ────────────────────────────────────────────────────────────
+
+export function BottleneckSectionContent({
+  location,
+  weekStart,
+  bottlenecks,
+}: BottleneckSectionProps) {
+  const [showForm, setShowForm] = useState(false);
+
+  // Determine if this is a past week (read-only)
+  const currentWeek = getWeekStart(new Date());
+  const weekDate = new Date(weekStart + 'T00:00:00');
+  const isPastWeek = weekDate.getTime() < currentWeek.getTime();
+
+  return (
+    <div className="space-y-4">
+      {/* Existing bottleneck entries */}
+      {bottlenecks.length > 0 ? (
+        <div className="space-y-3">
+          {bottlenecks.map((entry) => (
+            <BottleneckEntryCard
+              key={entry.id}
+              entry={entry}
+              location={location}
+              weekStart={weekStart}
+              isPastWeek={isPastWeek}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-muted text-center py-4">
+          No bottlenecks logged this week.
+        </div>
+      )}
+
+      {/* Add button / form */}
+      {!isPastWeek && (
+        <>
+          {showForm ? (
+            <NewBottleneckForm
+              location={location}
+              weekStart={weekStart}
+              onComplete={() => setShowForm(false)}
+            />
+          ) : (
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full py-2 text-sm font-medium text-muted border border-dashed border-border rounded-xl hover:border-orange-500/50 hover:text-orange-400 transition-colors"
+            >
+              + Add Bottleneck
+            </button>
+          )}
+        </>
+      )}
 
       {/* Diagnostic reference table */}
       <div>
-        <h4 className="text-sm font-medium text-muted mb-2">
-          Diagnostic Framework
-        </h4>
+        <h4 className="text-sm font-medium text-muted mb-2">Diagnostic Framework</h4>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-2 px-3 text-muted font-medium">
-                  Signal
-                </th>
-                <th className="text-left py-2 px-3 text-muted font-medium">
-                  Owner
-                </th>
+                <th className="text-left py-2 px-3 text-muted font-medium">Signal</th>
+                <th className="text-left py-2 px-3 text-muted font-medium">Owner</th>
               </tr>
             </thead>
             <tbody>

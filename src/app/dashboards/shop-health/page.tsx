@@ -177,13 +177,13 @@ export default function ShopHealthDashboard() {
             <CustomerSuccessSectionContent data={data.customerSuccess} />
           </SectionCard>
 
-          {/* Bottleneck */}
-          <SectionCard title="Bottleneck of the Week" icon="🎯" defaultOpen={true}>
+          {/* Bottlenecks */}
+          <SectionCard title="Bottlenecks of the Week" icon="🎯" defaultOpen={true}>
             <BottleneckSectionContent
               key={`${activeTab}-${weekParam}`}
               location={activeTab}
               weekStart={weekParam}
-              bottleneck={data.bottleneck}
+              bottlenecks={data.bottlenecks}
             />
           </SectionCard>
         </div>
