@@ -114,6 +114,7 @@ export interface ProjectFunnelResponse {
 }
 
 const CANCELLED_STAGE_ID = "68229433";
+const ON_HOLD_STAGE_ID = "20440344";
 
 function todayStr(): string {
   const d = new Date();
@@ -244,6 +245,7 @@ export function buildProjectFunnelData(
 
   const filtered = projects.filter((p) => {
     if (!p.closeDate) return false;
+    if (p.stageId === ON_HOLD_STAGE_ID) return false;
     if (new Date(p.closeDate + "T12:00:00") < cutoff) return false;
     if (!matchesLocation(p)) return false;
     return true;
