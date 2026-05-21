@@ -115,7 +115,25 @@ export interface ProjectFunnelResponse {
 
 const CANCELLED_STAGE_ID = "68229433";
 const ON_HOLD_STAGE_ID = "20440344";
-const PROJECT_COMPLETE_STAGE_ID = "20440343";
+
+/**
+ * Stage priority from DEAL_STAGE_MAP / STAGE_PRIORITY.
+ * Used to infer completed milestones from the deal's current pipeline stage
+ * when date fields are missing.
+ */
+const STAGE_PRIORITY_MAP: Record<string, number> = {
+  "20461935": 0,  // Project Rejected - Needs Review
+  "20461936": 1,  // Site Survey
+  "20461937": 2,  // Design & Engineering
+  "20461938": 3,  // Permitting & Interconnection
+  "71052436": 4,  // RTB - Blocked
+  "22580871": 5,  // Ready To Build
+  "20440342": 6,  // Construction
+  "22580872": 7,  // Inspection
+  "20461940": 8,  // Permission To Operate
+  "24743347": 9,  // Close Out
+  "20440343": 10, // Project Complete
+};
 
 function todayStr(): string {
   const d = new Date();
@@ -200,21 +218,50 @@ function emptyCohort(month: string): ProjectFunnelCohort {
 }
 
 /**
- * Resolve milestone flags using implied progression.
- * Later milestones imply earlier ones were completed (handles HubSpot data gaps).
+ * Resolve milestone flags using three layers:
+ *   1. Stage-based floor — the deal's current pipeline stage implies certain
+ *      milestones are done even when date fields are missing.
+ *   2. Date-based detection — milestone date exists.
+ *   3. Implied progression — later milestones cascade to earlier ones.
+ *
+ * Stage → milestone mapping (RTB-Blocked does NOT imply permits submitted):
+ *   D&E (≥2)           → survey
+ *   P&I (≥3)           → survey, DA sent, DA approved, design complete
+ *   RTB-Blocked (4)    → same as P&I (no permit assumption)
+ *   RTB (≥5)           → + permits submitted, permits issued
+ *   Construction (≥6)  → + construction scheduled
+ *   Inspection (≥7)    → + construction complete
+ *   PTO (≥8)           → + inspection passed
+ *   Close Out (≥9)     → + PTO granted
+ *   Project Complete   → all milestones
  */
 function resolveMilestones(p: Project) {
-  const isComplete = p.stageId === PROJECT_COMPLETE_STAGE_ID;
-  const hasPtoGranted = isComplete || !!p.ptoGrantedDate;
-  const hasInspectionPassed = hasPtoGranted || !!p.inspectionPassDate;
-  const hasConstructionComplete = hasInspectionPassed || !!p.constructionCompleteDate;
-  const hasConstructionScheduled = hasConstructionComplete || !!p.constructionScheduleDate;
-  const hasPermitIssued = hasConstructionScheduled || !!p.permitIssueDate;
-  const hasPermitSubmit = hasPermitIssued || !!p.permitSubmitDate;
-  const hasDesignComplete = hasPermitSubmit || !!p.designCompletionDate;
-  const hasDaApproved = hasDesignComplete || !!p.designApprovalDate;
-  const hasDaSent = hasDaApproved || !!p.designApprovalSentDate;
-  const hasSurvey = hasDaSent || !!p.siteSurveyCompletionDate;
+  const sp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
+
+  // Stage-based floor: what must be true given the deal's current stage
+  const stageSurvey = sp >= 2;
+  const stageDaSent = sp >= 3;
+  const stageDaApproved = sp >= 3;
+  const stageDesignComplete = sp >= 3;
+  // RTB-Blocked (4) does NOT imply permits — jump to 5
+  const stagePermitSubmit = sp >= 5;
+  const stagePermitIssued = sp >= 5;
+  const stageConstructionScheduled = sp >= 6;
+  const stageConstructionComplete = sp >= 7;
+  const stageInspectionPassed = sp >= 8;
+  const stagePtoGranted = sp >= 9;
+
+  // Date-based + implied progression chain (later dates cascade to earlier)
+  const hasPtoGranted = stagePtoGranted || !!p.ptoGrantedDate;
+  const hasInspectionPassed = hasPtoGranted || stageInspectionPassed || !!p.inspectionPassDate;
+  const hasConstructionComplete = hasInspectionPassed || stageConstructionComplete || !!p.constructionCompleteDate;
+  const hasConstructionScheduled = hasConstructionComplete || stageConstructionScheduled || !!p.constructionScheduleDate;
+  const hasPermitIssued = hasConstructionScheduled || stagePermitIssued || !!p.permitIssueDate;
+  const hasPermitSubmit = hasPermitIssued || stagePermitSubmit || !!p.permitSubmitDate;
+  const hasDesignComplete = hasPermitSubmit || stageDesignComplete || !!p.designCompletionDate;
+  const hasDaApproved = hasDesignComplete || stageDaApproved || !!p.designApprovalDate;
+  const hasDaSent = hasDaApproved || stageDaSent || !!p.designApprovalSentDate;
+  const hasSurvey = hasDaSent || stageSurvey || !!p.siteSurveyCompletionDate;
 
   return {
     hasSurvey,
