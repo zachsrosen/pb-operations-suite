@@ -654,6 +654,7 @@ const ACTIVITY_COLUMNS: Array<{
   { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400" },
   { key: "ptosGranted", label: "PTOs", color: "text-teal-400", amountKey: "ptosGrantedAmount" },
   { key: "closedOut", label: "Closed Out", color: "text-sky-400", amountKey: "closedOutAmount" },
+  { key: "cancelled", label: "Cancelled", color: "text-red-400", amountKey: "cancelledAmount" },
 ];
 
 function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[] }) {
@@ -663,7 +664,7 @@ function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[]
         Monthly Activity
       </h3>
       <p className="text-xs text-muted mb-4">
-        Sales Closed &amp; Closed Out by close/completion date — all other milestones by the month they happened
+        Sales Closed by close date · Closed Out &amp; Cancelled by date entered stage — all other milestones by the month they happened
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">

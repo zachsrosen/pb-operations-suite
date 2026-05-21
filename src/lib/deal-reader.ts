@@ -294,8 +294,9 @@ export function dealToProject(deal: PrismaDeal): Project {
     ptoGrantedDate: dateToDateString(deal.ptoCompletionDate),
     ptoStatus: deal.ptoStatus ?? null,
 
-    // Project complete (not yet in Deal cache — populated only via HubSpot API path)
+    // Project complete / cancelled (not yet in Deal cache — populated only via HubSpot API path)
     projectCompleteDate: null,
+    cancelledDate: null,
 
     // Forecasted dates
     forecastedInstallDate: dateToDateString(deal.forecastedInstallDate),

@@ -76,6 +76,8 @@ export interface ProjectMonthlyActivity {
   ptosGrantedAmount: number;
   closedOut: number;
   closedOutAmount: number;
+  cancelled: number;
+  cancelledAmount: number;
 }
 
 export interface ProjectFunnelStageGroup {
@@ -446,6 +448,8 @@ export function buildProjectFunnelData(
         ptosGrantedAmount: 0,
         closedOut: 0,
         closedOutAmount: 0,
+        cancelled: 0,
+        cancelledAmount: 0,
       });
     }
     return activityMap.get(mk)!;
@@ -490,6 +494,15 @@ export function buildProjectFunnelData(
         const act = ensureActivity(monthKey(p.projectCompleteDate));
         act.closedOut++;
         act.closedOutAmount += p.amount || 0;
+      }
+    }
+    // Cancelled: binned by the date the deal entered Cancelled stage
+    if (p.cancelledDate) {
+      const d = new Date(p.cancelledDate + "T12:00:00");
+      if (d >= cutoff) {
+        const act = ensureActivity(monthKey(p.cancelledDate));
+        act.cancelled++;
+        act.cancelledAmount += p.amount || 0;
       }
     }
   }
