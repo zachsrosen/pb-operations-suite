@@ -534,9 +534,10 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
       );
     } else if (!m.hasSurvey) {
-      const waitSince = p.siteSurveyScheduleDate || p.closeDate!;
+      // Use close date as "waiting since" — the scheduled date may be in the
+      // future, which would produce negative days.
       drillDown.awaitingSurvey.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.siteSurveyStatus ?? null)
+        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
       );
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
