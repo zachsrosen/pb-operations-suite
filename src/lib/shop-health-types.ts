@@ -159,6 +159,9 @@ export interface ShopHealthDrilldown {
   // Customer Success
   daysSinceContact: DrilldownDeal[];
   noSameDayResponse: DrilldownDeal[];
+  sentimentScores: DrilldownDeal[];
+  fiveStarReviews: DrilldownDeal[];
+  responseTime: DrilldownDeal[];
 }
 
 export interface ShopHealthData {

@@ -1,6 +1,5 @@
 'use client';
 
-import { MetricCard } from '@/components/ui/MetricCard';
 import { DrilldownMetricCard } from '@/components/ui/DrilldownMetricCard';
 import type { CustomerSuccessSection, ShopHealthDrilldown } from '@/lib/shop-health-types';
 
@@ -31,13 +30,15 @@ export function CustomerSuccessSectionContent({
     <div className="space-y-6">
       {/* Row 1: Core metrics */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <MetricCard
+        <DrilldownMetricCard
           label="Avg Sentiment Score"
           value={data.avgSentimentScore !== null ? data.avgSentimentScore : '—'}
           valueColor={sentimentColor(data.avgSentimentScore)}
           sub={data.avgSentimentScore !== null ? '/ 100' : undefined}
+          deals={drilldown.sentimentScores}
+          dateLabel="Score"
         />
-        <MetricCard
+        <DrilldownMetricCard
           label="5-Star Reviews MTD"
           value={data.fiveStarReviewsMTD}
           sub={`/ ${data.fiveStarReviewsTarget} target`}
@@ -48,6 +49,8 @@ export function CustomerSuccessSectionContent({
                 ? 'text-amber-400'
                 : 'text-red-400'
           }
+          deals={drilldown.fiveStarReviews}
+          dateLabel="Close Date"
         />
         <ComingSoonCard label="NPS / CSAT" />
       </div>
@@ -83,7 +86,7 @@ export function CustomerSuccessSectionContent({
           deals={drilldown.noSameDayResponse}
           dateLabel="Last Contact"
         />
-        <MetricCard
+        <DrilldownMetricCard
           label="Avg Response Time"
           value={
             data.avgTimeToRespondHours !== null
@@ -99,6 +102,8 @@ export function CustomerSuccessSectionContent({
                   : 'text-red-400'
               : undefined
           }
+          deals={drilldown.responseTime}
+          dateLabel="Resp. Time"
         />
         <ComingSoonCard label="Proactive Update %" />
       </div>

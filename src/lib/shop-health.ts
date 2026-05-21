@@ -743,13 +743,17 @@ async function computeCustomerSuccess(
   group: DashboardLocationGroup,
   weekStart: Date,
   contactMetrics: DealContactProperties[]
-): Promise<{ section: CustomerSuccessSection; drilldown: Pick<ShopHealthDrilldown, 'daysSinceContact' | 'noSameDayResponse'> }> {
+): Promise<{ section: CustomerSuccessSection; drilldown: Pick<ShopHealthDrilldown, 'daysSinceContact' | 'noSameDayResponse' | 'sentimentScores' | 'fiveStarReviews' | 'responseTime'> }> {
   const activeDeals = locationProjects.filter((p) => p.isActive);
 
   // ── Sentiment from deal properties ──
-  const sentimentScores = activeDeals
-    .map((p) => p.customerSentimentScore)
-    .filter((s): s is number => s !== null && !isNaN(s));
+  const dealsWithSentiment = activeDeals
+    .filter((p) => p.customerSentimentScore !== null && !isNaN(p.customerSentimentScore!))
+    .map((p) => ({ deal: p, score: p.customerSentimentScore! }));
+  // Sort worst-first (lowest sentiment at top)
+  dealsWithSentiment.sort((a, b) => a.score - b.score);
+
+  const sentimentScores = dealsWithSentiment.map((d) => d.score);
 
   const avgSentimentScore =
     sentimentScores.length > 0
@@ -808,26 +812,31 @@ async function computeCustomerSuccess(
   let reviewCount = 0;
   let reviewTarget = 0;
 
+  // Cache stores location → deal IDs (shared with goals-pipeline)
+  const reviewDealIds: string[] = [];
   try {
     const reviewCacheKey = CACHE_KEYS.FIVE_STAR_REVIEWS(`${year}-${month}`);
-    const { data: reviewLocationCounts } =
-      await appCache.getOrFetch<Record<string, number>>(
+    const { data: reviewLocationDealIds } =
+      await appCache.getOrFetch<Record<string, string[]>>(
         reviewCacheKey,
         async () => {
           const allReviews = await fetchFiveStarReviewsForMonth(month, year);
           const reviewLocations = await resolveReviewLocations(allReviews);
-          const counts: Record<string, number> = {};
-          for (const loc of reviewLocations.values()) {
-            counts[loc] = (counts[loc] || 0) + 1;
+          const dealIdsByLocation: Record<string, string[]> = {};
+          for (const resolved of reviewLocations.values()) {
+            if (!dealIdsByLocation[resolved.location]) dealIdsByLocation[resolved.location] = [];
+            dealIdsByLocation[resolved.location].push(resolved.dealId);
           }
-          return counts;
+          return dealIdsByLocation;
         },
         false
       );
 
-    // Sum reviews across all canonical locations in this dashboard group
+    // Collect deal IDs and count across all canonical locations in this group
     for (const loc of group.canonicals) {
-      reviewCount += reviewLocationCounts[loc] || 0;
+      const locDealIds = reviewLocationDealIds[loc] || [];
+      reviewCount += locDealIds.length;
+      reviewDealIds.push(...locDealIds);
     }
   } catch (err) {
     console.error("[shop-health] Failed to fetch 5-star reviews:", err);
@@ -869,6 +878,8 @@ async function computeCustomerSuccess(
   let noSameDayCount = 0;
   const noSameDayDealIds = new Set<string>();
   const respondHours: number[] = [];
+  // Track worst response time per deal for drill-down
+  const dealResponseHours = new Map<string, number>();
   for (const cm of locationContactMetrics) {
     if (seenContacts.has(cm.contactId)) continue;
     seenContacts.add(cm.contactId);
@@ -881,6 +892,11 @@ async function computeCustomerSuccess(
     }
     if (cm.averageTimeToRespondHours !== null) {
       respondHours.push(cm.averageTimeToRespondHours);
+      // Keep the worst (highest) response time per deal
+      const existing = dealResponseHours.get(cm.dealId);
+      if (existing === undefined || cm.averageTimeToRespondHours > existing) {
+        dealResponseHours.set(cm.dealId, cm.averageTimeToRespondHours);
+      }
     }
   }
 
@@ -910,6 +926,35 @@ async function computeCustomerSuccess(
     }
   }
 
+  // ── Drilldown: sentiment scores (worst-first) ──
+  const sentimentDrilldown = dealsWithSentiment.map(({ deal, score }) => ({
+    ...toDrilldown(deal, null),
+    date: `${score}/100`,
+  }));
+
+  // ── Drilldown: 5-star review deals ──
+  // reviewDealIds are HubSpot deal IDs; map back to projects by matching id
+  const allProjectMap = new Map(locationProjects.map((p) => [String(p.id), p]));
+  const fiveStarDrilldown: DrilldownDeal[] = [];
+  for (const dealId of reviewDealIds) {
+    const deal = allProjectMap.get(dealId);
+    if (deal) {
+      fiveStarDrilldown.push(toDrilldown(deal, deal.closeDate));
+    }
+  }
+
+  // ── Drilldown: response time per deal (slowest first) ──
+  const responseTimeDrilldown: DrilldownDeal[] = [];
+  for (const [dealId, hours] of [...dealResponseHours.entries()].sort(([, a], [, b]) => b - a)) {
+    const deal = activeDealMap.get(dealId);
+    if (deal) {
+      responseTimeDrilldown.push({
+        ...toDrilldown(deal, null),
+        date: `${Math.round(hours * 10) / 10}h`,
+      });
+    }
+  }
+
   return {
     section: {
       avgSentimentScore,
@@ -930,6 +975,9 @@ async function computeCustomerSuccess(
     drilldown: {
       daysSinceContact: daysSinceContactDrilldown,
       noSameDayResponse: noSameDayDeals,
+      sentimentScores: sentimentDrilldown,
+      fiveStarReviews: fiveStarDrilldown,
+      responseTime: responseTimeDrilldown,
     },
   };
 }
