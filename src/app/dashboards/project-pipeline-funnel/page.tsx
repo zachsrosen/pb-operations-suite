@@ -269,25 +269,35 @@ function BacklogSection({
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  type StaffCol = { key: keyof ProjectFunnelDrillDownDeal; label: string };
+  const PM: StaffCol = { key: "projectManager", label: "PM" };
+  const OWNER: StaffCol = { key: "dealOwner", label: "Owner" };
+  const SURVEYOR: StaffCol = { key: "siteSurveyor", label: "Surveyor" };
+  const DESIGN: StaffCol = { key: "designLead", label: "Design" };
+  const PERMIT: StaffCol = { key: "permitLead", label: "Permit" };
+  const OPS: StaffCol = { key: "operationsManager", label: "Ops Lead" };
+  const IC: StaffCol = { key: "interconnectionsLead", label: "IC Lead" };
+
   const backlogs: Array<{
     key: string;
     label: string;
     count: number;
     color: string;
     deals: ProjectFunnelDrillDownDeal[];
+    staffCols: StaffCol[];
   }> = [
-    { key: "awaitingSurveySchedule", label: "Awaiting Survey Sched.", count: summary.salesClosed.count - summary.surveyScheduled.count, color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule },
-    { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count, color: "bg-amber-500", deals: drillDown.awaitingSurvey },
-    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, color: "bg-lime-500", deals: drillDown.awaitingDaSend },
-    { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count, color: "bg-blue-500", deals: drillDown.awaitingApproval },
-    { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count, color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete },
-    { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit },
-    { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, color: "bg-violet-500", deals: drillDown.awaitingPermitIssue },
-    { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule },
-    { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, color: "bg-green-500", deals: drillDown.awaitingConstructionComplete },
-    { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, color: "bg-emerald-500", deals: drillDown.awaitingInspection },
-    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto },
-    { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, color: "bg-sky-500", deals: drillDown.awaitingCloseOut },
+    { key: "awaitingSurveySchedule", label: "Awaiting Survey Sched.", count: summary.salesClosed.count - summary.surveyScheduled.count, color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule, staffCols: [PM, OWNER] },
+    { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count, color: "bg-amber-500", deals: drillDown.awaitingSurvey, staffCols: [PM, SURVEYOR] },
+    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, DESIGN] },
+    { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count, color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, DESIGN] },
+    { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count, color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete, staffCols: [PM, DESIGN] },
+    { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, PERMIT] },
+    { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, PERMIT] },
+    { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OPS] },
+    { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OPS] },
+    { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OPS] },
+    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, IC] },
+    { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM] },
   ];
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
@@ -332,7 +342,7 @@ function BacklogSection({
               </div>
             </button>
             {expanded === b.key && b.deals.length > 0 && (
-              <DrillDownTable deals={b.deals} />
+              <DrillDownTable deals={b.deals} staffCols={b.staffCols} />
             )}
           </div>
         ))}
@@ -346,7 +356,13 @@ function formatShortDate(dateStr: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
+function DrillDownTable({
+  deals,
+  staffCols = [],
+}: {
+  deals: ProjectFunnelDrillDownDeal[];
+  staffCols?: Array<{ key: keyof ProjectFunnelDrillDownDeal; label: string }>;
+}) {
   const hasScheduled = deals.some((d) => d.scheduledDate);
   const hasExtra = deals.some((d) => d.extraDate);
   const extraLabel = deals.find((d) => d.extraLabel)?.extraLabel || "Extra";
@@ -360,6 +376,9 @@ function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
             <th className="text-right py-1 px-1.5 text-muted font-medium">Amount</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Location</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Stage</th>
+            {staffCols.map((sc) => (
+              <th key={sc.key} className="text-left py-1 px-1.5 text-muted font-medium">{sc.label}</th>
+            ))}
             {hasScheduled && <th className="text-left py-1 px-1.5 text-muted font-medium">Scheduled</th>}
             {hasExtra && <th className="text-left py-1 px-1.5 text-muted font-medium">{extraLabel}</th>}
             <th className="text-right py-1 px-1.5 text-muted font-medium">Days</th>
@@ -393,6 +412,14 @@ function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
               <td className="py-1 px-1.5 text-muted truncate max-w-[140px]" title={d.stage}>
                 {d.stage}
               </td>
+              {staffCols.map((sc) => {
+                const val = d[sc.key] as string;
+                return (
+                  <td key={sc.key} className="py-1 px-1.5 text-muted truncate max-w-[110px]" title={val || "—"}>
+                    {val || <span className="italic text-muted/60">—</span>}
+                  </td>
+                );
+              })}
               {hasScheduled && (
                 <td className="py-1 px-1.5 text-muted whitespace-nowrap">
                   {d.scheduledDate ? formatShortDate(d.scheduledDate) : <span className="italic text-muted/60">—</span>}

@@ -103,6 +103,14 @@ export interface ProjectFunnelDrillDownDeal {
   /** Optional second date with context label (e.g. inspection fail date) */
   extraDate?: string | null;
   extraLabel?: string;
+  /** Staff assignments */
+  projectManager: string;
+  dealOwner: string;
+  siteSurveyor: string;
+  designLead: string;
+  permitLead: string;
+  operationsManager: string;
+  interconnectionsLead: string;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -178,6 +186,13 @@ function toDrillDown(
     status,
     ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
     ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
+    projectManager: p.projectManager || "",
+    dealOwner: p.dealOwner || "",
+    siteSurveyor: p.siteSurveyor || "",
+    designLead: p.designLead || "",
+    permitLead: p.permitLead || "",
+    operationsManager: p.operationsManager || "",
+    interconnectionsLead: p.interconnectionsLead || "",
   };
 }
 
