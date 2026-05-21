@@ -267,6 +267,7 @@ function DealSection({
   onStatusChange,
   savingDeals,
   docMap,
+  defaultCollapsed = false,
 }: {
   title: string;
   subtitle: string;
@@ -279,8 +280,10 @@ function DealSection({
   onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
   savingDeals: Set<string>;
   docMap: Map<string, DocReview>;
+  defaultCollapsed?: boolean;
 }) {
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   const accentBorder = accent === "orange"
     ? "border-l-orange-400"
@@ -296,7 +299,11 @@ function DealSection({
 
   return (
     <div>
-      <div className={`flex items-baseline gap-3 mb-2 ${accent ? `border-l-2 ${accentBorder} pl-3` : ""}`}>
+      <div
+        className={`flex items-baseline gap-3 mb-2 cursor-pointer select-none ${accent ? `border-l-2 ${accentBorder} pl-3` : ""}`}
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <span className="text-xs text-muted/60 w-4">{collapsed ? "▸" : "▾"}</span>
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         <span className="text-xs text-muted">{subtitle}</span>
         {deals.length > 0 && (
@@ -305,7 +312,7 @@ function DealSection({
           </span>
         )}
       </div>
-      <div className="bg-surface rounded-lg border border-border shadow-card">
+      {collapsed ? null : <div className="bg-surface rounded-lg border border-border shadow-card">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border">
@@ -537,7 +544,7 @@ function DealSection({
             )}
           </tbody>
         </table>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -706,7 +713,10 @@ export default function PeDealsPage() {
   const m2Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m2"), [unpaid]);
   const m1Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m1"), [unpaid]);
 
-  const PRECON_STAGES = new Set(["Site Survey", "Design", "Design Approval", "Permitting", "Ready to Build"]);
+  const PRECON_STAGES = new Set([
+    "Site Survey", "Design & Engineering", "Permitting & Interconnection",
+    "Ready To Build", "RTB - Blocked", "Project Rejected - Needs Review", "On Hold",
+  ]);
   const CONSTRUCTION_STAGES = new Set(["Construction"]);
   const INSPECTION_STAGES = new Set(["Inspection"]);
 
@@ -728,21 +738,6 @@ export default function PeDealsPage() {
   // deals shown in other table sections.
   const totalPeExpected = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
-  // Pipeline stage distribution for hero card (counts from full filtered set)
-  const stageCounts = useMemo(() => {
-    let precon = 0, construction = 0, inspection = 0, pto = 0, closeOut = 0, complete = 0;
-    for (const d of filtered) {
-      const s = d.dealStageLabel;
-      if (PRECON_STAGES.has(s)) precon++;
-      else if (CONSTRUCTION_STAGES.has(s)) construction++;
-      else if (INSPECTION_STAGES.has(s)) inspection++;
-      else if (s === "Permission To Operate") pto++;
-      else if (s === "Close Out") closeOut++;
-      else if (s === "Project Complete") complete++;
-    }
-    return { precon, construction, inspection, pto, closeOut, complete };
-  }, [filtered]);
-
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
   const m1ReadyDeals = filtered.filter((d) => d.peM1Status === "Approved");
   const m2ReadyDeals = filtered.filter((d) => d.peM2Status === "Approved");
@@ -752,12 +747,10 @@ export default function PeDealsPage() {
     m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
 
   // Already-paid PE totals across the full filtered set.
-  const m1PaidValue = filtered
-    .filter((d) => d.peM1Status === "Paid")
-    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
-  const m2PaidValue = filtered
-    .filter((d) => d.peM2Status === "Paid")
-    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const m1PaidDeals = filtered.filter((d) => d.peM1Status === "Paid");
+  const m2PaidDeals = filtered.filter((d) => d.peM2Status === "Paid");
+  const m1PaidValue = m1PaidDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+  const m2PaidValue = m2PaidDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
   const totalPECollected = m1PaidValue + m2PaidValue;
 
   // PE Receivable = milestones PE has committed to (Approved or Paid only).
@@ -771,6 +764,8 @@ export default function PeDealsPage() {
     .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
   const totalPEReceivable = m1ReceivableValue + m2ReceivableValue;
   const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
+  const m1ReceivableCount = filtered.filter((d) => d.peM1Status !== null && APPROVED_OR_PAID.has(d.peM1Status)).length;
+  const m2ReceivableCount = filtered.filter((d) => d.peM2Status !== null && APPROVED_OR_PAID.has(d.peM2Status)).length;
 
   // Awaiting PE Approval = PE payment we're owed based on deal stage,
   // minus what's already Approved or Paid.
@@ -855,56 +850,32 @@ export default function PeDealsPage() {
           subtitle={`${fmt(totalPeExpected)} total PE expected`}
           color="orange"
         />
-        {/* Pipeline stage distribution — replaces old single-count card */}
-        <div className="col-span-2 md:col-span-5 -mt-2 mb-0">
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] px-1">
-            <span className="text-muted font-medium">Pipeline:</span>
-            {stageCounts.precon > 0 && (
-              <span className="text-muted">Precon <span className="text-foreground font-medium">{stageCounts.precon}</span></span>
-            )}
-            {stageCounts.construction > 0 && (
-              <span className="text-muted">Construction <span className="text-orange-400 font-medium">{stageCounts.construction}</span></span>
-            )}
-            {stageCounts.inspection > 0 && (
-              <span className="text-muted">Inspection <span className="text-cyan-400 font-medium">{stageCounts.inspection}</span></span>
-            )}
-            {stageCounts.pto > 0 && (
-              <span className="text-muted">PTO <span className="text-blue-400 font-medium">{stageCounts.pto}</span></span>
-            )}
-            {stageCounts.closeOut > 0 && (
-              <span className="text-muted">Close Out <span className="text-emerald-400 font-medium">{stageCounts.closeOut}</span></span>
-            )}
-            {stageCounts.complete > 0 && (
-              <span className="text-muted">Complete <span className="text-green-400 font-medium">{stageCounts.complete}</span></span>
-            )}
-          </div>
-        </div>
         <StatCard
           key={`awaiting-${totalAwaitingCount}-${totalAwaitingValue}`}
           label="Awaiting PE Approval"
           value={fmt(totalAwaitingValue)}
-          subtitle={`${awaitingM1Count} M1 (${fmt(awaitingM1Value)}) + ${awaitingM2Count} M2 (${fmt(awaitingM2Value)})`}
+          subtitle={`${totalAwaitingCount} milestones · ${awaitingM1Count} M1 + ${awaitingM2Count} M2`}
           color="amber"
         />
         <StatCard
           key={`ready-${readyToInvoiceCount}-${readyToInvoiceValue}`}
           label="Approved (Unpaid)"
           value={fmt(readyToInvoiceValue)}
-          subtitle={`${m1ReadyDeals.length} M1 (${fmt(m1ReadyDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0))}) + ${m2ReadyDeals.length} M2 (${fmt(m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0))})`}
+          subtitle={`${readyToInvoiceCount} milestones · ${m1ReadyDeals.length} M1 + ${m2ReadyDeals.length} M2`}
           color="blue"
         />
         <StatCard
           key={`paid-${totalPECollected}`}
           label="PE Collected"
           value={fmt(totalPECollected)}
-          subtitle={`${totalPEReceivable > 0 ? ((totalPECollected / totalPEReceivable) * 100).toFixed(0) : 0}% of ${fmt(totalPEReceivable)} approved`}
+          subtitle={`${m1PaidDeals.length + m2PaidDeals.length} milestones · ${m1PaidDeals.length} M1 + ${m2PaidDeals.length} M2`}
           color="emerald"
         />
         <StatCard
           key={`recv-${totalPEReceivable}`}
           label="Total Approved"
           value={fmt(totalPEReceivable)}
-          subtitle={`Paid ${fmt(totalPECollected)} · Unpaid ${fmt(totalPEOutstanding)}`}
+          subtitle={`${m1ReceivableCount + m2ReceivableCount} milestones · Paid ${fmt(totalPECollected)} · Unpaid ${fmt(totalPEOutstanding)}`}
           color="green"
         />
       </div>
@@ -1107,11 +1078,12 @@ export default function PeDealsPage() {
               docMap={docMap}
             />
           )}
-          {preconDeals.length > 0 && (
+          {inspectionDeals.length > 0 && (
             <DealSection
-              title="Preconstruction"
-              subtitle={`${preconDeals.length} deal${preconDeals.length !== 1 ? "s" : ""} — survey through ready to build`}
-              deals={preconDeals}
+              title="Pending Inspection"
+              subtitle={`${inspectionDeals.length} deal${inspectionDeals.length !== 1 ? "s" : ""}`}
+              accent="emerald"
+              deals={inspectionDeals}
               sortKey={sortKey}
               sortDir={sortDir}
               sortArrow={sortArrow}
@@ -1136,12 +1108,11 @@ export default function PeDealsPage() {
               docMap={docMap}
             />
           )}
-          {inspectionDeals.length > 0 && (
+          {preconDeals.length > 0 && (
             <DealSection
-              title="Pending Inspection"
-              subtitle={`${inspectionDeals.length} deal${inspectionDeals.length !== 1 ? "s" : ""}`}
-              accent="emerald"
-              deals={inspectionDeals}
+              title="Preconstruction"
+              subtitle={`${preconDeals.length} deal${preconDeals.length !== 1 ? "s" : ""} — survey through ready to build`}
+              deals={preconDeals}
               sortKey={sortKey}
               sortDir={sortDir}
               sortArrow={sortArrow}
@@ -1149,6 +1120,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              defaultCollapsed
             />
           )}
           {otherDeals.length > 0 && (
@@ -1163,6 +1135,7 @@ export default function PeDealsPage() {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              defaultCollapsed
             />
           )}
         </div>
