@@ -14,14 +14,6 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// Team UID → PB location (mirrors scheduler page constants)
-const TEAM_TO_LOCATION: Record<string, string> = {
-  "1c23adb9-cefa-44c7-8506-804949afc56f": "Westminster",
-  "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c": "DTC",
-  "1a914a0e-b633-4f12-8ed6-3348285d6b93": "Colorado Springs",
-  "699cec60-f9f8-4e57-b41a-bb29b1f3649c": "San Luis Obispo",
-};
-
 export async function POST(request: Request) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
@@ -47,10 +39,21 @@ export async function POST(request: Request) {
     take: 100,
   });
 
+  // Batch-fetch PB locations from the deal's HubSpot project cache
+  const orphanDealIds = orphanedJobs.map((j) => j.hubspotDealId!).filter(Boolean);
+  const dealLocations: Record<string, string> = {};
+  if (orphanDealIds.length > 0) {
+    const cached = await prisma.hubSpotProjectCache.findMany({
+      where: { dealId: { in: orphanDealIds } },
+      select: { dealId: true, pbLocation: true },
+    });
+    for (const c of cached) {
+      if (c.pbLocation) dealLocations[c.dealId] = c.pbLocation;
+    }
+  }
+
   const jobs = orphanedJobs.map((j) => {
-    // Derive location from assignedTeam
-    const teamUid = j.assignedTeam || "";
-    const location = TEAM_TO_LOCATION[teamUid] || "";
+    const location = dealLocations[j.hubspotDealId!] || "";
 
     // Parse assignedUsers JSON
     const assignedUsers = (j.assignedUsers as { user_name?: string }[] | null) || [];
