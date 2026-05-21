@@ -21,14 +21,40 @@ import type {
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
+/** Compute months lookback for a given timeframe key */
+function resolveMonths(key: string): number {
+  const now = new Date();
+  const thisMonth = now.getMonth(); // 0-based
+  switch (key) {
+    case "this-month":
+      return 1;
+    case "this-quarter": {
+      const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
+      return thisMonth - qStart + 1;
+    }
+    case "this-year":
+      return thisMonth + 1;
+    case "last-year":
+      return thisMonth + 13; // current partial year + full prior year
+    case "ytd-vs-last":
+      return thisMonth + 13;
+    default:
+      return parseInt(key) || 6;
+  }
+}
+
 const TIMEFRAMES = [
-  { label: "1 month", value: 1 },
-  { label: "3 months", value: 3 },
-  { label: "6 months", value: 6 },
-  { label: "9 months", value: 9 },
-  { label: "12 months", value: 12 },
-  { label: "18 months", value: 18 },
-  { label: "24 months", value: 24 },
+  { label: "This Month", value: "this-month" },
+  { label: "This Quarter", value: "this-quarter" },
+  { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
+  { label: `Last Year (${new Date().getFullYear() - 1})`, value: "last-year" },
+  { label: "1 month", value: "1" },
+  { label: "3 months", value: "3" },
+  { label: "6 months", value: "6" },
+  { label: "9 months", value: "9" },
+  { label: "12 months", value: "12" },
+  { label: "18 months", value: "18" },
+  { label: "24 months", value: "24" },
 ] as const;
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -79,8 +105,10 @@ const MEDIAN_KEYS: Array<{
 ];
 
 export default function ProjectPipelineFunnelPage() {
-  const [months, setMonths] = useState(6);
+  const [timeframe, setTimeframe] = useState("6");
   const [locations, setLocations] = useState<string[]>([]);
+
+  const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
   const locationOptions = useMemo(
     () => CANONICAL_LOCATIONS.map((loc) => ({ value: loc, label: loc })),
@@ -133,11 +161,11 @@ export default function ProjectPipelineFunnelPage() {
           accentColor="cyan"
         />
         <div className="flex items-center gap-2">
-          <label htmlFor="timeframe" className="text-xs text-muted font-medium">Closed In Last</label>
+          <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
           <select
             id="timeframe"
-            value={months}
-            onChange={(e) => setMonths(Number(e.target.value))}
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value)}
             className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
           >
             {TIMEFRAMES.map((t) => (
