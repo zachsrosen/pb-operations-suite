@@ -467,8 +467,7 @@ export function buildProjectFunnelData(
 
   const monthlyActivity = [...activityMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
-  // Stage distribution
-  const stageOrder = Object.keys(DEAL_STAGE_MAP);
+  // Stage distribution — sorted by pipeline order (STAGE_PRIORITY_MAP)
   const stageMap = new Map<string, ProjectFunnelStageGroup>();
   for (const p of filtered) {
     const sid = p.stageId || "unknown";
@@ -485,7 +484,7 @@ export function buildProjectFunnelData(
     sg.amount += p.amount || 0;
   }
   const stageDistribution = [...stageMap.values()].sort(
-    (a, b) => stageOrder.indexOf(a.stageId) - stageOrder.indexOf(b.stageId)
+    (a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99)
   );
 
   // Drill-down
