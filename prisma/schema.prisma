@@ -4310,7 +4310,7 @@ model EnphaseSite {
   longitude     Float?
   linkDistanceM Float?
 
-  devices            Json @default("[]")
+  devices            Json @default("{}")
   microinverterCount Int  @default(0)
   batteryCount       Int  @default(0)
 

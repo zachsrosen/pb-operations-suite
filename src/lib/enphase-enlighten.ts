@@ -365,8 +365,10 @@ export function createEnphaseClient(): EnphaseClient {
   return {
     async listSystems() {
       // Enphase paginates with ?next= cursor
+      const MAX_PAGES = 100;
       const all: EnphaseSystem[] = [];
       let next: string | undefined;
+      let pages = 0;
       do {
         const path = next
           ? `/api/v4/systems?next=${next}`
@@ -374,6 +376,11 @@ export function createEnphaseClient(): EnphaseClient {
         const page = await apiCall<{ systems: EnphaseSystem[]; next?: string }>(path);
         all.push(...(page.systems || []));
         next = page.next;
+        pages++;
+        if (pages >= MAX_PAGES) {
+          console.warn(`[enphase] listSystems hit MAX_PAGES (${MAX_PAGES}), stopping pagination`);
+          break;
+        }
       } while (next);
       return all;
     },

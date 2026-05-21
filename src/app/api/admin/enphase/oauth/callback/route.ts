@@ -40,7 +40,6 @@ export async function GET(request: Request) {
 
     const data = await res.json();
     const refreshToken: string = data.refresh_token;
-    const accessToken: string = data.access_token;
 
     // Persist refresh token to DB for runtime use
     await prisma.systemConfig.upsert({
@@ -49,23 +48,24 @@ export async function GET(request: Request) {
       update: { value: refreshToken },
     });
 
-    // Return a simple HTML page showing the tokens
+    // Return a simple HTML page confirming success (no tokens displayed)
     const html = `
       <!DOCTYPE html>
       <html><head><title>Enphase OAuth Complete</title></head>
       <body style="font-family:system-ui;padding:2rem;">
         <h1>Enphase OAuth Setup Complete</h1>
         <p>Refresh token has been saved to the database.</p>
-        <p>For backup, copy this to <code>ENPHASE_REFRESH_TOKEN</code> env var:</p>
-        <pre style="background:#f0f0f0;padding:1rem;word-break:break-all;">${refreshToken}</pre>
-        <p>Access token (expires in ${data.expires_in}s):</p>
-        <pre style="background:#f0f0f0;padding:1rem;word-break:break-all;">${accessToken}</pre>
+        <p>Access token expires in ${data.expires_in}s and is ready for API calls.</p>
         <p><a href="/dashboards/admin">← Back to Admin</a></p>
       </body></html>
     `;
 
     return new NextResponse(html, {
-      headers: { "Content-Type": "text/html" },
+      headers: {
+        "Content-Type": "text/html",
+        "Cache-Control": "no-store, no-cache",
+        "Pragma": "no-cache",
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
