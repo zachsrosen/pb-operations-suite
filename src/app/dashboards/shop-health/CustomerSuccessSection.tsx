@@ -64,14 +64,41 @@ export function CustomerSuccessSectionContent({
               : undefined
           }
         />
+        <MetricCard
+          label="No Same-Day Response"
+          value={data.noSameDayResponseCount}
+          valueColor={
+            data.noSameDayResponseCount === 0
+              ? 'text-emerald-400'
+              : data.noSameDayResponseCount <= 3
+                ? 'text-amber-400'
+                : 'text-red-400'
+          }
+          sub="contacts"
+        />
+        <MetricCard
+          label="Avg Response Time"
+          value={
+            data.avgTimeToRespondHours !== null
+              ? `${data.avgTimeToRespondHours}h`
+              : '—'
+          }
+          valueColor={
+            data.avgTimeToRespondHours !== null
+              ? data.avgTimeToRespondHours <= 4
+                ? 'text-emerald-400'
+                : data.avgTimeToRespondHours <= 12
+                  ? 'text-amber-400'
+                  : 'text-red-400'
+              : undefined
+          }
+        />
         <ComingSoonCard label="Proactive Update %" />
-        <ComingSoonCard label="Open Escalations" />
-        <ComingSoonCard label="Avg Escalation Age" />
       </div>
 
       {/* Row 3: Operational CX */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <ComingSoonCard label="Avg Response Time" />
+        <ComingSoonCard label="Open Escalations" />
         <ComingSoonCard label="Avg Resolution Time" />
         <ComingSoonCard label="Change Orders/Job" />
         <ComingSoonCard label="Active Service Tickets" />
