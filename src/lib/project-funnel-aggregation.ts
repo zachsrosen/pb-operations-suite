@@ -115,6 +115,7 @@ export interface ProjectFunnelResponse {
 
 const CANCELLED_STAGE_ID = "68229433";
 const ON_HOLD_STAGE_ID = "20440344";
+const PROJECT_COMPLETE_STAGE_ID = "20440343";
 
 function todayStr(): string {
   const d = new Date();
@@ -203,7 +204,8 @@ function emptyCohort(month: string): ProjectFunnelCohort {
  * Later milestones imply earlier ones were completed (handles HubSpot data gaps).
  */
 function resolveMilestones(p: Project) {
-  const hasPtoGranted = !!p.ptoGrantedDate;
+  const isComplete = p.stageId === PROJECT_COMPLETE_STAGE_ID;
+  const hasPtoGranted = isComplete || !!p.ptoGrantedDate;
   const hasInspectionPassed = hasPtoGranted || !!p.inspectionPassDate;
   const hasConstructionComplete = hasInspectionPassed || !!p.constructionCompleteDate;
   const hasConstructionScheduled = hasConstructionComplete || !!p.constructionScheduleDate;
