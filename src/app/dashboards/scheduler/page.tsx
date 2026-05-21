@@ -6899,11 +6899,35 @@ export default function SchedulerPage() {
         >
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[420px] w-[90%]">
             <h3 className="text-base mb-1">Reschedule</h3>
-            <p className="text-[0.75rem] text-muted mb-4">
+            <p className="text-[0.75rem] text-muted mb-3">
               Move <span className="text-foreground font-semibold">{getCustomerName(rescheduleConfirm.project.name)}</span> from{" "}
-              <span className="text-blue-400">{formatDateShort(rescheduleConfirm.fromDate)}</span> to{" "}
-              <span className="text-blue-400">{formatDateShort(rescheduleConfirm.toDate)}</span>?
+              <span className="text-blue-400">{formatDateShort(rescheduleConfirm.fromDate)}</span>
             </p>
+
+            {/* Editable target date — raw value stored; getNextWorkday runs on confirm */}
+            <div className="mb-3 flex items-center gap-3">
+              <label className="text-[0.7rem] text-muted whitespace-nowrap">New date</label>
+              <input
+                type="date"
+                value={rescheduleConfirm.toDate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  setRescheduleConfirm((prev) => prev ? { ...prev, toDate: v } : null);
+                }}
+                className="flex-1 px-2 py-1.5 rounded-md bg-background border border-t-border text-foreground text-[0.8rem] font-semibold [color-scheme:dark]"
+              />
+            </div>
+            {(() => {
+              const holidayWarn = pbHolidayName(rescheduleConfirm.toDate);
+              const weekendWarn = isWeekend(rescheduleConfirm.toDate);
+              const sameDate = rescheduleConfirm.toDate === rescheduleConfirm.fromDate;
+              const adjusted = getNextWorkday(rescheduleConfirm.toDate);
+              if (holidayWarn) return <p className="text-[0.65rem] text-red-400 mb-2">⚠ {holidayWarn} — will schedule on {formatDateShort(adjusted)} instead</p>;
+              if (weekendWarn) return <p className="text-[0.65rem] text-red-400 mb-2">⚠ Weekend — will schedule on {formatDateShort(adjusted)} instead</p>;
+              if (sameDate) return <p className="text-[0.65rem] text-yellow-400 mb-2">Same as current date</p>;
+              return null;
+            })()}
 
             {/* Days control — only for construction, not surveys/inspections (always 1 day) */}
             {rescheduleConfirm.project.stage !== "survey" && rescheduleConfirm.project.stage !== "inspection" && (
