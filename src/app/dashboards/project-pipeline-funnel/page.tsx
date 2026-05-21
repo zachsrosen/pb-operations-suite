@@ -287,6 +287,7 @@ function BacklogSection({
     { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, color: "bg-green-500", deals: drillDown.awaitingConstructionComplete },
     { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, color: "bg-emerald-500", deals: drillDown.awaitingInspection },
     { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto },
+    { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, color: "bg-sky-500", deals: drillDown.awaitingCloseOut },
   ];
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
@@ -340,7 +341,16 @@ function BacklogSection({
   );
 }
 
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
+  const hasScheduled = deals.some((d) => d.scheduledDate);
+  const hasExtra = deals.some((d) => d.extraDate);
+  const extraLabel = deals.find((d) => d.extraLabel)?.extraLabel || "Extra";
+
   return (
     <div className="ml-[11.5rem] mt-1 mb-2 overflow-x-auto">
       <table className="w-full text-[11px]">
@@ -350,6 +360,8 @@ function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
             <th className="text-right py-1 px-1.5 text-muted font-medium">Amount</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Location</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Stage</th>
+            {hasScheduled && <th className="text-left py-1 px-1.5 text-muted font-medium">Scheduled</th>}
+            {hasExtra && <th className="text-left py-1 px-1.5 text-muted font-medium">{extraLabel}</th>}
             <th className="text-right py-1 px-1.5 text-muted font-medium">Days</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Status</th>
           </tr>
@@ -381,6 +393,20 @@ function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
               <td className="py-1 px-1.5 text-muted truncate max-w-[140px]" title={d.stage}>
                 {d.stage}
               </td>
+              {hasScheduled && (
+                <td className="py-1 px-1.5 text-muted whitespace-nowrap">
+                  {d.scheduledDate ? formatShortDate(d.scheduledDate) : <span className="italic text-muted/60">—</span>}
+                </td>
+              )}
+              {hasExtra && (
+                <td className="py-1 px-1.5 whitespace-nowrap">
+                  {d.extraDate ? (
+                    <span className="text-red-400">{formatShortDate(d.extraDate)}</span>
+                  ) : (
+                    <span className="italic text-muted/60">—</span>
+                  )}
+                </td>
+              )}
               <td className={`text-right py-1 px-1.5 font-medium ${d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
               </td>
@@ -615,6 +641,7 @@ const ACTIVITY_COLUMNS: Array<{
   color: string;
   amountKey?: keyof ProjectMonthlyActivity;
 }> = [
+  { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", amountKey: "salesClosedAmount" },
   { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400" },
   { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400" },
   { key: "dasSent", label: "DAs Sent", color: "text-lime-400" },
@@ -626,6 +653,8 @@ const ACTIVITY_COLUMNS: Array<{
   { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
   { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400" },
   { key: "ptosGranted", label: "PTOs", color: "text-teal-400", amountKey: "ptosGrantedAmount" },
+  { key: "closedOut", label: "Closed Out", color: "text-sky-400", amountKey: "closedOutAmount" },
+  { key: "cancelled", label: "Cancelled", color: "text-red-400", amountKey: "cancelledAmount" },
 ];
 
 function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[] }) {
@@ -635,7 +664,7 @@ function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[]
         Monthly Activity
       </h3>
       <p className="text-xs text-muted mb-4">
-        Milestones by the month they happened — not when the deal closed
+        Sales Closed by close date · Closed Out &amp; Cancelled by date entered stage — all other milestones by the month they happened
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">

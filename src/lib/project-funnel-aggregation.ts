@@ -58,6 +58,8 @@ export interface ProjectFunnelMedianDays {
 
 export interface ProjectMonthlyActivity {
   month: string;
+  salesClosed: number;
+  salesClosedAmount: number;
   surveysScheduled: number;
   surveysCompleted: number;
   dasSent: number;
@@ -72,6 +74,10 @@ export interface ProjectMonthlyActivity {
   inspectionsPassed: number;
   ptosGranted: number;
   ptosGrantedAmount: number;
+  closedOut: number;
+  closedOutAmount: number;
+  cancelled: number;
+  cancelledAmount: number;
 }
 
 export interface ProjectFunnelStageGroup {
@@ -92,6 +98,11 @@ export interface ProjectFunnelDrillDownDeal {
   url: string;
   daysWaiting: number;
   status: string | null;
+  /** Optional scheduled / milestone date to display (e.g. survey date, construction date) */
+  scheduledDate?: string | null;
+  /** Optional second date with context label (e.g. inspection fail date) */
+  extraDate?: string | null;
+  extraLabel?: string;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -106,6 +117,7 @@ export interface ProjectFunnelDrillDown {
   awaitingConstructionComplete: ProjectFunnelDrillDownDeal[];
   awaitingInspection: ProjectFunnelDrillDownDeal[];
   awaitingPto: ProjectFunnelDrillDownDeal[];
+  awaitingCloseOut: ProjectFunnelDrillDownDeal[];
 }
 
 export interface ProjectFunnelResponse {
@@ -150,7 +162,8 @@ function todayStr(): string {
 function toDrillDown(
   p: Project,
   daysWaiting: number,
-  status: string | null
+  status: string | null,
+  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
 ): ProjectFunnelDrillDownDeal {
   return {
     id: p.id,
@@ -163,6 +176,8 @@ function toDrillDown(
     url: p.url,
     daysWaiting,
     status,
+    ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
+    ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
   };
 }
 
@@ -415,6 +430,8 @@ export function buildProjectFunnelData(
     if (!activityMap.has(mk)) {
       activityMap.set(mk, {
         month: mk,
+        salesClosed: 0,
+        salesClosedAmount: 0,
         surveysScheduled: 0,
         surveysCompleted: 0,
         dasSent: 0,
@@ -429,6 +446,10 @@ export function buildProjectFunnelData(
         inspectionsPassed: 0,
         ptosGranted: 0,
         ptosGrantedAmount: 0,
+        closedOut: 0,
+        closedOutAmount: 0,
+        cancelled: 0,
+        cancelledAmount: 0,
       });
     }
     return activityMap.get(mk)!;
@@ -439,6 +460,7 @@ export function buildProjectFunnelData(
     activityKey: keyof ProjectMonthlyActivity;
     amountKey?: keyof ProjectMonthlyActivity;
   }> = [
+    { field: "closeDate", activityKey: "salesClosed", amountKey: "salesClosedAmount" },
     { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled" },
     { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted" },
     { field: "designApprovalSentDate", activityKey: "dasSent" },
@@ -463,6 +485,24 @@ export function buildProjectFunnelData(
           (act[activityKey] as number)++;
           if (amountKey) (act[amountKey] as number) += p.amount || 0;
         }
+      }
+    }
+    // Closed Out: binned by the date the deal entered Project Complete stage
+    if (p.projectCompleteDate) {
+      const d = new Date(p.projectCompleteDate + "T12:00:00");
+      if (d >= cutoff) {
+        const act = ensureActivity(monthKey(p.projectCompleteDate));
+        act.closedOut++;
+        act.closedOutAmount += p.amount || 0;
+      }
+    }
+    // Cancelled: binned by the date the deal entered Cancelled stage
+    if (p.cancelledDate) {
+      const d = new Date(p.cancelledDate + "T12:00:00");
+      if (d >= cutoff) {
+        const act = ensureActivity(monthKey(p.cancelledDate));
+        act.cancelled++;
+        act.cancelledAmount += p.amount || 0;
       }
     }
   }
@@ -503,6 +543,7 @@ export function buildProjectFunnelData(
     awaitingConstructionComplete: [],
     awaitingInspection: [],
     awaitingPto: [],
+    awaitingCloseOut: [],
   };
 
   for (const p of filtered) {
@@ -514,9 +555,12 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
       );
     } else if (!m.hasSurvey) {
-      const waitSince = p.siteSurveyScheduleDate || p.closeDate!;
+      // Use close date as "waiting since" — the scheduled date may be in the
+      // future, which would produce negative days.
       drillDown.awaitingSurvey.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.siteSurveyStatus ?? null)
+        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null, {
+          scheduledDate: p.siteSurveyScheduleDate,
+        })
       );
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
@@ -551,18 +595,33 @@ export function buildProjectFunnelData(
     } else if (!m.hasConstructionComplete) {
       const waitSince = p.constructionScheduleDate || p.closeDate!;
       drillDown.awaitingConstructionComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null, {
+          scheduledDate: p.constructionScheduleDate,
+        })
       );
     } else if (!m.hasInspectionPassed) {
       const waitSince = p.constructionCompleteDate || p.closeDate!;
       drillDown.awaitingInspection.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.finalInspectionStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.finalInspectionStatus ?? null, {
+          scheduledDate: p.inspectionScheduleDate,
+          extraDate: p.inspectionFailDate,
+          extraLabel: "Failed",
+        })
       );
     } else if (!m.hasPtoGranted) {
       const waitSince = p.inspectionPassDate || p.closeDate!;
       drillDown.awaitingPto.push(
         toDrillDown(p, daysBetween(waitSince, today), p.ptoStatus ?? null)
       );
+    } else {
+      // In Close Out stage (priority 9) but not yet Project Complete
+      const sp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
+      if (sp === 9) {
+        const waitSince = p.ptoGrantedDate || p.closeDate!;
+        drillDown.awaitingCloseOut.push(
+          toDrillDown(p, daysBetween(waitSince, today), null)
+        );
+      }
     }
   }
 
@@ -579,6 +638,7 @@ export function buildProjectFunnelData(
   drillDown.awaitingConstructionComplete.sort(byWaitDesc);
   drillDown.awaitingInspection.sort(byWaitDesc);
   drillDown.awaitingPto.sort(byWaitDesc);
+  drillDown.awaitingCloseOut.sort(byWaitDesc);
 
   return {
     summary,
