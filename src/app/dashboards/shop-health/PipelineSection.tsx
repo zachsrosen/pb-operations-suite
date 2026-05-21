@@ -1,7 +1,12 @@
 'use client';
 
 import { MetricCard } from '@/components/ui/MetricCard';
-import type { PipelineSection as PipelineSectionData, ShopHealthGoals } from '@/lib/shop-health-types';
+import { DrilldownMetricCard } from '@/components/ui/DrilldownMetricCard';
+import type {
+  PipelineSection as PipelineSectionData,
+  ShopHealthGoals,
+  ShopHealthDrilldown,
+} from '@/lib/shop-health-types';
 
 function formatDollars(value: number): string {
   if (value >= 1_000_000) {
@@ -16,9 +21,11 @@ function formatDollars(value: number): string {
 export function PipelineSectionContent({
   data,
   goals,
+  drilldown,
 }: {
   data: PipelineSectionData;
   goals: ShopHealthGoals;
+  drilldown: ShopHealthDrilldown;
 }) {
   return (
     <div className="space-y-4">
@@ -47,15 +54,19 @@ export function PipelineSectionContent({
       </div>
       {/* Pipeline metrics row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <MetricCard
+        <DrilldownMetricCard
           label="Contracts Signed"
           value={data.contractsSigned}
           sub={formatDollars(data.contractsSignedValue)}
+          deals={drilldown.contractsSigned}
+          dateLabel="Close Date"
         />
-        <MetricCard
+        <DrilldownMetricCard
           label="Backlog Jobs"
           value={data.totalBacklogCount}
           sub={formatDollars(data.totalBacklogValue)}
+          deals={drilldown.backlog}
+          dateLabel="Close Date"
         />
         <MetricCard
           label="Backlog Weeks"

@@ -1,7 +1,8 @@
 'use client';
 
 import { MetricCard } from '@/components/ui/MetricCard';
-import type { PreconstructionSection } from '@/lib/shop-health-types';
+import { DrilldownMetricCard } from '@/components/ui/DrilldownMetricCard';
+import type { PreconstructionSection, ShopHealthDrilldown } from '@/lib/shop-health-types';
 
 function formatDays(value: number | null): string {
   if (value === null) return '—';
@@ -15,20 +16,42 @@ function daysColor(value: number | null, warnAt: number, badAt: number): string 
   return 'text-red-400';
 }
 
-export function PreconSectionContent({ data }: { data: PreconstructionSection }) {
+export function PreconSectionContent({
+  data,
+  drilldown,
+}: {
+  data: PreconstructionSection;
+  drilldown: ShopHealthDrilldown;
+}) {
   return (
     <div className="space-y-6">
       {/* Row 1: Pipeline Snapshot */}
       <div>
         <h4 className="text-sm font-medium text-muted mb-3">Pipeline Snapshot</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard label="Jobs in Design" value={data.jobsInDesign} />
-          <MetricCard label="In Permitting" value={data.jobsSubmittedForPermit} />
-          <MetricCard label="Ready to Build" value={data.totalReadyJobs} />
-          <MetricCard
+          <DrilldownMetricCard
+            label="Jobs in Design"
+            value={data.jobsInDesign}
+            deals={drilldown.inDesign}
+            dateLabel="Design Start"
+          />
+          <DrilldownMetricCard
+            label="In Permitting"
+            value={data.jobsSubmittedForPermit}
+            deals={drilldown.inPermitting}
+            dateLabel="Submitted"
+          />
+          <DrilldownMetricCard
+            label="Ready to Build"
+            value={data.totalReadyJobs}
+            deals={drilldown.readyToBuild}
+            dateLabel="RTB Date"
+          />
+          <DrilldownMetricCard
             label="Aging >2 Weeks"
             value={data.jobsAgingOver2Weeks}
             valueColor={data.jobsAgingOver2Weeks > 0 ? 'text-red-400' : undefined}
+            deals={drilldown.agingOver2Weeks}
           />
         </div>
       </div>
@@ -37,10 +60,30 @@ export function PreconSectionContent({ data }: { data: PreconstructionSection })
       <div>
         <h4 className="text-sm font-medium text-muted mb-3">Weekly Throughput</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard label="Surveys Completed" value={data.surveysCompletedThisWeek} />
-          <MetricCard label="DAs Approved" value={data.dasApprovedThisWeek} />
-          <MetricCard label="Permits Issued" value={data.permitsIssuedThisWeek} />
-          <MetricCard label="IC Approved" value={data.icApprovedThisWeek} />
+          <DrilldownMetricCard
+            label="Surveys Completed"
+            value={data.surveysCompletedThisWeek}
+            deals={drilldown.surveysCompleted}
+            dateLabel="Completed"
+          />
+          <DrilldownMetricCard
+            label="DAs Approved"
+            value={data.dasApprovedThisWeek}
+            deals={drilldown.dasApproved}
+            dateLabel="Approved"
+          />
+          <DrilldownMetricCard
+            label="Permits Issued"
+            value={data.permitsIssuedThisWeek}
+            deals={drilldown.permitsIssued}
+            dateLabel="Issued"
+          />
+          <DrilldownMetricCard
+            label="IC Approved"
+            value={data.icApprovedThisWeek}
+            deals={drilldown.icApproved}
+            dateLabel="Approved"
+          />
         </div>
       </div>
 

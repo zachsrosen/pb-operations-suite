@@ -1,18 +1,32 @@
 'use client';
 
 import { MetricCard } from '@/components/ui/MetricCard';
-import type { SchedulingSection as SchedulingSectionData } from '@/lib/shop-health-types';
+import { DrilldownMetricCard } from '@/components/ui/DrilldownMetricCard';
+import type {
+  SchedulingSection as SchedulingSectionData,
+  ShopHealthDrilldown,
+} from '@/lib/shop-health-types';
 
-export function SchedulingSectionContent({ data }: { data: SchedulingSectionData }) {
+export function SchedulingSectionContent({
+  data,
+  drilldown,
+}: {
+  data: SchedulingSectionData;
+  drilldown: ShopHealthDrilldown;
+}) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <MetricCard
+      <DrilldownMetricCard
         label="Scheduled Next 2 Weeks"
         value={data.scheduledNext2Weeks}
+        deals={drilldown.scheduledNext2Weeks}
+        dateLabel="Install Date"
       />
-      <MetricCard
+      <DrilldownMetricCard
         label="Scheduled Next 4 Weeks"
         value={data.scheduledNext4Weeks}
+        deals={drilldown.scheduledNext4Weeks}
+        dateLabel="Install Date"
       />
       <MetricCard
         label="Schedule Accuracy"

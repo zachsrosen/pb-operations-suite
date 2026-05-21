@@ -119,6 +119,45 @@ export interface SectionHealth {
   customerSuccess: HealthStatus;
 }
 
+/** Lightweight deal summary for metric drill-down tables. */
+export interface DrilldownDeal {
+  id: string;
+  name: string;
+  projectNumber: string;
+  amount: number;
+  stage: string;
+  pm: string;
+  /** Context-specific date (e.g. close date, install date, permit date) */
+  date: string | null;
+}
+
+/** Maps metric keys → the underlying deals that compose that count. */
+export interface ShopHealthDrilldown {
+  // Pipeline
+  contractsSigned: DrilldownDeal[];
+  backlog: DrilldownDeal[];
+  // Preconstruction — snapshot
+  inDesign: DrilldownDeal[];
+  inPermitting: DrilldownDeal[];
+  readyToBuild: DrilldownDeal[];
+  agingOver2Weeks: DrilldownDeal[];
+  // Preconstruction — throughput
+  surveysCompleted: DrilldownDeal[];
+  dasApproved: DrilldownDeal[];
+  permitsIssued: DrilldownDeal[];
+  icApproved: DrilldownDeal[];
+  // Scheduling
+  scheduledNext2Weeks: DrilldownDeal[];
+  scheduledNext4Weeks: DrilldownDeal[];
+  // Operations
+  installsCompleted: DrilldownDeal[];
+  installsPlanned: DrilldownDeal[];
+  // Inspections
+  awaitingInspection: DrilldownDeal[];
+  inspectionsPassed: DrilldownDeal[];
+  ptosReceived: DrilldownDeal[];
+}
+
 export interface ShopHealthData {
   location: string;
   weekStart: string;
@@ -132,6 +171,7 @@ export interface ShopHealthData {
   customerSuccess: CustomerSuccessSection;
   sectionHealth: SectionHealth;
   bottlenecks: ShopHealthBottleneckEntry[];
+  drilldown: ShopHealthDrilldown;
   lastUpdated: string;
   goals: ShopHealthGoals;
 }

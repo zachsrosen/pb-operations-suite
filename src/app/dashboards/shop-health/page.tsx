@@ -149,27 +149,27 @@ export default function ShopHealthDashboard() {
 
           {/* Pipeline */}
           <SectionCard title="Pipeline" icon="📊" health={data.sectionHealth.pipeline}>
-            <PipelineSectionContent data={data.pipeline} goals={data.goals} />
+            <PipelineSectionContent data={data.pipeline} goals={data.goals} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Preconstruction */}
           <SectionCard title="Preconstruction" icon="📐" health={data.sectionHealth.preconstruction}>
-            <PreconSectionContent data={data.preconstruction} />
+            <PreconSectionContent data={data.preconstruction} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Scheduling */}
           <SectionCard title="Scheduling" icon="📅" health={data.sectionHealth.scheduling}>
-            <SchedulingSectionContent data={data.scheduling} />
+            <SchedulingSectionContent data={data.scheduling} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Operations */}
           <SectionCard title="Operations" icon="⚡" health={data.sectionHealth.operations}>
-            <OperationsSectionContent data={data.operations} />
+            <OperationsSectionContent data={data.operations} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Inspections */}
           <SectionCard title="Inspections" icon="🔍" health={data.sectionHealth.inspections}>
-            <InspectionsSectionContent data={data.inspections} />
+            <InspectionsSectionContent data={data.inspections} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Customer Success */}
