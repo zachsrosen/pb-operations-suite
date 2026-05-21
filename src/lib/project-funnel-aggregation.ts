@@ -96,6 +96,11 @@ export interface ProjectFunnelDrillDownDeal {
   url: string;
   daysWaiting: number;
   status: string | null;
+  /** Optional scheduled / milestone date to display (e.g. survey date, construction date) */
+  scheduledDate?: string | null;
+  /** Optional second date with context label (e.g. inspection fail date) */
+  extraDate?: string | null;
+  extraLabel?: string;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -155,7 +160,8 @@ function todayStr(): string {
 function toDrillDown(
   p: Project,
   daysWaiting: number,
-  status: string | null
+  status: string | null,
+  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
 ): ProjectFunnelDrillDownDeal {
   return {
     id: p.id,
@@ -168,6 +174,8 @@ function toDrillDown(
     url: p.url,
     daysWaiting,
     status,
+    ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
+    ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
   };
 }
 
@@ -537,7 +545,9 @@ export function buildProjectFunnelData(
       // Use close date as "waiting since" — the scheduled date may be in the
       // future, which would produce negative days.
       drillDown.awaitingSurvey.push(
-        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
+        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null, {
+          scheduledDate: p.siteSurveyScheduleDate,
+        })
       );
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
@@ -572,12 +582,18 @@ export function buildProjectFunnelData(
     } else if (!m.hasConstructionComplete) {
       const waitSince = p.constructionScheduleDate || p.closeDate!;
       drillDown.awaitingConstructionComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null, {
+          scheduledDate: p.constructionScheduleDate,
+        })
       );
     } else if (!m.hasInspectionPassed) {
       const waitSince = p.constructionCompleteDate || p.closeDate!;
       drillDown.awaitingInspection.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.finalInspectionStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.finalInspectionStatus ?? null, {
+          scheduledDate: p.inspectionScheduleDate,
+          extraDate: p.inspectionFailDate,
+          extraLabel: "Failed",
+        })
       );
     } else if (!m.hasPtoGranted) {
       const waitSince = p.inspectionPassDate || p.closeDate!;

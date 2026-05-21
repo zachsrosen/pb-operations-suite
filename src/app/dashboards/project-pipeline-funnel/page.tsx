@@ -341,7 +341,16 @@ function BacklogSection({
   );
 }
 
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
+  const hasScheduled = deals.some((d) => d.scheduledDate);
+  const hasExtra = deals.some((d) => d.extraDate);
+  const extraLabel = deals.find((d) => d.extraLabel)?.extraLabel || "Extra";
+
   return (
     <div className="ml-[11.5rem] mt-1 mb-2 overflow-x-auto">
       <table className="w-full text-[11px]">
@@ -351,6 +360,8 @@ function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
             <th className="text-right py-1 px-1.5 text-muted font-medium">Amount</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Location</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Stage</th>
+            {hasScheduled && <th className="text-left py-1 px-1.5 text-muted font-medium">Scheduled</th>}
+            {hasExtra && <th className="text-left py-1 px-1.5 text-muted font-medium">{extraLabel}</th>}
             <th className="text-right py-1 px-1.5 text-muted font-medium">Days</th>
             <th className="text-left py-1 px-1.5 text-muted font-medium">Status</th>
           </tr>
@@ -382,6 +393,20 @@ function DrillDownTable({ deals }: { deals: ProjectFunnelDrillDownDeal[] }) {
               <td className="py-1 px-1.5 text-muted truncate max-w-[140px]" title={d.stage}>
                 {d.stage}
               </td>
+              {hasScheduled && (
+                <td className="py-1 px-1.5 text-muted whitespace-nowrap">
+                  {d.scheduledDate ? formatShortDate(d.scheduledDate) : <span className="italic text-muted/60">—</span>}
+                </td>
+              )}
+              {hasExtra && (
+                <td className="py-1 px-1.5 whitespace-nowrap">
+                  {d.extraDate ? (
+                    <span className="text-red-400">{formatShortDate(d.extraDate)}</span>
+                  ) : (
+                    <span className="italic text-muted/60">—</span>
+                  )}
+                </td>
+              )}
               <td className={`text-right py-1 px-1.5 font-medium ${d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
               </td>
