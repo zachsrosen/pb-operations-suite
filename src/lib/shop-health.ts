@@ -325,7 +325,7 @@ export async function getShopHealthData(
   // Compute per-section health indicators (worst-case of key metrics)
   const sectionHealth = computeSectionHealth(heroes, pipeline, scheduling, operations);
 
-  const bottleneck = await getBottleneckForWeek(group.label, weekStart);
+  const bottlenecks = await getBottlenecksForLocationWeek(group.label, weekStart);
 
   return {
     location: group.label,
@@ -339,7 +339,7 @@ export async function getShopHealthData(
     inspections,
     customerSuccess,
     sectionHealth,
-    bottleneck,
+    bottlenecks,
     lastUpdated: new Date().toISOString(),
     goals,
   };
@@ -947,15 +947,15 @@ function computeSectionHealth(
 
 // ─── Bottleneck Persistence ──────────────────────────────────────────────────
 
-async function getBottleneckForWeek(
+async function getBottlenecksForLocationWeek(
   location: string,
   weekStart: Date
-): Promise<ShopHealthBottleneckEntry | null> {
-  const entry = await prisma.shopHealthBottleneck.findUnique({
-    where: { location_weekStart: { location, weekStart } },
+): Promise<ShopHealthBottleneckEntry[]> {
+  const entries = await prisma.shopHealthBottleneck.findMany({
+    where: { location, weekStart },
+    orderBy: { createdAt: 'asc' },
   });
-  if (!entry) return null;
-  return {
+  return entries.map((entry) => ({
     id: entry.id,
     location: entry.location,
     weekStart: entry.weekStart.toISOString(),
@@ -965,5 +965,5 @@ async function getBottleneckForWeek(
     owner: entry.owner,
     userId: entry.userId,
     updatedAt: entry.updatedAt.toISOString(),
-  };
+  }));
 }

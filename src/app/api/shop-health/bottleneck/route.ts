@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { upsertBottleneck, getBottleneckHistory } from '@/lib/shop-health-bottleneck';
+import {
+  createBottleneck,
+  updateBottleneck,
+  deleteBottleneck,
+  getBottleneckHistory,
+} from '@/lib/shop-health-bottleneck';
 import { getWeekStart } from '@/lib/shop-health';
 
 export async function GET(request: NextRequest) {
@@ -20,6 +25,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ entries });
 }
 
+/** Create a new bottleneck entry. */
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -36,8 +42,7 @@ export async function POST(request: NextRequest) {
   const weekStart = getWeekStart(new Date(weekStartStr));
 
   try {
-    // session.user.id is typed as optional but runtime-guaranteed by auth guard above.
-    const entry = await upsertBottleneck({
+    const entry = await createBottleneck({
       location,
       weekStart,
       constraint,
@@ -46,9 +51,62 @@ export async function POST(request: NextRequest) {
       owner,
       userId: session.user.id as string,
     });
+    return NextResponse.json(entry, { status: 201 });
+  } catch (error) {
+    console.error('[shop-health] Bottleneck create error:', error);
+    return NextResponse.json({ error: 'Failed to create bottleneck' }, { status: 500 });
+  }
+}
+
+/** Update an existing bottleneck entry by ID. */
+export async function PATCH(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const { id, constraint, rootCause, actionPlan, owner } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: 'id required' }, { status: 400 });
+  }
+
+  try {
+    const entry = await updateBottleneck({
+      id,
+      constraint,
+      rootCause,
+      actionPlan,
+      owner,
+      userId: session.user.id as string,
+    });
     return NextResponse.json(entry);
   } catch (error) {
-    console.error('[shop-health] Bottleneck upsert error:', error);
-    return NextResponse.json({ error: 'Failed to save bottleneck' }, { status: 500 });
+    console.error('[shop-health] Bottleneck update error:', error);
+    return NextResponse.json({ error: 'Failed to update bottleneck' }, { status: 500 });
+  }
+}
+
+/** Delete a bottleneck entry by ID. */
+export async function DELETE(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
+
+  if (!id) {
+    return NextResponse.json({ error: 'id param required' }, { status: 400 });
+  }
+
+  try {
+    await deleteBottleneck(id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[shop-health] Bottleneck delete error:', error);
+    return NextResponse.json({ error: 'Failed to delete bottleneck' }, { status: 500 });
   }
 }
