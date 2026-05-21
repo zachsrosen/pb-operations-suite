@@ -1182,7 +1182,7 @@ export default function SchedulerPage() {
             crew: null,
             daysInstall: 1, daysElec: 0, totalDays: 0, roofersCount: 0,
             electriciansCount: 0, difficulty: 0, installNotes: "", roofType: null,
-            scheduleDate: null,
+            scheduleDate: oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
             surveyScheduleDate: isSurvey && oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
             constructionScheduleDate: null,
             inspectionScheduleDate: !isSurvey && oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
