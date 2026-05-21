@@ -616,6 +616,7 @@ const ACTIVITY_COLUMNS: Array<{
   color: string;
   amountKey?: keyof ProjectMonthlyActivity;
 }> = [
+  { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", amountKey: "salesClosedAmount" },
   { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400" },
   { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400" },
   { key: "dasSent", label: "DAs Sent", color: "text-lime-400" },
@@ -627,6 +628,7 @@ const ACTIVITY_COLUMNS: Array<{
   { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
   { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400" },
   { key: "ptosGranted", label: "PTOs", color: "text-teal-400", amountKey: "ptosGrantedAmount" },
+  { key: "closedOut", label: "Closed Out", color: "text-sky-400", amountKey: "closedOutAmount" },
 ];
 
 function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[] }) {
@@ -636,7 +638,7 @@ function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[]
         Monthly Activity
       </h3>
       <p className="text-xs text-muted mb-4">
-        Milestones by the month they happened — not when the deal closed
+        Sales Closed &amp; Closed Out by close/completion date — all other milestones by the month they happened
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">

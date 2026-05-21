@@ -58,6 +58,8 @@ export interface ProjectFunnelMedianDays {
 
 export interface ProjectMonthlyActivity {
   month: string;
+  salesClosed: number;
+  salesClosedAmount: number;
   surveysScheduled: number;
   surveysCompleted: number;
   dasSent: number;
@@ -72,6 +74,8 @@ export interface ProjectMonthlyActivity {
   inspectionsPassed: number;
   ptosGranted: number;
   ptosGrantedAmount: number;
+  closedOut: number;
+  closedOutAmount: number;
 }
 
 export interface ProjectFunnelStageGroup {
@@ -416,6 +420,8 @@ export function buildProjectFunnelData(
     if (!activityMap.has(mk)) {
       activityMap.set(mk, {
         month: mk,
+        salesClosed: 0,
+        salesClosedAmount: 0,
         surveysScheduled: 0,
         surveysCompleted: 0,
         dasSent: 0,
@@ -430,6 +436,8 @@ export function buildProjectFunnelData(
         inspectionsPassed: 0,
         ptosGranted: 0,
         ptosGrantedAmount: 0,
+        closedOut: 0,
+        closedOutAmount: 0,
       });
     }
     return activityMap.get(mk)!;
@@ -440,6 +448,7 @@ export function buildProjectFunnelData(
     activityKey: keyof ProjectMonthlyActivity;
     amountKey?: keyof ProjectMonthlyActivity;
   }> = [
+    { field: "closeDate", activityKey: "salesClosed", amountKey: "salesClosedAmount" },
     { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled" },
     { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted" },
     { field: "designApprovalSentDate", activityKey: "dasSent" },
@@ -464,6 +473,15 @@ export function buildProjectFunnelData(
           (act[activityKey] as number)++;
           if (amountKey) (act[amountKey] as number) += p.amount || 0;
         }
+      }
+    }
+    // Closed Out: binned by the date the deal entered Project Complete stage
+    if (p.projectCompleteDate) {
+      const d = new Date(p.projectCompleteDate + "T12:00:00");
+      if (d >= cutoff) {
+        const act = ensureActivity(monthKey(p.projectCompleteDate));
+        act.closedOut++;
+        act.closedOutAmount += p.amount || 0;
       }
     }
   }

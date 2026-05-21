@@ -362,6 +362,9 @@ export interface Project {
   forecastedInspectionDate: string | null;
   forecastedPtoDate: string | null;
 
+  // Project completion
+  projectCompleteDate: string | null;
+
   // Calculated fields
   daysToInstall: number | null;
   daysToInspection: number | null;
@@ -646,6 +649,7 @@ const DEAL_PROPERTIES = [
 
   // Stage timing (precise — replaces 30-day-bucket days_since_stage_movement)
   "hs_v2_date_entered_current_stage",
+  "hs_date_entered_20440343", // Date entered Project Complete stage
 
   // Install planning
   "expected_days_for_install",
@@ -993,6 +997,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     ptoSubmitDate: parseDate(deal.pto_start_date),
     ptoGrantedDate: parseDate(deal.pto_completion_date),
     ptoStatus: deal.pto_status ? String(deal.pto_status) : null,
+
+    // Project completion
+    projectCompleteDate: parseDate(deal.hs_date_entered_20440343),
 
     // Forecasted dates
     forecastedInstallDate: parseDate(deal.forecasted_installation_date),
