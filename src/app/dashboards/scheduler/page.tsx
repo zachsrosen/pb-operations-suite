@@ -1152,6 +1152,61 @@ export default function SchedulerPage() {
       }
     }
 
+    // Inject orphaned survey/inspection jobs (resurveys for deals past survey stage)
+    try {
+      const loadedDealIds = transformed.map((p: SchedulerProject) => p.id);
+      const orphanRes = await fetch("/api/zuper/jobs/orphaned", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loadedDealIds }),
+      });
+      if (orphanRes.ok) {
+        const { jobs: orphanedJobs } = await orphanRes.json();
+        for (const oj of orphanedJobs as { dealId: string; jobUid: string; jobTitle: string; projectName: string; category: string; status: string; scheduledStart: string | null; scheduledEnd: string | null; assignedTo: string[]; location: string; address: string }[]) {
+          // Skip if this deal somehow got loaded already
+          if (loadedDealIds.includes(oj.dealId)) continue;
+          const isSurvey = oj.category === "survey";
+          const synthetic: SchedulerProject = {
+            id: oj.dealId,
+            name: oj.projectName,
+            address: oj.address,
+            location: oj.location,
+            amount: 0,
+            type: "Solar",
+            stage: isSurvey ? "survey" : "inspection",
+            systemSize: 0, moduleCount: 0, inverterCount: 0, batteries: 0,
+            batteryExpansion: 0, batteryModel: null, evCount: 0,
+            moduleBrand: "", moduleModel: "", moduleWattage: 0,
+            inverterBrand: "", inverterModel: "", inverterSizeKwac: 0, batterySizeKwh: 0,
+            ahj: "", utility: "",
+            crew: null,
+            daysInstall: 1, daysElec: 0, totalDays: 0, roofersCount: 0,
+            electriciansCount: 0, difficulty: 0, installNotes: "", roofType: null,
+            scheduleDate: null,
+            surveyScheduleDate: isSurvey && oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
+            constructionScheduleDate: null,
+            inspectionScheduleDate: !isSurvey && oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
+            surveyCompleted: null, constructionCompleted: null,
+            inspectionCompleted: null, inspectionStatus: null,
+            hubspotUrl: `https://app.hubspot.com/contacts/21710069/record/0-3/${oj.dealId}`,
+            isPE: false,
+            daysToInstall: null,
+            isCompletedPastStage: false,
+            zuperJobUid: oj.jobUid,
+            zuperJobStatus: oj.status,
+            zuperJobCategory: oj.category,
+            zuperScheduledStart: oj.scheduledStart || undefined,
+            zuperScheduledEnd: oj.scheduledEnd || undefined,
+            zuperAssignedTo: oj.assignedTo,
+          };
+          transformed.push(synthetic);
+          loadedDealIds.push(oj.dealId);
+        }
+      }
+    } catch (orphanErr) {
+      console.warn("Failed to fetch orphaned survey/inspection jobs:", orphanErr);
+    }
+
     // Rehydrate tentative schedules from DB
     let restoredManualSchedules: Record<string, ManualSchedule> | null = null;
     if (transformed.length > 0) {
