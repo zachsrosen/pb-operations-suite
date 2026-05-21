@@ -129,6 +129,8 @@ export const queryKeys = {
     root: ["funnel"] as const,
     designPipeline: (months?: number, locations?: string[]) =>
       [...queryKeys.funnel.root, "design-pipeline", months, locations] as const,
+    projectPipeline: (months?: number, locations?: string[]) =>
+      [...queryKeys.funnel.root, "project-pipeline", months, locations] as const,
   },
   territoryMap: {
     root: ["territory-map"] as const,
