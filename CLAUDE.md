@@ -384,7 +384,32 @@ Current palette (10 actions + 2 control-flow):
 
 All routes are `/api/admin/*` → covered by the existing `ADMIN_ONLY_ROUTES` prefix check.
 
-### 12. Suite Navigation (`lib/suite-nav.ts`)
+### 12. Enphase Enlighten Integration (`lib/enphase-enlighten.ts`, `lib/enphase-crosslink.ts`)
+
+Enphase monitoring API integration at full parity with Tesla PowerHub. OAuth2 authorization code grant with refresh token rotation (stored in SystemConfig DB row, not env var).
+
+**API Client** (`enphase-enlighten.ts`):
+- OAuth2 auth code flow with DB-persisted refresh token rotation
+- Token bucket rate limiter (8 req/sec, under Enphase's ~10 limit)
+- Typed wrappers: listSystems, getSystemSummary, getSystemDevices, telemetry endpoints
+- Optional Fly.io proxy via `ENPHASE_PROXY_URL`
+
+**Crosslink** (`enphase-crosslink.ts`): Same cascade as PowerHub — resolvePrimarySite → pushToHubSpotForProperty → Zuper dirty flag via updatedAt.
+
+**DB Models:** `EnphaseSite`, `EnphaseTelemetrySnapshot`, `EnphaseTelemetryHistory` + 8 `enphase_*` columns on `HubSpotPropertyCache`.
+
+**Cron Jobs:**
+- `enphase-assets` (daily 9am): Fleet discovery, device refresh, address-hash auto-linking to Properties
+- `enphase-telemetry` (every 15 min): Production/consumption/battery snapshots
+- `enphase-status-check` (every 30 min): Micro health monitoring, status transitions
+
+**HubSpot Card**: `/api/hubspot-card/enphase/` — HMAC-signed card showing production, battery SoC, micro health, portal link.
+
+**OAuth Setup**: `/api/admin/enphase/oauth/authorize` + `/callback` — one-time admin flow to obtain initial refresh token. Persists to SystemConfig DB row.
+
+**Feature flags**: `ENPHASE_ENABLED`, `ENPHASE_CROSSLINK_ENABLED`, `NEXT_PUBLIC_UI_ENPHASE_VIEWS_ENABLED`
+
+### 13. Suite Navigation (`lib/suite-nav.ts`)
 
 Departmental suites with role-based visibility. Full list: `grep "href:" src/lib/suite-nav.ts`.
 
