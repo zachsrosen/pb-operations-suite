@@ -2369,6 +2369,99 @@ export async function fetchLineItemsForDeals(
   return results;
 }
 
+// ── Contact properties batch fetch ──────────────────────────────────────────
+
+export interface DealContactProperties {
+  dealId: string;
+  contactId: string;
+  noSameDayResponse: string | null;
+  averageTimeToRespondHours: number | null;
+}
+
+/**
+ * Batch-fetch contact properties for a set of deal IDs.
+ *
+ * 1. Resolves deal → contact associations in bulk (100 per batch).
+ * 2. Batch-reads the two response-time contact properties.
+ *
+ * Returns one entry per deal-contact pair. Best-effort — swallows errors
+ * so shop-health never fails because of this.
+ */
+export async function fetchContactResponseMetrics(
+  dealIds: string[]
+): Promise<DealContactProperties[]> {
+  if (dealIds.length === 0) return [];
+
+  // Phase 1: Resolve deal → contact associations
+  const contactToDealIds = new Map<string, string[]>();
+  try {
+    for (const dealIdBatch of chunk(dealIds, HUBSPOT_BATCH_SIZE)) {
+      const assocResponse =
+        await hubspotClient.crm.associations.batchApi.read(
+          "deals",
+          "contacts",
+          { inputs: dealIdBatch.map((id) => ({ id })) }
+        );
+      for (const result of assocResponse.results ?? []) {
+        const dealId = String(result._from?.id ?? "").trim();
+        if (!dealId) continue;
+        for (const to of result.to ?? []) {
+          const contactId = String(to.id ?? "").trim();
+          if (!contactId) continue;
+          const existing = contactToDealIds.get(contactId);
+          if (existing) existing.push(dealId);
+          else contactToDealIds.set(contactId, [dealId]);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[HubSpot] Failed to fetch deal→contact associations:", err);
+    return [];
+  }
+
+  if (contactToDealIds.size === 0) return [];
+
+  // Phase 2: Batch-read contact properties
+  const contactIds = Array.from(contactToDealIds.keys());
+  const results: DealContactProperties[] = [];
+
+  try {
+    for (const contactBatch of chunk(contactIds, HUBSPOT_BATCH_SIZE)) {
+      const readResponse =
+        await hubspotClient.crm.contacts.batchApi.read({
+          inputs: contactBatch.map((id) => ({ id })),
+          properties: [
+            "no_same_day_response",
+            "average_time_to_respond_hours",
+          ],
+          propertiesWithHistory: [],
+        });
+
+      for (const contact of readResponse.results ?? []) {
+        const props = contact.properties as Record<string, string | undefined>;
+        const dealIdsForContact = contactToDealIds.get(contact.id) ?? [];
+        const avgHours = props.average_time_to_respond_hours
+          ? parseFloat(props.average_time_to_respond_hours)
+          : null;
+
+        for (const dealId of dealIdsForContact) {
+          results.push({
+            dealId,
+            contactId: contact.id,
+            noSameDayResponse: props.no_same_day_response ?? null,
+            averageTimeToRespondHours:
+              avgHours !== null && !isNaN(avgHours) ? avgHours : null,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[HubSpot] Failed to batch-read contact response metrics:", err);
+  }
+
+  return results;
+}
+
 // ── HubSpot manufacturer enum enforcement ─────────────────────────────────────
 
 /**

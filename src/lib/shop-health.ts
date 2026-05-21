@@ -18,10 +18,10 @@ import type {
   InspectionsSection,
   ShopHealthBottleneckEntry,
 } from "./shop-health-types";
-import type { Project } from "./hubspot";
+import type { Project, DealContactProperties } from "./hubspot";
 import type { DashboardLocationGroup } from "./dashboard-location-groups";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
-import { fetchAllProjects } from "./hubspot";
+import { fetchAllProjects, fetchContactResponseMetrics } from "./hubspot";
 import { normalizeLocation } from "./locations";
 import { DEFAULT_TARGETS } from "./goals-pipeline-types";
 import {
@@ -272,11 +272,23 @@ export async function getShopHealthData(
     .filter((p) => isInWeek(p.constructionCompleteDate, priorWeekStart))
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 
+  // ── Contact response metrics (batch fetch for Customer Success) ──
+  const activeDealIds = locationProjects
+    .filter((p) => p.isActive)
+    .map((p) => String(p.id));
+  let contactMetrics: DealContactProperties[] = [];
+  try {
+    contactMetrics = await fetchContactResponseMetrics(activeDealIds);
+  } catch (err) {
+    console.error("[shop-health] Failed to fetch contact response metrics:", err);
+  }
+
   // ── Customer Success section ──
   const customerSuccess = await computeCustomerSuccess(
     locationProjects,
     group,
-    weekStart
+    weekStart,
+    contactMetrics
   );
 
   // Compute prior-week avg sentiment for hero delta
@@ -655,7 +667,8 @@ const SENTIMENT_BUCKETS: Omit<SentimentBucket, "count" | "pct">[] = [
 async function computeCustomerSuccess(
   locationProjects: Project[],
   group: DashboardLocationGroup,
-  weekStart: Date
+  weekStart: Date,
+  contactMetrics: DealContactProperties[]
 ): Promise<CustomerSuccessSection> {
   const activeDeals = locationProjects.filter((p) => p.isActive);
 
@@ -767,16 +780,49 @@ async function computeCustomerSuccess(
     }
   }
 
+  // ── Response metrics from contact properties ──
+  const activeDealIds = new Set(activeDeals.map((d) => String(d.id)));
+  const locationContactMetrics = contactMetrics.filter((cm) =>
+    activeDealIds.has(cm.dealId)
+  );
+
+  // Count contacts flagged as no same-day response
+  // (dedupe by contactId so a contact linked to multiple deals counts once)
+  const seenContacts = new Set<string>();
+  let noSameDayCount = 0;
+  const respondHours: number[] = [];
+  for (const cm of locationContactMetrics) {
+    if (seenContacts.has(cm.contactId)) continue;
+    seenContacts.add(cm.contactId);
+    if (
+      cm.noSameDayResponse &&
+      cm.noSameDayResponse.toLowerCase() === "true"
+    ) {
+      noSameDayCount++;
+    }
+    if (cm.averageTimeToRespondHours !== null) {
+      respondHours.push(cm.averageTimeToRespondHours);
+    }
+  }
+
+  const avgTimeToRespondHours =
+    respondHours.length > 0
+      ? Math.round(
+          (respondHours.reduce((a, b) => a + b, 0) / respondHours.length) * 10
+        ) / 10
+      : null;
+
   return {
     avgSentimentScore,
     fiveStarReviewsMTD: reviewCount,
     fiveStarReviewsTarget: reviewTarget,
     npsCsat: null,
     avgDaysSinceContact,
+    noSameDayResponseCount: noSameDayCount,
+    avgTimeToRespondHours,
     proactiveUpdatePct: null,
     openEscalations: null,
     avgEscalationAge: null,
-    avgResponseTime: null,
     avgResolutionTime: null,
     changeOrdersPerJob: null,
     activeServiceTickets: null,

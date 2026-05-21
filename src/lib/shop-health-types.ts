@@ -55,10 +55,11 @@ export interface CustomerSuccessSection {
   fiveStarReviewsTarget: number;
   npsCsat: null; // Coming soon
   avgDaysSinceContact: number | null;
+  noSameDayResponseCount: number;
+  avgTimeToRespondHours: number | null;
   proactiveUpdatePct: null; // Coming soon
   openEscalations: null; // Coming soon
   avgEscalationAge: null; // Coming soon
-  avgResponseTime: null; // Coming soon
   avgResolutionTime: null; // Coming soon
   changeOrdersPerJob: null; // Coming soon
   activeServiceTickets: null; // Coming soon
