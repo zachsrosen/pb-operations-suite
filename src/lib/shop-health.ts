@@ -17,6 +17,8 @@ import type {
   OperationsSection,
   InspectionsSection,
   ShopHealthBottleneckEntry,
+  DrilldownDeal,
+  ShopHealthDrilldown,
 } from "./shop-health-types";
 import type { Project, DealContactProperties } from "./hubspot";
 import type { DashboardLocationGroup } from "./dashboard-location-groups";
@@ -101,6 +103,21 @@ function subWeeks(date: Date, n: number): Date {
   const d = new Date(date);
   d.setDate(d.getDate() - n * 7);
   return d;
+}
+
+// ─── Drill-down Helpers ─────────────────────────────────────────────────────
+
+/** Convert a Project to a lightweight drill-down row. */
+function toDrilldown(p: Project, date?: string | null): DrilldownDeal {
+  return {
+    id: String(p.id),
+    name: p.name,
+    projectNumber: p.projectNumber,
+    amount: p.amount || 0,
+    stage: p.stage,
+    pm: p.projectManager,
+    date: date ?? null,
+  };
 }
 
 // ─── Health Scoring ──────────────────────────────────────────────────────────
@@ -243,26 +260,32 @@ export async function getShopHealthData(
   const goals = await computeGoalsFromOfficeGoals(group, avgDealSize, weekStart);
 
   // Compute sections for current and prior week
-  const pipeline = computePipeline(locationProjects, weekStart);
-  const preconstruction = computePreconstruction(locationProjects, weekStart);
-  const scheduling = computeScheduling(locationProjects, goals);
-  const operations = computeOperations(locationProjects, weekStart, goals);
-  const inspections = computeInspections(locationProjects, weekStart);
+  const pipelineResult = computePipeline(locationProjects, weekStart);
+  const preconResult = computePreconstruction(locationProjects, weekStart);
+  const schedulingResult = computeScheduling(locationProjects, goals);
+  const opsResult = computeOperations(locationProjects, weekStart, goals);
+  const inspResult = computeInspections(locationProjects, weekStart);
 
-  const priorPipeline = computePipeline(locationProjects, priorWeekStart);
+  const pipeline = pipelineResult.section;
+  const preconstruction = preconResult.section;
+  const scheduling = schedulingResult.section;
+  const operations = opsResult.section;
+  const inspections = inspResult.section;
+
+  const priorPipeline = computePipeline(locationProjects, priorWeekStart).section;
   const priorPreconstruction = computePreconstruction(
     locationProjects,
     priorWeekStart
-  );
+  ).section;
   const priorOperations = computeOperations(
     locationProjects,
     priorWeekStart,
     goals
-  );
+  ).section;
   const priorInspections = computeInspections(
     locationProjects,
     priorWeekStart
-  );
+  ).section;
 
   // Compute weekly revenue = sum of deal amounts for installs completed this week
   const weeklyRevenueActual = locationProjects
@@ -327,6 +350,15 @@ export async function getShopHealthData(
 
   const bottlenecks = await getBottlenecksForLocationWeek(group.label, weekStart);
 
+  // Assemble drill-down data from all section results
+  const drilldown: ShopHealthDrilldown = {
+    ...pipelineResult.drilldown,
+    ...preconResult.drilldown,
+    ...schedulingResult.drilldown,
+    ...opsResult.drilldown,
+    ...inspResult.drilldown,
+  };
+
   return {
     location: group.label,
     weekStart: formatWeekParam(weekStart),
@@ -340,6 +372,7 @@ export async function getShopHealthData(
     customerSuccess,
     sectionHealth,
     bottlenecks,
+    drilldown,
     lastUpdated: new Date().toISOString(),
     goals,
   };
@@ -431,7 +464,7 @@ async function computeGoalsFromOfficeGoals(
 function computePipeline(
   projects: Project[],
   weekStart: Date
-): PipelineSection {
+): { section: PipelineSection; drilldown: Pick<ShopHealthDrilldown, 'contractsSigned' | 'backlog'> } {
   const contractsSigned = projects.filter((p) =>
     isInWeek(p.closeDate, weekStart)
   );
@@ -455,23 +488,31 @@ function computePipeline(
       : 0;
 
   return {
-    contractsSigned: contractsSigned.length,
-    contractsSignedValue: contractsSigned.reduce(
-      (sum, p) => sum + (p.amount || 0),
-      0
-    ),
-    totalBacklogCount: backlog.length,
-    totalBacklogValue: backlog.reduce((sum, p) => sum + (p.amount || 0), 0),
-    backlogInWeeks,
-    cancellationCount: 0, // V1: no cancelled_date property on Project
-    cancellationRate: 0,
+    section: {
+      contractsSigned: contractsSigned.length,
+      contractsSignedValue: contractsSigned.reduce(
+        (sum, p) => sum + (p.amount || 0),
+        0
+      ),
+      totalBacklogCount: backlog.length,
+      totalBacklogValue: backlog.reduce((sum, p) => sum + (p.amount || 0), 0),
+      backlogInWeeks,
+      cancellationCount: 0, // V1: no cancelled_date property on Project
+      cancellationRate: 0,
+    },
+    drilldown: {
+      contractsSigned: contractsSigned.map((p) => toDrilldown(p, p.closeDate)),
+      backlog: backlog.map((p) => toDrilldown(p, p.closeDate)),
+    },
   };
 }
+
+type PreconDrilldownKeys = 'inDesign' | 'inPermitting' | 'readyToBuild' | 'agingOver2Weeks' | 'surveysCompleted' | 'dasApproved' | 'permitsIssued' | 'icApproved';
 
 function computePreconstruction(
   projects: Project[],
   weekStart: Date
-): PreconstructionSection {
+): { section: PreconstructionSection; drilldown: Pick<ShopHealthDrilldown, PreconDrilldownKeys> } {
   const active = projects.filter((p) => p.isActive);
   const inDesign = active.filter(
     (p) => p.stage === "Design & Engineering"
@@ -482,21 +523,21 @@ function computePreconstruction(
   const rtb = active.filter((p) => RTB_STAGES.includes(p.stage));
 
   // ── Weekly throughput (milestone events this week) ──
-  const surveysCompletedThisWeek = projects.filter(
+  const surveysCompletedList = projects.filter(
     (p) => isInWeek(p.siteSurveyCompletionDate, weekStart)
-  ).length;
+  );
 
-  const dasApprovedThisWeek = projects.filter(
+  const dasApprovedList = projects.filter(
     (p) => isInWeek(p.designApprovalDate, weekStart)
-  ).length;
+  );
 
-  const permitsIssuedThisWeek = projects.filter(
+  const permitsIssuedList = projects.filter(
     (p) => isInWeek(p.permitIssueDate, weekStart)
-  ).length;
+  );
 
-  const icApprovedThisWeek = projects.filter(
+  const icApprovedList = projects.filter(
     (p) => isInWeek(p.interconnectionApprovalDate, weekStart)
-  ).length;
+  );
 
   // ── Cycle times (averages from recent completions) ──
   // Avg days from contract close to permit issue
@@ -544,31 +585,43 @@ function computePreconstruction(
   );
 
   return {
-    jobsInDesign: inDesign.length,
-    jobsSubmittedForPermit: inPermitting.length,
-    totalReadyJobs: rtb.length,
-    jobsAgingOver2Weeks: agingProjects.length,
-    surveysCompletedThisWeek,
-    dasApprovedThisWeek,
-    permitsIssuedThisWeek,
-    icApprovedThisWeek,
-    avgDaysSaleToPermit,
-    avgDesignTurnaroundDays,
-    avgPermitTurnaroundDays,
+    section: {
+      jobsInDesign: inDesign.length,
+      jobsSubmittedForPermit: inPermitting.length,
+      totalReadyJobs: rtb.length,
+      jobsAgingOver2Weeks: agingProjects.length,
+      surveysCompletedThisWeek: surveysCompletedList.length,
+      dasApprovedThisWeek: dasApprovedList.length,
+      permitsIssuedThisWeek: permitsIssuedList.length,
+      icApprovedThisWeek: icApprovedList.length,
+      avgDaysSaleToPermit,
+      avgDesignTurnaroundDays,
+      avgPermitTurnaroundDays,
+    },
+    drilldown: {
+      inDesign: inDesign.map((p) => toDrilldown(p, p.designStartDate)),
+      inPermitting: inPermitting.map((p) => toDrilldown(p, p.permitSubmitDate)),
+      readyToBuild: rtb.map((p) => toDrilldown(p, p.readyToBuildDate)),
+      agingOver2Weeks: agingProjects.map((p) => toDrilldown(p)),
+      surveysCompleted: surveysCompletedList.map((p) => toDrilldown(p, p.siteSurveyCompletionDate)),
+      dasApproved: dasApprovedList.map((p) => toDrilldown(p, p.designApprovalDate)),
+      permitsIssued: permitsIssuedList.map((p) => toDrilldown(p, p.permitIssueDate)),
+      icApproved: icApprovedList.map((p) => toDrilldown(p, p.interconnectionApprovalDate)),
+    },
   };
 }
 
 function computeScheduling(
   projects: Project[],
   goals: ShopHealthGoals
-): SchedulingSection {
+): { section: SchedulingSection; drilldown: Pick<ShopHealthDrilldown, 'scheduledNext2Weeks' | 'scheduledNext4Weeks'> } {
   const active = projects.filter((p) => p.isActive);
-  const scheduledNext2Weeks = active.filter((p) =>
+  const sched2 = active.filter((p) =>
     isWithinDays(p.constructionScheduleDate, 14)
-  ).length;
-  const scheduledNext4Weeks = active.filter((p) =>
+  );
+  const sched4 = active.filter((p) =>
     isWithinDays(p.constructionScheduleDate, 28)
-  ).length;
+  );
 
   // Spec: "% Crew Capacity Filled = Scheduled installs for next 2 weeks /
   // (crew count × 2 weeks of workdays)". Use weeklyInstalls * 2 as the
@@ -576,14 +629,20 @@ function computeScheduling(
   const twoWeekCapacity = goals.weeklyInstalls * 2;
   const crewCapacityFilledPct =
     twoWeekCapacity > 0
-      ? Math.round((scheduledNext2Weeks / twoWeekCapacity) * 100)
+      ? Math.round((sched2.length / twoWeekCapacity) * 100)
       : 0;
 
   return {
-    scheduledNext2Weeks,
-    scheduledNext4Weeks,
-    scheduleAccuracy: null,
-    crewCapacityFilledPct,
+    section: {
+      scheduledNext2Weeks: sched2.length,
+      scheduledNext4Weeks: sched4.length,
+      scheduleAccuracy: null,
+      crewCapacityFilledPct,
+    },
+    drilldown: {
+      scheduledNext2Weeks: sched2.map((p) => toDrilldown(p, p.constructionScheduleDate)),
+      scheduledNext4Weeks: sched4.map((p) => toDrilldown(p, p.constructionScheduleDate)),
+    },
   };
 }
 
@@ -591,7 +650,7 @@ function computeOperations(
   projects: Project[],
   weekStart: Date,
   goals: ShopHealthGoals
-): OperationsSection {
+): { section: OperationsSection; drilldown: Pick<ShopHealthDrilldown, 'installsCompleted' | 'installsPlanned'> } {
   const completedThisWeek = projects.filter((p) =>
     isInWeek(p.constructionCompleteDate, weekStart)
   );
@@ -606,17 +665,23 @@ function computeOperations(
       : 0;
 
   return {
-    installsCompleted: completedThisWeek.length,
-    installsPlanned: plannedThisWeek.length,
-    installsActual: completedThisWeek.length,
-    crewUtilizationPct,
+    section: {
+      installsCompleted: completedThisWeek.length,
+      installsPlanned: plannedThisWeek.length,
+      installsActual: completedThisWeek.length,
+      crewUtilizationPct,
+    },
+    drilldown: {
+      installsCompleted: completedThisWeek.map((p) => toDrilldown(p, p.constructionCompleteDate)),
+      installsPlanned: plannedThisWeek.map((p) => toDrilldown(p, p.constructionScheduleDate)),
+    },
   };
 }
 
 function computeInspections(
   projects: Project[],
   weekStart: Date
-): InspectionsSection {
+): { section: InspectionsSection; drilldown: Pick<ShopHealthDrilldown, 'awaitingInspection' | 'inspectionsPassed' | 'ptosReceived'> } {
   const active = projects.filter((p) => p.isActive);
   const awaitingInspection = active.filter(
     (p) => p.stage === "Inspection"
@@ -645,10 +710,17 @@ function computeInspections(
   );
 
   return {
-    jobsAwaitingInspection: awaitingInspection.length,
-    inspectionsPassed: passedThisWeek.length,
-    avgDaysInstallToInspection,
-    ptosReceived: ptosThisWeek.length,
+    section: {
+      jobsAwaitingInspection: awaitingInspection.length,
+      inspectionsPassed: passedThisWeek.length,
+      avgDaysInstallToInspection,
+      ptosReceived: ptosThisWeek.length,
+    },
+    drilldown: {
+      awaitingInspection: awaitingInspection.map((p) => toDrilldown(p, p.constructionCompleteDate)),
+      inspectionsPassed: passedThisWeek.map((p) => toDrilldown(p, p.inspectionPassDate)),
+      ptosReceived: ptosThisWeek.map((p) => toDrilldown(p, p.ptoGrantedDate)),
+    },
   };
 }
 

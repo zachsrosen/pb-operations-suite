@@ -1,23 +1,32 @@
 'use client';
 
 import { MetricCard } from '@/components/ui/MetricCard';
-import type { OperationsSection as OperationsSectionData } from '@/lib/shop-health-types';
+import { DrilldownMetricCard } from '@/components/ui/DrilldownMetricCard';
+import type {
+  OperationsSection as OperationsSectionData,
+  ShopHealthDrilldown,
+} from '@/lib/shop-health-types';
 
-export function OperationsSectionContent({ data }: { data: OperationsSectionData }) {
+export function OperationsSectionContent({
+  data,
+  drilldown,
+}: {
+  data: OperationsSectionData;
+  drilldown: ShopHealthDrilldown;
+}) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      <MetricCard
+      <DrilldownMetricCard
         label="Installs Completed"
         value={data.installsCompleted}
+        deals={drilldown.installsCompleted}
+        dateLabel="Completed"
       />
-      <MetricCard
-        label="Planned vs Actual"
-        value={`${data.installsPlanned} / ${data.installsActual}`}
-        valueColor={
-          data.installsActual >= data.installsPlanned
-            ? 'text-emerald-500'
-            : 'text-red-400'
-        }
+      <DrilldownMetricCard
+        label="Installs Planned"
+        value={data.installsPlanned}
+        deals={drilldown.installsPlanned}
+        dateLabel="Scheduled"
       />
       <MetricCard
         label="Crew Utilization %"
