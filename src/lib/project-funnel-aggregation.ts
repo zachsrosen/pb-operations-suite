@@ -566,9 +566,9 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(waitSince, today), p.ptoStatus ?? null)
       );
     } else {
-      // PTO granted but not yet in Close Out or Project Complete
+      // In Close Out stage (priority 9) but not yet Project Complete
       const sp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
-      if (sp < 9) {
+      if (sp === 9) {
         const waitSince = p.ptoGrantedDate || p.closeDate!;
         drillDown.awaitingCloseOut.push(
           toDrillDown(p, daysBetween(waitSince, today), null)
