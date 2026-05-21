@@ -705,12 +705,43 @@ export default function PeDealsPage() {
   const unpaid = useMemo(() => filtered.filter((d) => !excludedIds.has(d.dealId)), [filtered, excludedIds]);
   const m2Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m2"), [unpaid]);
   const m1Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m1"), [unpaid]);
-  const allDeals = unpaid;
+
+  const PRECON_STAGES = new Set(["Site Survey", "Design", "Design Approval", "Permitting", "Ready to Build"]);
+  const CONSTRUCTION_STAGES = new Set(["Construction"]);
+  const INSPECTION_STAGES = new Set(["Inspection"]);
+
+  const milestoneIds = useMemo(
+    () => new Set([...m2Deals, ...m1Deals].map((d) => d.dealId)),
+    [m2Deals, m1Deals],
+  );
+  const remaining = useMemo(() => unpaid.filter((d) => !milestoneIds.has(d.dealId)), [unpaid, milestoneIds]);
+  const preconDeals = useMemo(() => remaining.filter((d) => PRECON_STAGES.has(d.dealStageLabel)), [remaining]);
+  const constructionDeals = useMemo(() => remaining.filter((d) => CONSTRUCTION_STAGES.has(d.dealStageLabel)), [remaining]);
+  const inspectionDeals = useMemo(() => remaining.filter((d) => INSPECTION_STAGES.has(d.dealStageLabel)), [remaining]);
+  const otherDeals = useMemo(() => {
+    const grouped = new Set([...preconDeals, ...constructionDeals, ...inspectionDeals].map((d) => d.dealId));
+    return remaining.filter((d) => !grouped.has(d.dealId));
+  }, [remaining, preconDeals, constructionDeals, inspectionDeals]);
 
   // Hero-card stats use the FULL filtered PE deal set (paid + approved +
   // unpaid). NOT `allDeals` — that's the leftover bucket after subtracting
   // deals shown in other table sections.
   const totalPeExpected = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+
+  // Pipeline stage distribution for hero card (counts from full filtered set)
+  const stageCounts = useMemo(() => {
+    let precon = 0, construction = 0, inspection = 0, pto = 0, closeOut = 0, complete = 0;
+    for (const d of filtered) {
+      const s = d.dealStageLabel;
+      if (PRECON_STAGES.has(s)) precon++;
+      else if (CONSTRUCTION_STAGES.has(s)) construction++;
+      else if (INSPECTION_STAGES.has(s)) inspection++;
+      else if (s === "Permission To Operate") pto++;
+      else if (s === "Close Out") closeOut++;
+      else if (s === "Project Complete") complete++;
+    }
+    return { precon, construction, inspection, pto, closeOut, complete };
+  }, [filtered]);
 
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
   const m1ReadyDeals = filtered.filter((d) => d.peM1Status === "Approved");
@@ -824,6 +855,30 @@ export default function PeDealsPage() {
           subtitle={`${fmt(totalPeExpected)} total PE expected`}
           color="orange"
         />
+        {/* Pipeline stage distribution — replaces old single-count card */}
+        <div className="col-span-2 md:col-span-5 -mt-2 mb-0">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] px-1">
+            <span className="text-muted font-medium">Pipeline:</span>
+            {stageCounts.precon > 0 && (
+              <span className="text-muted">Precon <span className="text-foreground font-medium">{stageCounts.precon}</span></span>
+            )}
+            {stageCounts.construction > 0 && (
+              <span className="text-muted">Construction <span className="text-orange-400 font-medium">{stageCounts.construction}</span></span>
+            )}
+            {stageCounts.inspection > 0 && (
+              <span className="text-muted">Inspection <span className="text-cyan-400 font-medium">{stageCounts.inspection}</span></span>
+            )}
+            {stageCounts.pto > 0 && (
+              <span className="text-muted">PTO <span className="text-blue-400 font-medium">{stageCounts.pto}</span></span>
+            )}
+            {stageCounts.closeOut > 0 && (
+              <span className="text-muted">Close Out <span className="text-emerald-400 font-medium">{stageCounts.closeOut}</span></span>
+            )}
+            {stageCounts.complete > 0 && (
+              <span className="text-muted">Complete <span className="text-green-400 font-medium">{stageCounts.complete}</span></span>
+            )}
+          </div>
+        </div>
         <StatCard
           key={`awaiting-${totalAwaitingCount}-${totalAwaitingValue}`}
           label="Awaiting PE Approval"
@@ -1052,18 +1107,64 @@ export default function PeDealsPage() {
               docMap={docMap}
             />
           )}
-          <DealSection
-            title="All Active PE Deals"
-            subtitle={`${allDeals.length} total`}
-            deals={allDeals}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            sortArrow={sortArrow}
-            toggleSort={toggleSort}
-            onStatusChange={handleStatusChange}
-            savingDeals={savingDeals}
-            docMap={docMap}
-          />
+          {preconDeals.length > 0 && (
+            <DealSection
+              title="Preconstruction"
+              subtitle={`${preconDeals.length} deal${preconDeals.length !== 1 ? "s" : ""} — survey through ready to build`}
+              deals={preconDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+              docMap={docMap}
+            />
+          )}
+          {constructionDeals.length > 0 && (
+            <DealSection
+              title="In Construction"
+              subtitle={`${constructionDeals.length} deal${constructionDeals.length !== 1 ? "s" : ""}`}
+              accent="orange"
+              deals={constructionDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+              docMap={docMap}
+            />
+          )}
+          {inspectionDeals.length > 0 && (
+            <DealSection
+              title="Pending Inspection"
+              subtitle={`${inspectionDeals.length} deal${inspectionDeals.length !== 1 ? "s" : ""}`}
+              accent="emerald"
+              deals={inspectionDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+              docMap={docMap}
+            />
+          )}
+          {otherDeals.length > 0 && (
+            <DealSection
+              title="Other"
+              subtitle={`${otherDeals.length} deal${otherDeals.length !== 1 ? "s" : ""}`}
+              deals={otherDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+              docMap={docMap}
+            />
+          )}
         </div>
       )}
     </DashboardShell>
