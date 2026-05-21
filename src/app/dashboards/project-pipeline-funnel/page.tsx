@@ -53,6 +53,8 @@ const STAGE_CONFIG: StageConfig[] = [
   { key: "permitsIssued", label: "Permits Issued", color: "bg-violet-500", textColor: "text-violet-400" },
   { key: "constructionScheduled", label: "Construction Sched.", color: "bg-cyan-500", textColor: "text-cyan-400" },
   { key: "constructionComplete", label: "Construction Complete", color: "bg-green-500", textColor: "text-green-400" },
+  { key: "inspectionPassed", label: "Inspection Passed", color: "bg-emerald-500", textColor: "text-emerald-400" },
+  { key: "ptoGranted", label: "PTO Granted", color: "bg-teal-500", textColor: "text-teal-400" },
 ];
 
 const MEDIAN_KEYS: Array<{
@@ -66,6 +68,8 @@ const MEDIAN_KEYS: Array<{
   { key: "permitSubmitToIssued" },
   { key: "permitIssuedToConstructionScheduled" },
   { key: "constructionScheduledToComplete" },
+  { key: "constructionCompleteToInspection" },
+  { key: "inspectionToPto" },
 ];
 
 export default function ProjectPipelineFunnelPage() {
@@ -143,9 +147,9 @@ export default function ProjectPipelineFunnelPage() {
         <LoadingSpinner />
       ) : (
         <>
-          {/* Hero stat cards — first row: Sales → DA Approved */}
+          {/* Hero stat cards — row 1: Sales → Design Complete (5) */}
           <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 5)} />
-          {/* Second row: Design Complete → Construction Complete */}
+          {/* Row 2: Permits Submitted → PTO Granted (6) */}
           <HeroCards summary={s} stages={STAGE_CONFIG.slice(5)} />
 
           {/* Backlog */}
@@ -239,6 +243,8 @@ function BacklogSection({
     { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, color: "bg-violet-500", deals: drillDown.awaitingPermitIssue },
     { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule },
     { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, color: "bg-green-500", deals: drillDown.awaitingConstructionComplete },
+    { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, color: "bg-emerald-500", deals: drillDown.awaitingInspection },
+    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto },
   ];
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));

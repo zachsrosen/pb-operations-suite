@@ -19,6 +19,8 @@ export const PROJECT_FUNNEL_STAGES = [
   "permitsIssued",
   "constructionScheduled",
   "constructionComplete",
+  "inspectionPassed",
+  "ptoGranted",
 ] as const;
 
 export type ProjectFunnelStageKey = (typeof PROJECT_FUNNEL_STAGES)[number];
@@ -34,6 +36,8 @@ export interface ProjectFunnelCohort {
   permitsIssued: ProjectFunnelStageData;
   constructionScheduled: ProjectFunnelStageData;
   constructionComplete: ProjectFunnelStageData;
+  inspectionPassed: ProjectFunnelStageData;
+  ptoGranted: ProjectFunnelStageData;
 }
 
 export interface ProjectFunnelMedianDays {
@@ -45,6 +49,8 @@ export interface ProjectFunnelMedianDays {
   permitSubmitToIssued: number | null;
   permitIssuedToConstructionScheduled: number | null;
   constructionScheduledToComplete: number | null;
+  constructionCompleteToInspection: number | null;
+  inspectionToPto: number | null;
 }
 
 export interface ProjectMonthlyActivity {
@@ -59,6 +65,9 @@ export interface ProjectMonthlyActivity {
   constructionsScheduled: number;
   constructionsComplete: number;
   constructionsCompleteAmount: number;
+  inspectionsPassed: number;
+  ptosGranted: number;
+  ptosGrantedAmount: number;
 }
 
 export interface ProjectFunnelStageGroup {
@@ -90,6 +99,8 @@ export interface ProjectFunnelDrillDown {
   awaitingPermitIssue: ProjectFunnelDrillDownDeal[];
   awaitingConstructionSchedule: ProjectFunnelDrillDownDeal[];
   awaitingConstructionComplete: ProjectFunnelDrillDownDeal[];
+  awaitingInspection: ProjectFunnelDrillDownDeal[];
+  awaitingPto: ProjectFunnelDrillDownDeal[];
 }
 
 export interface ProjectFunnelResponse {
@@ -177,6 +188,8 @@ function emptySummary(): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
     permitsIssued: emptyStage(),
     constructionScheduled: emptyStage(),
     constructionComplete: emptyStage(),
+    inspectionPassed: emptyStage(),
+    ptoGranted: emptyStage(),
   };
 }
 
@@ -189,7 +202,9 @@ function emptyCohort(month: string): ProjectFunnelCohort {
  * Later milestones imply earlier ones were completed (handles HubSpot data gaps).
  */
 function resolveMilestones(p: Project) {
-  const hasConstructionComplete = !!p.constructionCompleteDate;
+  const hasPtoGranted = !!p.ptoGrantedDate;
+  const hasInspectionPassed = hasPtoGranted || !!p.inspectionPassDate;
+  const hasConstructionComplete = hasInspectionPassed || !!p.constructionCompleteDate;
   const hasConstructionScheduled = hasConstructionComplete || !!p.constructionScheduleDate;
   const hasPermitIssued = hasConstructionScheduled || !!p.permitIssueDate;
   const hasPermitSubmit = hasPermitIssued || !!p.permitSubmitDate;
@@ -207,6 +222,8 @@ function resolveMilestones(p: Project) {
     hasPermitIssued,
     hasConstructionScheduled,
     hasConstructionComplete,
+    hasInspectionPassed,
+    hasPtoGranted,
   };
 }
 
@@ -244,6 +261,8 @@ export function buildProjectFunnelData(
   const dPermitSubmitToIssued: number[] = [];
   const dPermitIssuedToConstructionScheduled: number[] = [];
   const dConstructionScheduledToComplete: number[] = [];
+  const dConstructionCompleteToInspection: number[] = [];
+  const dInspectionToPto: number[] = [];
 
   for (const p of filtered) {
     const cancelled = p.stageId === CANCELLED_STAGE_ID;
@@ -306,6 +325,18 @@ export function buildProjectFunnelData(
       if (!cancelled && p.constructionScheduleDate && p.constructionCompleteDate)
         dConstructionScheduledToComplete.push(daysBetween(p.constructionScheduleDate, p.constructionCompleteDate));
     }
+    if (m.hasInspectionPassed) {
+      addToStage(summary.inspectionPassed, amt, cancelled);
+      addToStage(cohort.inspectionPassed, amt, cancelled);
+      if (!cancelled && p.constructionCompleteDate && p.inspectionPassDate)
+        dConstructionCompleteToInspection.push(daysBetween(p.constructionCompleteDate, p.inspectionPassDate));
+    }
+    if (m.hasPtoGranted) {
+      addToStage(summary.ptoGranted, amt, cancelled);
+      addToStage(cohort.ptoGranted, amt, cancelled);
+      if (!cancelled && p.inspectionPassDate && p.ptoGrantedDate)
+        dInspectionToPto.push(daysBetween(p.inspectionPassDate, p.ptoGrantedDate));
+    }
   }
 
   const cohorts = [...cohortMap.values()].sort((a, b) => b.month.localeCompare(a.month));
@@ -326,6 +357,9 @@ export function buildProjectFunnelData(
         constructionsScheduled: 0,
         constructionsComplete: 0,
         constructionsCompleteAmount: 0,
+        inspectionsPassed: 0,
+        ptosGranted: 0,
+        ptosGrantedAmount: 0,
       });
     }
     return activityMap.get(mk)!;
@@ -344,6 +378,8 @@ export function buildProjectFunnelData(
     { field: "permitIssueDate", activityKey: "permitsIssued" },
     { field: "constructionScheduleDate", activityKey: "constructionsScheduled" },
     { field: "constructionCompleteDate", activityKey: "constructionsComplete", amountKey: "constructionsCompleteAmount" },
+    { field: "inspectionPassDate", activityKey: "inspectionsPassed" },
+    { field: "ptoGrantedDate", activityKey: "ptosGranted", amountKey: "ptosGrantedAmount" },
   ];
 
   for (const p of projects) {
@@ -395,6 +431,8 @@ export function buildProjectFunnelData(
     awaitingPermitIssue: [],
     awaitingConstructionSchedule: [],
     awaitingConstructionComplete: [],
+    awaitingInspection: [],
+    awaitingPto: [],
   };
 
   for (const p of filtered) {
@@ -423,22 +461,32 @@ export function buildProjectFunnelData(
     } else if (!m.hasPermitSubmit) {
       const waitSince = p.designCompletionDate || p.closeDate!;
       drillDown.awaitingPermitSubmit.push(
-        toDrillDown(p, daysBetween(waitSince, today), null)
+        toDrillDown(p, daysBetween(waitSince, today), p.permittingStatus ?? null)
       );
     } else if (!m.hasPermitIssued) {
       const waitSince = p.permitSubmitDate || p.closeDate!;
       drillDown.awaitingPermitIssue.push(
-        toDrillDown(p, daysBetween(waitSince, today), null)
+        toDrillDown(p, daysBetween(waitSince, today), p.permittingStatus ?? null)
       );
     } else if (!m.hasConstructionScheduled) {
       const waitSince = p.permitIssueDate || p.closeDate!;
       drillDown.awaitingConstructionSchedule.push(
-        toDrillDown(p, daysBetween(waitSince, today), null)
+        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null)
       );
     } else if (!m.hasConstructionComplete) {
       const waitSince = p.constructionScheduleDate || p.closeDate!;
       drillDown.awaitingConstructionComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), null)
+        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null)
+      );
+    } else if (!m.hasInspectionPassed) {
+      const waitSince = p.constructionCompleteDate || p.closeDate!;
+      drillDown.awaitingInspection.push(
+        toDrillDown(p, daysBetween(waitSince, today), p.finalInspectionStatus ?? null)
+      );
+    } else if (!m.hasPtoGranted) {
+      const waitSince = p.inspectionPassDate || p.closeDate!;
+      drillDown.awaitingPto.push(
+        toDrillDown(p, daysBetween(waitSince, today), p.ptoStatus ?? null)
       );
     }
   }
@@ -453,6 +501,8 @@ export function buildProjectFunnelData(
   drillDown.awaitingPermitIssue.sort(byWaitDesc);
   drillDown.awaitingConstructionSchedule.sort(byWaitDesc);
   drillDown.awaitingConstructionComplete.sort(byWaitDesc);
+  drillDown.awaitingInspection.sort(byWaitDesc);
+  drillDown.awaitingPto.sort(byWaitDesc);
 
   return {
     summary,
@@ -469,6 +519,8 @@ export function buildProjectFunnelData(
       permitSubmitToIssued: median(dPermitSubmitToIssued),
       permitIssuedToConstructionScheduled: median(dPermitIssuedToConstructionScheduled),
       constructionScheduledToComplete: median(dConstructionScheduledToComplete),
+      constructionCompleteToInspection: median(dConstructionCompleteToInspection),
+      inspectionToPto: median(dInspectionToPto),
     },
     generatedAt: new Date().toISOString(),
   };
