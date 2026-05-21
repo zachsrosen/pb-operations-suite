@@ -745,6 +745,9 @@ export default function PeDealsPage() {
   const readyToInvoiceValue =
     m1ReadyDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0) +
     m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const approvedUnpaidDealCount = filtered.filter((d) =>
+    d.peM1Status === "Approved" || d.peM2Status === "Approved",
+  ).length;
 
   // Already-paid PE totals across the full filtered set.
   const m1PaidDeals = filtered.filter((d) => d.peM1Status === "Paid");
@@ -752,6 +755,9 @@ export default function PeDealsPage() {
   const m1PaidValue = m1PaidDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
   const m2PaidValue = m2PaidDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
   const totalPECollected = m1PaidValue + m2PaidValue;
+  const collectedDealCount = filtered.filter((d) =>
+    d.peM1Status === "Paid" || d.peM2Status === "Paid",
+  ).length;
 
   // PE Receivable = milestones PE has committed to (Approved or Paid only).
   // Excludes deals where PE hasn't yet approved either milestone.
@@ -764,8 +770,10 @@ export default function PeDealsPage() {
     .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
   const totalPEReceivable = m1ReceivableValue + m2ReceivableValue;
   const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
-  const m1ReceivableCount = filtered.filter((d) => d.peM1Status !== null && APPROVED_OR_PAID.has(d.peM1Status)).length;
-  const m2ReceivableCount = filtered.filter((d) => d.peM2Status !== null && APPROVED_OR_PAID.has(d.peM2Status)).length;
+  const totalApprovedDealCount = filtered.filter((d) =>
+    (d.peM1Status !== null && APPROVED_OR_PAID.has(d.peM1Status)) ||
+    (d.peM2Status !== null && APPROVED_OR_PAID.has(d.peM2Status)),
+  ).length;
 
   // Awaiting PE Approval = PE payment we're owed based on deal stage,
   // minus what's already Approved or Paid.
@@ -783,20 +791,25 @@ export default function PeDealsPage() {
   let awaitingM2Value = 0;
   let awaitingM1Count = 0;
   let awaitingM2Count = 0;
+  let awaitingDealCount = 0;
   for (const d of filtered) {
     const atPto = isPto(d);
     const atCloseOut = isCloseOutOrComplete(d);
     if (!atPto && !atCloseOut) continue;
+    let dealAwaiting = false;
     // M1: should be approved/paid at PTO or later
     if (!APPROVED_OR_PAID.has(d.peM1Status ?? "")) {
       awaitingM1Value += d.pePaymentIC ?? 0;
       awaitingM1Count++;
+      dealAwaiting = true;
     }
     // M2: should be approved/paid at close-out or later
     if (atCloseOut && !APPROVED_OR_PAID.has(d.peM2Status ?? "")) {
       awaitingM2Value += d.pePaymentPC ?? 0;
       awaitingM2Count++;
+      dealAwaiting = true;
     }
+    if (dealAwaiting) awaitingDealCount++;
   }
   const totalAwaitingValue = awaitingM1Value + awaitingM2Value;
   const totalAwaitingCount = awaitingM1Count + awaitingM2Count;
@@ -854,28 +867,28 @@ export default function PeDealsPage() {
           key={`awaiting-${totalAwaitingCount}-${totalAwaitingValue}`}
           label="Awaiting PE Approval"
           value={fmt(totalAwaitingValue)}
-          subtitle={`${totalAwaitingCount} milestones · ${awaitingM1Count} M1 + ${awaitingM2Count} M2`}
+          subtitle={`${awaitingDealCount} deals · ${awaitingM1Count} M1 (${fmt(awaitingM1Value)}) + ${awaitingM2Count} M2 (${fmt(awaitingM2Value)})`}
           color="amber"
         />
         <StatCard
           key={`ready-${readyToInvoiceCount}-${readyToInvoiceValue}`}
           label="Approved (Unpaid)"
           value={fmt(readyToInvoiceValue)}
-          subtitle={`${readyToInvoiceCount} milestones · ${m1ReadyDeals.length} M1 + ${m2ReadyDeals.length} M2`}
+          subtitle={`${approvedUnpaidDealCount} deals · ${m1ReadyDeals.length} M1 (${fmt(m1ReadyDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0))}) + ${m2ReadyDeals.length} M2 (${fmt(m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0))})`}
           color="blue"
         />
         <StatCard
           key={`paid-${totalPECollected}`}
           label="PE Collected"
           value={fmt(totalPECollected)}
-          subtitle={`${m1PaidDeals.length + m2PaidDeals.length} milestones · ${m1PaidDeals.length} M1 + ${m2PaidDeals.length} M2`}
+          subtitle={`${collectedDealCount} deals · ${m1PaidDeals.length} M1 (${fmt(m1PaidValue)}) + ${m2PaidDeals.length} M2 (${fmt(m2PaidValue)})`}
           color="emerald"
         />
         <StatCard
           key={`recv-${totalPEReceivable}`}
           label="Total Approved"
           value={fmt(totalPEReceivable)}
-          subtitle={`${m1ReceivableCount + m2ReceivableCount} milestones · Paid ${fmt(totalPECollected)} · Unpaid ${fmt(totalPEOutstanding)}`}
+          subtitle={`${totalApprovedDealCount} deals · Paid ${fmt(totalPECollected)} · Unpaid ${fmt(totalPEOutstanding)}`}
           color="green"
         />
       </div>
