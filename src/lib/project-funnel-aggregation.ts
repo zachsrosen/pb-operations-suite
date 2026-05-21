@@ -11,6 +11,7 @@ export interface ProjectFunnelStageData {
 
 export const PROJECT_FUNNEL_STAGES = [
   "salesClosed",
+  "surveyScheduled",
   "surveyDone",
   "daSent",
   "daApproved",
@@ -28,6 +29,7 @@ export type ProjectFunnelStageKey = (typeof PROJECT_FUNNEL_STAGES)[number];
 export interface ProjectFunnelCohort {
   month: string;
   salesClosed: ProjectFunnelStageData;
+  surveyScheduled: ProjectFunnelStageData;
   surveyDone: ProjectFunnelStageData;
   daSent: ProjectFunnelStageData;
   daApproved: ProjectFunnelStageData;
@@ -41,7 +43,8 @@ export interface ProjectFunnelCohort {
 }
 
 export interface ProjectFunnelMedianDays {
-  closedToSurvey: number | null;
+  closedToSurveyScheduled: number | null;
+  surveyScheduledToComplete: number | null;
   surveyToDaSent: number | null;
   daSentToApproved: number | null;
   approvedToDesignComplete: number | null;
@@ -55,6 +58,7 @@ export interface ProjectFunnelMedianDays {
 
 export interface ProjectMonthlyActivity {
   month: string;
+  surveysScheduled: number;
   surveysCompleted: number;
   dasSent: number;
   dasApproved: number;
@@ -91,6 +95,7 @@ export interface ProjectFunnelDrillDownDeal {
 }
 
 export interface ProjectFunnelDrillDown {
+  awaitingSurveySchedule: ProjectFunnelDrillDownDeal[];
   awaitingSurvey: ProjectFunnelDrillDownDeal[];
   awaitingDaSend: ProjectFunnelDrillDownDeal[];
   awaitingApproval: ProjectFunnelDrillDownDeal[];
@@ -200,6 +205,7 @@ function addToStage(
 function emptySummary(): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
   return {
     salesClosed: emptyStage(),
+    surveyScheduled: emptyStage(),
     surveyDone: emptyStage(),
     daSent: emptyStage(),
     daApproved: emptyStage(),
@@ -262,8 +268,10 @@ function resolveMilestones(p: Project) {
   const hasDaApproved = hasDesignComplete || stageDaApproved || !!p.designApprovalDate;
   const hasDaSent = hasDaApproved || stageDaSent || !!p.designApprovalSentDate;
   const hasSurvey = hasDaSent || stageSurvey || !!p.siteSurveyCompletionDate;
+  const hasSurveyScheduled = hasSurvey || !!p.siteSurveyScheduleDate || p.isSiteSurveyScheduled;
 
   return {
+    hasSurveyScheduled,
     hasSurvey,
     hasDaSent,
     hasDaApproved,
@@ -304,7 +312,8 @@ export function buildProjectFunnelData(
   const cohortMap = new Map<string, ProjectFunnelCohort>();
 
   // Median-days accumulators
-  const dClosedToSurvey: number[] = [];
+  const dClosedToSurveyScheduled: number[] = [];
+  const dSurveyScheduledToComplete: number[] = [];
   const dSurveyToDaSent: number[] = [];
   const dDaSentToApproved: number[] = [];
   const dApprovedToDesignComplete: number[] = [];
@@ -328,11 +337,17 @@ export function buildProjectFunnelData(
     addToStage(summary.salesClosed, amt, cancelled);
     addToStage(cohort.salesClosed, amt, cancelled);
 
+    if (m.hasSurveyScheduled) {
+      addToStage(summary.surveyScheduled, amt, cancelled);
+      addToStage(cohort.surveyScheduled, amt, cancelled);
+      if (!cancelled && p.siteSurveyScheduleDate)
+        dClosedToSurveyScheduled.push(daysBetween(p.closeDate!, p.siteSurveyScheduleDate));
+    }
     if (m.hasSurvey) {
       addToStage(summary.surveyDone, amt, cancelled);
       addToStage(cohort.surveyDone, amt, cancelled);
-      if (!cancelled && p.siteSurveyCompletionDate)
-        dClosedToSurvey.push(daysBetween(p.closeDate!, p.siteSurveyCompletionDate));
+      if (!cancelled && p.siteSurveyScheduleDate && p.siteSurveyCompletionDate)
+        dSurveyScheduledToComplete.push(daysBetween(p.siteSurveyScheduleDate, p.siteSurveyCompletionDate));
     }
     if (m.hasDaSent) {
       addToStage(summary.daSent, amt, cancelled);
@@ -398,6 +413,7 @@ export function buildProjectFunnelData(
     if (!activityMap.has(mk)) {
       activityMap.set(mk, {
         month: mk,
+        surveysScheduled: 0,
         surveysCompleted: 0,
         dasSent: 0,
         dasApproved: 0,
@@ -421,6 +437,7 @@ export function buildProjectFunnelData(
     activityKey: keyof ProjectMonthlyActivity;
     amountKey?: keyof ProjectMonthlyActivity;
   }> = [
+    { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled" },
     { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted" },
     { field: "designApprovalSentDate", activityKey: "dasSent" },
     { field: "designApprovalDate", activityKey: "dasApproved", amountKey: "dasApprovedAmount" },
@@ -474,6 +491,7 @@ export function buildProjectFunnelData(
   // Drill-down
   const today = todayStr();
   const drillDown: ProjectFunnelDrillDown = {
+    awaitingSurveySchedule: [],
     awaitingSurvey: [],
     awaitingDaSend: [],
     awaitingApproval: [],
@@ -490,9 +508,14 @@ export function buildProjectFunnelData(
     if (p.stageId === CANCELLED_STAGE_ID) continue;
     const m = resolveMilestones(p);
 
-    if (!m.hasSurvey) {
-      drillDown.awaitingSurvey.push(
+    if (!m.hasSurveyScheduled) {
+      drillDown.awaitingSurveySchedule.push(
         toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
+      );
+    } else if (!m.hasSurvey) {
+      const waitSince = p.siteSurveyScheduleDate || p.closeDate!;
+      drillDown.awaitingSurvey.push(
+        toDrillDown(p, daysBetween(waitSince, today), p.siteSurveyStatus ?? null)
       );
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
@@ -544,6 +567,7 @@ export function buildProjectFunnelData(
 
   const byWaitDesc = (a: ProjectFunnelDrillDownDeal, b: ProjectFunnelDrillDownDeal) =>
     b.daysWaiting - a.daysWaiting;
+  drillDown.awaitingSurveySchedule.sort(byWaitDesc);
   drillDown.awaitingSurvey.sort(byWaitDesc);
   drillDown.awaitingDaSend.sort(byWaitDesc);
   drillDown.awaitingApproval.sort(byWaitDesc);
@@ -562,7 +586,8 @@ export function buildProjectFunnelData(
     stageDistribution,
     drillDown,
     medianDays: {
-      closedToSurvey: median(dClosedToSurvey),
+      closedToSurveyScheduled: median(dClosedToSurveyScheduled),
+      surveyScheduledToComplete: median(dSurveyScheduledToComplete),
       surveyToDaSent: median(dSurveyToDaSent),
       daSentToApproved: median(dDaSentToApproved),
       approvedToDesignComplete: median(dApprovedToDesignComplete),

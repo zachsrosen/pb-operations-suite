@@ -44,13 +44,17 @@ interface StageConfig {
 }
 
 const STAGE_CONFIG: StageConfig[] = [
+  // Pre-construction
   { key: "salesClosed", label: "Sales Closed", color: "bg-orange-500", textColor: "text-orange-400" },
-  { key: "surveyDone", label: "Survey Done", color: "bg-amber-500", textColor: "text-amber-400" },
-  { key: "daSent", label: "DA Sent", color: "bg-yellow-500", textColor: "text-yellow-400" },
+  { key: "surveyScheduled", label: "Survey Scheduled", color: "bg-amber-500", textColor: "text-amber-400" },
+  { key: "surveyDone", label: "Survey Done", color: "bg-yellow-500", textColor: "text-yellow-400" },
+  { key: "daSent", label: "DA Sent", color: "bg-lime-500", textColor: "text-lime-400" },
+  // Design & permitting
   { key: "daApproved", label: "DA Approved", color: "bg-blue-500", textColor: "text-blue-400" },
   { key: "designCompleted", label: "Design Complete", color: "bg-indigo-500", textColor: "text-indigo-400" },
   { key: "permitsSubmitted", label: "Permits Submitted", color: "bg-purple-500", textColor: "text-purple-400" },
   { key: "permitsIssued", label: "Permits Issued", color: "bg-violet-500", textColor: "text-violet-400" },
+  // Construction & closeout
   { key: "constructionScheduled", label: "Construction Sched.", color: "bg-cyan-500", textColor: "text-cyan-400" },
   { key: "constructionComplete", label: "Construction Complete", color: "bg-green-500", textColor: "text-green-400" },
   { key: "inspectionPassed", label: "Inspection Passed", color: "bg-emerald-500", textColor: "text-emerald-400" },
@@ -60,7 +64,8 @@ const STAGE_CONFIG: StageConfig[] = [
 const MEDIAN_KEYS: Array<{
   key: keyof ProjectFunnelResponse["medianDays"];
 }> = [
-  { key: "closedToSurvey" },
+  { key: "closedToSurveyScheduled" },
+  { key: "surveyScheduledToComplete" },
   { key: "surveyToDaSent" },
   { key: "daSentToApproved" },
   { key: "approvedToDesignComplete" },
@@ -147,10 +152,12 @@ export default function ProjectPipelineFunnelPage() {
         <LoadingSpinner />
       ) : (
         <>
-          {/* Hero stat cards — row 1: Sales → Design Complete (5) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 5)} />
-          {/* Row 2: Permits Submitted → PTO Granted (6) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(5)} />
+          {/* Pre-construction: Sales → DA Sent (4) */}
+          <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 4)} />
+          {/* Design & Permitting: DA Approved → Permits Issued (4) */}
+          <HeroCards summary={s} stages={STAGE_CONFIG.slice(4, 8)} />
+          {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
+          <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} />
 
           {/* Backlog */}
           <BacklogSection summary={s} drillDown={data.drillDown} />
@@ -189,7 +196,7 @@ function HeroCards({
   const closedTotal = total(summary.salesClosed);
 
   return (
-    <div className={`grid gap-4 mb-4 ${stages.length <= 4 ? "grid-cols-2 lg:grid-cols-4" : "grid-cols-2 lg:grid-cols-4"}`}>
+    <div className="grid gap-4 mb-4 grid-cols-2 lg:grid-cols-4">
       {stages.map((stage, i) => {
         const d = summary[stage.key];
         const stageTotal = total(d);
@@ -235,8 +242,9 @@ function BacklogSection({
     color: string;
     deals: ProjectFunnelDrillDownDeal[];
   }> = [
-    { key: "awaitingSurvey", label: "Awaiting Survey", count: summary.salesClosed.count - summary.surveyDone.count, color: "bg-amber-500", deals: drillDown.awaitingSurvey },
-    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, color: "bg-yellow-500", deals: drillDown.awaitingDaSend },
+    { key: "awaitingSurveySchedule", label: "Awaiting Survey Sched.", count: summary.salesClosed.count - summary.surveyScheduled.count, color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule },
+    { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count, color: "bg-amber-500", deals: drillDown.awaitingSurvey },
+    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, color: "bg-lime-500", deals: drillDown.awaitingDaSend },
     { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count, color: "bg-blue-500", deals: drillDown.awaitingApproval },
     { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count, color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete },
     { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit },
