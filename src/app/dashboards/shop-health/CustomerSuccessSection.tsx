@@ -1,7 +1,8 @@
 'use client';
 
 import { MetricCard } from '@/components/ui/MetricCard';
-import type { CustomerSuccessSection } from '@/lib/shop-health-types';
+import { DrilldownMetricCard } from '@/components/ui/DrilldownMetricCard';
+import type { CustomerSuccessSection, ShopHealthDrilldown } from '@/lib/shop-health-types';
 
 function sentimentColor(value: number | null): string | undefined {
   if (value === null) return undefined;
@@ -21,8 +22,10 @@ function ComingSoonCard({ label }: { label: string }) {
 
 export function CustomerSuccessSectionContent({
   data,
+  drilldown,
 }: {
   data: CustomerSuccessSection;
+  drilldown: ShopHealthDrilldown;
 }) {
   return (
     <div className="space-y-6">
@@ -51,7 +54,7 @@ export function CustomerSuccessSectionContent({
 
       {/* Row 2: Communication health */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard
+        <DrilldownMetricCard
           label="Avg Days Since Contact"
           value={data.avgDaysSinceContact !== null ? `${data.avgDaysSinceContact}d` : '—'}
           valueColor={
@@ -63,8 +66,10 @@ export function CustomerSuccessSectionContent({
                   : 'text-red-400'
               : undefined
           }
+          deals={drilldown.daysSinceContact}
+          dateLabel="Last Contact"
         />
-        <MetricCard
+        <DrilldownMetricCard
           label="No Same-Day Response"
           value={data.noSameDayResponseCount}
           valueColor={
@@ -75,6 +80,8 @@ export function CustomerSuccessSectionContent({
                 : 'text-red-400'
           }
           sub="contacts"
+          deals={drilldown.noSameDayResponse}
+          dateLabel="Last Contact"
         />
         <MetricCard
           label="Avg Response Time"

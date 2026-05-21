@@ -174,7 +174,7 @@ export default function ShopHealthDashboard() {
 
           {/* Customer Success */}
           <SectionCard title="Customer Success" icon="🤝" health={data.sectionHealth.customerSuccess}>
-            <CustomerSuccessSectionContent data={data.customerSuccess} />
+            <CustomerSuccessSectionContent data={data.customerSuccess} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Bottlenecks */}

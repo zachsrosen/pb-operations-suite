@@ -307,12 +307,13 @@ export async function getShopHealthData(
   }
 
   // ── Customer Success section ──
-  const customerSuccess = await computeCustomerSuccess(
+  const csResult = await computeCustomerSuccess(
     locationProjects,
     group,
     weekStart,
     contactMetrics
   );
+  const customerSuccess = csResult.section;
 
   // Compute prior-week avg sentiment for hero delta
   const priorActive = locationProjects.filter((p) => p.isActive);
@@ -357,6 +358,7 @@ export async function getShopHealthData(
     ...schedulingResult.drilldown,
     ...opsResult.drilldown,
     ...inspResult.drilldown,
+    ...csResult.drilldown,
   };
 
   return {
@@ -741,7 +743,7 @@ async function computeCustomerSuccess(
   group: DashboardLocationGroup,
   weekStart: Date,
   contactMetrics: DealContactProperties[]
-): Promise<CustomerSuccessSection> {
+): Promise<{ section: CustomerSuccessSection; drilldown: Pick<ShopHealthDrilldown, 'daysSinceContact' | 'noSameDayResponse'> }> {
   const activeDeals = locationProjects.filter((p) => p.isActive);
 
   // ── Sentiment from deal properties ──
@@ -760,20 +762,23 @@ async function computeCustomerSuccess(
 
   // ── Avg days since last contact ──
   const now = new Date();
-  const daysSinceContact = activeDeals
-    .map((p) => {
-      if (!p.notesLastContacted) return null;
-      const last = new Date(p.notesLastContacted);
-      if (isNaN(last.getTime())) return null;
-      return Math.max(0, Math.round((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)));
-    })
-    .filter((d): d is number => d !== null);
+  const dealsWithContactDays: { deal: Project; days: number }[] = [];
+  for (const p of activeDeals) {
+    if (!p.notesLastContacted) continue;
+    const last = new Date(p.notesLastContacted);
+    if (isNaN(last.getTime())) continue;
+    const days = Math.max(0, Math.round((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)));
+    dealsWithContactDays.push({ deal: p, days });
+  }
+  // Sort worst-first (most days since contact at top)
+  dealsWithContactDays.sort((a, b) => b.days - a.days);
 
+  const daysSinceContactValues = dealsWithContactDays.map((d) => d.days);
   const avgDaysSinceContact =
-    daysSinceContact.length > 0
+    daysSinceContactValues.length > 0
       ? Math.round(
-          (daysSinceContact.reduce((a, b) => a + b, 0) /
-            daysSinceContact.length) *
+          (daysSinceContactValues.reduce((a, b) => a + b, 0) /
+            daysSinceContactValues.length) *
             10
         ) / 10
       : null;
@@ -862,6 +867,7 @@ async function computeCustomerSuccess(
   // (dedupe by contactId so a contact linked to multiple deals counts once)
   const seenContacts = new Set<string>();
   let noSameDayCount = 0;
+  const noSameDayDealIds = new Set<string>();
   const respondHours: number[] = [];
   for (const cm of locationContactMetrics) {
     if (seenContacts.has(cm.contactId)) continue;
@@ -871,6 +877,7 @@ async function computeCustomerSuccess(
       cm.noSameDayResponse.toLowerCase() === "true"
     ) {
       noSameDayCount++;
+      noSameDayDealIds.add(cm.dealId);
     }
     if (cm.averageTimeToRespondHours !== null) {
       respondHours.push(cm.averageTimeToRespondHours);
@@ -884,21 +891,46 @@ async function computeCustomerSuccess(
         ) / 10
       : null;
 
+  // ── Drilldown: deals for "days since contact" (sorted worst-first) ──
+  const daysSinceContactDrilldown = dealsWithContactDays.map(({ deal }) =>
+    toDrilldown(deal, deal.notesLastContacted)
+  ).map((d, i) => ({
+    ...d,
+    // Override the date field to show "Xd ago" for clarity
+    date: dealsWithContactDays[i] ? `${dealsWithContactDays[i].days}d ago` : d.date,
+  }));
+
+  // ── Drilldown: deals linked to no-same-day-response contacts ──
+  const activeDealMap = new Map(activeDeals.map((p) => [String(p.id), p]));
+  const noSameDayDeals: DrilldownDeal[] = [];
+  for (const dealId of noSameDayDealIds) {
+    const deal = activeDealMap.get(dealId);
+    if (deal) {
+      noSameDayDeals.push(toDrilldown(deal, deal.notesLastContacted));
+    }
+  }
+
   return {
-    avgSentimentScore,
-    fiveStarReviewsMTD: reviewCount,
-    fiveStarReviewsTarget: reviewTarget,
-    npsCsat: null,
-    avgDaysSinceContact,
-    noSameDayResponseCount: noSameDayCount,
-    avgTimeToRespondHours,
-    proactiveUpdatePct: null,
-    openEscalations: null,
-    avgEscalationAge: null,
-    avgResolutionTime: null,
-    changeOrdersPerJob: null,
-    activeServiceTickets: null,
-    sentimentDistribution: distribution,
+    section: {
+      avgSentimentScore,
+      fiveStarReviewsMTD: reviewCount,
+      fiveStarReviewsTarget: reviewTarget,
+      npsCsat: null,
+      avgDaysSinceContact,
+      noSameDayResponseCount: noSameDayCount,
+      avgTimeToRespondHours,
+      proactiveUpdatePct: null,
+      openEscalations: null,
+      avgEscalationAge: null,
+      avgResolutionTime: null,
+      changeOrdersPerJob: null,
+      activeServiceTickets: null,
+      sentimentDistribution: distribution,
+    },
+    drilldown: {
+      daysSinceContact: daysSinceContactDrilldown,
+      noSameDayResponse: noSameDayDeals,
+    },
   };
 }
 
