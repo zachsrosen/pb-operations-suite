@@ -65,7 +65,6 @@
     "src/app/api/cron/pe-invoice-audit/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/pe-email-sync/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/pe-api-sync/route.ts": { "maxDuration": 300 },
-    "src/app/api/cron/pe-scraper-sync/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/shovels-enrich/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/zuper-property-sync/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/zuper-job-backfill/route.ts": { "maxDuration": 120 }
@@ -193,7 +192,6 @@
     { "path": "/api/cron/pe-invoice-audit", "schedule": "7 * * * *" },
     { "path": "/api/cron/pe-email-sync", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/pe-api-sync", "schedule": "0 0-1,13-23 * * *" },
-    { "path": "/api/cron/pe-scraper-sync", "schedule": "30 13,20 * * 1-5" },
     { "path": "/api/cron/pe-doc-digest", "schedule": "30 21 * * 1-5" },
     { "path": "/api/cron/shovels-enrich", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/zuper-property-sync", "schedule": "*/15 * * * *" },
