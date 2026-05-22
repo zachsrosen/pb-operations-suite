@@ -56,12 +56,15 @@ export async function POST(request: NextRequest) {
   // If only ticketId provided, resolve the associated deal
   if (!dealId && ticketId) {
     try {
-      const associations = await hubspotClient.crm.tickets.associationsApi.getAll(
-        Number(ticketId), "deals"
+      const batchResponse = await hubspotClient.crm.associations.batchApi.read(
+        "tickets",
+        "deals",
+        { inputs: [{ id: ticketId }] },
       );
-      const firstDeal = associations?.results?.[0];
+      const firstResult = batchResponse?.results?.[0];
+      const firstDeal = firstResult?.to?.[0];
       if (firstDeal) {
-        dealId = String(firstDeal.toObjectId);
+        dealId = String(firstDeal.id);
       } else {
         // No associated deal — use synthetic dealId for dedup
         dealId = `ticket:${ticketId}`;

@@ -71,6 +71,7 @@ function makeFakePrisma() {
         const row: FakeRow = {
           id,
           dealId: String(args.data.dealId),
+          ticketId: (args.data.ticketId as string | null) ?? null,
           productCode: args.data.productCode as EagleViewProduct,
           addressHash: String(args.data.addressHash),
           reportId: String(args.data.reportId),
