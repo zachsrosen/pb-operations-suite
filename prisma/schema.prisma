@@ -3839,6 +3839,7 @@ enum EagleViewOrderStatus {
 model EagleViewOrder {
   id                    String               @id @default(cuid())
   dealId                String
+  ticketId              String?              // HubSpot ticket ID when order originates from a ticket
   productCode           EagleViewProduct     @default(TDP)
   reportId              String               @unique // EagleView's ReportId from PlaceOrder
   addressHash           String // SHA-256 of normalized address (for dedup)
