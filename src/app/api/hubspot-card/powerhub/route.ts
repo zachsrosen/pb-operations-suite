@@ -252,15 +252,17 @@ function severityRank(s: string): number {
 
 /**
  * Extract the model (raw Tesla part number, e.g. "1707000-11-J") for each
- * device class from the PowerhubSite.devices JSON column. Picks the first
- * non-empty value per class — multi-pack sites typically share a model
- * across units, but if they differ we surface only the first to keep the
- * card single-line.
+ * device class from the PowerhubSite.devices JSON column. Joins all
+ * distinct part-number variants in a bucket with "; " — sites sometimes
+ * mix sub-models (e.g. domestic vs non-domestic PW3 units) and the variant
+ * matters for IRA tracking + warranty.
  *
- * For integrated battery+gateway units like Powerwall 3, Tesla reports the
- * unit only in the "gateways" bucket. We mirror that part number into the
- * powerwall slot when no standalone battery is reported, so the card shows
- * the actual battery model for PW3 sites.
+ * Integrated battery+gateway units (Powerwall 3 / Powerwall+) are reported
+ * by Tesla under the "gateways" bucket because the gateway is built into
+ * the Powerwall. The physical standalone gateway / backup switch DOES
+ * exist on those sites but isn't exposed via the partner API — so we
+ * leave gateway fields null and route the PW3 model + serials into the
+ * powerwall slot.
  */
 function extractDeviceModels(raw: unknown): {
   gateway: string | null;
@@ -269,25 +271,40 @@ function extractDeviceModels(raw: unknown): {
   meter: string | null;
 } {
   const safe = (raw ?? {}) as Record<string, unknown>;
-  const firstPn = (key: string): string | null => {
+  const pnsIn = (key: string): string[] => {
     const arr = safe[key];
-    if (!Array.isArray(arr)) return null;
+    if (!Array.isArray(arr)) return [];
+    const out: string[] = [];
     for (const item of arr as Record<string, unknown>[]) {
       const pn = typeof item?.part_number === "string" ? item.part_number.trim() : "";
-      if (pn) return pn;
+      if (pn) out.push(pn);
     }
-    return null;
+    return out;
   };
-  const gatewayPn = firstPn("gateways");
-  const batteryPn = firstPn("batteries");
-  const inverterPn = firstPn("inverters");
-  const meterPn = firstPn("meters");
-  const gatewayProduct = teslaProductFromPartNumber(gatewayPn);
+  const joinDistinct = (pns: string[]): string | null => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const pn of pns) {
+      if (!seen.has(pn)) {
+        seen.add(pn);
+        ordered.push(pn);
+      }
+    }
+    return ordered.length > 0 ? ordered.join("; ") : null;
+  };
+
+  const gatewayPns = pnsIn("gateways");
+  const truePns = gatewayPns.filter(
+    (pn) => !teslaProductFromPartNumber(pn)?.integratedBatteryGateway
+  );
+  const integratedPns = gatewayPns.filter(
+    (pn) => teslaProductFromPartNumber(pn)?.integratedBatteryGateway === true
+  );
 
   return {
-    gateway: gatewayPn,
-    powerwall: batteryPn ?? (gatewayProduct?.integratedBatteryGateway ? gatewayPn : null),
-    inverter: inverterPn,
-    meter: meterPn,
+    gateway: joinDistinct(truePns),
+    powerwall: joinDistinct([...pnsIn("batteries"), ...integratedPns]),
+    inverter: joinDistinct(pnsIn("inverters")),
+    meter: joinDistinct(pnsIn("meters")),
   };
 }

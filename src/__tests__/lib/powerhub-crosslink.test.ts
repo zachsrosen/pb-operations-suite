@@ -384,41 +384,66 @@ describe("enqueueCrossSystemPush", () => {
 });
 
 describe("buildDeviceSummary", () => {
-  it("preserves raw part number as model and mirrors PW3 serials to powerwall", () => {
-    // Tesla reports PW3 units in the gateways bucket — integrated battery+gateway
+  it("leaves gateway null on PW3 sites and routes PW3 data into powerwall fields", () => {
+    // Tesla reports PW3 units in the gateways bucket because the gateway is
+    // integrated into the Powerwall hardware. The actual standalone gateway /
+    // backup switch model is not exposed via the partner API — so we leave
+    // gateway fields null rather than mislabel the PW3 model as a gateway.
     const summary = buildDeviceSummary({
       gateways: [
         { serial_number: "TG124271002CS6", part_number: "1707000-11-J" },
       ],
       batteries: [],
     });
-    // Model fields hold raw part numbers (variant matters for IRA / warranty)
-    expect(summary.gatewayModel).toBe("1707000-11-J");
+    expect(summary.gatewayModel).toBeNull();
+    expect(summary.gatewaySerial).toBeNull();
     expect(summary.powerwallModel).toBe("1707000-11-J");
-    expect(summary.gatewaySerial).toBe("TG124271002CS6");
     expect(summary.powerwallSerials).toBe("TG124271002CS6");
-    // Formatted display uses friendly product name + part number variant
+    // Formatted display labels the row with the product name
     expect(summary.formatted).toContain("Powerwall 3: TG124271002CS6 (1707000-11-J");
     expect(summary.formatted).not.toContain("Gateway: TG124271002CS6");
   });
 
-  it("joins all serials for multi-unit Powerwall 3 sites", () => {
+  it("joins distinct part-number variants when a site mixes PW3 sub-models", () => {
+    // STE20240519-00523 from prod: mix of -11-J (domestic) and -11-L variants
     const summary = buildDeviceSummary({
       gateways: [
-        { serial_number: "TG124056002MBB", part_number: "1707000-11-J" },
-        { serial_number: "TG124055002744", part_number: "1707000-11-J" },
-        { serial_number: "TG124056002JMN", part_number: "1707000-11-J" },
+        { serial_number: "TG124271002CS6", part_number: "1707000-11-L" },
+        { serial_number: "TG124078002XM1", part_number: "1707000-11-J" },
+        { serial_number: "TG124078002Y41", part_number: "1707000-11-J" },
+        { serial_number: "TG125062000J4B", part_number: "1707000-11-L" },
       ],
       batteries: [],
     });
-    expect(summary.gatewaySerial).toBe("TG124056002MBB");
-    expect(summary.powerwallSerials).toBe("TG124056002MBB; TG124055002744; TG124056002JMN");
-    expect(summary.gatewayModel).toBe("1707000-11-J");
-    expect(summary.powerwallModel).toBe("1707000-11-J");
+    expect(summary.gatewayModel).toBeNull();
+    expect(summary.powerwallModel).toBe("1707000-11-L; 1707000-11-J");
+    expect(summary.powerwallSerials).toBe(
+      "TG124271002CS6; TG124078002XM1; TG124078002Y41; TG125062000J4B"
+    );
   });
 
-  it("keeps gateway and battery models distinct for standalone PW2 sites", () => {
-    // PW2 site: standalone Backup Gateway 2 + standalone Powerwall 2 batteries
+  it("aggregates batteries + integrated PW3 entries on mixed sites", () => {
+    // STE20250210-00629 from prod: 4 PW3 (in gateways) + 2 expansion packs (in batteries)
+    const summary = buildDeviceSummary({
+      gateways: [
+        { serial_number: "TG1242630027DY", part_number: "1707000-21-K" },
+        { serial_number: "TG124298001KRW", part_number: "1707000-21-K" },
+      ],
+      batteries: [
+        { serial_number: "TG12528100181C", part_number: "1807000-20-B" },
+        { serial_number: "TG1252810014RW", part_number: "1807000-20-B" },
+      ],
+    });
+    expect(summary.gatewayModel).toBeNull();
+    expect(summary.gatewaySerial).toBeNull();
+    // Both the PW3 model AND the expansion-pack model surface in powerwallModel
+    expect(summary.powerwallModel).toBe("1807000-20-B; 1707000-21-K");
+    expect(summary.powerwallSerials).toBe(
+      "TG12528100181C; TG1252810014RW; TG1242630027DY; TG124298001KRW"
+    );
+  });
+
+  it("populates gateway fields for standalone PW2 sites with real Backup Gateway 2", () => {
     const summary = buildDeviceSummary({
       gateways: [{ serial_number: "GW001", part_number: "1232100-01-A" }],
       batteries: [
@@ -435,13 +460,14 @@ describe("buildDeviceSummary", () => {
     expect(summary.formatted).toContain("Powerwall: BAT001 (2012170-02-B)");
   });
 
-  it("keeps unknown prefixes as raw part numbers", () => {
+  it("treats unknown gateway prefixes as standalone gateway hardware", () => {
     const summary = buildDeviceSummary({
       gateways: [{ serial_number: "GW1", part_number: "9999999-XX-X" }],
       batteries: [],
     });
+    // Unknown prefix → not flagged as integrated → treat as a real gateway
     expect(summary.gatewayModel).toBe("9999999-XX-X");
-    // Unknown prefix → not treated as integrated → no mirror
+    expect(summary.gatewaySerial).toBe("GW1");
     expect(summary.powerwallModel).toBeNull();
     expect(summary.powerwallSerials).toBeNull();
   });

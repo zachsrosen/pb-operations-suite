@@ -102,41 +102,57 @@ export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
   const inverters = asArray("inverters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
   const meters = asArray("meters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
 
-  const firstNonEmptyPn = (arr: { pn: string }[]): string | null => {
-    for (const item of arr) if (item.pn) return item.pn;
-    return null;
+  // Split the gateways bucket into "true gateways" (standalone hardware like
+  // Backup Gateway 2) vs "integrated units" (PW3 / PW+ — Tesla's API reports
+  // the Powerwall unit itself in the gateways bucket because the gateway is
+  // built into it).
+  //
+  // A separate gateway / backup switch DOES exist physically on a PW3 site,
+  // but Tesla doesn't expose its model number via the partner API — so we
+  // leave the gateway model/serial null rather than mislabel the PW3 part
+  // number as a gateway model.
+  const integratedFromGateways = gateways.filter(
+    (g) => teslaProductFromPartNumber(g.pn)?.integratedBatteryGateway === true
+  );
+  const trueGateways = gateways.filter(
+    (g) => !teslaProductFromPartNumber(g.pn)?.integratedBatteryGateway
+  );
+  // Powerwall data = batteries bucket + any PW3/PW+ entries from gateways
+  const allPowerwalls = [...batteries, ...integratedFromGateways];
+
+  // Join all distinct part numbers in a bucket with "; ". Sites can mix
+  // variants (e.g. some PW3 units are 1707000-11-J domestic + some 1707000-11-L
+  // non-domestic) and we want to surface every variant for warranty + IRA
+  // domestic-content tracking, not just the first.
+  const joinDistinctPns = (arr: { pn: string }[]): string | null => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const item of arr) {
+      if (item.pn && !seen.has(item.pn)) {
+        seen.add(item.pn);
+        ordered.push(item.pn);
+      }
+    }
+    return ordered.length > 0 ? ordered.join("; ") : null;
+  };
+  const joinSerials = (arr: { sn: string }[]): string | null => {
+    const sns = arr.map((x) => x.sn).filter((s) => s.length > 0);
+    return sns.length > 0 ? sns.join("; ") : null;
   };
 
-  // Detect Powerwall 3 / Powerwall+ in the gateways bucket — Tesla's API
-  // reports these integrated battery+gateway units under "gateways" even
-  // though the hardware is really a battery. When that happens, we mirror
-  // both the model name AND serials into the powerwall slot, so the
-  // property record shows complete model+serial pairs in both fields.
-  const gatewayPn = firstNonEmptyPn(gateways);
-  const gatewayProduct = teslaProductFromPartNumber(gatewayPn);
-  const batteryPn = firstNonEmptyPn(batteries);
-  const integrated = gatewayProduct?.integratedBatteryGateway === true;
+  // Gateway fields only populated when a TRUE standalone gateway is reported.
+  // PW3 sites report no standalone gateway → both fields null.
+  const gatewaySerial = trueGateways[0]?.sn || null;
+  const gatewayModel = joinDistinctPns(trueGateways);
 
-  const gatewaySerial = gateways[0]?.sn || null;
-  const powerwallSerials = batteries.length > 0
-    ? batteries.map((b) => b.sn).filter((s) => s.length > 0).join("; ") || null
-    : integrated
-    ? gateways.map((g) => g.sn).filter((s) => s.length > 0).join("; ") || null
-    : null;
+  // Powerwall fields aggregate batteries[] + integrated gateway entries
+  const powerwallSerials = joinSerials(allPowerwalls);
+  const powerwallModel = joinDistinctPns(allPowerwalls);
+
   const inverterSerial = inverters[0]?.sn || null;
+  const inverterModel = joinDistinctPns(inverters);
   const meterSerial = meters[0]?.sn || null;
-
-  // Model fields hold the RAW part number (e.g. "1707000-11-J") — the
-  // specific variant matters for things like IRA domestic-content tracking
-  // and warranty SKU lookup. Friendly product names ("Powerwall 3", etc.)
-  // are used only for the formatted display lines below.
-  const gatewayModel = gatewayPn;
-  // If gateway is an integrated PW3/PW+, mirror its part number as the
-  // powerwall model when no standalone battery is reported (the gateway
-  // IS the battery).
-  const powerwallModel = batteryPn ?? (integrated ? gatewayPn : null);
-  const inverterModel = firstNonEmptyPn(inverters);
-  const meterModel = firstNonEmptyPn(meters);
+  const meterModel = joinDistinctPns(meters);
 
   // Formatted display: shows friendly product name as the role prefix,
   // followed by serial and part-number variant in parens so the variant
