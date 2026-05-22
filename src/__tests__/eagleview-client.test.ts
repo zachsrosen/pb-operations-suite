@@ -260,26 +260,34 @@ describe("EagleViewClient — placeOrder + reports", () => {
     (global.fetch as jest.Mock).mockReset();
   });
 
-  it("placeOrder posts to /v2/Order/PlaceOrder and returns reportId", async () => {
+  it("placeOrder posts to /v2/Order/PlaceOrder with correct wire format", async () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(tokenResponse)
-      .mockResolvedValueOnce(mkResp(200, { reportId: 12345 }));
+      .mockResolvedValueOnce(mkResp(200, { OrderId: 99, ReportIds: [12345] }));
     const c = makeClient();
     const result = await c.placeOrder({
-      reportAddresses: {
-        primary: { street: "1 Main St", city: "Denver", state: "CO", zip: "80202" },
-      },
+      street: "1 Main St",
+      city: "Denver",
+      state: "CO",
+      zip: "80202",
       primaryProductId: 91,
       deliveryProductId: 8,
       measurementInstructionType: 1,
       changesInLast4Years: false,
     });
-    expect(result.reportId).toBe(12345);
+    // camelizeKeys normalizes PascalCase response
+    expect(result.reportIds).toEqual([12345]);
+    expect(result.orderId).toBe(99);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[1];
     expect(url).toBe("https://sandbox.apicenter.eagleview.com/v2/Order/PlaceOrder");
     expect(init.method).toBe("POST");
+    // Wire format uses PascalCase + nested arrays
     const body = JSON.parse(init.body as string);
-    expect(body.primaryProductId).toBe(91);
+    expect(body.OrderReports).toHaveLength(1);
+    expect(body.OrderReports[0].PrimaryProductId).toBe(91);
+    expect(body.OrderReports[0].ReportAddresses).toHaveLength(1);
+    expect(body.OrderReports[0].ReportAddresses[0].Address).toBe("1 Main St");
+    expect(body.OrderReports[0].ReportAddresses[0].AddressType).toBe(1);
   });
 
   it("getReport sends reportId as query param", async () => {

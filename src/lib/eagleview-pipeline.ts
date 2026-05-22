@@ -205,15 +205,11 @@ export async function orderTrueDesign(
   let realReportId: string;
   try {
     const placed = await deps.client.placeOrder({
-      reportAddresses: {
-        primary: {
-          street: addressParts.street,
-          city: addressParts.city,
-          state: addressParts.state,
-          zip: addressParts.zip,
-          country: "United States",
-        },
-      },
+      street: addressParts.street,
+      city: addressParts.city,
+      state: addressParts.state,
+      zip: addressParts.zip,
+      country: "United States",
       primaryProductId: EAGLEVIEW_PRODUCT_ID.TDP,
       // EagleView's "Regular" delivery (productId 8); upgrade-rush products are
       // separate IDs that aren't in our enabled set.
@@ -225,7 +221,10 @@ export async function orderTrueDesign(
       longitude,
       referenceId: input.dealId,
     });
-    realReportId = String(placed.reportId);
+    // Production returns reportIds[] array; sandbox returned reportId singular.
+    realReportId = String(
+      placed.reportIds?.[0] ?? placed.reportId ?? "unknown",
+    );
   } catch (err) {
     Sentry.captureException(err, {
       tags: { feature: "eagleview", phase: "placeOrder" },
