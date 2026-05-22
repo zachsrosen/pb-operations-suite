@@ -393,6 +393,10 @@ export function dealToProject(deal: PrismaDeal): Project {
     customerSentimentScore: null,
     mostRecentSentimentScore: null,
     notesLastContacted: null,
+
+    // Customer response metrics (deal-level rollups — not available from DB cache)
+    noSameDayResponse: 0,
+    averageCustomerResponseTime: null,
   };
 }
 

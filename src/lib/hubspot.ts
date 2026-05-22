@@ -447,6 +447,10 @@ export interface Project {
   customerSentimentScore: number | null;
   mostRecentSentimentScore: number | null;
   notesLastContacted: string | null;
+
+  // Customer response metrics (deal-level rollups)
+  noSameDayResponse: number;
+  averageCustomerResponseTime: number | null;
 }
 
 export interface LineItem {
@@ -736,6 +740,10 @@ const DEAL_PROPERTIES = [
   "customer_sentiment_score",
   "most_recent_sentiment_score",
   "notes_last_contacted",
+
+  // Customer response metrics (deal-level rollups)
+  "no_same_day_response",
+  "average_customer_response_time",
 ];
 
 const MS_PER_DAY = 86_400_000;
@@ -1118,6 +1126,10 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     customerSentimentScore: deal.customer_sentiment_score ? parseFloat(String(deal.customer_sentiment_score)) || null : null,
     mostRecentSentimentScore: deal.most_recent_sentiment_score ? parseFloat(String(deal.most_recent_sentiment_score)) || null : null,
     notesLastContacted: deal.notes_last_contacted ? String(deal.notes_last_contacted) : null,
+
+    // Customer response metrics (deal-level rollups)
+    noSameDayResponse: parseInt(String(deal.no_same_day_response || "0"), 10) || 0,
+    averageCustomerResponseTime: deal.average_customer_response_time ? parseFloat(String(deal.average_customer_response_time)) || null : null,
   };
 }
 

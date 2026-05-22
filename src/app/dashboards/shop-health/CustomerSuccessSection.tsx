@@ -82,9 +82,9 @@ export function CustomerSuccessSectionContent({
                 ? 'text-amber-400'
                 : 'text-red-400'
           }
-          sub="contacts"
+          sub="missed responses"
           deals={drilldown.noSameDayResponse}
-          dateLabel="Last Contact"
+          dateLabel="Missed"
         />
         <DrilldownMetricCard
           label="Avg Response Time"

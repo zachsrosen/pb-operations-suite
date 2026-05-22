@@ -20,10 +20,10 @@ import type {
   DrilldownDeal,
   ShopHealthDrilldown,
 } from "./shop-health-types";
-import type { Project, DealContactProperties } from "./hubspot";
+import type { Project } from "./hubspot";
 import type { DashboardLocationGroup } from "./dashboard-location-groups";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
-import { fetchAllProjects, fetchContactResponseMetrics } from "./hubspot";
+import { fetchAllProjects } from "./hubspot";
 import { normalizeLocation } from "./locations";
 import { DEFAULT_TARGETS } from "./goals-pipeline-types";
 import {
@@ -295,23 +295,11 @@ export async function getShopHealthData(
     .filter((p) => isInWeek(p.constructionCompleteDate, priorWeekStart))
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  // ── Contact response metrics (batch fetch for Customer Success) ──
-  const activeDealIds = locationProjects
-    .filter((p) => p.isActive)
-    .map((p) => String(p.id));
-  let contactMetrics: DealContactProperties[] = [];
-  try {
-    contactMetrics = await fetchContactResponseMetrics(activeDealIds);
-  } catch (err) {
-    console.error("[shop-health] Failed to fetch contact response metrics:", err);
-  }
-
   // ── Customer Success section ──
   const csResult = await computeCustomerSuccess(
     locationProjects,
     group,
-    weekStart,
-    contactMetrics
+    weekStart
   );
   const customerSuccess = csResult.section;
 
@@ -741,8 +729,7 @@ const SENTIMENT_BUCKETS: Omit<SentimentBucket, "count" | "pct">[] = [
 async function computeCustomerSuccess(
   locationProjects: Project[],
   group: DashboardLocationGroup,
-  weekStart: Date,
-  contactMetrics: DealContactProperties[]
+  weekStart: Date
 ): Promise<{ section: CustomerSuccessSection; drilldown: Pick<ShopHealthDrilldown, 'daysSinceContact' | 'noSameDayResponse' | 'sentimentScores' | 'fiveStarReviews' | 'responseTime'> }> {
   const activeDeals = locationProjects.filter((p) => p.isActive);
 
@@ -866,39 +853,26 @@ async function computeCustomerSuccess(
     }
   }
 
-  // ── Response metrics from contact properties ──
-  const activeDealIds = new Set(activeDeals.map((d) => String(d.id)));
-  const locationContactMetrics = contactMetrics.filter((cm) =>
-    activeDealIds.has(cm.dealId)
-  );
-
-  // Count contacts flagged as no same-day response
-  // (dedupe by contactId so a contact linked to multiple deals counts once)
-  const seenContacts = new Set<string>();
+  // ── Response metrics from deal-level rollup properties ──
+  // Uses deal properties directly — no extra API calls needed.
+  // no_same_day_response: count of missed same-day responses per deal
+  // average_customer_response_time: avg response time in hours per deal
+  const noSameDayDealsData: { deal: Project; count: number }[] = [];
   let noSameDayCount = 0;
-  const noSameDayDealIds = new Set<string>();
   const respondHours: number[] = [];
-  // Track worst response time per deal for drill-down
   const dealResponseHours = new Map<string, number>();
-  for (const cm of locationContactMetrics) {
-    if (seenContacts.has(cm.contactId)) continue;
-    seenContacts.add(cm.contactId);
-    if (
-      cm.noSameDayResponse &&
-      cm.noSameDayResponse.toLowerCase() === "true"
-    ) {
-      noSameDayCount++;
-      noSameDayDealIds.add(cm.dealId);
+  for (const deal of activeDeals) {
+    if (deal.noSameDayResponse > 0) {
+      noSameDayCount += deal.noSameDayResponse;
+      noSameDayDealsData.push({ deal, count: deal.noSameDayResponse });
     }
-    if (cm.averageTimeToRespondHours !== null) {
-      respondHours.push(cm.averageTimeToRespondHours);
-      // Keep the worst (highest) response time per deal
-      const existing = dealResponseHours.get(cm.dealId);
-      if (existing === undefined || cm.averageTimeToRespondHours > existing) {
-        dealResponseHours.set(cm.dealId, cm.averageTimeToRespondHours);
-      }
+    if (deal.averageCustomerResponseTime !== null) {
+      respondHours.push(deal.averageCustomerResponseTime);
+      dealResponseHours.set(String(deal.id), deal.averageCustomerResponseTime);
     }
   }
+  // Sort no-same-day deals worst-first (highest count at top)
+  noSameDayDealsData.sort((a, b) => b.count - a.count);
 
   const avgTimeToRespondHours =
     respondHours.length > 0
@@ -916,15 +890,12 @@ async function computeCustomerSuccess(
     date: dealsWithContactDays[i] ? `${dealsWithContactDays[i].days}d ago` : d.date,
   }));
 
-  // ── Drilldown: deals linked to no-same-day-response contacts ──
+  // ── Drilldown: deals with no-same-day-response (sorted worst-first) ──
   const activeDealMap = new Map(activeDeals.map((p) => [String(p.id), p]));
-  const noSameDayDeals: DrilldownDeal[] = [];
-  for (const dealId of noSameDayDealIds) {
-    const deal = activeDealMap.get(dealId);
-    if (deal) {
-      noSameDayDeals.push(toDrilldown(deal, deal.notesLastContacted));
-    }
-  }
+  const noSameDayDeals: DrilldownDeal[] = noSameDayDealsData.map(({ deal, count }) => ({
+    ...toDrilldown(deal, deal.notesLastContacted),
+    date: `${count}× missed`,
+  }));
 
   // ── Drilldown: sentiment scores (worst-first) ──
   const sentimentDrilldown = dealsWithSentiment.map(({ deal, score }) => ({
@@ -933,13 +904,42 @@ async function computeCustomerSuccess(
   }));
 
   // ── Drilldown: 5-star review deals ──
-  // reviewDealIds are HubSpot deal IDs; map back to projects by matching id
+  // reviewDealIds can include deals from any pipeline (Project, D&R, Service, Roofing).
+  // Map known deals from locationProjects; batch-read unknown deals from HubSpot.
   const allProjectMap = new Map(locationProjects.map((p) => [String(p.id), p]));
   const fiveStarDrilldown: DrilldownDeal[] = [];
+  const missingDealIds: string[] = [];
   for (const dealId of reviewDealIds) {
     const deal = allProjectMap.get(dealId);
     if (deal) {
       fiveStarDrilldown.push(toDrilldown(deal, deal.closeDate));
+    } else {
+      missingDealIds.push(dealId);
+    }
+  }
+  // Batch-read deals from other pipelines (D&R, Service, Roofing) for drill-down
+  if (missingDealIds.length > 0) {
+    try {
+      const { hubspotClient } = await import("./hubspot");
+      const batchResponse = await hubspotClient.crm.deals.batchApi.read({
+        inputs: missingDealIds.map((id) => ({ id })),
+        properties: ["dealname", "project_number", "amount", "dealstage", "project_manager", "closedate"],
+        propertiesWithHistory: [],
+      });
+      for (const deal of batchResponse.results ?? []) {
+        const props = deal.properties as Record<string, string | null>;
+        fiveStarDrilldown.push({
+          id: deal.id,
+          name: props.dealname || "Unknown",
+          projectNumber: props.project_number || "",
+          amount: parseFloat(props.amount || "0") || 0,
+          stage: props.dealstage || "",
+          pm: props.project_manager || "",
+          date: props.closedate || null,
+        });
+      }
+    } catch (err) {
+      console.error("[shop-health] Failed to batch-read review deals from other pipelines:", err);
     }
   }
 
