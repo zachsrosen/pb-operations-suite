@@ -53,9 +53,10 @@ export async function POST(request: NextRequest) {
 
   const { raw, hash } = generateToken();
 
-  const baseUrl = process.env.PORTAL_BASE_URL
+  const baseUrl = (process.env.PORTAL_BASE_URL
     || process.env.NEXTAUTH_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  ).trim();
   const portalUrl = `${baseUrl}/portal/survey/${raw}`;
 
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);

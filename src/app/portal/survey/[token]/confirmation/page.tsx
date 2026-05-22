@@ -54,7 +54,6 @@ export default function SurveyConfirmationPage() {
         }
         const data = await res.json();
         if (data.status !== "scheduled") {
-          // Not scheduled — go back to main page
           router.replace(`/portal/survey/${token}`);
           return;
         }
@@ -68,7 +67,6 @@ export default function SurveyConfirmationPage() {
 
   const handleCancel = useCallback(async () => {
     if (cancelling) return;
-    // Encourage rescheduling over cancellation
     const confirmed = confirm(
       "Are you sure you want to cancel your survey?\n\nIf you need a different time, you can reschedule instead."
     );
@@ -105,38 +103,38 @@ export default function SurveyConfirmationPage() {
 
   if (state.type === "loading") {
     return (
-      <div className="animate-pulse space-y-4 py-8">
-        <div className="mx-auto h-12 w-12 rounded-full bg-skeleton" />
-        <div className="mx-auto h-6 w-48 rounded bg-skeleton" />
-        <div className="mx-auto h-4 w-64 rounded bg-skeleton" />
-        <div className="h-24 rounded-lg bg-skeleton" />
+      <div className="animate-pulse space-y-6 py-8">
+        <div className="mx-auto h-14 w-14 rounded-full bg-gray-200" />
+        <div className="mx-auto h-7 w-48 rounded-lg bg-gray-200" />
+        <div className="mx-auto h-4 w-64 rounded-lg bg-gray-200" />
+        <div className="h-32 rounded-xl bg-gray-200" />
       </div>
     );
   }
 
   if (state.type === "error") {
     return (
-      <div className="py-12 text-center">
-        <p className="text-sm text-muted">{state.message}</p>
+      <div className="py-16 text-center">
+        <p className="text-sm text-gray-500">{state.message}</p>
       </div>
     );
   }
 
   if (state.type === "cancelled") {
     return (
-      <div className="py-12 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+      <div className="py-16 text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
           <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-foreground">Survey Cancelled</h2>
-        <p className="mb-6 text-sm text-muted">
+        <h2 className="mb-2 text-lg font-semibold text-gray-900">Survey Cancelled</h2>
+        <p className="mb-8 text-sm text-gray-500">
           Your site survey has been cancelled. Would you like to pick a new time?
         </p>
         <button
           onClick={() => router.push(`/portal/survey/${token}`)}
-          className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+          className="rounded-xl bg-gradient-to-r from-[#f97316] to-[#ea580c] px-8 py-3 text-sm font-bold text-white shadow-lg shadow-orange-200 transition-all hover:shadow-xl hover:brightness-105"
         >
           Reschedule Survey
         </button>
@@ -147,7 +145,6 @@ export default function SurveyConfirmationPage() {
   const { data } = state;
   const { booking } = data;
 
-  // Format date for display
   const dateObj = new Date(booking.date + "T12:00:00Z");
   const formattedDate = dateObj.toLocaleDateString("en-US", {
     weekday: "long",
@@ -157,49 +154,47 @@ export default function SurveyConfirmationPage() {
     timeZone: "UTC",
   });
 
-  // Format time for display
   const [h, m] = booking.time.split(":").map(Number);
   const period = h >= 12 ? "PM" : "AM";
   const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   const formattedTime = `${hour12}:${m.toString().padStart(2, "0")} ${period}`;
 
-  // Google Calendar link
   const startDt = `${booking.date.replace(/-/g, "")}T${booking.time.replace(":", "")}00`;
   const endH = h + 1;
   const endDt = `${booking.date.replace(/-/g, "")}T${endH.toString().padStart(2, "0")}${m.toString().padStart(2, "0")}00`;
   const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Site Survey - Photon Brothers")}&dates=${startDt}/${endDt}&details=${encodeURIComponent(`Site survey at ${data.propertyAddress}\n\nPhoton Brothers will visit your property to assess your solar installation. The survey takes about 1 hour.`)}&location=${encodeURIComponent(data.propertyAddress)}`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       {/* Success header */}
       <div className="text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-          <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 ring-1 ring-green-100">
+          <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-xl font-semibold text-foreground">Survey Confirmed!</h2>
-        <p className="mt-1 text-sm text-muted">We&apos;ll see you soon.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-gray-900">Survey Confirmed!</h2>
+        <p className="mt-1.5 text-[15px] text-gray-500">We&apos;ll see you soon.</p>
       </div>
 
       {/* Booking details card */}
-      <div className="rounded-lg border border-t-border bg-surface p-4 space-y-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Date</p>
-          <p className="text-sm font-medium text-foreground">{formattedDate}</p>
+      <div className="divide-y divide-gray-100 rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+        <div className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Date</p>
+          <p className="mt-1 text-[15px] font-semibold text-gray-900">{formattedDate}</p>
         </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Time</p>
-          <p className="text-sm font-medium text-foreground">{formattedTime} (1 hour)</p>
+        <div className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Time</p>
+          <p className="mt-1 text-[15px] font-semibold text-gray-900">{formattedTime} <span className="font-normal text-gray-400">(1 hour)</span></p>
         </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Location</p>
-          <p className="text-sm text-foreground">{data.propertyAddress}</p>
+        <div className="p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Location</p>
+          <p className="mt-1 text-[15px] text-gray-900">{data.propertyAddress}</p>
         </div>
         {booking.accessNotes && (
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">Your Notes</p>
-            <p className="text-sm text-foreground">{booking.accessNotes}</p>
+          <div className="p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Your Notes</p>
+            <p className="mt-1 text-sm text-gray-700">{booking.accessNotes}</p>
           </div>
         )}
       </div>
@@ -209,22 +204,31 @@ export default function SurveyConfirmationPage() {
         href={calendarUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-t-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
+        className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
       >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4.5 w-4.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
         Add to Google Calendar
       </a>
 
       {/* What to expect */}
-      <div className="rounded-lg border border-t-border bg-surface p-4">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">What to Expect</h3>
-        <ul className="space-y-1.5 text-sm text-muted">
-          <li>A Photon Brothers surveyor will visit your property</li>
-          <li>They&apos;ll assess your roof, electrical panel, and sun exposure</li>
-          <li>The visit typically takes about 1 hour</li>
-          <li>Please ensure access to your main electrical panel</li>
+      <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100">
+        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">What to Expect</h3>
+        <ul className="space-y-2.5">
+          {[
+            "A Photon Brothers surveyor will visit your property",
+            "They'll assess your roof, electrical panel, and sun exposure",
+            "The visit typically takes about 1 hour",
+            "Please ensure access to your main electrical panel",
+          ].map((item) => (
+            <li key={item} className="flex items-start gap-2.5 text-sm text-gray-600">
+              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#f97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              {item}
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -233,14 +237,14 @@ export default function SurveyConfirmationPage() {
         <div className="flex gap-3">
           <button
             onClick={handleReschedule}
-            className="flex-1 rounded-lg border border-t-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
+            className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
           >
             Reschedule
           </button>
           <button
             onClick={handleCancel}
             disabled={cancelling}
-            className="flex-1 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+            className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-red-100 transition-all hover:bg-red-50 hover:shadow-md disabled:opacity-50"
           >
             {cancelling ? "Cancelling..." : "Cancel Survey"}
           </button>
