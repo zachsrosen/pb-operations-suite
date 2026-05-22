@@ -27,6 +27,9 @@ export interface PrimarySiteCandidate {
   id: string;
   siteName: string;
   createdAt: Date;
+  totalGateways: number;
+  totalBatteries: number;
+  totalInverters: number;
 }
 
 const STE_PATTERN = /^STE(\d{8})-\d+$/;
@@ -144,11 +147,12 @@ export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
  * Choose the primary site from a list of candidates.
  *
  * Rules:
- *   1. Newest STE date wins
- *   2. Tie → lexicographically max siteName
- *   3. No STE pattern → newest createdAt
- *   4. STE-named sites beat any fallback-named site
- *   5. Final tie-break: lexicographically max id (cuid)
+ *   1. Sites with equipment (gateways/batteries/inverters) beat empty sites
+ *   2. Newest STE date wins
+ *   3. Tie → lexicographically max siteName
+ *   4. No STE pattern → newest createdAt
+ *   5. STE-named sites beat any fallback-named site
+ *   6. Final tie-break: lexicographically max id (cuid)
  *
  * Returns null only if the input is empty.
  */
@@ -157,8 +161,13 @@ export function pickPrimarySite<T extends PrimarySiteCandidate>(sites: T[]): T |
   const enriched = sites.map((s) => ({
     site: s,
     steDate: parseSteDateFromName(s.siteName),
+    hasEquipment:
+      (s.totalGateways ?? 0) + (s.totalBatteries ?? 0) + (s.totalInverters ?? 0) > 0,
   }));
   enriched.sort((a, b) => {
+    // Sites with equipment always beat empty sites
+    if (a.hasEquipment && !b.hasEquipment) return -1;
+    if (!a.hasEquipment && b.hasEquipment) return 1;
     // STE-named always beats fallback-named
     if (a.steDate && !b.steDate) return -1;
     if (!a.steDate && b.steDate) return 1;
@@ -210,6 +219,9 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
       createdAt: true,
       primaryForProperty: true,
       devices: true,
+      totalGateways: true,
+      totalBatteries: true,
+      totalInverters: true,
     },
   });
 

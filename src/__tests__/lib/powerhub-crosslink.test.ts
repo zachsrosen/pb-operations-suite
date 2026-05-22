@@ -90,9 +90,12 @@ describe("parseSteDateFromName", () => {
 });
 
 describe("pickPrimarySite", () => {
-  type S = { id: string; siteName: string; createdAt: Date };
-  const mk = (id: string, siteName: string, createdAt: string): S => ({
+  type S = { id: string; siteName: string; createdAt: Date; totalGateways: number; totalBatteries: number; totalInverters: number };
+  const mk = (id: string, siteName: string, createdAt: string, equipment?: { gw?: number; bat?: number; inv?: number }): S => ({
     id, siteName, createdAt: new Date(createdAt),
+    totalGateways: equipment?.gw ?? 0,
+    totalBatteries: equipment?.bat ?? 0,
+    totalInverters: equipment?.inv ?? 0,
   });
 
   it("returns null for empty array", () => {
@@ -102,6 +105,23 @@ describe("pickPrimarySite", () => {
   it("returns the only site when there's one", () => {
     const sites = [mk("a", "STE20240105-008", "2024-01-10")];
     expect(pickPrimarySite(sites)?.id).toBe("a");
+  });
+
+  it("prefers site with equipment over newer STE site without", () => {
+    const sites = [
+      mk("a", "STE20240315-001", "2024-03-15"), // newest STE but no equipment
+      mk("b", "STE20231201-002", "2023-12-01", { gw: 1, bat: 3 }), // older STE but has equipment
+      mk("c", "STE20231105-003", "2023-11-05"), // no equipment
+    ];
+    expect(pickPrimarySite(sites)?.id).toBe("b");
+  });
+
+  it("still picks newest STE when multiple sites have equipment", () => {
+    const sites = [
+      mk("a", "STE20230101-001", "2023-01-10", { gw: 1, bat: 2 }),
+      mk("b", "STE20240105-008", "2024-01-10", { gw: 1, bat: 3, inv: 1 }),
+    ];
+    expect(pickPrimarySite(sites)?.id).toBe("b");
   });
 
   it("picks newest STE date", () => {
@@ -161,15 +181,15 @@ describe("resolvePrimarySite", () => {
     expect(result).toBeNull();
     expect(mockPrisma.hubSpotPropertyCache.updateMany).toHaveBeenCalledWith({
       where: { id: "prop-1" },
-      data: { teslaPortalUrl: null, teslaSiteId: null },
+      data: expect.objectContaining({ teslaPortalUrl: null, teslaSiteId: null }),
     });
     expect(mockPrisma.powerhubSite.updateMany).not.toHaveBeenCalled();
   });
 
   it("picks newest STE site and writes denormalized fields", async () => {
     (mockPrisma.powerhubSite.findMany as jest.Mock).mockResolvedValue([
-      { id: "s1", siteId: "tesla-old", siteName: "STE20230101-001", createdAt: new Date("2023-01-01"), portalUrl: "https://gridlogic.tesla.com/sites/tesla-old", primaryForProperty: false },
-      { id: "s2", siteId: "tesla-new", siteName: "STE20240105-008", createdAt: new Date("2024-01-05"), portalUrl: "https://gridlogic.tesla.com/sites/tesla-new", primaryForProperty: false },
+      { id: "s1", siteId: "tesla-old", siteName: "STE20230101-001", createdAt: new Date("2023-01-01"), portalUrl: "https://gridlogic.tesla.com/sites/tesla-old", primaryForProperty: false, totalGateways: 1, totalBatteries: 2, totalInverters: 0 },
+      { id: "s2", siteId: "tesla-new", siteName: "STE20240105-008", createdAt: new Date("2024-01-05"), portalUrl: "https://gridlogic.tesla.com/sites/tesla-new", primaryForProperty: false, totalGateways: 1, totalBatteries: 3, totalInverters: 1 },
     ]);
 
     const result = await resolvePrimarySite("prop-1");
@@ -177,10 +197,10 @@ describe("resolvePrimarySite", () => {
     expect(result?.id).toBe("s2");
     expect(mockPrisma.hubSpotPropertyCache.updateMany).toHaveBeenCalledWith({
       where: { id: "prop-1" },
-      data: {
+      data: expect.objectContaining({
         teslaPortalUrl: "https://gridlogic.tesla.com/sites/tesla-new",
         teslaSiteId: "tesla-new",
-      },
+      }),
     });
     // Demote losers, promote winner
     expect(mockPrisma.powerhubSite.updateMany).toHaveBeenCalledWith({
@@ -195,7 +215,7 @@ describe("resolvePrimarySite", () => {
 
   it("no-ops when the chosen primary is already marked", async () => {
     (mockPrisma.powerhubSite.findMany as jest.Mock).mockResolvedValue([
-      { id: "s1", siteId: "tesla-1", siteName: "STE20240101-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: true },
+      { id: "s1", siteId: "tesla-1", siteName: "STE20240101-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: true, totalGateways: 1, totalBatteries: 0, totalInverters: 0 },
     ]);
     (mockPrisma.hubSpotPropertyCache.update as jest.Mock).mockResolvedValue({});
 
@@ -207,7 +227,7 @@ describe("resolvePrimarySite", () => {
 
   it("retries on P2002 from the partial unique index", async () => {
     (mockPrisma.powerhubSite.findMany as jest.Mock).mockResolvedValue([
-      { id: "s1", siteId: "tesla-1", siteName: "STE20240101-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false },
+      { id: "s1", siteId: "tesla-1", siteName: "STE20240101-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false, totalGateways: 1, totalBatteries: 0, totalInverters: 0 },
     ]);
     const p2002 = Object.assign(new Error("Unique violation"), { code: "P2002" });
     (mockPrisma.powerhubSite.update as jest.Mock)
@@ -222,7 +242,7 @@ describe("resolvePrimarySite", () => {
 
   it("gives up after maxAttempts P2002 errors and throws", async () => {
     (mockPrisma.powerhubSite.findMany as jest.Mock).mockResolvedValue([
-      { id: "s1", siteId: "tesla-1", siteName: "STE20240101-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false },
+      { id: "s1", siteId: "tesla-1", siteName: "STE20240101-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false, totalGateways: 1, totalBatteries: 0, totalInverters: 0 },
     ]);
     const p2002 = Object.assign(new Error("Unique violation"), { code: "P2002" });
     (mockPrisma.powerhubSite.update as jest.Mock).mockRejectedValue(p2002);
@@ -340,7 +360,7 @@ describe("enqueueCrossSystemPush", () => {
 
   it("runs resolve → push → mark dirty in order", async () => {
     (mockPrisma.powerhubSite.findMany as jest.Mock).mockResolvedValue([
-      { id: "s1", siteId: "tesla-1", siteName: "STE20240105-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false },
+      { id: "s1", siteId: "tesla-1", siteName: "STE20240105-001", createdAt: new Date(), portalUrl: "https://x", primaryForProperty: false, totalGateways: 1, totalBatteries: 0, totalInverters: 0 },
     ]);
     (mockPrisma.hubSpotPropertyCache.findUnique as jest.Mock).mockResolvedValue({
       id: "prop-1",

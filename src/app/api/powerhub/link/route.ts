@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { resolvePrimarySite, pushToHubSpotForProperty } from "@/lib/powerhub-crosslink";
 
 export async function POST(request: Request) {
   if (process.env.POWERHUB_ENABLED !== "true") {
@@ -30,12 +31,20 @@ export async function POST(request: Request) {
     select: { address: true, city: true, state: true, zipCode: true },
   });
 
-  await prisma.powerhubSite.update({
+  // Resolve propertyId from the deal's PropertyDealLink (if the deal is linked to a property)
+  const dealLink = await prisma.propertyDealLink.findFirst({
+    where: { dealId },
+    select: { propertyId: true },
+  });
+
+  const updatedSite = await prisma.powerhubSite.update({
     where: { siteId },
     data: {
       dealId,
       linkMethod: "MANUAL",
       linkConfidence: "HIGH",
+      // Link to property if the deal has one
+      ...(dealLink ? { propertyId: dealLink.propertyId } : {}),
       // Populate address from deal if site has none
       ...(dealCache?.address && !site.address
         ? {
@@ -47,6 +56,13 @@ export async function POST(request: Request) {
         : {}),
     },
   });
+
+  // Re-resolve primary site so equipment data flows to the property record
+  const propertyId = updatedSite.propertyId;
+  if (propertyId) {
+    await resolvePrimarySite(propertyId);
+    await pushToHubSpotForProperty(propertyId);
+  }
 
   return NextResponse.json({ success: true });
 }
