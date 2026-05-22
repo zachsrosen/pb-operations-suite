@@ -303,6 +303,7 @@ export const CACHE_KEYS = {
   PROPERTY_PHOTOS: (propertyId: string) =>
     `property-photos:${propertyId}` as const,
   PAYMENT_TRACKING: "accounting:payment-tracking",
+  ZUPER_ALL_JOBS: "zuper:all-jobs",
   // On-call "tonight" keys are built dynamically per-pool-per-date in
   // src/app/api/on-call/tonight/route.ts so they roll over at each pool's local
   // midnight. Invalidate via appCache.invalidateByPrefix("on-call:tonight").
