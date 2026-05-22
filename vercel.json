@@ -116,7 +116,7 @@
     },
     {
       "path": "/api/zuper/sync-cache",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/cron/eod-summary",
