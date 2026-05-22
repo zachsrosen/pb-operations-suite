@@ -69,15 +69,11 @@ export async function GET() {
   // Step 2: Place order
   try {
     const placed = await client.placeOrder({
-      reportAddresses: {
-        primary: {
-          street: TEST_ADDRESS.street,
-          city: TEST_ADDRESS.city,
-          state: TEST_ADDRESS.state,
-          zip: TEST_ADDRESS.zip,
-          country: "United States",
-        },
-      },
+      street: TEST_ADDRESS.street,
+      city: TEST_ADDRESS.city,
+      state: TEST_ADDRESS.state,
+      zip: TEST_ADDRESS.zip,
+      country: "United States",
       primaryProductId: EAGLEVIEW_PRODUCT_ID.TDP,
       deliveryProductId: 8,
       measurementInstructionType: 2,
@@ -88,10 +84,11 @@ export async function GET() {
     });
     steps.placeOrder = { status: "OK", response: placed };
 
-    // Step 3: Report status
-    if (placed.reportId) {
+    // Step 3: Report status — production returns reportIds[], sandbox returned reportId
+    const firstReportId = placed.reportIds?.[0] ?? placed.reportId;
+    if (firstReportId) {
       try {
-        const report = await client.getReport(placed.reportId);
+        const report = await client.getReport(firstReportId);
         steps.reportStatus = { status: "OK", response: report };
       } catch (err) {
         steps.reportStatus = { status: "ERROR", error: err instanceof Error ? err.message : String(err) };

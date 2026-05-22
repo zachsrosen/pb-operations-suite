@@ -114,27 +114,36 @@ export interface AvailableProduct {
 }
 
 export interface PlaceOrderRequest {
-  reportAddresses: {
-    primary: {
-      street: string;
-      city: string;
-      state: string;
-      zip: string;
-      country?: string;
-    };
-  };
+  /** Street address (max 50 chars). */
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  /**
+   * Address type: 1 = Primary (default).
+   * Production API requires this field.
+   */
+  addressType?: number;
   primaryProductId: number;
   deliveryProductId: number;
   measurementInstructionType: number;
   changesInLast4Years: boolean;
-  latitude?: number;
-  longitude?: number;
   /** Customer-side reference id; we use the HubSpot deal id. */
   referenceId?: string;
 }
 
 export interface PlaceOrderResponse {
-  reportId: number;
+  /**
+   * Production API returns `orderId` + `reportIds[]`.
+   * Sandbox returned `reportId` (singular).
+   * After camelizeKeys both shapes land here.
+   */
+  orderId?: number;
+  reportId?: number;
+  reportIds?: number[];
 }
 
 export interface ReportFileLink {
@@ -367,10 +376,41 @@ export class EagleViewClient {
   /**
    * POST /v2/Order/PlaceOrder — place an order for one product at one address.
    * Returns the EagleView ReportId, which is the durable handle for status + files.
+   *
+   * The production API expects PascalCase field names and a nested array
+   * structure: `{ OrderReports: [{ ReportAddresses: [{...}], ... }] }`.
+   * This method builds that wire format from our flat PlaceOrderRequest.
    */
   async placeOrder(req: PlaceOrderRequest): Promise<PlaceOrderResponse> {
+    // Build the production-format payload.
+    // Both OrderReports and ReportAddresses are arrays despite the
+    // OpenAPI spec defining them as single-object $refs.
+    const wireBody = {
+      OrderReports: [
+        {
+          ReportAddresses: [
+            {
+              Address: req.street,
+              City: req.city,
+              State: req.state,
+              Zip: req.zip,
+              Country: req.country ?? "United States",
+              ...(req.latitude != null ? { Latitude: req.latitude } : {}),
+              ...(req.longitude != null ? { Longitude: req.longitude } : {}),
+              AddressType: req.addressType ?? 1,
+            },
+          ],
+          PrimaryProductId: req.primaryProductId,
+          DeliveryProductId: req.deliveryProductId,
+          MeasurementInstructionType: req.measurementInstructionType,
+          ChangesInLast4Years: req.changesInLast4Years,
+          ...(req.referenceId ? { ReferenceId: req.referenceId } : {}),
+        },
+      ],
+    };
+
     return this.request<PlaceOrderResponse>("POST", "/v2/Order/PlaceOrder", {
-      body: req,
+      body: wireBody,
     });
   }
 
