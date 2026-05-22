@@ -116,7 +116,7 @@ export default function SurveyConfirmationPage() {
         <div className="mx-auto h-14 w-14 rounded-full bg-gray-200" />
         <div className="mx-auto h-7 w-48 rounded-lg bg-gray-200" />
         <div className="mx-auto h-4 w-64 rounded-lg bg-gray-200" />
-        <div className="h-32 rounded-xl bg-gray-200" />
+        <div className="h-32 rounded-lg bg-gray-200" />
       </div>
     );
   }
@@ -124,7 +124,7 @@ export default function SurveyConfirmationPage() {
   if (state.type === "error") {
     return (
       <div className="py-16 text-center">
-        <p className="text-sm text-gray-500">{state.message}</p>
+        <p className="text-sm text-[#6B7280]">{state.message}</p>
       </div>
     );
   }
@@ -137,13 +137,13 @@ export default function SurveyConfirmationPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-gray-900">Survey Cancelled</h2>
-        <p className="mb-8 text-sm text-gray-500">
+        <h2 className="mb-2 text-lg font-semibold text-[#323F4D]">Survey Cancelled</h2>
+        <p className="mb-8 text-sm text-[#6B7280]">
           Your site survey has been cancelled. Would you like to pick a new time?
         </p>
         <button
           onClick={() => router.push(`/portal/survey/${token}`)}
-          className="rounded-xl bg-gradient-to-r from-[#2596be] to-[#1d7a9a] px-8 py-3 text-sm font-bold text-white shadow-lg shadow-[#2596be]/20 transition-all hover:shadow-xl hover:brightness-105"
+          className="rounded-lg bg-[#FF9E1B] px-8 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#DF8407]"
         >
           Reschedule Survey
         </button>
@@ -174,7 +174,7 @@ export default function SurveyConfirmationPage() {
   const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Site Survey - Photon Brothers")}&dates=${startDt}/${endDt}&details=${encodeURIComponent(`Site survey at ${data.propertyAddress}\n\nPhoton Brothers will visit your property to assess your solar installation. The survey takes about 1 hour.`)}&location=${encodeURIComponent(data.propertyAddress)}`;
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       {/* Success header */}
       <div className="text-center">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 ring-1 ring-green-100">
@@ -182,28 +182,28 @@ export default function SurveyConfirmationPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-2xl font-bold tracking-tight text-gray-900">Survey Confirmed!</h2>
-        <p className="mt-1.5 text-[15px] text-gray-500">We&apos;ll see you soon.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-[#323F4D]">Survey Confirmed!</h2>
+        <p className="mt-1.5 text-[15px] text-[#6B7280]">We&apos;ll see you soon.</p>
       </div>
 
       {/* Booking details card */}
-      <div className="divide-y divide-gray-100 rounded-xl bg-white shadow-sm ring-1 ring-gray-100">
+      <div className="divide-y divide-[#E5E7EB] rounded-lg border border-[#E5E7EB] bg-white">
         <div className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Date</p>
-          <p className="mt-1 text-[15px] font-semibold text-gray-900">{formattedDate}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Date</p>
+          <p className="mt-1 text-[15px] font-semibold text-[#323F4D]">{formattedDate}</p>
         </div>
         <div className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Time</p>
-          <p className="mt-1 text-[15px] font-semibold text-gray-900">{formattedTime} <span className="font-normal text-gray-400">(1 hour)</span></p>
+          <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Time</p>
+          <p className="mt-1 text-[15px] font-semibold text-[#323F4D]">{formattedTime} <span className="font-normal text-[#6B7280]">(1 hour)</span></p>
         </div>
         <div className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Location</p>
-          <p className="mt-1 text-[15px] text-gray-900">{data.propertyAddress}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Location</p>
+          <p className="mt-1 text-[15px] text-[#323F4D]">{data.propertyAddress}</p>
         </div>
         {booking.accessNotes && (
           <div className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Your Notes</p>
-            <p className="mt-1 text-sm text-gray-700">{booking.accessNotes}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Your Notes</p>
+            <p className="mt-1 text-sm text-[#323F4D]">{booking.accessNotes}</p>
           </div>
         )}
       </div>
@@ -213,17 +213,17 @@ export default function SurveyConfirmationPage() {
         href={calendarUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
+        className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm font-medium text-[#323F4D] transition-colors hover:border-[#FF9E1B]"
       >
-        <svg className="h-4.5 w-4.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4.5 w-4.5 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
         Add to Google Calendar
       </a>
 
       {/* What to expect */}
-      <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100">
-        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">What to Expect</h3>
+      <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-5">
+        <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[#6B7280]">What to Expect</h3>
         <ul className="space-y-2.5">
           {[
             "A Photon Brothers surveyor will visit your property",
@@ -231,8 +231,8 @@ export default function SurveyConfirmationPage() {
             "The visit typically takes about 1 hour",
             "Please ensure access to your main electrical panel",
           ].map((item) => (
-            <li key={item} className="flex items-start gap-2.5 text-sm text-gray-600">
-              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#2596be]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <li key={item} className="flex items-start gap-2.5 text-sm text-[#323F4D]">
+              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FF9E1B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
               </svg>
               {item}
@@ -247,29 +247,29 @@ export default function SurveyConfirmationPage() {
           <div className="flex gap-3">
             <button
               onClick={handleReschedule}
-              className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
+              className="flex-1 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm font-medium text-[#323F4D] transition-colors hover:border-[#FF9E1B]"
             >
               Reschedule
             </button>
             <button
               onClick={handleCancelClick}
-              className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-red-100 transition-all hover:bg-red-50 hover:shadow-md"
+              className="flex-1 rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
             >
               Cancel Survey
             </button>
           </div>
 
           {cancelConfirmOpen && (
-            <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100">
-              <p className="text-sm font-semibold text-gray-900">
+            <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+              <p className="text-sm font-medium text-[#323F4D]">
                 Cancel your scheduled site survey?
               </p>
-              <p className="mt-1.5 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-[#6B7280]">
                 We&apos;ll free up the slot. If you change your mind later, you can use this same link to reschedule.
               </p>
 
               {cancelError && (
-                <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-100">
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   {cancelError}
                 </div>
               )}
@@ -279,7 +279,7 @@ export default function SurveyConfirmationPage() {
                   type="button"
                   onClick={handleCancelDismiss}
                   disabled={cancelling}
-                  className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200 disabled:opacity-50"
+                  className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-medium text-[#323F4D] transition-colors hover:border-[#FF9E1B] disabled:opacity-50"
                 >
                   Keep my appointment
                 </button>
@@ -287,7 +287,7 @@ export default function SurveyConfirmationPage() {
                   type="button"
                   onClick={handleCancelConfirm}
                   disabled={cancelling}
-                  className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                 >
                   {cancelling ? "Cancelling…" : "Yes, cancel"}
                 </button>
