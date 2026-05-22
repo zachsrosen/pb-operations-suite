@@ -62,9 +62,10 @@ export async function POST(request: NextRequest) {
   const { raw, hash } = generateToken();
 
   // Build portal URL — prefer custom domain for customer-facing links
-  const baseUrl = process.env.PORTAL_BASE_URL
+  const baseUrl = (process.env.PORTAL_BASE_URL
     || process.env.NEXTAUTH_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  ).trim();
   const portalUrl = `${baseUrl}/portal/survey/${raw}`;
 
   // Create invite

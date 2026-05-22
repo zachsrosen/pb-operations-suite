@@ -64,13 +64,10 @@ type PageState =
   | { type: "expired" }
   | { type: "data"; data: InviteData };
 
-/** Extract first name from "Last, First" or "First Last" format */
 function extractFirstName(name: string): string {
   if (name.includes(",")) {
-    // "Last, First" → take the part after the comma
     return name.split(",")[1]?.trim().split(" ")[0] || name;
   }
-  // "First Last" → take the first word
   return name.split(" ")[0] || name;
 }
 
@@ -98,10 +95,8 @@ function SurveyScheduleInner() {
   const [accessNotes, setAccessNotes] = useState("");
   const [booking, setBooking] = useState(false);
 
-  // Generate idempotency key once per mount
   const idempotencyKey = useRef(crypto.randomUUID());
 
-  // Fetch invite data
   useEffect(() => {
     async function load() {
       try {
@@ -124,10 +119,9 @@ function SurveyScheduleInner() {
         const data: InviteData = await res.json();
         setState({ type: "data", data });
 
-        // Auto-select first available date
         const avail = data.status === "pending"
           ? data.availability
-          : data.availability; // reschedule mode also has availability
+          : data.availability;
         if (avail && avail.days.length > 0) {
           setSelectedDate(avail.days[0].date);
         }
@@ -138,13 +132,11 @@ function SurveyScheduleInner() {
     load();
   }, [token, isReschedule]);
 
-  // Book or reschedule the slot
   const handleBook = useCallback(async () => {
     if (!selectedSlot || booking) return;
     setBooking(true);
 
     try {
-      // Use reschedule endpoint if rescheduling, book endpoint otherwise
       const endpoint = isReschedule
         ? `/api/portal/survey/${token}/reschedule`
         : `/api/portal/survey/${token}/book`;
@@ -167,7 +159,6 @@ function SurveyScheduleInner() {
         return;
       }
 
-      // Navigate to confirmation
       router.push(`/portal/survey/${token}/confirmation`);
     } catch {
       setState({ type: "error", message: "Unable to connect. Please try again." });
@@ -186,28 +177,28 @@ function SurveyScheduleInner() {
 
   if (state.type === "error") {
     return (
-      <div className="py-12 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+      <div className="py-16 text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
           <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-foreground">Something went wrong</h2>
-        <p className="text-sm text-muted">{state.message}</p>
+        <h2 className="mb-2 text-lg font-semibold text-gray-900">Something went wrong</h2>
+        <p className="text-sm text-gray-500">{state.message}</p>
       </div>
     );
   }
 
   if (state.type === "expired") {
     return (
-      <div className="py-12 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
-          <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="py-16 text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 ring-1 ring-amber-100">
+          <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-foreground">Link Expired</h2>
-        <p className="text-sm text-muted">
+        <h2 className="mb-2 text-lg font-semibold text-gray-900">Link Expired</h2>
+        <p className="mx-auto max-w-xs text-sm text-gray-500">
           This scheduling link has expired. Please contact your Photon Brothers representative
           to receive a new one.
         </p>
@@ -217,16 +208,13 @@ function SurveyScheduleInner() {
 
   const { data } = state;
 
-  // Already scheduled — redirect to confirmation (unless rescheduling)
   if (data.status === "scheduled" && !isReschedule) {
     router.replace(`/portal/survey/${token}/confirmation`);
     return <LoadingSkeleton />;
   }
 
-  // Get availability from either pending data or reschedule response
   const availability = data.status === "pending" ? data.availability : data.availability;
 
-  // If rescheduling but no availability (shouldn't happen, but guard)
   if (!availability) {
     router.replace(`/portal/survey/${token}/confirmation`);
     return <LoadingSkeleton />;
@@ -234,29 +222,58 @@ function SurveyScheduleInner() {
 
   const selectedDay = availability.days.find((d) => d.date === selectedDate);
 
+  // Progress: 1=date, 2=time, 3=notes
+  const step = selectedSlot ? 3 : selectedDate ? 2 : 1;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
+      {/* Progress indicator */}
+      <div className="flex items-center gap-2">
+        {[1, 2, 3].map((s) => (
+          <div
+            key={s}
+            className={`h-1 flex-1 rounded-full transition-all duration-300 ${
+              s <= step ? "bg-[#f97316]" : "bg-gray-200"
+            }`}
+          />
+        ))}
+      </div>
+
       {/* Greeting */}
       <div>
-        <h2 className="text-xl font-semibold text-foreground">
+        <h2 className="text-2xl font-bold tracking-tight text-gray-900">
           {isReschedule
-            ? `Pick a new time for your site survey`
-            : `Hi ${extractFirstName(data.customerName)}, let\u2019s schedule your site survey`}
+            ? "Pick a new time"
+            : `Hi ${extractFirstName(data.customerName)},`}
         </h2>
-        <p className="mt-1 text-sm text-muted">
-          Select a date and time that works for you. The survey takes about 1 hour.
+        <p className="mt-1.5 text-[15px] leading-relaxed text-gray-500">
+          {isReschedule
+            ? "Select a new date and time for your site survey."
+            : "Let’s get your site survey scheduled. It takes about 1 hour."}
         </p>
       </div>
 
-      {/* Address */}
-      <div className="rounded-lg border border-t-border bg-surface p-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">Survey Location</p>
-        <p className="mt-1 text-sm text-foreground">{data.propertyAddress}</p>
+      {/* Address card */}
+      <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-100">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#0f1b3d]/5">
+            <svg className="h-4 w-4 text-[#0f1b3d]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+              Survey Location
+            </p>
+            <p className="mt-1 text-[15px] font-medium text-gray-900">{data.propertyAddress}</p>
+          </div>
+        </div>
       </div>
 
       {availability.days.length === 0 ? (
-        <div className="rounded-lg border border-t-border bg-surface p-6 text-center">
-          <p className="text-sm text-muted">
+        <div className="rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-gray-100">
+          <p className="text-sm text-gray-500">
             No available times right now. Please check back later or call us to schedule.
           </p>
         </div>
@@ -264,49 +281,61 @@ function SurveyScheduleInner() {
         <>
           {/* Date selector */}
           <div>
-            <p className="mb-2 text-sm font-medium text-foreground">Select a date</p>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {availability.days.map((day) => (
-                <button
-                  key={day.date}
-                  onClick={() => {
-                    setSelectedDate(day.date);
-                    setSelectedSlot(null);
-                  }}
-                  className={`flex-shrink-0 rounded-lg border px-3 py-2 text-center transition-colors ${
-                    selectedDate === day.date
-                      ? "border-orange-500 bg-orange-500 text-white"
-                      : "border-t-border bg-surface text-foreground hover:border-orange-300"
-                  }`}
-                >
-                  <div className="text-xs font-medium">{day.dayLabel.split(",")[0]}</div>
-                  <div className="text-lg font-semibold">{day.dayLabel.split(" ").pop()}</div>
-                  <div className="text-xs opacity-75">{day.dayLabel.split(" ")[1]}</div>
-                </button>
-              ))}
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+              Choose a Date
+            </p>
+            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+              {availability.days.map((day) => {
+                const isSelected = selectedDate === day.date;
+                return (
+                  <button
+                    key={day.date}
+                    onClick={() => {
+                      setSelectedDate(day.date);
+                      setSelectedSlot(null);
+                    }}
+                    className={`flex-shrink-0 rounded-xl px-4 py-3 text-center transition-all duration-200 ${
+                      isSelected
+                        ? "bg-[#f97316] text-white shadow-md shadow-orange-200"
+                        : "bg-white text-gray-700 shadow-sm ring-1 ring-gray-100 hover:ring-[#f97316]/40 hover:shadow-md"
+                    }`}
+                  >
+                    <div className={`text-[11px] font-semibold uppercase tracking-wide ${isSelected ? "text-white/80" : "text-gray-400"}`}>
+                      {day.dayLabel.split(",")[0]}
+                    </div>
+                    <div className="mt-0.5 text-xl font-bold">{day.dayLabel.split(" ").pop()}</div>
+                    <div className={`text-[11px] font-medium ${isSelected ? "text-white/70" : "text-gray-400"}`}>
+                      {day.dayLabel.split(" ")[1]}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* Time slots */}
           {selectedDay && (
             <div>
-              <p className="mb-2 text-sm font-medium text-foreground">
-                Select a time ({availability.tzAbbrev})
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                Choose a Time <span className="normal-case tracking-normal text-gray-300">({availability.tzAbbrev})</span>
               </p>
-              <div className="grid grid-cols-2 gap-2">
-                {selectedDay.slots.map((slot) => (
-                  <button
-                    key={slot.slotId}
-                    onClick={() => setSelectedSlot(slot)}
-                    className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
-                      selectedSlot?.slotId === slot.slotId
-                        ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400"
-                        : "border-t-border bg-surface text-foreground hover:border-orange-300"
-                    }`}
-                  >
-                    {slot.displayTime}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 gap-2.5">
+                {selectedDay.slots.map((slot) => {
+                  const isSelected = selectedSlot?.slotId === slot.slotId;
+                  return (
+                    <button
+                      key={slot.slotId}
+                      onClick={() => setSelectedSlot(slot)}
+                      className={`rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 ${
+                        isSelected
+                          ? "bg-[#f97316]/10 text-[#f97316] ring-2 ring-[#f97316] shadow-sm"
+                          : "bg-white text-gray-700 shadow-sm ring-1 ring-gray-100 hover:ring-[#f97316]/40 hover:shadow-md"
+                      }`}
+                    >
+                      {slot.displayTime}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -314,8 +343,8 @@ function SurveyScheduleInner() {
           {/* Access notes */}
           {selectedSlot && (
             <div>
-              <label htmlFor="access-notes" className="mb-1 block text-sm font-medium text-foreground">
-                Access instructions <span className="text-muted">(optional)</span>
+              <label htmlFor="access-notes" className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                Access Instructions <span className="normal-case tracking-normal text-gray-300">(optional)</span>
               </label>
               <textarea
                 id="access-notes"
@@ -324,7 +353,7 @@ function SurveyScheduleInner() {
                 placeholder="Gate codes, pets, where to park, side of house to access..."
                 value={accessNotes}
                 onChange={(e) => setAccessNotes(e.target.value)}
-                className="w-full rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-900 shadow-sm ring-1 ring-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#f97316] transition-shadow"
               />
             </div>
           )}
@@ -334,7 +363,7 @@ function SurveyScheduleInner() {
             <button
               onClick={handleBook}
               disabled={booking}
-              className="w-full rounded-lg bg-orange-500 px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+              className="w-full rounded-xl bg-gradient-to-r from-[#f97316] to-[#ea580c] px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-orange-200 transition-all duration-200 hover:shadow-xl hover:shadow-orange-300 hover:brightness-105 active:scale-[0.98] disabled:opacity-50 disabled:shadow-none"
             >
               {booking ? "Scheduling..." : isReschedule ? "Confirm New Time" : "Confirm Survey"}
             </button>
@@ -351,20 +380,30 @@ function SurveyScheduleInner() {
 
 function LoadingSkeleton() {
   return (
-    <div className="animate-pulse space-y-6">
-      <div>
-        <div className="h-6 w-3/4 rounded bg-skeleton" />
-        <div className="mt-2 h-4 w-1/2 rounded bg-skeleton" />
-      </div>
-      <div className="h-16 rounded-lg bg-skeleton" />
+    <div className="animate-pulse space-y-7">
+      {/* Progress bar */}
       <div className="flex gap-2">
+        <div className="h-1 flex-1 rounded-full bg-gray-200" />
+        <div className="h-1 flex-1 rounded-full bg-gray-200" />
+        <div className="h-1 flex-1 rounded-full bg-gray-200" />
+      </div>
+      {/* Heading */}
+      <div>
+        <div className="h-7 w-3/4 rounded-lg bg-gray-200" />
+        <div className="mt-3 h-4 w-1/2 rounded-lg bg-gray-200" />
+      </div>
+      {/* Address card */}
+      <div className="h-20 rounded-xl bg-gray-200" />
+      {/* Date cards */}
+      <div className="flex gap-2.5">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-16 w-14 flex-shrink-0 rounded-lg bg-skeleton" />
+          <div key={i} className="h-20 w-16 flex-shrink-0 rounded-xl bg-gray-200" />
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      {/* Time slots */}
+      <div className="grid grid-cols-2 gap-2.5">
         {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-10 rounded-lg bg-skeleton" />
+          <div key={i} className="h-12 rounded-xl bg-gray-200" />
         ))}
       </div>
     </div>
