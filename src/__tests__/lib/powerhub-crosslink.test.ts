@@ -5,6 +5,7 @@ import {
   resolvePrimarySite,
   pushToHubSpotForProperty,
   enqueueCrossSystemPush,
+  buildDeviceSummary,
 } from "@/lib/powerhub-crosslink";
 import { prisma } from "@/lib/db";
 import { updateDealProperty } from "@/lib/hubspot";
@@ -379,5 +380,73 @@ describe("enqueueCrossSystemPush", () => {
     expect(mockPrisma.hubSpotPropertyCache.findUnique).toHaveBeenCalled();
     // resolvePrimarySite now uses updateMany (safer when cache row may not exist)
     expect(mockPrisma.hubSpotPropertyCache.updateMany).toHaveBeenCalled();
+  });
+});
+
+describe("buildDeviceSummary", () => {
+  it("labels Powerwall 3 sites as 'Powerwall 3' instead of raw part number", () => {
+    // Tesla reports PW3 units in the gateways bucket — integrated battery+gateway
+    const summary = buildDeviceSummary({
+      gateways: [
+        { serial_number: "GW123", part_number: "1707000-12-A" },
+      ],
+      batteries: [],
+    });
+    expect(summary.gatewayModel).toBe("Powerwall 3");
+    // PW3 has integrated battery — mirror model AND serials since batteries[] is empty
+    expect(summary.powerwallModel).toBe("Powerwall 3");
+    expect(summary.gatewaySerial).toBe("GW123");
+    expect(summary.powerwallSerials).toBe("GW123");
+    expect(summary.formatted).toContain("Powerwall 3: GW123");
+    expect(summary.formatted).not.toContain("Gateway: GW123");
+  });
+
+  it("joins all serials for multi-unit Powerwall 3 sites", () => {
+    const summary = buildDeviceSummary({
+      gateways: [
+        { serial_number: "PW3-A", part_number: "1707000-12-A" },
+        { serial_number: "PW3-B", part_number: "1707000-12-A" },
+        { serial_number: "PW3-C", part_number: "1707000-12-A" },
+      ],
+      batteries: [],
+    });
+    expect(summary.gatewaySerial).toBe("PW3-A");
+    expect(summary.powerwallSerials).toBe("PW3-A; PW3-B; PW3-C");
+  });
+
+  it("labels standalone Backup Gateway 2 sites correctly", () => {
+    // PW2 site: standalone gateway + standalone batteries
+    const summary = buildDeviceSummary({
+      gateways: [{ serial_number: "GW001", part_number: "1232100-01-A" }],
+      batteries: [
+        { serial_number: "BAT001", part_number: "2012170-02-B" },
+        { serial_number: "BAT002", part_number: "2012170-02-B" },
+      ],
+    });
+    expect(summary.gatewayModel).toBe("Tesla Backup Gateway 2");
+    expect(summary.powerwallModel).toBe("Powerwall 2");
+    expect(summary.gatewaySerial).toBe("GW001");
+    expect(summary.powerwallSerials).toBe("BAT001; BAT002");
+    expect(summary.formatted).toContain("Gateway: GW001");
+    expect(summary.formatted).toContain("Powerwall: BAT001");
+  });
+
+  it("falls back to raw part number when prefix is unrecognized", () => {
+    const summary = buildDeviceSummary({
+      gateways: [{ serial_number: "GW1", part_number: "9999999-XX-X" }],
+      batteries: [],
+    });
+    expect(summary.gatewayModel).toBe("9999999-XX-X");
+    // Unknown prefix → not treated as integrated → no mirror
+    expect(summary.powerwallModel).toBeNull();
+    expect(summary.powerwallSerials).toBeNull();
+  });
+
+  it("returns null model fields when devices are empty", () => {
+    const summary = buildDeviceSummary({});
+    expect(summary.gatewayModel).toBeNull();
+    expect(summary.powerwallModel).toBeNull();
+    expect(summary.inverterModel).toBeNull();
+    expect(summary.meterModel).toBeNull();
   });
 });

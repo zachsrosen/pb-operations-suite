@@ -16,6 +16,7 @@ import { prisma } from "@/lib/db";
 import { updateDealProperty } from "@/lib/hubspot";
 import { updateTicketProperties } from "@/lib/hubspot-tickets";
 import { updateProperty as updateHubSpotProperty } from "@/lib/hubspot-property";
+import { teslaProductFromPartNumber, teslaDeviceLabel } from "@/lib/tesla-part-numbers";
 
 const CROSSLINK_FLAG = "POWERHUB_CROSSLINK_ENABLED";
 
@@ -101,33 +102,76 @@ export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
   const inverters = asArray("inverters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
   const meters = asArray("meters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
 
-  const firstNonEmpty = (arr: { pn: string }[]): string | null => {
+  const firstNonEmptyPn = (arr: { pn: string }[]): string | null => {
     for (const item of arr) if (item.pn) return item.pn;
     return null;
   };
 
+  // Detect Powerwall 3 / Powerwall+ in the gateways bucket — Tesla's API
+  // reports these integrated battery+gateway units under "gateways" even
+  // though the hardware is really a battery. When that happens, we mirror
+  // both the model name AND serials into the powerwall slot, so the
+  // property record shows complete model+serial pairs in both fields.
+  const gatewayPn = firstNonEmptyPn(gateways);
+  const gatewayProduct = teslaProductFromPartNumber(gatewayPn);
+  const batteryPn = firstNonEmptyPn(batteries);
+  const integrated = gatewayProduct?.integratedBatteryGateway === true;
+
   const gatewaySerial = gateways[0]?.sn || null;
   const powerwallSerials = batteries.length > 0
     ? batteries.map((b) => b.sn).filter((s) => s.length > 0).join("; ") || null
+    : integrated
+    ? gateways.map((g) => g.sn).filter((s) => s.length > 0).join("; ") || null
     : null;
   const inverterSerial = inverters[0]?.sn || null;
   const meterSerial = meters[0]?.sn || null;
 
-  const gatewayModel = firstNonEmpty(gateways);
-  const powerwallModel = firstNonEmpty(batteries);
-  const inverterModel = firstNonEmpty(inverters);
-  const meterModel = firstNonEmpty(meters);
+  // Model labels use the human-readable product name (e.g. "Powerwall 3",
+  // "Tesla Backup Gateway 2") instead of raw part numbers. Falls back to
+  // the raw part number when the prefix isn't recognized.
+  const gatewayModel = gatewayPn ? teslaDeviceLabel(gatewayPn) : null;
+  // If gateway is an integrated PW3/PW+, mirror that as the powerwall model
+  // when no standalone battery is reported (the gateway IS the battery).
+  const powerwallModel = batteryPn
+    ? teslaDeviceLabel(batteryPn)
+    : integrated
+    ? teslaDeviceLabel(gatewayPn)
+    : null;
+  const inverterModel = (() => {
+    const pn = firstNonEmptyPn(inverters);
+    return pn ? teslaDeviceLabel(pn) : null;
+  })();
+  const meterModel = (() => {
+    const pn = firstNonEmptyPn(meters);
+    return pn ? teslaDeviceLabel(pn) : null;
+  })();
 
   const lines: string[] = [];
   for (const g of gateways) {
-    const tail = g.pn || g.eWh != null || g.pW != null
-      ? " (" + [g.pn, g.eWh != null && `${(g.eWh / 1000).toFixed(1)} kWh`, g.pW != null && `${(g.pW / 1000).toFixed(1)} kW max`].filter(Boolean).join(", ") + ")"
-      : "";
-    lines.push(`Gateway: ${g.sn}${tail}`);
+    const product = teslaProductFromPartNumber(g.pn);
+    // For integrated units, label as the product name (e.g. "Powerwall 3"),
+    // not "Gateway", since Tesla's bucket name is misleading.
+    const role = product?.integratedBatteryGateway ? product.name : "Gateway";
+    const label = product ? product.name : g.pn;
+    const detail = [
+      label,
+      g.eWh != null && `${(g.eWh / 1000).toFixed(1)} kWh`,
+      g.pW != null && `${(g.pW / 1000).toFixed(1)} kW max`,
+    ].filter(Boolean).join(", ");
+    lines.push(detail ? `${role}: ${g.sn} (${detail})` : `${role}: ${g.sn}`);
   }
-  for (const b of batteries) lines.push(`Powerwall: ${b.sn}${b.pn ? ` (${b.pn})` : ""}`);
-  for (const i of inverters) lines.push(`Inverter: ${i.sn}${i.pn ? ` (${i.pn})` : ""}`);
-  for (const m of meters) lines.push(`Meter: ${m.sn}${m.pn ? ` (${m.pn})` : ""}`);
+  for (const b of batteries) {
+    const label = b.pn ? teslaDeviceLabel(b.pn) : null;
+    lines.push(`Powerwall: ${b.sn}${label ? ` (${label})` : ""}`);
+  }
+  for (const i of inverters) {
+    const label = i.pn ? teslaDeviceLabel(i.pn) : null;
+    lines.push(`Inverter: ${i.sn}${label ? ` (${label})` : ""}`);
+  }
+  for (const m of meters) {
+    const label = m.pn ? teslaDeviceLabel(m.pn) : null;
+    lines.push(`Meter: ${m.sn}${label ? ` (${label})` : ""}`);
+  }
   const formatted = lines.length > 0 ? lines.join("\n") : null;
 
   return {

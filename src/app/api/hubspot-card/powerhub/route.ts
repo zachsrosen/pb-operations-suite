@@ -22,6 +22,7 @@ import { NextResponse } from "next/server";
 import { Signature } from "@hubspot/api-client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { teslaProductFromPartNumber, teslaDeviceLabel } from "@/lib/tesla-part-numbers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -250,10 +251,16 @@ function severityRank(s: string): number {
 }
 
 /**
- * Extract human-readable model (part_number) for each device class from the
+ * Extract human-readable model name for each device class from the
  * PowerhubSite.devices JSON column. Picks the first non-empty value per
  * class — multi-pack sites typically share a model across units, but if
  * they differ we surface only the first to keep the card single-line.
+ *
+ * Raw Tesla part numbers (e.g. "1707000-XX-X") are translated to friendly
+ * product names (e.g. "Powerwall 3") via the part-number prefix lookup.
+ * For integrated battery+gateway units like Powerwall 3, the same product
+ * is mirrored into the powerwall slot when no standalone battery is
+ * reported — Tesla's API places PW3 units in the "gateways" bucket only.
  */
 function extractDeviceModels(raw: unknown): {
   gateway: string | null;
@@ -262,7 +269,7 @@ function extractDeviceModels(raw: unknown): {
   meter: string | null;
 } {
   const safe = (raw ?? {}) as Record<string, unknown>;
-  const first = (key: string): string | null => {
+  const firstPn = (key: string): string | null => {
     const arr = safe[key];
     if (!Array.isArray(arr)) return null;
     for (const item of arr as Record<string, unknown>[]) {
@@ -271,10 +278,20 @@ function extractDeviceModels(raw: unknown): {
     }
     return null;
   };
+  const gatewayPn = firstPn("gateways");
+  const batteryPn = firstPn("batteries");
+  const inverterPn = firstPn("inverters");
+  const meterPn = firstPn("meters");
+  const gatewayProduct = teslaProductFromPartNumber(gatewayPn);
+
   return {
-    gateway: first("gateways"),
-    powerwall: first("batteries"),
-    inverter: first("inverters"),
-    meter: first("meters"),
+    gateway: gatewayPn ? teslaDeviceLabel(gatewayPn) : null,
+    powerwall: batteryPn
+      ? teslaDeviceLabel(batteryPn)
+      : gatewayProduct?.integratedBatteryGateway
+      ? teslaDeviceLabel(gatewayPn)
+      : null,
+    inverter: inverterPn ? teslaDeviceLabel(inverterPn) : null,
+    meter: meterPn ? teslaDeviceLabel(meterPn) : null,
   };
 }
