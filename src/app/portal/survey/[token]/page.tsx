@@ -233,7 +233,7 @@ function SurveyScheduleInner() {
           <div
             key={s}
             className={`h-1 flex-1 rounded-full transition-all duration-300 ${
-              s <= step ? "bg-[#f97316]" : "bg-gray-200"
+              s <= step ? "bg-[#2596be]" : "bg-gray-200"
             }`}
           />
         ))}
@@ -284,7 +284,8 @@ function SurveyScheduleInner() {
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
               Choose a Date
             </p>
-            <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+            <div className="-mx-5 overflow-x-auto pb-3 pt-1">
+              <div className="flex gap-2.5 px-5 snap-x snap-mandatory">
               {availability.days.map((day) => {
                 const isSelected = selectedDate === day.date;
                 return (
@@ -294,10 +295,10 @@ function SurveyScheduleInner() {
                       setSelectedDate(day.date);
                       setSelectedSlot(null);
                     }}
-                    className={`flex-shrink-0 rounded-xl px-4 py-3 text-center transition-all duration-200 ${
+                    className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-center transition-all duration-200 ${
                       isSelected
-                        ? "bg-[#f97316] text-white shadow-md shadow-orange-200"
-                        : "bg-white text-gray-700 shadow-sm ring-1 ring-gray-100 hover:ring-[#f97316]/40 hover:shadow-md"
+                        ? "bg-[#2596be] text-white shadow-md shadow-[#2596be]/20"
+                        : "bg-white text-gray-700 shadow-sm ring-1 ring-gray-100 hover:ring-[#2596be]/40 hover:shadow-md"
                     }`}
                   >
                     <div className={`text-[11px] font-semibold uppercase tracking-wide ${isSelected ? "text-white/80" : "text-gray-400"}`}>
@@ -310,6 +311,7 @@ function SurveyScheduleInner() {
                   </button>
                 );
               })}
+              </div>
             </div>
           </div>
 
@@ -328,8 +330,8 @@ function SurveyScheduleInner() {
                       onClick={() => setSelectedSlot(slot)}
                       className={`rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 ${
                         isSelected
-                          ? "bg-[#f97316]/10 text-[#f97316] ring-2 ring-[#f97316] shadow-sm"
-                          : "bg-white text-gray-700 shadow-sm ring-1 ring-gray-100 hover:ring-[#f97316]/40 hover:shadow-md"
+                          ? "bg-[#2596be]/10 text-[#2596be] ring-2 ring-[#2596be] shadow-sm"
+                          : "bg-white text-gray-700 shadow-sm ring-1 ring-gray-100 hover:ring-[#2596be]/40 hover:shadow-md"
                       }`}
                     >
                       {slot.displayTime}
@@ -353,7 +355,7 @@ function SurveyScheduleInner() {
                 placeholder="Gate codes, pets, where to park, side of house to access..."
                 value={accessNotes}
                 onChange={(e) => setAccessNotes(e.target.value)}
-                className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-900 shadow-sm ring-1 ring-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#f97316] transition-shadow"
+                className="w-full rounded-xl bg-white px-4 py-3 text-sm text-gray-900 shadow-sm ring-1 ring-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2596be] transition-shadow"
               />
             </div>
           )}
@@ -363,7 +365,7 @@ function SurveyScheduleInner() {
             <button
               onClick={handleBook}
               disabled={booking}
-              className="w-full rounded-xl bg-gradient-to-r from-[#f97316] to-[#ea580c] px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-orange-200 transition-all duration-200 hover:shadow-xl hover:shadow-orange-300 hover:brightness-105 active:scale-[0.98] disabled:opacity-50 disabled:shadow-none"
+              className="w-full rounded-xl bg-gradient-to-r from-[#2596be] to-[#1d7a9a] px-4 py-3.5 text-base font-bold text-white shadow-lg shadow-[#2596be]/20 transition-all duration-200 hover:shadow-xl hover:shadow-[#2596be]/30 hover:brightness-105 active:scale-[0.98] disabled:opacity-50 disabled:shadow-none"
             >
               {booking ? "Scheduling..." : isReschedule ? "Confirm New Time" : "Confirm Survey"}
             </button>
