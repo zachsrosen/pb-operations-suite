@@ -111,6 +111,14 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "⚡",
     section: "Tools",
   },
+  {
+    href: "/dashboards/eagleview-orders",
+    title: "EagleView Orders",
+    description: "Search deals or tickets and order EagleView TrueDesign aerial imagery.",
+    tag: "EAGLEVIEW",
+    icon: "🛰️",
+    section: "Tools",
+  },
 ];
 
 const LINKS: SuitePageCard[] = [
