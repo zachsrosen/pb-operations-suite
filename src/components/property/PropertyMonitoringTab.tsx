@@ -5,6 +5,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PowerhubLink } from "@/components/powerhub/PowerhubLink";
 import type { MonitoringTabData } from "@/lib/property-hub";
+import { teslaProductFromPartNumber } from "@/lib/tesla-part-numbers";
 
 interface Props {
   propertyId: string;
@@ -448,9 +449,22 @@ function HardwareSection({
     serialNumber: string;
     extra?: string;
   }) {
+    const product = teslaProductFromPartNumber(partNumber);
+    // For integrated battery+gateway units (PW3 / PW+), Tesla reports them
+    // in the "gateways" bucket — re-label the row to the actual product name
+    // so the UI doesn't say "Gateway" for what's really a Powerwall 3.
+    const displayType =
+      type === "Gateway" && product?.integratedBatteryGateway
+        ? product.name
+        : type;
     return (
       <tr className="border-t border-t-border first:border-t-0">
-        <td className="py-1.5 pr-3 text-muted whitespace-nowrap">{type}</td>
+        <td className="py-1.5 pr-3 text-muted whitespace-nowrap">
+          {displayType}
+          {product && displayType === type && product.name !== type && (
+            <span className="ml-1.5 text-[10px] uppercase tracking-wide text-muted/70">({product.name})</span>
+          )}
+        </td>
         <td className="py-1.5 pr-3 font-mono text-xs truncate">{partNumber || "—"}</td>
         <td className="py-1.5 pr-3 font-mono text-xs truncate">
           {serialNumber ? (
