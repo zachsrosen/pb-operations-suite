@@ -384,38 +384,41 @@ describe("enqueueCrossSystemPush", () => {
 });
 
 describe("buildDeviceSummary", () => {
-  it("labels Powerwall 3 sites as 'Powerwall 3' instead of raw part number", () => {
+  it("preserves raw part number as model and mirrors PW3 serials to powerwall", () => {
     // Tesla reports PW3 units in the gateways bucket — integrated battery+gateway
     const summary = buildDeviceSummary({
       gateways: [
-        { serial_number: "GW123", part_number: "1707000-12-A" },
+        { serial_number: "TG124271002CS6", part_number: "1707000-11-J" },
       ],
       batteries: [],
     });
-    expect(summary.gatewayModel).toBe("Powerwall 3");
-    // PW3 has integrated battery — mirror model AND serials since batteries[] is empty
-    expect(summary.powerwallModel).toBe("Powerwall 3");
-    expect(summary.gatewaySerial).toBe("GW123");
-    expect(summary.powerwallSerials).toBe("GW123");
-    expect(summary.formatted).toContain("Powerwall 3: GW123");
-    expect(summary.formatted).not.toContain("Gateway: GW123");
+    // Model fields hold raw part numbers (variant matters for IRA / warranty)
+    expect(summary.gatewayModel).toBe("1707000-11-J");
+    expect(summary.powerwallModel).toBe("1707000-11-J");
+    expect(summary.gatewaySerial).toBe("TG124271002CS6");
+    expect(summary.powerwallSerials).toBe("TG124271002CS6");
+    // Formatted display uses friendly product name + part number variant
+    expect(summary.formatted).toContain("Powerwall 3: TG124271002CS6 (1707000-11-J");
+    expect(summary.formatted).not.toContain("Gateway: TG124271002CS6");
   });
 
   it("joins all serials for multi-unit Powerwall 3 sites", () => {
     const summary = buildDeviceSummary({
       gateways: [
-        { serial_number: "PW3-A", part_number: "1707000-12-A" },
-        { serial_number: "PW3-B", part_number: "1707000-12-A" },
-        { serial_number: "PW3-C", part_number: "1707000-12-A" },
+        { serial_number: "TG124056002MBB", part_number: "1707000-11-J" },
+        { serial_number: "TG124055002744", part_number: "1707000-11-J" },
+        { serial_number: "TG124056002JMN", part_number: "1707000-11-J" },
       ],
       batteries: [],
     });
-    expect(summary.gatewaySerial).toBe("PW3-A");
-    expect(summary.powerwallSerials).toBe("PW3-A; PW3-B; PW3-C");
+    expect(summary.gatewaySerial).toBe("TG124056002MBB");
+    expect(summary.powerwallSerials).toBe("TG124056002MBB; TG124055002744; TG124056002JMN");
+    expect(summary.gatewayModel).toBe("1707000-11-J");
+    expect(summary.powerwallModel).toBe("1707000-11-J");
   });
 
-  it("labels standalone Backup Gateway 2 sites correctly", () => {
-    // PW2 site: standalone gateway + standalone batteries
+  it("keeps gateway and battery models distinct for standalone PW2 sites", () => {
+    // PW2 site: standalone Backup Gateway 2 + standalone Powerwall 2 batteries
     const summary = buildDeviceSummary({
       gateways: [{ serial_number: "GW001", part_number: "1232100-01-A" }],
       batteries: [
@@ -423,15 +426,16 @@ describe("buildDeviceSummary", () => {
         { serial_number: "BAT002", part_number: "2012170-02-B" },
       ],
     });
-    expect(summary.gatewayModel).toBe("Tesla Backup Gateway 2");
-    expect(summary.powerwallModel).toBe("Powerwall 2");
+    expect(summary.gatewayModel).toBe("1232100-01-A");
+    expect(summary.powerwallModel).toBe("2012170-02-B");
     expect(summary.gatewaySerial).toBe("GW001");
     expect(summary.powerwallSerials).toBe("BAT001; BAT002");
-    expect(summary.formatted).toContain("Gateway: GW001");
-    expect(summary.formatted).toContain("Powerwall: BAT001");
+    // Formatted display labels each row with the product name
+    expect(summary.formatted).toContain("Gateway: GW001 (1232100-01-A");
+    expect(summary.formatted).toContain("Powerwall: BAT001 (2012170-02-B)");
   });
 
-  it("falls back to raw part number when prefix is unrecognized", () => {
+  it("keeps unknown prefixes as raw part numbers", () => {
     const summary = buildDeviceSummary({
       gateways: [{ serial_number: "GW1", part_number: "9999999-XX-X" }],
       batteries: [],

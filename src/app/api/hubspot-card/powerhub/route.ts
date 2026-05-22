@@ -22,7 +22,7 @@ import { NextResponse } from "next/server";
 import { Signature } from "@hubspot/api-client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { teslaProductFromPartNumber, teslaDeviceLabel } from "@/lib/tesla-part-numbers";
+import { teslaProductFromPartNumber } from "@/lib/tesla-part-numbers";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -251,16 +251,16 @@ function severityRank(s: string): number {
 }
 
 /**
- * Extract human-readable model name for each device class from the
- * PowerhubSite.devices JSON column. Picks the first non-empty value per
- * class — multi-pack sites typically share a model across units, but if
- * they differ we surface only the first to keep the card single-line.
+ * Extract the model (raw Tesla part number, e.g. "1707000-11-J") for each
+ * device class from the PowerhubSite.devices JSON column. Picks the first
+ * non-empty value per class — multi-pack sites typically share a model
+ * across units, but if they differ we surface only the first to keep the
+ * card single-line.
  *
- * Raw Tesla part numbers (e.g. "1707000-XX-X") are translated to friendly
- * product names (e.g. "Powerwall 3") via the part-number prefix lookup.
- * For integrated battery+gateway units like Powerwall 3, the same product
- * is mirrored into the powerwall slot when no standalone battery is
- * reported — Tesla's API places PW3 units in the "gateways" bucket only.
+ * For integrated battery+gateway units like Powerwall 3, Tesla reports the
+ * unit only in the "gateways" bucket. We mirror that part number into the
+ * powerwall slot when no standalone battery is reported, so the card shows
+ * the actual battery model for PW3 sites.
  */
 function extractDeviceModels(raw: unknown): {
   gateway: string | null;
@@ -285,13 +285,9 @@ function extractDeviceModels(raw: unknown): {
   const gatewayProduct = teslaProductFromPartNumber(gatewayPn);
 
   return {
-    gateway: gatewayPn ? teslaDeviceLabel(gatewayPn) : null,
-    powerwall: batteryPn
-      ? teslaDeviceLabel(batteryPn)
-      : gatewayProduct?.integratedBatteryGateway
-      ? teslaDeviceLabel(gatewayPn)
-      : null,
-    inverter: inverterPn ? teslaDeviceLabel(inverterPn) : null,
-    meter: meterPn ? teslaDeviceLabel(meterPn) : null,
+    gateway: gatewayPn,
+    powerwall: batteryPn ?? (gatewayProduct?.integratedBatteryGateway ? gatewayPn : null),
+    inverter: inverterPn,
+    meter: meterPn,
   };
 }

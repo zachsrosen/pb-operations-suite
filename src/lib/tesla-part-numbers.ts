@@ -33,6 +33,9 @@ export interface TeslaProduct {
 const PREFIXES: Array<{ prefix: string; product: TeslaProduct }> = [
   { prefix: "1707000", product: { name: "Powerwall 3", integratedBatteryGateway: true } },
   { prefix: "1707001", product: { name: "Powerwall 3 Expansion Pack" } },
+  // Observed in production data on multi-PW3 sites: Tesla reports the
+  // battery-only expansion pack under prefix 1807000-XX-X.
+  { prefix: "1807000", product: { name: "Powerwall 3 Expansion Pack" } },
   { prefix: "3012170", product: { name: "Powerwall+", integratedBatteryGateway: true } },
   { prefix: "2012170", product: { name: "Powerwall 2" } },
   { prefix: "1092170", product: { name: "Powerwall 2" } },

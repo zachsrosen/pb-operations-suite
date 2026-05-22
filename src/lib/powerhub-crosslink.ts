@@ -16,7 +16,7 @@ import { prisma } from "@/lib/db";
 import { updateDealProperty } from "@/lib/hubspot";
 import { updateTicketProperties } from "@/lib/hubspot-tickets";
 import { updateProperty as updateHubSpotProperty } from "@/lib/hubspot-property";
-import { teslaProductFromPartNumber, teslaDeviceLabel } from "@/lib/tesla-part-numbers";
+import { teslaProductFromPartNumber } from "@/lib/tesla-part-numbers";
 
 const CROSSLINK_FLAG = "POWERHUB_CROSSLINK_ENABLED";
 
@@ -126,51 +126,42 @@ export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
   const inverterSerial = inverters[0]?.sn || null;
   const meterSerial = meters[0]?.sn || null;
 
-  // Model labels use the human-readable product name (e.g. "Powerwall 3",
-  // "Tesla Backup Gateway 2") instead of raw part numbers. Falls back to
-  // the raw part number when the prefix isn't recognized.
-  const gatewayModel = gatewayPn ? teslaDeviceLabel(gatewayPn) : null;
-  // If gateway is an integrated PW3/PW+, mirror that as the powerwall model
-  // when no standalone battery is reported (the gateway IS the battery).
-  const powerwallModel = batteryPn
-    ? teslaDeviceLabel(batteryPn)
-    : integrated
-    ? teslaDeviceLabel(gatewayPn)
-    : null;
-  const inverterModel = (() => {
-    const pn = firstNonEmptyPn(inverters);
-    return pn ? teslaDeviceLabel(pn) : null;
-  })();
-  const meterModel = (() => {
-    const pn = firstNonEmptyPn(meters);
-    return pn ? teslaDeviceLabel(pn) : null;
-  })();
+  // Model fields hold the RAW part number (e.g. "1707000-11-J") — the
+  // specific variant matters for things like IRA domestic-content tracking
+  // and warranty SKU lookup. Friendly product names ("Powerwall 3", etc.)
+  // are used only for the formatted display lines below.
+  const gatewayModel = gatewayPn;
+  // If gateway is an integrated PW3/PW+, mirror its part number as the
+  // powerwall model when no standalone battery is reported (the gateway
+  // IS the battery).
+  const powerwallModel = batteryPn ?? (integrated ? gatewayPn : null);
+  const inverterModel = firstNonEmptyPn(inverters);
+  const meterModel = firstNonEmptyPn(meters);
 
+  // Formatted display: shows friendly product name as the role prefix,
+  // followed by serial and part-number variant in parens so the variant
+  // (e.g. domestic vs non-domestic PW3) is visible at a glance.
   const lines: string[] = [];
   for (const g of gateways) {
     const product = teslaProductFromPartNumber(g.pn);
     // For integrated units, label as the product name (e.g. "Powerwall 3"),
     // not "Gateway", since Tesla's bucket name is misleading.
     const role = product?.integratedBatteryGateway ? product.name : "Gateway";
-    const label = product ? product.name : g.pn;
     const detail = [
-      label,
+      g.pn || null,
       g.eWh != null && `${(g.eWh / 1000).toFixed(1)} kWh`,
       g.pW != null && `${(g.pW / 1000).toFixed(1)} kW max`,
     ].filter(Boolean).join(", ");
     lines.push(detail ? `${role}: ${g.sn} (${detail})` : `${role}: ${g.sn}`);
   }
   for (const b of batteries) {
-    const label = b.pn ? teslaDeviceLabel(b.pn) : null;
-    lines.push(`Powerwall: ${b.sn}${label ? ` (${label})` : ""}`);
+    lines.push(`Powerwall: ${b.sn}${b.pn ? ` (${b.pn})` : ""}`);
   }
   for (const i of inverters) {
-    const label = i.pn ? teslaDeviceLabel(i.pn) : null;
-    lines.push(`Inverter: ${i.sn}${label ? ` (${label})` : ""}`);
+    lines.push(`Inverter: ${i.sn}${i.pn ? ` (${i.pn})` : ""}`);
   }
   for (const m of meters) {
-    const label = m.pn ? teslaDeviceLabel(m.pn) : null;
-    lines.push(`Meter: ${m.sn}${label ? ` (${label})` : ""}`);
+    lines.push(`Meter: ${m.sn}${m.pn ? ` (${m.pn})` : ""}`);
   }
   const formatted = lines.length > 0 ? lines.join("\n") : null;
 
