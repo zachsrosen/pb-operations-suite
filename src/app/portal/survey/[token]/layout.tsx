@@ -28,7 +28,7 @@ export default function PortalLayout({
           </div>
         </div>
         {/* Orange accent divider */}
-        <div className="h-[3px] bg-gradient-to-r from-[#f97316] via-[#fb923c] to-[#f97316]" />
+        <div className="h-[3px] bg-gradient-to-r from-[#2596be] via-[#5fb1ce] to-[#2596be]" />
       </header>
 
       {/* Content */}
@@ -42,7 +42,7 @@ export default function PortalLayout({
           Questions? Call us at{" "}
           <a
             href="tel:+13034300096"
-            className="font-semibold text-[#f97316] hover:text-[#ea580c] transition-colors"
+            className="font-semibold text-[#2596be] hover:text-[#1d7a9a] transition-colors"
           >
             (303) 430-0096
           </a>

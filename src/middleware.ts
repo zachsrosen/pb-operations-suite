@@ -287,6 +287,25 @@ export default auth((req) => {
     return addSecurityHeaders(requestId, NextResponse.redirect(new URL("/", req.url)));
   }
 
+  // ── schedule.photonbrothers.com subdomain isolation ─────────────────
+  // This subdomain is a Vercel alias used exclusively for the customer
+  // survey self-scheduling portal. Any non-portal request that reaches
+  // this middleware (i.e. not a static file, not an auth route) must NOT
+  // see the internal login page or any other pbtechops UI. We redirect
+  // everything else to the public marketing site.
+  const hostHeader = req.nextUrl.hostname.toLowerCase();
+  if (hostHeader === "schedule.photonbrothers.com") {
+    const isCustomerPortalPagePath = pathname.startsWith("/portal/survey/");
+    const isCustomerPortalApiPath = pathname.startsWith("/api/portal/survey/");
+    const isCustomerPortalScope = isCustomerPortalPagePath || isCustomerPortalApiPath;
+    if (!isCustomerPortalScope && !isAuthRoute && !isStaticFile) {
+      return addSecurityHeaders(
+        requestId,
+        NextResponse.redirect("https://photonbrothers.com", 302),
+      );
+    }
+  }
+
   // Always allow auth routes and static files
   if (isAuthRoute || isStaticFile) {
     return nextWithRequestId(requestId, req);

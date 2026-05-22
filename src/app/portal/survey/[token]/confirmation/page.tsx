@@ -42,6 +42,8 @@ export default function SurveyConfirmationPage() {
 
   const [state, setState] = useState<PageState>({ type: "loading" });
   const [cancelling, setCancelling] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const cancelIdempotencyKey = useRef(crypto.randomUUID());
 
   useEffect(() => {
@@ -65,33 +67,40 @@ export default function SurveyConfirmationPage() {
     load();
   }, [token, router]);
 
-  const handleCancel = useCallback(async () => {
-    if (cancelling) return;
-    const confirmed = confirm(
-      "Are you sure you want to cancel your survey?\n\nIf you need a different time, you can reschedule instead."
-    );
-    if (!confirmed) return;
+  const handleCancelClick = useCallback(() => {
+    setCancelError(null);
+    setCancelConfirmOpen(true);
+  }, []);
 
+  const handleCancelConfirm = useCallback(async () => {
+    if (cancelling) return;
     setCancelling(true);
+    setCancelError(null);
     try {
       const res = await fetch(`/api/portal/survey/${token}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idempotencyKey: cancelIdempotencyKey.current }),
       });
-
       if (res.ok) {
         setState({ type: "cancelled" });
+        setCancelConfirmOpen(false);
       } else {
-        const body = await res.json();
-        alert(body.error || "Unable to cancel. Please call us for help.");
+        const body = await res.json().catch(() => ({}));
+        setCancelError(body.error || "Unable to cancel. Please call us for help.");
       }
     } catch {
-      alert("Unable to connect. Please try again.");
+      setCancelError("Unable to connect. Please try again.");
     } finally {
       setCancelling(false);
     }
   }, [cancelling, token]);
+
+  const handleCancelDismiss = useCallback(() => {
+    if (cancelling) return;
+    setCancelConfirmOpen(false);
+    setCancelError(null);
+  }, [cancelling]);
 
   const handleReschedule = useCallback(() => {
     router.push(`/portal/survey/${token}?reschedule=1`);
@@ -134,7 +143,7 @@ export default function SurveyConfirmationPage() {
         </p>
         <button
           onClick={() => router.push(`/portal/survey/${token}`)}
-          className="rounded-xl bg-gradient-to-r from-[#f97316] to-[#ea580c] px-8 py-3 text-sm font-bold text-white shadow-lg shadow-orange-200 transition-all hover:shadow-xl hover:brightness-105"
+          className="rounded-xl bg-gradient-to-r from-[#2596be] to-[#1d7a9a] px-8 py-3 text-sm font-bold text-white shadow-lg shadow-[#2596be]/20 transition-all hover:shadow-xl hover:brightness-105"
         >
           Reschedule Survey
         </button>
@@ -223,7 +232,7 @@ export default function SurveyConfirmationPage() {
             "Please ensure access to your main electrical panel",
           ].map((item) => (
             <li key={item} className="flex items-start gap-2.5 text-sm text-gray-600">
-              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#f97316]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#2596be]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
               </svg>
               {item}
@@ -234,20 +243,57 @@ export default function SurveyConfirmationPage() {
 
       {/* Reschedule / Cancel */}
       {booking.canModify && (
-        <div className="flex gap-3">
-          <button
-            onClick={handleReschedule}
-            className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
-          >
-            Reschedule
-          </button>
-          <button
-            onClick={handleCancel}
-            disabled={cancelling}
-            className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-red-100 transition-all hover:bg-red-50 hover:shadow-md disabled:opacity-50"
-          >
-            {cancelling ? "Cancelling..." : "Cancel Survey"}
-          </button>
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <button
+              onClick={handleReschedule}
+              className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
+            >
+              Reschedule
+            </button>
+            <button
+              onClick={handleCancelClick}
+              className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm ring-1 ring-red-100 transition-all hover:bg-red-50 hover:shadow-md"
+            >
+              Cancel Survey
+            </button>
+          </div>
+
+          {cancelConfirmOpen && (
+            <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100">
+              <p className="text-sm font-semibold text-gray-900">
+                Cancel your scheduled site survey?
+              </p>
+              <p className="mt-1.5 text-sm text-gray-500">
+                We&apos;ll free up the slot. If you change your mind later, you can use this same link to reschedule.
+              </p>
+
+              {cancelError && (
+                <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-100">
+                  {cancelError}
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={handleCancelDismiss}
+                  disabled={cancelling}
+                  className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200 disabled:opacity-50"
+                >
+                  Keep my appointment
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelConfirm}
+                  disabled={cancelling}
+                  className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {cancelling ? "Cancelling…" : "Yes, cancel"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
