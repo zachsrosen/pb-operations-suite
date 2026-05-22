@@ -405,7 +405,10 @@ Enphase monitoring API integration at full parity with Tesla PowerHub. OAuth2 au
 
 **HubSpot Card**: `/api/hubspot-card/enphase/` — HMAC-signed card showing production, battery SoC, micro health, portal link.
 
-**OAuth Setup**: `/api/admin/enphase/oauth/authorize` + `/callback` — one-time admin flow to obtain initial refresh token. Persists to SystemConfig DB row.
+**OAuth Setup** (two flows):
+- **Partner** (recommended): `/api/admin/enphase/oauth/partner-setup` — `grant_type=password` with Enlighten installer credentials. For installers with 10+ systems.
+- **Developer**: `/api/admin/enphase/oauth/authorize` + `/callback` — `authorization_code` flow with per-homeowner approval. For Watt/Kilowatt/Megawatt plans.
+Both persist the refresh token to SystemConfig DB row. Partner flow is simpler (no redirect dance).
 
 **Feature flags**: `ENPHASE_ENABLED`, `ENPHASE_CROSSLINK_ENABLED`, `NEXT_PUBLIC_UI_ENPHASE_VIEWS_ENABLED`
 

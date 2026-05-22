@@ -270,7 +270,7 @@ export function createEnphaseClient(): EnphaseClient {
         const refreshToken = await readRefreshToken();
         if (!refreshToken) {
           throw new Error(
-            "No Enphase refresh token available. Run the OAuth setup flow at /api/admin/enphase/oauth/authorize"
+            "No Enphase refresh token available. Run Partner setup at /api/admin/enphase/oauth/partner-setup (or developer flow at /api/admin/enphase/oauth/authorize)"
           );
         }
 
