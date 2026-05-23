@@ -90,13 +90,13 @@ function HeroCard({
 export function HeroMetrics({ heroes }: { heroes: ShopHealthHeroes }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-      <HeroCard label="Revenue" metric={heroes.weeklyRevenue} icon="💰" currency />
-      <HeroCard label="Sentiment" metric={heroes.sentiment} icon="😊" />
-      <HeroCard label="Backlog" metric={heroes.backlogWeeks} icon="📋" />
+      <HeroCard label="Revenue This Wk" metric={heroes.weeklyRevenue} icon="💰" currency />
+      <HeroCard label="Avg Sentiment" metric={heroes.sentiment} icon="😊" />
+      <HeroCard label="Backlog (Wks)" metric={heroes.backlogWeeks} icon="📋" />
       <HeroCard label="Ready to Build" metric={heroes.readyToBuild} icon="🔧" />
-      <HeroCard label="Scheduled" metric={heroes.scheduledInstalls} icon="📅" />
-      <HeroCard label="Installs" metric={heroes.installsCompleted} icon="⚡" />
-      <HeroCard label="PTOs" metric={heroes.ptosReceived} icon="✅" />
+      <HeroCard label="Planned This Wk" metric={heroes.scheduledInstalls} icon="📅" />
+      <HeroCard label="Completed This Wk" metric={heroes.installsCompleted} icon="⚡" />
+      <HeroCard label="PTOs This Wk" metric={heroes.ptosReceived} icon="✅" />
     </div>
   );
 }

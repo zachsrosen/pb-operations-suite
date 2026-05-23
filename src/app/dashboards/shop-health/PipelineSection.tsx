@@ -55,26 +55,26 @@ export function PipelineSectionContent({
       {/* Pipeline metrics row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <DrilldownMetricCard
-          label="Contracts Signed"
+          label="Contracts Signed This Wk"
           value={data.contractsSigned}
           sub={formatDollars(data.contractsSignedValue)}
           deals={drilldown.contractsSigned}
           dateLabel="Close Date"
         />
         <DrilldownMetricCard
-          label="Backlog Jobs"
+          label="Total Backlog"
           value={data.totalBacklogCount}
-          sub={formatDollars(data.totalBacklogValue)}
+          sub={`${formatDollars(data.totalBacklogValue)} across active jobs`}
           deals={drilldown.backlog}
           dateLabel="Close Date"
         />
         <MetricCard
-          label="Backlog Weeks"
+          label="Backlog Depth"
           value={data.backlogInWeeks % 1 !== 0 ? data.backlogInWeeks.toFixed(1) : data.backlogInWeeks}
-          sub="Target: 4-8 weeks"
+          sub="weeks of work · target 4-8"
         />
         <MetricCard
-          label="Cancellations"
+          label="Cancellations This Wk"
           value={data.cancellationCount}
           sub={`${data.cancellationRate.toFixed(1)}% rate`}
         />

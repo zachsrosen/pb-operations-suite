@@ -1032,15 +1032,15 @@ function buildHeroes(
       goals.weeklyInstalls * 2
     ),
     scheduledInstalls: buildHeroMetric(
-      // Spec: "Scheduled Installs (2-4 wk)" = deals with install dates in
-      // the 14-28 day window. This is a forward-looking pipeline indicator.
-      scheduling.scheduledNext4Weeks - scheduling.scheduledNext2Weeks,
-      null,
+      // Scheduled installs for the current week (install date falls in this
+      // Mon-Sun window). Shows how full this week's schedule is vs. target.
+      operations.installsPlanned,
+      priorOperations.installsPlanned,
       scoreScheduledInstalls(
-        scheduling.scheduledNext4Weeks - scheduling.scheduledNext2Weeks,
-        goals.weeklyInstalls * 2
+        operations.installsPlanned,
+        goals.weeklyInstalls
       ),
-      goals.weeklyInstalls * 2
+      goals.weeklyInstalls
     ),
     installsCompleted: buildHeroMetric(
       operations.installsCompleted,
