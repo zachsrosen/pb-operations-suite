@@ -16,6 +16,7 @@ import { prisma } from "@/lib/db";
 import { updateDealProperty } from "@/lib/hubspot";
 import { updateTicketProperties } from "@/lib/hubspot-tickets";
 import { updateProperty as updateHubSpotProperty } from "@/lib/hubspot-property";
+import { teslaProductFromPartNumber } from "@/lib/tesla-part-numbers";
 
 const CROSSLINK_FLAG = "POWERHUB_CROSSLINK_ENABLED";
 
@@ -27,6 +28,9 @@ export interface PrimarySiteCandidate {
   id: string;
   siteName: string;
   createdAt: Date;
+  totalGateways: number;
+  totalBatteries: number;
+  totalInverters: number;
 }
 
 const STE_PATTERN = /^STE(\d{8})-\d+$/;
@@ -98,33 +102,83 @@ export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
   const inverters = asArray("inverters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
   const meters = asArray("meters").map((d) => ({ sn: str(d.serial_number), pn: str(d.part_number) }));
 
-  const firstNonEmpty = (arr: { pn: string }[]): string | null => {
-    for (const item of arr) if (item.pn) return item.pn;
-    return null;
+  // Split the gateways bucket into "true gateways" (standalone hardware like
+  // Backup Gateway 2) vs "integrated units" (PW3 / PW+ — Tesla's API reports
+  // the Powerwall unit itself in the gateways bucket because the gateway is
+  // built into it).
+  //
+  // A separate gateway / backup switch DOES exist physically on a PW3 site,
+  // but Tesla doesn't expose its model number via the partner API — so we
+  // leave the gateway model/serial null rather than mislabel the PW3 part
+  // number as a gateway model.
+  const integratedFromGateways = gateways.filter(
+    (g) => teslaProductFromPartNumber(g.pn)?.integratedBatteryGateway === true
+  );
+  const trueGateways = gateways.filter(
+    (g) => !teslaProductFromPartNumber(g.pn)?.integratedBatteryGateway
+  );
+  // Powerwall data = batteries bucket + any PW3/PW+ entries from gateways
+  const allPowerwalls = [...batteries, ...integratedFromGateways];
+
+  // Join all distinct part numbers in a bucket with "; ". Sites can mix
+  // variants (e.g. some PW3 units are 1707000-11-J domestic + some 1707000-11-L
+  // non-domestic) and we want to surface every variant for warranty + IRA
+  // domestic-content tracking, not just the first.
+  const joinDistinctPns = (arr: { pn: string }[]): string | null => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const item of arr) {
+      if (item.pn && !seen.has(item.pn)) {
+        seen.add(item.pn);
+        ordered.push(item.pn);
+      }
+    }
+    return ordered.length > 0 ? ordered.join("; ") : null;
+  };
+  const joinSerials = (arr: { sn: string }[]): string | null => {
+    const sns = arr.map((x) => x.sn).filter((s) => s.length > 0);
+    return sns.length > 0 ? sns.join("; ") : null;
   };
 
-  const gatewaySerial = gateways[0]?.sn || null;
-  const powerwallSerials = batteries.length > 0
-    ? batteries.map((b) => b.sn).filter((s) => s.length > 0).join("; ") || null
-    : null;
+  // Gateway fields only populated when a TRUE standalone gateway is reported.
+  // PW3 sites report no standalone gateway → both fields null.
+  const gatewaySerial = trueGateways[0]?.sn || null;
+  const gatewayModel = joinDistinctPns(trueGateways);
+
+  // Powerwall fields aggregate batteries[] + integrated gateway entries
+  const powerwallSerials = joinSerials(allPowerwalls);
+  const powerwallModel = joinDistinctPns(allPowerwalls);
+
   const inverterSerial = inverters[0]?.sn || null;
+  const inverterModel = joinDistinctPns(inverters);
   const meterSerial = meters[0]?.sn || null;
+  const meterModel = joinDistinctPns(meters);
 
-  const gatewayModel = firstNonEmpty(gateways);
-  const powerwallModel = firstNonEmpty(batteries);
-  const inverterModel = firstNonEmpty(inverters);
-  const meterModel = firstNonEmpty(meters);
-
+  // Formatted display: shows friendly product name as the role prefix,
+  // followed by serial and part-number variant in parens so the variant
+  // (e.g. domestic vs non-domestic PW3) is visible at a glance.
   const lines: string[] = [];
   for (const g of gateways) {
-    const tail = g.pn || g.eWh != null || g.pW != null
-      ? " (" + [g.pn, g.eWh != null && `${(g.eWh / 1000).toFixed(1)} kWh`, g.pW != null && `${(g.pW / 1000).toFixed(1)} kW max`].filter(Boolean).join(", ") + ")"
-      : "";
-    lines.push(`Gateway: ${g.sn}${tail}`);
+    const product = teslaProductFromPartNumber(g.pn);
+    // For integrated units, label as the product name (e.g. "Powerwall 3"),
+    // not "Gateway", since Tesla's bucket name is misleading.
+    const role = product?.integratedBatteryGateway ? product.name : "Gateway";
+    const detail = [
+      g.pn || null,
+      g.eWh != null && `${(g.eWh / 1000).toFixed(1)} kWh`,
+      g.pW != null && `${(g.pW / 1000).toFixed(1)} kW max`,
+    ].filter(Boolean).join(", ");
+    lines.push(detail ? `${role}: ${g.sn} (${detail})` : `${role}: ${g.sn}`);
   }
-  for (const b of batteries) lines.push(`Powerwall: ${b.sn}${b.pn ? ` (${b.pn})` : ""}`);
-  for (const i of inverters) lines.push(`Inverter: ${i.sn}${i.pn ? ` (${i.pn})` : ""}`);
-  for (const m of meters) lines.push(`Meter: ${m.sn}${m.pn ? ` (${m.pn})` : ""}`);
+  for (const b of batteries) {
+    lines.push(`Powerwall: ${b.sn}${b.pn ? ` (${b.pn})` : ""}`);
+  }
+  for (const i of inverters) {
+    lines.push(`Inverter: ${i.sn}${i.pn ? ` (${i.pn})` : ""}`);
+  }
+  for (const m of meters) {
+    lines.push(`Meter: ${m.sn}${m.pn ? ` (${m.pn})` : ""}`);
+  }
   const formatted = lines.length > 0 ? lines.join("\n") : null;
 
   return {
@@ -144,11 +198,12 @@ export function buildDeviceSummary(devicesJson: unknown): DeviceSummary {
  * Choose the primary site from a list of candidates.
  *
  * Rules:
- *   1. Newest STE date wins
- *   2. Tie → lexicographically max siteName
- *   3. No STE pattern → newest createdAt
- *   4. STE-named sites beat any fallback-named site
- *   5. Final tie-break: lexicographically max id (cuid)
+ *   1. Sites with equipment (gateways/batteries/inverters) beat empty sites
+ *   2. Newest STE date wins
+ *   3. Tie → lexicographically max siteName
+ *   4. No STE pattern → newest createdAt
+ *   5. STE-named sites beat any fallback-named site
+ *   6. Final tie-break: lexicographically max id (cuid)
  *
  * Returns null only if the input is empty.
  */
@@ -157,8 +212,13 @@ export function pickPrimarySite<T extends PrimarySiteCandidate>(sites: T[]): T |
   const enriched = sites.map((s) => ({
     site: s,
     steDate: parseSteDateFromName(s.siteName),
+    hasEquipment:
+      (s.totalGateways ?? 0) + (s.totalBatteries ?? 0) + (s.totalInverters ?? 0) > 0,
   }));
   enriched.sort((a, b) => {
+    // Sites with equipment always beat empty sites
+    if (a.hasEquipment && !b.hasEquipment) return -1;
+    if (!a.hasEquipment && b.hasEquipment) return 1;
     // STE-named always beats fallback-named
     if (a.steDate && !b.steDate) return -1;
     if (!a.steDate && b.steDate) return 1;
@@ -210,6 +270,9 @@ export async function resolvePrimarySite(propertyId: string): Promise<ResolvedPr
       createdAt: true,
       primaryForProperty: true,
       devices: true,
+      totalGateways: true,
+      totalBatteries: true,
+      totalInverters: true,
     },
   });
 

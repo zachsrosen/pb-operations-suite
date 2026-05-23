@@ -42,6 +42,8 @@ export default function SurveyConfirmationPage() {
 
   const [state, setState] = useState<PageState>({ type: "loading" });
   const [cancelling, setCancelling] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const cancelIdempotencyKey = useRef(crypto.randomUUID());
 
   useEffect(() => {
@@ -54,7 +56,6 @@ export default function SurveyConfirmationPage() {
         }
         const data = await res.json();
         if (data.status !== "scheduled") {
-          // Not scheduled — go back to main page
           router.replace(`/portal/survey/${token}`);
           return;
         }
@@ -66,34 +67,40 @@ export default function SurveyConfirmationPage() {
     load();
   }, [token, router]);
 
-  const handleCancel = useCallback(async () => {
-    if (cancelling) return;
-    // Encourage rescheduling over cancellation
-    const confirmed = confirm(
-      "Are you sure you want to cancel your survey?\n\nIf you need a different time, you can reschedule instead."
-    );
-    if (!confirmed) return;
+  const handleCancelClick = useCallback(() => {
+    setCancelError(null);
+    setCancelConfirmOpen(true);
+  }, []);
 
+  const handleCancelConfirm = useCallback(async () => {
+    if (cancelling) return;
     setCancelling(true);
+    setCancelError(null);
     try {
       const res = await fetch(`/api/portal/survey/${token}/cancel`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idempotencyKey: cancelIdempotencyKey.current }),
       });
-
       if (res.ok) {
         setState({ type: "cancelled" });
+        setCancelConfirmOpen(false);
       } else {
-        const body = await res.json();
-        alert(body.error || "Unable to cancel. Please call us for help.");
+        const body = await res.json().catch(() => ({}));
+        setCancelError(body.error || "Unable to cancel. Please call us for help.");
       }
     } catch {
-      alert("Unable to connect. Please try again.");
+      setCancelError("Unable to connect. Please try again.");
     } finally {
       setCancelling(false);
     }
   }, [cancelling, token]);
+
+  const handleCancelDismiss = useCallback(() => {
+    if (cancelling) return;
+    setCancelConfirmOpen(false);
+    setCancelError(null);
+  }, [cancelling]);
 
   const handleReschedule = useCallback(() => {
     router.push(`/portal/survey/${token}?reschedule=1`);
@@ -105,38 +112,38 @@ export default function SurveyConfirmationPage() {
 
   if (state.type === "loading") {
     return (
-      <div className="animate-pulse space-y-4 py-8">
-        <div className="mx-auto h-12 w-12 rounded-full bg-skeleton" />
-        <div className="mx-auto h-6 w-48 rounded bg-skeleton" />
-        <div className="mx-auto h-4 w-64 rounded bg-skeleton" />
-        <div className="h-24 rounded-lg bg-skeleton" />
+      <div className="animate-pulse space-y-6 py-8">
+        <div className="mx-auto h-14 w-14 rounded-full bg-gray-200" />
+        <div className="mx-auto h-7 w-48 rounded-lg bg-gray-200" />
+        <div className="mx-auto h-4 w-64 rounded-lg bg-gray-200" />
+        <div className="h-32 rounded-lg bg-gray-200" />
       </div>
     );
   }
 
   if (state.type === "error") {
     return (
-      <div className="py-12 text-center">
-        <p className="text-sm text-muted">{state.message}</p>
+      <div className="py-16 text-center">
+        <p className="text-sm text-[#6B7280]">{state.message}</p>
       </div>
     );
   }
 
   if (state.type === "cancelled") {
     return (
-      <div className="py-12 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+      <div className="py-16 text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
           <svg className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
-        <h2 className="mb-2 text-lg font-semibold text-foreground">Survey Cancelled</h2>
-        <p className="mb-6 text-sm text-muted">
+        <h2 className="mb-2 text-lg font-semibold text-[#323F4D]">Survey Cancelled</h2>
+        <p className="mb-8 text-sm text-[#6B7280]">
           Your site survey has been cancelled. Would you like to pick a new time?
         </p>
         <button
           onClick={() => router.push(`/portal/survey/${token}`)}
-          className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-orange-600"
+          className="rounded-lg bg-[#FF9E1B] px-8 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#DF8407]"
         >
           Reschedule Survey
         </button>
@@ -147,7 +154,6 @@ export default function SurveyConfirmationPage() {
   const { data } = state;
   const { booking } = data;
 
-  // Format date for display
   const dateObj = new Date(booking.date + "T12:00:00Z");
   const formattedDate = dateObj.toLocaleDateString("en-US", {
     weekday: "long",
@@ -157,13 +163,11 @@ export default function SurveyConfirmationPage() {
     timeZone: "UTC",
   });
 
-  // Format time for display
   const [h, m] = booking.time.split(":").map(Number);
   const period = h >= 12 ? "PM" : "AM";
   const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   const formattedTime = `${hour12}:${m.toString().padStart(2, "0")} ${period}`;
 
-  // Google Calendar link
   const startDt = `${booking.date.replace(/-/g, "")}T${booking.time.replace(":", "")}00`;
   const endH = h + 1;
   const endDt = `${booking.date.replace(/-/g, "")}T${endH.toString().padStart(2, "0")}${m.toString().padStart(2, "0")}00`;
@@ -173,33 +177,33 @@ export default function SurveyConfirmationPage() {
     <div className="space-y-6">
       {/* Success header */}
       <div className="text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-          <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 ring-1 ring-green-100">
+          <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-xl font-semibold text-foreground">Survey Confirmed!</h2>
-        <p className="mt-1 text-sm text-muted">We&apos;ll see you soon.</p>
+        <h2 className="text-2xl font-bold tracking-tight text-[#323F4D]">Survey Confirmed!</h2>
+        <p className="mt-1.5 text-[15px] text-[#6B7280]">We&apos;ll see you soon.</p>
       </div>
 
       {/* Booking details card */}
-      <div className="rounded-lg border border-t-border bg-surface p-4 space-y-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Date</p>
-          <p className="text-sm font-medium text-foreground">{formattedDate}</p>
+      <div className="divide-y divide-[#E5E7EB] rounded-lg border border-[#E5E7EB] bg-white">
+        <div className="p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Date</p>
+          <p className="mt-1 text-[15px] font-semibold text-[#323F4D]">{formattedDate}</p>
         </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Time</p>
-          <p className="text-sm font-medium text-foreground">{formattedTime} (1 hour)</p>
+        <div className="p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Time</p>
+          <p className="mt-1 text-[15px] font-semibold text-[#323F4D]">{formattedTime} <span className="font-normal text-[#6B7280]">(1 hour)</span></p>
         </div>
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Location</p>
-          <p className="text-sm text-foreground">{data.propertyAddress}</p>
+        <div className="p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Location</p>
+          <p className="mt-1 text-[15px] text-[#323F4D]">{data.propertyAddress}</p>
         </div>
         {booking.accessNotes && (
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">Your Notes</p>
-            <p className="text-sm text-foreground">{booking.accessNotes}</p>
+          <div className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Your Notes</p>
+            <p className="mt-1 text-sm text-[#323F4D]">{booking.accessNotes}</p>
           </div>
         )}
       </div>
@@ -209,41 +213,87 @@ export default function SurveyConfirmationPage() {
         href={calendarUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex w-full items-center justify-center gap-2 rounded-lg border border-t-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
+        className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm font-medium text-[#323F4D] transition-colors hover:border-[#FF9E1B]"
       >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4.5 w-4.5 text-[#6B7280]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
         Add to Google Calendar
       </a>
 
       {/* What to expect */}
-      <div className="rounded-lg border border-t-border bg-surface p-4">
-        <h3 className="mb-2 text-sm font-semibold text-foreground">What to Expect</h3>
-        <ul className="space-y-1.5 text-sm text-muted">
-          <li>A Photon Brothers surveyor will visit your property</li>
-          <li>They&apos;ll assess your roof, electrical panel, and sun exposure</li>
-          <li>The visit typically takes about 1 hour</li>
-          <li>Please ensure access to your main electrical panel</li>
+      <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-5">
+        <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[#6B7280]">What to Expect</h3>
+        <ul className="space-y-2.5">
+          {[
+            "A Photon Brothers surveyor will visit your property",
+            "They'll assess your roof, electrical panel, and sun exposure",
+            "The visit typically takes about 1 hour",
+            "Please ensure access to your main electrical panel",
+          ].map((item) => (
+            <li key={item} className="flex items-start gap-2.5 text-sm text-[#323F4D]">
+              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FF9E1B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+              {item}
+            </li>
+          ))}
         </ul>
       </div>
 
       {/* Reschedule / Cancel */}
       {booking.canModify && (
-        <div className="flex gap-3">
-          <button
-            onClick={handleReschedule}
-            className="flex-1 rounded-lg border border-t-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
-          >
-            Reschedule
-          </button>
-          <button
-            onClick={handleCancel}
-            disabled={cancelling}
-            className="flex-1 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
-          >
-            {cancelling ? "Cancelling..." : "Cancel Survey"}
-          </button>
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <button
+              onClick={handleReschedule}
+              className="flex-1 rounded-lg border border-[#E5E7EB] bg-white px-4 py-3 text-sm font-medium text-[#323F4D] transition-colors hover:border-[#FF9E1B]"
+            >
+              Reschedule
+            </button>
+            <button
+              onClick={handleCancelClick}
+              className="flex-1 rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+            >
+              Cancel Survey
+            </button>
+          </div>
+
+          {cancelConfirmOpen && (
+            <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+              <p className="text-sm font-medium text-[#323F4D]">
+                Cancel your scheduled site survey?
+              </p>
+              <p className="mt-1 text-sm text-[#6B7280]">
+                We&apos;ll free up the slot. If you change your mind later, you can use this same link to reschedule.
+              </p>
+
+              {cancelError && (
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {cancelError}
+                </div>
+              )}
+
+              <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={handleCancelDismiss}
+                  disabled={cancelling}
+                  className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-2 text-sm font-medium text-[#323F4D] transition-colors hover:border-[#FF9E1B] disabled:opacity-50"
+                >
+                  Keep my appointment
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelConfirm}
+                  disabled={cancelling}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {cancelling ? "Cancelling…" : "Yes, cancel"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

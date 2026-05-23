@@ -309,6 +309,9 @@ enum ActivityType {
 
   // Participate Energy — email status sync
   PE_EMAIL_SYNC
+
+  // Enphase Enlighten
+  ENPHASE_STATUS_CHANGE
 }
 
 enum ClientType {
@@ -848,17 +851,27 @@ model HubSpotPropertyCache {
   zuperSyncFailCount    Int       @default(0)
 
   // Tesla PowerHub denormalized fields (populated from primary PowerhubSite)
-  teslaPortalUrl         String?
-  teslaSiteId            String?
-  teslaGatewaySerial     String?
-  teslaPowerwallSerials  String?
-  teslaInverterSerial    String?
-  teslaMeterSerial       String?
-  teslaGatewayModel      String?
-  teslaPowerwallModel    String?
-  teslaInverterModel     String?
-  teslaMeterModel        String?
-  teslaHardwareSummary   String?
+  teslaPortalUrl        String?
+  teslaSiteId           String?
+  teslaGatewaySerial    String?
+  teslaPowerwallSerials String?
+  teslaInverterSerial   String?
+  teslaMeterSerial      String?
+  teslaGatewayModel     String?
+  teslaPowerwallModel   String?
+  teslaInverterModel    String?
+  teslaMeterModel       String?
+  teslaHardwareSummary  String?
+
+  // Enphase Enlighten denormalized fields (populated from primary EnphaseSite)
+  enphasePortalUrl       String?
+  enphaseSystemId        String?
+  enphaseEnvoySerial     String?
+  enphaseMicroCount      String?
+  enphaseBatterySerials  String?
+  enphaseBatteryModel    String?
+  enphaseSystemSize      String?
+  enphaseHardwareSummary String?
 
   lastReconciledAt DateTime
   updatedAt        DateTime @updatedAt
@@ -870,6 +883,7 @@ model HubSpotPropertyCache {
   ticketLinks      PropertyTicketLink[]
   companyLinks     PropertyCompanyLink[]
   powerhubSites    PowerhubSite[]
+  enphaseSites     EnphaseSite[]
   shovelsPermits   ShovelsPermitRecord[] @relation("ShovelsPermits")
   shovelsResidents ShovelsResident[]     @relation("ShovelsResidents")
 
@@ -1901,33 +1915,33 @@ model PeAuditRun {
 //   OPEN → DISMISSED (PM says N/A; permanent — re-runs do not change)
 
 model PeActionTask {
-  id               String   @id @default(cuid())
-  dealId           String
+  id     String @id @default(cuid())
+  dealId String
 
   // Identity for re-run dedup. Same identityKey across runs = same task.
   // Versioned (e.g. "P10@v1:...") so analyzer rule changes migrate explicitly.
-  identityKey      String
+  identityKey String
 
-  pCode            String   // "P1" | "P10B" | "MONITORING" | "ENPHASE"
-  severity         String   // "critical" | "major" | "conditional" | "monitoring"
-  category         String   // "hardware" | "so" | "planset" | "photo" | "monitoring"
-  analyzer         String
+  pCode    String // "P1" | "P10B" | "MONITORING" | "ENPHASE"
+  severity String // "critical" | "major" | "conditional" | "monitoring"
+  category String // "hardware" | "so" | "planset" | "photo" | "monitoring"
+  analyzer String
 
-  title            String
-  message          String   @db.Text
-  action           String   @db.Text
-  evidence         Json
+  title    String
+  message  String @db.Text
+  action   String @db.Text
+  evidence Json
 
-  status           String   // "OPEN" | "RESOLVED_AUTO" | "RESOLVED_MANUAL" | "DISMISSED"
-  resolvedBy       String?  // "auto" | userEmail
+  status           String // "OPEN" | "RESOLVED_AUTO" | "RESOLVED_MANUAL" | "DISMISSED"
+  resolvedBy       String? // "auto" | userEmail
   resolvedAt       DateTime?
   manualResolvedAt DateTime?
   dismissedReason  String?
 
-  firstSeenRunId   String?
-  lastSeenRunId    String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  firstSeenRunId String?
+  lastSeenRunId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([dealId, identityKey])
   @@index([dealId, status])
@@ -1937,23 +1951,23 @@ model PeActionTask {
 }
 
 model CrossRefRun {
-  id               String   @id @default(cuid())
-  dealId           String
-  status           String   // "running" | "completed" | "failed"
-  triggeredBy      String
+  id          String @id @default(cuid())
+  dealId      String
+  status      String // "running" | "completed" | "failed"
+  triggeredBy String
 
-  startedAt        DateTime @default(now())
-  completedAt      DateTime?
-  durationMs       Int?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
 
-  detectedCount    Int      @default(0)
-  newCount         Int      @default(0)
-  resolvedCount    Int      @default(0)
+  detectedCount Int @default(0)
+  newCount      Int @default(0)
+  resolvedCount Int @default(0)
 
   extractorResults Json?
 
-  errorMessage     String?  @db.Text
-  createdAt        DateTime @default(now())
+  errorMessage String?  @db.Text
+  createdAt    DateTime @default(now())
 
   @@index([dealId, startedAt])
 }
@@ -3852,6 +3866,7 @@ enum EagleViewOrderStatus {
 model EagleViewOrder {
   id                    String               @id @default(cuid())
   dealId                String
+  ticketId              String?              // HubSpot ticket ID when order originates from a ticket
   productCode           EagleViewProduct     @default(TDP)
   reportId              String               @unique // EagleView's ReportId from PlaceOrder
   addressHash           String // SHA-256 of normalized address (for dedup)
@@ -4247,6 +4262,124 @@ enum PowerhubTelemetrySource {
   BULK
 }
 
+// ─── Enphase Enlighten ──────────────────────────────────────────────────────
+
+enum EnphaseLinkMethod {
+  PROPERTY
+  ADDRESS_MATCH
+  MANUAL
+  GEO
+  UNLINKED
+}
+
+enum EnphaseLinkConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model EnphaseSite {
+  id               String  @id @default(cuid())
+  systemId         Int     @unique
+  systemName       String
+  systemPublicName String?
+
+  portalUrl          String?
+  primaryForProperty Boolean @default(false)
+
+  address     String
+  city        String
+  state       String
+  zip         String?
+  addressHash String?
+
+  propertyId     String?
+  property       HubSpotPropertyCache? @relation(fields: [propertyId], references: [id])
+  dealId         String?
+  linkMethod     EnphaseLinkMethod     @default(UNLINKED)
+  linkConfidence EnphaseLinkConfidence @default(LOW)
+
+  modules        Int       @default(0)
+  systemSizeW    Float?
+  timezone       String?
+  connectionType String?
+  envoySerial    String?
+  status         String    @default("normal")
+  operationalAt  DateTime?
+
+  latitude      Float?
+  longitude     Float?
+  linkDistanceM Float?
+
+  devices            Json @default("{}")
+  microinverterCount Int  @default(0)
+  batteryCount       Int  @default(0)
+
+  lastAssetSyncAt     DateTime
+  lastTelemetrySyncAt DateTime?
+  lastStatusCheckAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  telemetrySnapshot EnphaseTelemetrySnapshot?
+  telemetryHistory  EnphaseTelemetryHistory[]
+
+  @@index([addressHash])
+  @@index([propertyId])
+  @@index([dealId])
+  @@index([status])
+  @@index([latitude, longitude])
+}
+
+model EnphaseTelemetrySnapshot {
+  id       String      @id @default(cuid())
+  systemId Int         @unique
+  site     EnphaseSite @relation(fields: [systemId], references: [systemId])
+
+  timestamp DateTime
+
+  currentProductionW   Float?
+  todayProductionWh    Float?
+  lifetimeProductionWh Float?
+  lastDayProductionWh  Float?
+
+  currentConsumptionW   Float?
+  todayConsumptionWh    Float?
+  lifetimeConsumptionWh Float?
+
+  batteryPercentCharge Float?
+  batteryCapacityWh    Float?
+  batteryChargeW       Float?
+
+  gridImportW Float?
+  gridExportW Float?
+
+  systemStatus        String?
+  microReportingCount Int?
+  microTotalCount     Int?
+  lastReportAt        DateTime?
+
+  raw Json?
+
+  updatedAt DateTime @updatedAt
+}
+
+model EnphaseTelemetryHistory {
+  id       String      @id @default(cuid())
+  systemId Int
+  site     EnphaseSite @relation(fields: [systemId], references: [systemId])
+
+  timestamp   DateTime
+  signalName  String
+  value       Float?
+  valueString String?
+  source      String   @default("POLL")
+
+  @@index([systemId, signalName, timestamp])
+  @@index([systemId, timestamp])
+}
+
 model PowerhubSite {
   id               String  @id @default(cuid())
   siteId           String  @unique // Tesla site UUID
@@ -4281,9 +4414,9 @@ model PowerhubSite {
   totalInverters     Int  @default(0)
 
   // Geo coordinates (populated by portal-imported assetGetSiteLocations)
-  latitude       Float?
-  longitude      Float?
-  linkDistanceM  Float? // Distance in meters from matched property at link time
+  latitude      Float?
+  longitude     Float?
+  linkDistanceM Float? // Distance in meters from matched property at link time
 
   // Status
   status PowerhubSiteStatus @default(ACTIVE)
@@ -4317,81 +4450,81 @@ model PowerhubTelemetrySnapshot {
   timestamp DateTime
 
   // ── Power flows (instantaneous, W; signed where directional) ──
-  solarPowerW              Float?  // solar_instant_power
-  solarPowerRgmW           Float?  // solar_instant_power_rgm (revenue-grade meter)
-  solarReactivePowerVar    Float?  // solar_reactive_power
-  solarRealPowerLimitW     Float?  // solar_real_power_limit (curtailment ceiling)
-  batteryPowerW            Float?  // battery_instant_power (signed: + discharge, − charge)
-  batteryChargePowerW      Float?  // battery_charge_power (unsigned magnitude)
-  batteryDischargePowerW   Float?  // battery_discharge_power (unsigned magnitude)
-  batteryReactivePowerVar  Float?  // battery_instant_reactive_power
-  batteryTargetPowerW      Float?  // battery_target_power (commanded)
-  batteryTargetReactiveVar Float?  // battery_target_reactive_power
-  batteryMaxChargeW        Float?  // max_charge_power (current limit)
-  batteryMaxDischargeW     Float?  // max_discharge_power
+  solarPowerW                 Float? // solar_instant_power
+  solarPowerRgmW              Float? // solar_instant_power_rgm (revenue-grade meter)
+  solarReactivePowerVar       Float? // solar_reactive_power
+  solarRealPowerLimitW        Float? // solar_real_power_limit (curtailment ceiling)
+  batteryPowerW               Float? // battery_instant_power (signed: + discharge, − charge)
+  batteryChargePowerW         Float? // battery_charge_power (unsigned magnitude)
+  batteryDischargePowerW      Float? // battery_discharge_power (unsigned magnitude)
+  batteryReactivePowerVar     Float? // battery_instant_reactive_power
+  batteryTargetPowerW         Float? // battery_target_power (commanded)
+  batteryTargetReactiveVar    Float? // battery_target_reactive_power
+  batteryMaxChargeW           Float? // max_charge_power (current limit)
+  batteryMaxDischargeW        Float? // max_discharge_power
   estimatedBatteryNextPeriodW Float? // estimated_battery_power_next_period
-  gridPowerW               Float?  // site_instant_power (− export, + import)
-  loadPowerW               Float?  // load_instant_real_power
-  gridServicesPowerW       Float?  // grid_services_instant_power (VPP)
+  gridPowerW                  Float? // site_instant_power (− export, + import)
+  loadPowerW                  Float? // load_instant_real_power
+  gridServicesPowerW          Float? // grid_services_instant_power (VPP)
 
   // ── Battery state ──
-  batterySocPercent        Float?  // battery_state_of_energy or _remaining_percentage
-  batteryEnergyRemainingWh Float?  // battery_expected_energy_remaining
-  batteryNominalCapacityWh Float?  // battery_nominal_full_pack_energy (true capacity)
-  backupReservePercent     Float?  // backup_reserve (customer setting)
+  batterySocPercent        Float? // battery_state_of_energy or _remaining_percentage
+  batteryEnergyRemainingWh Float? // battery_expected_energy_remaining
+  batteryNominalCapacityWh Float? // battery_nominal_full_pack_energy (true capacity)
+  backupReservePercent     Float? // backup_reserve (customer setting)
   batteryFault             Boolean? // battery_fault
 
   // ── Cumulative energy (lifetime Wh counters) ──
-  solarEnergyTodayWh       Float?  // solar_energy_exported (was misnamed; it's lifetime)
-  solarEnergyImportedWh    Float?  // solar_energy_imported
-  solarEnergyExportedRgmWh Float?  // solar_energy_exported_rgm
-  batteryEnergyImportedWh  Float?  // battery_energy_imported
-  batteryEnergyExportedWh  Float?  // battery_energy_exported
-  gridEnergyImportedWh     Float?  // site_energy_imported
-  gridEnergyExportedWh     Float?  // site_energy_exported
-  loadEnergyImportedWh     Float?  // load_energy_imported
-  solarToLoadEnergyWh      Float?  // solar_to_load_energy
-  solarToBatteryEnergyWh   Float?  // solar_to_battery_energy
-  batteryToLoadEnergyWh    Float?  // battery_to_load_energy
-  gridServicesEnergyInWh   Float?  // grid_services_energy_imported
-  gridServicesEnergyOutWh  Float?  // grid_services_energy_exported
+  solarEnergyTodayWh       Float? // solar_energy_exported (was misnamed; it's lifetime)
+  solarEnergyImportedWh    Float? // solar_energy_imported
+  solarEnergyExportedRgmWh Float? // solar_energy_exported_rgm
+  batteryEnergyImportedWh  Float? // battery_energy_imported
+  batteryEnergyExportedWh  Float? // battery_energy_exported
+  gridEnergyImportedWh     Float? // site_energy_imported
+  gridEnergyExportedWh     Float? // site_energy_exported
+  loadEnergyImportedWh     Float? // load_energy_imported
+  solarToLoadEnergyWh      Float? // solar_to_load_energy
+  solarToBatteryEnergyWh   Float? // solar_to_battery_energy
+  batteryToLoadEnergyWh    Float? // battery_to_load_energy
+  gridServicesEnergyInWh   Float? // grid_services_energy_imported
+  gridServicesEnergyOutWh  Float? // grid_services_energy_exported
 
   // ── Grid quality ──
-  voltageV                 Float?  // voltage
-  gridVoltageV             Float?  // grid_voltage
-  chassisVoltageV          Float?  // chassis_voltage
-  frequencyHz              Float?  // frequency
+  voltageV        Float? // voltage
+  gridVoltageV    Float? // grid_voltage
+  chassisVoltageV Float? // chassis_voltage
+  frequencyHz     Float? // frequency
 
   // ── Grid / island state ──
-  gridConnectedStatus      String? // grid_connected_status ("1" connected / "0" islanded)
-  islandMode               String? // island_mode
-  islanderDisconnected     Boolean? // islander_disconnected
-  breakerOpenStatus        Boolean? // breaker_open_status
-  gridReadySync            Boolean? // grid_ready_sync
-  offGridFaultState        String? // off_grid_fault_state
-  loadsDropped             Boolean? // loads_dropped
-  systemShutdown           Boolean? // system_shutdown
+  gridConnectedStatus  String? // grid_connected_status ("1" connected / "0" islanded)
+  islandMode           String? // island_mode
+  islanderDisconnected Boolean? // islander_disconnected
+  breakerOpenStatus    Boolean? // breaker_open_status
+  gridReadySync        Boolean? // grid_ready_sync
+  offGridFaultState    String? // off_grid_fault_state
+  loadsDropped         Boolean? // loads_dropped
+  systemShutdown       Boolean? // system_shutdown
 
   // ── Operational + control ──
-  batteryMode              String? // command_real_mode (0–9 → Standby/Backup/Self-Powered/etc.)
-  opticasterReasonCode     String? // opticaster_control_reason_code
-  isPrimaryGateway         Boolean? // is_primary
-  waitForUserLowSoe        Boolean? // wait_for_user_low_soe
-  waitForUserManualBackup  Boolean? // wait_for_user_manual_backup
-  waitForUserNoInverters   Boolean? // wait_for_user_no_inverters_ready
-  waitForUserRetriesDone   Boolean? // wait_for_user_retries_exhausted
+  batteryMode             String? // command_real_mode (0–9 → Standby/Backup/Self-Powered/etc.)
+  opticasterReasonCode    String? // opticaster_control_reason_code
+  isPrimaryGateway        Boolean? // is_primary
+  waitForUserLowSoe       Boolean? // wait_for_user_low_soe
+  waitForUserManualBackup Boolean? // wait_for_user_manual_backup
+  waitForUserNoInverters  Boolean? // wait_for_user_no_inverters_ready
+  waitForUserRetriesDone  Boolean? // wait_for_user_retries_exhausted
 
   // ── Comms health (per-component) ──
-  commsBattery             Boolean? // battery_comms
-  commsBatteryMeter        Boolean? // battery_meter_comms
-  commsSiteMeter           Boolean? // site_meter_comms
-  commsSolarMeter          Boolean? // solar_meter_comms
+  commsBattery      Boolean? // battery_comms
+  commsBatteryMeter Boolean? // battery_meter_comms
+  commsSiteMeter    Boolean? // site_meter_comms
+  commsSolarMeter   Boolean? // solar_meter_comms
 
   // ── Rate plan ──
-  energyBuyPrice           Float?  // energy_buy_price
-  energySellPrice          Float?  // energy_sell_price
-  customerEnergyBuyPrice   Float?  // customer_energy_buy_price
-  customerEnergySellPrice  Float?  // customer_energy_sell_price
+  energyBuyPrice          Float? // energy_buy_price
+  energySellPrice         Float? // energy_sell_price
+  customerEnergyBuyPrice  Float? // customer_energy_buy_price
+  customerEnergySellPrice Float? // customer_energy_sell_price
 
   raw Json?
 

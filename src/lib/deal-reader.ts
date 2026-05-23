@@ -84,6 +84,7 @@ interface DepartmentLeadsJson {
   design?: string;
   permit_tech?: string;
   interconnections_tech?: string;
+  inspections_lead?: string;
   rtb_lead?: string;
 }
 
@@ -294,6 +295,10 @@ export function dealToProject(deal: PrismaDeal): Project {
     ptoGrantedDate: dateToDateString(deal.ptoCompletionDate),
     ptoStatus: deal.ptoStatus ?? null,
 
+    // Project complete / cancelled (not yet in Deal cache — populated only via HubSpot API path)
+    projectCompleteDate: null,
+    cancelledDate: null,
+
     // Forecasted dates
     forecastedInstallDate: dateToDateString(deal.forecastedInstallDate),
     forecastedInspectionDate: dateToDateString(deal.forecastedInspectionDate),
@@ -341,6 +346,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     designLead: leads.design ?? "",
     permitLead: leads.permit_tech ?? "",
     interconnectionsLead: leads.interconnections_tech ?? "",
+    inspectionsLead: leads.inspections_lead ?? "",
     preconstructionLead: leads.rtb_lead ?? "",
 
     // QC Time Metrics (stored as Decimal days, Project expects number | null)

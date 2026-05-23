@@ -71,6 +71,7 @@ function makeFakePrisma() {
         const row: FakeRow = {
           id,
           dealId: String(args.data.dealId),
+          ticketId: (args.data.ticketId as string | null) ?? null,
           productCode: args.data.productCode as EagleViewProduct,
           addressHash: String(args.data.addressHash),
           reportId: String(args.data.reportId),
@@ -139,7 +140,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     postDealNote: jest.Mock;
   };
 } {
-  const placeOrder = jest.fn(async () => ({ reportId: 12345 }));
+  const placeOrder = jest.fn(async () => ({ reportIds: [12345], orderId: 99 }));
   const checkSolarAvailability = jest.fn(async () => ({
     jobId: "j1",
     address: "x",

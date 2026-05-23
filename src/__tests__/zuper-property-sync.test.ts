@@ -24,11 +24,20 @@ describe("buildPropertyCustomFields", () => {
       utilityName: "Colorado Springs Utilities",
       teslaPortalUrl: null,
       teslaSiteId: null,
+      teslaGatewaySerial: null,
+      teslaPowerwallSerials: null,
+      teslaInverterSerial: null,
+      teslaMeterSerial: null,
+      teslaGatewayModel: null,
+      teslaPowerwallModel: null,
+      teslaInverterModel: null,
+      teslaMeterModel: null,
+      teslaHardwareSummary: null,
     };
 
     const fields = buildPropertyCustomFields(property);
 
-    expect(fields).toHaveLength(12);
+    expect(fields).toHaveLength(21);
     expect(fields.find((f) => f.label === "System Size (kW)")?.value).toBe("8.4");
     expect(fields.find((f) => f.label === "Has Battery")?.value).toBe("Yes");
     expect(fields.find((f) => f.label === "Has EV Charger")?.value).toBe("No");
@@ -55,11 +64,20 @@ describe("buildPropertyCustomFields", () => {
       utilityName: null,
       teslaPortalUrl: null,
       teslaSiteId: null,
+      teslaGatewaySerial: null,
+      teslaPowerwallSerials: null,
+      teslaInverterSerial: null,
+      teslaMeterSerial: null,
+      teslaGatewayModel: null,
+      teslaPowerwallModel: null,
+      teslaInverterModel: null,
+      teslaMeterModel: null,
+      teslaHardwareSummary: null,
     };
 
     const fields = buildPropertyCustomFields(property);
 
-    expect(fields).toHaveLength(12);
+    expect(fields).toHaveLength(21);
     expect(fields.find((f) => f.label === "System Size (kW)")?.value).toBe("N/A");
     expect(fields.find((f) => f.label === "Has Battery")?.value).toBe("No");
     expect(fields.find((f) => f.label === "Has EV Charger")?.value).toBe("No");
@@ -74,11 +92,11 @@ describe("buildPropertyCustomFields", () => {
     expect(fields.find((f) => f.label === "Tesla Site ID")?.value).toBe("");
   });
 
-  it("exports all 12 field labels", () => {
-    expect(ZUPER_PROPERTY_FIELD_LABELS).toHaveLength(12);
+  it("exports all 21 field labels", () => {
+    expect(ZUPER_PROPERTY_FIELD_LABELS).toHaveLength(21);
   });
 
-  it("all fields use SINGLE_LINE type", () => {
+  it("all simple fields use SINGLE_LINE type (hardware summary is MULTI_LINE)", () => {
     const property = {
       systemSizeKwDc: 5.0,
       hasBattery: false,
@@ -92,9 +110,20 @@ describe("buildPropertyCustomFields", () => {
       utilityName: "Xcel Energy",
       teslaPortalUrl: null,
       teslaSiteId: null,
+      teslaGatewaySerial: null,
+      teslaPowerwallSerials: null,
+      teslaInverterSerial: null,
+      teslaMeterSerial: null,
+      teslaGatewayModel: null,
+      teslaPowerwallModel: null,
+      teslaInverterModel: null,
+      teslaMeterModel: null,
+      teslaHardwareSummary: null,
     };
 
     const fields = buildPropertyCustomFields(property);
-    expect(fields.every((f) => f.type === "SINGLE_LINE")).toBe(true);
+    const summary = fields.find((f) => f.label === "Tesla Hardware Summary");
+    expect(summary?.type).toBe("MULTI_LINE");
+    expect(fields.filter((f) => f.label !== "Tesla Hardware Summary").every((f) => f.type === "SINGLE_LINE")).toBe(true);
   });
 });

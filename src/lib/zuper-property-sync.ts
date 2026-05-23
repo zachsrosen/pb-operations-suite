@@ -26,9 +26,19 @@ export const ZUPER_PROPERTY_FIELD_LABELS = [
   "PB Location",
   "AHJ",
   "Utility",
-  // NEW — Tesla PowerHub cross-link
+  // Tesla PowerHub cross-link
   "Tesla PowerHub",
   "Tesla Site ID",
+  // Tesla device serials + models (cascaded from primary PowerhubSite.devices)
+  "Tesla Gateway Serial",
+  "Tesla Powerwall Serial(s)",
+  "Tesla Inverter Serial",
+  "Tesla Meter Serial",
+  "Tesla Gateway Model",
+  "Tesla Powerwall Model",
+  "Tesla Inverter Model",
+  "Tesla Meter Model",
+  "Tesla Hardware Summary",
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,9 +56,19 @@ export interface PropertyFieldSource {
   pbLocation: string | null;
   ahjName: string | null;
   utilityName: string | null;
-  // NEW
+  // Tesla PowerHub link
   teslaPortalUrl: string | null;
   teslaSiteId: string | null;
+  // Tesla device serials + models
+  teslaGatewaySerial: string | null;
+  teslaPowerwallSerials: string | null;
+  teslaInverterSerial: string | null;
+  teslaMeterSerial: string | null;
+  teslaGatewayModel: string | null;
+  teslaPowerwallModel: string | null;
+  teslaInverterModel: string | null;
+  teslaMeterModel: string | null;
+  teslaHardwareSummary: string | null;
 }
 
 export interface SyncPropertyResult {
@@ -87,6 +107,15 @@ export function buildPropertyCustomFields(property: PropertyFieldSource): ZuperM
     { label: "Utility", value: str(property.utilityName), type: "SINGLE_LINE" },
     { label: "Tesla PowerHub", value: str(property.teslaPortalUrl), type: "SINGLE_LINE" },
     { label: "Tesla Site ID", value: str(property.teslaSiteId), type: "SINGLE_LINE" },
+    { label: "Tesla Gateway Serial", value: str(property.teslaGatewaySerial), type: "SINGLE_LINE" },
+    { label: "Tesla Powerwall Serial(s)", value: str(property.teslaPowerwallSerials), type: "SINGLE_LINE" },
+    { label: "Tesla Inverter Serial", value: str(property.teslaInverterSerial), type: "SINGLE_LINE" },
+    { label: "Tesla Meter Serial", value: str(property.teslaMeterSerial), type: "SINGLE_LINE" },
+    { label: "Tesla Gateway Model", value: str(property.teslaGatewayModel), type: "SINGLE_LINE" },
+    { label: "Tesla Powerwall Model", value: str(property.teslaPowerwallModel), type: "SINGLE_LINE" },
+    { label: "Tesla Inverter Model", value: str(property.teslaInverterModel), type: "SINGLE_LINE" },
+    { label: "Tesla Meter Model", value: str(property.teslaMeterModel), type: "SINGLE_LINE" },
+    { label: "Tesla Hardware Summary", value: str(property.teslaHardwareSummary), type: "MULTI_LINE" },
   ];
 }
 
@@ -277,6 +306,15 @@ export async function syncPropertyToZuper(propertyCacheId: string): Promise<Sync
     utilityName: property.utilityName,
     teslaPortalUrl: property.teslaPortalUrl,
     teslaSiteId: property.teslaSiteId,
+    teslaGatewaySerial: property.teslaGatewaySerial,
+    teslaPowerwallSerials: property.teslaPowerwallSerials,
+    teslaInverterSerial: property.teslaInverterSerial,
+    teslaMeterSerial: property.teslaMeterSerial,
+    teslaGatewayModel: property.teslaGatewayModel,
+    teslaPowerwallModel: property.teslaPowerwallModel,
+    teslaInverterModel: property.teslaInverterModel,
+    teslaMeterModel: property.teslaMeterModel,
+    teslaHardwareSummary: property.teslaHardwareSummary,
   });
 
   // Resolve customer UID from linked jobs.

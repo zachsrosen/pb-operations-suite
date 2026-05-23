@@ -362,6 +362,10 @@ export interface Project {
   forecastedInspectionDate: string | null;
   forecastedPtoDate: string | null;
 
+  // Project completion / cancellation
+  projectCompleteDate: string | null;
+  cancelledDate: string | null;
+
   // Calculated fields
   daysToInstall: number | null;
   daysToInspection: number | null;
@@ -403,6 +407,7 @@ export interface Project {
   designLead: string;
   permitLead: string;
   interconnectionsLead: string;
+  inspectionsLead: string;
   preconstructionLead: string;
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
@@ -650,6 +655,8 @@ const DEAL_PROPERTIES = [
 
   // Stage timing (precise — replaces 30-day-bucket days_since_stage_movement)
   "hs_v2_date_entered_current_stage",
+  "hs_date_entered_20440343", // Date entered Project Complete stage
+  "hs_date_entered_68229433", // Date entered Cancelled stage
 
   // Install planning
   "expected_days_for_install",
@@ -697,6 +704,7 @@ const DEAL_PROPERTIES = [
   "permit_tech",
   "interconnections_tech",
   "rtb_lead",
+  "inspections_lead",
 
   // QC Time Metrics (pre-calculated by HubSpot, in days)
   "site_survey_turnaround_time",
@@ -1002,6 +1010,10 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     ptoGrantedDate: parseDate(deal.pto_completion_date),
     ptoStatus: deal.pto_status ? String(deal.pto_status) : null,
 
+    // Project completion
+    projectCompleteDate: parseDate(deal.hs_date_entered_20440343),
+    cancelledDate: parseDate(deal.hs_date_entered_68229433),
+
     // Forecasted dates
     forecastedInstallDate: parseDate(deal.forecasted_installation_date),
     forecastedInspectionDate: parseDate(deal.forecasted_inspection_date),
@@ -1067,6 +1079,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     })(),
     interconnectionsLead: (() => {
       const raw = String(deal.interconnections_tech || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
+    inspectionsLead: (() => {
+      const raw = String(deal.inspections_lead || "");
       if (!raw) return "";
       return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
     })(),

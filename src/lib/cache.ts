@@ -272,6 +272,8 @@ export const CACHE_KEYS = {
   REVENUE_GOALS: (year: number) => `revenue-goals:${year}` as const,
   DESIGN_FUNNEL: (months: number, location: string) =>
     `funnel:design-pipeline:${months}:${location}` as const,
+  PROJECT_FUNNEL: (months: number, location: string) =>
+    `funnel:project-pipeline:${months}:${location}` as const,
   TERRITORY_MAP: "territory-map",
   OFFICE_PERFORMANCE: (location: string) => `office-performance:${location}`,
   GOALS_PIPELINE: (location: string) => `goals-pipeline:${location}`,
@@ -301,6 +303,7 @@ export const CACHE_KEYS = {
   PROPERTY_PHOTOS: (propertyId: string) =>
     `property-photos:${propertyId}` as const,
   PAYMENT_TRACKING: "accounting:payment-tracking",
+  ZUPER_ALL_JOBS: "zuper:all-jobs",
   // On-call "tonight" keys are built dynamically per-pool-per-date in
   // src/app/api/on-call/tonight/route.ts so they roll over at each pool's local
   // midnight. Invalidate via appCache.invalidateByPrefix("on-call:tonight").

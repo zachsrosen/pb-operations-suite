@@ -58,11 +58,13 @@
     "src/app/api/cron/powerhub-assets/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/powerhub-telemetry/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/powerhub-alerts/route.ts": { "maxDuration": 120 },
+    "src/app/api/cron/enphase-assets/route.ts": { "maxDuration": 300 },
+    "src/app/api/cron/enphase-telemetry/route.ts": { "maxDuration": 120 },
+    "src/app/api/cron/enphase-status-check/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/goals-digest/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/pe-invoice-audit/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/pe-email-sync/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/pe-api-sync/route.ts": { "maxDuration": 300 },
-    "src/app/api/cron/pe-scraper-sync/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/shovels-enrich/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/zuper-property-sync/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/zuper-job-backfill/route.ts": { "maxDuration": 120 }
@@ -114,7 +116,7 @@
     },
     {
       "path": "/api/zuper/sync-cache",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/cron/eod-summary",
@@ -183,14 +185,16 @@
     { "path": "/api/cron/powerhub-assets", "schedule": "0 0,6,12,18 * * *" },
     { "path": "/api/cron/powerhub-telemetry", "schedule": "2,17,32,47 * * * *" },
     { "path": "/api/cron/powerhub-alerts", "schedule": "4,9,14,19,24,29,34,39,44,49,54,59 * * * *" },
+    { "path": "/api/cron/enphase-assets", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/enphase-telemetry", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/enphase-status-check", "schedule": "5,35 * * * *" },
     { "path": "/api/cron/goals-digest", "schedule": "0 14 * * 1,2" },
     { "path": "/api/cron/pe-invoice-audit", "schedule": "7 * * * *" },
     { "path": "/api/cron/pe-email-sync", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/pe-api-sync", "schedule": "0 0-1,13-23 * * *" },
-    { "path": "/api/cron/pe-scraper-sync", "schedule": "30 13,20 * * 1-5" },
     { "path": "/api/cron/pe-doc-digest", "schedule": "30 21 * * 1-5" },
     { "path": "/api/cron/shovels-enrich", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/zuper-property-sync", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/zuper-property-sync", "schedule": "*/30 * * * *" },
     { "path": "/api/cron/zuper-job-backfill", "schedule": "0 * * * *" }
   ],
   "redirects": [

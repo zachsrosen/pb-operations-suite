@@ -3,6 +3,7 @@ import { CONSTRUCTION_CATEGORY_NAMES, JOB_CATEGORIES, JOB_CATEGORY_UIDS, ZuperCl
 import { extractSubJobsFromCandidates, type SubJobInfo } from "@/lib/scheduler-subjobs";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 /**
  * POST /api/zuper/jobs/lookup
@@ -438,64 +439,65 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
             addressScore: 0,
             categoryName: cached.jobCategory,
           });
-          console.log(`Zuper: DB cache hit for project ${cached.hubspotDealId} → job ${cached.jobUid} (scheduled: ${cached.scheduledStart?.toISOString()}, assigned: ${cachedAssignedUsers?.[0]?.user_name || 'none'})`);
+          // Verbose per-project logging removed — DB cache hits are the common path
         }
       }
     } catch (dbErr) {
       console.warn("Zuper: DB cache lookup failed, falling back to API:", dbErr);
     }
 
-    // --- Zuper API search (paginated — fetch ALL jobs) ---
-    // Two passes: first with date range, then without for any remaining unmatched projects
+    // --- Zuper API search (cached, single pass) ---
+    // Server-side cache (5-min TTL) with request coalescing so concurrent
+    // scheduler pages share one Zuper API sweep instead of each triggering
+    // 10+ paginated calls. Previously this did TWO full passes (dated +
+    // undated) but the date range (365d back + 180d forward) already
+    // returns 100% of jobs, making the second pass redundant.
     const PAGE_SIZE = 500;
     const MAX_PAGES = 10; // Safety cap: 5000 jobs max
-    const allJobs: ZuperJob[] = [];
-    const seenJobUids = new Set<string>();
 
-    // Helper: fetch all pages of a search query
-    const fetchAllPages = async (searchParams: Parameters<typeof zuper.searchJobs>[0]): Promise<ZuperJob[]> => {
-      const jobs: ZuperJob[] = [];
-      const page1 = await zuper.searchJobs({ ...searchParams, limit: PAGE_SIZE, page: 1 });
-      if (page1.type === "success" && page1.data?.jobs) {
-        jobs.push(...page1.data.jobs);
-        const total = page1.data.total || 0;
-        if (total > PAGE_SIZE) {
-          const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
-          const promises = [];
-          for (let p = 2; p <= totalPages; p++) {
-            promises.push(zuper.searchJobs({ ...searchParams, limit: PAGE_SIZE, page: p }));
+    const { data: allJobs, cached: jobsCached } = await appCache.getOrFetch<ZuperJob[]>(
+      CACHE_KEYS.ZUPER_ALL_JOBS,
+      async () => {
+        const jobs: ZuperJob[] = [];
+        const seen = new Set<string>();
+
+        // Single pass: no date filter — returns all jobs. Zuper has ~5k jobs;
+        // paginating at 500/page = 10 API calls, cached for 5 min.
+        const page1 = await zuper.searchJobs({ limit: PAGE_SIZE, page: 1 });
+        if (page1.type === "success" && page1.data?.jobs) {
+          for (const j of page1.data.jobs) {
+            if (j.job_uid && !seen.has(j.job_uid)) {
+              seen.add(j.job_uid);
+              jobs.push(j);
+            }
           }
-          const results = await Promise.all(promises);
-          for (const r of results) {
-            if (r.type === "success" && r.data?.jobs) jobs.push(...r.data.jobs);
+          const total = page1.data.total || 0;
+          if (total > PAGE_SIZE) {
+            const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
+            const promises = [];
+            for (let p = 2; p <= totalPages; p++) {
+              promises.push(zuper.searchJobs({ limit: PAGE_SIZE, page: p }));
+            }
+            const results = await Promise.all(promises);
+            for (const r of results) {
+              if (r.type === "success" && r.data?.jobs) {
+                for (const j of r.data.jobs) {
+                  if (j.job_uid && !seen.has(j.job_uid)) {
+                    seen.add(j.job_uid);
+                    jobs.push(j);
+                  }
+                }
+              }
+            }
           }
         }
-      }
-      return jobs;
-    };
 
-    // Pass 1: Date-ranged search (365 days back, 180 days forward — wider window)
-    const fromDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const toDate = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        console.log(`[zuper-lookup] Fetched ${jobs.length} jobs from Zuper API (${Math.min(Math.ceil((page1.data?.total || 0) / PAGE_SIZE), MAX_PAGES)} pages)`);
+        return jobs;
+      },
+    );
 
-    const datedJobs = await fetchAllPages({ from_date: fromDate, to_date: toDate });
-    for (const j of datedJobs) {
-      if (j.job_uid && !seenJobUids.has(j.job_uid)) {
-        seenJobUids.add(j.job_uid);
-        allJobs.push(j);
-      }
-    }
-
-    // Pass 2: No date filter — catches unscheduled jobs or those outside the date window
-    const undatedJobs = await fetchAllPages({});
-    for (const j of undatedJobs) {
-      if (j.job_uid && !seenJobUids.has(j.job_uid)) {
-        seenJobUids.add(j.job_uid);
-        allJobs.push(j);
-      }
-    }
-
-    console.log(`Zuper lookup: searching ${allJobs.length} jobs (${datedJobs.length} dated + ${undatedJobs.length} undated, ${seenJobUids.size} unique) for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
+    console.log(`Zuper lookup: searching ${allJobs.length} ${jobsCached ? "cached" : "fresh"} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
 
     if (allJobs.length > 0) {
       for (const job of allJobs) {

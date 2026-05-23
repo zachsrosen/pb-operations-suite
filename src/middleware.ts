@@ -73,11 +73,14 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/pe-invoice-audit",    // PE invoice payment audit — CRON_SECRET validated in route
   "/api/cron/pe-email-sync",       // PE email status sync — CRON_SECRET validated in route
   "/api/cron/pe-api-sync",         // PE Raceway API doc + action item sync — CRON_SECRET validated in route
-  "/api/cron/pe-scraper-sync",     // PE GCS scraper report sync — CRON_SECRET validated in route
   "/api/webhooks/pe-scraper",      // PE portal scraper push — API_SECRET_TOKEN validated in route
   "/api/webhooks/hubspot/pe-doc-status", // PE doc status webhook — HubSpot signature validated in route
   "/api/properties/workflow-sync", // HubSpot workflow webhook → property sync — PROPERTY_SYNC_ENABLED + Zod validated in route
   "/api/hubspot-card/powerhub",    // HubSpot UI Extension data fetch — HubSpot signature v3 validated in route
+  "/api/cron/enphase-assets",       // Enphase asset sync — CRON_SECRET validated in route
+  "/api/cron/enphase-telemetry",    // Enphase telemetry poll — CRON_SECRET validated in route
+  "/api/cron/enphase-status-check", // Enphase status check — CRON_SECRET validated in route
+  "/api/hubspot-card/enphase",      // HubSpot UI Extension — HubSpot signature v3 validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
@@ -281,6 +284,25 @@ export default auth((req) => {
   // If maintenance mode is OFF and user is on maintenance page, redirect to home
   if (!maintenanceMode && isMaintenancePage) {
     return addSecurityHeaders(requestId, NextResponse.redirect(new URL("/", req.url)));
+  }
+
+  // ── schedule.photonbrothers.com subdomain isolation ─────────────────
+  // This subdomain is a Vercel alias used exclusively for the customer
+  // survey self-scheduling portal. Any non-portal request that reaches
+  // this middleware (i.e. not a static file, not an auth route) must NOT
+  // see the internal login page or any other pbtechops UI. We redirect
+  // everything else to the public marketing site.
+  const hostHeader = req.nextUrl.hostname.toLowerCase();
+  if (hostHeader === "schedule.photonbrothers.com") {
+    const isCustomerPortalPagePath = pathname.startsWith("/portal/survey/");
+    const isCustomerPortalApiPath = pathname.startsWith("/api/portal/survey/");
+    const isCustomerPortalScope = isCustomerPortalPagePath || isCustomerPortalApiPath;
+    if (!isCustomerPortalScope && !isAuthRoute && !isStaticFile) {
+      return addSecurityHeaders(
+        requestId,
+        NextResponse.redirect("https://photonbrothers.com", 302),
+      );
+    }
   }
 
   // Always allow auth routes and static files

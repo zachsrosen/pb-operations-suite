@@ -77,6 +77,14 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
+    href: "/dashboards/project-pipeline-funnel",
+    title: "Project Pipeline Funnel",
+    description: "Full 11-stage funnel from Sales Closed through PTO Granted — backlog, cohorts, and median transition times.",
+    tag: "PIPELINE",
+    icon: "🏗️",
+    section: "Sales",
+  },
+  {
     href: "/estimator/new-install?step=address",
     title: "Customer Estimator (preview)",
     description: "Public-facing instant solar estimator — walk a customer quote from address through results.",
