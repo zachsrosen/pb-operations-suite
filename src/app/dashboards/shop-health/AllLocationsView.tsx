@@ -89,10 +89,10 @@ export function AllLocationsView({ weekStart }: AllLocationsViewProps) {
           <thead>
             <tr className="border-b border-border bg-surface-2/50">
               <th className="text-left py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Location</th>
-              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Backlog</th>
+              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Backlog (Wks)</th>
               <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">RTB</th>
-              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Scheduled</th>
-              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Installs</th>
+              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Planned</th>
+              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Completed</th>
               <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">PTOs</th>
               <th className="text-left py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Bottleneck</th>
             </tr>

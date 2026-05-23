@@ -34,14 +34,14 @@ export function CustomerSuccessSectionContent({
           label="Avg Sentiment Score"
           value={data.avgSentimentScore !== null ? data.avgSentimentScore : '—'}
           valueColor={sentimentColor(data.avgSentimentScore)}
-          sub={data.avgSentimentScore !== null ? '/ 100' : undefined}
+          sub={data.avgSentimentScore !== null ? '/ 100 across active deals' : undefined}
           deals={drilldown.sentimentScores}
           dateLabel="Score"
         />
         <DrilldownMetricCard
           label="5-Star Reviews MTD"
           value={data.fiveStarReviewsMTD}
-          sub={`/ ${data.fiveStarReviewsTarget} target`}
+          sub={`/ ${data.fiveStarReviewsTarget} target · month to date`}
           valueColor={
             data.fiveStarReviewsMTD >= data.fiveStarReviewsTarget
               ? 'text-emerald-400'
@@ -60,6 +60,7 @@ export function CustomerSuccessSectionContent({
         <DrilldownMetricCard
           label="Avg Days Since Contact"
           value={data.avgDaysSinceContact !== null ? `${data.avgDaysSinceContact}d` : '—'}
+          sub="across active deals"
           valueColor={
             data.avgDaysSinceContact !== null
               ? data.avgDaysSinceContact <= 3
@@ -73,7 +74,7 @@ export function CustomerSuccessSectionContent({
           dateLabel="Last Contact"
         />
         <DrilldownMetricCard
-          label="No Same-Day Response"
+          label="Missed Same-Day Response"
           value={data.noSameDayResponseCount}
           valueColor={
             data.noSameDayResponseCount === 0
@@ -82,9 +83,9 @@ export function CustomerSuccessSectionContent({
                 ? 'text-amber-400'
                 : 'text-red-400'
           }
-          sub="contacts"
+          sub="times we didn't reply within 24h"
           deals={drilldown.noSameDayResponse}
-          dateLabel="Last Contact"
+          dateLabel="Missed"
         />
         <DrilldownMetricCard
           label="Avg Response Time"
@@ -93,6 +94,7 @@ export function CustomerSuccessSectionContent({
               ? `${data.avgTimeToRespondHours}h`
               : '—'
           }
+          sub="hours to first reply"
           valueColor={
             data.avgTimeToRespondHours !== null
               ? data.avgTimeToRespondHours <= 4
@@ -120,7 +122,7 @@ export function CustomerSuccessSectionContent({
       {data.sentimentDistribution.length > 0 && (
         <div>
           <h4 className="text-sm font-medium text-muted mb-3">
-            Sentiment Distribution
+            Sentiment Distribution <span className="font-normal opacity-70">· most recent score per active deal</span>
           </h4>
           <div className="flex h-6 rounded-full overflow-hidden bg-surface-2">
             {data.sentimentDistribution.map((bucket) =>

@@ -19,18 +19,21 @@ export function OperationsSectionContent({
       <DrilldownMetricCard
         label="Installs Completed"
         value={data.installsCompleted}
+        sub="construction complete this wk"
         deals={drilldown.installsCompleted}
         dateLabel="Completed"
       />
       <DrilldownMetricCard
         label="Installs Planned"
         value={data.installsPlanned}
+        sub="scheduled for this week"
         deals={drilldown.installsPlanned}
         dateLabel="Scheduled"
       />
       <MetricCard
-        label="Crew Utilization %"
+        label="Crew Utilization"
         value={`${data.crewUtilizationPct}%`}
+        sub="completed / weekly target"
         valueColor={
           data.crewUtilizationPct >= 100
             ? 'text-emerald-500'
