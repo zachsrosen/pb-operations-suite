@@ -31,15 +31,6 @@ export default function PortalLayout({
         {children}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-[#E5E7EB] px-4 py-6 text-center">
-        <p className="text-xs text-[#6B7280]">
-          Questions? Call us at{" "}
-          <a href="tel:+13034300096" className="text-[#FF9E1B] hover:text-[#DF8407] hover:underline">
-            (303) 430-0096
-          </a>
-        </p>
-      </footer>
     </div>
   );
 }
