@@ -5,7 +5,10 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { toDateStr } from "@/lib/scheduling-utils";
-import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
+// JOB_CATEGORY_UIDS was previously imported from "@/lib/zuper" but that
+// pulls server-only modules (prisma via the call-counter). These three
+// UIDs are static and inlined here to keep this client component bundle
+// free of server deps.
 import { getInternalDealUrl } from "@/lib/external-links";
 import { pbHolidayName } from "@/lib/on-call-holidays";
 
@@ -40,9 +43,9 @@ interface ZuperJob {
 /* ------------------------------------------------------------------ */
 
 const CATEGORY_UIDS = [
-  JOB_CATEGORY_UIDS.WALK_ROOF,        // "b3289bad-d618-47c7-b592-43454b655982"
-  JOB_CATEGORY_UIDS.MID_ROOF_INSTALL, // "18f08c0d-f767-4e4a-8970-7c67597f4b4a"
-  JOB_CATEGORY_UIDS.ROOF_FINAL,       // "92caf51d-1a53-4679-9b64-ba316ccb870d"
+  "b3289bad-d618-47c7-b592-43454b655982", // Walk Roof
+  "18f08c0d-f767-4e4a-8970-7c67597f4b4a", // Mid-Roof Install
+  "92caf51d-1a53-4679-9b64-ba316ccb870d", // Roof Final
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
