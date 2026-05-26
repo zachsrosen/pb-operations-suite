@@ -145,7 +145,7 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
   // Pre-load Zuper user names so POST-format assigned_to entries get human names
   let userNameCache: Map<string, string> | undefined;
   try {
-    const usersResult = await zuper.getUsers();
+    const usersResult = await zuper.getUsers("syncZuperServiceJobs:userCache");
     if (usersResult.type === "success" && usersResult.data) {
       userNameCache = new Map();
       for (const u of usersResult.data) {
@@ -166,7 +166,7 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
   let total = Infinity; // will be set from first response
 
   while ((synced + errors) < total) {
-    const result = await zuper.searchJobs({ page, limit: PAGE_SIZE });
+    const result = await zuper.searchJobs({ page, limit: PAGE_SIZE }, `syncZuperServiceJobs:page-${page}`);
 
     if (result.type !== "success" || !result.data) {
       console.error("[ZuperSync] Failed to fetch page", page, result.error || result.message);
@@ -264,7 +264,7 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
       let backfilled = 0;
       for (const { jobUid } of missingCrew) {
         try {
-          const detail = await zuper.getJob(jobUid);
+          const detail = await zuper.getJob(jobUid, "syncZuperServiceJobs:backfillCrew");
           if (detail.type !== "success" || !detail.data) continue;
           const job = detail.data;
           const users = resolveAssignedUsers(job.assigned_to, userNameCache);
@@ -325,7 +325,7 @@ export async function syncRecentZuperJobs(opts: {
   // Pre-load user names
   let userNameCache: Map<string, string> | undefined;
   try {
-    const usersResult = await zuper.getUsers();
+    const usersResult = await zuper.getUsers("syncRecentZuperJobs:userCache");
     if (usersResult.type === "success" && usersResult.data) {
       userNameCache = new Map();
       for (const u of usersResult.data) {
@@ -361,12 +361,15 @@ export async function syncRecentZuperJobs(opts: {
       break;
     }
 
-    const result = await zuper.searchJobs({
-      from_date: fromStr,
-      to_date: toStr,
-      page,
-      limit: PAGE_SIZE,
-    });
+    const result = await zuper.searchJobs(
+      {
+        from_date: fromStr,
+        to_date: toStr,
+        page,
+        limit: PAGE_SIZE,
+      },
+      `syncRecentZuperJobs:page-${page}`,
+    );
 
     if (result.type !== "success" || !result.data) {
       console.error("[ZuperBackfill] Failed to fetch page", page, result.error);
@@ -456,7 +459,7 @@ export async function syncRecentZuperJobs(opts: {
       for (const { jobUid } of missingCrew) {
         if (Date.now() - startTime > timeBudgetMs) break;
         try {
-          const detail = await zuper.getJob(jobUid);
+          const detail = await zuper.getJob(jobUid, "syncRecentZuperJobs:backfillCrew");
           if (detail.type !== "success" || !detail.data) continue;
           const job = detail.data;
           const users = resolveAssignedUsers(job.assigned_to, userNameCache);
@@ -507,7 +510,7 @@ export async function fetchAndCacheZuperJob(jobUid: string): Promise<{
   }
 
   try {
-    const result = await zuper.getJob(jobUid);
+    const result = await zuper.getJob(jobUid, "fetchAndCacheZuperJob:webhook");
     if (result.type !== "success" || !result.data) {
       return { cached: false, error: result.error || "Job not found" };
     }

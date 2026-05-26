@@ -480,7 +480,7 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
 
         // Single pass: no date filter — returns all jobs. Zuper has ~5k jobs;
         // paginating at 500/page = 10 API calls, cached for 30 min.
-        const page1 = await zuper.searchJobs({ limit: PAGE_SIZE, page: 1 });
+        const page1 = await zuper.searchJobs({ limit: PAGE_SIZE, page: 1 }, "lookup:fuzzy-sweep:page-1");
         if (page1.type === "success" && page1.data?.jobs) {
           for (const j of page1.data.jobs) {
             if (j.job_uid && !seen.has(j.job_uid)) {
@@ -493,7 +493,7 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
             const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
             const promises = [];
             for (let p = 2; p <= totalPages; p++) {
-              promises.push(zuper.searchJobs({ limit: PAGE_SIZE, page: p }));
+              promises.push(zuper.searchJobs({ limit: PAGE_SIZE, page: p }, `lookup:fuzzy-sweep:page-${p}`));
             }
             const results = await Promise.all(promises);
             for (const r of results) {

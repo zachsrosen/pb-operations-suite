@@ -40,50 +40,49 @@ function todayKey(): string {
 }
 
 /**
- * Walk the current stack to find the FIRST frame outside zuper.ts /
- * zuper-property-sync.ts / zuper-call-counter.ts itself — that's the
- * application code that triggered this Zuper call. Returns something
- * like "src/app/api/cron/zuper-property-sync/route.ts:34:18" or
- * "<unknown>" if we can't isolate one.
+ * Best-effort caller attribution. The original implementation walked the
+ * stack looking for "the first frame outside our own files" — but in the
+ * Turbopack-bundled prod build every .ts file collapses into one chunk
+ * (e.g. /var/task/.next/server/chunks/src_lib_00wu2i3._.js), so the
+ * file-path filter can't distinguish frames and we end up emitting
+ * "from=" with no useful attribution.
+ *
+ * The reliable fix is to pass an explicit `caller` string at every call
+ * site (see recordZuperCall's `caller` arg). This function stays as a
+ * fallback that emits the first 3-5 stack frames raw so we at least have
+ * SOMETHING grep-able in the Vercel log.
  */
-function findCallerSource(): string {
+function captureStackSnippet(): string {
   const stack = new Error().stack || "";
-  const lines = stack.split("\n");
-  for (const line of lines) {
-    const m = line.match(/\(?(?:file:\/\/)?([^()]+\.(?:ts|tsx|js|mjs|cjs)):(\d+):(\d+)\)?/);
-    if (!m) continue;
-    const filePath = m[1];
-    // Skip the counter itself + the two zuper transports + node internals
-    if (
-      filePath.includes("/zuper-call-counter") ||
-      filePath.includes("/zuper.ts") ||
-      filePath.includes("/zuper-property-sync") ||
-      filePath.includes("node:internal") ||
-      filePath.includes("/node_modules/")
-    ) {
-      continue;
-    }
-    // Trim absolute prefix down to the repo-relative path if possible
-    const srcIdx = filePath.indexOf("/src/");
-    const trimmed = srcIdx >= 0 ? filePath.slice(srcIdx + 1) : filePath;
-    return `${trimmed}:${m[2]}:${m[3]}`;
-  }
-  return "<unknown>";
+  // Drop the first line ("Error") and the first frame (this fn itself
+  // + the recordZuperCall caller). Keep the next 4 frames.
+  const lines = stack.split("\n").slice(3, 7);
+  return lines.map((l) => l.trim()).join(" | ") || "<no-stack>";
 }
 
 /**
  * Increment the counter for a (method, normalizedPath) bucket on today's row.
  * Also emits a structured console.log so each call is visible in Vercel logs
  * with the caller source/file.
+ *
+ * `caller` is an explicit attribution string (e.g. "syncZuperServiceJobs",
+ * "handleLookup:fuzzy", "zuperFetch:syncPropertyToZuper") supplied at the
+ * call site — much more reliable than walking the stack in a bundled prod
+ * build.
+ *
  * Best-effort: failures are silent so storage hiccups never break Zuper calls.
  */
-export async function recordZuperCall(method: string, endpoint: string): Promise<void> {
+export async function recordZuperCall(
+  method: string,
+  endpoint: string,
+  caller?: string,
+): Promise<void> {
   const upMethod = method.toUpperCase();
   const path = normalizePath(endpoint);
-  const caller = findCallerSource();
+  const attribution = caller || captureStackSnippet();
 
   // Structured log line — searchable in Vercel logs as "[zuper-call]"
-  console.log(`[zuper-call] ${upMethod} ${path} from=${caller}`);
+  console.log(`[zuper-call] ${upMethod} ${path} from=${attribution}`);
 
   try {
     const key = todayKey();

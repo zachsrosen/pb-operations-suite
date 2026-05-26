@@ -128,12 +128,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function zuperFetch(path: string, init?: RequestInit): Promise<Response> {
+async function zuperFetch(path: string, init?: RequestInit, caller?: string): Promise<Response> {
   const apiKey = process.env.ZUPER_API_KEY;
   if (!apiKey) throw new Error("ZUPER_API_KEY not set");
 
-  // Best-effort per-endpoint counter — see src/lib/zuper-call-counter.ts
-  void recordZuperCall(String(init?.method || "GET"), path);
+  // Best-effort per-endpoint counter — see src/lib/zuper-call-counter.ts.
+  // Default to "zuperFetch:<caller>" so log lines tell us which property-sync
+  // helper fired without making every callsite pass it explicitly.
+  void recordZuperCall(String(init?.method || "GET"), path, caller ?? "zuperFetch");
 
   const res = await fetch(`${ZUPER_API_URL}${path}`, {
     ...init,
@@ -188,7 +190,7 @@ export async function createZuperProperty(
   const res = await zuperFetch("/property", {
     method: "POST",
     body: JSON.stringify({ property: propertyPayload }),
-  });
+  }, "createZuperProperty");
 
   const data = await res.json();
   const uid = data?.data?.property_uid ?? data?.data?.uid;
@@ -207,7 +209,7 @@ export async function updateZuperProperty(
   customerUid?: string | null,
 ): Promise<void> {
   // 1. Read existing fields
-  const readRes = await zuperFetch(`/property/${zuperPropertyUid}`);
+  const readRes = await zuperFetch(`/property/${zuperPropertyUid}`, undefined, "updateZuperProperty:read");
   const readData = await readRes.json();
   const existingProperty = readData?.data ?? {};
   const existingFields = existingProperty.custom_fields ?? existingProperty.property?.custom_fields ?? [];
@@ -235,7 +237,7 @@ export async function updateZuperProperty(
   await zuperFetch(`/property/${zuperPropertyUid}`, {
     method: "PUT",
     body: JSON.stringify({ property: updatePayload }),
-  });
+  }, "updateZuperProperty:write");
 }
 
 /**
@@ -250,7 +252,7 @@ export async function linkJobToProperty(jobUid: string, zuperPropertyUid: string
         property: zuperPropertyUid,
       },
     }),
-  });
+  }, "linkJobToProperty");
 }
 
 /**
@@ -260,7 +262,7 @@ export async function linkJobToProperty(jobUid: string, zuperPropertyUid: string
  */
 export async function linkProjectToProperty(projectUid: string, zuperPropertyUid: string): Promise<void> {
   // Read existing project to check current properties
-  const readRes = await zuperFetch(`/projects/${projectUid}`);
+  const readRes = await zuperFetch(`/projects/${projectUid}`, undefined, "linkProjectToProperty:read");
   const readData = await readRes.json();
   const existingProperties: Array<{ property?: { property_uid?: string } }> =
     readData?.data?.properties ?? [];
@@ -280,7 +282,7 @@ export async function linkProjectToProperty(projectUid: string, zuperPropertyUid
   await zuperFetch(`/projects/${projectUid}`, {
     method: "PUT",
     body: JSON.stringify({ project: { properties: updatedProperties } }),
-  });
+  }, "linkProjectToProperty:write");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

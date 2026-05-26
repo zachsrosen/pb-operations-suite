@@ -59,12 +59,15 @@ export async function GET(request: NextRequest) {
     const { data: rawAllJobs } = await appCache.getOrFetch<ZuperRawJob[] | { __error: string }>(
       cacheKey,
       async () => {
-        const page1 = await zuper.searchJobs({
-          from_date: fromDate || undefined,
-          to_date: toDate || undefined,
-          limit: PAGE_SIZE,
-          page: 1,
-        });
+        const page1 = await zuper.searchJobs(
+          {
+            from_date: fromDate || undefined,
+            to_date: toDate || undefined,
+            limit: PAGE_SIZE,
+            page: 1,
+          },
+          "by-category:page-1",
+        );
         if (page1.type === "error") {
           return { __error: page1.error || "Zuper search failed" };
         }
@@ -74,12 +77,15 @@ export async function GET(request: NextRequest) {
         if (totalPages > 1) {
           const pagePromises = [];
           for (let page = 2; page <= totalPages; page++) {
-            pagePromises.push(zuper.searchJobs({
-              from_date: fromDate || undefined,
-              to_date: toDate || undefined,
-              limit: PAGE_SIZE,
-              page,
-            }));
+            pagePromises.push(zuper.searchJobs(
+              {
+                from_date: fromDate || undefined,
+                to_date: toDate || undefined,
+                limit: PAGE_SIZE,
+                page,
+              },
+              `by-category:page-${page}`,
+            ));
           }
           const pageResults = await Promise.all(pagePromises);
           for (const result of pageResults) {

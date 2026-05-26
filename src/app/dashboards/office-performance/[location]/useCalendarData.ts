@@ -43,8 +43,12 @@ export function useCalendarData(location: string) {
       if (!res.ok) throw new Error("Failed to fetch projects");
       return res.json();
     },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
+    // F-7a: bumped from 2min/1min → 10min/5min to slash Zuper API volume.
+    // The by-category endpoint is now cached server-side for 30 min anyway,
+    // so polling more often than that just hits the cache (still costs DB
+    // roundtrips + RQ refresh churn for nothing).
+    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   // Fetch Zuper survey/construction/inspection jobs for assignee enrichment
@@ -60,8 +64,12 @@ export function useCalendarData(location: string) {
       if (!res.ok) return { jobs: [] };
       return res.json();
     },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
+    // F-7a: bumped from 2min/1min → 10min/5min to slash Zuper API volume.
+    // The by-category endpoint is now cached server-side for 30 min anyway,
+    // so polling more often than that just hits the cache (still costs DB
+    // roundtrips + RQ refresh churn for nothing).
+    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   const serviceQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
@@ -76,8 +84,12 @@ export function useCalendarData(location: string) {
       if (!res.ok) return { jobs: [] };
       return res.json();
     },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
+    // F-7a: bumped from 2min/1min → 10min/5min to slash Zuper API volume.
+    // The by-category endpoint is now cached server-side for 30 min anyway,
+    // so polling more often than that just hits the cache (still costs DB
+    // roundtrips + RQ refresh churn for nothing).
+    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   const dnrQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
@@ -92,8 +104,12 @@ export function useCalendarData(location: string) {
       if (!res.ok) return { jobs: [] };
       return res.json();
     },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
+    // F-7a: bumped from 2min/1min → 10min/5min to slash Zuper API volume.
+    // The by-category endpoint is now cached server-side for 30 min anyway,
+    // so polling more often than that just hits the cache (still costs DB
+    // roundtrips + RQ refresh churn for nothing).
+    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   const roofingQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
@@ -108,8 +124,12 @@ export function useCalendarData(location: string) {
       if (!res.ok) return { jobs: [] };
       return res.json();
     },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
+    // F-7a: bumped from 2min/1min → 10min/5min to slash Zuper API volume.
+    // The by-category endpoint is now cached server-side for 30 min anyway,
+    // so polling more often than that just hits the cache (still costs DB
+    // roundtrips + RQ refresh churn for nothing).
+    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   const otherQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
@@ -124,8 +144,12 @@ export function useCalendarData(location: string) {
       if (!res.ok) return { jobs: [] };
       return res.json();
     },
-    refetchInterval: 120_000,
-    staleTime: 60_000,
+    // F-7a: bumped from 2min/1min → 10min/5min to slash Zuper API volume.
+    // The by-category endpoint is now cached server-side for 30 min anyway,
+    // so polling more often than that just hits the cache (still costs DB
+    // roundtrips + RQ refresh churn for nothing).
+    refetchInterval: 10 * 60_000,
+    staleTime: 5 * 60_000,
   });
 
   const isLoading = projectsQuery.isLoading;

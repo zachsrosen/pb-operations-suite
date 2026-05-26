@@ -345,7 +345,8 @@ export class ZuperClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    timeoutMs = 30000
+    timeoutMs = 30000,
+    caller?: string,
   ): Promise<ZuperApiResponse<T>> {
     if (!this.apiKey) {
       return { type: "error", error: "Zuper API key not configured" };
@@ -355,8 +356,11 @@ export class ZuperClient {
     // Fire-and-forget; loaded dynamically so client bundles don't pull in
     // prisma transitively (this file's constants get imported by client
     // components like the schedulers).
+    // `caller` is an explicit attribution string passed by the calling
+    // method — see zuper-call-counter.ts for why stack-walking doesn't
+    // work in the Turbopack-bundled prod build.
     void import("@/lib/zuper-call-counter").then((m) =>
-      m.recordZuperCall(String(options.method || "GET"), endpoint),
+      m.recordZuperCall(String(options.method || "GET"), endpoint, caller),
     ).catch(() => { /* never break a Zuper call over instrumentation */ });
 
     try {
@@ -447,12 +451,12 @@ export class ZuperClient {
   /**
    * Get a job by ID
    */
-  async getJob(jobUid: string): Promise<ZuperApiResponse<ZuperJob>> {
+  async getJob(jobUid: string, caller?: string): Promise<ZuperApiResponse<ZuperJob>> {
     // /jobs/{uid} commonly returns envelope: { type, data: {...job} }
     // Normalize to the job object so downstream assignment/unschedule logic
     // does not misread envelope keys as missing job fields.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await this.request<any>(`/jobs/${jobUid}`);
+    const result = await this.request<any>(`/jobs/${jobUid}`, {}, 30000, caller ?? "getJob");
     if (result.type === "success" && result.data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = result.data as any;
@@ -1313,17 +1317,20 @@ export class ZuperClient {
   /**
    * Search jobs with filters
    */
-  async searchJobs(filters: {
-    status?: string;
-    category?: string;
-    assigned_to?: string;
-    customer_uid?: string;
-    from_date?: string;
-    to_date?: string;
-    page?: number;
-    limit?: number;
-    search?: string; // Search by job title, customer name, etc.
-  }): Promise<ZuperApiResponse<{ jobs: ZuperJob[]; total: number }>> {
+  async searchJobs(
+    filters: {
+      status?: string;
+      category?: string;
+      assigned_to?: string;
+      customer_uid?: string;
+      from_date?: string;
+      to_date?: string;
+      page?: number;
+      limit?: number;
+      search?: string; // Search by job title, customer name, etc.
+    },
+    caller?: string,
+  ): Promise<ZuperApiResponse<{ jobs: ZuperJob[]; total: number }>> {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined) {
@@ -1336,7 +1343,12 @@ export class ZuperClient {
     // Zuper API returns { type: "success", data: [...], total_records, ... }
     // The request() method wraps this in another { type, data } structure
     // So result.data contains the full Zuper response with its own data array
-    const result = await this.request<{ type: string; data: ZuperJob[]; total_records?: number }>(`/jobs?${params.toString()}`);
+    const result = await this.request<{ type: string; data: ZuperJob[]; total_records?: number }>(
+      `/jobs?${params.toString()}`,
+      {},
+      30000,
+      caller ?? "searchJobs",
+    );
 
     if (result.type === "success" && result.data) {
       // result.data is the Zuper response: { type, data: [...], total_records }
@@ -1397,8 +1409,8 @@ export class ZuperClient {
   /**
    * Get all users/technicians (legacy /users endpoint)
    */
-  async getUsers(): Promise<ZuperApiResponse<ZuperUser[]>> {
-    return this.request<ZuperUser[]>("/users");
+  async getUsers(caller?: string): Promise<ZuperApiResponse<ZuperUser[]>> {
+    return this.request<ZuperUser[]>("/users", {}, 30000, caller ?? "getUsers");
   }
 
   /**
@@ -1474,11 +1486,14 @@ export class ZuperClient {
    * Get time-off requests for users in a date range
    * Used to determine when technicians are unavailable
    */
-  async getTimeOffRequests(params: {
-    fromDate: string; // YYYY-MM-DD
-    toDate: string; // YYYY-MM-DD
-    userUid?: string; // Optional specific user
-  }): Promise<ZuperApiResponse<TimeOffRequest[]>> {
+  async getTimeOffRequests(
+    params: {
+      fromDate: string; // YYYY-MM-DD
+      toDate: string; // YYYY-MM-DD
+      userUid?: string; // Optional specific user
+    },
+    caller?: string,
+  ): Promise<ZuperApiResponse<TimeOffRequest[]>> {
     const queryParams = new URLSearchParams();
     queryParams.append("filter.from_date", params.fromDate);
     queryParams.append("filter.to_date", params.toDate);
@@ -1487,7 +1502,10 @@ export class ZuperClient {
     }
 
     const result = await this.request<{ type: string; data: TimeOffRequest[] }>(
-      `/timesheets/request/timeoff?${queryParams.toString()}`
+      `/timesheets/request/timeoff?${queryParams.toString()}`,
+      {},
+      30000,
+      caller ?? "getTimeOffRequests",
     );
 
     if (result.type === "success" && result.data) {

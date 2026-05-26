@@ -689,7 +689,7 @@ export async function GET(request: NextRequest) {
       zuper.getTimeOffRequests({
         fromDate,
         toDate,
-      }),
+      }, "availability:timeoff"),
       ...jobFetches,
     ]);
 
