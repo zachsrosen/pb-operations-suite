@@ -755,8 +755,13 @@ export default function PeDealsPage() {
 
   // Split the deal count into pre-construction (no work started) vs
   // construction+ (Construction, Inspection, PTO, Close Out, Complete, Paid).
-  const preconFiltered = filtered.filter((d) => PRECON_STAGES.has(d.dealStageLabel));
-  const constructionPlusFiltered = filtered.filter((d) => !PRECON_STAGES.has(d.dealStageLabel));
+  // On Hold and Cancelled deals are excluded — they're not active pipeline.
+  const EXCLUDED_BUCKET_STAGES = new Set([
+    "On Hold", "On-Hold", "Cancelled", "Project Cancelled",
+  ]);
+  const bucketableDeals = filtered.filter((d) => !EXCLUDED_BUCKET_STAGES.has(d.dealStageLabel));
+  const preconFiltered = bucketableDeals.filter((d) => PRECON_STAGES.has(d.dealStageLabel));
+  const constructionPlusFiltered = bucketableDeals.filter((d) => !PRECON_STAGES.has(d.dealStageLabel));
   const preconPeExpected = preconFiltered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
   const constructionPlusPeExpected = constructionPlusFiltered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
@@ -876,7 +881,7 @@ export default function PeDealsPage() {
           key={`construction-plus-${constructionPlusFiltered.length}`}
           label="Construction+"
           value={String(constructionPlusFiltered.length)}
-          subtitle={`${fmt(constructionPlusPeExpected)} PE expected · ${filtered.length} total`}
+          subtitle={`${fmt(constructionPlusPeExpected)} PE expected · ${bucketableDeals.length} active pipeline`}
           color="orange"
         />
         <StatCard
