@@ -14,7 +14,10 @@ import { getBusinessEndDateInclusive } from "@/lib/business-days";
 import { getZuperWebBaseUrl } from "@/lib/external-links";
 import { prisma } from "@/lib/db";
 import { linkJobToProperty } from "@/lib/zuper-property-sync";
-import { recordZuperCall } from "@/lib/zuper-call-counter";
+// NOTE: zuper-call-counter pulls in prisma which can't be bundled for the
+// browser. Client components (e.g. schedulers) import constants from this
+// file, so we load the counter dynamically only at request-time. Tree
+// shaker excludes it from client bundles.
 
 // Types for Zuper API
 export interface ZuperJobCategory {
@@ -349,8 +352,12 @@ export class ZuperClient {
     }
 
     // Best-effort per-endpoint call counter (records to SystemConfig).
-    // Fire-and-forget so storage hiccups never block the Zuper call.
-    void recordZuperCall(String(options.method || "GET"), endpoint);
+    // Fire-and-forget; loaded dynamically so client bundles don't pull in
+    // prisma transitively (this file's constants get imported by client
+    // components like the schedulers).
+    void import("@/lib/zuper-call-counter").then((m) =>
+      m.recordZuperCall(String(options.method || "GET"), endpoint),
+    ).catch(() => { /* never break a Zuper call over instrumentation */ });
 
     try {
       const controller = new AbortController();
