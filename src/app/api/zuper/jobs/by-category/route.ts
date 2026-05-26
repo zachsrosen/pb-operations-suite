@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zuper } from "@/lib/zuper";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
+
+const BY_CATEGORY_TTL_MS = 30 * 60 * 1000; // 30 min — matches jobs/lookup
 
 /**
  * GET /api/zuper/jobs/by-category?categories=uid1,uid2&from_date=2026-01-01&to_date=2026-03-31
@@ -45,45 +48,63 @@ export async function GET(request: NextRequest) {
     const PAGE_SIZE = 500;
     const MAX_PAGES = 10; // Safety cap: 5000 raw jobs max per request
 
-    const page1 = await zuper.searchJobs({
-      from_date: fromDate || undefined,
-      to_date: toDate || undefined,
-      limit: PAGE_SIZE,
-      page: 1,
-    });
-
-    if (page1.type === "error") {
-      return NextResponse.json({ error: page1.error }, { status: 500 });
-    }
-
-    const allJobs = [...(page1.data?.jobs || [])];
-    const total = page1.data?.total || allJobs.length;
-    const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
-
-    if (totalPages > 1) {
-      const pagePromises = [];
-      for (let page = 2; page <= totalPages; page++) {
-        pagePromises.push(zuper.searchJobs({
+    // Cache the full job sweep per (from_date, to_date) — schedulers
+    // hammer this endpoint on every page load with the same date window,
+    // and prior to caching each load fired 10 paginated Zuper API calls.
+    // 30-min TTL with stale-while-revalidate (matches jobs/lookup).
+    const cacheKey = CACHE_KEYS.ZUPER_JOBS_BY_CATEGORY(
+      `${fromDate || "_"}|${toDate || "_"}`,
+    );
+    type ZuperRawJob = NonNullable<NonNullable<Awaited<ReturnType<typeof zuper.searchJobs>>["data"]>["jobs"]>[number];
+    const { data: rawAllJobs } = await appCache.getOrFetch<ZuperRawJob[] | { __error: string }>(
+      cacheKey,
+      async () => {
+        const page1 = await zuper.searchJobs({
           from_date: fromDate || undefined,
           to_date: toDate || undefined,
           limit: PAGE_SIZE,
-          page,
-        }));
-      }
-      const pageResults = await Promise.all(pagePromises);
-      for (const result of pageResults) {
-        if (result.type === "success" && result.data?.jobs) {
-          allJobs.push(...result.data.jobs);
+          page: 1,
+        });
+        if (page1.type === "error") {
+          return { __error: page1.error || "Zuper search failed" };
         }
-      }
-    }
+        const jobs = [...(page1.data?.jobs || [])];
+        const total = page1.data?.total || jobs.length;
+        const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
+        if (totalPages > 1) {
+          const pagePromises = [];
+          for (let page = 2; page <= totalPages; page++) {
+            pagePromises.push(zuper.searchJobs({
+              from_date: fromDate || undefined,
+              to_date: toDate || undefined,
+              limit: PAGE_SIZE,
+              page,
+            }));
+          }
+          const pageResults = await Promise.all(pagePromises);
+          for (const result of pageResults) {
+            if (result.type === "success" && result.data?.jobs) {
+              jobs.push(...result.data.jobs);
+            }
+          }
+        }
+        if (totalPages === MAX_PAGES && total > PAGE_SIZE * MAX_PAGES) {
+          console.warn(
+            "Zuper jobs by category truncated at pagination safety cap",
+            { total, maxRawJobs: PAGE_SIZE * MAX_PAGES }
+          );
+        }
+        console.log(`[jobs-by-category] Fetched ${jobs.length} jobs from Zuper API (key=${cacheKey})`);
+        return jobs;
+      },
+      false,
+      { ttl: BY_CATEGORY_TTL_MS, staleTtl: BY_CATEGORY_TTL_MS * 2 },
+    );
 
-    if (totalPages === MAX_PAGES && total > PAGE_SIZE * MAX_PAGES) {
-      console.warn(
-        "Zuper jobs by category truncated at pagination safety cap",
-        { total, maxRawJobs: PAGE_SIZE * MAX_PAGES }
-      );
+    if (rawAllJobs && typeof rawAllJobs === "object" && "__error" in rawAllJobs) {
+      return NextResponse.json({ error: rawAllJobs.__error }, { status: 500 });
     }
+    const allJobs = rawAllJobs as ZuperRawJob[];
 
     // Client-side filter by category UIDs (include list or exclude list)
     // Cast to `any` since Zuper API returns more fields than typed ZuperJob interface

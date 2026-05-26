@@ -446,23 +446,40 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
       console.warn("Zuper: DB cache lookup failed, falling back to API:", dbErr);
     }
 
+    // --- Decide if we can skip the expensive Zuper API sweep ---
+    // Most calls are scheduler-page refreshes for projects we already know
+    // about. If Pass 0 (DB cache) produced a hit for EVERY projectId, the
+    // Zuper API sweep is pure overhead. Skip it.
+    let allProjectsCoveredByDb = true;
+    for (const projectId of projectIds) {
+      const matches = allCandidates[projectId] || [];
+      if (!matches.some((c) => c.matchMethod === "db_cache")) {
+        allProjectsCoveredByDb = false;
+        break;
+      }
+    }
+
     // --- Zuper API search (cached, single pass) ---
-    // Server-side cache (5-min TTL) with request coalescing so concurrent
-    // scheduler pages share one Zuper API sweep instead of each triggering
-    // 10+ paginated calls. Previously this did TWO full passes (dated +
-    // undated) but the date range (365d back + 180d forward) already
-    // returns 100% of jobs, making the second pass redundant.
+    // Server-side cache (30-min TTL — was 5min; bumped 2026-05-26 since the
+    // DB cache is the source of truth for actively-scheduled jobs and this
+    // sweep is fallback fuzzy-matching for unmapped projects).
     const PAGE_SIZE = 500;
     const MAX_PAGES = 10; // Safety cap: 5000 jobs max
+    const LOOKUP_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 
-    const { data: allJobs, cached: jobsCached } = await appCache.getOrFetch<ZuperJob[]>(
-      CACHE_KEYS.ZUPER_ALL_JOBS,
-      async () => {
+    let allJobs: ZuperJob[] = [];
+    let jobsCached = true; // true so log says "cached" (or "skipped")
+    if (allProjectsCoveredByDb) {
+      console.log(`[zuper-lookup] Skipping Zuper API sweep — DB cache covered all ${projectIds.length} projects`);
+    } else {
+      const fetchResult = await appCache.getOrFetch<ZuperJob[]>(
+        CACHE_KEYS.ZUPER_ALL_JOBS,
+        async () => {
         const jobs: ZuperJob[] = [];
         const seen = new Set<string>();
 
         // Single pass: no date filter — returns all jobs. Zuper has ~5k jobs;
-        // paginating at 500/page = 10 API calls, cached for 5 min.
+        // paginating at 500/page = 10 API calls, cached for 30 min.
         const page1 = await zuper.searchJobs({ limit: PAGE_SIZE, page: 1 });
         if (page1.type === "success" && page1.data?.jobs) {
           for (const j of page1.data.jobs) {
@@ -495,9 +512,14 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
         console.log(`[zuper-lookup] Fetched ${jobs.length} jobs from Zuper API (${Math.min(Math.ceil((page1.data?.total || 0) / PAGE_SIZE), MAX_PAGES)} pages)`);
         return jobs;
       },
-    );
+      false,
+      { ttl: LOOKUP_CACHE_TTL_MS, staleTtl: LOOKUP_CACHE_TTL_MS * 2 },
+      );
+      allJobs = fetchResult.data;
+      jobsCached = fetchResult.cached;
+    }
 
-    console.log(`Zuper lookup: searching ${allJobs.length} ${jobsCached ? "cached" : "fresh"} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
+    console.log(`Zuper lookup: searching ${allJobs.length} ${allProjectsCoveredByDb ? "skipped" : jobsCached ? "cached" : "fresh"} jobs for ${projectIds.length} projects, category filter: ${targetCategory || 'none'}`);
 
     if (allJobs.length > 0) {
       for (const job of allJobs) {

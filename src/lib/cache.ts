@@ -12,6 +12,10 @@ type CacheEntry<T> = {
   data: T;
   timestamp: number;
   stale: boolean;
+  /** Optional per-entry TTL override (ms). Falls back to store.ttl. */
+  ttl?: number;
+  /** Optional per-entry stale window override (ms). Falls back to store.staleTtl. */
+  staleTtl?: number;
 };
 
 type CacheListener = (key: string, timestamp: number) => void;
@@ -42,9 +46,11 @@ export class CacheStore {
       return { data: null, stale: false, hit: false, age: 0 };
     }
 
+    const effectiveTtl = entry.ttl ?? this.ttl;
+    const effectiveStale = entry.staleTtl ?? this.staleTtl;
     const age = Date.now() - entry.timestamp;
-    const isFresh = age < this.ttl;
-    const isStale = !isFresh && age < this.staleTtl;
+    const isFresh = age < effectiveTtl;
+    const isStale = !isFresh && age < effectiveStale;
 
     if (!isFresh && !isStale) {
       // Expired beyond stale window
@@ -56,13 +62,16 @@ export class CacheStore {
   }
 
   /**
-   * Set cache data
+   * Set cache data. Optional per-entry TTL overrides apply to that one
+   * value only; the rest of the store keeps its default TTL.
    */
-  set<T>(key: string, data: T): void {
+  set<T>(key: string, data: T, opts?: { ttl?: number; staleTtl?: number }): void {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
       stale: false,
+      ttl: opts?.ttl,
+      staleTtl: opts?.staleTtl,
     });
     this.notifyListeners(key, Date.now());
   }
@@ -78,7 +87,8 @@ export class CacheStore {
   async getOrFetch<T>(
     key: string,
     fetcher: () => Promise<T>,
-    forceRefresh = false
+    forceRefresh = false,
+    opts?: { ttl?: number; staleTtl?: number }
   ): Promise<{ data: T; cached: boolean; stale: boolean; lastUpdated: string }> {
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
@@ -107,7 +117,7 @@ export class CacheStore {
     }
 
     // No cache or force refresh - fetch with coalescing
-    const data = await this.coalescedFetch<T>(key, fetcher);
+    const data = await this.coalescedFetch<T>(key, fetcher, opts);
     return {
       data,
       cached: false,
@@ -120,7 +130,11 @@ export class CacheStore {
    * Coalesced fetch - if a request for this key is already in flight,
    * piggyback on it instead of making a duplicate request.
    */
-  private async coalescedFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  private async coalescedFetch<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    opts?: { ttl?: number; staleTtl?: number },
+  ): Promise<T> {
     // Check if there's already an in-flight request for this key
     const existing = this.inflight.get(key);
     if (existing) {
@@ -130,7 +144,7 @@ export class CacheStore {
     // Start new fetch
     const promise = fetcher()
       .then((data) => {
-        this.set(key, data);
+        this.set(key, data, opts);
         return data;
       })
       .finally(() => {
@@ -304,6 +318,7 @@ export const CACHE_KEYS = {
     `property-photos:${propertyId}` as const,
   PAYMENT_TRACKING: "accounting:payment-tracking",
   ZUPER_ALL_JOBS: "zuper:all-jobs",
+  ZUPER_JOBS_BY_CATEGORY: (key: string) => `zuper:jobs-by-category:${key}` as const,
   // On-call "tonight" keys are built dynamically per-pool-per-date in
   // src/app/api/on-call/tonight/route.ts so they roll over at each pool's local
   // midnight. Invalidate via appCache.invalidateByPrefix("on-call:tonight").
