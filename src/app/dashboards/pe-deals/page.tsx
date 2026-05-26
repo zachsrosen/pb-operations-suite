@@ -340,22 +340,24 @@ function DealSection({
                 const sections = dealDocSections(deal.dealStageLabel);
                 const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
                 const approvedCount = docs.filter((d) => docMap.get(`${deal.dealId}:${d.name}`)?.status === "APPROVED").length;
-                const actionCount = docs.filter((d) => {
+                const rejectedCount = docs.filter((d) => {
                   const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
                   return s === "ACTION_REQUIRED" || s === "REJECTED";
                 }).length;
-                const uploadedCount = docs.filter((d) => {
+                const underReviewCount = docs.filter((d) => {
                   const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
                   return s === "UPLOADED" || s === "UNDER_REVIEW";
                 }).length;
-                const notUploadedCount = docs.length - approvedCount - actionCount - uploadedCount;
+                const submittedCount = approvedCount + rejectedCount + underReviewCount;
+                const notUploadedCount = docs.length - submittedCount;
 
-                // Build tooltip with breakdown of remaining docs
-                const remainderParts: string[] = [];
-                if (actionCount > 0) remainderParts.push(`${actionCount} action req`);
-                if (uploadedCount > 0) remainderParts.push(`${uploadedCount} under review`);
-                if (notUploadedCount > 0) remainderParts.push(`${notUploadedCount} not uploaded`);
-                const docTooltip = `${approvedCount}/${docs.length} approved${remainderParts.length ? ` · ${remainderParts.join(" · ")}` : ""}`;
+                // Build tooltip with breakdown
+                const breakdownParts: string[] = [];
+                if (approvedCount > 0) breakdownParts.push(`${approvedCount} approved`);
+                if (underReviewCount > 0) breakdownParts.push(`${underReviewCount} under review`);
+                if (rejectedCount > 0) breakdownParts.push(`${rejectedCount} action req`);
+                if (notUploadedCount > 0) breakdownParts.push(`${notUploadedCount} not uploaded`);
+                const docTooltip = `${submittedCount}/${docs.length} submitted · ${breakdownParts.join(" · ")}`;
 
                 return (
                   <React.Fragment key={deal.dealId}>
@@ -389,12 +391,12 @@ function DealSection({
                               </svg>
                             </a>
                           )}
-                          {/* Doc progress indicator with remainder breakdown */}
+                          {/* Doc progress indicator — submitted/total with rejection + review badges */}
                           {docs.length > 0 && (
-                            <span className={`text-[9px] ml-0.5 ${approvedCount === docs.length ? "text-green-400" : actionCount > 0 ? "text-orange-400" : "text-muted/50"}`} title={docTooltip}>
-                              {approvedCount}/{docs.length}
-                              {actionCount > 0 && <span className="text-red-400 ml-0.5">⚠{actionCount}</span>}
-                              {notUploadedCount > 0 && approvedCount < docs.length && <span className="text-zinc-500 ml-0.5">◌{notUploadedCount}</span>}
+                            <span className={`text-[9px] ml-0.5 ${submittedCount === docs.length ? "text-green-400" : rejectedCount > 0 ? "text-orange-400" : "text-muted/50"}`} title={docTooltip}>
+                              {submittedCount}/{docs.length}
+                              {rejectedCount > 0 && <span className="text-red-400 ml-0.5">⚠{rejectedCount}</span>}
+                              {underReviewCount > 0 && <span className="text-blue-400 ml-0.5">◎{underReviewCount}</span>}
                             </span>
                           )}
                         </div>
@@ -447,15 +449,28 @@ function DealSection({
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {sections.map((sec) => {
                               const sectionDocs = PE_DOCUMENTS.filter((d) => d.section === sec);
-                              const sectionApproved = sectionDocs.filter((d) =>
-                                docMap.get(`${deal.dealId}:${d.name}`)?.status === "APPROVED"
-                              ).length;
+                              const sectionSubmitted = sectionDocs.filter((d) => {
+                                const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
+                                return s && s !== "NOT_UPLOADED";
+                              }).length;
+                              const sectionRejected = sectionDocs.filter((d) => {
+                                const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
+                                return s === "ACTION_REQUIRED" || s === "REJECTED";
+                              }).length;
+                              const sectionReviewing = sectionDocs.filter((d) => {
+                                const s = docMap.get(`${deal.dealId}:${d.name}`)?.status;
+                                return s === "UPLOADED" || s === "UNDER_REVIEW";
+                              }).length;
                               return (
                                 <div key={sec}>
                                   <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-xs font-semibold text-foreground">{DOC_SECTION_LABELS[sec]}</span>
-                                    <span className={`text-[10px] ${sectionApproved === sectionDocs.length ? "text-green-400" : "text-muted"}`}>
-                                      {sectionApproved}/{sectionDocs.length}
+                                    <span className="flex items-center gap-1.5">
+                                      <span className={`text-[10px] ${sectionSubmitted === sectionDocs.length ? "text-green-400" : "text-muted"}`}>
+                                        {sectionSubmitted}/{sectionDocs.length}
+                                      </span>
+                                      {sectionRejected > 0 && <span className="text-[9px] text-red-400">⚠{sectionRejected}</span>}
+                                      {sectionReviewing > 0 && <span className="text-[9px] text-blue-400">◎{sectionReviewing}</span>}
                                     </span>
                                   </div>
                                   <div className="space-y-1">
