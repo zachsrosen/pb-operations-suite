@@ -14,6 +14,7 @@ import { getBusinessEndDateInclusive } from "@/lib/business-days";
 import { getZuperWebBaseUrl } from "@/lib/external-links";
 import { prisma } from "@/lib/db";
 import { linkJobToProperty } from "@/lib/zuper-property-sync";
+import { recordZuperCall } from "@/lib/zuper-call-counter";
 
 // Types for Zuper API
 export interface ZuperJobCategory {
@@ -346,6 +347,10 @@ export class ZuperClient {
     if (!this.apiKey) {
       return { type: "error", error: "Zuper API key not configured" };
     }
+
+    // Best-effort per-endpoint call counter (records to SystemConfig).
+    // Fire-and-forget so storage hiccups never block the Zuper call.
+    void recordZuperCall(String(options.method || "GET"), endpoint);
 
     try {
       const controller = new AbortController();

@@ -7,6 +7,7 @@
 
 import { prisma } from "@/lib/db";
 import { mergeZuperMetaData, type ZuperMetaDataEntry } from "@/lib/zuper-catalog";
+import { recordZuperCall } from "@/lib/zuper-call-counter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -130,6 +131,9 @@ function sleep(ms: number): Promise<void> {
 async function zuperFetch(path: string, init?: RequestInit): Promise<Response> {
   const apiKey = process.env.ZUPER_API_KEY;
   if (!apiKey) throw new Error("ZUPER_API_KEY not set");
+
+  // Best-effort per-endpoint counter — see src/lib/zuper-call-counter.ts
+  void recordZuperCall(String(init?.method || "GET"), path);
 
   const res = await fetch(`${ZUPER_API_URL}${path}`, {
     ...init,
