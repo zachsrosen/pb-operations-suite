@@ -40,14 +40,53 @@ function todayKey(): string {
 }
 
 /**
+ * Walk the current stack to find the FIRST frame outside zuper.ts /
+ * zuper-property-sync.ts / zuper-call-counter.ts itself — that's the
+ * application code that triggered this Zuper call. Returns something
+ * like "src/app/api/cron/zuper-property-sync/route.ts:34:18" or
+ * "<unknown>" if we can't isolate one.
+ */
+function findCallerSource(): string {
+  const stack = new Error().stack || "";
+  const lines = stack.split("\n");
+  for (const line of lines) {
+    const m = line.match(/\(?(?:file:\/\/)?([^()]+\.(?:ts|tsx|js|mjs|cjs)):(\d+):(\d+)\)?/);
+    if (!m) continue;
+    const filePath = m[1];
+    // Skip the counter itself + the two zuper transports + node internals
+    if (
+      filePath.includes("/zuper-call-counter") ||
+      filePath.includes("/zuper.ts") ||
+      filePath.includes("/zuper-property-sync") ||
+      filePath.includes("node:internal") ||
+      filePath.includes("/node_modules/")
+    ) {
+      continue;
+    }
+    // Trim absolute prefix down to the repo-relative path if possible
+    const srcIdx = filePath.indexOf("/src/");
+    const trimmed = srcIdx >= 0 ? filePath.slice(srcIdx + 1) : filePath;
+    return `${trimmed}:${m[2]}:${m[3]}`;
+  }
+  return "<unknown>";
+}
+
+/**
  * Increment the counter for a (method, normalizedPath) bucket on today's row.
+ * Also emits a structured console.log so each call is visible in Vercel logs
+ * with the caller source/file.
  * Best-effort: failures are silent so storage hiccups never break Zuper calls.
  */
 export async function recordZuperCall(method: string, endpoint: string): Promise<void> {
+  const upMethod = method.toUpperCase();
+  const path = normalizePath(endpoint);
+  const caller = findCallerSource();
+
+  // Structured log line — searchable in Vercel logs as "[zuper-call]"
+  console.log(`[zuper-call] ${upMethod} ${path} from=${caller}`);
+
   try {
     const key = todayKey();
-    const path = normalizePath(endpoint);
-    const upMethod = method.toUpperCase();
 
     // Read-modify-write. Concurrent calls may race — that's acceptable for
     // a rough audit counter (we may under-count by a few in bursts but
