@@ -77,6 +77,20 @@ interface PeDeal {
   pePortalUrl: string | null;
   peProjectId: string | null;
   docReviews: DocReviewFromHS[];
+  paidInFull: boolean;
+  daInvoiceStatus: string | null;
+  ccInvoiceStatus: string | null;
+}
+
+// Customer payment bucket — Paid / Partial / Pending
+// Matches the pe-report convention: paid_in_full flag OR both DA + CC milestones marked Paid.
+type CustomerPaidStatus = "paid" | "partial" | "pending";
+function customerPaidStatus(deal: PeDeal): CustomerPaidStatus {
+  const daPaid = deal.daInvoiceStatus === "Paid";
+  const ccPaid = deal.ccInvoiceStatus === "Paid";
+  if (deal.paidInFull || (daPaid && ccPaid)) return "paid";
+  if (daPaid || ccPaid) return "partial";
+  return "pending";
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +233,7 @@ const COLUMNS: [SortKey, string, string?][] = [
   ["leaseFactor", "Factor", "text-right"],
   ["epcPrice", "EPC", "text-right"],
   ["customerPays", "Cust.", "text-right"],
+  ["paidInFull", "Cust Paid?", "text-center"],
   ["pePaymentTotal", "PE Tot", "text-right"],
   ["pePaymentIC", "PE IC", "text-right"],
   ["pePaymentPC", "PE PC", "text-right"],
@@ -421,6 +436,25 @@ function DealSection({
                       <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
                       <td className="px-1.5 py-1.5 text-foreground whitespace-nowrap text-right font-medium">{fmt(deal.epcPrice)}</td>
                       <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.customerPays)}</td>
+                      <td className="px-1.5 py-1.5 whitespace-nowrap text-center">
+                        {(() => {
+                          const s = customerPaidStatus(deal);
+                          const label =
+                            s === "paid" ? "Paid" : s === "partial" ? "Partial" : "Pending";
+                          const tooltip = `DA: ${deal.daInvoiceStatus ?? "—"} · CC: ${deal.ccInvoiceStatus ?? "—"}${deal.paidInFull ? " · paid_in_full=true" : ""}`;
+                          const cls =
+                            s === "paid"
+                              ? "text-emerald-400"
+                              : s === "partial"
+                                ? "text-amber-400"
+                                : "text-muted/60";
+                          return (
+                            <span className={`text-[10px] ${cls}`} title={tooltip}>
+                              {label}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-1.5 py-1.5 text-blue-400 whitespace-nowrap text-right font-medium">{fmt(deal.pePaymentTotal)}</td>
                       <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentIC)}</td>
                       <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
@@ -839,6 +873,7 @@ export default function PeDealsPage() {
     "Lease Factor": d.leaseFactor.toFixed(7),
     "EPC Price": d.epcPrice ?? "",
     "Customer Pays": d.customerPays ?? "",
+    "Customer Paid": customerPaidStatus(d) === "paid" ? "Paid" : customerPaidStatus(d) === "partial" ? "Partial" : "Pending",
     "PE Payment Total": d.pePaymentTotal ?? "",
     "PE @ IC": d.pePaymentIC ?? "",
     "PE @ PC": d.pePaymentPC ?? "",
