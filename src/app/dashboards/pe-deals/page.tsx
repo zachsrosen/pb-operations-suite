@@ -917,11 +917,21 @@ export default function PeDealsPage() {
       {/* Reconciliation bar — shows how Total PE Expected breaks down */}
       {!isLoading && totalPeExpected > 0 && (() => {
         const preMilestone = totalPeExpected - totalAwaitingValue - readyToInvoiceValue - totalPECollected;
+        // Split pre-milestone into the same buckets the table sections use,
+        // so the bar visually matches "Pending Inspection / In Construction /
+        // Preconstruction" subtotals below.
+        const inspectionPe = inspectionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+        const constructionPe = constructionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+        const preconPe = preconDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+        const otherPe = Math.max(0, preMilestone - inspectionPe - constructionPe - preconPe);
         const pcts = {
-          preMilestone: (preMilestone / totalPeExpected) * 100,
-          awaiting: (totalAwaitingValue / totalPeExpected) * 100,
-          approved: (readyToInvoiceValue / totalPeExpected) * 100,
           collected: (totalPECollected / totalPeExpected) * 100,
+          approved: (readyToInvoiceValue / totalPeExpected) * 100,
+          awaiting: (totalAwaitingValue / totalPeExpected) * 100,
+          inspection: (inspectionPe / totalPeExpected) * 100,
+          construction: (constructionPe / totalPeExpected) * 100,
+          precon: (preconPe / totalPeExpected) * 100,
+          other: (otherPe / totalPeExpected) * 100,
         };
         return (
           <div className="mb-6 bg-surface rounded-lg border border-border p-3 shadow-card">
@@ -942,9 +952,21 @@ export default function PeDealsPage() {
                 <div className="bg-amber-500 transition-all" style={{ width: `${pcts.awaiting}%` }}
                   title={`Awaiting Approval: ${fmt(totalAwaitingValue)}`} />
               )}
-              {pcts.preMilestone > 0 && (
-                <div className="bg-zinc-600 transition-all" style={{ width: `${pcts.preMilestone}%` }}
-                  title={`Pre-Milestone: ${fmt(preMilestone)}`} />
+              {pcts.inspection > 0 && (
+                <div className="bg-cyan-500 transition-all" style={{ width: `${pcts.inspection}%` }}
+                  title={`Pending Inspection: ${fmt(inspectionPe)}`} />
+              )}
+              {pcts.construction > 0 && (
+                <div className="bg-indigo-400 transition-all" style={{ width: `${pcts.construction}%` }}
+                  title={`In Construction: ${fmt(constructionPe)}`} />
+              )}
+              {pcts.precon > 0 && (
+                <div className="bg-zinc-500 transition-all" style={{ width: `${pcts.precon}%` }}
+                  title={`Preconstruction: ${fmt(preconPe)}`} />
+              )}
+              {pcts.other > 0 && (
+                <div className="bg-zinc-700 transition-all" style={{ width: `${pcts.other}%` }}
+                  title={`Other (On Hold, Cancelled, etc.): ${fmt(otherPe)}`} />
               )}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
@@ -964,10 +986,27 @@ export default function PeDealsPage() {
                 <span className="text-foreground font-medium">{fmt(totalAwaitingValue)}</span>
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-zinc-600" />
-                <span className="text-muted">Pre-Milestone</span>
-                <span className="text-foreground font-medium">{fmt(preMilestone)}</span>
+                <span className="w-2 h-2 rounded-full bg-cyan-500" />
+                <span className="text-muted">Pending Inspection</span>
+                <span className="text-foreground font-medium">{fmt(inspectionPe)}</span>
               </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                <span className="text-muted">In Construction</span>
+                <span className="text-foreground font-medium">{fmt(constructionPe)}</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-zinc-500" />
+                <span className="text-muted">Preconstruction</span>
+                <span className="text-foreground font-medium">{fmt(preconPe)}</span>
+              </span>
+              {otherPe > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-zinc-700" />
+                  <span className="text-muted">Other</span>
+                  <span className="text-foreground font-medium">{fmt(otherPe)}</span>
+                </span>
+              )}
             </div>
           </div>
         );
