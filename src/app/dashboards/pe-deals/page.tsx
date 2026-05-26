@@ -753,6 +753,18 @@ export default function PeDealsPage() {
   // deals shown in other table sections.
   const totalPeExpected = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
+  // Split the deal count into pre-construction (no work started) vs
+  // construction+ (Construction, Inspection, PTO, Close Out, Complete, Paid).
+  // On Hold and Cancelled deals are excluded — they're not active pipeline.
+  const EXCLUDED_BUCKET_STAGES = new Set([
+    "On Hold", "On-Hold", "Cancelled", "Project Cancelled",
+  ]);
+  const bucketableDeals = filtered.filter((d) => !EXCLUDED_BUCKET_STAGES.has(d.dealStageLabel));
+  const preconFiltered = bucketableDeals.filter((d) => PRECON_STAGES.has(d.dealStageLabel));
+  const constructionPlusFiltered = bucketableDeals.filter((d) => !PRECON_STAGES.has(d.dealStageLabel));
+  const preconPeExpected = preconFiltered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+  const constructionPlusPeExpected = constructionPlusFiltered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
   const m1ReadyDeals = filtered.filter((d) => d.peM1Status === "Approved");
   const m2ReadyDeals = filtered.filter((d) => d.peM2Status === "Approved");
@@ -857,12 +869,19 @@ export default function PeDealsPage() {
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats — PE payment pipeline */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6 stagger-grid">
         <StatCard
-          key={`deals-${filtered.length}`}
-          label="PE Deals"
-          value={String(filtered.length)}
-          subtitle={`${fmt(totalPeExpected)} total PE expected`}
+          key={`precon-${preconFiltered.length}`}
+          label="Pre-Construction"
+          value={String(preconFiltered.length)}
+          subtitle={`${fmt(preconPeExpected)} PE expected`}
+          color="orange"
+        />
+        <StatCard
+          key={`construction-plus-${constructionPlusFiltered.length}`}
+          label="Construction+"
+          value={String(constructionPlusFiltered.length)}
+          subtitle={`${fmt(constructionPlusPeExpected)} PE expected · ${bucketableDeals.length} active pipeline`}
           color="orange"
         />
         <StatCard
