@@ -226,7 +226,7 @@ Find `export interface ShopHealthOverviewRow` (currently at line 197) and add at
 ```typescript
   openTickets: HeroMetric;
   dnrActive: HeroMetric;
-  roofActive: HeroMetric;
+  roofingActive: HeroMetric;
 ```
 
 - [ ] **Step 7: Add `service` and `dnrRoofing` to `ShopHealthData` and `SectionHealth`**
@@ -1901,7 +1901,7 @@ In `src/app/api/shop-health/overview/route.ts:17-27`, add to the returned row:
 ```typescript
 openTickets: data.heroes.openTickets,
 dnrActive: toHeroMetric(data.dnrRoofing.dnrActive),
-roofActive: toHeroMetric(data.dnrRoofing.roofingActive),
+roofingActive: toHeroMetric(data.dnrRoofing.roofingActive),
 ```
 
 Define `toHeroMetric` at the top of the file:
@@ -1929,7 +1929,7 @@ And in the row map:
 ```tsx
 <td>{row.openTickets.value}</td>
 <td>{row.dnrActive.value}</td>
-<td>{row.roofActive.value}</td>
+<td>{row.roofingActive.value}</td>
 ```
 
 Match the existing color-coding pattern (e.g. red if > 10 for openTickets).

@@ -199,8 +199,8 @@ The overview row type and endpoint must be extended in three places (not just th
 1. **`shop-health-types.ts:197` — `ShopHealthOverviewRow`** gains three fields:
    - `openTickets: HeroMetric` (sourced from `data.heroes.openTickets`)
    - `dnrActive: HeroMetric` (sourced from `data.dnrRoofing.dnrActive` wrapped in a HeroMetric — the combined `dnrRoofingActive` hero is not split per pipeline, so the overview row populates these from the section data directly)
-   - `roofActive: HeroMetric` (sourced from `data.dnrRoofing.roofingActive`, same wrapping)
-2. **`src/app/api/shop-health/overview/route.ts`** — the row-building map at line 17-27 adds the three new fields. `openTickets` comes from `data.heroes.openTickets` (already exists in the new hero set). `dnrActive` and `roofActive` are wrapped from `data.dnrRoofing.dnrActive` and `data.dnrRoofing.roofingActive` using a small helper `toHeroMetric(value, priorValue?)` that returns `{ value, priorWeek: priorValue ?? value, delta: 0, health: 'green' }` — neutral health since these are informational counts.
+   - `roofingActive: HeroMetric` (sourced from `data.dnrRoofing.roofingActive`, same wrapping)
+2. **`src/app/api/shop-health/overview/route.ts`** — the row-building map at line 17-27 adds the three new fields. `openTickets` comes from `data.heroes.openTickets` (already exists in the new hero set). `dnrActive` and `roofingActive` are wrapped from `data.dnrRoofing.dnrActive` and `data.dnrRoofing.roofingActive` using a small helper `toHeroMetric(value, priorValue?)` that returns `{ value, priorWeek: priorValue ?? value, delta: 0, health: 'green' }` — neutral health since these are informational counts.
 3. **`AllLocationsView.tsx`** — render 3 new columns, sortable, color-coded by count
 
 Table is already responsive-overflow; 3 new columns slot in after the existing Customer Success columns.

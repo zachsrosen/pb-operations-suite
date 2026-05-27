@@ -296,7 +296,7 @@ export interface ShopHealthOverviewRow {
   topBottleneck: string | null;
   openTickets: HeroMetric;
   dnrActive: HeroMetric;
-  roofActive: HeroMetric;
+  roofingActive: HeroMetric;
 }
 
 export interface ShopHealthOverviewData {
