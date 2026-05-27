@@ -689,7 +689,15 @@ export default function PeDealsPage() {
     }
   };
 
-  const deals = data?.deals ?? [];
+  // Exclude Cancelled deals entirely — they're not part of the PE pipeline
+  // and their lingering PE values pollute every aggregate on this page.
+  const deals = useMemo(
+    () =>
+      (data?.deals ?? []).filter(
+        (d) => !/cancel+ed/i.test(d.dealStageLabel),
+      ),
+    [data],
+  );
   const lastUpdated = data?.lastUpdated
     ? new Date(data.lastUpdated).toLocaleTimeString()
     : undefined;
@@ -763,10 +771,12 @@ export default function PeDealsPage() {
 
   const PRECON_STAGES = new Set([
     "Site Survey", "Design & Engineering", "Permitting & Interconnection",
-    "Ready To Build", "RTB - Blocked", "Project Rejected - Needs Review", "On Hold",
+    "Ready To Build", "RTB - Blocked", "Project Rejected - Needs Review",
   ]);
   const CONSTRUCTION_STAGES = new Set(["Construction"]);
   const INSPECTION_STAGES = new Set(["Inspection"]);
+  // On Hold matches both "On Hold" and "On-Hold" stage labels
+  const isOnHold = (label: string) => /^on[\s-]?hold$/i.test(label.trim());
 
   const milestoneIds = useMemo(
     () => new Set([...m2Deals, ...m1Deals].map((d) => d.dealId)),
@@ -780,6 +790,10 @@ export default function PeDealsPage() {
     const grouped = new Set([...preconDeals, ...constructionDeals, ...inspectionDeals].map((d) => d.dealId));
     return remaining.filter((d) => !grouped.has(d.dealId));
   }, [remaining, preconDeals, constructionDeals, inspectionDeals]);
+  // If everything in Other is On Hold, label the bucket "On Hold" instead of
+  // the generic "Other". Falls back to "Other" if any non-On-Hold deal sneaks in.
+  const otherIsAllOnHold = otherDeals.length > 0 && otherDeals.every((d) => isOnHold(d.dealStageLabel));
+  const otherLabel = otherIsAllOnHold ? "On Hold" : "Other";
 
   // Hero-card stats use the FULL filtered PE deal set (paid + approved +
   // unpaid). NOT `allDeals` — that's the leftover bucket after subtracting
@@ -950,7 +964,9 @@ export default function PeDealsPage() {
         //                       (waiting for deal to advance to Close Out)
         //   Pending Inspection / In Construction / Preconstruction — stage breakdown
         //                       of pre-PTO deal value (matches table sections)
-        //   Other             — residual (On Hold + Cancelled + edge cases)
+        //   Other / On Hold   — residual (dynamic label: "On Hold" if all
+        //                       remaining deals are On Hold, else "Other").
+        //                       Cancelled deals are filtered out upstream.
         const inspectionPe = inspectionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
         const constructionPe = constructionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
         const preconPe = preconDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
@@ -1012,7 +1028,7 @@ export default function PeDealsPage() {
               )}
               {pcts.other > 0 && (
                 <div className="bg-zinc-700 transition-all" style={{ width: `${pcts.other}%` }}
-                  title={`Other (On Hold, Cancelled, etc.): ${fmt(otherPe)}`} />
+                  title={`${otherLabel}: ${fmt(otherPe)}`} />
               )}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
@@ -1054,7 +1070,7 @@ export default function PeDealsPage() {
               {otherPe > 0 && (
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-zinc-700" />
-                  <span className="text-muted">Other</span>
+                  <span className="text-muted">{otherLabel}</span>
                   <span className="text-foreground font-medium">{fmt(otherPe)}</span>
                 </span>
               )}
@@ -1238,7 +1254,7 @@ export default function PeDealsPage() {
           )}
           {otherDeals.length > 0 && (
             <DealSection
-              title="Other"
+              title={otherLabel}
               subtitle={`${otherDeals.length} deal${otherDeals.length !== 1 ? "s" : ""}`}
               deals={otherDeals}
               sortKey={sortKey}
