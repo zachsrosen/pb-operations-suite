@@ -29,6 +29,30 @@ export async function GET(request: NextRequest) {
   const typeFilter = url.searchParams.get("type");
 
   try {
+    // ── Morning Snapshot (runs FIRST, before emails) ──────────────────
+    // Must run before focus emails to avoid HubSpot rate limit exhaustion.
+    // The EOD summary compares this morning snapshot to evening state —
+    // if it runs after emails, later leads' queries fail silently.
+    // Skip on dry-run — snapshot writes are production DB mutations.
+    const snapshotResult = { saved: 0, errors: [] as string[] };
+    if (!dryRun) {
+      try {
+        const broadResult = await queryAllBroad();
+        await saveSnapshot(broadResult);
+        // Count total (dealId, ownerId) rows written
+        for (const [dealId, owners] of broadResult.dealOwnerSets) {
+          void dealId;
+          snapshotResult.saved += owners.size;
+        }
+        console.log(`[daily-focus] Morning snapshot saved: ${snapshotResult.saved} rows`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daily-focus] Morning snapshot failed (non-blocking): ${msg}`);
+        snapshotResult.errors.push(msg);
+      }
+    }
+
+    // ── Send focus emails ─────────────────────────────────────────────
     const results = [];
 
     if (!typeFilter || typeFilter === "pi") {
@@ -41,26 +65,6 @@ export async function GET(request: NextRequest) {
     const allErrors = results.flatMap((r) => r.errors);
     const totalSent = results.reduce((s, r) => s + r.emailsSent, 0);
     const totalItems = results.reduce((s, r) => s + r.totalItems, 0);
-
-    // ── EOD Snapshot (best-effort, does not block daily focus emails) ──
-    // Skip on dry-run — snapshot writes are production DB mutations.
-    const snapshotResult = { saved: 0, errors: [] as string[] };
-    if (!dryRun) {
-      try {
-        const broadResult = await queryAllBroad();
-        await saveSnapshot(broadResult);
-        // Count total (dealId, ownerId) rows written
-        for (const [dealId, owners] of broadResult.dealOwnerSets) {
-          void dealId;
-          snapshotResult.saved += owners.size;
-        }
-        console.log(`[daily-focus] EOD snapshot saved: ${snapshotResult.saved} rows`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[daily-focus] EOD snapshot failed (non-blocking): ${msg}`);
-        snapshotResult.errors.push(msg);
-      }
-    }
 
     return NextResponse.json({
       dryRun,
