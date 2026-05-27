@@ -200,20 +200,47 @@ function dealDocSections(stageLabel: string): ("onboarding" | "ic" | "pc")[] {
 
 type SortKey = keyof PeDeal;
 type SortDir = "asc" | "desc";
+type SortCriterion = { key: SortKey; dir: SortDir };
 
-function sortDeals(deals: PeDeal[], key: SortKey, dir: SortDir): PeDeal[] {
+// Tri-state customer-paid rank: Paid=2, Partial=1, Pending=0.
+// Sort by this instead of the raw paidInFull boolean so Paid > Partial > Pending.
+function customerPaidRank(d: PeDeal): number {
+  const daPaid = d.daInvoiceStatus === "Paid";
+  const ccPaid = d.ccInvoiceStatus === "Paid";
+  if (d.paidInFull || (daPaid && ccPaid)) return 2;
+  if (daPaid || ccPaid) return 1;
+  return 0;
+}
+
+function compareDeal(a: PeDeal, b: PeDeal, c: SortCriterion): number {
+  let av: unknown;
+  let bv: unknown;
+  if (c.key === "paidInFull") {
+    av = customerPaidRank(a);
+    bv = customerPaidRank(b);
+  } else {
+    av = a[c.key];
+    bv = b[c.key];
+  }
+  if (av == null && bv == null) return 0;
+  if (av == null) return 1;
+  if (bv == null) return -1;
+  if (typeof av === "number" && typeof bv === "number") {
+    return c.dir === "asc" ? av - bv : bv - av;
+  }
+  return c.dir === "asc"
+    ? String(av).localeCompare(String(bv))
+    : String(bv).localeCompare(String(av));
+}
+
+function sortDeals(deals: PeDeal[], criteria: SortCriterion[]): PeDeal[] {
+  if (criteria.length === 0) return deals;
   return [...deals].sort((a, b) => {
-    const av = a[key];
-    const bv = b[key];
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    if (typeof av === "number" && typeof bv === "number") {
-      return dir === "asc" ? av - bv : bv - av;
+    for (const c of criteria) {
+      const cmp = compareDeal(a, b, c);
+      if (cmp !== 0) return cmp;
     }
-    return dir === "asc"
-      ? String(av).localeCompare(String(bv))
-      : String(bv).localeCompare(String(av));
+    return 0;
   });
 }
 
@@ -274,8 +301,6 @@ function DealSection({
   subtitle,
   accent,
   deals,
-  sortKey,
-  sortDir,
   sortArrow,
   toggleSort,
   onStatusChange,
@@ -287,10 +312,8 @@ function DealSection({
   subtitle: string;
   accent?: "orange" | "emerald";
   deals: PeDeal[];
-  sortKey: SortKey;
-  sortDir: SortDir;
   sortArrow: (key: SortKey) => string;
-  toggleSort: (key: SortKey) => void;
+  toggleSort: (key: SortKey, append: boolean) => void;
   onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
   savingDeals: Set<string>;
   docMap: Map<string, DocReview>;
@@ -333,7 +356,8 @@ function DealSection({
               {COLUMNS.map(([key, label, align]) => (
                 <th
                   key={key}
-                  onClick={() => toggleSort(key)}
+                  onClick={(e) => toggleSort(key, e.shiftKey)}
+                  title="Click to sort. Shift-click to add as a secondary sort."
                   className={`px-1.5 py-1.5 font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none ${align ?? "text-left"}`}
                 >
                   {label}{sortArrow(key)}
@@ -677,27 +701,36 @@ export default function PeDealsPage() {
     },
     [queryClient],
   );
-  const [sortKey, setSortKey] = useState<SortKey>("closeDate");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Multi-column sort: array of {key, dir} criteria evaluated in order.
+  // Default: highest PE Total Payment first.
+  const [sortCriteria, setSortCriteria] = useState<SortCriterion[]>([
+    { key: "pePaymentTotal", dir: "desc" },
+  ]);
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
+  const toggleSort = (key: SortKey, append: boolean) => {
+    setSortCriteria((curr) => {
+      const existing = curr.find((c) => c.key === key);
+      if (append) {
+        // Shift-click: add as secondary, or flip direction if already present
+        if (existing) {
+          return curr.map((c) =>
+            c.key === key ? { ...c, dir: c.dir === "asc" ? "desc" : "asc" } : c,
+          );
+        }
+        return [...curr, { key, dir: "desc" }];
+      }
+      // Plain click: replace. If clicking the sole active key, flip its direction.
+      if (existing && curr.length === 1) {
+        return [{ key, dir: existing.dir === "asc" ? "desc" : "asc" }];
+      }
+      return [{ key, dir: "desc" }];
+    });
   };
 
-  // Exclude Cancelled deals entirely — they're not part of the PE pipeline
-  // and their lingering PE values pollute every aggregate on this page.
-  const deals = useMemo(
-    () =>
-      (data?.deals ?? []).filter(
-        (d) => !/cancel+ed/i.test(d.dealStageLabel),
-      ),
-    [data],
-  );
+  // Cancelled deals are already filtered out at the API level (see
+  // EXCLUDED_STAGES in src/app/api/accounting/pe-deals/route.ts), so no
+  // client-side filter is needed here.
+  const deals = data?.deals ?? [];
   const lastUpdated = data?.lastUpdated
     ? new Date(data.lastUpdated).toLocaleTimeString()
     : undefined;
@@ -745,8 +778,8 @@ export default function PeDealsPage() {
     if (m2Filter.length > 0) {
       result = result.filter((d) => d.peM2Status !== null && m2Filter.includes(d.peM2Status));
     }
-    return sortDeals(result, sortKey, sortDir);
-  }, [deals, search, locationFilter, stageFilter, m1Filter, m2Filter, sortKey, sortDir]);
+    return sortDeals(result, sortCriteria);
+  }, [deals, search, locationFilter, stageFilter, m1Filter, m2Filter, sortCriteria]);
 
   // Split into priority sections
   const paidDeals = useMemo(() => filtered.filter((d) => d.peM1Status === "Paid" && d.peM2Status === "Paid"), [filtered]);
@@ -893,8 +926,13 @@ export default function PeDealsPage() {
     "PE M2": d.peM2Status ?? "",
   }));
 
-  const sortArrow = (key: SortKey) =>
-    sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+  const sortArrow = (key: SortKey) => {
+    const idx = sortCriteria.findIndex((c) => c.key === key);
+    if (idx === -1) return "";
+    const arrow = sortCriteria[idx].dir === "asc" ? " ▲" : " ▼";
+    // Add index suffix only when more than one criterion is active
+    return sortCriteria.length > 1 ? `${arrow}${idx + 1}` : arrow;
+  };
 
   if (error) {
     return (
@@ -1124,8 +1162,6 @@ export default function PeDealsPage() {
             subtitle={`${paidDeals.length} deal${paidDeals.length !== 1 ? "s" : ""} — M1 & M2 paid`}
             accent="emerald"
             deals={paidDeals}
-            sortKey={sortKey}
-            sortDir={sortDir}
             sortArrow={sortArrow}
             toggleSort={toggleSort}
             onStatusChange={handleStatusChange}
@@ -1138,8 +1174,6 @@ export default function PeDealsPage() {
               subtitle={`${partiallyPaidDeals.length} deal${partiallyPaidDeals.length !== 1 ? "s" : ""} — M1 or M2 paid`}
               accent="orange"
               deals={partiallyPaidDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1153,8 +1187,6 @@ export default function PeDealsPage() {
               subtitle={`${fullyApprovedDeals.length} deal${fullyApprovedDeals.length !== 1 ? "s" : ""} — M1 & M2 approved, awaiting PE payment`}
               accent="emerald"
               deals={fullyApprovedDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1168,8 +1200,6 @@ export default function PeDealsPage() {
               subtitle={`${partiallyApprovedDeals.length} deal${partiallyApprovedDeals.length !== 1 ? "s" : ""} — M1 or M2 approved, other milestone still in progress`}
               accent="orange"
               deals={partiallyApprovedDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1183,8 +1213,6 @@ export default function PeDealsPage() {
               subtitle={`${m2Deals.length} deal${m2Deals.length !== 1 ? "s" : ""} pending PE payment (1/3)`}
               accent="emerald"
               deals={m2Deals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1198,8 +1226,6 @@ export default function PeDealsPage() {
               subtitle={`${m1Deals.length} deal${m1Deals.length !== 1 ? "s" : ""} pending PE payment (2/3)`}
               accent="orange"
               deals={m1Deals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1213,8 +1239,6 @@ export default function PeDealsPage() {
               subtitle={`${inspectionDeals.length} deal${inspectionDeals.length !== 1 ? "s" : ""}`}
               accent="emerald"
               deals={inspectionDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1228,8 +1252,6 @@ export default function PeDealsPage() {
               subtitle={`${constructionDeals.length} deal${constructionDeals.length !== 1 ? "s" : ""}`}
               accent="orange"
               deals={constructionDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1242,8 +1264,6 @@ export default function PeDealsPage() {
               title="Preconstruction"
               subtitle={`${preconDeals.length} deal${preconDeals.length !== 1 ? "s" : ""} — survey through ready to build`}
               deals={preconDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
@@ -1257,8 +1277,6 @@ export default function PeDealsPage() {
               title={otherLabel}
               subtitle={`${otherDeals.length} deal${otherDeals.length !== 1 ? "s" : ""}`}
               deals={otherDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
               onStatusChange={handleStatusChange}
