@@ -69,3 +69,176 @@ const ROOFING_STAGE_BUCKETS: Record<string, RoofingBucket> = {
 export function bucketRoofingStages(stageId: string): RoofingBucket {
   return ROOFING_STAGE_BUCKETS[stageId] ?? "unknown";
 }
+
+// ── computeDnrRoofingHealth ────────────────────────────────────────────────
+
+import type { Project } from "@/lib/hubspot";
+import type { DnrRoofingSection, DrilldownDeal } from "@/lib/shop-health-types";
+
+const STUCK_DAYS_THRESHOLD = 14;
+
+export interface DnrRoofingDrilldownBundle {
+  dnrActive: DrilldownDeal[];
+  dnrCompleted: DrilldownDeal[];
+  dnrPreDetach: DrilldownDeal[];
+  dnrDetachInProgress: DrilldownDeal[];
+  dnrRoofingPhase: DrilldownDeal[];
+  dnrResetBlocked: DrilldownDeal[];
+  dnrResetPhase: DrilldownDeal[];
+  dnrCloseout: DrilldownDeal[];
+  dnrStuck: DrilldownDeal[];
+  roofingActive: DrilldownDeal[];
+  roofingCompleted: DrilldownDeal[];
+  roofingPreProduction: DrilldownDeal[];
+  roofingInProduction: DrilldownDeal[];
+  roofingPostProduction: DrilldownDeal[];
+  roofingStuck: DrilldownDeal[];
+}
+
+function toDealDrilldown(d: Project): DrilldownDeal {
+  return {
+    id: String(d.id),
+    name: d.name,
+    projectNumber: d.projectNumber,
+    amount: d.amount,
+    stage: d.stage,
+    pm: "",
+    date: null,
+  };
+}
+
+export function computeDnrRoofingHealth(
+  dnrDeals: Project[],
+  roofingDeals: Project[],
+  weekStart: Date
+): { section: DnrRoofingSection; drilldown: DnrRoofingDrilldownBundle } {
+  const weekStartMs = weekStart.getTime();
+
+  // ── D&R ──
+  const dnrByBucket = {
+    preDetach: [] as Project[],
+    detachInProgress: [] as Project[],
+    roofingPhase: [] as Project[],
+    resetBlocked: [] as Project[],
+    resetPhase: [] as Project[],
+    closeout: [] as Project[],
+  };
+  const dnrCompleted: Project[] = [];
+  const dnrStuck: Project[] = [];
+  let unknownDnrStageCount = 0;
+
+  for (const d of dnrDeals) {
+    const bucket = bucketDnrStages(d.stageId);
+    if (bucket === "terminal") {
+      // Track completed-this-week (Complete only, not Cancelled or On-hold)
+      if (d.stageId === "68245827") {
+        const closeMs = d.closeDate ? new Date(d.closeDate).getTime() : 0;
+        if (closeMs >= weekStartMs) dnrCompleted.push(d);
+      }
+      continue;
+    }
+    if (bucket === "unknown") {
+      unknownDnrStageCount++;
+      console.warn(`[shop-health] Unknown D&R stage ID: ${d.stageId} (deal ${d.id})`);
+      continue;
+    }
+    dnrByBucket[bucket].push(d);
+    if ((d.daysSinceStageMovement ?? 0) > STUCK_DAYS_THRESHOLD) {
+      dnrStuck.push(d);
+    }
+  }
+
+  const dnrActive =
+    dnrByBucket.preDetach.length +
+    dnrByBucket.detachInProgress.length +
+    dnrByBucket.roofingPhase.length +
+    dnrByBucket.resetBlocked.length +
+    dnrByBucket.resetPhase.length +
+    dnrByBucket.closeout.length;
+  const dnrActiveDeals = [
+    ...dnrByBucket.preDetach,
+    ...dnrByBucket.detachInProgress,
+    ...dnrByBucket.roofingPhase,
+    ...dnrByBucket.resetBlocked,
+    ...dnrByBucket.resetPhase,
+    ...dnrByBucket.closeout,
+  ];
+
+  // ── Roofing ──
+  const roofingByBucket = {
+    preProduction: [] as Project[],
+    inProduction: [] as Project[],
+    postProduction: [] as Project[],
+  };
+  const roofingCompleted: Project[] = [];
+  const roofingStuck: Project[] = [];
+  let unknownRoofingStageCount = 0;
+
+  for (const r of roofingDeals) {
+    const bucket = bucketRoofingStages(r.stageId);
+    if (bucket === "terminal") {
+      const closeMs = r.closeDate ? new Date(r.closeDate).getTime() : 0;
+      if (closeMs >= weekStartMs) roofingCompleted.push(r);
+      continue;
+    }
+    if (bucket === "unknown") {
+      unknownRoofingStageCount++;
+      console.warn(`[shop-health] Unknown Roofing stage ID: ${r.stageId} (deal ${r.id})`);
+      continue;
+    }
+    roofingByBucket[bucket].push(r);
+    if ((r.daysSinceStageMovement ?? 0) > STUCK_DAYS_THRESHOLD) {
+      roofingStuck.push(r);
+    }
+  }
+
+  const roofingActive =
+    roofingByBucket.preProduction.length +
+    roofingByBucket.inProduction.length +
+    roofingByBucket.postProduction.length;
+  const roofingActiveDeals = [
+    ...roofingByBucket.preProduction,
+    ...roofingByBucket.inProduction,
+    ...roofingByBucket.postProduction,
+  ];
+
+  const section: DnrRoofingSection = {
+    dnrActive,
+    dnrCompletedThisWeek: dnrCompleted.length,
+    roofingActive,
+    roofingCompletedThisWeek: roofingCompleted.length,
+    dnrPreDetach: dnrByBucket.preDetach.length,
+    dnrDetachInProgress: dnrByBucket.detachInProgress.length,
+    dnrRoofingPhase: dnrByBucket.roofingPhase.length,
+    dnrResetBlocked: dnrByBucket.resetBlocked.length,
+    dnrResetPhase: dnrByBucket.resetPhase.length,
+    dnrCloseout: dnrByBucket.closeout.length,
+    roofPreProduction: roofingByBucket.preProduction.length,
+    roofInProduction: roofingByBucket.inProduction.length,
+    roofPostProduction: roofingByBucket.postProduction.length,
+    stuckDnrJobs: dnrStuck.length,
+    stuckRoofingJobs: roofingStuck.length,
+    unknownDnrStageCount,
+    unknownRoofingStageCount,
+  };
+
+  const drilldown: DnrRoofingDrilldownBundle = {
+    dnrActive: dnrActiveDeals.map(toDealDrilldown),
+    dnrCompleted: dnrCompleted.map(toDealDrilldown),
+    dnrPreDetach: dnrByBucket.preDetach.map(toDealDrilldown),
+    dnrDetachInProgress: dnrByBucket.detachInProgress.map(toDealDrilldown),
+    dnrRoofingPhase: dnrByBucket.roofingPhase.map(toDealDrilldown),
+    dnrResetBlocked: dnrByBucket.resetBlocked.map(toDealDrilldown),
+    dnrResetPhase: dnrByBucket.resetPhase.map(toDealDrilldown),
+    dnrCloseout: dnrByBucket.closeout.map(toDealDrilldown),
+    dnrStuck: dnrStuck.map(toDealDrilldown),
+    roofingActive: roofingActiveDeals.map(toDealDrilldown),
+    roofingCompleted: roofingCompleted.map(toDealDrilldown),
+    roofingPreProduction: roofingByBucket.preProduction.map(toDealDrilldown),
+    roofingInProduction: roofingByBucket.inProduction.map(toDealDrilldown),
+    roofingPostProduction: roofingByBucket.postProduction.map(toDealDrilldown),
+    roofingStuck: roofingStuck.map(toDealDrilldown),
+  };
+
+  return { section, drilldown };
+}
