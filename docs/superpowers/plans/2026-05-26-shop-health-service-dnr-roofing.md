@@ -1505,20 +1505,24 @@ const locationFilteredClosedTickets =
 
 - [ ] **Step 3: Filter D&R/Roofing/Service deals by location**
 
+**Match the existing pattern at `shop-health.ts:247-249`** which normalizes `pbLocation` BEFORE comparing against `canonicalSet`. Use the same `normalizeLocation` helper that already exists in that file:
+
 ```typescript
 const locationFilteredDnr =
   locationSlug === "all"
     ? dnrDeals
-    : dnrDeals.filter((d) => canonicalSet.has(d.pbLocation));
+    : dnrDeals.filter((d) => canonicalSet.has(normalizeLocation(d.pbLocation)));
 const locationFilteredRoofing =
   locationSlug === "all"
     ? roofingDeals
-    : roofingDeals.filter((d) => canonicalSet.has(d.pbLocation));
+    : roofingDeals.filter((d) => canonicalSet.has(normalizeLocation(d.pbLocation)));
 const locationFilteredService =
   locationSlug === "all"
     ? serviceDeals
-    : serviceDeals.filter((d) => canonicalSet.has(d.pbLocation));
+    : serviceDeals.filter((d) => canonicalSet.has(normalizeLocation(d.pbLocation)));
 ```
+
+Raw `pbLocation` values from HubSpot can be variants like `"Denver Tech Center"` that need normalization to the canonical form before they match `canonicalSet` entries.
 
 - [ ] **Step 4: Call new compute functions**
 
