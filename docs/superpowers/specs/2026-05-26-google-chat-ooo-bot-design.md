@@ -147,6 +147,8 @@ RULES:
   move deals, send emails, or override anyone's decisions
 - If you're not confident in an answer, use the escalate tool to flag it
 - When you escalate, tell the person it's been queued for Zach's return
+- For process/how-to questions, use the search_sop tool first — the SOP
+  guides have most standard procedures documented
 - Be helpful, direct, and a little funny — like a coworker who knows the
   playbook and has a sense of humor about being a robot filling in
 
@@ -159,31 +161,35 @@ TONE:
 
 ### Layer 2: Playbook (from OooBotConfig.playbook)
 
-Loaded from DB at request time. Content written with Zach on 5/28. Structure:
+Loaded from DB at request time. Content written with Zach on 5/28.
+
+**Division of labor — Playbook vs. SOPs**: The SOP system already documents standard procedures (HubSpot workflows, pipeline steps, scheduling flows). The playbook does NOT duplicate those — instead it covers Zach-specific judgment calls and current context that the SOPs don't have. When someone asks "how do I reschedule an install?", the bot should use `search_sop` to find the SOP. When someone asks "should I reschedule the Smith install?", the bot uses the playbook for context.
+
+Structure:
 
 ```markdown
 ## Current Priority Projects
-- PROJ-XXXX: [status, what to watch for]
+- PROJ-XXXX: [status, what to watch for, any special instructions]
 - ...
 
-## Standing Rules
+## Standing Rules (things Zach would decide on the spot)
 - If [X happens], [do Y]
 - ...
 
-## Who Handles What
+## Who Handles What While I'm Out
 - Scheduling conflicts: [person]
 - BOM questions: [person]
 - ...
 
-## Common Process Questions
-### How do we handle a failed inspection?
-[Answer]
+## Zach's Judgment Calls (not in SOPs)
+### When to escalate a stalled project vs. wait
+[Zach's criteria]
 
-### What's the flow for rescheduling an install?
-[Answer]
+### How to prioritize competing installs
+[Zach's approach]
 
-## Things to Hold for Zach
-- [List of decisions that should wait]
+## Things to Hold for My Return
+- [List of decisions that should wait until 6/10]
 
 ## Key Contacts
 - [Name]: [role], [what they handle]
@@ -218,8 +224,11 @@ Space: {spaceName or "Direct Message"}
 | `get_schedule_overview(location?, days?)` | Optional location filter, days ahead (default 7) | Upcoming installs/surveys from all location-specific Google Calendars. Resolves calendar IDs via existing `GOOGLE_INSTALL_CALENDAR_*` env vars. Uses `google-calendar.ts` module. |
 | `get_service_queue()` | None | Service priority queue summary (top 10 by score) via `service-priority.ts` |
 | `escalate(question, context)` | Original question + bot's reasoning | Writes OooBotEscalation row, returns acknowledgment |
+| `search_sop(query)` | Topic keyword or question | Searches SOP sections by title + content, returns matching section titles and stripped content. Queries `SopSection` table via `LIKE` on title + content fields. Returns top 5 matches with tab label, section title, and content (HTML stripped to plain text, truncated to 2000 chars per section). |
 
 **Removed**: `get_playbook_guidance(topic)` — unnecessary. The playbook is already injected into the system prompt (Layer 2), so Claude can answer playbook questions directly without a tool call. Saves a tool iteration and ~2s latency.
+
+**SOP integration**: The existing SOP system (`SopTab` → `SopSection`) already codifies most process knowledge (HubSpot workflows, project pipeline steps, scheduling flows, etc.). Rather than duplicating this into the playbook, the bot uses `search_sop` to pull relevant SOP content on demand. The playbook (Layer 2) focuses on Zach-specific decision rules, current priorities, and standing instructions — things that aren't in the SOPs. The SOP tool handles "how does X work?" while the playbook handles "what would Zach do about X?"
 
 **Tool file**: `src/lib/ooo-bot-tools.ts`
 
