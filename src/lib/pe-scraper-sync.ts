@@ -94,6 +94,18 @@ export function mapScraperStatus(status: string): PeDocStatus {
   return SCRAPER_STATUS_MAP[normalized] ?? PeDocStatus.NOT_UPLOADED;
 }
 
+/**
+ * Status labels that *genuinely* mean a doc has not been uploaded.
+ * Used to distinguish "really missing" from "unrecognized label silently
+ * mapped to NOT_UPLOADED" — see the defensive fallback in syncPeDocStatuses.
+ */
+const KNOWN_NOT_UPLOADED_LABELS = new Set<string>([
+  "not submitted",
+  "not yet expected",
+  "not found",
+  "unknown",
+]);
+
 // ---------------------------------------------------------------------------
 // Compact format status mapping (portal scrape codes → PeDocStatus)
 // ---------------------------------------------------------------------------
@@ -823,10 +835,29 @@ export async function syncPeDocStatuses(
     result.projectsMatched++;
 
     for (const doc of project.documents) {
+      let status = mapScraperStatus(doc.status);
+      // Defensive fallback: SCRAPER_STATUS_MAP silently maps unrecognized
+      // labels to NOT_UPLOADED. When that happens on a doc that has a
+      // submission date, we know it exists on the portal — refuse to
+      // pretend it's missing. Log the unknown label so we can extend the
+      // map upstream and eventually remove this fallback.
+      const normalizedLabel = doc.status.trim().toLowerCase();
+      if (
+        status === PeDocStatus.NOT_UPLOADED &&
+        doc.dateSubmitted &&
+        !KNOWN_NOT_UPLOADED_LABELS.has(normalizedLabel)
+      ) {
+        console.warn(
+          `[pe-scraper-sync] Unrecognized status ${JSON.stringify(doc.status)} ` +
+            `for ${project.projNumber}/${doc.name} with dateSubmitted=` +
+            `${doc.dateSubmitted}; overriding NOT_UPLOADED → UPLOADED.`,
+        );
+        status = PeDocStatus.UPLOADED;
+      }
       ops.push({
         dealId,
         docName: doc.name,
-        status: mapScraperStatus(doc.status),
+        status,
         notes: buildNotesString(doc, project.projNumber),
       });
     }
