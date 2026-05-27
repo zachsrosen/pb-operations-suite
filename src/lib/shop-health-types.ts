@@ -87,6 +87,54 @@ export interface InspectionsSection {
   ptosReceived: number;
 }
 
+export interface ServiceSection {
+  // Job pipeline
+  activeJobs: number;
+  awaitingSiteVisit: number;
+  workInProgress: number;
+  awaitingInspection: number;
+
+  // Ticket activity
+  openTickets: number;
+  ticketsCreatedThisWeek: number;
+  ticketsClosedThisWeek: number;
+  netTicketChange: number;
+
+  // Ticket health
+  avgTicketAgeDays: number | null;
+  avgResolutionHours: number | null;
+  stuckTicketsOver7d: number;
+}
+
+export interface DnrRoofingSection {
+  // Throughput summary
+  dnrActive: number;
+  dnrCompletedThisWeek: number;
+  roofingActive: number;
+  roofingCompletedThisWeek: number;
+
+  // D&R stage breakdown
+  dnrPreDetach: number;
+  dnrDetachInProgress: number;
+  dnrRoofingPhase: number;
+  dnrResetBlocked: number;
+  dnrResetPhase: number;
+  dnrCloseout: number;
+
+  // Roofing stage breakdown
+  roofPreProduction: number;
+  roofInProduction: number;
+  roofPostProduction: number;
+
+  // Aging
+  stuckDnrJobs: number;
+  stuckRoofingJobs: number;
+
+  // Diagnostic
+  unknownDnrStageCount: number;
+  unknownRoofingStageCount: number;
+}
+
 export interface ShopHealthHeroes {
   weeklyRevenue: HeroMetric;
   sentiment: HeroMetric;
@@ -95,6 +143,8 @@ export interface ShopHealthHeroes {
   scheduledInstalls: HeroMetric;
   installsCompleted: HeroMetric;
   ptosReceived: HeroMetric;
+  openTickets: HeroMetric;
+  dnrRoofingActive: HeroMetric;
 }
 
 export interface ShopHealthGoals {
@@ -117,6 +167,8 @@ export interface SectionHealth {
   operations: HealthStatus;
   inspections: HealthStatus;
   customerSuccess: HealthStatus;
+  service: HealthStatus;
+  dnrRoofing: HealthStatus;
 }
 
 /** Lightweight deal summary for metric drill-down tables. */
@@ -129,6 +181,17 @@ export interface DrilldownDeal {
   pm: string;
   /** Context-specific date (e.g. close date, install date, permit date) */
   date: string | null;
+}
+
+export interface DrilldownTicket {
+  id: string;
+  subject: string;
+  status: string;
+  priority: string | null;
+  createDate: string | null;
+  lastModified: string | null;
+  ageDays: number | null;
+  dealName: string | null;
 }
 
 /** Maps metric keys → the underlying deals that compose that count. */
@@ -162,6 +225,33 @@ export interface ShopHealthDrilldown {
   sentimentScores: DrilldownDeal[];
   fiveStarReviews: DrilldownDeal[];
   responseTime: DrilldownDeal[];
+
+  // Service section
+  serviceActiveJobs: DrilldownDeal[];
+  serviceAwaitingSiteVisit: DrilldownDeal[];
+  serviceWorkInProgress: DrilldownDeal[];
+  serviceAwaitingInspection: DrilldownDeal[];
+  serviceOpenTickets: DrilldownTicket[];
+  serviceTicketsCreated: DrilldownTicket[];
+  serviceTicketsClosed: DrilldownTicket[];
+  serviceStuckTickets: DrilldownTicket[];
+
+  // D&R + Roofing section
+  dnrActive: DrilldownDeal[];
+  dnrCompleted: DrilldownDeal[];
+  dnrPreDetach: DrilldownDeal[];
+  dnrDetachInProgress: DrilldownDeal[];
+  dnrRoofingPhase: DrilldownDeal[];
+  dnrResetBlocked: DrilldownDeal[];
+  dnrResetPhase: DrilldownDeal[];
+  dnrCloseout: DrilldownDeal[];
+  dnrStuck: DrilldownDeal[];
+  roofingActive: DrilldownDeal[];
+  roofingCompleted: DrilldownDeal[];
+  roofingPreProduction: DrilldownDeal[];
+  roofingInProduction: DrilldownDeal[];
+  roofingPostProduction: DrilldownDeal[];
+  roofingStuck: DrilldownDeal[];
 }
 
 export interface ShopHealthData {
@@ -175,6 +265,8 @@ export interface ShopHealthData {
   operations: OperationsSection;
   inspections: InspectionsSection;
   customerSuccess: CustomerSuccessSection;
+  service: ServiceSection;
+  dnrRoofing: DnrRoofingSection;
   sectionHealth: SectionHealth;
   bottlenecks: ShopHealthBottleneckEntry[];
   drilldown: ShopHealthDrilldown;
@@ -202,6 +294,9 @@ export interface ShopHealthOverviewRow {
   installsCompleted: HeroMetric;
   ptosReceived: HeroMetric;
   topBottleneck: string | null;
+  openTickets: HeroMetric;
+  dnrActive: HeroMetric;
+  roofActive: HeroMetric;
 }
 
 export interface ShopHealthOverviewData {
