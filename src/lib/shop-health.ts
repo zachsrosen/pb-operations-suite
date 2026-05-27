@@ -16,6 +16,8 @@ import type {
   SchedulingSection,
   OperationsSection,
   InspectionsSection,
+  ServiceSection,
+  DnrRoofingSection,
   ShopHealthBottleneckEntry,
   DrilldownDeal,
   ShopHealthDrilldown,
@@ -23,7 +25,11 @@ import type {
 import type { Project } from "./hubspot";
 import type { DashboardLocationGroup } from "./dashboard-location-groups";
 import { resolveDashboardGroup } from "./dashboard-location-groups";
-import { fetchAllProjects } from "./hubspot";
+import { fetchAllProjects, fetchDealsByPipelines } from "./hubspot";
+import { fetchServiceTickets, fetchClosedTicketsSince } from "./hubspot-tickets";
+import { PIPELINE_IDS } from "./deals-pipeline";
+import { computeServiceHealth } from "./shop-health-service";
+import { computeDnrRoofingHealth } from "./shop-health-dnr-roofing";
 import { normalizeLocation } from "./locations";
 import { DEFAULT_TARGETS } from "./goals-pipeline-types";
 import {
@@ -183,6 +189,15 @@ export function scoreSentiment(avgScore: number): HealthStatus {
 }
 
 /**
+ * Open service tickets count: <= 3 green, <= 10 yellow, else red.
+ */
+export function scoreOpenTickets(count: number): HealthStatus {
+  if (count <= 3) return "green";
+  if (count <= 10) return "yellow";
+  return "red";
+}
+
+/**
  * Constructs a HeroMetric with automatic delta calculation.
  */
 export function buildHeroMetric(
@@ -237,10 +252,43 @@ export async function getShopHealthData(
 
   // Fetch raw projects (cached with request coalescing so concurrent calls
   // from the overview endpoint share a single HubSpot fetch).
-  const { data: allProjects } = await appCache.getOrFetch(
-    CACHE_KEYS.PROJECTS_ACTIVE,
-    () => fetchAllProjects({ activeOnly: true })
-  );
+  // In parallel: fetch deals from all 4 pipelines (Project, Service, D&R,
+  // Roofing) for the new Service + D&R/Roofing sections, plus open and
+  // recently-closed service tickets.
+  const [
+    { data: allProjects },
+    allDealsResult,
+    openTickets,
+    closedTickets,
+  ] = await Promise.all([
+    appCache.getOrFetch(
+      CACHE_KEYS.PROJECTS_ACTIVE,
+      () => fetchAllProjects({ activeOnly: true })
+    ),
+    appCache.getOrFetch(
+      CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE,
+      () =>
+        fetchDealsByPipelines(
+          [
+            PIPELINE_IDS.project,
+            PIPELINE_IDS.service,
+            PIPELINE_IDS.dnr,
+            PIPELINE_IDS.roofing,
+          ],
+          true
+        ),
+      false,
+      { ttl: 10 * 60 * 1000 }
+    ),
+    fetchServiceTickets(),
+    fetchClosedTicketsSince(weekStart.toISOString()),
+  ]);
+  const allDeals = allDealsResult.data;
+
+  // Partition all-pipeline deals by pipelineId for the new sections.
+  const serviceDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.service);
+  const dnrDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.dnr);
+  const roofingDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.roofing);
 
   // Filter to this location group's canonical locations
   const canonicalSet = new Set<string>(group.canonicals);
@@ -248,6 +296,45 @@ export async function getShopHealthData(
     const normalized = normalizeLocation(p.pbLocation);
     return normalized !== null && canonicalSet.has(normalized);
   });
+
+  // Location filtering for the new sections — reuses canonicalSet.
+  // Closed tickets carry _derivedLocation populated by fetchClosedTicketsSince
+  // (raw pb_location from HubSpot, may be an alias); normalize before filtering.
+  const locationFilteredOpenTickets =
+    locationSlug === "all"
+      ? openTickets
+      : openTickets.filter((t) => {
+          const normalized = normalizeLocation(t.location ?? null);
+          return normalized !== null && canonicalSet.has(normalized);
+        });
+  const locationFilteredClosedTickets =
+    locationSlug === "all"
+      ? closedTickets
+      : closedTickets.filter((t) => {
+          const normalized = normalizeLocation(t._derivedLocation);
+          return normalized !== null && canonicalSet.has(normalized);
+        });
+  const locationFilteredService =
+    locationSlug === "all"
+      ? serviceDeals
+      : serviceDeals.filter((d) => {
+          const normalized = normalizeLocation(d.pbLocation);
+          return normalized !== null && canonicalSet.has(normalized);
+        });
+  const locationFilteredDnr =
+    locationSlug === "all"
+      ? dnrDeals
+      : dnrDeals.filter((d) => {
+          const normalized = normalizeLocation(d.pbLocation);
+          return normalized !== null && canonicalSet.has(normalized);
+        });
+  const locationFilteredRoofing =
+    locationSlug === "all"
+      ? roofingDeals
+      : roofingDeals.filter((d) => {
+          const normalized = normalizeLocation(d.pbLocation);
+          return normalized !== null && canonicalSet.has(normalized);
+        });
 
   // Compute average deal size from this location's active projects for
   // revenue→volume target derivation.
@@ -303,6 +390,21 @@ export async function getShopHealthData(
   );
   const customerSuccess = csResult.section;
 
+  // ── Service + D&R/Roofing sections ──
+  const serviceResult = computeServiceHealth(
+    locationFilteredService,
+    locationFilteredOpenTickets,
+    locationFilteredClosedTickets,
+    weekStart
+  );
+  const dnrRoofingResult = computeDnrRoofingHealth(
+    locationFilteredDnr,
+    locationFilteredRoofing,
+    weekStart
+  );
+  const service = serviceResult.section;
+  const dnrRoofing = dnrRoofingResult.section;
+
   // Compute prior-week avg sentiment for hero delta
   const priorActive = locationProjects.filter((p) => p.isActive);
   const priorSentimentScores = priorActive
@@ -331,11 +433,20 @@ export async function getShopHealthData(
     weeklyRevenueActual,
     priorWeekRevenueActual,
     customerSuccess.avgSentimentScore,
-    priorAvgSentiment
+    priorAvgSentiment,
+    service,
+    dnrRoofing
   );
 
   // Compute per-section health indicators (worst-case of key metrics)
-  const sectionHealth = computeSectionHealth(heroes, pipeline, scheduling, operations);
+  const sectionHealth = computeSectionHealth(
+    heroes,
+    pipeline,
+    scheduling,
+    operations,
+    service,
+    dnrRoofing
+  );
 
   const bottlenecks = await getBottlenecksForLocationWeek(group.label, weekStart);
 
@@ -347,6 +458,31 @@ export async function getShopHealthData(
     ...opsResult.drilldown,
     ...inspResult.drilldown,
     ...csResult.drilldown,
+    // Service section
+    serviceActiveJobs: serviceResult.drilldown.activeJobs,
+    serviceAwaitingSiteVisit: serviceResult.drilldown.awaitingSiteVisit,
+    serviceWorkInProgress: serviceResult.drilldown.workInProgress,
+    serviceAwaitingInspection: serviceResult.drilldown.awaitingInspection,
+    serviceOpenTickets: serviceResult.drilldown.openTickets,
+    serviceTicketsCreated: serviceResult.drilldown.ticketsCreated,
+    serviceTicketsClosed: serviceResult.drilldown.ticketsClosed,
+    serviceStuckTickets: serviceResult.drilldown.stuckTickets,
+    // D&R + Roofing section
+    dnrActive: dnrRoofingResult.drilldown.dnrActive,
+    dnrCompleted: dnrRoofingResult.drilldown.dnrCompleted,
+    dnrPreDetach: dnrRoofingResult.drilldown.dnrPreDetach,
+    dnrDetachInProgress: dnrRoofingResult.drilldown.dnrDetachInProgress,
+    dnrRoofingPhase: dnrRoofingResult.drilldown.dnrRoofingPhase,
+    dnrResetBlocked: dnrRoofingResult.drilldown.dnrResetBlocked,
+    dnrResetPhase: dnrRoofingResult.drilldown.dnrResetPhase,
+    dnrCloseout: dnrRoofingResult.drilldown.dnrCloseout,
+    dnrStuck: dnrRoofingResult.drilldown.dnrStuck,
+    roofingActive: dnrRoofingResult.drilldown.roofingActive,
+    roofingCompleted: dnrRoofingResult.drilldown.roofingCompleted,
+    roofingPreProduction: dnrRoofingResult.drilldown.roofingPreProduction,
+    roofingInProduction: dnrRoofingResult.drilldown.roofingInProduction,
+    roofingPostProduction: dnrRoofingResult.drilldown.roofingPostProduction,
+    roofingStuck: dnrRoofingResult.drilldown.roofingStuck,
   };
 
   return {
@@ -360,6 +496,8 @@ export async function getShopHealthData(
     operations,
     inspections,
     customerSuccess,
+    service,
+    dnrRoofing,
     sectionHealth,
     bottlenecks,
     drilldown,
@@ -998,8 +1136,11 @@ function buildHeroes(
   weeklyRevenueActual: number,
   priorWeekRevenueActual: number,
   avgSentiment: number | null,
-  priorAvgSentiment: number | null
+  priorAvgSentiment: number | null,
+  service: ServiceSection,
+  dnrRoofing: DnrRoofingSection
 ): ShopHealthHeroes {
+  const dnrRoofingActiveTotal = dnrRoofing.dnrActive + dnrRoofing.roofingActive;
   return {
     weeklyRevenue: buildHeroMetric(
       weeklyRevenueActual,
@@ -1057,6 +1198,20 @@ function buildHeroes(
       ),
       goals.weeklyInspections
     ),
+    openTickets: buildHeroMetric(
+      service.openTickets,
+      // No prior-week comparison available for the new sections yet;
+      // pass current value so delta = 0.
+      service.openTickets,
+      scoreOpenTickets(service.openTickets),
+      null
+    ),
+    dnrRoofingActive: buildHeroMetric(
+      dnrRoofingActiveTotal,
+      dnrRoofingActiveTotal,
+      "green",
+      null
+    ),
   };
 }
 
@@ -1078,6 +1233,8 @@ function computeSectionHealth(
   pipeline: PipelineSection,
   scheduling: SchedulingSection,
   operations: OperationsSection,
+  service: ServiceSection,
+  dnrRoofing: DnrRoofingSection,
 ): SectionHealth {
   return {
     pipeline: heroes.backlogWeeks.health,
@@ -1094,6 +1251,11 @@ function computeSectionHealth(
     ),
     inspections: heroes.ptosReceived.health,
     customerSuccess: heroes.sentiment.health,
+    service: scoreOpenTickets(service.openTickets),
+    dnrRoofing:
+      dnrRoofing.dnrResetBlocked > 0 || dnrRoofing.stuckDnrJobs > 5
+        ? "yellow"
+        : "green",
   };
 }
 

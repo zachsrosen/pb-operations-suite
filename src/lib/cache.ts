@@ -270,6 +270,7 @@ export const appCache = new CacheStore();
 export const CACHE_KEYS = {
   PROJECTS_ALL: "projects:all",
   PROJECTS_ACTIVE: "projects:active",
+  DEALS_ALL_PIPELINES_ACTIVE: "deals:all-pipelines:active",
   DEALS: (pipeline: string) => `deals:${pipeline}`,
   STATS: "stats",
   PIPELINES: "pipelines",
@@ -336,4 +337,17 @@ appCache.subscribe((key) => {
   if (key.startsWith("projects:")) {
     appCache.invalidateByPrefix("funnel:design-pipeline:");
   }
+});
+
+// Shop Health all-pipelines cache cascade: invalidate when ANY deal/project
+// data changes anywhere. This keeps the multi-pipeline fetch consistent with
+// the per-pipeline caches when SSE invalidates them.
+appCache.subscribe((key) => {
+  if (
+    key === CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE ||
+    !(key.startsWith("deals:") || key.startsWith("projects:") || key.startsWith("service-tickets"))
+  ) {
+    return;
+  }
+  appCache.invalidate(CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE);
 });

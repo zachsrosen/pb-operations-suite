@@ -40,6 +40,9 @@ function LocationRow({ row }: { row: ShopHealthOverviewRow }) {
       <MetricCell metric={row.scheduledInstalls} />
       <MetricCell metric={row.installsCompleted} />
       <MetricCell metric={row.ptosReceived} />
+      <MetricCell metric={row.openTickets} />
+      <MetricCell metric={row.dnrActive} />
+      <MetricCell metric={row.roofingActive} />
       <td className="py-3.5 px-4 text-sm text-muted max-w-[220px]">
         {row.topBottleneck ? (
           <span className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-300 px-2 py-1 rounded-md text-xs font-medium">
@@ -94,6 +97,9 @@ export function AllLocationsView({ weekStart }: AllLocationsViewProps) {
               <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Planned</th>
               <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Completed</th>
               <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">PTOs</th>
+              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Open Tickets</th>
+              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">D&R Active</th>
+              <th className="text-center py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Roof Active</th>
               <th className="text-left py-3 px-4 text-muted font-semibold text-xs uppercase tracking-wider">Bottleneck</th>
             </tr>
           </thead>
