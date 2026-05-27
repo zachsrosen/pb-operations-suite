@@ -34,23 +34,34 @@ Shop managers can't see at a glance how many active service jobs they have, how 
 
 ### Data Layer
 
-The existing `getShopHealthData()` orchestrator widens its HubSpot deal fetch to include all four pipelines:
+The existing `fetchAllProjects()` in `hubspot.ts` is **hard-coded to the Project pipeline** (`pipeline = PROJECT_PIPELINE_ID`, line 1169) and uses Project-only `INACTIVE_STAGE_IDS` (line 1164). Reusing it would corrupt every caller that depends on Project-only semantics (`fetchAllProjects` powers goals-pipeline, office-performance, and others). We must NOT widen the existing fetcher.
+
+**Approach:** add a new pure-fetcher `fetchDealsByPipelines(pipelineIds: string[], activeOnly: boolean): Promise<Project[]>` next to `fetchAllProjects`. It accepts pipeline IDs and, for active-only mode, computes the per-pipeline non-terminal stage IDs from `STAGE_MAPS` in `deals-pipeline.ts`. Internally it follows the same two-phase pattern (search for IDs, then batch-read properties).
+
+The shop-health orchestrator calls this once with all four pipelines:
 
 ```
-Pipelines fetched: [project, service, dnr, roofing]
+fetchDealsByPipelines([PROJECT, SERVICE, DNR, ROOFING], activeOnly: true)
+  → allDeals → partition by deal.pipelineId →
+      projectDeals  (existing flow)
+      serviceDeals  (new)
+      dnrDeals      (new)
+      roofingDeals  (new)
 ```
 
-This is a single `searchDeals` call with `pipeline IN [...]` — the existing pattern, just with a wider filter. After fetch, deals are partitioned by `pipeline` field:
+**Required Project-type changes** (since `deal.pipelineId` doesn't currently exist):
 
-```
-allDeals → partition →
-  projectDeals  (existing flow)
-  serviceDeals  (new)
-  dnrDeals      (new)
-  roofingDeals  (new)
-```
+- Add `pipelineId: string` to the `Project` interface in `hubspot.ts:254`
+- Add `pipelineId: deal.pipeline || ""` to the transform around `hubspot.ts:1027`
+- Add `pipelineId: ""` default to `deal-reader.ts` (same pattern used for previous Project additions)
 
-A new parallel API call fetches service tickets via the existing `hubspot-tickets.ts` module: `fetchServiceTickets(locationCanonicals)`. Runs concurrently with the deal fetch — no added latency.
+The `pipeline` HubSpot property is already in `DEAL_PROPERTIES` (line 540) — no new property to add.
+
+**Tickets**: One new parallel API call. `fetchServiceTickets()` currently takes no args and returns only open tickets (excludes closed stages server-side at `hubspot-tickets.ts:288-313`). To compute `ticketsClosedThisWeek` and `avgResolutionHours`, we need a second function:
+
+- `fetchClosedTicketsSince(sinceIsoDate: string)` — fetches tickets in closed stages with `hs_lastmodifieddate >= sinceIsoDate`. New function in `hubspot-tickets.ts`, follows the same pattern as `fetchServiceTickets` but inverts the stage filter.
+
+Both ticket fetches run in parallel with the deal fetch. Location filtering happens client-side in `computeServiceHealth` using each ticket's existing `_derivedLocation` field (resolved via the existing ticket→deal→pb_location + ticket→company→city fallback chain at `hubspot-tickets.ts:338,440-446`).
 
 ### Compute Functions (new files)
 
@@ -112,6 +123,10 @@ export interface DnrRoofingSection {
   // Aging
   stuckDnrJobs: number;       // >14 days in current stage
   stuckRoofingJobs: number;   // >14 days in current stage
+
+  // Diagnostic (stage label drift)
+  unknownDnrStageCount: number;     // deals whose stage didn't match any bucket
+  unknownRoofingStageCount: number;
 }
 ```
 
@@ -156,7 +171,14 @@ Four rows:
 
 Drill-down support on every card that maps to a concrete deal set.
 
-**Drill-down ticket display**: `DrilldownMetricCard` needs to handle both `DrilldownDeal[]` and `DrilldownTicket[]`. Add an optional `tickets` prop alongside the existing `deals` prop. Card uses whichever is supplied. Ticket rows show subject, status, age — not amount/PM/project number.
+**Drill-down ticket display**: `DrilldownMetricCard.tsx:15` currently has a strict `deals?: DrilldownDeal[]` prop with a hard-coded table (columns: name, project#, amount, stage, PM, date). To support tickets without polluting the deal path, refactor the modal body into a render-prop or render-mode:
+
+- Add optional `tickets?: DrilldownTicket[]` prop alongside `deals`
+- Internal table renders dynamically based on which prop is non-empty: deal columns OR ticket columns (subject, status, priority, age, dealName-if-resolved)
+- Card chrome (title, value, click handler, empty state) is unchanged
+- Type-safe: exactly one of `deals` or `tickets` should be provided per usage (enforced at component level)
+
+This is a ~50-line change to the card, not a from-scratch rewrite.
 
 ### Hero Row
 
@@ -171,10 +193,14 @@ New heroes:
 
 ### All Locations Table
 
-`AllLocationsView.tsx` gains 3 columns:
-- **Open Tickets** (sortable, color-coded by ticket count)
-- **D&R Active** (sortable)
-- **Roof Active** (sortable)
+The overview row type and endpoint must be extended in three places (not just the UI):
+
+1. **`shop-health-types.ts:197` — `ShopHealthOverviewRow`** gains three fields:
+   - `openTickets: HeroMetric`
+   - `dnrActive: HeroMetric`
+   - `roofActive: HeroMetric`
+2. **The overview computation** (wherever it builds rows — typically `getShopHealthOverviewData()` in `shop-health.ts`) populates these from the new section data
+3. **`AllLocationsView.tsx`** — render 3 new columns, sortable, color-coded by count
 
 Table is already responsive-overflow; 3 new columns slot in after the existing Customer Success columns.
 
@@ -209,7 +235,8 @@ Both functions accept the canonical labels and return a discriminated union buck
 
 ### Caching & Real-Time Updates
 
-- Same cache key as existing shop health (`shop-health:${locationSlug}:${weekStart}`)
+- The shop-health response cache key (`shop-health:${locationSlug}:${weekStart}`) is unchanged — that key wraps the whole `ShopHealthData` payload and is fine to reuse since the payload is the same shape, just with new fields
+- The **underlying fetcher cache** (`CACHE_KEYS.PROJECTS_ACTIVE`) keeps wrapping the Project-only `fetchAllProjects()` call. The new `fetchDealsByPipelines` call gets a separate cache key (e.g. `CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE`) so it doesn't collide with consumers that rely on Project-only semantics
 - TTL unchanged (10 min)
 - SSE invalidation cascades: existing `deals:*` invalidations now also invalidate the new sections. Add `tickets:*` to the invalidation map so ticket-driven metrics refresh when tickets change.
 
@@ -224,22 +251,27 @@ Expected total dashboard load time: unchanged ±200ms.
 
 ## File Layout
 
-**New files:**
+**New files** (line estimates are realistic, not optimistic — each compute fn mirrors existing `computePreconstruction`-style patterns):
+
 ```
-src/lib/shop-health-service.ts                          ~250 lines
-src/lib/shop-health-dnr-roofing.ts                      ~300 lines
-src/app/dashboards/shop-health/ServiceSection.tsx       ~120 lines
-src/app/dashboards/shop-health/DnrRoofingSection.tsx    ~180 lines
+src/lib/shop-health-service.ts                          ~400 lines
+src/lib/shop-health-dnr-roofing.ts                      ~500 lines
+src/app/dashboards/shop-health/ServiceSection.tsx       ~150 lines
+src/app/dashboards/shop-health/DnrRoofingSection.tsx    ~220 lines
 ```
 
 **Modified files:**
 ```
-src/lib/shop-health.ts          — widen pipeline filter, partition deals, delegate, merge
-src/lib/shop-health-types.ts    — add ServiceSection, DnrRoofingSection, hero keys, drilldown keys, DrilldownTicket
+src/lib/hubspot.ts              — add pipelineId to Project type/transform, add fetchDealsByPipelines()
+src/lib/hubspot-tickets.ts      — add fetchClosedTicketsSince()
+src/lib/deal-reader.ts          — add pipelineId default
+src/lib/shop-health.ts          — call new fetcher, partition deals, delegate, merge
+src/lib/shop-health-types.ts    — add ServiceSection, DnrRoofingSection, hero keys, drilldown keys, DrilldownTicket, 3 new ShopHealthOverviewRow fields
+src/lib/cache.ts                — add CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE
 src/app/dashboards/shop-health/page.tsx          — render two new SectionCards
 src/app/dashboards/shop-health/HeroMetrics.tsx   — render 2 new hero cards, adjust grid
 src/app/dashboards/shop-health/AllLocationsView.tsx — add 3 new table columns
-src/components/ui/DrilldownMetricCard.tsx        — accept optional tickets prop alongside deals
+src/components/ui/DrilldownMetricCard.tsx        — refactor table body to support tickets prop
 ```
 
 ## Testing Approach
@@ -266,6 +298,8 @@ src/components/ui/DrilldownMetricCard.tsx        — accept optional tickets pro
 3. **Stage label drift**: If HubSpot stage labels change, bucketing functions log a warning and use a default bucket. They do not throw, so the dashboard degrades gracefully.
 4. **D&R "On-hold" stage** is treated as **excluded from active** counts (along with Complete and Cancelled). Same as the existing pattern for terminal stages.
 5. **"Stuck" threshold of 14 days** is hardcoded for now. Future enhancement could make this configurable per pipeline via `OfficeGoal` table.
+6. **`daysSinceStageMovement`** (`hubspot.ts:374`, computed from `hs_v2_date_entered_current_stage`) is populated for all pipelines since the property is included in `DEAL_PROPERTIES`. The aging metric will work for D&R and Roofing without additional property fetches. Verified via existing usage at `hubspot.ts:3463`.
+7. **Cancellations**: the existing Pipeline section already tracks Project pipeline cancellations. D&R/Roofing/Service cancellations are NOT separately surfaced — out of scope. Future enhancement.
 
 ## Migration & Rollout
 
