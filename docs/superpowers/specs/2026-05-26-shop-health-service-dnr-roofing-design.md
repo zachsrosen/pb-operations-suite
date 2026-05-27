@@ -59,7 +59,8 @@ The `pipeline` HubSpot property is already in `DEAL_PROPERTIES` (line 540) — n
 
 **Tickets**: One new parallel API call. `fetchServiceTickets()` currently takes no args and returns only open tickets (excludes closed stages server-side at `hubspot-tickets.ts:288-313`). To compute `ticketsClosedThisWeek` and `avgResolutionHours`, we need a second function:
 
-- `fetchClosedTicketsSince(sinceIsoDate: string)` — fetches tickets in closed stages with `hs_lastmodifieddate >= sinceIsoDate`. New function in `hubspot-tickets.ts`, follows the same pattern as `fetchServiceTickets` but inverts the stage filter.
+- `fetchClosedTicketsSince(sinceIsoDate: string)` — fetches tickets in closed stages, filtered by `hs_lastclosedate >= sinceIsoDate`. New function in `hubspot-tickets.ts`, follows the same pattern as `fetchServiceTickets` but inverts the stage filter and uses the close-date property (not `hs_lastmodifieddate` — that would re-qualify tickets on any note/association change).
+- **Required property additions to `TICKET_PROPERTIES`** (`hubspot-tickets.ts:99`): `hs_lastclosedate` (for the filter and for `avgResolutionHours = (hs_lastclosedate − createdate) / 3600s`).
 
 Both ticket fetches run in parallel with the deal fetch. Location filtering happens client-side in `computeServiceHealth` using each ticket's existing `_derivedLocation` field (resolved via the existing ticket→deal→pb_location + ticket→company→city fallback chain at `hubspot-tickets.ts:338,440-446`).
 
@@ -196,42 +197,65 @@ New heroes:
 The overview row type and endpoint must be extended in three places (not just the UI):
 
 1. **`shop-health-types.ts:197` — `ShopHealthOverviewRow`** gains three fields:
-   - `openTickets: HeroMetric`
-   - `dnrActive: HeroMetric`
-   - `roofActive: HeroMetric`
-2. **The overview computation** (wherever it builds rows — typically `getShopHealthOverviewData()` in `shop-health.ts`) populates these from the new section data
+   - `openTickets: HeroMetric` (sourced from `data.heroes.openTickets`)
+   - `dnrActive: HeroMetric` (sourced from `data.dnrRoofing.dnrActive` wrapped in a HeroMetric — the combined `dnrRoofingActive` hero is not split per pipeline, so the overview row populates these from the section data directly)
+   - `roofActive: HeroMetric` (sourced from `data.dnrRoofing.roofingActive`, same wrapping)
+2. **`src/app/api/shop-health/overview/route.ts`** — the row-building map at line 17-27 adds the three new fields. `openTickets` comes from `data.heroes.openTickets` (already exists in the new hero set). `dnrActive` and `roofActive` are wrapped from `data.dnrRoofing.dnrActive` and `data.dnrRoofing.roofingActive` using a small helper `toHeroMetric(value, priorValue?)` that returns `{ value, priorWeek: priorValue ?? value, delta: 0, health: 'green' }` — neutral health since these are informational counts.
 3. **`AllLocationsView.tsx`** — render 3 new columns, sortable, color-coded by count
 
 Table is already responsive-overflow; 3 new columns slot in after the existing Customer Success columns.
 
 ### Stage Bucketing
 
-**`bucketDnrStages(stageName: string) → DnrBucket`**
+**Critical**: `transformDealToProject()` at `hubspot.ts:852` resolves `stageName` via the Project-only `DEAL_STAGE_MAP`. For non-project deals, `stageName` is just the raw `stageId` string. We therefore bucket by **stage ID** (stable, globally unique in HubSpot) not by label. The IDs come from `STAGE_MAPS` in `deals-pipeline.ts` (lines 21-70).
 
-Uses keyword matching against the canonical stage labels from `deals-pipeline.ts`. Explicit mapping (not generic keyword inference) since the D&R pipeline has labels like "Detach Complete - Roofing In Progress" that don't follow simple patterns:
-
-```
-"Kickoff" | "Site Survey" | "Design" | "Permit" | "Ready for Detach" → preDetach
-"Detach"                                                             → detachInProgress
-"Detach Complete - Roofing In Progress"                              → roofingPhase
-"Reset Blocked - Waiting on Payment"                                 → resetBlocked
-"Ready for Reset" | "Reset"                                          → resetPhase
-"Inspection" | "Closeout"                                            → closeout
-"Complete" | "Cancelled" | "On-hold"                                 → terminal/excluded
-```
-
-**`bucketRoofingStages(stageName: string) → RoofingBucket`**
+**`bucketDnrStages(stageId: string) → DnrBucket`** — explicit ID-to-bucket map:
 
 ```
-"On Hold" | "Color Selection" | "Material & Labor Order" |
-"Confirm Dates" | "Staged"                                → preProduction
-"Production"                                              → inProduction
-"Post Production" | "Invoice/Collections" |
-"Job Close Out Paperwork"                                 → postProduction
-"Job Completed"                                           → terminal/excluded
+"52474739" Kickoff
+"52474740" Site Survey         → preDetach
+"52474741" Design
+"52474742" Permit
+"78437201" Ready for Detach
+
+"52474743" Detach              → detachInProgress
+
+"78453339" Detach Complete - Roofing In Progress  → roofingPhase
+
+"78412639" Reset Blocked - Waiting on Payment     → resetBlocked
+
+"78412640" Ready for Reset     → resetPhase
+"52474744" Reset
+
+"55098156" Inspection          → closeout
+"52498440" Closeout
+
+"68245827" Complete            → terminal/excluded
+"52474745" Cancelled
+"72700977" On-hold
 ```
 
-Both functions accept the canonical labels and return a discriminated union bucket. If a stage label doesn't match (e.g., HubSpot adds a new stage), it falls through to a default bucket with a warning log — does not throw.
+**`bucketRoofingStages(stageId: string) → RoofingBucket`** — explicit ID-to-bucket map:
+
+```
+"1117662745" On Hold
+"1117662746" Color Selection
+"1215078279" Material & Labor Order   → preProduction
+"1117662747" Confirm Dates
+"1215078280" Staged
+
+"1215078281" Production               → inProduction
+
+"1215078282" Post Production
+"1215078283" Invoice/Collections      → postProduction
+"1215078284" Job Close Out Paperwork
+
+"1215078285" Job Completed            → terminal/excluded
+```
+
+Both functions accept the raw stage ID string and return a discriminated union bucket. If a stage ID doesn't match (e.g., HubSpot adds a new stage), it falls through to a default bucket, increments the `unknownDnrStageCount`/`unknownRoofingStageCount` counter on the section data (surfaced in UI), and logs a warning. Does not throw.
+
+**Active/terminal stage filtering** also uses stage IDs from `STAGE_MAPS`. The orchestrator builds a `TERMINAL_STAGE_IDS_BY_PIPELINE` map from `deals-pipeline.ts` and uses it both for the HubSpot search filter (active-only mode) and for client-side `isActive` derivation on non-project deals (since the existing `Project.isActive` field is only correct for Project pipeline).
 
 ### Caching & Real-Time Updates
 
