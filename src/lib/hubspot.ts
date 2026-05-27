@@ -1469,6 +1469,154 @@ export async function fetchAllProjects(options?: {
 }
 
 /**
+ * Pipeline-agnostic deal fetcher. Unlike fetchAllProjects (Project pipeline only),
+ * this accepts arbitrary pipeline IDs and computes per-pipeline terminal stage
+ * filters from STAGE_MAPS in deals-pipeline.ts when activeOnly=true.
+ *
+ * Used by shop-health to fetch Project + Service + D&R + Roofing in one call.
+ */
+export async function fetchDealsByPipelines(
+  pipelineIds: string[],
+  activeOnly: boolean
+): Promise<Project[]> {
+  if (pipelineIds.length === 0) return [];
+
+  const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
+
+  // Lazy import to avoid circular dep (deals-pipeline.ts imports hubspotClient from this file)
+  const { STAGE_MAPS, ACTIVE_STAGES, PIPELINE_IDS } = await import("./deals-pipeline");
+
+  // Build terminal stage ID list from STAGE_MAPS when activeOnly
+  const terminalStageIds: string[] = [];
+  if (activeOnly) {
+    const idToSlug: Record<string, string> = {};
+    for (const [slug, id] of Object.entries(PIPELINE_IDS)) {
+      idToSlug[id] = slug;
+    }
+
+    for (const pipelineId of pipelineIds) {
+      const slug = idToSlug[pipelineId];
+      if (!slug) continue;
+      const stageMap = STAGE_MAPS[slug] || {};
+      const activeStageNames = new Set(ACTIVE_STAGES[slug] || []);
+      // Stage IDs whose label is NOT in the active list are terminal
+      for (const [stageId, stageName] of Object.entries(stageMap)) {
+        if (!activeStageNames.has(stageName)) {
+          terminalStageIds.push(stageId);
+        }
+      }
+    }
+  }
+
+  type PipelineFilter = {
+    propertyName: string;
+    operator: typeof FilterOperatorEnum.In;
+    values: string[];
+  };
+  type StageFilter = {
+    propertyName: string;
+    operator: typeof FilterOperatorEnum.Neq;
+    value: string;
+  };
+  const filters: Array<PipelineFilter | StageFilter> = [
+    {
+      propertyName: "pipeline",
+      operator: FilterOperatorEnum.In,
+      values: pipelineIds,
+    },
+  ];
+
+  for (const stageId of terminalStageIds) {
+    filters.push({
+      propertyName: "dealstage",
+      operator: FilterOperatorEnum.Neq,
+      value: stageId,
+    });
+  }
+
+  // ── Phase 1: Collect deal IDs ──
+  const allDealIds: string[] = [];
+  let after: string | undefined;
+  const MAX_PAGINATION_PAGES = 100;
+  for (let page = 0; page < MAX_PAGINATION_PAGES; page++) {
+    const searchRequest: {
+      filterGroups: { filters: typeof filters }[];
+      properties: string[];
+      limit: number;
+      after?: string;
+    } = {
+      filterGroups: [{ filters }],
+      properties: ["hs_object_id"],
+      limit: 100,
+    };
+    if (after) searchRequest.after = after;
+
+    const response = await searchWithRetry(searchRequest);
+    for (const deal of response.results || []) {
+      allDealIds.push(deal.id);
+    }
+    after = response.paging?.next?.after;
+    if (!after) break;
+    await sleep(120);
+  }
+
+  if (allDealIds.length === 0) return [];
+
+  // ── Phase 2: Batch-read full properties ──
+  const allDeals: Record<string, unknown>[] = [];
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < allDealIds.length; i += BATCH_SIZE) {
+    const batch = allDealIds.slice(i, i + BATCH_SIZE);
+    try {
+      const batchResponse = await hubspotClient.crm.deals.batchApi.read({
+        inputs: batch.map((id) => ({ id })),
+        properties: DEAL_PROPERTIES,
+        propertiesWithHistory: [],
+      });
+      for (const deal of batchResponse.results || []) {
+        allDeals.push(deal.properties);
+      }
+    } catch (err) {
+      console.error("[HubSpot] fetchDealsByPipelines batch read failed:", getErrorMessage(err));
+    }
+  }
+
+  // Build owner map (best-effort; transformDealToProject tolerates empty maps)
+  const ownerMap: Record<string, string> = {};
+  if (ownersApiAllowed()) {
+    try {
+      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+        undefined,
+        undefined,
+        500,
+        false
+      );
+      for (const owner of ownersResponse.results || []) {
+        const name = [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim();
+        if (!name) continue;
+        const keys = [
+          owner.id != null ? String(owner.id) : "",
+          owner.userId != null ? String(owner.userId) : "",
+          owner.userIdIncludingInactive != null ? String(owner.userIdIncludingInactive) : "",
+        ].filter(Boolean);
+        for (const key of keys) {
+          if (!ownerMap[key]) ownerMap[key] = name;
+        }
+      }
+    } catch (err) {
+      const status = getHubSpotErrorStatus(err);
+      if (status === 403) {
+        markOwnersApiForbidden(err);
+      } else {
+        console.warn("[HubSpot] fetchDealsByPipelines owner fetch failed:", getErrorMessage(err));
+      }
+    }
+  }
+
+  return allDeals.map((deal) => transformDealToProject(deal, portalId, ownerMap, ownerMap));
+}
+
+/**
  * Fetch the primary associated contact ID for a deal using HubSpot v4 associations.
  * Returns null if no primary contact exists or the call fails.
  * Best-effort — never blocks deal loading.
