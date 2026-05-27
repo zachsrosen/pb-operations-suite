@@ -44,6 +44,20 @@ export interface EnrichedTicketItem extends PriorityItem {
   ownerId: string | null;
 }
 
+/**
+ * Closed ticket shape returned by `fetchClosedTicketsSince`.
+ * Used by shop-health for tickets-closed-this-week count and avg resolution time.
+ */
+export interface ClosedTicketItem {
+  id: string;
+  subject: string;
+  createDate: string;
+  closedDate: string; // hs_lastclosedate
+  stageName: string;
+  _derivedLocation: string | null;
+  resolutionHours: number; // (closedDate − createDate) in hours
+}
+
 export interface TimelineEntry {
   type: "note" | "email" | "call" | "meeting" | "task";
   timestamp: string;
@@ -104,6 +118,7 @@ const TICKET_PROPERTIES = [
   "hs_pipeline_stage",
   "hs_ticket_priority",
   "createdate",
+  "hs_lastclosedate",
   "hs_lastmodifieddate",
   "notes_last_contacted",
   "hubspot_owner_id",
@@ -342,6 +357,88 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
     console.error("[HubSpotTickets] Error fetching service tickets:", error);
     return [];
   }
+}
+
+/**
+ * Fetch tickets that were closed since the given ISO date.
+ * Used by shop-health for "tickets closed this week" + avg resolution time.
+ *
+ * Filters server-side on hs_lastclosedate >= sinceIso, AND on hs_pipeline_stage IN
+ * [closed stages] (identified via stageMap labels matching /closed|done|resolved|completed/i),
+ * to ensure we only count truly-closed tickets.
+ */
+export async function fetchClosedTicketsSince(sinceIso: string): Promise<ClosedTicketItem[]> {
+  const { map: stageMap } = await getTicketStageMap();
+
+  const closedStageIds = Object.entries(stageMap)
+    .filter(([, label]) => /closed|done|resolved|completed/i.test(label))
+    .map(([id]) => id);
+
+  if (closedStageIds.length === 0) return [];
+
+  const filters: Array<{ propertyName: string; operator: string; value?: string; values?: string[] }> = [
+    {
+      propertyName: "hs_lastclosedate",
+      operator: "GTE",
+      value: sinceIso,
+    },
+    {
+      propertyName: "hs_pipeline_stage",
+      operator: "IN",
+      values: closedStageIds,
+    },
+  ];
+
+  // Phase 1: collect ticket IDs via paginated search
+  const allTicketIds: string[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < 100; page++) {
+    const searchRequest = {
+      filterGroups: [{ filters }],
+      properties: ["hs_object_id"],
+      limit: 100,
+      ...(after ? { after } : {}),
+    };
+    const response = await searchTicketsWithRetry(
+      searchRequest as unknown as Parameters<typeof searchTicketsWithRetry>[0]
+    );
+    for (const t of response.results || []) {
+      allTicketIds.push(t.id);
+    }
+    after = response.paging?.next?.after;
+    if (!after) break;
+  }
+
+  if (allTicketIds.length === 0) return [];
+
+  // Phase 2: batch-read full properties
+  const out: ClosedTicketItem[] = [];
+  for (const batch of chunk(allTicketIds, BATCH_SIZE)) {
+    const batchResp = await hubspotClient.crm.tickets.batchApi.read({
+      inputs: batch.map((id) => ({ id })),
+      properties: TICKET_PROPERTIES,
+      propertiesWithHistory: [],
+    });
+    for (const t of batchResp.results || []) {
+      const props = t.properties as Record<string, string | null>;
+      const createDate = props.createdate || "";
+      const closedDate = props.hs_lastclosedate || "";
+      if (!createDate || !closedDate) continue;
+      const resolutionHours =
+        (new Date(closedDate).getTime() - new Date(createDate).getTime()) / 3_600_000;
+      out.push({
+        id: t.id,
+        subject: props.subject || "",
+        createDate,
+        closedDate,
+        stageName: stageMap[props.hs_pipeline_stage || ""] || "",
+        _derivedLocation: null, // location resolution is the consumer's responsibility
+        resolutionHours,
+      });
+    }
+  }
+
+  return out;
 }
 
 /**
