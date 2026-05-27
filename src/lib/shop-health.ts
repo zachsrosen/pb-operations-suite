@@ -298,10 +298,8 @@ export async function getShopHealthData(
   });
 
   // Location filtering for the new sections — reuses canonicalSet.
-  // Closed tickets currently have _derivedLocation = null (location resolution
-  // is the consumer's responsibility per fetchClosedTicketsSince). Until that
-  // is wired, per-location closed-ticket counts will be 0; "all" view is
-  // correct.
+  // Closed tickets carry _derivedLocation populated by fetchClosedTicketsSince
+  // (raw pb_location from HubSpot, may be an alias); normalize before filtering.
   const locationFilteredOpenTickets =
     locationSlug === "all"
       ? openTickets
@@ -312,10 +310,10 @@ export async function getShopHealthData(
   const locationFilteredClosedTickets =
     locationSlug === "all"
       ? closedTickets
-      : closedTickets.filter(
-          (t) =>
-            t._derivedLocation !== null && canonicalSet.has(t._derivedLocation)
-        );
+      : closedTickets.filter((t) => {
+          const normalized = normalizeLocation(t._derivedLocation);
+          return normalized !== null && canonicalSet.has(normalized);
+        });
   const locationFilteredService =
     locationSlug === "all"
       ? serviceDeals
