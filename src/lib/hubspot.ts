@@ -269,6 +269,7 @@ export interface Project {
   projectType: string;
   stage: string;
   stageId: string;
+  pipelineId: string;  // HubSpot pipeline ID this deal belongs to
   amount: number;
   url: string;
 
@@ -922,6 +923,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     projectType: String(deal.project_type || "Unknown"),
     stage: stageName,
     stageId,
+    pipelineId: String(deal.pipeline || ""),
     amount: Number(deal.amount) || 0,
     url: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${deal.hs_object_id}`,
 
