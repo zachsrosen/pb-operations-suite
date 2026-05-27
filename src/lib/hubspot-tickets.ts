@@ -378,6 +378,11 @@ export async function fetchClosedTicketsSince(sinceIso: string): Promise<ClosedT
 
   const filters: Array<{ propertyName: string; operator: string; value?: string; values?: string[] }> = [
     {
+      propertyName: "hs_pipeline",
+      operator: "EQ",
+      value: SERVICE_TICKET_PIPELINE_ID,
+    },
+    {
       propertyName: "hs_lastclosedate",
       operator: "GTE",
       value: sinceIso,

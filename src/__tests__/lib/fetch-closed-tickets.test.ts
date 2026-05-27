@@ -39,6 +39,12 @@ describe("fetchClosedTicketsSince", () => {
     expect(closeDateFilter).toBeDefined();
     expect(closeDateFilter.operator).toBe("GTE");
     expect(closeDateFilter.value).toBe("2026-05-19T00:00:00Z");
+    const pipelineFilter = callArg.filterGroups[0].filters.find(
+      (f: { propertyName: string }) => f.propertyName === "hs_pipeline"
+    );
+    expect(pipelineFilter).toBeDefined();
+    expect(pipelineFilter.operator).toBe("EQ");
+    expect(pipelineFilter.value).toBeTruthy();
     expect(pipelineSpy).toHaveBeenCalled();
   });
 
