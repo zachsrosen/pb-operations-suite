@@ -65,11 +65,13 @@ In `src/lib/hubspot.ts`, find the `Project` interface (around line 254). Locate 
 
 - [ ] **Step 2: Populate in transform**
 
-In `src/lib/hubspot.ts`, find `transformDealToProject` (around line 848). Locate where other simple string fields are set near line 1027 (look for `stageId: stageId,` or the spread that populates the returned object). Add:
+In `src/lib/hubspot.ts`, find `transformDealToProject` (around line 848). Use grep to find the **returned object literal** (not the computation block):
 
-```typescript
-  pipelineId: String(deal.pipeline || ""),
+```bash
+grep -n "stageId: stageId\|stageName: stageName" src/lib/hubspot.ts
 ```
+
+Insert `pipelineId: String(deal.pipeline || ""),` adjacent to the line that sets `stageId: stageId,` inside the returned object literal. **Do NOT** insert near line 1027 — that's a `daysSinceStageMovement` computation, not the return object.
 
 The `pipeline` raw property is already fetched (it's listed at `hubspot.ts:540` inside `DEAL_PROPERTIES`).
 
@@ -227,7 +229,7 @@ Find `export interface ShopHealthOverviewRow` (currently at line 197) and add at
   roofActive: HeroMetric;
 ```
 
-- [ ] **Step 7: Add `service` and `dnrRoofing` to `ShopHealthData`**
+- [ ] **Step 7: Add `service` and `dnrRoofing` to `ShopHealthData` and `SectionHealth`**
 
 Find `export interface ShopHealthData` and add:
 
@@ -235,6 +237,15 @@ Find `export interface ShopHealthData` and add:
   service: ServiceSection;
   dnrRoofing: DnrRoofingSection;
 ```
+
+Find `export interface SectionHealth` (around line 113) and add:
+
+```typescript
+  service: HealthStatus;
+  dnrRoofing: HealthStatus;
+```
+
+This unblocks the `<SectionCard health={data.sectionHealth.service}>` and `<SectionCard health={data.sectionHealth.dnrRoofing}>` wiring in Task 13.
 
 - [ ] **Step 8: Verify TypeScript compiles for the type file alone**
 
@@ -917,30 +928,52 @@ describe("computeServiceHealth", () => {
     expect(section.awaitingInspection).toBe(1);
   });
 
+  // Helper to build a valid EnrichedTicketItem (extends PriorityItem)
+  function makeTicket(over: { id: string; createDate: string; lastModified?: string }): EnrichedTicketItem {
+    return {
+      id: over.id,
+      type: "ticket",
+      title: `Ticket ${over.id}`,
+      stage: "Open",
+      createDate: over.createDate,
+      lastModified: over.lastModified ?? over.createDate,
+      lastContactDate: null,
+      location: "Westminster",
+    } as EnrichedTicketItem;
+  }
+
   it("counts open tickets and stuck >7d", () => {
-    const tenDaysAgo = new Date(weekStart.getTime() - 10 * 86_400_000).toISOString();
-    const oneDayAgo = new Date(weekStart.getTime() - 1 * 86_400_000).toISOString();
+    const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 1 * 86_400_000).toISOString();
     const tickets = [
-      { id: "T1", subject: "Old", _derivedLocation: "Westminster", createDate: tenDaysAgo, lastModified: tenDaysAgo },
-      { id: "T2", subject: "New", _derivedLocation: "Westminster", createDate: oneDayAgo, lastModified: oneDayAgo },
+      makeTicket({ id: "T1", createDate: tenDaysAgo }),
+      makeTicket({ id: "T2", createDate: oneDayAgo }),
     ];
-    const { section } = computeServiceHealth([], tickets as never, [], weekStart);
+    const { section } = computeServiceHealth([], tickets, [], weekStart);
     expect(section.openTickets).toBe(2);
     expect(section.stuckTicketsOver7d).toBe(1);
-    expect(section.avgTicketAgeDays).toBeGreaterThan(5);
+    expect(section.avgTicketAgeDays).toBeGreaterThan(4);
   });
 
   it("computes ticketsCreatedThisWeek, ticketsClosedThisWeek, netTicketChange, avgResolutionHours", () => {
     const inWeek = new Date(weekStart.getTime() + 86_400_000).toISOString();
     const beforeWeek = new Date(weekStart.getTime() - 10 * 86_400_000).toISOString();
     const openTickets = [
-      { id: "O1", subject: "x", _derivedLocation: "Westminster", createDate: inWeek, lastModified: inWeek },
-      { id: "O2", subject: "y", _derivedLocation: "Westminster", createDate: beforeWeek, lastModified: beforeWeek },
+      makeTicket({ id: "O1", createDate: inWeek }),
+      makeTicket({ id: "O2", createDate: beforeWeek }),
     ];
     const closedTickets = [
-      { id: "C1", subject: "z", _derivedLocation: "Westminster", createDate: beforeWeek, closedDate: inWeek, resolutionHours: 240 },
+      {
+        id: "C1",
+        subject: "z",
+        createDate: beforeWeek,
+        closedDate: inWeek,
+        stageName: "Closed",
+        _derivedLocation: "Westminster",
+        resolutionHours: 240,
+      },
     ];
-    const { section } = computeServiceHealth([], openTickets as never, closedTickets as never, weekStart);
+    const { section } = computeServiceHealth([], openTickets, closedTickets, weekStart);
     expect(section.ticketsCreatedThisWeek).toBe(1); // O1 was created in-week
     expect(section.ticketsClosedThisWeek).toBe(1);
     expect(section.netTicketChange).toBe(0);
@@ -1000,16 +1033,19 @@ function toDealDrilldown(d: Project): DrilldownDeal {
   };
 }
 
-function toTicketDrilldown(t: EnrichedTicketItem | (Omit<EnrichedTicketItem, "createDate"> & { createDate: string })): DrilldownTicket {
-  const createDate = (t as { createDate?: string | null }).createDate ?? null;
+// EnrichedTicketItem extends PriorityItem (src/lib/service-priority.ts):
+//   id, type, title, stage, createDate, lastModified, location, ...
+// Map title→subject and stage→status for the DrilldownTicket display contract.
+function toTicketDrilldown(t: EnrichedTicketItem): DrilldownTicket {
+  const createDate = t.createDate ?? null;
   const ageDays = createDate ? Math.floor((Date.now() - new Date(createDate).getTime()) / 86_400_000) : null;
   return {
     id: t.id,
-    subject: (t as { subject?: string }).subject ?? "",
-    status: (t as { status?: string }).status ?? "",
-    priority: (t as { priority?: string | null }).priority ?? null,
+    subject: t.title ?? "",
+    status: t.stage ?? "",
+    priority: null,  // PriorityItem doesn't carry HubSpot priority; tier comes from priority-score, not ticket
     createDate,
-    lastModified: (t as { lastModified?: string | null }).lastModified ?? null,
+    lastModified: t.lastModified ?? null,
     ageDays,
     dealName: null,
   };
@@ -1029,12 +1065,11 @@ export function computeServiceHealth(
   const wipDeals = activeDeals.filter((d) => d.stageId === STAGE_WORK_IN_PROGRESS);
   const inspectionDeals = activeDeals.filter((d) => d.stageId === STAGE_INSPECTION);
 
-  // Tickets
+  // Tickets — EnrichedTicketItem fields: id, title, stage, createDate, lastModified
   const openCount = openTickets.length;
-  const ticketsCreatedThisWeek = openTickets.filter((t) => {
-    const c = (t as { createDate?: string | null }).createDate;
-    return c ? new Date(c).getTime() >= weekStartMs : false;
-  });
+  const ticketsCreatedThisWeek = openTickets.filter(
+    (t) => t.createDate && new Date(t.createDate).getTime() >= weekStartMs
+  );
   const ticketsClosedThisWeek = closedTickets.filter(
     (t) => new Date(t.closedDate).getTime() >= weekStartMs
   );
@@ -1043,9 +1078,8 @@ export function computeServiceHealth(
   const ages: number[] = [];
   const stuckTickets: EnrichedTicketItem[] = [];
   for (const t of openTickets) {
-    const c = (t as { createDate?: string | null }).createDate;
-    if (!c) continue;
-    const ageDays = (Date.now() - new Date(c).getTime()) / 86_400_000;
+    if (!t.createDate) continue;
+    const ageDays = (Date.now() - new Date(t.createDate).getTime()) / 86_400_000;
     ages.push(ageDays);
     if (ageDays > 7) stuckTickets.push(t);
   }
@@ -1082,10 +1116,10 @@ export function computeServiceHealth(
     awaitingInspection: inspectionDeals.map(toDealDrilldown),
     openTickets: openTickets.map(toTicketDrilldown),
     ticketsCreated: ticketsCreatedThisWeek.map(toTicketDrilldown),
-    ticketsClosed: ticketsClosedThisWeek.map((t) => ({
+    ticketsClosed: ticketsClosedThisWeek.map((t): DrilldownTicket => ({
       id: t.id,
-      subject: t.subject,
-      status: "Closed",
+      subject: t.subject ?? "",
+      status: t.stageName || "Closed",
       priority: null,
       createDate: t.createDate,
       lastModified: t.closedDate,
@@ -1409,11 +1443,24 @@ Wire the new compute functions into the existing `shop-health.ts` orchestrator.
 
 - [ ] **Step 1: Update the data fetch**
 
-Find the main `getShopHealthData` function in `src/lib/shop-health.ts`. Locate the existing call to `fetchAllProjects()` (or the cache wrapper around it). Add a parallel new fetch:
+Find the main `getShopHealthData` function in `src/lib/shop-health.ts`. Locate the existing call to `fetchAllProjects()` (or the cache wrapper around it).
+
+**Important: `appCache.getOrFetch` signature** (verified at `cache.ts:87`):
+
+```typescript
+appCache.getOrFetch<T>(
+  key: string,
+  fetcher: () => Promise<T>,
+  forceRefresh = false,
+  opts?: { ttl?: number; staleTtl?: number }
+): Promise<{ data: T; cached: boolean; stale: boolean; lastUpdated: string }>
+```
+
+Returns a wrapper object — must destructure `.data`. Add the new fetch in parallel with the existing fetches:
 
 ```typescript
 const { PIPELINE_IDS } = await import("./deals-pipeline");
-const [allDeals, openTickets, closedTickets] = await Promise.all([
+const [allDealsResult, openTickets, closedTickets] = await Promise.all([
   appCache.getOrFetch(
     CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE,
     () =>
@@ -1421,11 +1468,13 @@ const [allDeals, openTickets, closedTickets] = await Promise.all([
         [PIPELINE_IDS.project, PIPELINE_IDS.service, PIPELINE_IDS.dnr, PIPELINE_IDS.roofing],
         true
       ),
-    10 * 60 * 1000
+    false,
+    { ttl: 10 * 60 * 1000 }
   ),
   fetchServiceTickets(),
   fetchClosedTicketsSince(weekStart.toISOString()),
 ]);
+const allDeals = allDealsResult.data;
 
 // Partition by pipelineId
 const projectDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.project);
@@ -1436,37 +1485,39 @@ const roofingDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.roofin
 
 Replace any `allProjects` variable downstream with `projectDeals` so the existing flow keeps working unchanged.
 
+**Alternative**: if the existing code uses `fetchAllProjects` via the appCache wrapper and the project flow expects a plain array, you can keep the existing fetch in place and ADD the new `fetchDealsByPipelines` fetch only for the new sections (avoid touching project flow). Up to the implementer based on what's easier to reason about.
+
 - [ ] **Step 2: Filter tickets by location**
 
-After fetching, filter both `openTickets` and `closedTickets` to the resolved location set:
+**Important: `resolveDashboardGroup().canonicals` is a `CanonicalLocation[]` array, NOT a Set.** The existing orchestrator at `shop-health.ts:246` wraps it: `const canonicalSet = new Set<string>(group.canonicals);`. Reuse the same `canonicalSet` variable that already exists in the function — do NOT redefine.
 
 ```typescript
-const locationCanonicals = resolveDashboardGroup(locationSlug)?.canonicals ?? new Set<string>();
+// canonicalSet already exists in scope from the existing project flow
 const locationFilteredOpenTickets =
   locationSlug === "all"
     ? openTickets
-    : openTickets.filter((t) => t._derivedLocation && locationCanonicals.has(t._derivedLocation));
+    : openTickets.filter((t) => t._derivedLocation && canonicalSet.has(t._derivedLocation));
 const locationFilteredClosedTickets =
   locationSlug === "all"
     ? closedTickets
-    : closedTickets.filter((t) => t._derivedLocation && locationCanonicals.has(t._derivedLocation));
+    : closedTickets.filter((t) => t._derivedLocation && canonicalSet.has(t._derivedLocation));
 ```
 
-- [ ] **Step 3: Filter D&R/Roofing deals by location**
+- [ ] **Step 3: Filter D&R/Roofing/Service deals by location**
 
 ```typescript
 const locationFilteredDnr =
   locationSlug === "all"
     ? dnrDeals
-    : dnrDeals.filter((d) => locationCanonicals.has(d.pbLocation));
+    : dnrDeals.filter((d) => canonicalSet.has(d.pbLocation));
 const locationFilteredRoofing =
   locationSlug === "all"
     ? roofingDeals
-    : roofingDeals.filter((d) => locationCanonicals.has(d.pbLocation));
+    : roofingDeals.filter((d) => canonicalSet.has(d.pbLocation));
 const locationFilteredService =
   locationSlug === "all"
     ? serviceDeals
-    : serviceDeals.filter((d) => locationCanonicals.has(d.pbLocation));
+    : serviceDeals.filter((d) => canonicalSet.has(d.pbLocation));
 ```
 
 - [ ] **Step 4: Call new compute functions**
@@ -1799,23 +1850,37 @@ git commit -m "feat(shop-health): DnrRoofingSection component (4 rows, ~15 metri
 
 - [ ] **Step 1: Add new sections to page.tsx**
 
-In `src/app/dashboards/shop-health/page.tsx`, after the existing Customer Success section, add:
+**`SectionCard` actual props** (verified at `src/app/dashboards/shop-health/SectionCard.tsx:26`): `title, health, children, defaultOpen=true, icon`. There is NO `accent` prop. Match the existing pattern:
 
 ```tsx
-<SectionCard title="Service" accent="cyan" defaultOpen={false}>
+<SectionCard title="Service" icon="🛠️" health={data.sectionHealth.service}>
   <ServiceSectionContent data={data.service} drilldown={data.drilldown} />
 </SectionCard>
 
-<SectionCard title="D&R + Roofing" accent="amber" defaultOpen={false}>
+<SectionCard title="D&R + Roofing" icon="🏠" health={data.sectionHealth.dnrRoofing}>
   <DnrRoofingSectionContent data={data.dnrRoofing} drilldown={data.drilldown} />
 </SectionCard>
 ```
+
+Insert these after the Customer Success `<SectionCard>` block (page.tsx:176) and before the Bottlenecks `<SectionCard>` (page.tsx:181).
 
 Add imports at top:
 
 ```tsx
 import { ServiceSectionContent } from './ServiceSection';
 import { DnrRoofingSectionContent } from './DnrRoofingSection';
+```
+
+The `data.sectionHealth.service` and `data.sectionHealth.dnrRoofing` fields require populating in the orchestrator. In Task 9 Step 5 (merge into return payload), also add:
+
+```typescript
+sectionHealth: {
+  ...existingSectionHealth,
+  service: serviceResult.section.openTickets > 10 ? "red" : serviceResult.section.openTickets > 3 ? "yellow" : "green",
+  dnrRoofing: (dnrRoofingResult.section.dnrResetBlocked > 0 || dnrRoofingResult.section.stuckDnrJobs > 5)
+    ? "yellow"
+    : "green",
+},
 ```
 
 - [ ] **Step 2: Update HeroMetrics.tsx**
@@ -1885,26 +1950,49 @@ git commit -m "feat(shop-health): wire ServiceSection + DnrRoofingSection into p
 
 ## Chunk 7: SSE Cache Invalidation + Verification
 
-### Task 14: Hook ticket invalidation into SSE cascade
+### Task 14: Hook D&R/Roofing/ticket invalidation into shop-health cache cascade
 
 **Files:**
-- Modify: `src/lib/cache.ts` or wherever cache invalidation cascade lives (likely `src/hooks/useSSE.ts` or `src/lib/query-keys.ts`)
+- Modify: `src/lib/cache.ts` (cascade subscriptions at the bottom of the file, around line 327-339)
 
-- [ ] **Step 1: Find the cascade map**
+**Pattern**: `cache.ts` uses `appCache.subscribe((key) => { ... appCache.invalidateByPrefix(...) })` blocks at the end of the file. Existing examples are at lines 327-339 (revenue-goals cascade, funnel cascade). The shop-health response is cached server-side via the route handler — verify by greping for `appCache.getOrFetch.*shop-health` first.
 
-Run: `grep -rn "service-tickets\|SERVICE_TICKETS\|deals:service" src/lib/ src/hooks/ | head -10`
+- [ ] **Step 1: Verify shop-health cache key prefix**
 
-Identify where the existing SSE event-name → cache-key invalidation map is defined.
+Run: `grep -n "shop-health" src/lib/cache.ts src/lib/shop-health.ts src/app/api/shop-health/ -r | head -10`
 
-- [ ] **Step 2: Add cascade entries**
+Identify the cache key prefix used to wrap the `ShopHealthData` payload (e.g. `shop-health:` or wherever the SWR/appCache wrapping happens).
 
-Ensure that whenever the SSE bus emits `tickets:*`, the `shop-health:*` cache keys also get invalidated. Likely a one-line addition to a key-pattern map.
+- [ ] **Step 2: Add cascade subscription**
 
-- [ ] **Step 3: Commit**
+Append to `src/lib/cache.ts` after the existing cascades (after line 339):
+
+```typescript
+// Shop Health cache cascade: invalidate when deals or tickets change
+appCache.subscribe((key) => {
+  if (
+    key.startsWith("deals:") ||
+    key.startsWith("projects:") ||
+    key.startsWith("service-tickets") ||
+    key === CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE
+  ) {
+    appCache.invalidateByPrefix("shop-health:");
+  }
+});
+```
+
+If the shop-health cache key uses a different prefix (e.g. just `shop-health`), adjust accordingly.
+
+- [ ] **Step 3: Verify TypeScript compiles**
+
+Run: `npx tsc --noEmit 2>&1 | grep "cache.ts"`
+Expected: no errors.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/lib/cache.ts src/hooks/useSSE.ts
-git commit -m "feat(shop-health): invalidate shop-health cache on ticket SSE events"
+git add src/lib/cache.ts
+git commit -m "feat(shop-health): cascade-invalidate shop-health cache on deal/ticket changes"
 ```
 
 ### Task 15: Full local verification
