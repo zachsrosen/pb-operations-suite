@@ -270,6 +270,7 @@ export const appCache = new CacheStore();
 export const CACHE_KEYS = {
   PROJECTS_ALL: "projects:all",
   PROJECTS_ACTIVE: "projects:active",
+  DEALS_ALL_PIPELINES_ACTIVE: "deals:all-pipelines:active",
   DEALS: (pipeline: string) => `deals:${pipeline}`,
   STATS: "stats",
   PIPELINES: "pipelines",
