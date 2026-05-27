@@ -6,6 +6,13 @@
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import { getStatusDisplayName, trimDealName } from "@/lib/daily-focus/format";
 import {
+  PI_LEADS,
+  DESIGN_LEADS,
+  PI_QUERY_DEFS,
+  DESIGN_QUERY_DEFS,
+  type PIRole,
+} from "@/lib/daily-focus/config";
+import {
   PIPELINE_SUFFIXES,
   STATUS_TO_ROLE_PROPERTY,
   FIELD_TO_HS_PROPERTY,
@@ -34,6 +41,10 @@ export interface EodEmailData {
   morningDealOwnerMap: Map<string, Set<string>>;
   /** Evening deal IDs (for computing which morning deals are still in scope) */
   eveningDealIds: Set<string>;
+  /** Full morning snapshot deals (for action-item resolution tracking) */
+  morningDeals: Map<string, SnapshotDeal>;
+  /** Full evening deals (for action-item resolution tracking) */
+  eveningDeals: Map<string, SnapshotDeal>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -94,6 +105,94 @@ function resolveOwnerId(
   return dealPropertyOwners.get(change.dealId)?.get(roleProperty) ?? "unknown";
 }
 
+// ── Morning action-item resolution ───────────────────────────────────
+
+/** Reverse map: HubSpot property → SnapshotDeal field name */
+const HS_TO_SNAPSHOT_FIELD: Record<string, keyof SnapshotDeal> = {
+  design_status: "designStatus",
+  layout_status: "layoutStatus",
+  permitting_status: "permittingStatus",
+  interconnection_status: "interconnectionStatus",
+  pto_status: "ptoStatus",
+};
+
+/**
+ * Build a lookup of action-ready statuses per HubSpot property for an owner.
+ * Uses the same PI/Design query defs that drive the morning focus email,
+ * so "action items" here = exactly what the person saw in their email.
+ */
+function getActionReadyLookup(ownerId: string): Map<string, Set<string>> {
+  const lookup = new Map<string, Set<string>>();
+
+  const piLead = PI_LEADS.find((l) => l.hubspotOwnerId === ownerId);
+  if (piLead) {
+    for (const def of PI_QUERY_DEFS) {
+      if (!piLead.roles.includes(def.roleProperty as PIRole)) continue;
+      if (def.onlyForOwnerIds?.length && !def.onlyForOwnerIds.includes(ownerId))
+        continue;
+      const all = [...def.readyStatuses, ...(def.resubmitStatuses ?? [])];
+      if (!lookup.has(def.statusProperty))
+        lookup.set(def.statusProperty, new Set());
+      for (const s of all) lookup.get(def.statusProperty)!.add(s);
+    }
+  }
+
+  const designLead = DESIGN_LEADS.find((l) => l.hubspotOwnerId === ownerId);
+  if (designLead) {
+    for (const def of DESIGN_QUERY_DEFS) {
+      const all = [...def.readyStatuses, ...(def.resubmitStatuses ?? [])];
+      if (!lookup.has(def.statusProperty))
+        lookup.set(def.statusProperty, new Set());
+      for (const s of all) lookup.get(def.statusProperty)!.add(s);
+    }
+  }
+
+  return lookup;
+}
+
+/**
+ * For a given owner, count how many of their morning deals were action items
+ * (status in an action-ready state per query defs) and how many of those
+ * had the status change by evening — meaning the person acted on them.
+ */
+function computeActionItemStats(
+  ownerId: string,
+  morningDealOwnerMap: Map<string, Set<string>>,
+  morningDeals: Map<string, SnapshotDeal>,
+  eveningDeals: Map<string, SnapshotDeal>,
+): { actionItems: number; actioned: number } {
+  const lookup = getActionReadyLookup(ownerId);
+  if (lookup.size === 0) return { actionItems: 0, actioned: 0 };
+
+  let actionItems = 0;
+  let actioned = 0;
+
+  for (const [dealId, owners] of morningDealOwnerMap) {
+    if (!owners.has(ownerId)) continue;
+    const morningDeal = morningDeals.get(dealId);
+    if (!morningDeal) continue;
+
+    for (const [hsProperty, readyStatuses] of lookup) {
+      const field = HS_TO_SNAPSHOT_FIELD[hsProperty];
+      if (!field) continue;
+      const morningValue = morningDeal[field] as string | null;
+      if (!morningValue || !readyStatuses.has(morningValue)) continue;
+
+      // This deal+status was an action item in the morning
+      actionItems++;
+
+      // Check if the status changed by evening (deal resolved or status moved)
+      const eveningDeal = eveningDeals.get(dealId);
+      const eveningValue = eveningDeal
+        ? (eveningDeal[field] as string | null)
+        : null;
+      if (eveningValue !== morningValue) actioned++;
+    }
+  }
+
+  return { actionItems, actioned };
+}
+
 // ── Per-person data aggregation ───────────────────────────────────────
 
 interface PersonData {
@@ -101,37 +200,40 @@ interface PersonData {
   milestones: MilestoneHit[];
   changes: StatusChange[];
   tasks: CompletedTask[];
-  /** How many morning focus deals this person had */
-  morningDealCount: number;
-  /** How many of those are still in scope at EOD */
-  morningStillInScope: number;
+  /** How many morning focus action items this person had */
+  morningActionItems: number;
+  /** How many of those action items had their status change by evening */
+  morningActioned: number;
 }
 
 function aggregateByPerson(data: EodEmailData): PersonData[] {
   const people = new Map<string, PersonData>();
   const trackedOwnerIds = new Set(data.ownerNameMap.keys());
 
-  // Precompute per-owner morning resolution stats
-  const ownerMorningCounts = new Map<string, { total: number; stillInScope: number }>();
-  for (const [dealId, owners] of data.morningDealOwnerMap) {
-    for (const ownerId of owners) {
-      if (!ownerMorningCounts.has(ownerId)) ownerMorningCounts.set(ownerId, { total: 0, stillInScope: 0 });
-      const stats = ownerMorningCounts.get(ownerId)!;
-      stats.total++;
-      if (data.eveningDealIds.has(dealId)) stats.stillInScope++;
-    }
+  // Precompute per-owner action-item resolution stats.
+  // "Action items" = morning deals whose status was in an action-ready state
+  // (same statuses the morning focus email shows). "Actioned" = status changed.
+  const ownerActionStats = new Map<string, { actionItems: number; actioned: number }>();
+  for (const ownerId of trackedOwnerIds) {
+    const stats = computeActionItemStats(
+      ownerId,
+      data.morningDealOwnerMap,
+      data.morningDeals,
+      data.eveningDeals,
+    );
+    if (stats.actionItems > 0) ownerActionStats.set(ownerId, stats);
   }
 
   function getOrCreate(ownerId: string): PersonData {
     if (!people.has(ownerId)) {
-      const morningStats = ownerMorningCounts.get(ownerId);
+      const stats = ownerActionStats.get(ownerId);
       people.set(ownerId, {
         name: data.ownerNameMap.get(ownerId) ?? ownerId,
         milestones: [],
         changes: [],
         tasks: [],
-        morningDealCount: morningStats?.total ?? 0,
-        morningStillInScope: morningStats?.stillInScope ?? 0,
+        morningActionItems: stats?.actionItems ?? 0,
+        morningActioned: stats?.actioned ?? 0,
       });
     }
     return people.get(ownerId)!;
@@ -207,10 +309,9 @@ function buildPersonHtml(person: PersonData, stageMap: Record<string, string>): 
   if (person.tasks.length > 0)
     badges.push(`<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;background:#1c1917;color:#a1a1aa;margin-right:4px;">${person.tasks.length} \u2713</span>`);
 
-  // Morning resolution line
-  const resolved = person.morningDealCount - person.morningStillInScope;
-  const resolutionLine = person.morningDealCount > 0
-    ? `<div style="font-size:10px;color:#52525b;margin-top:3px;">${resolved} of ${person.morningDealCount} morning items resolved</div>`
+  // Morning action-item resolution line
+  const resolutionLine = person.morningActionItems > 0
+    ? `<div style="font-size:10px;color:#52525b;margin-top:3px;">${person.morningActioned} of ${person.morningActionItems} morning items resolved</div>`
     : "";
 
   // Person header
