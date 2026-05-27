@@ -786,18 +786,6 @@ export default function PeDealsPage() {
   // deals shown in other table sections.
   const totalPeExpected = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
 
-  // Split the deal count into pre-construction (no work started) vs
-  // construction+ (Construction, Inspection, PTO, Close Out, Complete, Paid).
-  // On Hold and Cancelled deals are excluded — they're not active pipeline.
-  const EXCLUDED_BUCKET_STAGES = new Set([
-    "On Hold", "On-Hold", "Cancelled", "Project Cancelled",
-  ]);
-  const bucketableDeals = filtered.filter((d) => !EXCLUDED_BUCKET_STAGES.has(d.dealStageLabel));
-  const preconFiltered = bucketableDeals.filter((d) => PRECON_STAGES.has(d.dealStageLabel));
-  const constructionPlusFiltered = bucketableDeals.filter((d) => !PRECON_STAGES.has(d.dealStageLabel));
-  const preconPeExpected = preconFiltered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
-  const constructionPlusPeExpected = constructionPlusFiltered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
-
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
   const m1ReadyDeals = filtered.filter((d) => d.peM1Status === "Approved");
   const m2ReadyDeals = filtered.filter((d) => d.peM2Status === "Approved");
@@ -843,6 +831,11 @@ export default function PeDealsPage() {
   let awaitingM2Value = 0;
   let awaitingM1Count = 0;
   let awaitingM2Count = 0;
+  // Awaiting PTO = PC portion of PTO-stage deals where M2 isn't yet eligible
+  // (deal still needs to advance from PTO → Close Out before M2 PC can be
+  // submitted for PE approval).
+  let awaitingPtoValue = 0;
+  let awaitingPtoCount = 0;
   for (const d of filtered) {
     const atPto = isPto(d);
     const atCloseOut = isCloseOutOrComplete(d);
@@ -856,6 +849,11 @@ export default function PeDealsPage() {
     if (atCloseOut && !APPROVED_OR_PAID.has(d.peM2Status ?? "")) {
       awaitingM2Value += d.pePaymentPC ?? 0;
       awaitingM2Count++;
+    }
+    // M2 PC of PTO deals — not yet eligible, waiting for Close Out
+    if (atPto && !APPROVED_OR_PAID.has(d.peM2Status ?? "")) {
+      awaitingPtoValue += d.pePaymentPC ?? 0;
+      awaitingPtoCount++;
     }
   }
   const totalAwaitingValue = awaitingM1Value + awaitingM2Value;
@@ -903,19 +901,12 @@ export default function PeDealsPage() {
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats — PE payment pipeline */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <StatCard
-          key={`precon-${preconFiltered.length}`}
-          label="Pre-Construction"
-          value={String(preconFiltered.length)}
-          subtitle={`${fmt(preconPeExpected)} PE expected`}
-          color="orange"
-        />
-        <StatCard
-          key={`construction-plus-${constructionPlusFiltered.length}`}
-          label="Construction+"
-          value={String(constructionPlusFiltered.length)}
-          subtitle={`${fmt(constructionPlusPeExpected)} PE expected · ${bucketableDeals.length} active pipeline`}
+          key={`deals-${filtered.length}`}
+          label="PE Deals"
+          value={String(filtered.length)}
+          subtitle={`${fmt(totalPeExpected)} total PE expected`}
           color="orange"
         />
         <StatCard
@@ -950,18 +941,35 @@ export default function PeDealsPage() {
 
       {/* Reconciliation bar — shows how Total PE Expected breaks down */}
       {!isLoading && totalPeExpected > 0 && (() => {
-        const preMilestone = totalPeExpected - totalAwaitingValue - readyToInvoiceValue - totalPECollected;
-        // Split pre-milestone into the same buckets the table sections use,
-        // so the bar visually matches "Pending Inspection / In Construction /
-        // Preconstruction" subtotals below.
+        // Pipeline buckets (sum to totalPeExpected):
+        //   Collected         — paid milestones
+        //   Approved          — approved but not paid milestones
+        //   Awaiting Approval — milestones past due stage waiting on PE
+        //                       (M1 IC of PTO+ + M2 PC of Close Out+)
+        //   Awaiting PTO      — M2 PC of PTO-stage deals not yet eligible
+        //                       (waiting for deal to advance to Close Out)
+        //   Pending Inspection / In Construction / Preconstruction — stage breakdown
+        //                       of pre-PTO deal value (matches table sections)
+        //   Other             — residual (On Hold + Cancelled + edge cases)
         const inspectionPe = inspectionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
         const constructionPe = constructionDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
         const preconPe = preconDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
-        const otherPe = Math.max(0, preMilestone - inspectionPe - constructionPe - preconPe);
+        const otherPe = Math.max(
+          0,
+          totalPeExpected
+            - totalPECollected
+            - readyToInvoiceValue
+            - totalAwaitingValue
+            - awaitingPtoValue
+            - inspectionPe
+            - constructionPe
+            - preconPe,
+        );
         const pcts = {
           collected: (totalPECollected / totalPeExpected) * 100,
           approved: (readyToInvoiceValue / totalPeExpected) * 100,
           awaiting: (totalAwaitingValue / totalPeExpected) * 100,
+          awaitingPto: (awaitingPtoValue / totalPeExpected) * 100,
           inspection: (inspectionPe / totalPeExpected) * 100,
           construction: (constructionPe / totalPeExpected) * 100,
           precon: (preconPe / totalPeExpected) * 100,
@@ -985,6 +993,10 @@ export default function PeDealsPage() {
               {pcts.awaiting > 0 && (
                 <div className="bg-amber-500 transition-all" style={{ width: `${pcts.awaiting}%` }}
                   title={`Awaiting Approval: ${fmt(totalAwaitingValue)}`} />
+              )}
+              {pcts.awaitingPto > 0 && (
+                <div className="bg-orange-600 transition-all" style={{ width: `${pcts.awaitingPto}%` }}
+                  title={`Awaiting PTO (M2 PC of PTO-stage deals): ${fmt(awaitingPtoValue)}`} />
               )}
               {pcts.inspection > 0 && (
                 <div className="bg-cyan-500 transition-all" style={{ width: `${pcts.inspection}%` }}
@@ -1018,6 +1030,11 @@ export default function PeDealsPage() {
                 <span className="w-2 h-2 rounded-full bg-amber-500" />
                 <span className="text-muted">Awaiting Approval</span>
                 <span className="text-foreground font-medium">{fmt(totalAwaitingValue)}</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-orange-600" />
+                <span className="text-muted">Awaiting PTO</span>
+                <span className="text-foreground font-medium">{fmt(awaitingPtoValue)}</span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-cyan-500" />
