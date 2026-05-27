@@ -9,7 +9,7 @@
 import type { Deal as PrismaDeal } from "@/generated/prisma/client";
 import type { Project, Equipment } from "@/lib/hubspot";
 import { ACTIVE_STAGES, computeDaysInStage, STAGE_PRIORITY, SCHEDULABLE_STAGES } from "@/lib/hubspot";
-import { ACTIVE_STAGES as PIPELINE_ACTIVE_STAGES } from "@/lib/deals-pipeline";
+import { ACTIVE_STAGES as PIPELINE_ACTIVE_STAGES, PIPELINE_IDS } from "@/lib/deals-pipeline";
 import type { TransformedProject, Deal as DealType } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +23,15 @@ const PIPELINE_KEY: Record<string, string> = {
   DNR: "dnr",
   SERVICE: "service",
   ROOFING: "roofing",
+};
+
+/** Maps DealPipeline enum → HubSpot numeric pipeline ID (source-of-truth: PIPELINE_IDS) */
+const DEAL_PIPELINE_ENUM_TO_HUBSPOT_ID: Record<string, string> = {
+  SALES: PIPELINE_IDS.sales,
+  PROJECT: PIPELINE_IDS.project,
+  DNR: PIPELINE_IDS.dnr,
+  SERVICE: PIPELINE_IDS.service,
+  ROOFING: PIPELINE_IDS.roofing,
 };
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -206,6 +215,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     projectType: deal.projectType ?? "Unknown",
     stage,
     stageId: deal.stageId,
+    pipelineId: DEAL_PIPELINE_ENUM_TO_HUBSPOT_ID[deal.pipeline] ?? "",
     amount: decimalToNumber(deal.amount),
     url: deal.hubspotUrl ?? "",
 
@@ -403,7 +413,6 @@ export function dealToProject(deal: PrismaDeal): Project {
     // Customer response metrics (deal-level rollups — not available from DB cache)
     noSameDayResponse: 0,
     averageCustomerResponseTime: null,
-    pipelineId: "",
   };
 }
 
