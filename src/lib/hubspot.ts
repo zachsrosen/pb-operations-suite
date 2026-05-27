@@ -1484,9 +1484,11 @@ export async function fetchDealsByPipelines(
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
   // Lazy import to avoid circular dep (deals-pipeline.ts imports hubspotClient from this file)
-  const { STAGE_MAPS, ACTIVE_STAGES, PIPELINE_IDS } = await import("./deals-pipeline");
+  const { getStageMaps, getActiveStages, PIPELINE_IDS } = await import("./deals-pipeline");
+  const stageMaps = await getStageMaps();
+  const activeStages = await getActiveStages();
 
-  // Build terminal stage ID list from STAGE_MAPS when activeOnly
+  // Build terminal stage ID list from stageMaps when activeOnly
   const terminalStageIds: string[] = [];
   if (activeOnly) {
     const idToSlug: Record<string, string> = {};
@@ -1497,8 +1499,8 @@ export async function fetchDealsByPipelines(
     for (const pipelineId of pipelineIds) {
       const slug = idToSlug[pipelineId];
       if (!slug) continue;
-      const stageMap = STAGE_MAPS[slug] || {};
-      const activeStageNames = new Set(ACTIVE_STAGES[slug] || []);
+      const stageMap = stageMaps[slug] || {};
+      const activeStageNames = new Set(activeStages[slug] || []);
       // Stage IDs whose label is NOT in the active list are terminal
       for (const [stageId, stageName] of Object.entries(stageMap)) {
         if (!activeStageNames.has(stageName)) {
