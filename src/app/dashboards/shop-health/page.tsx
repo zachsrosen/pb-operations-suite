@@ -16,6 +16,8 @@ import { SchedulingSectionContent } from './SchedulingSection';
 import { OperationsSectionContent } from './OperationsSection';
 import { InspectionsSectionContent } from './InspectionsSection';
 import { CustomerSuccessSectionContent } from './CustomerSuccessSection';
+import { ServiceSectionContent } from './ServiceSection';
+import { DnrRoofingSectionContent } from './DnrRoofingSection';
 import { BottleneckSectionContent } from './BottleneckSection';
 import { AllLocationsView } from './AllLocationsView';
 
@@ -175,6 +177,16 @@ export default function ShopHealthDashboard() {
           {/* Customer Success */}
           <SectionCard title="Customer Success" icon="🤝" health={data.sectionHealth.customerSuccess}>
             <CustomerSuccessSectionContent data={data.customerSuccess} drilldown={data.drilldown} />
+          </SectionCard>
+
+          {/* Service */}
+          <SectionCard title="Service" icon="🛠️" health={data.sectionHealth.service}>
+            <ServiceSectionContent data={data.service} drilldown={data.drilldown} />
+          </SectionCard>
+
+          {/* D&R + Roofing */}
+          <SectionCard title="D&R + Roofing" icon="🏠" health={data.sectionHealth.dnrRoofing}>
+            <DnrRoofingSectionContent data={data.dnrRoofing} drilldown={data.drilldown} />
           </SectionCard>
 
           {/* Bottlenecks */}

@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireApiAuth } from '@/lib/api-auth';
 import { getShopHealthData, getWeekStart, formatWeekParam } from '@/lib/shop-health';
 import { DASHBOARD_LOCATION_GROUPS } from '@/lib/dashboard-location-groups';
-import type { ShopHealthOverviewData, ShopHealthOverviewRow } from '@/lib/shop-health-types';
+import type { HeroMetric, ShopHealthOverviewData, ShopHealthOverviewRow } from '@/lib/shop-health-types';
+
+function toHeroMetric(value: number): HeroMetric {
+  return { value, priorWeek: null, delta: null, health: 'green', target: null };
+}
 
 export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth();
@@ -23,6 +27,9 @@ export async function GET(request: NextRequest) {
           scheduledInstalls: data.heroes.scheduledInstalls,
           installsCompleted: data.heroes.installsCompleted,
           ptosReceived: data.heroes.ptosReceived,
+          openTickets: data.heroes.openTickets,
+          dnrActive: toHeroMetric(data.dnrRoofing.dnrActive),
+          roofingActive: toHeroMetric(data.dnrRoofing.roofingActive),
           topBottleneck: data.bottlenecks[0]?.constraint ?? null,
         };
       })
