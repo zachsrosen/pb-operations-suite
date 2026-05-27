@@ -14,6 +14,11 @@ A Google Chat bot that acts as Zach's OOO proxy. The bot receives messages from 
 
 ## Architecture
 
+**Async response pattern**: Google Chat enforces a 30-second response deadline on webhooks. Claude + tool calls (HubSpot, Zuper, Calendar APIs with retry) can easily exceed that. The bot uses a two-phase response:
+
+1. **Phase 1 (synchronous, <2s)**: Webhook validates JWT, deduplicates by message ID, returns an immediate acknowledgment ("Let me check on that...") or handles simple events (welcome, removal) directly.
+2. **Phase 2 (async, via `waitUntil`)**: Claude processing + tool calls run in the background. When complete, the bot posts the real answer via `spaces.messages.create` using the service account + Chat API.
+
 ```
 Google Chat (DM or Space)
   │
@@ -27,11 +32,17 @@ Google Chat Platform
   ▼
 /api/webhooks/google-chat/route.ts
   │
-  ├─ Verify Google JWT signature (JWKS)
-  ├─ Parse event type (MESSAGE, ADDED_TO_SPACE, REMOVED_FROM_SPACE)
-  ├─ Extract sender email, display name, space ID, thread ID
+  ├─ Verify Google JWT via `jose` JWKS (cached 1hr)
+  ├─ Deduplicate by message ID (IdempotencyKey table)
+  ├─ Parse event type
   │
-  ▼
+  ├─ ADDED_TO_SPACE → return welcome message (sync)
+  ├─ REMOVED_FROM_SPACE → no-op (200 OK)
+  ├─ MESSAGE →
+  │   ├─ Return immediate { text: "🤔 Let me check on that..." } (sync)
+  │   └─ Fire async via waitUntil():
+  │
+  ▼ (async, background)
 lib/ooo-bot.ts
   │
   ├─ Load conversation history from DB (last 20 msgs per space+thread)
@@ -40,13 +51,17 @@ lib/ooo-bot.ts
   │   ├─ Zach's playbook (from OooBotConfig DB row)
   │   └─ Live context (date, sender info)
   ├─ Call Claude via getAnthropicClient() + toolRunner
-  │   └─ Tools: reused chat-tools + new OOO-specific tools
+  │   └─ Tools: read-only subset of chat-tools + new OOO-specific tools
   ├─ Save conversation turn to OooBotConversation
   ├─ If escalated → write OooBotEscalation row
   │
   ▼
-Return JSON response body → Google Chat renders in-thread
+Post response via Google Chat API: spaces.messages.create
+  └─ Uses service account token (same JWT-signing pattern as google-calendar.ts)
+     with https://www.googleapis.com/auth/chat.bot scope
 ```
+
+For simple greetings and the welcome message, the bot responds synchronously (return JSON body). For anything requiring Claude/tools, it responds asynchronously to avoid the 30s wall.
 
 ## Decisions
 
@@ -54,7 +69,9 @@ Return JSON response body → Google Chat renders in-thread
 |----------|--------|-----------|
 | Architecture | Google Chat App via service account | Only option that supports both DMs and Spaces conversationally |
 | Webhook auth | Google JWT verification (JWKS) | Standard for Chat Apps; no shared-secret option available |
-| Claude model | Sonnet (claude-sonnet-4-5) | Needs tool use + nuanced judgment; Haiku too thin for advisory role |
+| Response pattern | Async via `waitUntil` + `spaces.messages.create` | Google Chat 30s webhook deadline; Claude + tools can take 10-20s |
+| Claude model | `CLAUDE_MODELS.sonnet` | Needs tool use + nuanced judgment; Haiku too thin for advisory role |
+| JWT library | `jose` (npm) | Lightweight, edge-compatible, JWKS auto-rotation support |
 | Conversation persistence | DB-backed, 20-message window per thread | Multi-turn context without blowing up token budget |
 | Playbook storage | DB config row (not hardcoded) | Editable without redeploying; can update Wednesday before OOO |
 | Write actions | None (advisor only) | 3-day build window; safety; can add later |
@@ -67,25 +84,41 @@ Return JSON response body → Google Chat renders in-thread
 **Runtime**: nodejs, maxDuration: 30
 **Auth**: Google JWT signature verification
 
-### JWT Verification
+### JWT Verification (via `jose`)
 
 ```typescript
-// Verify JWT from Authorization: Bearer <token> header
-// Issuer: chat@system.gserviceaccount.com
-// Audience: GOOGLE_CHAT_PROJECT_NUMBER env var
-// Keys: https://www.googleapis.com/service_accounts/v1/jwk/chat@system.gserviceaccount.com
+// Uses jose library: createRemoteJWKSet + jwtVerify
+// JWKS URL: https://www.googleapis.com/service_accounts/v1/jwk/chat@system.gserviceaccount.com
+// Expected claims:
+//   iss: chat@system.gserviceaccount.com
+//   aud: GOOGLE_CHAT_PROJECT_NUMBER env var
+// jose caches JWKS keys automatically with configurable TTL (use 1hr)
 ```
 
-Cache JWKS keys in-memory with 1-hour TTL (same pattern as other key-rotation schemes in the codebase).
+### Idempotency
+
+Google Chat may retry webhook deliveries on timeout. Deduplicate using the existing `IdempotencyKey` Prisma model, keyed on the `message.name` field from the Google Chat event payload (globally unique message ID). If a duplicate is detected, return 200 with no action.
+
+### Sender Filtering
+
+Defense-in-depth beyond GCP console visibility settings: reject messages from senders whose email doesn't end with `@photonbrothers.com`. Return a polite "I only respond to Photon Brothers team members" message.
 
 ### Event Types
 
-| Event | Action |
-|-------|--------|
-| `MESSAGE` | Process through Claude, return response |
-| `ADDED_TO_SPACE` | Return welcome message |
-| `REMOVED_FROM_SPACE` | No-op (200 OK) |
-| Other | No-op (200 OK) |
+| Event | Response | Sync/Async |
+|-------|----------|------------|
+| `MESSAGE` | Immediate "thinking..." + async Claude response | Sync ack → async answer |
+| `ADDED_TO_SPACE` | Welcome message | Sync |
+| `REMOVED_FROM_SPACE` | No-op (200 OK) | Sync |
+| Other | No-op (200 OK) | Sync |
+
+### Error Handling
+
+If Claude fails (API error, timeout, rate limit), the async handler catches the error and posts a fallback message via the Chat API:
+
+> "I ran into a technical issue processing that. Try again in a minute — if it keeps happening, ping Caleb or Patrick on IT."
+
+The webhook handler itself always returns 200 to prevent Google from retrying (which would cause duplicate processing).
 
 ### Middleware
 
@@ -166,7 +199,7 @@ Space: {spaceName or "Direct Message"}
 
 ## Tools
 
-### Tier 1: Reused from chat-tools.ts
+### Tier 1: Read-only tools from chat-tools.ts
 
 | Tool | Description |
 |------|-------------|
@@ -175,17 +208,18 @@ Space: {spaceName or "Direct Message"}
 | `filter_deals_by_stage(stage)` | Find deals in a specific stage |
 | `count_deals_by_stage()` | Pipeline stage counts |
 
-These are imported from `createChatTools()` — same implementations, no duplication.
+**Important**: Do NOT reuse `createChatTools()` wholesale. It includes `run_review` and `get_review_status` which acquire locks and start async processes — not read-only. Instead, extract the four read-only tool definitions above into a shared `createReadOnlyChatTools()` function (or selectively import the individual tool factory functions) and use only those.
 
 ### Tier 2: New OOO-specific tools
 
 | Tool | Input | Description |
 |------|-------|-------------|
 | `get_project_status(projectId)` | PROJ-XXXX string | Combined deal + Zuper job + BOM status lookup |
-| `get_schedule_overview(location?, days?)` | Optional location filter, days ahead (default 7) | Upcoming installs/surveys from Google Calendar |
-| `get_service_queue()` | None | Service priority queue summary (top 10 by score) |
+| `get_schedule_overview(location?, days?)` | Optional location filter, days ahead (default 7) | Upcoming installs/surveys from all location-specific Google Calendars. Resolves calendar IDs via existing `GOOGLE_INSTALL_CALENDAR_*` env vars. Uses `google-calendar.ts` module. |
+| `get_service_queue()` | None | Service priority queue summary (top 10 by score) via `service-priority.ts` |
 | `escalate(question, context)` | Original question + bot's reasoning | Writes OooBotEscalation row, returns acknowledgment |
-| `get_playbook_guidance(topic)` | Topic keyword | Searches playbook text for relevant section |
+
+**Removed**: `get_playbook_guidance(topic)` — unnecessary. The playbook is already injected into the system prompt (Layer 2), so Claude can answer playbook questions directly without a tool call. Saves a tool iteration and ~2s latency.
 
 **Tool file**: `src/lib/ooo-bot-tools.ts`
 
@@ -276,7 +310,7 @@ Runtime configuration — playbook, kill switch, date range.
 
 ```prisma
 model OooBotConfig {
-  id           String   @id @default(cuid())
+  id           String   @id @default("default")  // Singleton — always "default"
   playbook     String   // Markdown playbook content
   enabled      Boolean  @default(true)
   oooStartDate DateTime
@@ -284,6 +318,18 @@ model OooBotConfig {
   updatedAt    DateTime @updatedAt
 }
 ```
+
+**Singleton pattern**: `id` defaults to `"default"`. The orchestrator always queries `findFirst()`. Seed script uses `upsert` with `id: "default"`.
+
+**Playbook editing**: For v1, playbook is edited via Prisma Studio or direct SQL update. Admin UI for editing is a post-OOO follow-up.
+
+### Conversation Cleanup
+
+`OooBotConversation` rows are retained for 90 days after `createdAt`, then pruned. Can be added to the existing `audit-retention` cron pattern. For the 12-day OOO window this is a non-issue — cleanup is for long-term hygiene if the bot becomes permanent.
+
+### Thread ID Handling
+
+In DM conversations, Google Chat may not provide a `threadId` (DMs can be flat). When `threadId` is null, conversation history is keyed on `spaceId` alone. The `spaceId` for DMs is already unique per user (Google assigns a unique space per DM pair).
 
 ## Environment Variables
 
@@ -313,9 +359,10 @@ Performed by Zach or Caleb in Google Cloud Console (~30 min):
 | File | Purpose |
 |------|---------|
 | `src/app/api/webhooks/google-chat/route.ts` | Webhook endpoint — JWT auth, event parsing, response |
-| `src/lib/google-chat-auth.ts` | JWT verification against Google JWKS |
+| `src/lib/google-chat-auth.ts` | JWT verification via `jose` against Google JWKS |
+| `src/lib/google-chat-api.ts` | Google Chat API client — `postMessage()` for async responses using service account |
 | `src/lib/ooo-bot.ts` | Core orchestrator — history, prompt assembly, Claude call |
-| `src/lib/ooo-bot-tools.ts` | Tier 2 tools (project status, schedule, service queue, escalate, playbook) |
+| `src/lib/ooo-bot-tools.ts` | Tier 2 tools (project status, schedule, service queue, escalate) |
 | `prisma/migrations/XXXX_ooo_bot/migration.sql` | Schema migration for 3 new models |
 
 ## Files to Modify
@@ -323,30 +370,37 @@ Performed by Zach or Caleb in Google Cloud Console (~30 min):
 | File | Change |
 |------|--------|
 | `src/middleware.ts` | Add `/api/webhooks/google-chat` to `PUBLIC_API_ROUTES` |
+| `src/lib/chat-tools.ts` | Extract read-only tools into `createReadOnlyChatTools()` |
 | `prisma/schema.prisma` | Add 3 new models |
+| `package.json` | Add `jose` dependency |
 | `.env.example` | Add `GOOGLE_CHAT_PROJECT_NUMBER`, `GOOGLE_CHAT_ENABLED` |
 
 ## Build Sequence
 
 ### Day 1 (Monday 5/26) — Foundation
+- Install `jose` package
 - Prisma schema: 3 new models + migrate
-- `lib/google-chat-auth.ts` — JWT verification against Google JWKS
-- `/api/webhooks/google-chat/route.ts` — webhook handler, event parsing, response
+- `lib/google-chat-auth.ts` — JWT verification via `jose` JWKS
+- `lib/google-chat-api.ts` — Chat API client (`postMessage` for async responses)
+- `/api/webhooks/google-chat/route.ts` — webhook handler with async response pattern
 - Middleware update (PUBLIC_API_ROUTES)
-- Smoke test: message → hardcoded "Hello" response
+- Refactor: extract `createReadOnlyChatTools()` from `chat-tools.ts`
+- Smoke test: message → immediate "thinking" ack + async "Hello" response
 
 ### Day 2 (Tuesday 5/27) — Brain
-- `lib/ooo-bot.ts` — orchestrator (history, prompt, Claude call)
-- `lib/ooo-bot-tools.ts` — Tier 2 tools
-- `OooBotConfig` seed with placeholder playbook
-- End-to-end test: message → Claude thinks → real response
+- `lib/ooo-bot.ts` — orchestrator (history, prompt, Claude call, async post)
+- `lib/ooo-bot-tools.ts` — Tier 2 tools (project status, schedule, service queue, escalate)
+- `OooBotConfig` seed with placeholder playbook (upsert, id: "default")
+- IdempotencyKey integration for message dedup
+- End-to-end test: message → Claude thinks → real async response in thread
 
 ### Day 3 (Wednesday 5/28) — Polish & Playbook
 - Capture Zach's playbook content (20-30 min session)
-- Error handling hardening (timeouts, malformed payloads, Claude failures)
+- Error handling hardening (Claude failures → friendly fallback via Chat API)
+- Sender domain filtering (`@photonbrothers.com` only)
 - Escalation review endpoint (at minimum API, stretch: admin UI)
 - Final testing in DMs + Space with a precon team member
-- Deploy to prod, set env vars, verify
+- Deploy to prod, set env vars in Vercel, verify
 
 ## What Ships vs. Future
 
