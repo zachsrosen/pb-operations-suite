@@ -416,7 +416,12 @@ export async function fetchClosedTicketsSince(sinceIso: string): Promise<ClosedT
 
   if (allTicketIds.length === 0) return [];
 
-  // Phase 2: batch-read full properties
+  // Phase 2: batch-read full properties + resolve per-ticket location in parallel.
+  // Per-location dashboards (shop-health) filter closed tickets by `_derivedLocation`,
+  // so we must populate it via the same chain as fetchServiceTickets:
+  // ticket.pb_location → ticket→deal.pb_location → ticket→company.city.
+  const locationMap = await resolveTicketLocations(allTicketIds);
+
   const out: ClosedTicketItem[] = [];
   for (const batch of chunk(allTicketIds, BATCH_SIZE)) {
     const batchResp = await hubspotClient.crm.tickets.batchApi.read({
@@ -431,13 +436,15 @@ export async function fetchClosedTicketsSince(sinceIso: string): Promise<ClosedT
       if (!createDate || !closedDate) continue;
       const resolutionHours =
         (new Date(closedDate).getTime() - new Date(createDate).getTime()) / 3_600_000;
+      // Prefer ticket-level pb_location, fall back to derived (deal → company chain)
+      const derivedLocation = props.pb_location || locationMap.get(t.id) || null;
       out.push({
         id: t.id,
         subject: props.subject || "",
         createDate,
         closedDate,
         stageName: stageMap[props.hs_pipeline_stage || ""] || "",
-        _derivedLocation: null, // location resolution is the consumer's responsibility
+        _derivedLocation: derivedLocation,
         resolutionHours,
       });
     }
