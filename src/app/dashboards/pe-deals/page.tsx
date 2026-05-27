@@ -727,15 +727,10 @@ export default function PeDealsPage() {
     });
   };
 
-  // Exclude Cancelled deals entirely — they're not part of the PE pipeline
-  // and their lingering PE values pollute every aggregate on this page.
-  const deals = useMemo(
-    () =>
-      (data?.deals ?? []).filter(
-        (d) => !/cancel+ed/i.test(d.dealStageLabel),
-      ),
-    [data],
-  );
+  // Cancelled deals are already filtered out at the API level (see
+  // EXCLUDED_STAGES in src/app/api/accounting/pe-deals/route.ts), so no
+  // client-side filter is needed here.
+  const deals = data?.deals ?? [];
   const lastUpdated = data?.lastUpdated
     ? new Date(data.lastUpdated).toLocaleTimeString()
     : undefined;
