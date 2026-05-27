@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useState, useCallback } from 'react';
-import type { DrilldownDeal } from '@/lib/shop-health-types';
+import type { DrilldownDeal, DrilldownTicket } from '@/lib/shop-health-types';
 
 interface DrilldownMetricCardProps {
   label: string;
@@ -11,8 +11,13 @@ interface DrilldownMetricCardProps {
   valueColor?: string;
   subColor?: string;
   color?: string;
-  /** Underlying deals — if provided, the card is clickable and expands a table. */
+  /** Underlying deals — if provided, the card is clickable and expands a deal table. */
   deals?: DrilldownDeal[];
+  /**
+   * Underlying tickets — if provided, the card is clickable and expands a ticket table.
+   * If both `deals` and `tickets` are provided, `tickets` takes precedence (more specific).
+   */
+  tickets?: DrilldownTicket[];
   /** Column header for the contextual date (e.g. "Close Date", "Install Date") */
   dateLabel?: string;
 }
@@ -44,10 +49,14 @@ export const DrilldownMetricCard = memo(function DrilldownMetricCard({
   subColor,
   color,
   deals,
+  tickets,
   dateLabel,
 }: DrilldownMetricCardProps) {
   const [open, setOpen] = useState(false);
-  const hasDrilldown = deals && deals.length > 0;
+  // Tickets take precedence over deals when both are supplied.
+  const showTickets = tickets && tickets.length > 0;
+  const showDeals = !showTickets && deals && deals.length > 0;
+  const hasDrilldown = showTickets || showDeals;
   const effectiveValueColor = valueColor || color || 'text-foreground';
 
   const toggle = useCallback(() => {
@@ -96,49 +105,106 @@ export const DrilldownMetricCard = memo(function DrilldownMetricCard({
       {open && hasDrilldown && (
         <div className="mt-1 bg-surface-2/60 border border-border/50 rounded-lg overflow-hidden animate-in slide-in-from-top-1 duration-200">
           <div className="overflow-x-auto max-h-64 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-surface-2">
-                <tr className="border-b border-border">
-                  <th className="text-left py-1.5 px-2 text-muted font-medium">Project</th>
-                  <th className="text-right py-1.5 px-2 text-muted font-medium">Amount</th>
-                  <th className="text-left py-1.5 px-2 text-muted font-medium">Stage</th>
-                  <th className="text-left py-1.5 px-2 text-muted font-medium">PM</th>
-                  {dateLabel && (
-                    <th className="text-left py-1.5 px-2 text-muted font-medium">{dateLabel}</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {deals.map((deal) => (
-                  <tr key={deal.id} className="border-b border-border/30 hover:bg-surface/30">
-                    <td className="py-1.5 px-2 text-foreground">
-                      <a
-                        href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || '23761816'}/deal/${deal.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-orange-400 hover:underline"
-                        title={deal.name}
-                      >
-                        {deal.projectNumber || deal.name.slice(0, 30)}
-                      </a>
-                    </td>
-                    <td className="py-1.5 px-2 text-right text-muted tabular-nums">
-                      {currency.format(deal.amount)}
-                    </td>
-                    <td className="py-1.5 px-2 text-muted truncate max-w-[120px]">{deal.stage}</td>
-                    <td className="py-1.5 px-2 text-muted truncate max-w-[100px]">
-                      {deal.pm ? deal.pm.split(' ')[0] : '—'}
-                    </td>
-                    {dateLabel && (
-                      <td className="py-1.5 px-2 text-muted tabular-nums">{formatDate(deal.date)}</td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {showTickets
+              ? renderTicketTable(tickets!)
+              : renderDealTable(deals!, dateLabel)}
           </div>
         </div>
       )}
     </div>
   );
 });
+
+function renderDealTable(deals: DrilldownDeal[], dateLabel?: string) {
+  return (
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 bg-surface-2">
+        <tr className="border-b border-border">
+          <th className="text-left py-1.5 px-2 text-muted font-medium">Project</th>
+          <th className="text-right py-1.5 px-2 text-muted font-medium">Amount</th>
+          <th className="text-left py-1.5 px-2 text-muted font-medium">Stage</th>
+          <th className="text-left py-1.5 px-2 text-muted font-medium">PM</th>
+          {dateLabel && (
+            <th className="text-left py-1.5 px-2 text-muted font-medium">{dateLabel}</th>
+          )}
+        </tr>
+      </thead>
+      <tbody>
+        {deals.map((deal) => (
+          <tr key={deal.id} className="border-b border-border/30 hover:bg-surface/30">
+            <td className="py-1.5 px-2 text-foreground">
+              <a
+                href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || '23761816'}/deal/${deal.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-orange-400 hover:underline"
+                title={deal.name}
+              >
+                {deal.projectNumber || deal.name.slice(0, 30)}
+              </a>
+            </td>
+            <td className="py-1.5 px-2 text-right text-muted tabular-nums">
+              {currency.format(deal.amount)}
+            </td>
+            <td className="py-1.5 px-2 text-muted truncate max-w-[120px]">{deal.stage}</td>
+            <td className="py-1.5 px-2 text-muted truncate max-w-[100px]">
+              {deal.pm ? deal.pm.split(' ')[0] : '—'}
+            </td>
+            {dateLabel && (
+              <td className="py-1.5 px-2 text-muted tabular-nums">{formatDate(deal.date)}</td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function renderTicketTable(tickets: DrilldownTicket[]) {
+  const portalId = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || '23761816';
+  const anyHasDeal = tickets.some((t) => t.dealName);
+  return (
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 bg-surface-2">
+        <tr className="border-b border-border">
+          <th className="text-left py-1.5 px-2 text-muted font-medium">Subject</th>
+          <th className="text-left py-1.5 px-2 text-muted font-medium">Status</th>
+          <th className="text-left py-1.5 px-2 text-muted font-medium">Priority</th>
+          <th className="text-right py-1.5 px-2 text-muted font-medium">Age</th>
+          {anyHasDeal && (
+            <th className="text-left py-1.5 px-2 text-muted font-medium">Deal</th>
+          )}
+        </tr>
+      </thead>
+      <tbody>
+        {tickets.map((ticket) => (
+          <tr key={ticket.id} className="border-b border-border/30 hover:bg-surface/30">
+            <td className="py-1.5 px-2 text-foreground truncate max-w-[200px]">
+              <a
+                href={`https://app.hubspot.com/contacts/${portalId}/ticket/${ticket.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-orange-400 hover:underline"
+                title={ticket.subject}
+              >
+                {ticket.subject || '—'}
+              </a>
+            </td>
+            <td className="py-1.5 px-2 text-muted truncate max-w-[120px]">{ticket.status}</td>
+            <td className="py-1.5 px-2 text-muted truncate max-w-[100px]">
+              {ticket.priority || '—'}
+            </td>
+            <td className="py-1.5 px-2 text-right text-muted tabular-nums">
+              {ticket.ageDays != null ? `${ticket.ageDays}d` : '—'}
+            </td>
+            {anyHasDeal && (
+              <td className="py-1.5 px-2 text-muted truncate max-w-[140px]" title={ticket.dealName || ''}>
+                {ticket.dealName || '—'}
+              </td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
