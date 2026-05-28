@@ -1,26 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendEmailMessage } from "@/lib/email";
+import { hubspotClient } from "@/lib/hubspot";
 import { render } from "@react-email/render";
 import {
   PeDocDigest,
   type NearlyCompleteDeal,
-  type AttentionDeal,
+  type NotUploadedDeal,
+  type ActionRequiredDeal,
 } from "@/emails/PeDocDigest";
 
 /**
  * GET /api/cron/pe-doc-digest
  *
- * Vercel cron job — sends a daily email digest of PE document status changes
- * plus snapshot flags for deals needing attention or nearly complete.
+ * Vercel cron job — sends a daily email digest of PE document status:
+ *   Section 1: Nearly Complete (1-3 docs blocking)
+ *   Section 2: Not Uploaded (missing docs per deal)
+ *   Section 3: Action Required (rejections with PE comments)
+ *   Section 4: Today's Changes (status transitions)
  *
- * Schedule: 21:30 UTC (5:30 PM EST) weekdays
+ * Schedule: 21:30 UTC (3:30 PM MT) weekdays
  * Protected by CRON_SECRET.
  */
 export const maxDuration = 30;
 
-const RECIPIENT = "zach@photonbrothers.com";
+const RECIPIENTS = [
+  "layla@photonbrothers.com",
+  "zach@photonbrothers.com",
+];
 const TOTAL_DOCS_PER_DEAL = 15;
+// Strip any stray whitespace/escape chars — env var has been seen with a trailing newline
+const PORTAL_ID = (process.env.HUBSPOT_PORTAL_ID || "21710069").replace(/[^0-9]/g, "") || "21710069";
+const PTO_STAGE_ID = "20461940";
+const CLOSEOUT_STAGE_ID = "24743347";
+
+// Docs to skip for PTO-stage deals (not expected yet)
+const PTO_SKIP_DOCS = [
+  "Signed Interconnection Agreement",
+  "Permission to Operate (PTO)",
+];
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -45,64 +63,70 @@ export async function GET(request: NextRequest) {
     });
 
     // -----------------------------------------------------------------------
-    // 2. Current snapshot: all doc statuses grouped by deal
+    // 2. Current snapshot: all doc statuses grouped by deal (with notes)
     // -----------------------------------------------------------------------
     const allDocs = await prisma.peDocumentReview.findMany({
-      select: { dealId: true, docName: true, status: true },
+      select: { dealId: true, docName: true, status: true, notes: true },
     });
 
-    // Group by deal
-    const dealDocs = new Map<string, { docName: string; status: string }[]>();
+    const dealDocs = new Map<string, { docName: string; status: string; notes: string | null }[]>();
     for (const doc of allDocs) {
       if (!dealDocs.has(doc.dealId)) dealDocs.set(doc.dealId, []);
-      dealDocs.get(doc.dealId)!.push({ docName: doc.docName, status: doc.status });
+      dealDocs.get(doc.dealId)!.push({ docName: doc.docName, status: doc.status, notes: doc.notes });
     }
 
-    // Resolve deal names from change log or recent reviews
+    // -----------------------------------------------------------------------
+    // 2b. Batch-read dealname, dealstage, pe_portal_url from HubSpot
+    // -----------------------------------------------------------------------
+    const allDealIds = [...dealDocs.keys()];
+    const portalUrlMap = new Map<string, string>();
     const dealNameMap = new Map<string, string>();
-    for (const c of changes) {
-      if (c.dealName) dealNameMap.set(c.dealId, c.dealName);
-    }
-    // Also try to get names from the change log history for deals not in today's changes
-    const recentNames = await prisma.peDocChangeLog.findMany({
-      where: { dealName: { not: null } },
-      select: { dealId: true, dealName: true },
-      distinct: ["dealId"],
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    });
-    for (const r of recentNames) {
-      if (r.dealName && !dealNameMap.has(r.dealId)) {
-        dealNameMap.set(r.dealId, r.dealName);
+    const dealStageMap = new Map<string, string>();
+    try {
+      const chunks = [];
+      for (let i = 0; i < allDealIds.length; i += 100) {
+        chunks.push(allDealIds.slice(i, i + 100));
       }
-    }
-
-    // -----------------------------------------------------------------------
-    // 3. Compute "Needs Attention" — deals with REJECTED or ACTION_REQUIRED
-    // -----------------------------------------------------------------------
-    const needsAttention: AttentionDeal[] = [];
-    for (const [dealId, docs] of dealDocs.entries()) {
-      const issues = docs
-        .filter((d) => d.status === "ACTION_REQUIRED" || d.status === "REJECTED")
-        .map((d) => ({ docName: d.docName, status: d.status }));
-      if (issues.length > 0) {
-        needsAttention.push({
-          dealId,
-          dealName: dealNameMap.get(dealId) ?? null,
-          issues,
+      for (const chunk of chunks) {
+        const resp = await hubspotClient.crm.deals.batchApi.read({
+          inputs: chunk.map((id) => ({ id })),
+          properties: ["dealname", "dealstage", "pe_portal_url"],
+          propertiesWithHistory: [],
         });
+        for (const deal of resp.results) {
+          const id = String(deal.id);
+          if (deal.properties.pe_portal_url) portalUrlMap.set(id, deal.properties.pe_portal_url);
+          if (deal.properties.dealname) dealNameMap.set(id, deal.properties.dealname);
+          if (deal.properties.dealstage) dealStageMap.set(id, deal.properties.dealstage);
+        }
       }
+    } catch (err) {
+      console.warn(`[pe-doc-digest] Failed to batch-read deal properties (non-fatal):`, err);
     }
-    needsAttention.sort((a, b) =>
-      (a.dealName || a.dealId).localeCompare(b.dealName || b.dealId),
-    );
+
+    const hsUrl = (dealId: string) =>
+      `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${dealId}`;
+
+    const stageLabel = (dealId: string): string => {
+      const stage = dealStageMap.get(dealId);
+      if (stage === PTO_STAGE_ID) return "PTO";
+      if (stage === CLOSEOUT_STAGE_ID) return "Close Out";
+      return "Other";
+    };
+
+    // Snapshot sections target only deals currently in PTO or Close Out —
+    // earlier-stage deals aren't Layla's responsibility yet and would add noise.
+    const isTargetStage = (dealId: string): boolean => {
+      const stage = dealStageMap.get(dealId);
+      return stage === PTO_STAGE_ID || stage === CLOSEOUT_STAGE_ID;
+    };
 
     // -----------------------------------------------------------------------
-    // 4. Compute "Nearly Complete" — deals where only 1-3 docs are
-    //    NOT_UPLOADED or ACTION_REQUIRED (needs action to finish)
+    // 3. Section 1: Nearly Complete — deals where only 1-3 docs need action
     // -----------------------------------------------------------------------
     const nearlyComplete: NearlyCompleteDeal[] = [];
     for (const [dealId, docs] of dealDocs.entries()) {
+      if (!isTargetStage(dealId)) continue;
       const blocking = docs.filter((d) => d.status === "NOT_UPLOADED" || d.status === "ACTION_REQUIRED");
       if (blocking.length >= 1 && blocking.length <= 3 && docs.length >= TOTAL_DOCS_PER_DEAL - 3) {
         const approvedCount = docs.filter((d) => d.status === "APPROVED").length;
@@ -112,17 +136,68 @@ export async function GET(request: NextRequest) {
         nearlyComplete.push({
           dealId,
           dealName: dealNameMap.get(dealId) ?? null,
+          stage: stageLabel(dealId),
           approvedCount,
           inProgressCount,
           totalDocs: TOTAL_DOCS_PER_DEAL,
           missingDocs: blocking.map((d) => d.docName),
+          hubspotUrl: hsUrl(dealId),
+          pePortalUrl: portalUrlMap.get(dealId) ?? null,
         });
       }
     }
     nearlyComplete.sort((a, b) => b.approvedCount - a.approvedCount);
 
     // -----------------------------------------------------------------------
-    // 5. Build and send email
+    // 4. Section 2: Not Uploaded — deals with NOT_UPLOADED docs
+    //    Skip Signed IA + PTO letter for PTO-stage deals
+    // -----------------------------------------------------------------------
+    const notUploaded: NotUploadedDeal[] = [];
+    for (const [dealId, docs] of dealDocs.entries()) {
+      if (!isTargetStage(dealId)) continue;
+      const isPto = dealStageMap.get(dealId) === PTO_STAGE_ID;
+      const missing = docs
+        .filter((d) => d.status === "NOT_UPLOADED")
+        .filter((d) => !(isPto && PTO_SKIP_DOCS.includes(d.docName)))
+        .map((d) => d.docName);
+      if (missing.length > 0) {
+        notUploaded.push({
+          dealId,
+          dealName: dealNameMap.get(dealId) ?? null,
+          stage: stageLabel(dealId),
+          missingDocs: missing,
+          hubspotUrl: hsUrl(dealId),
+          pePortalUrl: portalUrlMap.get(dealId) ?? null,
+        });
+      }
+    }
+    notUploaded.sort((a, b) => b.missingDocs.length - a.missingDocs.length);
+
+    // -----------------------------------------------------------------------
+    // 5. Section 3: Action Required — deals with REJECTED or ACTION_REQUIRED
+    //    Includes PE rejection comments from notes
+    // -----------------------------------------------------------------------
+    const actionRequired: ActionRequiredDeal[] = [];
+    for (const [dealId, docs] of dealDocs.entries()) {
+      if (!isTargetStage(dealId)) continue;
+      const issues = docs
+        .filter((d) => d.status === "ACTION_REQUIRED" || d.status === "REJECTED")
+        .map((d) => ({ docName: d.docName, status: d.status, notes: d.notes }));
+      if (issues.length > 0) {
+        actionRequired.push({
+          dealId,
+          dealName: dealNameMap.get(dealId) ?? null,
+          stage: stageLabel(dealId),
+          issues,
+          hubspotUrl: hsUrl(dealId),
+          pePortalUrl: portalUrlMap.get(dealId) ?? null,
+        });
+      }
+    }
+    actionRequired.sort((a, b) => b.issues.length - a.issues.length);
+
+    // -----------------------------------------------------------------------
+    // 6. Build and send email
     // -----------------------------------------------------------------------
     const dateStr = todayStart.toLocaleDateString("en-US", {
       month: "long",
@@ -137,59 +212,73 @@ export async function GET(request: NextRequest) {
       docName: c.docName,
       oldStatus: c.oldStatus,
       newStatus: c.newStatus,
+      hubspotUrl: hsUrl(c.dealId),
+      pePortalUrl: portalUrlMap.get(c.dealId) ?? null,
     }));
 
     const html = await render(
       PeDocDigest({
         date: dateStr,
-        changes: emailChanges,
         totalDealsTracked: dealDocs.size,
         nearlyComplete,
-        needsAttention,
+        notUploaded,
+        actionRequired,
+        changes: emailChanges,
       }),
     );
 
     // Plain-text fallback
     const plainLines = [
-      `PE Doc Status Changes — ${dateStr}`,
-      `${changes.length} change(s) across ${new Set(changes.map((c) => c.dealId)).size} deal(s)`,
+      `PE Doc Digest — ${dateStr}`,
+      `${dealDocs.size} PE deals tracked`,
       "",
-      ...changes.map(
-        (c) =>
-          `${c.dealName || c.dealId}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`,
-      ),
     ];
-    if (changes.length === 0) {
-      plainLines.push("No document status changes today.");
+
+    if (nearlyComplete.length > 0) {
+      plainLines.push(`--- NEARLY COMPLETE (${nearlyComplete.length}) ---`);
+      for (const deal of nearlyComplete) {
+        plainLines.push(`${deal.dealName || deal.dealId} (${deal.stage}): ${deal.approvedCount}/${deal.totalDocs} approved, ${deal.missingDocs.length} need action — ${deal.missingDocs.join(", ")}`);
+      }
+      plainLines.push("");
     }
-    if (needsAttention.length > 0) {
-      plainLines.push("", `--- NEEDS ATTENTION (${needsAttention.length}) ---`);
-      for (const deal of needsAttention) {
-        plainLines.push(`${deal.dealName || deal.dealId}:`);
+
+    if (notUploaded.length > 0) {
+      plainLines.push(`--- NOT UPLOADED (${notUploaded.length}) ---`);
+      for (const deal of notUploaded) {
+        plainLines.push(`${deal.dealName || deal.dealId} (${deal.stage}) — ${deal.missingDocs.length} missing: ${deal.missingDocs.join(", ")}`);
+      }
+      plainLines.push("");
+    }
+
+    if (actionRequired.length > 0) {
+      plainLines.push(`--- ACTION REQUIRED (${actionRequired.length}) ---`);
+      for (const deal of actionRequired) {
+        plainLines.push(`${deal.dealName || deal.dealId} (${deal.stage}) — ${deal.issues.length} rejection(s):`);
         for (const issue of deal.issues) {
-          plainLines.push(`  ${issue.status} — ${issue.docName}`);
+          const noteSnippet = issue.notes ? `: ${issue.notes.slice(0, 120)}` : "";
+          plainLines.push(`  ${issue.docName}${noteSnippet}`);
         }
       }
+      plainLines.push("");
     }
-    if (nearlyComplete.length > 0) {
-      plainLines.push("", `--- NEARLY COMPLETE (${nearlyComplete.length}) ---`);
-      for (const deal of nearlyComplete) {
-        const parts = [`${deal.approvedCount}/${deal.totalDocs} approved`];
-        if (deal.inProgressCount > 0) parts.push(`${deal.inProgressCount} in review`);
-        parts.push(`${deal.missingDocs.length} need action`);
-        plainLines.push(
-          `${deal.dealName || deal.dealId}: ${parts.join(" · ")} — need action: ${deal.missingDocs.join(", ")}`,
-        );
+
+    if (emailChanges.length > 0) {
+      plainLines.push(`--- TODAY'S CHANGES (${emailChanges.length}) ---`);
+      for (const c of emailChanges) {
+        plainLines.push(`${c.dealName || c.dealId}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`);
       }
+    } else {
+      plainLines.push("No document status changes today.");
     }
 
     const subjectParts = [`PE Doc Digest — ${dateStr}`];
-    if (changes.length > 0) subjectParts.push(`${changes.length} change${changes.length !== 1 ? "s" : ""}`);
-    if (needsAttention.length > 0) subjectParts.push(`${needsAttention.length} need attention`);
     if (nearlyComplete.length > 0) subjectParts.push(`${nearlyComplete.length} nearly done`);
+    if (notUploaded.length > 0) subjectParts.push(`${notUploaded.length} not uploaded`);
+    if (actionRequired.length > 0) subjectParts.push(`${actionRequired.length} need action`);
+    if (emailChanges.length > 0) subjectParts.push(`${emailChanges.length} change${emailChanges.length !== 1 ? "s" : ""}`);
 
     const result = await sendEmailMessage({
-      to: RECIPIENT,
+      to: RECIPIENTS,
       subject: subjectParts.join(" | "),
       html,
       text: plainLines.join("\n"),
@@ -198,17 +287,19 @@ export async function GET(request: NextRequest) {
     });
 
     console.warn(
-      `[pe-doc-digest] Sent to ${RECIPIENT}: ${changes.length} changes, ` +
-      `${needsAttention.length} need attention, ${nearlyComplete.length} nearly complete, ` +
+      `[pe-doc-digest] Sent to ${RECIPIENTS.join(", ")}: ` +
+      `${nearlyComplete.length} nearly complete, ${notUploaded.length} not uploaded, ` +
+      `${actionRequired.length} need action, ${emailChanges.length} changes, ` +
       `email ${result.success ? "delivered" : "failed"}`,
     );
 
     return NextResponse.json({
       sent: result.success,
-      changesCount: changes.length,
-      dealsAffected: new Set(changes.map((c) => c.dealId)).size,
-      needsAttentionCount: needsAttention.length,
+      recipients: RECIPIENTS,
       nearlyCompleteCount: nearlyComplete.length,
+      notUploadedCount: notUploaded.length,
+      actionRequiredCount: actionRequired.length,
+      changesCount: emailChanges.length,
       totalDealsTracked: dealDocs.size,
       date: dateStr,
     });
