@@ -5,6 +5,12 @@
  * returns an immediate acknowledgment, then fires Claude processing
  * asynchronously via waitUntil.
  *
+ * The app is configured as a Google Workspace add-on, so requests arrive
+ * wrapped in a `chat.{messagePayload|addedToSpacePayload|...}` envelope and
+ * responses must use the `hostAppDataAction` format. We also support the
+ * legacy classic Chat bot envelope (`event.type` / `event.message`) as a
+ * fallback for robustness and local testing.
+ *
  * Auth: Google JWT verified via jose against Google's JWKS.
  * Listed in PUBLIC_API_ROUTES — signature validation happens here.
  */
@@ -17,39 +23,68 @@ import { safeWaitUntil } from "@/lib/safe-wait-until";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// ── Google Chat event types ──
+// ── Google Chat shapes (subset we read) ──
 
-interface GoogleChatUser {
+interface ChatUser {
   name?: string;
   displayName?: string;
   email?: string;
   type?: string;
 }
 
-interface GoogleChatMessage {
+interface ChatSpace {
+  name?: string;
+  displayName?: string;
+  type?: string; // "DM" | "ROOM" | "SPACE"
+  spaceType?: string;
+}
+
+interface ChatMessage {
   name?: string;
   text?: string;
-  sender?: GoogleChatUser;
-  thread?: { name?: string };
-  space?: {
-    name?: string;
-    displayName?: string;
-    type?: string;
-  };
   argumentText?: string;
-  createTime?: string;
+  sender?: ChatUser;
+  thread?: { name?: string; threadKey?: string };
+  space?: ChatSpace;
+}
+
+// Add-on envelope: { chat: { messagePayload | addedToSpacePayload | ... } }
+interface AddOnPayload {
+  message?: ChatMessage;
+  space?: ChatSpace;
+  user?: ChatUser;
+  configCompleteRedirectUri?: string;
 }
 
 interface GoogleChatEvent {
+  // classic envelope
   type?: string;
-  eventTime?: string;
-  message?: GoogleChatMessage;
-  user?: GoogleChatUser;
-  space?: {
-    name?: string;
-    displayName?: string;
-    type?: string;
+  message?: ChatMessage;
+  user?: ChatUser;
+  space?: ChatSpace;
+  // add-on envelope
+  chat?: {
+    messagePayload?: AddOnPayload;
+    addedToSpacePayload?: AddOnPayload;
+    removedFromSpacePayload?: AddOnPayload;
+    appCommandPayload?: AddOnPayload;
+    buttonClickedPayload?: AddOnPayload;
   };
+  commonEventObject?: unknown;
+}
+
+type NormalizedEventType =
+  | "MESSAGE"
+  | "ADDED_TO_SPACE"
+  | "REMOVED_FROM_SPACE"
+  | "OTHER";
+
+interface NormalizedEvent {
+  isAddOn: boolean;
+  type: NormalizedEventType;
+  message?: ChatMessage;
+  space?: ChatSpace;
+  user?: ChatUser;
 }
 
 // ── Welcome messages ──
@@ -59,6 +94,93 @@ const DM_WELCOME = `Hey — Zach's off pretending mountains exist outside of Col
 const SPACE_WELCOME = `👋 Zach's OOO bot reporting for duty. I've got his playbook loaded and can look up projects, schedules, and pipeline status. I can't approve anything or make promises, but I can usually point you in the right direction. If I'm stumped, I'll flag it for Zach when he's back June 10th.`;
 
 const THINKING_MESSAGE = `🤔 Let me check on that...`;
+
+// ── Envelope helpers ──
+
+/** Normalize either the add-on or classic envelope into a common shape. */
+function normalizeEvent(event: GoogleChatEvent): NormalizedEvent {
+  // Add-on envelope
+  if (event.chat) {
+    const c = event.chat;
+    if (c.messagePayload) {
+      return {
+        isAddOn: true,
+        type: "MESSAGE",
+        message: c.messagePayload.message,
+        space: c.messagePayload.space ?? c.messagePayload.message?.space,
+        user: c.messagePayload.user ?? c.messagePayload.message?.sender,
+      };
+    }
+    if (c.addedToSpacePayload) {
+      return {
+        isAddOn: true,
+        type: "ADDED_TO_SPACE",
+        space: c.addedToSpacePayload.space,
+        user: c.addedToSpacePayload.user,
+      };
+    }
+    if (c.removedFromSpacePayload) {
+      return { isAddOn: true, type: "REMOVED_FROM_SPACE" };
+    }
+    // appCommandPayload / buttonClickedPayload / etc. — treat as message-ish
+    if (c.appCommandPayload) {
+      return {
+        isAddOn: true,
+        type: "MESSAGE",
+        message: c.appCommandPayload.message,
+        space: c.appCommandPayload.space ?? c.appCommandPayload.message?.space,
+        user: c.appCommandPayload.user ?? c.appCommandPayload.message?.sender,
+      };
+    }
+    return { isAddOn: true, type: "OTHER" };
+  }
+
+  // Classic envelope
+  const t = event.type;
+  const type: NormalizedEventType =
+    t === "MESSAGE"
+      ? "MESSAGE"
+      : t === "ADDED_TO_SPACE"
+        ? "ADDED_TO_SPACE"
+        : t === "REMOVED_FROM_SPACE"
+          ? "REMOVED_FROM_SPACE"
+          : "OTHER";
+  return {
+    isAddOn: false,
+    type,
+    message: event.message,
+    space: event.space ?? event.message?.space,
+    user: event.user ?? event.message?.sender,
+  };
+}
+
+/** Build the correct text response for the active envelope. */
+function chatTextResponse(text: string, isAddOn: boolean) {
+  if (isAddOn) {
+    return NextResponse.json({
+      hostAppDataAction: {
+        chatDataAction: {
+          createMessageAction: {
+            message: { text },
+          },
+        },
+      },
+    });
+  }
+  return NextResponse.json({ text });
+}
+
+/** Empty/no-op response for the active envelope. */
+function chatNoop(isAddOn: boolean) {
+  if (isAddOn) {
+    return NextResponse.json({ hostAppDataAction: { chatDataAction: {} } });
+  }
+  return NextResponse.json({});
+}
+
+function isRoomSpace(space?: ChatSpace): boolean {
+  return space?.type === "ROOM" || space?.spaceType === "SPACE";
+}
 
 // ── Route handler ──
 
@@ -78,50 +200,58 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse event ──
-  let event: GoogleChatEvent;
+  let rawEvent: GoogleChatEvent;
   try {
-    event = await request.json();
+    rawEvent = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const eventType = event.type;
+  const event = normalizeEvent(rawEvent);
+  const { isAddOn } = event;
+  console.warn(
+    `[google-chat] event type=${event.type} addOn=${isAddOn} space=${event.space?.name ?? "?"}`
+  );
 
   // ── REMOVED_FROM_SPACE: no-op ──
-  if (eventType === "REMOVED_FROM_SPACE") {
-    return NextResponse.json({});
+  if (event.type === "REMOVED_FROM_SPACE") {
+    return chatNoop(isAddOn);
   }
 
   // ── ADDED_TO_SPACE: welcome message (sync) ──
-  if (eventType === "ADDED_TO_SPACE") {
-    const isRoom = event.space?.type === "ROOM";
-    return NextResponse.json({ text: isRoom ? SPACE_WELCOME : DM_WELCOME });
+  if (event.type === "ADDED_TO_SPACE") {
+    return chatTextResponse(
+      isRoomSpace(event.space) ? SPACE_WELCOME : DM_WELCOME,
+      isAddOn
+    );
   }
 
   // ── MESSAGE: async processing ──
-  if (eventType === "MESSAGE") {
+  if (event.type === "MESSAGE") {
     const message = event.message;
     const senderEmail = message?.sender?.email ?? event.user?.email;
-    const senderName = message?.sender?.displayName ?? event.user?.displayName ?? "Unknown";
-    const spaceName = message?.space?.name ?? event.space?.name;
+    const senderName =
+      message?.sender?.displayName ?? event.user?.displayName ?? "Unknown";
+    const spaceName = event.space?.name ?? message?.space?.name;
     const threadName = message?.thread?.name;
     const messageText = message?.argumentText ?? message?.text ?? "";
     const messageName = message?.name;
 
     // ── Sender domain filtering ──
     if (!senderEmail?.endsWith("@photonbrothers.com")) {
-      return NextResponse.json({
-        text: "I only respond to Photon Brothers team members.",
-      });
+      return chatTextResponse(
+        "I only respond to Photon Brothers team members.",
+        isAddOn
+      );
     }
 
     if (!spaceName) {
       console.error("[google-chat] MESSAGE event missing space name");
-      return NextResponse.json({});
+      return chatNoop(isAddOn);
     }
 
     if (!messageText.trim()) {
-      return NextResponse.json({ text: "I can only respond to text messages." });
+      return chatTextResponse("I can only respond to text messages.", isAddOn);
     }
 
     // ── Idempotency check ──
@@ -130,7 +260,7 @@ export async function POST(request: NextRequest) {
         where: { key_scope: { key: messageName, scope: "google-chat" } },
       });
       if (existing) {
-        return NextResponse.json({});
+        return chatNoop(isAddOn);
       }
       await prisma.idempotencyKey.create({
         data: {
@@ -145,9 +275,10 @@ export async function POST(request: NextRequest) {
     // ── DB config check ──
     const config = await prisma.oooBotConfig.findFirst();
     if (config && !config.enabled) {
-      return NextResponse.json({
-        text: "The OOO bot is currently turned off. Reach out to Caleb or Patrick if you need help.",
-      });
+      return chatTextResponse(
+        "The OOO bot is currently turned off. Reach out to Caleb or Patrick if you need help.",
+        isAddOn
+      );
     }
 
     // ── Fire async Claude processing ──
@@ -161,7 +292,7 @@ export async function POST(request: NextRequest) {
             senderName,
             spaceName,
             threadName: threadName ?? undefined,
-            spaceDisplayName: message?.space?.displayName ?? event.space?.displayName,
+            spaceDisplayName: event.space?.displayName,
             playbook: config?.playbook ?? "",
           });
         } catch (err) {
@@ -181,9 +312,9 @@ export async function POST(request: NextRequest) {
     );
 
     // ── Return immediate ack ──
-    return NextResponse.json({ text: THINKING_MESSAGE });
+    return chatTextResponse(THINKING_MESSAGE, isAddOn);
   }
 
   // ── Unknown event type: no-op ──
-  return NextResponse.json({});
+  return chatNoop(isAddOn);
 }

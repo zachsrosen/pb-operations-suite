@@ -99,10 +99,10 @@ export async function verifyGoogleChatJwt(
   try {
     const header = decodeProtectedHeader(token);
     const claims = decodeJwt(token);
-    console.log(
+    console.warn(
       `[google-chat-auth] JWT header: kid=${header.kid} alg=${header.alg}`
     );
-    console.log(
+    console.warn(
       `[google-chat-auth] JWT claims: iss=${claims.iss} aud=${claims.aud} sub=${claims.sub}`
     );
   } catch {
@@ -121,7 +121,7 @@ export async function verifyGoogleChatJwt(
           issuer,
           audience: audiences,
         });
-        console.log(
+        console.warn(
           `[google-chat-auth] Verified via ${source.label} (iss=${payload.iss} aud=${payload.aud})`
         );
         return { valid: true, payload };
