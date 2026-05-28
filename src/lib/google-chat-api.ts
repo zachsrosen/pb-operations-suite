@@ -125,6 +125,6 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "unknown");
     console.error(`[google-chat-api] Failed to post message: ${resp.status} ${errText}`);
-    throw new Error(`Google Chat API error: ${resp.status}`);
+    throw new Error(`Google Chat API error: ${resp.status} ${errText}`.slice(0, 800));
   }
 }

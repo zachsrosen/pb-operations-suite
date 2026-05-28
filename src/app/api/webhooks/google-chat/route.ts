@@ -314,6 +314,23 @@ export async function POST(request: NextRequest) {
           console.warn(`[google-chat] async DONE space=${spaceName}`);
         } catch (err) {
           console.error("[google-chat] Async processing failed:", err);
+          // Persist the error to the DB so it can be diagnosed without
+          // relying on (sampled) Vercel logs.
+          try {
+            await prisma.oooBotEscalation.create({
+              data: {
+                senderEmail: "DEBUG",
+                senderName: "async-error",
+                question: messageText.slice(0, 200),
+                botContext: (err instanceof Error ? err.message : String(err)).slice(0, 900),
+                spaceId: spaceName,
+                threadId: threadName ?? null,
+                status: "PENDING",
+              },
+            });
+          } catch (dbErr) {
+            console.error("[google-chat] Failed to persist debug error:", dbErr);
+          }
           try {
             const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
             await postGoogleChatMessage({
