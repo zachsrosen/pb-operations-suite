@@ -6,13 +6,15 @@
  *
  * Google Chat signs tokens with EITHER the chat service account JWKS
  * or Google's OAuth2 JWKS (when the app is a Workspace add-on).
- * We try both in sequence.
+ * The audience claim may be the project number OR the endpoint URL,
+ * depending on the GCP configuration. We accept both.
  *
  * Ref: https://developers.google.com/workspace/chat/authenticate-authorize-chat-app
  */
 
 import {
   createRemoteJWKSet,
+  decodeJwt,
   decodeProtectedHeader,
   jwtVerify,
   type JWTPayload,
@@ -24,12 +26,16 @@ const JWKS_SOURCES = [
   {
     label: "chat-service-account",
     url: "https://www.googleapis.com/service_accounts/v1/jwk/chat@system.gserviceaccount.com",
-    issuer: "chat@system.gserviceaccount.com",
+    issuers: ["chat@system.gserviceaccount.com"],
   },
   {
     label: "google-oauth2",
     url: "https://www.googleapis.com/oauth2/v3/certs",
-    issuer: "https://accounts.google.com",
+    issuers: [
+      "https://accounts.google.com",
+      "accounts.google.com",
+      "chat@system.gserviceaccount.com",
+    ],
   },
 ] as const;
 
@@ -50,6 +56,28 @@ export type VerifyResult =
   | { valid: false; error: string };
 
 /**
+ * Build the list of acceptable audience values.
+ * Google Chat may send the project number OR the endpoint URL as the audience.
+ */
+function getAcceptedAudiences(projectNumber: string): string[] {
+  const audiences = [projectNumber];
+
+  // Also accept the endpoint URL as audience (Workspace add-on mode)
+  const endpointUrl = process.env.GOOGLE_CHAT_ENDPOINT_URL;
+  if (endpointUrl) {
+    audiences.push(endpointUrl);
+  }
+
+  // Common endpoint URL patterns
+  audiences.push(
+    `https://www.pbtechops.com/api/webhooks/google-chat`,
+    `https://pbtechops.com/api/webhooks/google-chat`
+  );
+
+  return audiences;
+}
+
+/**
  * Verify Google Chat webhook JWT.
  * @param authHeader - The raw Authorization header value ("Bearer <token>")
  */
@@ -67,34 +95,46 @@ export async function verifyGoogleChatJwt(
 
   const token = authHeader.slice("Bearer ".length).trim();
 
-  // Log JWT header for debugging key mismatches
+  // Log JWT header + claims for debugging
   try {
     const header = decodeProtectedHeader(token);
+    const claims = decodeJwt(token);
     console.log(
       `[google-chat-auth] JWT header: kid=${header.kid} alg=${header.alg}`
+    );
+    console.log(
+      `[google-chat-auth] JWT claims: iss=${claims.iss} aud=${claims.aud} sub=${claims.sub}`
     );
   } catch {
     // non-fatal — proceed with verification
   }
 
-  // Try each JWKS source in order
+  const audiences = getAcceptedAudiences(projectNumber);
+
+  // Try each JWKS source × issuer combination
   const errors: string[] = [];
 
   for (const source of JWKS_SOURCES) {
-    try {
-      const { payload } = await jwtVerify(token, getJwks(source.url), {
-        issuer: source.issuer,
-        audience: projectNumber,
-      });
-      console.log(
-        `[google-chat-auth] Verified via ${source.label} (iss=${payload.iss})`
-      );
-      return { valid: true, payload };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "unknown error";
-      errors.push(`${source.label}: ${msg}`);
+    for (const issuer of source.issuers) {
+      try {
+        const { payload } = await jwtVerify(token, getJwks(source.url), {
+          issuer,
+          audience: audiences,
+        });
+        console.log(
+          `[google-chat-auth] Verified via ${source.label} (iss=${payload.iss} aud=${payload.aud})`
+        );
+        return { valid: true, payload };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "unknown error";
+        errors.push(`${source.label}/${issuer}: ${msg}`);
+      }
     }
   }
+
+  console.error(
+    `[google-chat-auth] All verification attempts failed:\n${errors.join("\n")}`
+  );
 
   return {
     valid: false,
