@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
   const weekStart = weekParam ? getWeekStart(new Date(weekParam)) : getWeekStart();
 
   try {
-    const rows: ShopHealthOverviewRow[] = await Promise.all(
-      DASHBOARD_LOCATION_GROUPS.map(async (group) => {
+    const settled = await Promise.allSettled(
+      DASHBOARD_LOCATION_GROUPS.map(async (group): Promise<ShopHealthOverviewRow> => {
         const data = await getShopHealthData(group.slug, weekStart);
         return {
           location: group.label,
@@ -28,12 +28,38 @@ export async function GET(request: NextRequest) {
           installsCompleted: data.heroes.installsCompleted,
           ptosReceived: data.heroes.ptosReceived,
           openTickets: data.heroes.openTickets,
-          dnrActive: toHeroMetric(data.dnrRoofing.dnrActive),
-          roofingActive: toHeroMetric(data.dnrRoofing.roofingActive),
+          dnrActive: toHeroMetric(data.dnrRoofing?.dnrActive ?? 0),
+          roofingActive: toHeroMetric(data.dnrRoofing?.roofingActive ?? 0),
           topBottleneck: data.bottlenecks[0]?.constraint ?? null,
         };
       })
     );
+
+    const rows: ShopHealthOverviewRow[] = [];
+    settled.forEach((result, idx) => {
+      const group = DASHBOARD_LOCATION_GROUPS[idx];
+      if (result.status === 'fulfilled') {
+        rows.push(result.value);
+      } else {
+        console.error(
+          `[shop-health] Overview row failed for ${group?.slug}:`,
+          result.reason instanceof Error ? `${result.reason.name}: ${result.reason.message}` : result.reason
+        );
+        // Emit a stub row so the UI knows the location exists but failed.
+        rows.push({
+          location: group?.label ?? 'Unknown',
+          backlogWeeks: toHeroMetric(0),
+          readyToBuild: toHeroMetric(0),
+          scheduledInstalls: toHeroMetric(0),
+          installsCompleted: toHeroMetric(0),
+          ptosReceived: toHeroMetric(0),
+          openTickets: toHeroMetric(0),
+          dnrActive: toHeroMetric(0),
+          roofingActive: toHeroMetric(0),
+          topBottleneck: null,
+        });
+      }
+    });
 
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);

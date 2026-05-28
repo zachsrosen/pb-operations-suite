@@ -259,7 +259,7 @@ export async function getShopHealthData(
     { data: allProjects },
     allDealsResult,
     openTickets,
-    closedTickets,
+    closedTicketsResult,
   ] = await Promise.all([
     appCache.getOrFetch(
       CACHE_KEYS.PROJECTS_ACTIVE,
@@ -281,9 +281,15 @@ export async function getShopHealthData(
       { ttl: 10 * 60 * 1000 }
     ),
     fetchServiceTickets(),
-    fetchClosedTicketsSince(weekStart.toISOString()),
+    appCache.getOrFetch(
+      `closed-tickets-since:${weekStart.toISOString()}`,
+      () => fetchClosedTicketsSince(weekStart.toISOString()),
+      false,
+      { ttl: 10 * 60 * 1000 }
+    ),
   ]);
   const allDeals = allDealsResult.data;
+  const closedTickets = closedTicketsResult.data;
 
   // Partition all-pipeline deals by pipelineId for the new sections.
   const serviceDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.service);
