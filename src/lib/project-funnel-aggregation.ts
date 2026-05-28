@@ -582,7 +582,7 @@ export function buildProjectFunnelData(
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
       drillDown.awaitingDaSend.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.designStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.layoutStatus ?? null)
       );
     } else if (!m.hasDaApproved) {
       const waitSince = p.designApprovalSentDate || p.closeDate!;
