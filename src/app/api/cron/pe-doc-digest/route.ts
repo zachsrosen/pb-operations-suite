@@ -48,19 +48,13 @@ export async function GET(request: NextRequest) {
 
   try {
     // -----------------------------------------------------------------------
-    // 1. Today's changes from PeDocChangeLog
+    // 1. Date anchor (MT). Status-change history is intentionally omitted from
+    //    this digest: Zach already receives real-time change alerts via
+    //    pe-doc-notify, so the daily digest focuses on the actionable snapshot
+    //    (Nearly Complete / Not Uploaded / Action Required) for Layla + Zach.
     // -----------------------------------------------------------------------
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setUTCHours(23, 59, 59, 999);
-
-    const changes = await prisma.peDocChangeLog.findMany({
-      where: {
-        createdAt: { gte: todayStart, lte: todayEnd },
-      },
-      orderBy: { createdAt: "asc" },
-    });
 
     // -----------------------------------------------------------------------
     // 2. Current snapshot: all doc statuses grouped by deal (with notes)
@@ -206,16 +200,6 @@ export async function GET(request: NextRequest) {
       timeZone: "America/Denver",
     });
 
-    const emailChanges = changes.map((c) => ({
-      dealId: c.dealId,
-      dealName: c.dealName,
-      docName: c.docName,
-      oldStatus: c.oldStatus,
-      newStatus: c.newStatus,
-      hubspotUrl: hsUrl(c.dealId),
-      pePortalUrl: portalUrlMap.get(c.dealId) ?? null,
-    }));
-
     const html = await render(
       PeDocDigest({
         date: dateStr,
@@ -223,7 +207,7 @@ export async function GET(request: NextRequest) {
         nearlyComplete,
         notUploaded,
         actionRequired,
-        changes: emailChanges,
+        changes: [],
       }),
     );
 
@@ -262,20 +246,10 @@ export async function GET(request: NextRequest) {
       plainLines.push("");
     }
 
-    if (emailChanges.length > 0) {
-      plainLines.push(`--- TODAY'S CHANGES (${emailChanges.length}) ---`);
-      for (const c of emailChanges) {
-        plainLines.push(`${c.dealName || c.dealId}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`);
-      }
-    } else {
-      plainLines.push("No document status changes today.");
-    }
-
     const subjectParts = [`PE Doc Digest — ${dateStr}`];
     if (nearlyComplete.length > 0) subjectParts.push(`${nearlyComplete.length} nearly done`);
     if (notUploaded.length > 0) subjectParts.push(`${notUploaded.length} not uploaded`);
     if (actionRequired.length > 0) subjectParts.push(`${actionRequired.length} need action`);
-    if (emailChanges.length > 0) subjectParts.push(`${emailChanges.length} change${emailChanges.length !== 1 ? "s" : ""}`);
 
     const result = await sendEmailMessage({
       to: RECIPIENTS,
@@ -289,7 +263,7 @@ export async function GET(request: NextRequest) {
     console.warn(
       `[pe-doc-digest] Sent to ${RECIPIENTS.join(", ")}: ` +
       `${nearlyComplete.length} nearly complete, ${notUploaded.length} not uploaded, ` +
-      `${actionRequired.length} need action, ${emailChanges.length} changes, ` +
+      `${actionRequired.length} need action, ` +
       `email ${result.success ? "delivered" : "failed"}`,
     );
 
@@ -299,7 +273,6 @@ export async function GET(request: NextRequest) {
       nearlyCompleteCount: nearlyComplete.length,
       notUploadedCount: notUploaded.length,
       actionRequiredCount: actionRequired.length,
-      changesCount: emailChanges.length,
       totalDealsTracked: dealDocs.size,
       date: dateStr,
     });
