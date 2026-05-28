@@ -23,7 +23,7 @@ describe("createOooBotTools", () => {
   it("all tools have descriptions", () => {
     const tools = createOooBotTools();
     for (const tool of tools) {
-      expect(tool.description).toBeTruthy();
+      expect((tool as { description?: string }).description).toBeTruthy();
     }
   });
 });
