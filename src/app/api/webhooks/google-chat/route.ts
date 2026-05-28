@@ -16,9 +16,22 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { verifyGoogleChatJwt } from "@/lib/google-chat-auth";
 import { prisma } from "@/lib/db";
-import { safeWaitUntil } from "@/lib/safe-wait-until";
+
+/**
+ * Keep a background promise alive after the response is returned.
+ * Uses Vercel's waitUntil (statically imported). Falls back to
+ * fire-and-forget locally where waitUntil throws outside a request scope.
+ */
+function keepAlive(promise: Promise<void>) {
+  try {
+    waitUntil(promise);
+  } catch {
+    promise.catch((err) => console.error("[google-chat] background error:", err));
+  }
+}
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -282,8 +295,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Fire async Claude processing ──
-    safeWaitUntil(
+    keepAlive(
       (async () => {
+        console.warn(
+          `[google-chat] async START space=${spaceName} sender=${senderEmail}`
+        );
         try {
           const { processOooBotMessage } = await import("@/lib/ooo-bot");
           await processOooBotMessage({
@@ -295,6 +311,7 @@ export async function POST(request: NextRequest) {
             spaceDisplayName: event.space?.displayName,
             playbook: config?.playbook ?? "",
           });
+          console.warn(`[google-chat] async DONE space=${spaceName}`);
         } catch (err) {
           console.error("[google-chat] Async processing failed:", err);
           try {
