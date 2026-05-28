@@ -265,12 +265,15 @@ export async function getShopHealthData(
       CACHE_KEYS.PROJECTS_ACTIVE,
       () => fetchAllProjects({ activeOnly: true })
     ),
+    // NOTE: Do NOT include PIPELINE_IDS.project here. fetchAllProjects above
+    // already returns the Project pipeline; duplicating it 2x rate-limited
+    // HubSpot to the point that the dashboard's overview started 429-ing.
+    // This fetcher exists only for the new Service + D&R + Roofing sections.
     appCache.getOrFetch(
       CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE,
       () =>
         fetchDealsByPipelines(
           [
-            PIPELINE_IDS.project,
             PIPELINE_IDS.service,
             PIPELINE_IDS.dnr,
             PIPELINE_IDS.roofing,
