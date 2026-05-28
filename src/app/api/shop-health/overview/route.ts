@@ -36,14 +36,19 @@ export async function GET(request: NextRequest) {
     );
 
     const rows: ShopHealthOverviewRow[] = [];
+    const errors: Array<{ slug: string; name: string; message: string; stack?: string }> = [];
     settled.forEach((result, idx) => {
       const group = DASHBOARD_LOCATION_GROUPS[idx];
       if (result.status === 'fulfilled') {
         rows.push(result.value);
       } else {
+        const err = result.reason;
+        const name = err instanceof Error ? err.name : 'Unknown';
+        const message = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 5).join(' | ') : undefined;
+        errors.push({ slug: group?.slug ?? 'unknown', name, message, stack });
         console.error(
-          `[shop-health] Overview row failed for ${group?.slug}:`,
-          result.reason instanceof Error ? `${result.reason.name}: ${result.reason.message}` : result.reason
+          `[shop-health] Overview row failed for ${group?.slug}: ${name}: ${message}\n${err instanceof Error ? err.stack : ''}`
         );
         // Emit a stub row so the UI knows the location exists but failed.
         rows.push({
@@ -64,12 +69,14 @@ export async function GET(request: NextRequest) {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
 
-    const result: ShopHealthOverviewData = {
+    const result: ShopHealthOverviewData & { _diagnostics?: typeof errors } = {
       rows,
       weekStart: formatWeekParam(weekStart),
       weekEnd: formatWeekParam(weekEnd),
       lastUpdated: new Date().toISOString(),
     };
+    // TEMP: surface per-location errors in the response for diagnosis
+    if (errors.length > 0) result._diagnostics = errors;
 
     return NextResponse.json(result);
   } catch (error) {
