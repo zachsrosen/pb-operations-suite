@@ -255,29 +255,24 @@ export async function getShopHealthData(
   // In parallel: fetch deals from all 4 pipelines (Project, Service, D&R,
   // Roofing) for the new Service + D&R/Roofing sections, plus open and
   // recently-closed service tickets.
-  const [
-    { data: allProjects },
-    allDealsResult,
-    openTickets,
-    closedTicketsResult,
-  ] = await Promise.all([
-    appCache.getOrFetch(
-      CACHE_KEYS.PROJECTS_ACTIVE,
-      () => fetchAllProjects({ activeOnly: true })
-    ),
-    // NOTE: Do NOT include PIPELINE_IDS.project here. fetchAllProjects above
-    // already returns the Project pipeline; duplicating it 2x rate-limited
-    // HubSpot to the point that the dashboard's overview started 429-ing.
-    // This fetcher exists only for the new Service + D&R + Roofing sections.
+  // The Project fetch is REQUIRED — it powers Pipeline, Preconstruction,
+  // Scheduling, Operations, Inspections, Customer Success.
+  const { data: allProjects } = await appCache.getOrFetch(
+    CACHE_KEYS.PROJECTS_ACTIVE,
+    () => fetchAllProjects({ activeOnly: true })
+  );
+
+  // The Service + D&R/Roofing + ticket fetches are OPTIONAL. If HubSpot is
+  // rate-limiting (PR #855's added load pushes us over budget in some windows)
+  // each new fetch fails open with empty data rather than taking down the
+  // whole dashboard. The new sections will show as empty until the next
+  // successful refresh.
+  const [allDealsResult, openTicketsResult, closedTicketsResult] = await Promise.allSettled([
     appCache.getOrFetch(
       CACHE_KEYS.DEALS_ALL_PIPELINES_ACTIVE,
       () =>
         fetchDealsByPipelines(
-          [
-            PIPELINE_IDS.service,
-            PIPELINE_IDS.dnr,
-            PIPELINE_IDS.roofing,
-          ],
+          [PIPELINE_IDS.service, PIPELINE_IDS.dnr, PIPELINE_IDS.roofing],
           true
         ),
       false,
@@ -291,8 +286,20 @@ export async function getShopHealthData(
       { ttl: 10 * 60 * 1000 }
     ),
   ]);
-  const allDeals = allDealsResult.data;
-  const closedTickets = closedTicketsResult.data;
+
+  const allDeals = allDealsResult.status === 'fulfilled' ? allDealsResult.value.data : [];
+  const openTickets = openTicketsResult.status === 'fulfilled' ? openTicketsResult.value : [];
+  const closedTickets = closedTicketsResult.status === 'fulfilled' ? closedTicketsResult.value.data : [];
+
+  if (allDealsResult.status === 'rejected') {
+    console.warn('[shop-health] fetchDealsByPipelines failed (Service+D&R+Roofing sections will be empty):', allDealsResult.reason);
+  }
+  if (openTicketsResult.status === 'rejected') {
+    console.warn('[shop-health] fetchServiceTickets failed (ticket metrics will be empty):', openTicketsResult.reason);
+  }
+  if (closedTicketsResult.status === 'rejected') {
+    console.warn('[shop-health] fetchClosedTicketsSince failed (closed-ticket metrics will be empty):', closedTicketsResult.reason);
+  }
 
   // Partition all-pipeline deals by pipelineId for the new sections.
   const serviceDeals = allDeals.filter((d) => d.pipelineId === PIPELINE_IDS.service);
