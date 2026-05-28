@@ -24,7 +24,7 @@ import type {
 } from "./shop-health-types";
 import type { Project } from "./hubspot";
 import type { DashboardLocationGroup } from "./dashboard-location-groups";
-import { resolveDashboardGroup } from "./dashboard-location-groups";
+import { resolveDashboardGroup, DASHBOARD_LOCATION_GROUPS } from "./dashboard-location-groups";
 import { fetchAllProjects, fetchDealsByPipelines } from "./hubspot";
 import { fetchServiceTickets, fetchClosedTicketsSince } from "./hubspot-tickets";
 import { PIPELINE_IDS } from "./deals-pipeline";
@@ -519,6 +519,132 @@ export async function getShopHealthData(
     drilldown,
     lastUpdated: new Date().toISOString(),
     goals,
+  };
+}
+
+/**
+ * Lightweight overview-row computation for the All Locations table.
+ *
+ * Unlike getShopHealthData (the full orchestrator), this fetches ONLY the
+ * Project pipeline — no Service deals, no tickets, no D&R/Roofing. It's
+ * designed for the All view's row-per-location table, where 5 parallel full
+ * orchestrators were pushing HubSpot past its rate-limit budget under load.
+ *
+ * Trade-off: the new columns (Open Tickets, D&R Active, Roof Active) show
+ * placeholder zeros in the All view. Per-location dashboards still use the
+ * full orchestrator and display real values for those metrics.
+ */
+export async function getShopHealthOverviewRows(
+  weekStart: Date
+): Promise<{
+  rows: import("./shop-health-types").ShopHealthOverviewRow[];
+  lastUpdated: string;
+}> {
+  // ONE Project fetch shared across all 5 locations (request coalescing).
+  const { data: allProjects } = await appCache.getOrFetch(
+    CACHE_KEYS.PROJECTS_ACTIVE,
+    () => fetchAllProjects({ activeOnly: true })
+  );
+
+  // ONE bottleneck DB query for all locations in this week.
+  const bottlenecksByLocation = new Map<string, string | null>();
+  try {
+    const allBottlenecks = await prisma.shopHealthBottleneck.findMany({
+      where: { weekStart },
+      orderBy: { createdAt: 'asc' },
+    });
+    for (const entry of allBottlenecks) {
+      // First entry per location wins (matches getBottlenecksForLocationWeek's order)
+      if (!bottlenecksByLocation.has(entry.location)) {
+        bottlenecksByLocation.set(entry.location, entry.constraint);
+      }
+    }
+  } catch (err) {
+    console.warn('[shop-health] Bottleneck DB read failed for overview:', err);
+  }
+
+  const stubMetric = (value: number): HeroMetric => ({
+    value,
+    priorWeek: null,
+    delta: null,
+    health: 'green',
+    target: null,
+  });
+
+  const rows = await Promise.all(
+    DASHBOARD_LOCATION_GROUPS.map(async (group) => {
+      // Filter projects to this dashboard group's canonical locations
+      const canonicalSet = new Set<string>(group.canonicals);
+      const locationProjects = allProjects.filter((p) => {
+        const normalized = normalizeLocation(p.pbLocation);
+        return normalized !== null && canonicalSet.has(normalized);
+      });
+
+      // Goals (one Prisma read per location — small, fast)
+      const avgDealSize = computeAvgDealSize(locationProjects);
+      const goals = await computeGoalsFromOfficeGoals(group, avgDealSize, weekStart);
+
+      // Compute the four core sections — all pure functions over locationProjects.
+      const pipeline = computePipeline(locationProjects, weekStart).section;
+      const preconstruction = computePreconstruction(locationProjects, weekStart).section;
+      const operations = computeOperations(locationProjects, weekStart, goals).section;
+      const inspections = computeInspections(locationProjects, weekStart).section;
+
+      // Bottleneck: first canonical-location match
+      let topBottleneck: string | null = null;
+      for (const canon of group.canonicals) {
+        const found = bottlenecksByLocation.get(canon);
+        if (found) {
+          topBottleneck = found;
+          break;
+        }
+      }
+
+      return {
+        location: group.label,
+        backlogWeeks: buildHeroMetric(
+          pipeline.backlogInWeeks,
+          null,
+          scoreBacklogWeeks(pipeline.backlogInWeeks),
+          6
+        ),
+        readyToBuild: buildHeroMetric(
+          preconstruction.totalReadyJobs,
+          null,
+          scoreReadyToBuild(preconstruction.totalReadyJobs, goals.weeklyInstalls),
+          goals.weeklyInstalls * 2
+        ),
+        scheduledInstalls: buildHeroMetric(
+          operations.installsPlanned,
+          null,
+          scoreScheduledInstalls(operations.installsPlanned, goals.weeklyInstalls),
+          goals.weeklyInstalls
+        ),
+        installsCompleted: buildHeroMetric(
+          operations.installsCompleted,
+          null,
+          scoreAgainstGoal(operations.installsCompleted, goals.weeklyInstalls),
+          goals.weeklyInstalls
+        ),
+        ptosReceived: buildHeroMetric(
+          inspections.ptosReceived,
+          null,
+          scoreAgainstGoal(inspections.ptosReceived, goals.weeklyInspections),
+          goals.weeklyInspections
+        ),
+        // Service/D&R/Roofing columns: stubbed in the All view to avoid the
+        // multi-pipeline HubSpot fetch. Click a per-location tab for real values.
+        openTickets: stubMetric(0),
+        dnrActive: stubMetric(0),
+        roofingActive: stubMetric(0),
+        topBottleneck,
+      };
+    })
+  );
+
+  return {
+    rows,
+    lastUpdated: new Date().toISOString(),
   };
 }
 
