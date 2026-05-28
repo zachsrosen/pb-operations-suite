@@ -21,13 +21,6 @@ const PTO_SKIP_DOCS = [
 async function main() {
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
-  const todayEnd = new Date();
-  todayEnd.setUTCHours(23, 59, 59, 999);
-
-  const changes = await prisma.peDocChangeLog.findMany({
-    where: { createdAt: { gte: todayStart, lte: todayEnd } },
-    orderBy: { createdAt: "asc" },
-  });
 
   const allDocs = await prisma.peDocumentReview.findMany({
     select: { dealId: true, docName: true, status: true, notes: true },
@@ -143,16 +136,6 @@ async function main() {
     month: "long", day: "numeric", year: "numeric", timeZone: "America/Denver",
   });
 
-  const emailChanges = changes.map((c) => ({
-    dealId: c.dealId,
-    dealName: dealNameMap.get(c.dealId) ?? c.dealName,
-    docName: c.docName,
-    oldStatus: c.oldStatus,
-    newStatus: c.newStatus,
-    hubspotUrl: hsUrl(c.dealId),
-    pePortalUrl: portalUrlMap.get(c.dealId) ?? null,
-  }));
-
   const html = await render(
     PeDocDigest({
       date: dateStr,
@@ -160,7 +143,7 @@ async function main() {
       nearlyComplete,
       notUploaded,
       actionRequired,
-      changes: emailChanges,
+      changes: [],
     }),
   );
 
@@ -170,7 +153,7 @@ async function main() {
   console.log(`Deals tracked: ${dealDocs.size}`);
   console.log(`HubSpot batch results: ${batchOk}, missing dealname: ${batchMissingName}`);
   console.log(`Names resolved: ${dealNameMap.size}, portal URLs: ${portalUrlMap.size}, stages: ${dealStageMap.size}`);
-  console.log(`Sections — nearlyComplete: ${nearlyComplete.length}, notUploaded: ${notUploaded.length}, actionRequired: ${actionRequired.length}, changes: ${emailChanges.length}`);
+  console.log(`Sections — nearlyComplete: ${nearlyComplete.length}, notUploaded: ${notUploaded.length}, actionRequired: ${actionRequired.length} (changes omitted from daily digest)`);
   const sample = [...nearlyComplete, ...notUploaded, ...actionRequired].slice(0, 5);
   console.log("Sample resolved deals:");
   for (const d of sample) {

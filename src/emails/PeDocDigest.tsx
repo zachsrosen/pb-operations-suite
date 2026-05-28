@@ -115,7 +115,8 @@ export function PeDocDigest({
           {totalDealsTracked} PE deals tracked
         </Text>
         <Text style={summaryMeta}>
-          {nearlyComplete.length} nearly complete · {notUploaded.length} not uploaded · {actionRequired.length} need action · {changes.length} change{changes.length !== 1 ? "s" : ""}
+          {nearlyComplete.length} nearly complete · {notUploaded.length} not uploaded · {actionRequired.length} need action
+          {changes.length > 0 && ` · ${changes.length} change${changes.length !== 1 ? "s" : ""}`}
         </Text>
       </Section>
 
@@ -229,13 +230,17 @@ export function PeDocDigest({
         </>
       )}
 
-      {/* Section 4: Today's Changes */}
-      <Section style={sectionHeader}>
-        <Text style={sectionHeaderText}>
-          Today&apos;s Changes ({changes.length})
-        </Text>
-      </Section>
-      {dealEntries.map(([dealKey, dealChanges]) => {
+      {/* Section 4: Today's Changes — only rendered when changes are passed.
+          The daily digest omits this (passes []); the real-time alert path
+          (pe-doc-notify.ts) reuses this template and populates it. */}
+      {changes.length > 0 && (
+        <>
+          <Section style={sectionHeader}>
+            <Text style={sectionHeaderText}>
+              Today&apos;s Changes ({changes.length})
+            </Text>
+          </Section>
+          {dealEntries.map(([dealKey, dealChanges]) => {
         const first = dealChanges[0];
         const hs = first.hubspotUrl || `https://app.hubspot.com/contacts/${portalId}/record/0-3/${first.dealId}`;
         return (
@@ -266,12 +271,8 @@ export function PeDocDigest({
             ))}
           </Section>
         );
-      })}
-
-      {changes.length === 0 && (
-        <Section style={emptyCard}>
-          <Text style={emptyText}>No document status changes today.</Text>
-        </Section>
+          })}
+        </>
       )}
     </EmailShell>
   );
@@ -405,20 +406,6 @@ const issueNotes: React.CSSProperties = {
   margin: "0",
   paddingLeft: "14px",
   whiteSpace: "pre-wrap" as const,
-};
-
-const emptyCard: React.CSSProperties = {
-  backgroundColor: "#1a1a2e",
-  border: "1px solid #2a2a3e",
-  borderRadius: "8px",
-  padding: "24px",
-  textAlign: "center",
-};
-
-const emptyText: React.CSSProperties = {
-  color: "#71717a",
-  fontSize: "14px",
-  margin: 0,
 };
 
 const dealNameStyle: React.CSSProperties = {
