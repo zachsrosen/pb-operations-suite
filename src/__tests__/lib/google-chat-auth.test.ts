@@ -4,6 +4,12 @@ import { verifyGoogleChatJwt } from "@/lib/google-chat-auth";
 jest.mock("jose", () => ({
   createRemoteJWKSet: jest.fn(() => jest.fn()),
   jwtVerify: jest.fn(),
+  decodeProtectedHeader: jest.fn(() => ({ alg: "RS256", kid: "test-kid" })),
+  decodeJwt: jest.fn(() => ({
+    iss: "https://accounts.google.com",
+    aud: "123456789",
+    sub: "user",
+  })),
 }));
 
 import { jwtVerify } from "jose";
@@ -46,10 +52,32 @@ describe("verifyGoogleChatJwt", () => {
     expect(result).toEqual({ valid: false, error: "Missing authorization header" });
   });
 
-  it("returns invalid when JWT verification fails", async () => {
-    mockJwtVerify.mockRejectedValueOnce(new Error("JWT expired"));
+  it("returns invalid when JWT verification fails across all sources", async () => {
+    // All JWKS source/issuer attempts reject
+    mockJwtVerify.mockRejectedValue(new Error("JWT expired"));
     const result = await verifyGoogleChatJwt("Bearer expired-token");
-    expect(result).toEqual({ valid: false, error: "JWT expired" });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain("JWT expired");
+    }
+  });
+
+  it("succeeds via a fallback JWKS source (OAuth2)", async () => {
+    const mockPayload = {
+      iss: "https://accounts.google.com",
+      aud: "123456789",
+      email: "user@photonbrothers.com",
+    };
+    // First source fails, second (OAuth2) succeeds
+    mockJwtVerify
+      .mockRejectedValueOnce(new Error("no applicable key found"))
+      .mockResolvedValueOnce({
+        payload: mockPayload,
+        protectedHeader: { alg: "RS256" },
+      } as never);
+
+    const result = await verifyGoogleChatJwt("Bearer fallback-token");
+    expect(result).toEqual({ valid: true, payload: mockPayload });
   });
 
   it("returns invalid when GOOGLE_CHAT_PROJECT_NUMBER is missing", async () => {
