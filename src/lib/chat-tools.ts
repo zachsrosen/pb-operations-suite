@@ -364,3 +364,116 @@ export function createChatTools(context: ChatToolContext) {
     countDealsByStage,
   ];
 }
+
+/**
+ * Read-only subset of chat tools for contexts where write operations
+ * (reviews, lock acquisition) are not appropriate — e.g. the OOO bot.
+ */
+export function createReadOnlyChatTools() {
+  const getDeal = betaZodTool({
+    name: "get_deal",
+    description: "Get HubSpot deal properties for a specific deal by ID",
+    inputSchema: z.object({
+      dealId: z.string().describe("HubSpot deal ID"),
+    }),
+    run: async (input) => {
+      const { hubspotClient } = await import("@/lib/hubspot");
+      const deal = await hubspotClient.crm.deals.basicApi.getById(
+        input.dealId,
+        [
+          "dealname", "dealstage", "amount", "pb_location",
+          "design_status", "permitting_status", "site_survey_status",
+          "install_date", "inspection_date", "pto_date",
+          "hubspot_owner_id", "closedate",
+        ]
+      );
+      return JSON.stringify(deal.properties);
+    },
+  });
+
+  const searchDeals = betaZodTool({
+    name: "search_deals",
+    description: "Search HubSpot deals by text query (searches deal name, stage, location)",
+    inputSchema: z.object({
+      query: z.string().describe("Search text"),
+    }),
+    run: async (input) => {
+      const { hubspotClient } = await import("@/lib/hubspot");
+      const response = await hubspotClient.crm.deals.searchApi.doSearch({
+        query: input.query,
+        limit: 10,
+        properties: ["dealname", "dealstage", "amount", "pb_location"],
+        sorts: ["createdate"],
+      });
+      return JSON.stringify(response.results.map((r) => r.properties));
+    },
+  });
+
+  const filterDealsByStage = betaZodTool({
+    name: "filter_deals_by_stage",
+    description: "Find deals in a specific pipeline stage by stage display name, returning up to 20 matches",
+    inputSchema: z.object({
+      stage: z.string().describe("Stage display name, e.g. 'Construction'"),
+    }),
+    run: async (input) => {
+      const { DEAL_STAGE_MAP, searchWithRetry } = await import("@/lib/hubspot");
+      const normalizedStage = input.stage.trim().toLowerCase();
+      const stageEntry = Object.entries(DEAL_STAGE_MAP).find(
+        ([stageId, stageName]) =>
+          stageName.toLowerCase() === normalizedStage ||
+          stageId.toLowerCase() === normalizedStage
+      ) ?? null;
+
+      if (!stageEntry) {
+        return JSON.stringify({
+          error: `Unknown stage: ${input.stage}`,
+          knownStages: Object.values(DEAL_STAGE_MAP),
+        });
+      }
+
+      const [stageId, stageName] = stageEntry;
+      const response = await searchWithRetry({
+        filterGroups: [{
+          filters: [{
+            propertyName: "dealstage",
+            operator: FilterOperatorEnum.Eq,
+            value: stageId,
+          }],
+        }],
+        limit: 20,
+        properties: ["dealname", "dealstage", "amount", "pb_location"],
+        sorts: ["createdate"],
+      });
+
+      return JSON.stringify({
+        stage: stageName,
+        count: response.results.length,
+        deals: response.results.map((deal) => ({
+          dealId: deal.id,
+          dealname: deal.properties?.dealname ?? "",
+          dealstage: stageName,
+          amount: deal.properties?.amount ?? "",
+          pb_location: deal.properties?.pb_location ?? "",
+        })),
+      });
+    },
+  });
+
+  const countDealsByStage = betaZodTool({
+    name: "count_deals_by_stage",
+    description: "Count active deals by stage in the project pipeline",
+    inputSchema: z.object({}),
+    run: async () => {
+      const { fetchAllProjects } = await import("@/lib/hubspot");
+      const projects = await fetchAllProjects({ activeOnly: true });
+      const counts = projects.reduce<Record<string, number>>((acc, project) => {
+        const stage = project.stage || "Unknown";
+        acc[stage] = (acc[stage] ?? 0) + 1;
+        return acc;
+      }, {});
+      return JSON.stringify({ total: projects.length, counts });
+    },
+  });
+
+  return [getDeal, searchDeals, filterDealsByStage, countDealsByStage];
+}
