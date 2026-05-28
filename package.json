@@ -66,6 +66,7 @@
     "cron-parser": "^5.5.0",
     "fflate": "^0.8.2",
     "inngest": "^4.2.4",
+    "jose": "^6.2.3",
     "next": "^16.2.1",
     "next-auth": "^5.0.0-beta.30",
     "pdf-lib": "^1.17.1",
