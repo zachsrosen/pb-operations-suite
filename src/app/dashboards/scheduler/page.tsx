@@ -2284,14 +2284,17 @@ export default function SchedulerPage() {
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
       let calendarOffset = 0;
-      // Iterate through calendar days but only count business days
+      // Iterate through calendar days but only count business days.
+      // When weekend columns are visible, weekend days within the span
+      // are displayed but never counted toward the business-day total.
       while (dayCount < businessDays) {
         const eventDate = new Date(startDate);
         eventDate.setDate(eventDate.getDate() + calendarOffset);
         const dayOfWeek = eventDate.getDay();
-        // Always count only business days — weekends are never work days
-        // even when weekend columns are visible (view-only toggle)
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        const isWeekendDay = dayOfWeek === 0 || dayOfWeek === 6;
+
+        if (!isWeekendDay) {
+          // Business day — always show, always count
           if (
             eventDate.getMonth() === currentMonth &&
             eventDate.getFullYear() === currentYear
@@ -2305,6 +2308,20 @@ export default function SchedulerPage() {
             });
           }
           dayCount++;
+        } else if (showWeekends) {
+          // Weekend day with toggle on — show but don't count
+          if (
+            eventDate.getMonth() === currentMonth &&
+            eventDate.getFullYear() === currentYear
+          ) {
+            const day = eventDate.getDate();
+            if (!eventsByDate[day]) eventsByDate[day] = [];
+            eventsByDate[day].push({
+              ...e,
+              dayNum: dayCount + 1,
+              totalCalDays: businessDays,
+            });
+          }
         }
         calendarOffset++;
       }
@@ -5171,12 +5188,13 @@ export default function SchedulerPage() {
                               const checkDate = new Date(eventStart);
                               checkDate.setDate(checkDate.getDate() + calOffset);
                               const dow = checkDate.getDay();
-                              if (dow !== 0 && dow !== 6) { // Always count only business days
+                              const isWknd = dow === 0 || dow === 6;
+                              if (!isWknd || showWeekends) {
                                 if (toDateStr(checkDate) === dateStr) {
                                   dayEvents.push({ event: e, dayNum: bDayCount + 1 });
                                   return; // Found match, done
                                 }
-                                bDayCount++;
+                                if (!isWknd) bDayCount++; // only weekdays count
                               }
                               calOffset++;
                             }
