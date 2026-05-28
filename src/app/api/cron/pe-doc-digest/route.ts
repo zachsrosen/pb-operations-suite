@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
     const portalUrlMap = new Map<string, string>();
     const dealNameMap = new Map<string, string>();
     const dealStageMap = new Map<string, string>();
+    const driveUrlMap = new Map<string, string>();
     try {
       const chunks = [];
       for (let i = 0; i < allDealIds.length; i += 100) {
@@ -84,7 +85,13 @@ export async function GET(request: NextRequest) {
       for (const chunk of chunks) {
         const resp = await hubspotClient.crm.deals.batchApi.read({
           inputs: chunk.map((id) => ({ id })),
-          properties: ["dealname", "dealstage", "pe_portal_url"],
+          // all_document_parent_folder_id is the deal's GDrive project folder,
+          // created by HubSpot automation for every deal (most reliable). The
+          // g_drive / all_document_folder_url fields are sparse legacy fallbacks.
+          properties: [
+            "dealname", "dealstage", "pe_portal_url",
+            "all_document_parent_folder_id", "g_drive", "all_document_folder_url",
+          ],
           propertiesWithHistory: [],
         });
         for (const deal of resp.results) {
@@ -92,6 +99,11 @@ export async function GET(request: NextRequest) {
           if (deal.properties.pe_portal_url) portalUrlMap.set(id, deal.properties.pe_portal_url);
           if (deal.properties.dealname) dealNameMap.set(id, deal.properties.dealname);
           if (deal.properties.dealstage) dealStageMap.set(id, deal.properties.dealstage);
+          const folderId = deal.properties.all_document_parent_folder_id;
+          const drive = folderId
+            ? `https://drive.google.com/drive/folders/${folderId}`
+            : (deal.properties.g_drive ?? deal.properties.all_document_folder_url);
+          if (drive) driveUrlMap.set(id, drive);
         }
       }
     } catch (err) {
@@ -137,6 +149,7 @@ export async function GET(request: NextRequest) {
           missingDocs: blocking.map((d) => d.docName),
           hubspotUrl: hsUrl(dealId),
           pePortalUrl: portalUrlMap.get(dealId) ?? null,
+          driveUrl: driveUrlMap.get(dealId) ?? null,
         });
       }
     }
@@ -162,6 +175,7 @@ export async function GET(request: NextRequest) {
           missingDocs: missing,
           hubspotUrl: hsUrl(dealId),
           pePortalUrl: portalUrlMap.get(dealId) ?? null,
+          driveUrl: driveUrlMap.get(dealId) ?? null,
         });
       }
     }
@@ -185,6 +199,7 @@ export async function GET(request: NextRequest) {
           issues,
           hubspotUrl: hsUrl(dealId),
           pePortalUrl: portalUrlMap.get(dealId) ?? null,
+          driveUrl: driveUrlMap.get(dealId) ?? null,
         });
       }
     }

@@ -36,6 +36,7 @@ async function main() {
   const portalUrlMap = new Map<string, string>();
   const dealNameMap = new Map<string, string>();
   const dealStageMap = new Map<string, string>();
+  const driveUrlMap = new Map<string, string>();
   let batchOk = 0;
   let batchMissingName = 0;
   try {
@@ -44,7 +45,10 @@ async function main() {
     for (const chunk of chunks) {
       const resp = await hubspotClient.crm.deals.batchApi.read({
         inputs: chunk.map((id) => ({ id })),
-        properties: ["dealname", "dealstage", "pe_portal_url"],
+        properties: [
+          "dealname", "dealstage", "pe_portal_url",
+          "all_document_parent_folder_id", "g_drive", "all_document_folder_url",
+        ],
         propertiesWithHistory: [],
       });
       for (const deal of resp.results) {
@@ -54,6 +58,11 @@ async function main() {
         if (deal.properties.dealname) dealNameMap.set(id, deal.properties.dealname);
         else batchMissingName++;
         if (deal.properties.dealstage) dealStageMap.set(id, deal.properties.dealstage);
+        const folderId = deal.properties.all_document_parent_folder_id;
+        const drive = folderId
+          ? `https://drive.google.com/drive/folders/${folderId}`
+          : (deal.properties.g_drive ?? deal.properties.all_document_folder_url);
+        if (drive) driveUrlMap.set(id, drive);
       }
     }
   } catch (err) {
@@ -87,6 +96,7 @@ async function main() {
         missingDocs: blocking.map((d) => d.docName),
         hubspotUrl: hsUrl(dealId),
         pePortalUrl: portalUrlMap.get(dealId) ?? null,
+        driveUrl: driveUrlMap.get(dealId) ?? null,
       });
     }
   }
@@ -108,6 +118,7 @@ async function main() {
         missingDocs: missing,
         hubspotUrl: hsUrl(dealId),
         pePortalUrl: portalUrlMap.get(dealId) ?? null,
+        driveUrl: driveUrlMap.get(dealId) ?? null,
       });
     }
   }
@@ -127,6 +138,7 @@ async function main() {
         issues,
         hubspotUrl: hsUrl(dealId),
         pePortalUrl: portalUrlMap.get(dealId) ?? null,
+        driveUrl: driveUrlMap.get(dealId) ?? null,
       });
     }
   }
@@ -152,12 +164,12 @@ async function main() {
   // Diagnostics
   console.log(`Deals tracked: ${dealDocs.size}`);
   console.log(`HubSpot batch results: ${batchOk}, missing dealname: ${batchMissingName}`);
-  console.log(`Names resolved: ${dealNameMap.size}, portal URLs: ${portalUrlMap.size}, stages: ${dealStageMap.size}`);
+  console.log(`Names resolved: ${dealNameMap.size}, portal URLs: ${portalUrlMap.size}, drive URLs: ${driveUrlMap.size}, stages: ${dealStageMap.size}`);
   console.log(`Sections — nearlyComplete: ${nearlyComplete.length}, notUploaded: ${notUploaded.length}, actionRequired: ${actionRequired.length} (changes omitted from daily digest)`);
   const sample = [...nearlyComplete, ...notUploaded, ...actionRequired].slice(0, 5);
   console.log("Sample resolved deals:");
   for (const d of sample) {
-    console.log(`  ${d.dealId} → name="${d.dealName ?? "(null)"}" stage=${d.stage} pePortal=${d.pePortalUrl ? "yes" : "NO"}`);
+    console.log(`  ${d.dealId} → name="${d.dealName ?? "(null)"}" stage=${d.stage} pePortal=${d.pePortalUrl ? "yes" : "NO"} drive=${d.driveUrl ? "yes" : "NO"}`);
   }
   await prisma.$disconnect();
 }

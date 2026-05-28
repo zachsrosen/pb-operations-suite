@@ -22,6 +22,7 @@ export interface NearlyCompleteDeal {
   missingDocs: string[];
   hubspotUrl?: string;
   pePortalUrl?: string | null;
+  driveUrl?: string | null;
 }
 
 export interface NotUploadedDeal {
@@ -31,6 +32,7 @@ export interface NotUploadedDeal {
   missingDocs: string[];
   hubspotUrl?: string;
   pePortalUrl?: string | null;
+  driveUrl?: string | null;
 }
 
 export interface ActionRequiredDeal {
@@ -40,6 +42,7 @@ export interface ActionRequiredDeal {
   issues: { docName: string; status: string; notes: string | null }[];
   hubspotUrl?: string;
   pePortalUrl?: string | null;
+  driveUrl?: string | null;
 }
 
 export interface PeDocDigestProps {
@@ -138,6 +141,9 @@ export function PeDocDigest({
                   {deal.pePortalUrl && (
                     <>{" "}<Link href={deal.pePortalUrl} style={portalLink}>PE Portal ↗</Link></>
                   )}
+                  {deal.driveUrl && (
+                    <>{" "}<Link href={deal.driveUrl} style={driveLink}>Drive ↗</Link></>
+                  )}
                 </Text>
                 <Text style={progressText}>
                   {deal.approvedCount}/{deal.totalDocs} approved
@@ -174,6 +180,9 @@ export function PeDocDigest({
                   {deal.pePortalUrl && (
                     <>{" "}<Link href={deal.pePortalUrl} style={portalLink}>PE Portal ↗</Link></>
                   )}
+                  {deal.driveUrl && (
+                    <>{" "}<Link href={deal.driveUrl} style={driveLink}>Drive ↗</Link></>
+                  )}
                 </Text>
                 <Text style={countBadge}>
                   {deal.missingDocs.length} doc{deal.missingDocs.length !== 1 ? "s" : ""} not uploaded
@@ -205,6 +214,9 @@ export function PeDocDigest({
                   <span style={stageTag}>{deal.stage}</span>
                   {deal.pePortalUrl && (
                     <>{" "}<Link href={deal.pePortalUrl} style={portalLink}>PE Portal ↗</Link></>
+                  )}
+                  {deal.driveUrl && (
+                    <>{" "}<Link href={deal.driveUrl} style={driveLink}>Drive ↗</Link></>
                   )}
                 </Text>
                 <Text style={countBadge}>
@@ -424,6 +436,13 @@ const dealLink: React.CSSProperties = {
 
 const portalLink: React.CSSProperties = {
   color: "#34d399",
+  fontSize: "11px",
+  textDecoration: "none",
+  fontWeight: "normal",
+};
+
+const driveLink: React.CSSProperties = {
+  color: "#60a5fa",
   fontSize: "11px",
   textDecoration: "none",
   fontWeight: "normal",
