@@ -4770,3 +4770,45 @@ model ShopHealthBottleneck {
   @@index([location])
   @@index([weekStart])
 }
+
+// ── OOO Bot ─────────────────────────────────────────────────
+
+model OooBotConversation {
+  id          String   @id @default(cuid())
+  spaceId     String
+  threadId    String?
+  senderEmail String
+  senderName  String
+  role        String
+  content     String
+  model       String?
+  toolsUsed   String[]
+  createdAt   DateTime @default(now())
+
+  @@index([spaceId, threadId, createdAt])
+}
+
+model OooBotEscalation {
+  id           String    @id @default(cuid())
+  senderEmail  String
+  senderName   String
+  question     String
+  botContext   String?
+  spaceId      String
+  threadId     String?
+  status       String   @default("PENDING")
+  resolvedAt   DateTime?
+  resolvedNote String?
+  createdAt    DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
+model OooBotConfig {
+  id           String   @id @default("default")
+  playbook     String
+  enabled      Boolean  @default(true)
+  oooStartDate DateTime
+  oooEndDate   DateTime
+  updatedAt    DateTime @updatedAt
+}
