@@ -928,12 +928,14 @@ export default function SchedulerPage() {
   const [showRoofing, setShowRoofing] = useState(false);
   const [showOther, setShowOther] = useState(false);
   const [showOnCall, setShowOnCall] = useState(false);
+  const [showWeekends, setShowWeekends] = useState(false);
   useEffect(() => {
     if (localStorage.getItem("scheduler-show-service") === "true") setShowService(true);
     if (localStorage.getItem("scheduler-show-dnr") === "true") setShowDnr(true);
     if (localStorage.getItem("scheduler-show-roofing") === "true") setShowRoofing(true);
     if (localStorage.getItem("scheduler-show-other") === "true") setShowOther(true);
     if (localStorage.getItem("scheduler-show-on-call") === "true") setShowOnCall(true);
+    if (localStorage.getItem("scheduler-show-weekends") === "true") setShowWeekends(true);
   }, []);
   const toggleService = useCallback(() => {
     setShowService((prev) => {
@@ -967,6 +969,13 @@ export default function SchedulerPage() {
     setShowOnCall((prev) => {
       const next = !prev;
       localStorage.setItem("scheduler-show-on-call", String(next));
+      return next;
+    });
+  }, []);
+  const toggleWeekends = useCallback(() => {
+    setShowWeekends((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-weekends", String(next));
       return next;
     });
   }, []);
@@ -2249,21 +2258,24 @@ export default function SchedulerPage() {
   const calendarData = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    // Convert to weekday-only grid index: how many empty cells before the 1st weekday
-    // Grid columns: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4
     const jsDay = firstDay.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    // Sun/Sat: first weekday is Monday → 0 padding
-    // Mon=0, Tue=1, Wed=2, Thu=3, Fri=4
-    const startDay = jsDay === 0 || jsDay === 6 ? 0 : jsDay - 1;
+    // Grid starts on Monday. With weekends: 7-col grid; without: 5-col grid.
+    // Padding = number of empty cells before the 1st of the month.
+    const startDay = showWeekends
+      ? (jsDay + 6) % 7 // Mon=0, Tue=1 ... Sun=6
+      : jsDay === 0 || jsDay === 6 ? 0 : jsDay - 1;
     const daysInMonth = lastDay.getDate();
     const today = new Date();
 
-    // Build list of weekday-only dates for this month
+    // Build list of dates to show in the grid
     const weekdays: number[] = [];
     for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(currentYear, currentMonth, d);
-      const dow = date.getDay();
-      if (dow !== 0 && dow !== 6) weekdays.push(d);
+      if (!showWeekends) {
+        const date = new Date(currentYear, currentMonth, d);
+        const dow = date.getDay();
+        if (dow === 0 || dow === 6) continue;
+      }
+      weekdays.push(d);
     }
 
     const eventsByDate: Record<number, (DisplayEvent & { dayNum: number; totalCalDays: number })[]> = {};
@@ -2277,8 +2289,8 @@ export default function SchedulerPage() {
         const eventDate = new Date(startDate);
         eventDate.setDate(eventDate.getDate() + calendarOffset);
         const dayOfWeek = eventDate.getDay();
-        // Skip weekends
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        // Skip weekends unless showing them
+        if (showWeekends || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
           if (
             eventDate.getMonth() === currentMonth &&
             eventDate.getFullYear() === currentYear
@@ -2313,7 +2325,7 @@ export default function SchedulerPage() {
     }
 
     return { startDay, daysInMonth, today, eventsByDate, weekdays };
-  }, [currentYear, currentMonth, displayEvents]);
+  }, [currentYear, currentMonth, displayEvents, showWeekends]);
 
   /* ================================================================ */
   /*  Week view logic                                                  */
@@ -2326,14 +2338,15 @@ export default function SchedulerPage() {
     const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday is 0, so go back 6 days
     const start = new Date(today);
     start.setDate(today.getDate() + mondayOffset + weekOffset * 7);
+    const dayCount = showWeekends ? 7 : 5;
     const dates: Date[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < dayCount; i++) {
       const d = new Date(start);
       d.setDate(d.getDate() + i);
       dates.push(d);
     }
     return dates;
-  }, [weekOffset]);
+  }, [weekOffset, showWeekends]);
 
   /* ================================================================ */
   /*  Day view logic                                                   */
@@ -2403,14 +2416,15 @@ export default function SchedulerPage() {
     start.setDate(today.getDate() + mondayOffset);
     const dates: Date[] = [];
     const current = new Date(start);
-    while (dates.length < 10) {
-      if (current.getDay() !== 0 && current.getDay() !== 6) {
+    const targetCount = showWeekends ? 14 : 10; // 2 weeks
+    while (dates.length < targetCount) {
+      if (showWeekends || (current.getDay() !== 0 && current.getDay() !== 6)) {
         dates.push(new Date(current));
       }
       current.setDate(current.getDate() + 1);
     }
     return dates;
-  }, []);
+  }, [showWeekends]);
 
   /* ================================================================ */
   /*  Handlers                                                         */
@@ -2427,9 +2441,12 @@ export default function SchedulerPage() {
   const handleDayClick = useCallback(
     (dateStr: string) => {
       if (!selectedProject) return;
-      if (isWeekend(dateStr)) {
+      if (isWeekend(dateStr) && !showWeekends) {
         showToast("Cannot schedule on weekends", "error");
         return;
+      }
+      if (isWeekend(dateStr) && showWeekends) {
+        showToast("Scheduling on a weekend", "warning");
       }
       const holiday = pbHolidayName(dateStr);
       if (holiday) {
@@ -2439,7 +2456,7 @@ export default function SchedulerPage() {
       openScheduleModal(selectedProject, dateStr);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedProject, showToast]
+    [selectedProject, showToast, showWeekends]
   );
 
   const openScheduleModal = useCallback(
@@ -3416,9 +3433,12 @@ export default function SchedulerPage() {
   const handleDrop = useCallback(
     (e: React.DragEvent, dateStr: string, crewName?: string) => {
       e.preventDefault();
-      if (isWeekend(dateStr)) {
+      if (isWeekend(dateStr) && !showWeekends) {
         showToast("Cannot schedule on weekends", "error");
         return;
+      }
+      if (isWeekend(dateStr) && showWeekends) {
+        showToast("Scheduling on a weekend", "warning");
       }
       const holiday = pbHolidayName(dateStr);
       if (holiday) {
@@ -3451,15 +3471,18 @@ export default function SchedulerPage() {
       }
       setDraggedProjectId(null);
     },
-    [projects, manualSchedules, showToast, openScheduleModal, getEffectiveConstructionDays]
+    [projects, manualSchedules, showToast, showWeekends, openScheduleModal, getEffectiveConstructionDays]
   );
 
   const handleWeekCellClick = useCallback(
     (dateStr: string, crewName: string) => {
       if (!selectedProject) return;
-      if (isWeekend(dateStr)) {
+      if (isWeekend(dateStr) && !showWeekends) {
         showToast("Cannot schedule on weekends", "error");
         return;
+      }
+      if (isWeekend(dateStr) && showWeekends) {
+        showToast("Scheduling on a weekend", "warning");
       }
       const holiday = pbHolidayName(dateStr);
       if (holiday) {
@@ -3470,7 +3493,7 @@ export default function SchedulerPage() {
       setSelectedProject(proj);
       openScheduleModal(proj, dateStr);
     },
-    [selectedProject, showToast, openScheduleModal]
+    [selectedProject, showToast, showWeekends, openScheduleModal]
   );
 
   /* ---- Export functions ---- */
@@ -4583,6 +4606,22 @@ export default function SchedulerPage() {
                 </span>
                 On-Call
               </button>
+              <button
+                onClick={toggleWeekends}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  showWeekends
+                    ? "border-orange-400 text-orange-400 bg-orange-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+                title="Show Saturday and Sunday columns on calendar"
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showWeekends ? "border-orange-400" : "border-t-border"
+                }`}>
+                  {showWeekends && <span className="w-1 h-1 rounded-full bg-orange-400" />}
+                </span>
+                Weekends
+              </button>
             </div>
             {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
               <button
@@ -4656,9 +4695,9 @@ export default function SchedulerPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-5 gap-0.5 bg-surface-2 rounded-lg overflow-hidden p-0.5">
-                  {/* Day headers — weekdays only */}
-                  {DAY_NAMES.map((d) => (
+                <div className={`grid ${showWeekends ? "grid-cols-7" : "grid-cols-5"} gap-0.5 bg-surface-2 rounded-lg overflow-hidden p-0.5`}>
+                  {/* Day headers */}
+                  {(showWeekends ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : DAY_NAMES).map((d) => (
                     <div
                       key={d}
                       className="bg-surface py-2 text-center font-semibold text-[0.65rem] text-muted"
@@ -4677,7 +4716,7 @@ export default function SchedulerPage() {
                     </div>
                   ))}
 
-                  {/* Current month weekdays only */}
+                  {/* Current month days */}
                   {calendarData.weekdays.map(
                     (day) => {
                       const isToday =
@@ -4687,6 +4726,7 @@ export default function SchedulerPage() {
                       const dayEvents = calendarData.eventsByDate[day] || [];
                       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                       const holidayLabel = pbHolidayName(dateStr);
+                      const isWeekendDay = showWeekends && isWeekend(dateStr);
 
                       return (
                         <div
@@ -4696,7 +4736,7 @@ export default function SchedulerPage() {
                               ? "ring-2 ring-inset ring-orange-500"
                               : ""
                           } ${
-                            holidayLabel ? "bg-red-900/10" : ""
+                            holidayLabel ? "bg-red-900/10" : isWeekendDay ? "bg-surface-2/50" : ""
                           } ${
                             canDrop && !holidayLabel
                               ? "hover:bg-orange-500/10 hover:ring-2 hover:ring-inset hover:ring-orange-500"
@@ -5039,7 +5079,7 @@ export default function SchedulerPage() {
                       day: "numeric",
                     })}{" "}
                     -{" "}
-                    {weekDates[4].toLocaleDateString("en-US", {
+                    {weekDates[weekDates.length - 1].toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
@@ -5053,7 +5093,7 @@ export default function SchedulerPage() {
                   </button>
                 </div>
 
-                <div className="grid gap-px bg-surface-2 rounded-lg overflow-hidden" style={{ gridTemplateColumns: "100px repeat(5, 1fr)" }}>
+                <div className="grid gap-px bg-surface-2 rounded-lg overflow-hidden" style={{ gridTemplateColumns: `100px repeat(${showWeekends ? 7 : 5}, 1fr)` }}>
                   {/* Header row */}
                   <div className="bg-background p-2" />
                   {weekDates.map((d, i) => {
@@ -5061,6 +5101,7 @@ export default function SchedulerPage() {
                       d.toDateString() === todayStr.current;
                     const dStr = toDateStr(d);
                     const weekHoliday = pbHolidayName(dStr);
+                    const weekHeaderWeekend = showWeekends && (d.getDay() === 0 || d.getDay() === 6);
                     return (
                       <div
                         key={i}
@@ -5069,7 +5110,9 @@ export default function SchedulerPage() {
                             ? "text-red-400 bg-red-900/10"
                             : isToday
                               ? "text-orange-400 bg-orange-500/10"
-                              : "text-muted bg-surface"
+                              : weekHeaderWeekend
+                                ? "text-muted/70 bg-surface-2/50"
+                                : "text-muted bg-surface"
                         }`}
                       >
                         {d.toLocaleDateString("en-US", { weekday: "short" })}
@@ -5127,7 +5170,7 @@ export default function SchedulerPage() {
                               const checkDate = new Date(eventStart);
                               checkDate.setDate(checkDate.getDate() + calOffset);
                               const dow = checkDate.getDay();
-                              if (dow !== 0 && dow !== 6) { // Skip weekends
+                              if (showWeekends || (dow !== 0 && dow !== 6)) { // Skip weekends unless showing them
                                 if (toDateStr(checkDate) === dateStr) {
                                   dayEvents.push({ event: e, dayNum: bDayCount + 1 });
                                   return; // Found match, done
@@ -5150,11 +5193,12 @@ export default function SchedulerPage() {
                             return (a.event.isForecast ? 1 : 0) - (b.event.isForecast ? 1 : 0);
                           });
                           const weekCellHoliday = isPbHoliday(dateStr);
+                          const weekCellWeekend = showWeekends && isWeekend(dateStr);
                           return (
                             <div
                               key={di}
                               className={`bg-surface min-h-[70px] p-1 cursor-pointer transition-colors hover:bg-surface-elevated ${
-                                weekCellHoliday ? "bg-red-900/10" : ""
+                                weekCellHoliday ? "bg-red-900/10" : weekCellWeekend ? "bg-surface-2/50" : ""
                               } ${
                                 canDrop && !weekCellHoliday
                                   ? "hover:bg-orange-500/10 hover:ring-2 hover:ring-inset hover:ring-orange-500"
@@ -5282,13 +5326,16 @@ export default function SchedulerPage() {
                     {ganttDates.map((d, i) => {
                       const isToday =
                         d.toDateString() === todayStr.current;
+                      const ganttWeekend = showWeekends && (d.getDay() === 0 || d.getDay() === 6);
                       return (
                         <div
                           key={i}
                           className={`p-1.5 text-center text-[0.55rem] ${
                             isToday
                               ? "bg-orange-500/10 text-orange-400"
-                              : "bg-surface text-muted"
+                              : ganttWeekend
+                                ? "bg-surface-2/50 text-muted/70"
+                                : "bg-surface text-muted"
                           }`}
                         >
                           <span className="font-semibold">
@@ -5327,7 +5374,7 @@ export default function SchedulerPage() {
                         {ganttDates.map((d, idx) => (
                           <div
                             key={idx}
-                            className="bg-surface relative"
+                            className={`relative ${showWeekends && (d.getDay() === 0 || d.getDay() === 6) ? "bg-surface-2/50" : "bg-surface"}`}
                           >
                             {displayEvents
                               .filter((e) => {
