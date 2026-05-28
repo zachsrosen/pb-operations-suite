@@ -2289,8 +2289,9 @@ export default function SchedulerPage() {
         const eventDate = new Date(startDate);
         eventDate.setDate(eventDate.getDate() + calendarOffset);
         const dayOfWeek = eventDate.getDay();
-        // Skip weekends unless showing them
-        if (showWeekends || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
+        // Always count only business days — weekends are never work days
+        // even when weekend columns are visible (view-only toggle)
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
           if (
             eventDate.getMonth() === currentMonth &&
             eventDate.getFullYear() === currentYear
@@ -5170,7 +5171,7 @@ export default function SchedulerPage() {
                               const checkDate = new Date(eventStart);
                               checkDate.setDate(checkDate.getDate() + calOffset);
                               const dow = checkDate.getDay();
-                              if (showWeekends || (dow !== 0 && dow !== 6)) { // Skip weekends unless showing them
+                              if (dow !== 0 && dow !== 6) { // Always count only business days
                                 if (toDateStr(checkDate) === dateStr) {
                                   dayEvents.push({ event: e, dayNum: bDayCount + 1 });
                                   return; // Found match, done
