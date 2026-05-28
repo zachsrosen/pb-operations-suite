@@ -120,7 +120,7 @@ const COLUMNS: AdminTableColumn<BugReport>[] = [
         <div className="text-xs font-medium text-foreground truncate max-w-xs">{r.title}</div>
         <div className="text-[10px] text-muted truncate max-w-xs">
           {r.reporterName || r.reporterEmail}
-          {r.pageUrl && <span className="ml-1 opacity-60">{new URL(r.pageUrl).pathname}</span>}
+          {r.pageUrl && <span className="ml-1 opacity-60">{(() => { try { return new URL(r.pageUrl).pathname; } catch { return r.pageUrl; } })()}</span>}
         </div>
       </div>
     ),
