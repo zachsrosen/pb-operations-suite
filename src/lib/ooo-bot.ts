@@ -226,9 +226,13 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   }
 
   // ── Post response to Google Chat ──
+  console.warn(
+    `[ooo-bot] posting reply to ${spaceName} (len=${responseText.length}, tools=${toolsUsed.join(",")})`
+  );
   await postGoogleChatMessage({
     spaceName,
     threadName,
     text: responseText || "I processed your message but didn't have anything to say. Try asking a specific question?",
   });
+  console.warn(`[ooo-bot] reply posted to ${spaceName}`);
 }
