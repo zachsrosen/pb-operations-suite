@@ -226,12 +226,14 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   }
 
   // ── Post response to Google Chat ──
+  // Post to the main conversation timeline (no thread) so the answer
+  // appears inline next to the user's question rather than hidden in a
+  // reply thread — better UX for a DM/assistant bot.
   console.warn(
     `[ooo-bot] posting reply to ${spaceName} (len=${responseText.length}, tools=${toolsUsed.join(",")})`
   );
   await postGoogleChatMessage({
     spaceName,
-    threadName,
     text: responseText || "I processed your message but didn't have anything to say. Try asking a specific question?",
   });
   console.warn(`[ooo-bot] reply posted to ${spaceName}`);
