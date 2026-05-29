@@ -12,7 +12,7 @@ import {
 } from "@/lib/pricing-calculator";
 import { safeWaitUntil } from "@/lib/safe-wait-until";
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
-import { PE_DOC_HUBSPOT_MAP, HUBSPOT_TO_PE_STATUS } from "@/lib/pe-hubspot-sync";
+import { prisma } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -73,10 +73,11 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
-  docReviews: PeDocReviewFromHS[];
+  driveUrl: string | null;
+  docReviews: PeDocReviewRow[];
 }
 
-interface PeDocReviewFromHS {
+interface PeDocReviewRow {
   dealId: string;
   docName: string;
   status: string;
@@ -128,8 +129,10 @@ const PE_DEAL_PROPERTIES = [
   // Milestone completion dates (for PE Submission Gap timeline)
   "inspections_completion_date",
   "pto_completion_date",
-  // PE per-document status + notes (15 status + 15 notes = 30 properties)
-  ...PE_DOC_HUBSPOT_MAP.flatMap((m) => [m.statusProp, m.notesProp]),
+  // Google Drive project folder (quick access to source docs)
+  "all_document_parent_folder_id",
+  "g_drive",
+  "all_document_folder_url",
 ];
 
 // ---------------------------------------------------------------------------
@@ -194,6 +197,24 @@ export async function GET() {
     const allStageMaps = (stageMaps.project || {}) as Record<string, string>;
 
     // EC lookup — static set, no network calls needed
+
+    // PE doc statuses come from the peDocumentReview table — the source of
+    // truth, populated by the PE portal scraper. HubSpot deal props are synced
+    // downstream of this table, so the DB is always at least as fresh and also
+    // carries the full rejection notes (submission/response dates + PE comment).
+    const dbDocs = await prisma.peDocumentReview.findMany({
+      select: { dealId: true, docName: true, status: true, notes: true },
+    });
+    const docsByDeal = new Map<string, PeDocReviewRow[]>();
+    for (const d of dbDocs) {
+      if (!docsByDeal.has(d.dealId)) docsByDeal.set(d.dealId, []);
+      docsByDeal.get(d.dealId)!.push({
+        dealId: d.dealId,
+        docName: d.docName,
+        status: d.status,
+        notes: d.notes,
+      });
+    }
 
     // Transform deals + build HubSpot sync batch in one pass
     // (raw `deal` properties are only in scope inside this .map())
@@ -281,23 +302,20 @@ export async function GET() {
         }
       }
 
-      // ------------------------------------------------------------------
-      // PE per-document statuses — read from HubSpot deal properties
-      // ------------------------------------------------------------------
-      const docReviews: PeDocReviewFromHS[] = [];
-      for (const mapping of PE_DOC_HUBSPOT_MAP) {
-        const rawStatus = deal[mapping.statusProp];
-        if (!rawStatus) continue; // skip docs with no status set
-        const statusStr = String(rawStatus);
-        const peStatus = HUBSPOT_TO_PE_STATUS[statusStr];
-        if (!peStatus) continue;
-        docReviews.push({
-          dealId,
-          docName: mapping.docName,
-          status: peStatus,
-          notes: deal[mapping.notesProp] ? String(deal[mapping.notesProp]) : null,
-        });
-      }
+      // PE per-document statuses — from the peDocumentReview DB table
+      const docReviews = docsByDeal.get(dealId) ?? [];
+
+      // Google Drive project folder. all_document_parent_folder_id is the
+      // HubSpot-automation-created folder (most reliable); g_drive /
+      // all_document_folder_url are sparse legacy fallbacks.
+      const folderId = deal.all_document_parent_folder_id;
+      const driveUrl = folderId
+        ? `https://drive.google.com/drive/folders/${String(folderId)}`
+        : deal.g_drive
+          ? String(deal.g_drive)
+          : deal.all_document_folder_url
+            ? String(deal.all_document_folder_url)
+            : null;
 
       return {
         dealId,
@@ -335,6 +353,7 @@ export async function GET() {
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
         pePortalUrl: deal.pe_portal_url ? String(deal.pe_portal_url) : null,
         peProjectId: deal.pe_project_id ? String(deal.pe_project_id) : null,
+        driveUrl,
         docReviews,
       };
     });
