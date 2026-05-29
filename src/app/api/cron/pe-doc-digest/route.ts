@@ -19,7 +19,7 @@ import {
  *   Section 3: Action Required (rejections with PE comments)
  *   Section 4: Today's Changes (status transitions)
  *
- * Schedule: 21:30 UTC (3:30 PM MT) weekdays
+ * Schedule: 13:30 UTC (7:30 AM MT) weekdays — see vercel.json
  * Protected by CRON_SECRET.
  */
 export const maxDuration = 30;

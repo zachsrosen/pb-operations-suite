@@ -32,6 +32,7 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
+  driveUrl: string | null;
   docReviews: DocReviewFromHS[];
 }
 
@@ -272,14 +273,44 @@ function computeDealDocSummary(
   };
 }
 
-const CATEGORY_LABELS: Record<ActionCategory, string> = {
-  "needs-upload": "PB Needs to Upload",
-  "action-required": "Action Required",
-  "rejected": "Rejected — Fix & Resubmit",
-  "waiting-on-pe": "Waiting on PE Review",
-  "approved": "All Approved",
-  "no-data": "No Portal Data",
-};
+// ---------------------------------------------------------------------------
+// Email-style actionable sections (mirrors the pe-doc-digest cron):
+//   Nearly Complete / Not Uploaded / Action Required
+// ---------------------------------------------------------------------------
+
+const TOTAL_DOCS_PER_DEAL = 15;
+// For PTO-stage deals these two aren't expected yet, so they're excluded from
+// the Not Uploaded list (matches the digest's PTO_SKIP_DOCS).
+const PTO_SKIP_DOCS = new Set<string>([
+  "Signed Interconnection Agreement",
+  "Permission to Operate (PTO)",
+]);
+
+type DocWithReview = { doc: DocRequirement; review: DocReview | undefined };
+
+function getDealActionLists(
+  s: DealDocSummary,
+  docMap: Map<string, DocReview>,
+): { blocking: DocWithReview[]; missing: DocWithReview[]; issues: DocWithReview[] } {
+  const docs = PE_DOCUMENTS.filter((d) => s.sections.includes(d.section));
+  const withReviews: DocWithReview[] = docs.map((doc) => ({
+    doc,
+    review: docMap.get(`${s.deal.dealId}:${doc.name}`),
+  }));
+  const isPto = s.milestone === "pto";
+  return {
+    blocking: withReviews.filter(
+      ({ review }) => review?.status === "NOT_UPLOADED" || review?.status === "ACTION_REQUIRED",
+    ),
+    missing: withReviews.filter(
+      ({ doc, review }) =>
+        review?.status === "NOT_UPLOADED" && !(isPto && PTO_SKIP_DOCS.has(doc.name)),
+    ),
+    issues: withReviews.filter(
+      ({ review }) => review?.status === "ACTION_REQUIRED" || review?.status === "REJECTED",
+    ),
+  };
+}
 
 const CATEGORY_COLORS: Record<ActionCategory, string> = {
   "needs-upload": "border-yellow-500/40 bg-yellow-500/5",
@@ -288,15 +319,6 @@ const CATEGORY_COLORS: Record<ActionCategory, string> = {
   "waiting-on-pe": "border-blue-500/40 bg-blue-500/5",
   "approved": "border-green-500/40 bg-green-500/5",
   "no-data": "border-zinc-500/30 bg-zinc-500/5",
-};
-
-const CATEGORY_DOT: Record<ActionCategory, string> = {
-  "needs-upload": "bg-yellow-400",
-  "action-required": "bg-orange-400",
-  "rejected": "bg-red-400",
-  "waiting-on-pe": "bg-blue-400",
-  "approved": "bg-green-400",
-  "no-data": "bg-zinc-500",
 };
 
 const CATEGORY_PRIORITY: Record<ActionCategory, number> = {
@@ -422,6 +444,40 @@ function DocLine({ doc, review }: { doc: DocRequirement; review: DocReview | und
   );
 }
 
+// Shared external-link cluster (HubSpot + PE Portal + Drive)
+function DealLinks({ deal, iconClass }: { deal: PeDeal; iconClass: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <a href={deal.hubspotUrl} target="_blank" rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="text-orange-400/60 hover:text-orange-400 transition-colors" title="HubSpot">
+        <svg className={iconClass} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+        </svg>
+      </a>
+      {deal.pePortalUrl && (
+        <a href={deal.pePortalUrl} target="_blank" rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-emerald-500/60 hover:text-emerald-400 transition-colors"
+          title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}>
+          <svg className={iconClass} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+          </svg>
+        </a>
+      )}
+      {deal.driveUrl && (
+        <a href={deal.driveUrl} target="_blank" rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-blue-400/60 hover:text-blue-400 transition-colors" title="Google Drive">
+          <svg className={iconClass} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
+          </svg>
+        </a>
+      )}
+    </div>
+  );
+}
+
 function DealCard({ summary, docMap, defaultExpanded }: {
   summary: DealDocSummary;
   docMap: Map<string, DocReview>;
@@ -479,25 +535,7 @@ function DealCard({ summary, docMap, defaultExpanded }: {
             )}
           </div>
           {/* External links */}
-          <div className="flex items-center gap-1">
-            <a href={deal.hubspotUrl} target="_blank" rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-orange-400/60 hover:text-orange-400 transition-colors" title="HubSpot">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-              </svg>
-            </a>
-            {deal.pePortalUrl && (
-              <a href={deal.pePortalUrl} target="_blank" rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-emerald-500/60 hover:text-emerald-400 transition-colors"
-                title={`PE Portal${deal.peProjectId ? ` — ${deal.peProjectId}` : ""}`}>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                </svg>
-              </a>
-            )}
-          </div>
+          <DealLinks deal={deal} iconClass="w-3.5 h-3.5" />
           {/* Chevron */}
           <svg className={`w-4 h-4 text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
             fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -596,23 +634,8 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
               />
             );
           })}
-          <div className="flex items-center gap-1 ml-1">
-            <a href={deal.hubspotUrl} target="_blank" rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="text-orange-400/60 hover:text-orange-400 transition-colors" title="HubSpot">
-              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-              </svg>
-            </a>
-            {deal.pePortalUrl && (
-              <a href={deal.pePortalUrl} target="_blank" rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-emerald-500/60 hover:text-emerald-400 transition-colors" title="PE Portal">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                </svg>
-              </a>
-            )}
+          <div className="ml-1">
+            <DealLinks deal={deal} iconClass="w-3 h-3" />
           </div>
           <svg className={`w-3.5 h-3.5 text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
             fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -634,6 +657,62 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
 }
 
 // ---------------------------------------------------------------------------
+// Section view — email-style row showing only the docs relevant to a section
+// (Nearly Complete / Not Uploaded / Action Required)
+// ---------------------------------------------------------------------------
+
+function SectionDealRow({ summary, docs, badgeLabel, badgeClass, defaultExpanded }: {
+  summary: DealDocSummary;
+  docs: DocWithReview[];
+  badgeLabel: string;
+  badgeClass: string;
+  defaultExpanded: boolean;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const { deal, milestone } = summary;
+
+  return (
+    <div className="rounded-lg border border-border/40 bg-surface/30 transition-colors">
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface/40 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <ProgressRing approved={summary.approved} total={summary.totalDocs} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-foreground truncate">{deal.dealName}</span>
+            <MilestoneBadge milestone={milestone} />
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${badgeClass}`}>
+              {badgeLabel}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[11px] text-muted">{deal.pbLocation}</span>
+            {deal.peProjectId && <span className="text-[10px] text-muted/50">{deal.peProjectId}</span>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <DealLinks deal={deal} iconClass="w-3.5 h-3.5" />
+          <svg className={`w-4 h-4 text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-3 border-t border-border/30">
+          <div className="divide-y divide-border/20 mt-1">
+            {docs.map(({ doc, review }) => (
+              <DocLine key={doc.name} doc={doc} review={review} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -644,7 +723,7 @@ export default function PeDocsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Build docMap from HubSpot deal properties (no separate DB query needed)
+  // Build docMap from the API's docReviews (sourced from peDocumentReview DB)
   const docMap = useMemo(() => {
     const m = new Map<string, DocReview>();
     for (const deal of data?.deals ?? []) {
@@ -675,14 +754,15 @@ export default function PeDocsPage() {
   const [locFilter, setLocFilter] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"grouped" | "list" | "by-team">("grouped");
+  const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team">("sections");
 
   const filterOptions = useMemo(() => {
     const locations = [...new Set(summaries.map((s) => s.deal.pbLocation).filter(Boolean))].sort();
     return { locations };
   }, [summaries]);
 
-  const filtered = useMemo(() => {
+  // Search + location + milestone filters (shared by sections and category views)
+  const baseFiltered = useMemo(() => {
     return summaries.filter((s) => {
       if (search) {
         const q = search.toLowerCase();
@@ -693,11 +773,49 @@ export default function PeDocsPage() {
         ) return false;
       }
       if (locFilter.length > 0 && !locFilter.includes(s.deal.pbLocation)) return false;
-      if (categoryFilter.length > 0 && !categoryFilter.includes(s.category)) return false;
       if (milestoneFilter.length > 0 && !milestoneFilter.includes(s.milestone)) return false;
       return true;
     });
-  }, [summaries, search, locFilter, categoryFilter, milestoneFilter]);
+  }, [summaries, search, locFilter, milestoneFilter]);
+
+  // Category filter only applies to the category-based List/By-Team views
+  const filtered = useMemo(() => {
+    if (categoryFilter.length === 0) return baseFiltered;
+    return baseFiltered.filter((s) => categoryFilter.includes(s.category));
+  }, [baseFiltered, categoryFilter]);
+
+  // Email-style actionable sections (mirrors the pe-doc-digest cron)
+  const emailSections = useMemo(() => {
+    const nearlyComplete: { summary: DealDocSummary; docs: DocWithReview[] }[] = [];
+    const notUploaded: { summary: DealDocSummary; docs: DocWithReview[] }[] = [];
+    const actionRequired: { summary: DealDocSummary; docs: DocWithReview[] }[] = [];
+
+    for (const s of baseFiltered) {
+      const { blocking, missing, issues } = getDealActionLists(s, docMap);
+
+      // Nearly Complete: 1–3 blocking docs and almost the full doc set present
+      if (blocking.length >= 1 && blocking.length <= 3 && s.totalDocs >= TOTAL_DOCS_PER_DEAL - 3) {
+        nearlyComplete.push({ summary: s, docs: blocking });
+      }
+      if (missing.length > 0) notUploaded.push({ summary: s, docs: missing });
+      if (issues.length > 0) actionRequired.push({ summary: s, docs: issues });
+    }
+
+    // Nearly Complete: most-approved first (closest to done)
+    nearlyComplete.sort((a, b) =>
+      b.summary.approved - a.summary.approved ||
+      a.summary.deal.dealName.localeCompare(b.summary.deal.dealName));
+    // Not Uploaded: most missing docs first
+    notUploaded.sort((a, b) =>
+      b.docs.length - a.docs.length ||
+      a.summary.deal.dealName.localeCompare(b.summary.deal.dealName));
+    // Action Required: most issues first
+    actionRequired.sort((a, b) =>
+      b.docs.length - a.docs.length ||
+      a.summary.deal.dealName.localeCompare(b.summary.deal.dealName));
+
+    return { nearlyComplete, notUploaded, actionRequired };
+  }, [baseFiltered, docMap]);
 
   // Sort: category priority, then by "to do" count (least first), then deal name
   const sorted = useMemo(() => {
@@ -711,21 +829,6 @@ export default function PeDocsPage() {
       return a.deal.dealName.localeCompare(b.deal.dealName);
     });
   }, [filtered]);
-
-  // Group by category
-  const grouped = useMemo(() => {
-    const groups = new Map<ActionCategory, DealDocSummary[]>();
-    for (const s of sorted) {
-      const existing = groups.get(s.category) ?? [];
-      existing.push(s);
-      groups.set(s.category, existing);
-    }
-    // Return in priority order
-    const order: ActionCategory[] = ["needs-upload", "rejected", "action-required", "waiting-on-pe", "no-data", "approved"];
-    return order
-      .filter((cat) => groups.has(cat))
-      .map((cat) => ({ category: cat, items: groups.get(cat)! }));
-  }, [sorted]);
 
   // Group by team — for each team, find deals with outstanding docs owned by that team
   const teamGrouped = useMemo(() => {
@@ -882,7 +985,7 @@ export default function PeDocsPage() {
         )}
 
         <div className="ml-auto flex items-center gap-1 bg-surface-2 rounded-lg p-0.5 border border-border">
-          {(["grouped", "list", "by-team"] as const).map((mode) => (
+          {(["sections", "list", "by-team"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
@@ -890,7 +993,7 @@ export default function PeDocsPage() {
                 viewMode === mode ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
               }`}
             >
-              {mode === "grouped" ? "Grouped" : mode === "list" ? "List" : "By Team"}
+              {mode === "sections" ? "Sections" : mode === "list" ? "List" : "By Team"}
             </button>
           ))}
         </div>
@@ -898,9 +1001,13 @@ export default function PeDocsPage() {
 
       {/* Results count */}
       <div className="text-xs text-muted mb-3">
-        {filtered.length === summaries.length
-          ? `${summaries.length} deals`
-          : `${filtered.length} of ${summaries.length} deals`}
+        {viewMode === "sections" ? (
+          `${emailSections.nearlyComplete.length} nearly complete · ${emailSections.notUploaded.length} not uploaded · ${emailSections.actionRequired.length} need action`
+        ) : filtered.length === summaries.length ? (
+          `${summaries.length} deals`
+        ) : (
+          `${filtered.length} of ${summaries.length} deals`
+        )}
       </div>
 
       {/* Deal cards */}
@@ -912,27 +1019,85 @@ export default function PeDocsPage() {
         </div>
       )}
 
-      {!isLoading && viewMode === "grouped" && (
-        <div className="space-y-6">
-          {grouped.map(({ category, items }) => (
-            <div key={category}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${CATEGORY_DOT[category]}`} />
-                <h3 className="text-sm font-semibold text-foreground">{CATEGORY_LABELS[category]}</h3>
-                <span className="text-xs text-muted">({items.length})</span>
-              </div>
+      {!isLoading && viewMode === "sections" && (
+        <div className="space-y-8">
+          {/* Nearly Complete */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <h3 className="text-sm font-semibold text-foreground">Nearly Complete</h3>
+              <span className="text-xs text-muted">({emailSections.nearlyComplete.length})</span>
+              <span className="text-[10px] text-muted/60">1–3 docs from done</span>
+            </div>
+            {emailSections.nearlyComplete.length === 0 ? (
+              <div className="text-xs text-muted/60 px-1 py-2">No deals nearly complete.</div>
+            ) : (
               <div className="space-y-2">
-                {items.map((s) => (
-                  <DealCard
+                {emailSections.nearlyComplete.map(({ summary: s, docs }) => (
+                  <SectionDealRow
                     key={s.deal.dealId}
                     summary={s}
-                    docMap={docMap}
-                    defaultExpanded={category !== "approved" && category !== "no-data" && items.length <= 10}
+                    docs={docs}
+                    badgeLabel={`${docs.length} to finish`}
+                    badgeClass="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                    defaultExpanded={emailSections.nearlyComplete.length <= 15}
                   />
                 ))}
               </div>
+            )}
+          </div>
+
+          {/* Not Uploaded */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+              <h3 className="text-sm font-semibold text-foreground">Not Uploaded</h3>
+              <span className="text-xs text-muted">({emailSections.notUploaded.length})</span>
+              <span className="text-[10px] text-muted/60">PB needs to upload</span>
             </div>
-          ))}
+            {emailSections.notUploaded.length === 0 ? (
+              <div className="text-xs text-muted/60 px-1 py-2">Nothing missing uploads.</div>
+            ) : (
+              <div className="space-y-2">
+                {emailSections.notUploaded.map(({ summary: s, docs }) => (
+                  <SectionDealRow
+                    key={s.deal.dealId}
+                    summary={s}
+                    docs={docs}
+                    badgeLabel={`${docs.length} missing`}
+                    badgeClass="bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
+                    defaultExpanded={emailSections.notUploaded.length <= 15}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action Required */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-400" />
+              <h3 className="text-sm font-semibold text-foreground">Action Required</h3>
+              <span className="text-xs text-muted">({emailSections.actionRequired.length})</span>
+              <span className="text-[10px] text-muted/60">Rejections &amp; fixes</span>
+            </div>
+            {emailSections.actionRequired.length === 0 ? (
+              <div className="text-xs text-muted/60 px-1 py-2">No rejections or action items.</div>
+            ) : (
+              <div className="space-y-2">
+                {emailSections.actionRequired.map(({ summary: s, docs }) => (
+                  <SectionDealRow
+                    key={s.deal.dealId}
+                    summary={s}
+                    docs={docs}
+                    badgeLabel={docs.length === 1 ? "1 rejection" : `${docs.length} rejections`}
+                    badgeClass="bg-orange-500/20 text-orange-400 border-orange-500/30"
+                    defaultExpanded={emailSections.actionRequired.length <= 15}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -979,7 +1144,7 @@ export default function PeDocsPage() {
         </div>
       )}
 
-      {!isLoading && filtered.length === 0 && (
+      {!isLoading && viewMode !== "sections" && filtered.length === 0 && (
         <div className="text-center py-12 text-muted">
           {hasFilters ? "No deals match the current filters." : "No PE deals found."}
         </div>
