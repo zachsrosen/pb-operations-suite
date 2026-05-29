@@ -215,6 +215,11 @@ export async function GET(request: NextRequest) {
       timeZone: "America/Denver",
     });
 
+    // Full per-deal detail (300KB+ across ~130 deals) lives in the PE Document
+    // Tracker, not the email — Gmail clips messages over ~102KB, which truncates
+    // the digest mid-list. The email shows a summary + a link to the tracker.
+    const reportUrl = "https://pbtechops.com/dashboards/pe-docs";
+
     const html = await render(
       PeDocDigest({
         date: dateStr,
@@ -223,43 +228,22 @@ export async function GET(request: NextRequest) {
         notUploaded,
         actionRequired,
         changes: [],
+        reportUrl,
       }),
     );
 
-    // Plain-text fallback
+    // Plain-text fallback — summary + link, mirroring the HTML email.
     const plainLines = [
       `PE Doc Digest — ${dateStr}`,
       `${dealDocs.size} PE deals tracked`,
       "",
+      `Nearly Complete — ${nearlyComplete.length} deals just 1-3 docs from done`,
+      `Not Uploaded — ${notUploaded.length} deals with missing documents`,
+      `Action Required — ${actionRequired.length} deals with PE rejections to fix`,
+      "",
+      `Full per-deal status, rejection notes, and links:`,
+      reportUrl,
     ];
-
-    if (nearlyComplete.length > 0) {
-      plainLines.push(`--- NEARLY COMPLETE (${nearlyComplete.length}) ---`);
-      for (const deal of nearlyComplete) {
-        plainLines.push(`${deal.dealName || deal.dealId} (${deal.stage}): ${deal.approvedCount}/${deal.totalDocs} approved, ${deal.missingDocs.length} need action — ${deal.missingDocs.join(", ")}`);
-      }
-      plainLines.push("");
-    }
-
-    if (notUploaded.length > 0) {
-      plainLines.push(`--- NOT UPLOADED (${notUploaded.length}) ---`);
-      for (const deal of notUploaded) {
-        plainLines.push(`${deal.dealName || deal.dealId} (${deal.stage}) — ${deal.missingDocs.length} missing: ${deal.missingDocs.join(", ")}`);
-      }
-      plainLines.push("");
-    }
-
-    if (actionRequired.length > 0) {
-      plainLines.push(`--- ACTION REQUIRED (${actionRequired.length}) ---`);
-      for (const deal of actionRequired) {
-        plainLines.push(`${deal.dealName || deal.dealId} (${deal.stage}) — ${deal.issues.length} rejection(s):`);
-        for (const issue of deal.issues) {
-          const noteSnippet = issue.notes ? `: ${issue.notes.slice(0, 120)}` : "";
-          plainLines.push(`  ${issue.docName}${noteSnippet}`);
-        }
-      }
-      plainLines.push("");
-    }
 
     const subjectParts = [`PE Doc Digest — ${dateStr}`];
     if (nearlyComplete.length > 0) subjectParts.push(`${nearlyComplete.length} nearly done`);
