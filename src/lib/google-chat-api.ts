@@ -35,11 +35,32 @@ async function signRS256(data: string, privateKey: string): Promise<string> {
   return signature.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
+/**
+ * Parse the service account private key, which may be stored either as a
+ * raw PEM (with escaped \n) or base64-encoded. Mirrors the logic used by
+ * google-calendar.ts so the same env var works for both integrations.
+ */
+function parseServiceAccountPrivateKey(serviceAccountKey: string): string | null {
+  const normalizedRaw = serviceAccountKey.replace(/\\n/g, "\n").trim();
+  if (normalizedRaw.includes("-----BEGIN")) {
+    return normalizedRaw;
+  }
+  const decoded = Buffer.from(serviceAccountKey, "base64").toString("utf-8");
+  const normalizedDecoded = decoded.replace(/\\n/g, "\n").trim();
+  if (normalizedDecoded.includes("-----BEGIN")) {
+    return normalizedDecoded;
+  }
+  return null;
+}
+
 function getServiceAccountCreds() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const rawKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
   if (!email || !rawKey) throw new Error("Google service account not configured");
-  const privateKey = rawKey.replace(/\\n/g, "\n");
+  const privateKey = parseServiceAccountPrivateKey(rawKey);
+  if (!privateKey) {
+    throw new Error("Google service account private key could not be parsed");
+  }
   return { email, privateKey };
 }
 
