@@ -8,6 +8,8 @@ export interface PeDocChange {
   docName: string;
   oldStatus: string;
   newStatus: string;
+  /** PE reviewer comment attached to the new status, when present. */
+  notes?: string | null;
   hubspotUrl?: string;
   pePortalUrl?: string | null;
 }
@@ -101,35 +103,86 @@ export function PeDocDigest({
   changes,
   reportUrl,
 }: PeDocDigestProps) {
-  // Group changes by deal
-  const byDeal = new Map<string, PeDocChange[]>();
+  // Changes mode (real-time alert): the email is built around status changes
+  // rather than the daily snapshot. Detected by the absence of snapshot data.
+  const isChangesMode = changes.length > 0;
+
+  // Group changes by deal ID (not name — names can repeat / be missing), while
+  // keeping the resolved display name for the card title.
+  const byDeal = new Map<string, { name: string | null; changes: PeDocChange[] }>();
   for (const c of changes) {
-    const key = c.dealName || c.dealId;
-    if (!byDeal.has(key)) byDeal.set(key, []);
-    byDeal.get(key)!.push(c);
+    let entry = byDeal.get(c.dealId);
+    if (!entry) {
+      entry = { name: c.dealName, changes: [] };
+      byDeal.set(c.dealId, entry);
+    }
+    if (!entry.name && c.dealName) entry.name = c.dealName;
+    entry.changes.push(c);
   }
 
   const dealEntries = [...byDeal.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
+    (a[1].name || a[0]).localeCompare(b[1].name || b[0]),
+  );
+
+  // High-level rollup of all changes by resulting status, e.g.
+  // "5 Approved · 20 Rejected · 3 Under Review".
+  const STATUS_ORDER = [
+    "APPROVED",
+    "ACTION_REQUIRED",
+    "REJECTED",
+    "UNDER_REVIEW",
+    "UPLOADED",
+    "NOT_UPLOADED",
+  ];
+  const statusCounts = new Map<string, number>();
+  for (const c of changes) {
+    statusCounts.set(c.newStatus, (statusCounts.get(c.newStatus) || 0) + 1);
+  }
+  const overviewCounts = STATUS_ORDER.filter((s) => statusCounts.has(s)).map(
+    (s) => ({ status: s, count: statusCounts.get(s)! }),
   );
 
   return (
     <EmailShell
-      preview={`PE Doc Digest — ${date} | ${nearlyComplete.length} nearly done, ${notUploaded.length} not uploaded, ${actionRequired.length} need action`}
-      subtitle="PE Document Status Digest"
+      preview={
+        isChangesMode
+          ? `PE Doc Changes — ${date} | ${overviewCounts.map((o) => `${o.count} ${statusLabel(o.status)}`).join(", ")}`
+          : `PE Doc Digest — ${date} | ${nearlyComplete.length} nearly done, ${notUploaded.length} not uploaded, ${actionRequired.length} need action`
+      }
+      subtitle={isChangesMode ? "PE Document Changes" : "PE Document Status Digest"}
       maxWidth={600}
     >
       {/* Summary card */}
       <Section style={summaryCard}>
         <Text style={summaryDate}>{date}</Text>
-        <Text style={summaryCount}>
-          {totalDealsTracked} PE deals tracked
-        </Text>
-        <Text style={summaryMeta}>
-          {nearlyComplete.length} nearly complete · {notUploaded.length} not uploaded · {actionRequired.length} need action
-          {changes.length > 0 && ` · ${changes.length} change${changes.length !== 1 ? "s" : ""}`}
-        </Text>
+        {isChangesMode ? (
+          <Text style={summaryCount}>
+            {changes.length} document change{changes.length !== 1 ? "s" : ""} across{" "}
+            {dealEntries.length} deal{dealEntries.length !== 1 ? "s" : ""}
+          </Text>
+        ) : (
+          <>
+            <Text style={summaryCount}>{totalDealsTracked} PE deals tracked</Text>
+            <Text style={summaryMeta}>
+              {nearlyComplete.length} nearly complete · {notUploaded.length} not uploaded · {actionRequired.length} need action
+            </Text>
+          </>
+        )}
       </Section>
+
+      {/* Overview — high-level rollup of all changes by resulting status. */}
+      {isChangesMode && overviewCounts.length > 0 && (
+        <Section style={attentionSummaryCard}>
+          <Text style={overviewHeader}>Overview</Text>
+          {overviewCounts.map(({ status, count }) => (
+            <Text key={status} style={summaryLine}>
+              <span style={{ color: statusColor(status) }}>●</span>{" "}
+              <b style={{ color: "#ffffff" }}>{count}</b>{" "}
+              <span style={summaryLabel}>{statusLabel(status)}</span>
+            </Text>
+          ))}
+        </Section>
+      )}
 
       {/* Daily-digest summary + link to the full PE Document Tracker.
           The full per-deal detail (300KB+ across ~130 deals) is intentionally
@@ -174,13 +227,14 @@ export function PeDocDigest({
               Today&apos;s Changes ({changes.length})
             </Text>
           </Section>
-          {dealEntries.map(([dealKey, dealChanges]) => {
+          {dealEntries.map(([dealId, { name, changes: dealChanges }]) => {
         const first = dealChanges[0];
-        const hs = first.hubspotUrl || `https://app.hubspot.com/contacts/${portalId}/record/0-3/${first.dealId}`;
+        const hs = first.hubspotUrl || `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
+        const displayName = name || `Deal ${dealId}`;
         return (
-          <Section key={dealKey} style={dealCard}>
+          <Section key={dealId} style={dealCard}>
             <Text style={dealNameStyle}>
-              <Link href={hs} style={dealLink}>{dealKey}</Link>
+              <Link href={hs} style={dealLink}>{displayName}</Link>
               {first.pePortalUrl && (
                 <>
                   {" "}
@@ -201,6 +255,7 @@ export function PeDocDigest({
                     {statusLabel(c.newStatus)}
                   </span>
                 </Text>
+                {c.notes && <Text style={noteText}>“{c.notes}”</Text>}
               </Section>
             ))}
           </Section>
@@ -284,6 +339,16 @@ const statusLine: React.CSSProperties = {
   margin: 0,
 };
 
+const noteText: React.CSSProperties = {
+  color: "#a1a1aa",
+  fontSize: "12px",
+  fontStyle: "italic",
+  lineHeight: "1.4",
+  margin: "2px 0 0 0",
+  paddingLeft: "8px",
+  borderLeft: "2px solid #2a2a3e",
+};
+
 const dealNameStyle: React.CSSProperties = {
   color: "#ffffff",
   fontSize: "14px",
@@ -312,6 +377,15 @@ const attentionSummaryCard: React.CSSProperties = {
   padding: "16px 20px",
   marginTop: "8px",
   marginBottom: "20px",
+};
+
+const overviewHeader: React.CSSProperties = {
+  color: "#f97316",
+  fontSize: "12px",
+  fontWeight: "bold",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  margin: "0 0 8px 0",
 };
 
 const summaryLine: React.CSSProperties = {
