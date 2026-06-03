@@ -125,7 +125,9 @@ export function PeDocDigest({
   );
 
   // High-level rollup of all changes by resulting status, e.g.
-  // "5 Approved · 20 Rejected · 3 Under Review".
+  // "5 Approved · 20 Rejected · 3 Under Review". Rows where the status didn't
+  // move (only the notes/dates changed) aren't real transitions, so they're
+  // tallied separately as "Note updated" rather than inflating a status count.
   const STATUS_ORDER = [
     "APPROVED",
     "ACTION_REQUIRED",
@@ -135,7 +137,12 @@ export function PeDocDigest({
     "NOT_UPLOADED",
   ];
   const statusCounts = new Map<string, number>();
+  let noteUpdateCount = 0;
   for (const c of changes) {
+    if (c.oldStatus === c.newStatus) {
+      noteUpdateCount++;
+      continue;
+    }
     statusCounts.set(c.newStatus, (statusCounts.get(c.newStatus) || 0) + 1);
   }
   const overviewCounts = STATUS_ORDER.filter((s) => statusCounts.has(s)).map(
@@ -146,7 +153,10 @@ export function PeDocDigest({
     <EmailShell
       preview={
         isChangesMode
-          ? `PE Doc Changes — ${date} | ${overviewCounts.map((o) => `${o.count} ${statusLabel(o.status)}`).join(", ")}`
+          ? `PE Doc Changes — ${date} | ${[
+              ...overviewCounts.map((o) => `${o.count} ${statusLabel(o.status)}`),
+              ...(noteUpdateCount > 0 ? [`${noteUpdateCount} note updated`] : []),
+            ].join(", ")}`
           : `PE Doc Digest — ${date} | ${nearlyComplete.length} nearly done, ${notUploaded.length} not uploaded, ${actionRequired.length} need action`
       }
       subtitle={isChangesMode ? "PE Document Changes" : "PE Document Status Digest"}
@@ -170,8 +180,9 @@ export function PeDocDigest({
         )}
       </Section>
 
-      {/* Overview — high-level rollup of all changes by resulting status. */}
-      {isChangesMode && overviewCounts.length > 0 && (
+      {/* Overview — high-level rollup of all changes by resulting status,
+          with note-only updates (no status move) tallied separately. */}
+      {isChangesMode && (overviewCounts.length > 0 || noteUpdateCount > 0) && (
         <Section style={attentionSummaryCard}>
           <Text style={overviewHeader}>Overview</Text>
           {overviewCounts.map(({ status, count }) => (
@@ -181,6 +192,14 @@ export function PeDocDigest({
               <span style={summaryLabel}>{statusLabel(status)}</span>
             </Text>
           ))}
+          {noteUpdateCount > 0 && (
+            <Text style={summaryLine}>
+              <span style={{ color: "#71717a" }}>●</span>{" "}
+              <b style={{ color: "#ffffff" }}>{noteUpdateCount}</b>{" "}
+              <span style={summaryLabel}>Note updated</span>{" "}
+              <span style={{ color: "#71717a" }}>(no status change)</span>
+            </Text>
+          )}
         </Section>
       )}
 
@@ -246,15 +265,26 @@ export function PeDocDigest({
             {dealChanges.map((c, i) => (
               <Section key={i} style={changeRow}>
                 <Text style={docNameText}>{c.docName}</Text>
-                <Text style={statusLine}>
-                  <span style={{ color: statusColor(c.oldStatus) }}>
-                    {statusLabel(c.oldStatus)}
-                  </span>
-                  <span style={{ color: "#71717a" }}>{" "}→{" "}</span>
-                  <span style={{ color: statusColor(c.newStatus) }}>
-                    {statusLabel(c.newStatus)}
-                  </span>
-                </Text>
+                {c.oldStatus === c.newStatus ? (
+                  // Notes/metadata changed but the review status didn't move —
+                  // label it as a note update instead of "Uploaded → Uploaded".
+                  <Text style={statusLine}>
+                    <span style={{ color: "#a1a1aa" }}>Note updated</span>{" "}
+                    <span style={{ color: statusColor(c.newStatus) }}>
+                      ({statusLabel(c.newStatus)})
+                    </span>
+                  </Text>
+                ) : (
+                  <Text style={statusLine}>
+                    <span style={{ color: statusColor(c.oldStatus) }}>
+                      {statusLabel(c.oldStatus)}
+                    </span>
+                    <span style={{ color: "#71717a" }}>{" "}→{" "}</span>
+                    <span style={{ color: statusColor(c.newStatus) }}>
+                      {statusLabel(c.newStatus)}
+                    </span>
+                  </Text>
+                )}
                 {c.notes && <Text style={noteText}>“{c.notes}”</Text>}
               </Section>
             ))}

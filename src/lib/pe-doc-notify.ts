@@ -116,13 +116,23 @@ export async function sendPeDocChangeNotification(
       REJECTED: "Rejected",
       APPROVED: "Approved",
     };
+    // Rows where the status didn't move are note-only updates, not real
+    // transitions — tally them separately rather than under a status count.
     const statusCounts = new Map<string, number>();
+    let noteUpdateCount = 0;
     for (const c of emailChanges) {
+      if (c.oldStatus === c.newStatus) {
+        noteUpdateCount++;
+        continue;
+      }
       statusCounts.set(c.newStatus, (statusCounts.get(c.newStatus) || 0) + 1);
     }
-    const overviewLine = STATUS_ORDER.filter((s) => statusCounts.has(s))
-      .map((s) => `${statusCounts.get(s)} ${STATUS_LABELS[s] || s}`)
-      .join(" · ");
+    const overviewLine = [
+      ...STATUS_ORDER.filter((s) => statusCounts.has(s)).map(
+        (s) => `${statusCounts.get(s)} ${STATUS_LABELS[s] || s}`,
+      ),
+      ...(noteUpdateCount > 0 ? [`${noteUpdateCount} note updated`] : []),
+    ].join(" · ");
 
     const plainLines = [
       `PE Doc Changes — ${dateStr} at ${timeStr}`,
@@ -132,7 +142,11 @@ export async function sendPeDocChangeNotification(
       `Overview: ${overviewLine}`,
       "",
       ...emailChanges.flatMap((c) => {
-        const line = `${c.dealName || `Deal ${c.dealId}`}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`;
+        const dealLabel = c.dealName || `Deal ${c.dealId}`;
+        const line =
+          c.oldStatus === c.newStatus
+            ? `${dealLabel}: ${c.docName} — note updated (${c.newStatus})`
+            : `${dealLabel}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`;
         return c.notes ? [line, `  “${c.notes}”`] : [line];
       }),
     ];
