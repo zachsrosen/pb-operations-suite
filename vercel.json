@@ -71,6 +71,10 @@
   },
   "crons": [
     {
+      "path": "/api/cron/pe-doc-replay",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/shit-show-task-sync",
       "schedule": "*/15 * * * *"
     },
