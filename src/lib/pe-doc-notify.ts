@@ -26,7 +26,7 @@ export async function sendPeDocChangeNotification(
     const nameMap = new Map<string, string>();
     const portalUrlMap = new Map<string, string>();
 
-    // Try HubSpot batch read for deal names + pe_portal_url
+    // HubSpot batch read is the primary source for deal names + pe_portal_url.
     try {
       const batchResponse = await hubspotClient.crm.deals.batchApi.read({
         inputs: dealIds.map((id) => ({ id })),
@@ -39,31 +39,36 @@ export async function sendPeDocChangeNotification(
         if (deal.properties.pe_portal_url) portalUrlMap.set(id, deal.properties.pe_portal_url);
       }
     } catch {
-      // Fall back to DB for names
-      if (prisma) {
-        try {
-          const rows = await prisma.peDocChangeLog.findMany({
-            where: { dealId: { in: dealIds }, dealName: { not: null } },
-            select: { dealId: true, dealName: true },
-            distinct: ["dealId"],
-            orderBy: { createdAt: "desc" },
-          });
-          for (const r of rows) {
-            if (r.dealName) nameMap.set(r.dealId, r.dealName);
-          }
-        } catch {
-          // Best-effort — proceed without names
+      // Non-fatal — the DB changelog fallback below fills in names.
+    }
+
+    // Fill any names HubSpot didn't resolve (request failed, or deal missing a
+    // name) from the change-log table so deals show a name, never just an ID.
+    const missingNameIds = dealIds.filter((id) => !nameMap.has(id));
+    if (missingNameIds.length > 0 && prisma) {
+      try {
+        const rows = await prisma.peDocChangeLog.findMany({
+          where: { dealId: { in: missingNameIds }, dealName: { not: null } },
+          select: { dealId: true, dealName: true },
+          distinct: ["dealId"],
+          orderBy: { createdAt: "desc" },
+        });
+        for (const r of rows) {
+          if (r.dealName) nameMap.set(r.dealId, r.dealName);
         }
+      } catch {
+        // Best-effort — proceed without the remaining names.
       }
     }
 
-    // Map DocChange → PeDocChange (adding dealName + URLs)
+    // Map DocChange → PeDocChange (adding dealName + reviewer notes + URLs)
     const emailChanges: PeDocChange[] = changes.map((c) => ({
       dealId: c.dealId,
       dealName: nameMap.get(c.dealId) ?? null,
       docName: c.docName,
       oldStatus: c.oldStatus,
       newStatus: c.newStatus,
+      notes: c.newNotes,
       hubspotUrl: `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${c.dealId}`,
       pePortalUrl: portalUrlMap.get(c.dealId) ?? null,
     }));
@@ -94,15 +99,42 @@ export async function sendPeDocChangeNotification(
       }),
     );
 
+    // Overview rollup of all changes by resulting status, mirroring the HTML.
+    const STATUS_ORDER = [
+      "APPROVED",
+      "ACTION_REQUIRED",
+      "REJECTED",
+      "UNDER_REVIEW",
+      "UPLOADED",
+      "NOT_UPLOADED",
+    ];
+    const STATUS_LABELS: Record<string, string> = {
+      NOT_UPLOADED: "Not Uploaded",
+      UPLOADED: "Uploaded",
+      UNDER_REVIEW: "Under Review",
+      ACTION_REQUIRED: "Action Required",
+      REJECTED: "Rejected",
+      APPROVED: "Approved",
+    };
+    const statusCounts = new Map<string, number>();
+    for (const c of emailChanges) {
+      statusCounts.set(c.newStatus, (statusCounts.get(c.newStatus) || 0) + 1);
+    }
+    const overviewLine = STATUS_ORDER.filter((s) => statusCounts.has(s))
+      .map((s) => `${statusCounts.get(s)} ${STATUS_LABELS[s] || s}`)
+      .join(" · ");
+
     const plainLines = [
       `PE Doc Changes — ${dateStr} at ${timeStr}`,
       `${changes.length} change(s) across ${dealCount} deal(s)`,
       `Source: ${source}`,
       "",
-      ...emailChanges.map(
-        (c) =>
-          `${c.dealName || c.dealId}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`,
-      ),
+      `Overview: ${overviewLine}`,
+      "",
+      ...emailChanges.flatMap((c) => {
+        const line = `${c.dealName || `Deal ${c.dealId}`}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`;
+        return c.notes ? [line, `  “${c.notes}”`] : [line];
+      }),
     ];
 
     const result = await sendEmailMessage({
