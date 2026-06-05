@@ -135,6 +135,15 @@ const COMPACT_STATUS_LABELS: Record<string, string> = {
   K: "UNKNOWN",
 };
 
+// UPLOADED is merged into UNDER_REVIEW ("In Review"). Compare statuses
+// canonically so a legacy UPLOADED → UNDER_REVIEW convergence is NOT recorded
+// as a change (no notification, no change-log row) unless the notes also
+// changed. Without this, that one-time convergence would surface as a
+// meaningless "Note updated (In Review)" row.
+function canonicalPeStatus(s: string): string {
+  return s === PeDocStatus.UPLOADED ? PeDocStatus.UNDER_REVIEW : s;
+}
+
 // ---------------------------------------------------------------------------
 // Compact format parser
 //
@@ -918,7 +927,10 @@ export async function syncPeDocStatuses(
         const prev = existingMap.get(key);
         if (!prev) {
           result.docsNew++;
-        } else if (prev.status !== op.status || prev.notes !== op.notes) {
+        } else if (
+          canonicalPeStatus(prev.status) !== canonicalPeStatus(op.status) ||
+          prev.notes !== op.notes
+        ) {
           result.docsChanged++;
           result.changes.push({
             dealId: op.dealId,
