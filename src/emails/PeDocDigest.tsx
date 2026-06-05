@@ -63,10 +63,17 @@ export interface PeDocDigestProps {
   reportUrl?: string;
 }
 
+// UPLOADED is merged into UNDER_REVIEW and shown as a single "In Review"
+// status. Normalize before labeling/counting so the two never appear as
+// distinct buckets (or as a meaningless "In Review → In Review" transition).
+function canonStatus(s: string): string {
+  return s === "UPLOADED" ? "UNDER_REVIEW" : s;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   NOT_UPLOADED: "Not Uploaded",
-  UPLOADED: "Uploaded",
-  UNDER_REVIEW: "Under Review",
+  UPLOADED: "In Review",
+  UNDER_REVIEW: "In Review",
   ACTION_REQUIRED: "Action Required",
   REJECTED: "Rejected",
   APPROVED: "Approved",
@@ -84,7 +91,6 @@ function statusColor(s: string): string {
     case "REJECTED":
       return "#ef4444";
     case "UNDER_REVIEW":
-      return "#f59e0b";
     case "UPLOADED":
       return "#3b82f6";
     default:
@@ -139,11 +145,13 @@ export function PeDocDigest({
   const statusCounts = new Map<string, number>();
   let noteUpdateCount = 0;
   for (const c of changes) {
-    if (c.oldStatus === c.newStatus) {
+    // A row counts as a real transition only if the canonical status moved —
+    // e.g. UPLOADED → UNDER_REVIEW is a no-op now that both are "In Review".
+    if (canonStatus(c.oldStatus) === canonStatus(c.newStatus)) {
       noteUpdateCount++;
       continue;
     }
-    statusCounts.set(c.newStatus, (statusCounts.get(c.newStatus) || 0) + 1);
+    statusCounts.set(canonStatus(c.newStatus), (statusCounts.get(canonStatus(c.newStatus)) || 0) + 1);
   }
   const overviewCounts = STATUS_ORDER.filter((s) => statusCounts.has(s)).map(
     (s) => ({ status: s, count: statusCounts.get(s)! }),
@@ -265,9 +273,10 @@ export function PeDocDigest({
             {dealChanges.map((c, i) => (
               <Section key={i} style={changeRow}>
                 <Text style={docNameText}>{c.docName}</Text>
-                {c.oldStatus === c.newStatus ? (
-                  // Notes/metadata changed but the review status didn't move —
-                  // label it as a note update instead of "Uploaded → Uploaded".
+                {canonStatus(c.oldStatus) === canonStatus(c.newStatus) ? (
+                  // Notes/metadata changed but the (canonical) review status
+                  // didn't move — label it as a note update instead of a
+                  // same-status arrow like "In Review → In Review".
                   <Text style={statusLine}>
                     <span style={{ color: "#a1a1aa" }}>Note updated</span>{" "}
                     <span style={{ color: statusColor(c.newStatus) }}>

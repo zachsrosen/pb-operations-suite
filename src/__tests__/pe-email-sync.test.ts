@@ -64,8 +64,9 @@ describe("EMAIL_STATUS_MAP", () => {
       PeDocStatus.ACTION_REQUIRED,
     );
     expect(EMAIL_STATUS_MAP["under review"]).toBe(PeDocStatus.UNDER_REVIEW);
-    expect(EMAIL_STATUS_MAP["uploaded"]).toBe(PeDocStatus.UPLOADED);
-    expect(EMAIL_STATUS_MAP["document uploaded"]).toBe(PeDocStatus.UPLOADED);
+    // "Uploaded" is merged into UNDER_REVIEW ("In Review").
+    expect(EMAIL_STATUS_MAP["uploaded"]).toBe(PeDocStatus.UNDER_REVIEW);
+    expect(EMAIL_STATUS_MAP["document uploaded"]).toBe(PeDocStatus.UNDER_REVIEW);
     expect(EMAIL_STATUS_MAP["not uploaded"]).toBe(PeDocStatus.NOT_UPLOADED);
   });
 });

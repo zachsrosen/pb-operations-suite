@@ -69,6 +69,9 @@ export function statusPropToDocName(prop: string): string | undefined {
 // Status value mapping: PeDocStatus <-> HubSpot enum value
 // ---------------------------------------------------------------------------
 
+// Note: UPLOADED is deprecated (merged into UNDER_REVIEW / "In Review") and no
+// longer written by any sync, so the "uploaded" HubSpot value is naturally no
+// longer produced. The 1:1 mapping is kept intact for the rare legacy row.
 export const PE_STATUS_TO_HUBSPOT: Record<PeDocStatus, string> = {
   [PeDocStatus.NOT_UPLOADED]: "not_uploaded",
   [PeDocStatus.UPLOADED]: "uploaded",

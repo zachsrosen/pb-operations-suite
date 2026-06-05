@@ -4629,7 +4629,7 @@ model PowerhubCrosslinkBackfillRun {
 
 enum PeDocStatus {
   NOT_UPLOADED
-  UPLOADED
+  UPLOADED // DEPRECATED: merged into UNDER_REVIEW ("In Review"); no longer written by any sync. Retained so legacy rows stay valid until they re-sync.
   UNDER_REVIEW
   ACTION_REQUIRED
   REJECTED
