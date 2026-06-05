@@ -180,7 +180,8 @@ function milestoneDocSections(m: PeMilestone): ("onboarding" | "ic" | "pc")[] {
 
 const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
   NOT_UPLOADED: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-  UPLOADED: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  // UPLOADED is merged into UNDER_REVIEW ("In Review") — same blue styling.
+  UPLOADED: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   UNDER_REVIEW: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   ACTION_REQUIRED: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   REJECTED: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -189,8 +190,8 @@ const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
 
 const DOC_STATUS_LABELS: Record<PeDocStatusValue, string> = {
   NOT_UPLOADED: "Not Uploaded",
-  UPLOADED: "Uploaded",
-  UNDER_REVIEW: "Under Review",
+  UPLOADED: "In Review",
+  UNDER_REVIEW: "In Review",
   ACTION_REQUIRED: "Action Required",
   REJECTED: "Rejected",
   APPROVED: "Approved",
@@ -912,7 +913,7 @@ export default function PeDocsPage() {
           color={stats.actionableDeals > 0 ? "orange" : "green"}
         />
         <StatCard
-          label="Under Review"
+          label="In Review"
           value={isLoading ? null : stats.totalUnderReview}
           subtitle="Waiting on PE"
           color="blue"
@@ -934,7 +935,7 @@ export default function PeDocsPage() {
       {/* Doc status breakdown */}
       <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mb-6">
         <MiniStat label="Approved" value={stats.totalApproved} />
-        <MiniStat label="Under Review" value={stats.totalUnderReview} />
+        <MiniStat label="In Review" value={stats.totalUnderReview} />
         <MiniStat label="Not Uploaded" value={stats.totalNotUploaded} />
         <MiniStat label="Action Required" value={stats.totalActionReq} />
         <MiniStat label="Rejected" value={stats.totalRejected} />

@@ -185,8 +185,9 @@ const DOC_STATUS_LABEL: Record<string, string> = {
   APPROVED: "Approved",
   REJECTED: "Rejected",
   ACTION_REQUIRED: "Action Required",
-  UNDER_REVIEW: "Under Review",
-  UPLOADED: "Uploaded",
+  // UPLOADED is merged into UNDER_REVIEW ("In Review").
+  UNDER_REVIEW: "In Review",
+  UPLOADED: "In Review",
   NOT_UPLOADED: "Not Uploaded",
 };
 

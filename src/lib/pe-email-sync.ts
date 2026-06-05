@@ -93,8 +93,9 @@ export const EMAIL_STATUS_MAP: Record<string, PeDocStatus> = {
   approved: PeDocStatus.APPROVED,
   "response needed": PeDocStatus.ACTION_REQUIRED,
   "under review": PeDocStatus.UNDER_REVIEW,
-  uploaded: PeDocStatus.UPLOADED,
-  "document uploaded": PeDocStatus.UPLOADED,
+  // "Uploaded" is merged into UNDER_REVIEW ("In Review").
+  uploaded: PeDocStatus.UNDER_REVIEW,
+  "document uploaded": PeDocStatus.UNDER_REVIEW,
   "not uploaded": PeDocStatus.NOT_UPLOADED,
 };
 

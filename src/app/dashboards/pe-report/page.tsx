@@ -167,10 +167,11 @@ const M1M2_STATUSES = [
   "Paid",
 ];
 
+// UPLOADED is merged into UNDER_REVIEW and shown as a single "In Review" label.
 const DOC_STATUS_OPTIONS: { value: PeDocStatusValue; label: string }[] = [
   { value: "NOT_UPLOADED", label: "Not Uploaded" },
-  { value: "UPLOADED", label: "Uploaded" },
-  { value: "UNDER_REVIEW", label: "Under Review" },
+  { value: "UPLOADED", label: "In Review" },
+  { value: "UNDER_REVIEW", label: "In Review" },
   { value: "ACTION_REQUIRED", label: "Action Required" },
   { value: "REJECTED", label: "Rejected" },
   { value: "APPROVED", label: "Approved" },
@@ -178,7 +179,7 @@ const DOC_STATUS_OPTIONS: { value: PeDocStatusValue; label: string }[] = [
 
 const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
   NOT_UPLOADED: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-  UPLOADED: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  UPLOADED: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   UNDER_REVIEW: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   ACTION_REQUIRED: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   REJECTED: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -1002,7 +1003,7 @@ export default function PeReportPage() {
               </div>
               <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
                 <MiniStat label="Approved" value={data.approved} />
-                <MiniStat label="Under Review" value={data.underReview} />
+                <MiniStat label="In Review" value={data.underReview} />
                 <MiniStat label="Not Uploaded" value={data.notUploaded} />
                 <MiniStat label="Action Required" value={data.actionReq} />
                 <MiniStat label="Rejected" value={data.rejected} />

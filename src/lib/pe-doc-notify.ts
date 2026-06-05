@@ -100,32 +100,34 @@ export async function sendPeDocChangeNotification(
     );
 
     // Overview rollup of all changes by resulting status, mirroring the HTML.
+    // UPLOADED is merged into UNDER_REVIEW ("In Review"); normalize before
+    // counting/labeling so the two never appear as separate buckets.
+    const canonStatus = (s: string) => (s === "UPLOADED" ? "UNDER_REVIEW" : s);
     const STATUS_ORDER = [
       "APPROVED",
       "ACTION_REQUIRED",
       "REJECTED",
       "UNDER_REVIEW",
-      "UPLOADED",
       "NOT_UPLOADED",
     ];
     const STATUS_LABELS: Record<string, string> = {
       NOT_UPLOADED: "Not Uploaded",
-      UPLOADED: "Uploaded",
-      UNDER_REVIEW: "Under Review",
+      UPLOADED: "In Review",
+      UNDER_REVIEW: "In Review",
       ACTION_REQUIRED: "Action Required",
       REJECTED: "Rejected",
       APPROVED: "Approved",
     };
-    // Rows where the status didn't move are note-only updates, not real
-    // transitions — tally them separately rather than under a status count.
+    // Rows where the (canonical) status didn't move are note-only updates, not
+    // real transitions — tally them separately rather than under a status count.
     const statusCounts = new Map<string, number>();
     let noteUpdateCount = 0;
     for (const c of emailChanges) {
-      if (c.oldStatus === c.newStatus) {
+      if (canonStatus(c.oldStatus) === canonStatus(c.newStatus)) {
         noteUpdateCount++;
         continue;
       }
-      statusCounts.set(c.newStatus, (statusCounts.get(c.newStatus) || 0) + 1);
+      statusCounts.set(canonStatus(c.newStatus), (statusCounts.get(canonStatus(c.newStatus)) || 0) + 1);
     }
     const overviewLine = [
       ...STATUS_ORDER.filter((s) => statusCounts.has(s)).map(
@@ -143,10 +145,12 @@ export async function sendPeDocChangeNotification(
       "",
       ...emailChanges.flatMap((c) => {
         const dealLabel = c.dealName || `Deal ${c.dealId}`;
+        const oldLabel = STATUS_LABELS[c.oldStatus] || c.oldStatus;
+        const newLabel = STATUS_LABELS[c.newStatus] || c.newStatus;
         const line =
-          c.oldStatus === c.newStatus
-            ? `${dealLabel}: ${c.docName} — note updated (${c.newStatus})`
-            : `${dealLabel}: ${c.docName} — ${c.oldStatus} → ${c.newStatus}`;
+          canonStatus(c.oldStatus) === canonStatus(c.newStatus)
+            ? `${dealLabel}: ${c.docName} — note updated (${newLabel})`
+            : `${dealLabel}: ${c.docName} — ${oldLabel} → ${newLabel}`;
         return c.notes ? [line, `  “${c.notes}”`] : [line];
       }),
     ];

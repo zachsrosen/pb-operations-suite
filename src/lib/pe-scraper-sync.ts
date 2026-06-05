@@ -75,16 +75,19 @@ export interface SyncResult {
 
 const SCRAPER_STATUS_MAP: Record<string, PeDocStatus> = {
   "approved": PeDocStatus.APPROVED,
-  "pending review": PeDocStatus.UPLOADED,
+  // "Uploaded"/"Pending Review"/"Draft" are merged into UNDER_REVIEW ("In
+  // Review") — we no longer distinguish a doc sitting in the queue from one
+  // actively being reviewed. UPLOADED is retained in the enum but unwritten.
+  "pending review": PeDocStatus.UNDER_REVIEW,
   "pending approval": PeDocStatus.UNDER_REVIEW,
   "response needed": PeDocStatus.ACTION_REQUIRED,
   "not submitted": PeDocStatus.NOT_UPLOADED,
   // Compact-format full-text labels (from portal scrape)
   "action required": PeDocStatus.ACTION_REQUIRED,
   "under review": PeDocStatus.UNDER_REVIEW,
-  "uploaded": PeDocStatus.UPLOADED,
+  "uploaded": PeDocStatus.UNDER_REVIEW,
   "not yet expected": PeDocStatus.NOT_UPLOADED,
-  "draft": PeDocStatus.UPLOADED,
+  "draft": PeDocStatus.UNDER_REVIEW,
   "not found": PeDocStatus.NOT_UPLOADED,
   "unknown": PeDocStatus.NOT_UPLOADED,
 };
@@ -115,8 +118,8 @@ const COMPACT_STATUS_MAP: Record<string, PeDocStatus> = {
   R: PeDocStatus.ACTION_REQUIRED,
   U: PeDocStatus.UNDER_REVIEW,
   N: PeDocStatus.NOT_UPLOADED,   // NOT YET EXPECTED → NOT_UPLOADED
-  X: PeDocStatus.UPLOADED,
-  D: PeDocStatus.UPLOADED,       // DRAFT → UPLOADED
+  X: PeDocStatus.UNDER_REVIEW,   // UPLOADED → merged into UNDER_REVIEW ("In Review")
+  D: PeDocStatus.UNDER_REVIEW,   // DRAFT → merged into UNDER_REVIEW ("In Review")
   F: PeDocStatus.NOT_UPLOADED,   // NOT FOUND → NOT_UPLOADED
   K: PeDocStatus.NOT_UPLOADED,   // UNKNOWN → NOT_UPLOADED
 };
@@ -850,9 +853,9 @@ export async function syncPeDocStatuses(
         console.warn(
           `[pe-scraper-sync] Unrecognized status ${JSON.stringify(doc.status)} ` +
             `for ${project.projNumber}/${doc.name} with dateSubmitted=` +
-            `${doc.dateSubmitted}; overriding NOT_UPLOADED → UPLOADED.`,
+            `${doc.dateSubmitted}; overriding NOT_UPLOADED → UNDER_REVIEW.`,
         );
-        status = PeDocStatus.UPLOADED;
+        status = PeDocStatus.UNDER_REVIEW;
       }
       ops.push({
         dealId,

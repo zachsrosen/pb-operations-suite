@@ -17,7 +17,7 @@
  * Status derivation (API → PeDocStatus):
  *   - document.present=true  + has active action item      → ACTION_REQUIRED
  *   - document.present=true  + has review pass, no action  → APPROVED
- *   - document.present=true  + no action items at all      → UPLOADED
+ *   - document.present=true  + no action items at all      → UNDER_REVIEW ("In Review")
  *   - document.present=false                               → NOT_UPLOADED
  *
  * Source priority: portal scrape > email sync > API sync.
@@ -148,14 +148,15 @@ export function isReviewPass(notes: string | null | undefined): boolean {
  *   - Not present (present=false)                   → NOT_UPLOADED
  *   - Present + has active action item              → ACTION_REQUIRED
  *   - Present + has review pass (no active actions)  → APPROVED
- *   - Present + no action items at all               → UPLOADED
+ *   - Present + no action items at all               → UNDER_REVIEW ("In Review")
  *
  * Note: The API `version` field never exceeds 1 across the entire dataset,
  * so it cannot distinguish APPROVED from UNDER_REVIEW. We rely on review
  * pass action items ("No issues found") as the only API-based proof of
  * approval. Docs that are present but have no action items at all get
- * UPLOADED — the portal scrape or email sync can later upgrade to
- * APPROVED or UNDER_REVIEW with real status data.
+ * UNDER_REVIEW — the portal scrape or email sync can later upgrade to
+ * APPROVED with real status data. (UPLOADED and UNDER_REVIEW are merged into
+ * a single "In Review" status.)
  */
 function deriveDocStatus(
   present: boolean,
@@ -165,7 +166,7 @@ function deriveDocStatus(
   if (!present) return PeDocStatus.NOT_UPLOADED;
   if (hasActiveActionItem) return PeDocStatus.ACTION_REQUIRED;
   if (hasReviewPass) return PeDocStatus.APPROVED;
-  return PeDocStatus.UPLOADED;
+  return PeDocStatus.UNDER_REVIEW;
 }
 
 // ---------------------------------------------------------------------------
