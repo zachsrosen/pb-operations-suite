@@ -85,6 +85,14 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
+    href: "/dashboards/monthly-activity",
+    title: "Monthly Activity",
+    description: "Throughput by the month each milestone actually happened — what hit each stage in a window, regardless of when the deal was sold.",
+    tag: "PIPELINE",
+    icon: "📈",
+    section: "Sales",
+  },
+  {
     href: "/estimator/new-install?step=address",
     title: "Customer Estimator (preview)",
     description: "Public-facing instant solar estimator — walk a customer quote from address through results.",
