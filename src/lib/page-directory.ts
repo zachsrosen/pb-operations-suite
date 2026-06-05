@@ -62,6 +62,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/inventory",
   "/dashboards/locations",
   "/dashboards/mobile",
+  "/dashboards/monthly-activity",
   "/dashboards/my-tasks",
   "/dashboards/my-tickets",
   "/dashboards/office-performance/[location]",
