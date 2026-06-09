@@ -36,8 +36,8 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
   },
   {
     href: "/dashboards/admin/ooo-escalations",
-    title: "OOO Bot Escalations",
-    description: "Review questions the Google Chat OOO bot flagged for follow-up.",
+    title: "Bot Escalations",
+    description: "Review questions the Google Chat assistant bot flagged for follow-up.",
     icon: "🤖",
   },
 ];

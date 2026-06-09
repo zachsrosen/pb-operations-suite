@@ -25,7 +25,7 @@ describe("buildOooBotSystemPrompt", () => {
       senderEmail: "alice@photonbrothers.com",
       spaceDisplayName: "Precon Team",
     });
-    expect(prompt).toContain("Zach's OOO assistant");
+    expect(prompt).toContain("Zach's AI assistant");
     expect(prompt).toContain("Photon Brothers");
   });
 
