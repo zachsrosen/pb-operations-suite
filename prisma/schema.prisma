@@ -3368,8 +3368,14 @@ model OnCallPool {
   startDate         String
   horizonMonths     Int     @default(3)
   /// Rotation cadence: "daily" or "weekly". New pools default to "weekly".
-  /// Weekly anchors on the Sunday of startDate (Sun-Sat weeks).
+  /// Weekly anchors on the Monday of startDate (Mon-Sun weeks) — electrician
+  /// shifts start Monday (shifted from Sun-Sat on 2026-06).
   rotationUnit      String  @default("weekly")
+  /// When false, this pool has no Sunday on-call coverage: the weekly assignee
+  /// covers Mon-Sat only and no assignment row is generated for Sundays.
+  /// California dropped Sunday coverage on 2026-06. Defaults true (Colorado
+  /// pools cover all 7 days).
+  coversSundays     Boolean @default(true)
   isActive          Boolean @default(true)
 
   lastPublishedAt      DateTime?
