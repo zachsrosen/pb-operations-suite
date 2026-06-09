@@ -62,10 +62,28 @@ Extend `src/components/PageViewTracker.tsx`:
   absurd values (e.g. cap at 30 min) to avoid a backgrounded tab skewing averages.
 - Only fire when `status === "authenticated"` (same guard the existing tracker uses).
 
-**Endpoint change** — `src/app/api/activity/log/route.ts`:
-add `case "page_dwell": return "PAGE_DWELL";` to `getActionActivityType`, and
-persist the dwell value into the existing `durationMs` column. `entityType =
+**Endpoint change** — `src/app/api/activity/log/route.ts`. Two edits, not one:
+1. Add `case "page_dwell": return "PAGE_DWELL";` to `getActionActivityType`.
+2. Add a `case "page_dwell":` branch to the main `POST` action `switch` (which
+   currently `default`s to a 400 "Unknown action"), mirroring the `page_view`
+   branch, so the row actually persists. Without this branch the beacon hits the
+   400 default.
+
+Persist the dwell value into the existing `durationMs` column with `entityType =
 "page"`, `entityId =` normalized path. No new endpoint.
+
+> **`durationMs` is semantically overloaded.** Today it stores *server-side request
+> duration* (`Date.now() - start`; schema comment "How long the request took").
+> For `PAGE_DWELL` rows it stores *client-measured dwell ms*. Rows are always
+> disambiguated by `type`, so aggregation only ever reads `durationMs` from
+> `PAGE_DWELL` rows and request-duration from others — they are never averaged
+> together. Update the `durationMs` schema comment to document both meanings.
+
+> **Write-side volume.** Dwell beacons fire on every route change / tab-hide, a
+> higher write rate than the current page-view events. The endpoint runs audit-session
+> resolution + anomaly scoring on every POST. `PAGE_DWELL` events are inherently
+> low-risk navigation telemetry, so the handler should **skip anomaly scoring** for
+> `page_dwell` (treat as `LOW` risk, score 1) to avoid amplifying audit-pipeline load.
 
 **Hook change** — `src/hooks/useActivityTracking.ts`: add a `trackPageDwell(path,
 durationMs)` method that posts `action: "page_dwell"` via `sendBeacon`.
@@ -79,22 +97,35 @@ durationMs)` method that posts `action: "page_dwell"` via `sendBeacon`.
   Detection: numeric segments, UUID/objectid-like segments, and HubSpot-style IDs
   map to the parameter name from a small known-pattern table.
 - `suiteForPath(path: string): string | null` — map a normalized path to its
-  owning suite, reusing the route→suite relationships already encoded in
-  `src/lib/suite-nav.ts`. Unknown paths bucket to `"Other"`.
-- `KNOWN_PAGES` — canonical list of dashboard + suite-landing routes (derived from
-  the dashboards directory + `suite-nav.ts`). This is the denominator for the
-  dead-weight calculation (a known page with ~zero traffic in the window is dead).
+  owning suite. **Source of truth:** the per-suite landing pages
+  `src/app/suites/*/page.tsx`, each of which declares its dashboard cards as a
+  `href: "/dashboards/..."` array. `suite-nav.ts` only holds suite *landing*
+  hrefs (`/suites/operations`, etc.) and contains **no** `/dashboards/*` entries,
+  so it is **not** the source. The implementation builds a single
+  `PATH_TO_SUITE` map by extracting the `/dashboards/*` hrefs from each suite page
+  (a page can appear in more than one suite; first-match wins, or pick a documented
+  primary suite). Unknown paths bucket to `"Other"`.
+- `KNOWN_PAGES` — canonical list of dashboard + suite-landing routes (the union of
+  all `/dashboards/*` hrefs harvested from the suite pages, plus the `/suites/*`
+  landing routes). This is the denominator for the dead-weight calculation (a known
+  page with ~zero traffic in the window is dead).
+
+> Note: because the suite-card hrefs are the data source, the map is assembled from
+> ~11 suite page files. If a page is not referenced by any suite card it still gets
+> tracked (its path appears in `ActivityLog`) but buckets to `"Other"`.
 
 These are pure functions — unit-tested with no DB.
 
 ### 3. Aggregation layer (`src/lib/page-traffic.ts`)
 
-`getPageTraffic(opts: { window, role?, location? }): Promise<PageTrafficResult>`
+`getPageTraffic(opts: { window, roles?: string[], locations?: string[] }): Promise<PageTrafficResult>`
+
+(`roles`/`locations` are arrays to match the `MultiSelectFilter` UI — empty/undefined = no filter.)
 
 - Window → `createdAt >= start` (`7d | 30d | 90d | all`).
 - Query `ActivityLog` where `type ∈ { DASHBOARD_VIEWED, PAGE_DWELL, FEATURE_USED }`
-  and `createdAt >= start`, optionally filtered by `pbLocation` and by the actor's
-  role (role filter resolves via `userId` → user roles).
+  and `createdAt >= start`, optionally filtered by `pbLocation ∈ locations` and by the
+  actor's role (role filter resolves via `userId` → user roles; `IN (roles)`).
 - In-process: normalize each row's path, then aggregate:
   - **views** = count of `DASHBOARD_VIEWED` per normalized path
   - **uniqueUsers** = distinct `userId` per path
@@ -111,10 +142,11 @@ JS because the dynamic-segment collapse can't be expressed in SQL.
 
 ### 4. API route (`src/app/api/admin/analytics/page-traffic/route.ts`)
 
-`GET` with query params `window` (default `30d`), `role`, `location`. Returns the
-`PageTrafficResult` JSON. Under `/api/admin/*`, so it's already behind the
-admin-only middleware prefix check — no new middleware wiring. Validates/normalizes
-params and rejects unknown window values.
+`GET` with query params `window` (default `30d`), `roles` (comma-separated, optional),
+`locations` (comma-separated, optional). Parses the CSV params into arrays and calls
+`getPageTraffic`. Returns the `PageTrafficResult` JSON. Under `/api/admin/*`, so it's
+already behind the admin-only middleware prefix check — no new middleware wiring.
+Validates/normalizes params and rejects unknown window values.
 
 ### 5. Page (`src/app/dashboards/admin/page-traffic/page.tsx`)
 
@@ -145,9 +177,17 @@ metric cards per house style.
 
 ## Data model / migration
 
-One **additive** migration: add `PAGE_DWELL` to the `ActivityType` enum in
-`prisma/schema.prisma`. No new tables, no new columns (`durationMs`, `entityType`,
-`entityId`, `sessionId` all already exist on `ActivityLog`).
+One **additive** migration, two changes — both non-destructive:
+1. Add `PAGE_DWELL` to the `ActivityType` enum in `prisma/schema.prisma`.
+2. Add a composite index `@@index([type, createdAt])` on `ActivityLog`. The main
+   aggregation query filters `WHERE type IN (...) AND createdAt >= start`; the table
+   today has only *separate* single-column indexes `@@index([type])` and
+   `@@index([createdAt])`, which Postgres won't combine as efficiently as a composite.
+   Adding an index is additive/safe (built `CONCURRENTLY` if the table is large).
+
+No new tables and no new columns (`durationMs`, `entityType`, `entityId`,
+`sessionId` all already exist on `ActivityLog`). Also update the `durationMs` column
+comment to document its dual meaning (request duration vs. `PAGE_DWELL` dwell ms).
 
 **Migration ordering (per project rules):** this additive enum value must be
 applied to the database **before** the code that writes/reads it merges, to avoid
@@ -167,9 +207,10 @@ explicit user approval — **subagents may write the migration file but must not
 
 ## Risks & mitigations
 
-- **Large `ActivityLog`** → long-window queries slow. Mitigation: indexed on
-  `(type, createdAt)` and `(entityType, entityId)`; cap default window at 30d;
-  rollups remain the documented escape hatch (Approach B) if needed.
+- **Large `ActivityLog`** → long-window queries slow. Mitigation: the new
+  composite `(type, createdAt)` index (added by this migration) plus the existing
+  `(entityType, entityId)` index; cap default window at 30d; rollups remain the
+  documented escape hatch (Approach B) if needed.
 - **Beacon reliability** → some dwell events lost on hard crashes. Acceptable;
   averages tolerate sampling. View/click/user counts are unaffected.
 - **Backgrounded tabs inflating dwell** → clamp + `visibilitychange` handling.
