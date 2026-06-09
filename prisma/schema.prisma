@@ -4771,9 +4771,11 @@ model ShopHealthBottleneck {
   @@index([weekStart])
 }
 
-// ── OOO Bot ─────────────────────────────────────────────────
+// ── Tech Ops Bot ─────────────────────────────────────────────────
+// (Physical table names kept as OooBot* via @@map — renaming the models
+// is a code-only change; no migration required.)
 
-model OooBotConversation {
+model TechOpsBotConversation {
   id          String   @id @default(cuid())
   spaceId     String
   threadId    String?
@@ -4786,9 +4788,10 @@ model OooBotConversation {
   createdAt   DateTime @default(now())
 
   @@index([spaceId, threadId, createdAt])
+  @@map("OooBotConversation")
 }
 
-model OooBotEscalation {
+model TechOpsBotEscalation {
   id           String    @id @default(cuid())
   senderEmail  String
   senderName   String
@@ -4802,13 +4805,16 @@ model OooBotEscalation {
   createdAt    DateTime @default(now())
 
   @@index([status, createdAt])
+  @@map("OooBotEscalation")
 }
 
-model OooBotConfig {
+model TechOpsBotConfig {
   id           String   @id @default("default")
   playbook     String
   enabled      Boolean  @default(true)
   oooStartDate DateTime
   oooEndDate   DateTime
   updatedAt    DateTime @updatedAt
+
+  @@map("OooBotConfig")
 }

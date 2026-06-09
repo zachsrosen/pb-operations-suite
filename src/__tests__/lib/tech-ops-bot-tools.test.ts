@@ -1,13 +1,13 @@
-import { createOooBotTools } from "@/lib/ooo-bot-tools";
+import { createTechOpsBotTools } from "@/lib/tech-ops-bot-tools";
 
-describe("createOooBotTools", () => {
+describe("createTechOpsBotTools", () => {
   it("returns 6 tools", () => {
-    const tools = createOooBotTools();
+    const tools = createTechOpsBotTools();
     expect(tools).toHaveLength(6);
   });
 
   it("includes expected tool names", () => {
-    const tools = createOooBotTools();
+    const tools = createTechOpsBotTools();
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -22,7 +22,7 @@ describe("createOooBotTools", () => {
   });
 
   it("all tools have descriptions", () => {
-    const tools = createOooBotTools();
+    const tools = createTechOpsBotTools();
     for (const tool of tools) {
       expect((tool as { description?: string }).description).toBeTruthy();
     }

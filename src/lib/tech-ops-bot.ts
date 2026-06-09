@@ -1,5 +1,5 @@
 /**
- * OOO Bot Orchestrator
+ * Tech Ops Bot Orchestrator
  *
  * Core logic: loads conversation history, builds system prompt,
  * calls Claude with toolRunner, persists conversation, posts response
@@ -11,7 +11,7 @@
 
 import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
 import { createReadOnlyChatTools } from "@/lib/chat-tools";
-import { createOooBotTools } from "@/lib/ooo-bot-tools";
+import { createTechOpsBotTools } from "@/lib/tech-ops-bot-tools";
 import { postGoogleChatMessage } from "@/lib/google-chat-api";
 import { sendBugReportEmail } from "@/lib/email";
 import { prisma, logActivity } from "@/lib/db";
@@ -61,7 +61,7 @@ KEY CONTEXT:
 - Locations: Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo
 - Pipeline stages: Site Survey > Design & Engineering > Permitting & Interconnection > RTB - Blocked > Ready To Build > Construction > Inspection > Permission To Operate > Close Out`;
 
-export function buildOooBotSystemPrompt(params: SystemPromptParams): string {
+export function buildTechOpsBotSystemPrompt(params: SystemPromptParams): string {
   let prompt = IDENTITY_PROMPT;
 
   // Layer 2: Playbook
@@ -90,7 +90,7 @@ interface ProcessMessageParams {
   playbook: string;
 }
 
-export async function processOooBotMessage(params: ProcessMessageParams): Promise<void> {
+export async function processTechOpsBotMessage(params: ProcessMessageParams): Promise<void> {
   const {
     messageText,
     senderEmail,
@@ -104,7 +104,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   // ── Load conversation history ──
   let history: Array<{ role: "user" | "assistant"; content: string }> = [];
   if (prisma) {
-    const rows = await prisma.oooBotConversation.findMany({
+    const rows = await prisma.techOpsBotConversation.findMany({
       where: {
         spaceId: spaceName,
         ...(threadName ? { threadId: threadName } : {}),
@@ -121,7 +121,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   }
 
   // ── Build system prompt ──
-  const systemPrompt = buildOooBotSystemPrompt({
+  const systemPrompt = buildTechOpsBotSystemPrompt({
     playbook,
     senderName,
     senderEmail,
@@ -136,18 +136,18 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
 
   // ── Build tools ──
   const readOnlyTools = createReadOnlyChatTools();
-  const rawOooTools = createOooBotTools();
+  const rawBotTools = createTechOpsBotTools();
 
   // Wrap the escalate + submit_process_request tools to inject request
   // context (these are the only tools that write to the DB).
-  const oooTools = rawOooTools.map((tool) => {
+  const botTools = rawBotTools.map((tool) => {
     if (tool.name === "escalate") {
       return {
         ...tool,
         run: async (input: { question: string; context: string }) => {
           // Write escalation with real context
           if (prisma) {
-            await prisma.oooBotEscalation.create({
+            await prisma.techOpsBotEscalation.create({
               data: {
                 senderEmail,
                 senderName,
@@ -184,7 +184,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
               type: "FEATURE_REQUEST",
               title: input.title.slice(0, 200),
               description: input.description.slice(0, 5000),
-              pageUrl: "via assistant bot (Google Chat)",
+              pageUrl: "via Tech Ops bot (Google Chat)",
               reporterEmail: senderEmail,
               reporterName: senderName,
             },
@@ -206,24 +206,24 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
               data: { emailSent: emailResult.success },
             });
           } catch (err) {
-            console.warn("[ooo-bot] process request email failed:", err);
+            console.warn("[tech-ops-bot] process request email failed:", err);
           }
 
           try {
             await logActivity({
               type: "FEATURE_REQUESTED",
-              description: `Process request submitted via assistant bot: ${input.title}`,
+              description: `Process request submitted via Tech Ops bot: ${input.title}`,
               userEmail: senderEmail,
               userName: senderName,
               entityType: "bug_report",
               entityId: report.id,
               entityName: input.title,
-              metadata: { type: "FEATURE_REQUEST", source: "assistant-bot", spaceId: spaceName },
+              metadata: { type: "FEATURE_REQUEST", source: "tech-ops-bot", spaceId: spaceName },
               ipAddress: "google-chat",
-              userAgent: "assistant-bot",
+              userAgent: "tech-ops-bot",
             });
           } catch (err) {
-            console.warn("[ooo-bot] process request activity log failed:", err);
+            console.warn("[tech-ops-bot] process request activity log failed:", err);
           }
 
           return JSON.stringify({
@@ -242,7 +242,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   // toolRunner returns only the final text message — intermediate tool_use
   // blocks are internal. We track usage by wrapping each tool's run function.
   const toolsUsedSet = new Set<string>();
-  const allTools = [...readOnlyTools, ...oooTools].map((tool) => ({
+  const allTools = [...readOnlyTools, ...botTools].map((tool) => ({
     ...tool,
     run: async (input: unknown) => {
       toolsUsedSet.add(tool.name);
@@ -273,7 +273,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   // ── Persist conversation ──
   if (prisma) {
     await prisma.$transaction([
-      prisma.oooBotConversation.create({
+      prisma.techOpsBotConversation.create({
         data: {
           spaceId: spaceName,
           threadId: threadName,
@@ -283,7 +283,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
           content: messageText,
         },
       }),
-      prisma.oooBotConversation.create({
+      prisma.techOpsBotConversation.create({
         data: {
           spaceId: spaceName,
           threadId: threadName,
@@ -303,11 +303,11 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   // appears inline next to the user's question rather than hidden in a
   // reply thread — better UX for a DM/assistant bot.
   console.warn(
-    `[ooo-bot] posting reply to ${spaceName} (len=${responseText.length}, tools=${toolsUsed.join(",")})`
+    `[tech-ops-bot] posting reply to ${spaceName} (len=${responseText.length}, tools=${toolsUsed.join(",")})`
   );
   await postGoogleChatMessage({
     spaceName,
     text: responseText || "I processed your message but didn't have anything to say. Try asking a specific question?",
   });
-  console.warn(`[ooo-bot] reply posted to ${spaceName}`);
+  console.warn(`[tech-ops-bot] reply posted to ${spaceName}`);
 }
