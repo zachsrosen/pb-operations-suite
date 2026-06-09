@@ -81,6 +81,8 @@ const ACTIVITY_COLUMNS: Array<{
   { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", amountKey: "designsCompletedAmount" },
   { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400", amountKey: "permitsSubmittedAmount" },
   { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400", amountKey: "permitsIssuedAmount" },
+  { key: "icSubmitted", label: "IC Submitted", color: "text-fuchsia-400", amountKey: "icSubmittedAmount" },
+  { key: "icApproved", label: "IC Approved", color: "text-pink-400", amountKey: "icApprovedAmount" },
   { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400", amountKey: "constructionsScheduledAmount" },
   { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
   { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", amountKey: "inspectionsPassedAmount" },

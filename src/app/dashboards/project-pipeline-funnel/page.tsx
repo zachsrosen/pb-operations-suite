@@ -277,6 +277,9 @@ function BacklogSection({
   const OPS: StaffCol = { key: "operationsManager", label: "Ops Lead" };
   const INSP: StaffCol = { key: "inspectionsLead", label: "Insp. Lead" };
   const IC: StaffCol = { key: "interconnectionsLead", label: "IC Lead" };
+  // Interconnection runs parallel to permitting before construction — surface
+  // its status in the pre-construction backlogs so blockers are visible.
+  const ICSTATUS: StaffCol = { key: "interconnectionStatus", label: "IC Status" };
 
   const backlogs: Array<{
     key: string;
@@ -291,9 +294,9 @@ function BacklogSection({
     { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, DESIGN] },
     { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count, color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, DESIGN] },
     { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count, color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete, staffCols: [PM, DESIGN] },
-    { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, PERMIT] },
-    { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, PERMIT] },
-    { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OPS] },
+    { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, PERMIT, ICSTATUS] },
+    { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, PERMIT, ICSTATUS] },
+    { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OPS, ICSTATUS] },
     { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OPS] },
     { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, INSP] },
     { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, IC] },
@@ -678,6 +681,8 @@ const ACTIVITY_COLUMNS: Array<{
   { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", amountKey: "designsCompletedAmount" },
   { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400", amountKey: "permitsSubmittedAmount" },
   { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400", amountKey: "permitsIssuedAmount" },
+  { key: "icSubmitted", label: "IC Submitted", color: "text-fuchsia-400", amountKey: "icSubmittedAmount" },
+  { key: "icApproved", label: "IC Approved", color: "text-pink-400", amountKey: "icApprovedAmount" },
   { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400", amountKey: "constructionsScheduledAmount" },
   { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
   { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", amountKey: "inspectionsPassedAmount" },

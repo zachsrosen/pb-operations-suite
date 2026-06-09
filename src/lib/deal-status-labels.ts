@@ -172,6 +172,35 @@ const PTO_STATUS: StatusMap = {
   "Pending Truck Roll": "Pending Truck Roll",
 };
 
+const INTERCONNECTION_STATUS: StatusMap = {
+  "Ready for Interconnection": "Ready for Interconnection",
+  "Submitted To Customer": "Submitted To Customer",
+  "Ready To Submit - Pending Design": "Ready To Submit - Pending Design",
+  "Signature Acquired By Customer": "Ready To Submit",
+  "Submitted To Utility": "Submitted To Utility",
+  "Waiting On Information": "Waiting On Information",
+  "Waiting on Utility Bill": "Waiting on Utility Bill",
+  "Waiting on New Construction": "Waiting on New Construction",
+  "In Review": "In Review",
+  "Non-Design Related Rejection": "Non-Design Related Rejection",
+  "Rejected (New)": "Rejected",
+  Rejected: "Rejected - Revisions Needed",
+  "In Design For Revisions": "Design Revision In Progress",
+  "Revision Returned From Design": "Revision Ready To Resubmit",
+  "Resubmitted To Utility": "Resubmitted To Utility",
+  "Application Approved": "Application Approved",
+  "Application Approved - Pending Signatures": "Application Approved - Pending Signatures",
+  "Transformer Upgrade": "Transformer Upgrade",
+  "Supplemental Review": "Supplemental Review",
+  "RBC On Hold": "RBC On Hold",
+  "Not Needed": "Not Needed",
+  "Xcel Site Plan & SLD Needed": "Xcel Site Plan & SLD Needed",
+  "Pending Rebate Approval": "Pending Rebate Approval",
+  "Conditional Application Approval": "Conditional Application Approval",
+  "As-Built Ready to Resubmit": "As-Built Ready to Resubmit",
+  "As-Built Resubmitted": "As-Built Resubmitted",
+};
+
 const STATUS_MAPS: Record<string, StatusMap> = {
   site_survey_status: SITE_SURVEY_STATUS,
   layout_status: LAYOUT_STATUS,
@@ -180,6 +209,7 @@ const STATUS_MAPS: Record<string, StatusMap> = {
   install_status: CONSTRUCTION_STATUS,
   final_inspection_status: FINAL_INSPECTION_STATUS,
   pto_status: PTO_STATUS,
+  interconnection_status: INTERCONNECTION_STATUS,
 };
 
 /**
