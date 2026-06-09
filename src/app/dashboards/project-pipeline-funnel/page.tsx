@@ -20,28 +20,7 @@ import type {
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
-
-/** Compute months lookback for a given timeframe key */
-function resolveMonths(key: string): number {
-  const now = new Date();
-  const thisMonth = now.getMonth(); // 0-based
-  switch (key) {
-    case "this-month":
-      return 1;
-    case "this-quarter": {
-      const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
-      return thisMonth - qStart + 1;
-    }
-    case "this-year":
-      return thisMonth + 1;
-    case "last-year":
-      return thisMonth + 13; // current partial year + full prior year
-    case "ytd-vs-last":
-      return thisMonth + 13;
-    default:
-      return parseInt(key) || 6;
-  }
-}
+import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
@@ -116,10 +95,18 @@ export default function ProjectPipelineFunnelPage() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: queryKeys.funnel.projectPipeline(months, locations),
+    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe),
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
+      // Calendar timeframes (This Year, Last Year, …) pass exact month bounds so
+      // the server clamps to real calendar boundaries instead of N-months-back.
+      const range = calendarMonthRange(timeframe);
+      if (range) {
+        const dates = monthRangeToDates(range);
+        params.set("start", dates.start);
+        params.set("end", dates.end);
+      }
       const res = await fetch(`/api/deals/project-funnel?${params}`);
       if (!res.ok) throw new Error("Failed to fetch project funnel data");
       return res.json();
@@ -370,26 +357,91 @@ function DrillDownTable({
   const hasExtra = deals.some((d) => d.extraDate);
   const extraLabel = deals.find((d) => d.extraLabel)?.extraLabel || "Extra";
 
+  type SortDir = "asc" | "desc";
+  // Default mirrors the server ordering: longest-waiting first.
+  const [sort, setSort] = useState<{ key: string; dir: SortDir }>({ key: "days", dir: "desc" });
+
+  function sortValue(d: ProjectFunnelDrillDownDeal, key: string): string | number {
+    switch (key) {
+      case "project": return (d.projectNumber || d.name || "").toLowerCase();
+      case "amount": return d.amount || 0;
+      case "location": return (d.pbLocation || "").toLowerCase();
+      case "stage": return (d.stage || "").toLowerCase();
+      case "scheduled": return d.scheduledDate || "";
+      case "extra": return d.extraDate || "";
+      case "days": return d.daysWaiting;
+      case "status": return (d.status || "").toLowerCase();
+      default: return String((d[key as keyof ProjectFunnelDrillDownDeal] ?? "")).toLowerCase();
+    }
+  }
+
+  const sorted = useMemo(() => {
+    const arr = [...deals];
+    arr.sort((a, b) => {
+      const av = sortValue(a, sort.key);
+      const bv = sortValue(b, sort.key);
+      if (typeof av === "number" && typeof bv === "number") {
+        return sort.dir === "asc" ? av - bv : bv - av;
+      }
+      const as = String(av);
+      const bs = String(bv);
+      // Blanks always sort to the bottom regardless of direction.
+      if (as === "" && bs !== "") return 1;
+      if (bs === "" && as !== "") return -1;
+      const cmp = as.localeCompare(bs);
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [deals, sort]);
+
+  function toggleSort(key: string, defaultDir: SortDir) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: defaultDir }
+    );
+  }
+
+  const renderTh = (
+    id: string,
+    label: string,
+    align: "left" | "right" = "left",
+    defaultDir: SortDir = "asc"
+  ) => {
+    const active = sort.key === id;
+    return (
+      <th key={id} className={`${align === "right" ? "text-right" : "text-left"} py-1 px-1.5 text-muted font-medium`}>
+        <button
+          type="button"
+          onClick={() => toggleSort(id, defaultDir)}
+          className={`inline-flex items-center gap-0.5 hover:text-foreground transition-colors cursor-pointer ${active ? "text-foreground" : ""} ${align === "right" ? "flex-row-reverse" : ""}`}
+          title={`Sort by ${label}`}
+        >
+          {label}
+          <span className="text-[8px] w-2">{active ? (sort.dir === "asc" ? "▲" : "▼") : ""}</span>
+        </button>
+      </th>
+    );
+  };
+
   return (
     <div className="ml-[11.5rem] mt-1 mb-2 overflow-x-auto">
       <table className="w-full text-[11px]">
         <thead>
           <tr className="border-b border-t-border/50">
-            <th className="text-left py-1 px-1.5 text-muted font-medium">Project</th>
-            <th className="text-right py-1 px-1.5 text-muted font-medium">Amount</th>
-            <th className="text-left py-1 px-1.5 text-muted font-medium">Location</th>
-            <th className="text-left py-1 px-1.5 text-muted font-medium">Stage</th>
-            {staffCols.map((sc) => (
-              <th key={sc.key} className="text-left py-1 px-1.5 text-muted font-medium">{sc.label}</th>
-            ))}
-            {hasScheduled && <th className="text-left py-1 px-1.5 text-muted font-medium">Scheduled</th>}
-            {hasExtra && <th className="text-left py-1 px-1.5 text-muted font-medium">{extraLabel}</th>}
-            <th className="text-right py-1 px-1.5 text-muted font-medium">Days</th>
-            <th className="text-left py-1 px-1.5 text-muted font-medium">Status</th>
+            {renderTh("project", "Project")}
+            {renderTh("amount", "Amount", "right", "desc")}
+            {renderTh("location", "Location")}
+            {renderTh("stage", "Stage")}
+            {staffCols.map((sc) => renderTh(String(sc.key), sc.label))}
+            {hasScheduled && renderTh("scheduled", "Scheduled", "left", "desc")}
+            {hasExtra && renderTh("extra", extraLabel, "left", "desc")}
+            {renderTh("days", "Days", "right", "desc")}
+            {renderTh("status", "Status")}
           </tr>
         </thead>
         <tbody>
-          {deals.map((d) => (
+          {sorted.map((d) => (
             <tr
               key={d.id}
               className={`border-b border-t-border/30 ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}

@@ -287,8 +287,8 @@ export const CACHE_KEYS = {
   REVENUE_GOALS: (year: number) => `revenue-goals:${year}` as const,
   DESIGN_FUNNEL: (months: number, location: string) =>
     `funnel:design-pipeline:${months}:${location}` as const,
-  PROJECT_FUNNEL: (months: number, location: string) =>
-    `funnel:project-pipeline:${months}:${location}` as const,
+  PROJECT_FUNNEL: (months: number, location: string, range = "rolling") =>
+    `funnel:project-pipeline:${months}:${location}:${range}` as const,
   TERRITORY_MAP: "territory-map",
   OFFICE_PERFORMANCE: (location: string) => `office-performance:${location}`,
   GOALS_PIPELINE: (location: string) => `goals-pipeline:${location}`,

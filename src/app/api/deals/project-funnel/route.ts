@@ -21,7 +21,22 @@ export async function GET(request: NextRequest) {
     const locations = locationParam ? locationParam.split(",").filter(Boolean) : [];
     const cacheLocation = locations.length > 0 ? locations.sort().join(",") : "all";
 
-    const cacheKey = CACHE_KEYS.PROJECT_FUNNEL(months, cacheLocation);
+    // Optional explicit calendar window (YYYY-MM-DD). Only honored when both
+    // bounds are present and well-formed; otherwise fall back to the rolling
+    // `months` lookback.
+    const startParam = searchParams.get("start") || "";
+    const endParam = searchParams.get("end") || "";
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+    const range =
+      dateRe.test(startParam) && dateRe.test(endParam)
+        ? { start: startParam, end: endParam }
+        : undefined;
+
+    const cacheKey = CACHE_KEYS.PROJECT_FUNNEL(
+      months,
+      cacheLocation,
+      range ? `${range.start}_${range.end}` : "rolling"
+    );
 
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
       cacheKey,
@@ -30,7 +45,8 @@ export async function GET(request: NextRequest) {
         return buildProjectFunnelData(
           projects,
           months,
-          locations.length > 0 ? locations : undefined
+          locations.length > 0 ? locations : undefined,
+          range
         );
       }
     );

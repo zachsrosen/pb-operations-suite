@@ -338,10 +338,22 @@ function resolveMilestones(p: Project) {
 export function buildProjectFunnelData(
   projects: Project[],
   months: number,
-  locations?: string[]
+  locations?: string[],
+  /**
+   * Optional explicit calendar window (inclusive "YYYY-MM-DD" bounds). When
+   * provided it overrides the rolling `months` lookback — used so calendar
+   * timeframes (This Year, Last Year, …) map to real month boundaries instead
+   * of "N months back from today".
+   */
+  range?: { start: string; end: string }
 ): ProjectFunnelResponse {
   const now = new Date();
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  const cutoff = range
+    ? new Date(range.start + "T00:00:00")
+    : new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  const endBound = range ? new Date(range.end + "T23:59:59") : null;
+  /** A milestone/close date falls inside the active window. */
+  const inWindow = (d: Date): boolean => d >= cutoff && (!endBound || d <= endBound);
 
   const locSet = locations && locations.length > 0 ? new Set(locations) : null;
   function matchesLocation(p: Project): boolean {
@@ -353,7 +365,7 @@ export function buildProjectFunnelData(
   const filtered = projects.filter((p) => {
     if (!p.closeDate) return false;
     if (p.stageId === ON_HOLD_STAGE_ID) return false;
-    if (new Date(p.closeDate + "T12:00:00") < cutoff) return false;
+    if (!inWindow(new Date(p.closeDate + "T12:00:00"))) return false;
     if (!matchesLocation(p)) return false;
     return true;
   });
@@ -527,7 +539,7 @@ export function buildProjectFunnelData(
       const dateVal = p[field] as string | null;
       if (dateVal) {
         const d = new Date(dateVal + "T12:00:00");
-        if (d >= cutoff) {
+        if (inWindow(d)) {
           const act = ensureActivity(monthKey(dateVal));
           (act[activityKey] as number)++;
           if (amountKey) (act[amountKey] as number) += p.amount || 0;
@@ -537,7 +549,7 @@ export function buildProjectFunnelData(
     // Closed Out: binned by the date the deal entered Project Complete stage
     if (p.projectCompleteDate) {
       const d = new Date(p.projectCompleteDate + "T12:00:00");
-      if (d >= cutoff) {
+      if (inWindow(d)) {
         const act = ensureActivity(monthKey(p.projectCompleteDate));
         act.closedOut++;
         act.closedOutAmount += p.amount || 0;
@@ -546,7 +558,7 @@ export function buildProjectFunnelData(
     // Cancelled: binned by the date the deal entered Cancelled stage
     if (p.cancelledDate) {
       const d = new Date(p.cancelledDate + "T12:00:00");
-      if (d >= cutoff) {
+      if (inWindow(d)) {
         const act = ensureActivity(monthKey(p.cancelledDate));
         act.cancelled++;
         act.cancelledAmount += p.amount || 0;

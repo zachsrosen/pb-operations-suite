@@ -15,30 +15,7 @@ import type {
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
-
-/** Compute months lookback for a given timeframe key */
-function resolveMonths(key: string): number {
-  const now = new Date();
-  const thisMonth = now.getMonth(); // 0-based
-  switch (key) {
-    case "this-month":
-      return 1;
-    case "last-month":
-      // Look back two months so the previous calendar month is fully inside
-      // the window; the page then filters the display to that single month.
-      return 2;
-    case "this-quarter": {
-      const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
-      return thisMonth - qStart + 1;
-    }
-    case "this-year":
-      return thisMonth + 1;
-    case "last-year":
-      return thisMonth + 13;
-    default:
-      return parseInt(key) || 6;
-  }
-}
+import { resolveMonths, calendarMonthRange } from "@/lib/dashboard-timeframe";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
@@ -146,15 +123,13 @@ export default function MonthlyActivityPage() {
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
 
   // Chronological for the chart, descending (newest first) for the table.
-  // "Last Month" narrows the fetched window down to the single prior calendar month.
+  // Calendar timeframes are clamped to exact month boundaries so the rolling
+  // fetch window doesn't bleed in an extra month (e.g. last December).
   const activity = useMemo(() => {
     const rows = data?.monthlyActivity ?? [];
-    if (timeframe !== "last-month") return rows;
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-    const lastMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    return rows.filter((r) => r.month === lastMonthKey);
+    const range = calendarMonthRange(timeframe);
+    if (!range) return rows;
+    return rows.filter((r) => r.month >= range.start && r.month <= range.end);
   }, [data, timeframe]);
   const totals = useMemo(() => sumTotals(activity), [activity]);
 
