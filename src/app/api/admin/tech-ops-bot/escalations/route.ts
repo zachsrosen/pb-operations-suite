@@ -1,8 +1,8 @@
 /**
- * GET /api/admin/ooo-bot/escalations
- * PATCH /api/admin/ooo-bot/escalations
+ * GET /api/admin/tech-ops-bot/escalations
+ * PATCH /api/admin/tech-ops-bot/escalations
  *
- * Admin-only endpoint for reviewing OOO bot escalations.
+ * Admin-only endpoint for reviewing Tech Ops bot escalations.
  * GET: list pending escalations
  * PATCH: resolve/dismiss an escalation
  *
@@ -15,7 +15,7 @@ import { prisma } from "@/lib/db";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const escalations = await prisma.oooBotEscalation.findMany({
+  const escalations = await prisma.techOpsBotEscalation.findMany({
     where: { status: "PENDING" },
     orderBy: { createdAt: "desc" },
     take: 50,
@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const updated = await prisma.oooBotEscalation.update({
+  const updated = await prisma.techOpsBotEscalation.update({
     where: { id: body.id },
     data: {
       status: body.status,

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * OOO Bot Escalations admin review UI.
+ * Tech Ops Bot Escalations admin review UI.
  *
  * - Filter toggle: Pending / Resolved / Dismissed / All
  * - Table of escalations (one row each)
@@ -63,7 +63,7 @@ const fmtDate = (iso: string | null) =>
       })
     : "—";
 
-export default function OooEscalationsClient({
+export default function TechOpsEscalationsClient({
   initialEscalations,
   currentFilter,
   counts,
@@ -97,7 +97,7 @@ export default function OooEscalationsClient({
       if (resolvedNote.trim()) body.resolvedNote = resolvedNote.trim();
 
       try {
-        const res = await fetch("/api/admin/ooo-bot/escalations", {
+        const res = await fetch("/api/admin/tech-ops-bot/escalations", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -121,7 +121,7 @@ export default function OooEscalationsClient({
   const switchFilter = (f: Props["currentFilter"]) => {
     const params = new URLSearchParams();
     if (f !== "PENDING") params.set("status", f);
-    router.push(`/dashboards/admin/ooo-escalations?${params.toString()}`);
+    router.push(`/dashboards/admin/tech-ops-escalations?${params.toString()}`);
   };
 
   return (

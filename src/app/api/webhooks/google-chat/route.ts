@@ -1,7 +1,7 @@
 /**
  * POST /api/webhooks/google-chat
  *
- * Google Chat webhook for OOO bot. Receives messages from Google Chat,
+ * Google Chat webhook for the Tech Ops bot. Receives messages from Google Chat,
  * returns an immediate acknowledgment, then fires Claude processing
  * asynchronously via waitUntil.
  *
@@ -286,7 +286,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── DB config check ──
-    const config = await prisma.oooBotConfig.findFirst();
+    const config = await prisma.techOpsBotConfig.findFirst();
     if (config && !config.enabled) {
       return chatTextResponse(
         "The assistant bot is currently turned off. Reach out to Caleb or Patrick if you need help.",
@@ -301,8 +301,8 @@ export async function POST(request: NextRequest) {
           `[google-chat] async START space=${spaceName} sender=${senderEmail}`
         );
         try {
-          const { processOooBotMessage } = await import("@/lib/ooo-bot");
-          await processOooBotMessage({
+          const { processTechOpsBotMessage } = await import("@/lib/tech-ops-bot");
+          await processTechOpsBotMessage({
             messageText,
             senderEmail,
             senderName,
@@ -317,7 +317,7 @@ export async function POST(request: NextRequest) {
           // Persist the error to the DB so it can be diagnosed without
           // relying on (sampled) Vercel logs.
           try {
-            await prisma.oooBotEscalation.create({
+            await prisma.techOpsBotEscalation.create({
               data: {
                 senderEmail: "DEBUG",
                 senderName: "async-error",

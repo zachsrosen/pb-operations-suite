@@ -1,10 +1,10 @@
 /**
- * OOO Bot Tool Definitions
+ * Tech Ops Bot Tool Definitions
  *
  * Tools specific to the assistant bot that aren't in the standard chat
- * tools. Tools are READ-ONLY except `escalate` (writes OooBotEscalation)
+ * tools. Tools are READ-ONLY except `escalate` (writes TechOpsBotEscalation)
  * and `submit_process_request` (writes BugReport) — both handled by the
- * orchestrator wrapper in ooo-bot.ts, not here.
+ * orchestrator wrapper in tech-ops-bot.ts, not here.
  *
  * Uses betaZodTool (same pattern as chat-tools.ts).
  */
@@ -12,7 +12,7 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 
-export function createOooBotTools() {
+export function createTechOpsBotTools() {
   const getProjectStatus = betaZodTool({
     name: "get_project_status",
     description:
@@ -222,10 +222,10 @@ export function createOooBotTools() {
         .describe("What you know about this question and why you're escalating"),
     }),
     run: async (_input) => {
-      // NOTE: The orchestrator in ooo-bot.ts wraps this tool and replaces
+      // NOTE: The orchestrator in tech-ops-bot.ts wraps this tool and replaces
       // `run` entirely to inject request context (senderEmail, spaceName,
       // etc.). This default implementation is only hit in unit tests or
-      // if someone calls createOooBotTools() standalone.
+      // if someone calls createTechOpsBotTools() standalone.
       // It does NOT write to the DB — the orchestrator wrapper handles that.
       return JSON.stringify({
         escalated: true,
@@ -250,7 +250,7 @@ export function createOooBotTools() {
         .describe("Full details of what's being requested and why"),
     }),
     run: async (_input) => {
-      // NOTE: The orchestrator in ooo-bot.ts wraps this tool and replaces
+      // NOTE: The orchestrator in tech-ops-bot.ts wraps this tool and replaces
       // `run` entirely to inject request context (senderEmail, senderName,
       // spaceName) and write the BugReport row. This default implementation
       // is only hit in unit tests or standalone use — it does NOT persist.

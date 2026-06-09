@@ -367,7 +367,7 @@ export function createChatTools(context: ChatToolContext) {
 
 /**
  * Read-only subset of chat tools for contexts where write operations
- * (reviews, lock acquisition) are not appropriate — e.g. the OOO bot.
+ * (reviews, lock acquisition) are not appropriate — e.g. the Tech Ops bot.
  */
 export function createReadOnlyChatTools() {
   const getDeal = betaZodTool({

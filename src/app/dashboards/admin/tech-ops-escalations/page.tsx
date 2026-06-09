@@ -2,20 +2,20 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import DashboardShell from "@/components/DashboardShell";
-import OooEscalationsClient from "./OooEscalationsClient";
+import TechOpsEscalationsClient from "./TechOpsEscalationsClient";
 
 /**
- * Admin OOO Bot Escalations dashboard.
+ * Admin Tech Ops Bot Escalations dashboard.
  *
- * Lists everything the Google Chat OOO bot flagged for review via its
+ * Lists everything the Google Chat Tech Ops bot flagged for review via its
  * `escalate()` tool (low-confidence answers), plus the crash-diagnostic
  * rows the webhook writes on async processing failures (senderName
  * "async-error"). Admins resolve or dismiss each row with an optional note.
  *
- * Reads the OooBotEscalation table directly (server component) and mutates
- * via PATCH /api/admin/ooo-bot/escalations.
+ * Reads the TechOpsBotEscalation table directly (server component) and mutates
+ * via PATCH /api/admin/tech-ops-bot/escalations.
  */
-export default async function OooEscalationsPage({
+export default async function TechOpsEscalationsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string }>;
@@ -46,7 +46,7 @@ export default async function OooEscalationsPage({
 
   const where: { status?: string } = filter === "all" ? {} : { status: filter };
 
-  const escalations = await prisma.oooBotEscalation.findMany({
+  const escalations = await prisma.techOpsBotEscalation.findMany({
     where,
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -66,14 +66,14 @@ export default async function OooEscalationsPage({
   });
 
   const [pendingCount, resolvedCount, dismissedCount] = await Promise.all([
-    prisma.oooBotEscalation.count({ where: { status: "PENDING" } }),
-    prisma.oooBotEscalation.count({ where: { status: "RESOLVED" } }),
-    prisma.oooBotEscalation.count({ where: { status: "DISMISSED" } }),
+    prisma.techOpsBotEscalation.count({ where: { status: "PENDING" } }),
+    prisma.techOpsBotEscalation.count({ where: { status: "RESOLVED" } }),
+    prisma.techOpsBotEscalation.count({ where: { status: "DISMISSED" } }),
   ]);
 
   return (
     <DashboardShell title="Bot Escalations" accentColor="purple">
-      <OooEscalationsClient
+      <TechOpsEscalationsClient
         initialEscalations={escalations.map((e) => ({
           ...e,
           createdAt: e.createdAt.toISOString(),
