@@ -110,9 +110,14 @@ durationMs)` method that posts `action: "page_dwell"` via `sendBeacon`.
   landing routes). This is the denominator for the dead-weight calculation (a known
   page with ~zero traffic in the window is dead).
 
-> Note: because the suite-card hrefs are the data source, the map is assembled from
-> ~11 suite page files. If a page is not referenced by any suite card it still gets
-> tracked (its path appears in `ActivityLog`) but buckets to `"Other"`.
+> Note: harvest the `/dashboards/*` hrefs **programmatically from every
+> `src/app/suites/*/page.tsx`** rather than hardcoding a list/count (the set of
+> suites changes over time). Decide whether to exclude any non-production sandbox
+> suite (e.g. a `testing` suite) from `KNOWN_PAGES`. For pages that appear in more
+> than one suite, pin the tie-break in the implementation plan (documented primary
+> suite) so suite-rollup numbers are deterministic. If a page isn't referenced by
+> any suite card it still gets tracked (its path appears in `ActivityLog`) but
+> buckets to `"Other"`.
 
 These are pure functions — unit-tested with no DB.
 
