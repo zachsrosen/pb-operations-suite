@@ -34,6 +34,12 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
     description: "Map HubSpot task-queue IDs to display names (HubSpot has no queue API).",
     icon: "📁",
   },
+  {
+    href: "/dashboards/admin/ooo-escalations",
+    title: "OOO Bot Escalations",
+    description: "Review questions the Google Chat OOO bot flagged for follow-up.",
+    icon: "🤖",
+  },
 ];
 
 /**
