@@ -15,62 +15,7 @@ import type {
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
-
-/** Compute months lookback for a given timeframe key */
-function resolveMonths(key: string): number {
-  const now = new Date();
-  const thisMonth = now.getMonth(); // 0-based
-  switch (key) {
-    case "this-month":
-      return 1;
-    case "last-month":
-      // Look back two months so the previous calendar month is fully inside
-      // the window; the page then filters the display to that single month.
-      return 2;
-    case "this-quarter": {
-      const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
-      return thisMonth - qStart + 1;
-    }
-    case "this-year":
-      return thisMonth + 1;
-    case "last-year":
-      return thisMonth + 13;
-    default:
-      return parseInt(key) || 6;
-  }
-}
-
-/**
- * For calendar timeframes, the exact inclusive [start, end] month keys the view
- * should show. Rolling timeframes ("3", "6", …) return null (no calendar clamp).
- * The months-lookback above only sizes the fetch; this clamps the display to
- * real calendar boundaries so e.g. "This Year" doesn't bleed in last December.
- * Month keys are "YYYY-MM", so plain string comparison is chronological.
- */
-function calendarMonthRange(key: string): { start: string; end: string } | null {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth(); // 0-based
-  const mk = (yr: number, mo: number) => `${yr}-${String(mo + 1).padStart(2, "0")}`;
-  switch (key) {
-    case "this-month":
-      return { start: mk(y, m), end: mk(y, m) };
-    case "last-month": {
-      const d = new Date(y, m - 1, 1);
-      return { start: mk(d.getFullYear(), d.getMonth()), end: mk(d.getFullYear(), d.getMonth()) };
-    }
-    case "this-quarter": {
-      const qStart = Math.floor(m / 3) * 3;
-      return { start: mk(y, qStart), end: mk(y, m) };
-    }
-    case "this-year":
-      return { start: mk(y, 0), end: mk(y, m) };
-    case "last-year":
-      return { start: mk(y - 1, 0), end: mk(y - 1, 11) };
-    default:
-      return null;
-  }
-}
+import { resolveMonths, calendarMonthRange } from "@/lib/dashboard-timeframe";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },

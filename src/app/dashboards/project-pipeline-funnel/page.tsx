@@ -20,28 +20,7 @@ import type {
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
-
-/** Compute months lookback for a given timeframe key */
-function resolveMonths(key: string): number {
-  const now = new Date();
-  const thisMonth = now.getMonth(); // 0-based
-  switch (key) {
-    case "this-month":
-      return 1;
-    case "this-quarter": {
-      const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
-      return thisMonth - qStart + 1;
-    }
-    case "this-year":
-      return thisMonth + 1;
-    case "last-year":
-      return thisMonth + 13; // current partial year + full prior year
-    case "ytd-vs-last":
-      return thisMonth + 13;
-    default:
-      return parseInt(key) || 6;
-  }
-}
+import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
@@ -116,10 +95,18 @@ export default function ProjectPipelineFunnelPage() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: queryKeys.funnel.projectPipeline(months, locations),
+    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe),
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
+      // Calendar timeframes (This Year, Last Year, …) pass exact month bounds so
+      // the server clamps to real calendar boundaries instead of N-months-back.
+      const range = calendarMonthRange(timeframe);
+      if (range) {
+        const dates = monthRangeToDates(range);
+        params.set("start", dates.start);
+        params.set("end", dates.end);
+      }
       const res = await fetch(`/api/deals/project-funnel?${params}`);
       if (!res.ok) throw new Error("Failed to fetch project funnel data");
       return res.json();
