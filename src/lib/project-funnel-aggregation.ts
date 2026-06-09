@@ -61,17 +61,25 @@ export interface ProjectMonthlyActivity {
   salesClosed: number;
   salesClosedAmount: number;
   surveysScheduled: number;
+  surveysScheduledAmount: number;
   surveysCompleted: number;
+  surveysCompletedAmount: number;
   dasSent: number;
+  dasSentAmount: number;
   dasApproved: number;
   dasApprovedAmount: number;
   designsCompleted: number;
+  designsCompletedAmount: number;
   permitsSubmitted: number;
+  permitsSubmittedAmount: number;
   permitsIssued: number;
+  permitsIssuedAmount: number;
   constructionsScheduled: number;
+  constructionsScheduledAmount: number;
   constructionsComplete: number;
   constructionsCompleteAmount: number;
   inspectionsPassed: number;
+  inspectionsPassedAmount: number;
   ptosGranted: number;
   ptosGrantedAmount: number;
   closedOut: number;
@@ -450,17 +458,25 @@ export function buildProjectFunnelData(
         salesClosed: 0,
         salesClosedAmount: 0,
         surveysScheduled: 0,
+        surveysScheduledAmount: 0,
         surveysCompleted: 0,
+        surveysCompletedAmount: 0,
         dasSent: 0,
+        dasSentAmount: 0,
         dasApproved: 0,
         dasApprovedAmount: 0,
         designsCompleted: 0,
+        designsCompletedAmount: 0,
         permitsSubmitted: 0,
+        permitsSubmittedAmount: 0,
         permitsIssued: 0,
+        permitsIssuedAmount: 0,
         constructionsScheduled: 0,
+        constructionsScheduledAmount: 0,
         constructionsComplete: 0,
         constructionsCompleteAmount: 0,
         inspectionsPassed: 0,
+        inspectionsPassedAmount: 0,
         ptosGranted: 0,
         ptosGrantedAmount: 0,
         closedOut: 0,
@@ -478,16 +494,16 @@ export function buildProjectFunnelData(
     amountKey?: keyof ProjectMonthlyActivity;
   }> = [
     { field: "closeDate", activityKey: "salesClosed", amountKey: "salesClosedAmount" },
-    { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled" },
-    { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted" },
-    { field: "designApprovalSentDate", activityKey: "dasSent" },
+    { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled", amountKey: "surveysScheduledAmount" },
+    { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted", amountKey: "surveysCompletedAmount" },
+    { field: "designApprovalSentDate", activityKey: "dasSent", amountKey: "dasSentAmount" },
     { field: "designApprovalDate", activityKey: "dasApproved", amountKey: "dasApprovedAmount" },
-    { field: "designCompletionDate", activityKey: "designsCompleted" },
-    { field: "permitSubmitDate", activityKey: "permitsSubmitted" },
-    { field: "permitIssueDate", activityKey: "permitsIssued" },
-    { field: "constructionScheduleDate", activityKey: "constructionsScheduled" },
+    { field: "designCompletionDate", activityKey: "designsCompleted", amountKey: "designsCompletedAmount" },
+    { field: "permitSubmitDate", activityKey: "permitsSubmitted", amountKey: "permitsSubmittedAmount" },
+    { field: "permitIssueDate", activityKey: "permitsIssued", amountKey: "permitsIssuedAmount" },
+    { field: "constructionScheduleDate", activityKey: "constructionsScheduled", amountKey: "constructionsScheduledAmount" },
     { field: "constructionCompleteDate", activityKey: "constructionsComplete", amountKey: "constructionsCompleteAmount" },
-    { field: "inspectionPassDate", activityKey: "inspectionsPassed" },
+    { field: "inspectionPassDate", activityKey: "inspectionsPassed", amountKey: "inspectionsPassedAmount" },
     { field: "ptoGrantedDate", activityKey: "ptosGranted", amountKey: "ptosGrantedAmount" },
   ];
 
