@@ -75,6 +75,10 @@ export interface ProjectMonthlyActivity {
   permitsSubmittedAmount: number;
   permitsIssued: number;
   permitsIssuedAmount: number;
+  icSubmitted: number;
+  icSubmittedAmount: number;
+  icApproved: number;
+  icApprovedAmount: number;
   constructionsScheduled: number;
   constructionsScheduledAmount: number;
   constructionsComplete: number;
@@ -121,6 +125,8 @@ export interface ProjectFunnelDrillDownDeal {
   operationsManager: string;
   inspectionsLead: string;
   interconnectionsLead: string;
+  /** Interconnection workstream status (runs parallel to permitting) */
+  interconnectionStatus: string | null;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -204,6 +210,7 @@ function toDrillDown(
     operationsManager: p.operationsManager || "",
     inspectionsLead: p.inspectionsLead || "",
     interconnectionsLead: p.interconnectionsLead || "",
+    interconnectionStatus: statusLabel("interconnection_status", p.interconnectionStatus),
   };
 }
 
@@ -472,6 +479,10 @@ export function buildProjectFunnelData(
         permitsSubmittedAmount: 0,
         permitsIssued: 0,
         permitsIssuedAmount: 0,
+        icSubmitted: 0,
+        icSubmittedAmount: 0,
+        icApproved: 0,
+        icApprovedAmount: 0,
         constructionsScheduled: 0,
         constructionsScheduledAmount: 0,
         constructionsComplete: 0,
@@ -502,6 +513,8 @@ export function buildProjectFunnelData(
     { field: "designCompletionDate", activityKey: "designsCompleted", amountKey: "designsCompletedAmount" },
     { field: "permitSubmitDate", activityKey: "permitsSubmitted", amountKey: "permitsSubmittedAmount" },
     { field: "permitIssueDate", activityKey: "permitsIssued", amountKey: "permitsIssuedAmount" },
+    { field: "interconnectionSubmitDate", activityKey: "icSubmitted", amountKey: "icSubmittedAmount" },
+    { field: "interconnectionApprovalDate", activityKey: "icApproved", amountKey: "icApprovedAmount" },
     { field: "constructionScheduleDate", activityKey: "constructionsScheduled", amountKey: "constructionsScheduledAmount" },
     { field: "constructionCompleteDate", activityKey: "constructionsComplete", amountKey: "constructionsCompleteAmount" },
     { field: "inspectionPassDate", activityKey: "inspectionsPassed", amountKey: "inspectionsPassedAmount" },
