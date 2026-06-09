@@ -40,6 +40,38 @@ function resolveMonths(key: string): number {
   }
 }
 
+/**
+ * For calendar timeframes, the exact inclusive [start, end] month keys the view
+ * should show. Rolling timeframes ("3", "6", …) return null (no calendar clamp).
+ * The months-lookback above only sizes the fetch; this clamps the display to
+ * real calendar boundaries so e.g. "This Year" doesn't bleed in last December.
+ * Month keys are "YYYY-MM", so plain string comparison is chronological.
+ */
+function calendarMonthRange(key: string): { start: string; end: string } | null {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-based
+  const mk = (yr: number, mo: number) => `${yr}-${String(mo + 1).padStart(2, "0")}`;
+  switch (key) {
+    case "this-month":
+      return { start: mk(y, m), end: mk(y, m) };
+    case "last-month": {
+      const d = new Date(y, m - 1, 1);
+      return { start: mk(d.getFullYear(), d.getMonth()), end: mk(d.getFullYear(), d.getMonth()) };
+    }
+    case "this-quarter": {
+      const qStart = Math.floor(m / 3) * 3;
+      return { start: mk(y, qStart), end: mk(y, m) };
+    }
+    case "this-year":
+      return { start: mk(y, 0), end: mk(y, m) };
+    case "last-year":
+      return { start: mk(y - 1, 0), end: mk(y - 1, 11) };
+    default:
+      return null;
+  }
+}
+
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
   { label: "Last Month", value: "last-month" },
@@ -146,15 +178,13 @@ export default function MonthlyActivityPage() {
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
 
   // Chronological for the chart, descending (newest first) for the table.
-  // "Last Month" narrows the fetched window down to the single prior calendar month.
+  // Calendar timeframes are clamped to exact month boundaries so the rolling
+  // fetch window doesn't bleed in an extra month (e.g. last December).
   const activity = useMemo(() => {
     const rows = data?.monthlyActivity ?? [];
-    if (timeframe !== "last-month") return rows;
-    const d = new Date();
-    d.setDate(1);
-    d.setMonth(d.getMonth() - 1);
-    const lastMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    return rows.filter((r) => r.month === lastMonthKey);
+    const range = calendarMonthRange(timeframe);
+    if (!range) return rows;
+    return rows.filter((r) => r.month >= range.start && r.month <= range.end);
   }, [data, timeframe]);
   const totals = useMemo(() => sumTotals(activity), [activity]);
 
