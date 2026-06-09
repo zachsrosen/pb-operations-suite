@@ -1,6 +1,7 @@
 import type { Project } from "@/lib/hubspot";
 import { DEAL_STAGE_MAP } from "@/lib/hubspot";
 import { normalizeLocation } from "@/lib/locations";
+import { statusLabel } from "@/lib/deal-status-labels";
 
 export interface ProjectFunnelStageData {
   count: number;
@@ -61,17 +62,25 @@ export interface ProjectMonthlyActivity {
   salesClosed: number;
   salesClosedAmount: number;
   surveysScheduled: number;
+  surveysScheduledAmount: number;
   surveysCompleted: number;
+  surveysCompletedAmount: number;
   dasSent: number;
+  dasSentAmount: number;
   dasApproved: number;
   dasApprovedAmount: number;
   designsCompleted: number;
+  designsCompletedAmount: number;
   permitsSubmitted: number;
+  permitsSubmittedAmount: number;
   permitsIssued: number;
+  permitsIssuedAmount: number;
   constructionsScheduled: number;
+  constructionsScheduledAmount: number;
   constructionsComplete: number;
   constructionsCompleteAmount: number;
   inspectionsPassed: number;
+  inspectionsPassedAmount: number;
   ptosGranted: number;
   ptosGrantedAmount: number;
   closedOut: number;
@@ -450,17 +459,25 @@ export function buildProjectFunnelData(
         salesClosed: 0,
         salesClosedAmount: 0,
         surveysScheduled: 0,
+        surveysScheduledAmount: 0,
         surveysCompleted: 0,
+        surveysCompletedAmount: 0,
         dasSent: 0,
+        dasSentAmount: 0,
         dasApproved: 0,
         dasApprovedAmount: 0,
         designsCompleted: 0,
+        designsCompletedAmount: 0,
         permitsSubmitted: 0,
+        permitsSubmittedAmount: 0,
         permitsIssued: 0,
+        permitsIssuedAmount: 0,
         constructionsScheduled: 0,
+        constructionsScheduledAmount: 0,
         constructionsComplete: 0,
         constructionsCompleteAmount: 0,
         inspectionsPassed: 0,
+        inspectionsPassedAmount: 0,
         ptosGranted: 0,
         ptosGrantedAmount: 0,
         closedOut: 0,
@@ -478,16 +495,16 @@ export function buildProjectFunnelData(
     amountKey?: keyof ProjectMonthlyActivity;
   }> = [
     { field: "closeDate", activityKey: "salesClosed", amountKey: "salesClosedAmount" },
-    { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled" },
-    { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted" },
-    { field: "designApprovalSentDate", activityKey: "dasSent" },
+    { field: "siteSurveyScheduleDate", activityKey: "surveysScheduled", amountKey: "surveysScheduledAmount" },
+    { field: "siteSurveyCompletionDate", activityKey: "surveysCompleted", amountKey: "surveysCompletedAmount" },
+    { field: "designApprovalSentDate", activityKey: "dasSent", amountKey: "dasSentAmount" },
     { field: "designApprovalDate", activityKey: "dasApproved", amountKey: "dasApprovedAmount" },
-    { field: "designCompletionDate", activityKey: "designsCompleted" },
-    { field: "permitSubmitDate", activityKey: "permitsSubmitted" },
-    { field: "permitIssueDate", activityKey: "permitsIssued" },
-    { field: "constructionScheduleDate", activityKey: "constructionsScheduled" },
+    { field: "designCompletionDate", activityKey: "designsCompleted", amountKey: "designsCompletedAmount" },
+    { field: "permitSubmitDate", activityKey: "permitsSubmitted", amountKey: "permitsSubmittedAmount" },
+    { field: "permitIssueDate", activityKey: "permitsIssued", amountKey: "permitsIssuedAmount" },
+    { field: "constructionScheduleDate", activityKey: "constructionsScheduled", amountKey: "constructionsScheduledAmount" },
     { field: "constructionCompleteDate", activityKey: "constructionsComplete", amountKey: "constructionsCompleteAmount" },
-    { field: "inspectionPassDate", activityKey: "inspectionsPassed" },
+    { field: "inspectionPassDate", activityKey: "inspectionsPassed", amountKey: "inspectionsPassedAmount" },
     { field: "ptoGrantedDate", activityKey: "ptosGranted", amountKey: "ptosGrantedAmount" },
   ];
 
@@ -569,57 +586,57 @@ export function buildProjectFunnelData(
 
     if (!m.hasSurveyScheduled) {
       drillDown.awaitingSurveySchedule.push(
-        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
+        toDrillDown(p, daysBetween(p.closeDate!, today), statusLabel("site_survey_status", p.siteSurveyStatus))
       );
     } else if (!m.hasSurvey) {
       // Use close date as "waiting since" — the scheduled date may be in the
       // future, which would produce negative days.
       drillDown.awaitingSurvey.push(
-        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null, {
+        toDrillDown(p, daysBetween(p.closeDate!, today), statusLabel("site_survey_status", p.siteSurveyStatus), {
           scheduledDate: p.siteSurveyScheduleDate,
         })
       );
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
       drillDown.awaitingDaSend.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.layoutStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("layout_status", p.layoutStatus))
       );
     } else if (!m.hasDaApproved) {
       const waitSince = p.designApprovalSentDate || p.closeDate!;
       drillDown.awaitingApproval.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.layoutStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("layout_status", p.layoutStatus))
       );
     } else if (!m.hasDesignComplete) {
       const waitSince = p.designApprovalDate || p.closeDate!;
       drillDown.awaitingDesignComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.designStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("design_status", p.designStatus))
       );
     } else if (!m.hasPermitSubmit) {
       const waitSince = p.designCompletionDate || p.closeDate!;
       drillDown.awaitingPermitSubmit.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.permittingStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasPermitIssued) {
       const waitSince = p.permitSubmitDate || p.closeDate!;
       drillDown.awaitingPermitIssue.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.permittingStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasConstructionScheduled) {
       const waitSince = p.permitIssueDate || p.closeDate!;
       drillDown.awaitingConstructionSchedule.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
       );
     } else if (!m.hasConstructionComplete) {
       const waitSince = p.constructionScheduleDate || p.closeDate!;
       drillDown.awaitingConstructionComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.constructionStatus ?? null, {
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus), {
           scheduledDate: p.constructionScheduleDate,
         })
       );
     } else if (!m.hasInspectionPassed) {
       const waitSince = p.constructionCompleteDate || p.closeDate!;
       drillDown.awaitingInspection.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.finalInspectionStatus ?? null, {
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("final_inspection_status", p.finalInspectionStatus), {
           scheduledDate: p.inspectionScheduleDate,
           extraDate: p.inspectionFailDate,
           extraLabel: "Failed",
@@ -628,7 +645,7 @@ export function buildProjectFunnelData(
     } else if (!m.hasPtoGranted) {
       const waitSince = p.inspectionPassDate || p.closeDate!;
       drillDown.awaitingPto.push(
-        toDrillDown(p, daysBetween(waitSince, today), p.ptoStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("pto_status", p.ptoStatus))
       );
     } else {
       // In Close Out stage (priority 9) but not yet Project Complete

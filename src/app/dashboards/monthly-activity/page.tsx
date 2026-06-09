@@ -23,6 +23,10 @@ function resolveMonths(key: string): number {
   switch (key) {
     case "this-month":
       return 1;
+    case "last-month":
+      // Look back two months so the previous calendar month is fully inside
+      // the window; the page then filters the display to that single month.
+      return 2;
     case "this-quarter": {
       const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
       return thisMonth - qStart + 1;
@@ -38,6 +42,7 @@ function resolveMonths(key: string): number {
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
+  { label: "Last Month", value: "last-month" },
   { label: "This Quarter", value: "this-quarter" },
   { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
   { label: `Last Year (${new Date().getFullYear() - 1})`, value: "last-year" },
@@ -69,16 +74,16 @@ const ACTIVITY_COLUMNS: Array<{
   amountKey?: keyof ProjectMonthlyActivity;
 }> = [
   { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", amountKey: "salesClosedAmount" },
-  { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400" },
-  { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400" },
-  { key: "dasSent", label: "DAs Sent", color: "text-lime-400" },
+  { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400", amountKey: "surveysScheduledAmount" },
+  { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400", amountKey: "surveysCompletedAmount" },
+  { key: "dasSent", label: "DAs Sent", color: "text-lime-400", amountKey: "dasSentAmount" },
   { key: "dasApproved", label: "DAs Approved", color: "text-blue-400", amountKey: "dasApprovedAmount" },
-  { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400" },
-  { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400" },
-  { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400" },
-  { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400" },
+  { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", amountKey: "designsCompletedAmount" },
+  { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400", amountKey: "permitsSubmittedAmount" },
+  { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400", amountKey: "permitsIssuedAmount" },
+  { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400", amountKey: "constructionsScheduledAmount" },
   { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
-  { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400" },
+  { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", amountKey: "inspectionsPassedAmount" },
   { key: "ptosGranted", label: "PTOs", color: "text-teal-400", amountKey: "ptosGrantedAmount" },
   { key: "closedOut", label: "Closed Out", color: "text-sky-400", amountKey: "closedOutAmount" },
   { key: "cancelled", label: "Cancelled", color: "text-red-400", amountKey: "cancelledAmount" },
@@ -87,12 +92,12 @@ const ACTIVITY_COLUMNS: Array<{
 /** Hero cards — the milestones teams most often track output against. */
 const HERO_KEYS: Array<{ key: keyof ProjectMonthlyActivity; label: string; color: string; amountKey?: keyof ProjectMonthlyActivity }> = [
   { key: "salesClosed", label: "Sales Closed", color: "orange", amountKey: "salesClosedAmount" },
-  { key: "surveysCompleted", label: "Surveys Done", color: "yellow" },
+  { key: "surveysCompleted", label: "Surveys Done", color: "yellow", amountKey: "surveysCompletedAmount" },
   { key: "dasApproved", label: "DAs Approved", color: "blue", amountKey: "dasApprovedAmount" },
-  { key: "designsCompleted", label: "Designs Done", color: "indigo" },
-  { key: "permitsIssued", label: "Permits Issued", color: "purple" },
+  { key: "designsCompleted", label: "Designs Done", color: "indigo", amountKey: "designsCompletedAmount" },
+  { key: "permitsIssued", label: "Permits Issued", color: "purple", amountKey: "permitsIssuedAmount" },
   { key: "constructionsComplete", label: "Constr. Done", color: "green", amountKey: "constructionsCompleteAmount" },
-  { key: "inspectionsPassed", label: "Inspections", color: "emerald" },
+  { key: "inspectionsPassed", label: "Inspections", color: "emerald", amountKey: "inspectionsPassedAmount" },
   { key: "ptosGranted", label: "PTOs Granted", color: "teal", amountKey: "ptosGrantedAmount" },
 ];
 
@@ -113,6 +118,7 @@ export default function MonthlyActivityPage() {
   const [timeframe, setTimeframe] = useState("6");
   const [locations, setLocations] = useState<string[]>([]);
   const [chartMetric, setChartMetric] = useState<keyof ProjectMonthlyActivity>("dasApproved");
+  const [chartValueMode, setChartValueMode] = useState<"count" | "revenue">("count");
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -138,7 +144,16 @@ export default function MonthlyActivityPage() {
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : null;
 
   // Chronological for the chart, descending (newest first) for the table.
-  const activity = useMemo(() => data?.monthlyActivity ?? [], [data]);
+  // "Last Month" narrows the fetched window down to the single prior calendar month.
+  const activity = useMemo(() => {
+    const rows = data?.monthlyActivity ?? [];
+    if (timeframe !== "last-month") return rows;
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    const lastMonthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return rows.filter((r) => r.month === lastMonthKey);
+  }, [data, timeframe]);
   const totals = useMemo(() => sumTotals(activity), [activity]);
 
   const exportRows = useMemo(
@@ -228,6 +243,8 @@ export default function MonthlyActivityPage() {
             activity={activity}
             metric={chartMetric}
             onMetricChange={setChartMetric}
+            valueMode={chartValueMode}
+            onValueModeChange={setChartValueMode}
           />
 
           {/* Full monthly breakdown */}
@@ -242,51 +259,79 @@ function ThroughputChart({
   activity,
   metric,
   onMetricChange,
+  valueMode,
+  onValueModeChange,
 }: {
   activity: ProjectMonthlyActivity[];
   metric: keyof ProjectMonthlyActivity;
   onMetricChange: (m: keyof ProjectMonthlyActivity) => void;
+  valueMode: "count" | "revenue";
+  onValueModeChange: (m: "count" | "revenue") => void;
 }) {
   const chronological = useMemo(() => [...activity].reverse(), [activity]);
   const col = ACTIVITY_COLUMNS.find((c) => c.key === metric) ?? ACTIVITY_COLUMNS[0];
   const barColor = col.color.replace("text-", "bg-").replace("-400", "-500");
 
-  const maxCount = useMemo(
-    () => Math.max(1, ...chronological.map((c) => c[metric] as number)),
-    [chronological, metric]
+  // Revenue mode plots the matching amount column; every milestone has one.
+  const valueKey: keyof ProjectMonthlyActivity =
+    valueMode === "revenue" && col.amountKey ? col.amountKey : metric;
+  const fmt = (v: number) =>
+    valueMode === "revenue" ? formatCurrencyCompact(v) : String(v);
+
+  const maxValue = useMemo(
+    () => Math.max(1, ...chronological.map((c) => c[valueKey] as number)),
+    [chronological, valueKey]
   );
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h3 className="text-sm font-semibold text-foreground/80">Monthly Throughput</h3>
-        <select
-          value={metric}
-          onChange={(e) => onMetricChange(e.target.value as keyof ProjectMonthlyActivity)}
-          className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
-        >
-          {ACTIVITY_COLUMNS.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-t-border overflow-hidden text-xs">
+            <button
+              type="button"
+              onClick={() => onValueModeChange("count")}
+              className={`px-3 py-1.5 transition-colors ${valueMode === "count" ? "bg-emerald-500 text-white" : "bg-surface-2 text-muted hover:text-foreground"}`}
+            >
+              Count
+            </button>
+            <button
+              type="button"
+              onClick={() => onValueModeChange("revenue")}
+              className={`px-3 py-1.5 transition-colors ${valueMode === "revenue" ? "bg-emerald-500 text-white" : "bg-surface-2 text-muted hover:text-foreground"}`}
+            >
+              Revenue
+            </button>
+          </div>
+          <select
+            value={metric}
+            onChange={(e) => onMetricChange(e.target.value as keyof ProjectMonthlyActivity)}
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
+          >
+            {ACTIVITY_COLUMNS.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       {chronological.length === 0 ? (
         <p className="text-xs text-muted/60 italic">No activity in this window.</p>
       ) : (
         <div className="flex items-end justify-around gap-1" style={{ height: 180 }}>
           {chronological.map((row) => {
-            const count = row[metric] as number;
-            const heightPct = (count / maxCount) * 100;
+            const value = row[valueKey] as number;
+            const heightPct = (value / maxValue) * 100;
             return (
               <div key={row.month} className="flex flex-col items-center gap-1 flex-1 min-w-0">
-                <span className="text-[10px] text-muted tabular-nums">{count > 0 ? count : ""}</span>
+                <span className="text-[10px] text-muted tabular-nums">{value > 0 ? fmt(value) : ""}</span>
                 <div className="w-full flex justify-center" style={{ height: 130 }}>
                   <div
                     className={`${barColor} rounded-t-sm w-4 lg:w-6 transition-all duration-300 mt-auto`}
-                    style={{ height: `${Math.max(heightPct, count > 0 ? 3 : 0)}%` }}
-                    title={`${monthLabel(row.month)}: ${count}`}
+                    style={{ height: `${Math.max(heightPct, value > 0 ? 3 : 0)}%` }}
+                    title={`${monthLabel(row.month)}: ${fmt(value)}`}
                   />
                 </div>
                 <span className="text-[9px] text-muted truncate">{monthLabel(row.month, false)}</span>
