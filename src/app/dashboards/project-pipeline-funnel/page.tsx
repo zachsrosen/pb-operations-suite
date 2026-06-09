@@ -227,16 +227,15 @@ function HeroCards({
   summary: ProjectFunnelResponse["summary"];
   stages: StageConfig[];
 }) {
-  const closedTotal = total(summary.salesClosed);
-
   return (
     <div className="grid gap-4 mb-4 grid-cols-2 lg:grid-cols-4">
       {stages.map((stage, i) => {
         const d = summary[stage.key];
         const stageTotal = total(d);
         const prevKey = i > 0 ? stages[i - 1].key : null;
-        const prevTotal = prevKey ? total(summary[prevKey]) : closedTotal;
-        const convPct = prevTotal > 0 ? Math.round((stageTotal / prevTotal) * 100) : 0;
+        // Conversion is computed on active deals only — cancelled excluded.
+        const prevActive = prevKey ? summary[prevKey].count : summary.salesClosed.count;
+        const convPct = prevActive > 0 ? Math.round((d.count / prevActive) * 100) : 0;
 
         const cancelNote = d.cancelledCount > 0
           ? ` · ${d.cancelledCount} cancelled (${formatCurrencyCompact(d.cancelledAmount)})`
@@ -460,10 +459,11 @@ function FunnelBars({
 
   const conversions = STAGE_CONFIG.slice(1).map((stage, i) => {
     const prevStage = STAGE_CONFIG[i];
-    const prevTotal = total(summary[prevStage.key]);
-    const curTotal = total(summary[stage.key]);
+    // Conversion is computed on active deals only — cancelled excluded.
+    const prevActive = summary[prevStage.key].count;
+    const curActive = summary[stage.key].count;
     return {
-      pct: prevTotal > 0 ? Math.round((curTotal / prevTotal) * 100) : 0,
+      pct: prevActive > 0 ? Math.round((curActive / prevActive) * 100) : 0,
       days: medianDays[MEDIAN_KEYS[i].key],
     };
   });
@@ -614,7 +614,8 @@ function CohortTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] })
           </thead>
           <tbody>
             {cohorts.map((cohort, i) => {
-              const closedTotal = total(cohort.salesClosed);
+              // Conversion is computed on active deals only — cancelled excluded.
+              const closedActive = cohort.salesClosed.count;
 
               return (
                 <tr
@@ -628,9 +629,9 @@ function CohortTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] })
                     const d = cohort[stage.key];
                     const t = total(d);
                     const conversionPct =
-                      stage.key === "salesClosed" || closedTotal === 0
+                      stage.key === "salesClosed" || closedActive === 0
                         ? null
-                        : Math.round((t / closedTotal) * 100);
+                        : Math.round((d.count / closedActive) * 100);
 
                     return (
                       <td key={stage.key} className="text-center py-2 px-1.5">
