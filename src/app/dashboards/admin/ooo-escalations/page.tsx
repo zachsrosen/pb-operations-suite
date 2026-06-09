@@ -36,7 +36,7 @@ export default async function OooEscalationsPage({
 
   if (!prisma) {
     return (
-      <DashboardShell title="OOO Bot Escalations" accentColor="purple">
+      <DashboardShell title="Bot Escalations" accentColor="purple">
         <div className="bg-surface border border-t-border rounded-lg p-6 text-foreground">
           Database not configured.
         </div>
@@ -72,7 +72,7 @@ export default async function OooEscalationsPage({
   ]);
 
   return (
-    <DashboardShell title="OOO Bot Escalations" accentColor="purple">
+    <DashboardShell title="Bot Escalations" accentColor="purple">
       <OooEscalationsClient
         initialEscalations={escalations.map((e) => ({
           ...e,

@@ -1,9 +1,10 @@
 /**
  * OOO Bot Tool Definitions
  *
- * Tools specific to the OOO bot that aren't in the standard chat tools.
- * All tools are READ-ONLY — no mutations except OooBotEscalation writes
- * (handled by the orchestrator wrapper in ooo-bot.ts, not here).
+ * Tools specific to the assistant bot that aren't in the standard chat
+ * tools. Tools are READ-ONLY except `escalate` (writes OooBotEscalation)
+ * and `submit_process_request` (writes BugReport) — both handled by the
+ * orchestrator wrapper in ooo-bot.ts, not here.
  *
  * Uses betaZodTool (same pattern as chat-tools.ts).
  */
@@ -155,7 +156,7 @@ export function createOooBotTools() {
         range: { from: now.toISOString(), to: endDate.toISOString() },
         locations: input.location ? [input.location] : ["all"],
         note: "For detailed schedule, check pbtechops.com/dashboards/scheduler. " +
-              "Calendar read integration is a post-OOO enhancement.",
+              "Calendar read integration is a future enhancement.",
       });
     },
   });
@@ -212,7 +213,7 @@ export function createOooBotTools() {
   const escalate = betaZodTool({
     name: "escalate",
     description:
-      "Flag a question that you can't confidently answer for Zach to review when he returns. " +
+      "Flag a question that you can't confidently answer for Zach to follow up on. " +
       "Use this when the question requires judgment, approval, or information you don't have.",
     inputSchema: z.object({
       question: z.string().describe("The original question from the user"),
@@ -228,7 +229,34 @@ export function createOooBotTools() {
       // It does NOT write to the DB — the orchestrator wrapper handles that.
       return JSON.stringify({
         escalated: true,
-        message: "Flagged for Zach — he's back June 10th.",
+        message: "Flagged for Zach to follow up.",
+      });
+    },
+  });
+
+  const submitProcessRequest = betaZodTool({
+    name: "submit_process_request",
+    description:
+      "File a process request on behalf of the person you're chatting with — a request to add, change, " +
+      "or fix a process, workflow, or tool in the suite. ONLY use this when the person EXPLICITLY asks " +
+      "you to file/submit/log a request (e.g. \"can you put in a request to…\"). Never file one on your own " +
+      "initiative. Read the title back to them so they know what was logged.",
+    inputSchema: z.object({
+      title: z
+        .string()
+        .describe("Short one-line summary of the request (max ~200 chars)"),
+      description: z
+        .string()
+        .describe("Full details of what's being requested and why"),
+    }),
+    run: async (_input) => {
+      // NOTE: The orchestrator in ooo-bot.ts wraps this tool and replaces
+      // `run` entirely to inject request context (senderEmail, senderName,
+      // spaceName) and write the BugReport row. This default implementation
+      // is only hit in unit tests or standalone use — it does NOT persist.
+      return JSON.stringify({
+        submitted: true,
+        message: "Logged your process request for the team.",
       });
     },
   });
@@ -284,5 +312,5 @@ export function createOooBotTools() {
     },
   });
 
-  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop];
+  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest];
 }

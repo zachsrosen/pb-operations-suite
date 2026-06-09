@@ -1,9 +1,9 @@
 import { createOooBotTools } from "@/lib/ooo-bot-tools";
 
 describe("createOooBotTools", () => {
-  it("returns 5 tools", () => {
+  it("returns 6 tools", () => {
     const tools = createOooBotTools();
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(6);
   });
 
   it("includes expected tool names", () => {
@@ -16,6 +16,7 @@ describe("createOooBotTools", () => {
         "get_service_queue",
         "escalate",
         "search_sop",
+        "submit_process_request",
       ])
     );
   });

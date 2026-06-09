@@ -13,7 +13,8 @@ import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
 import { createReadOnlyChatTools } from "@/lib/chat-tools";
 import { createOooBotTools } from "@/lib/ooo-bot-tools";
 import { postGoogleChatMessage } from "@/lib/google-chat-api";
-import { prisma } from "@/lib/db";
+import { sendBugReportEmail } from "@/lib/email";
+import { prisma, logActivity } from "@/lib/db";
 
 // ── System Prompt Builder ──
 
@@ -24,17 +25,18 @@ interface SystemPromptParams {
   spaceDisplayName?: string;
 }
 
-const IDENTITY_PROMPT = `You are Zach's OOO assistant for the precon team at Photon Brothers (a solar installation company). Zach is out of office from May 29 to June 10, 2026.
+const IDENTITY_PROMPT = `You are Zach's AI assistant for Zach's team at Photon Brothers (a solar installation company). You're always on — the team can reach you any time.
 
-You have Zach's operational playbook and access to live project data. You help the precon team with process questions, project status lookups, scheduling visibility, and general guidance based on how Zach runs things.
+You have Zach's operational playbook and access to live project data. You help Zach's team with process questions, project status lookups, scheduling visibility, and general guidance based on how Zach runs things.
 
 RULES:
-- Always identify yourself as Zach's OOO bot, never pretend to be Zach
+- Always identify yourself as Zach's assistant bot, never pretend to be Zach
 - You CANNOT: approve things, make commitments, change data, reassign crews, move deals, send emails, or override anyone's decisions
-- If you're not confident in an answer, use the escalate tool to flag it for Zach's return
-- When you escalate, tell the person it's been queued for Zach
+- The one exception: when someone EXPLICITLY asks you to log a request, you can file a "process request" with the submit_process_request tool — a request to add, change, or fix a process, workflow, or tool. Never file one on your own initiative; read the title back so they know what was logged.
+- If you're not confident in an answer, use the escalate tool to flag it for Zach to follow up on
+- When you escalate, tell the person it's been flagged for Zach
 - For process/how-to questions, use the search_sop tool first — the SOP guides have most standard procedures documented
-- Be helpful, direct, and a little funny — like a coworker who knows the playbook and has a sense of humor about being a robot filling in
+- Be helpful, direct, and a little funny — like a coworker who knows the playbook and has a sense of humor about being a robot
 
 TONE:
 - Casual and direct, not corporate
@@ -50,8 +52,9 @@ AVAILABLE TOOLS:
 - get_project_status(projectId) — combined deal + Zuper + BOM status
 - get_schedule_overview(location?, days?) — upcoming installs/surveys
 - get_service_queue() — service priority queue summary
-- escalate(question, context) — flag for Zach's return
+- escalate(question, context) — flag for Zach to follow up
 - search_sop(query) — search SOP guides for process docs
+- submit_process_request(title, description) — file a process/tool request when someone explicitly asks
 
 KEY CONTEXT:
 - Projects are identified by PROJ-XXXX numbers in deal names
@@ -135,7 +138,8 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
   const readOnlyTools = createReadOnlyChatTools();
   const rawOooTools = createOooBotTools();
 
-  // Wrap the escalate tool to inject request context
+  // Wrap the escalate + submit_process_request tools to inject request
+  // context (these are the only tools that write to the DB).
   const oooTools = rawOooTools.map((tool) => {
     if (tool.name === "escalate") {
       return {
@@ -157,7 +161,76 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
           }
           return JSON.stringify({
             escalated: true,
-            message: "Flagged for Zach — he's back June 10th.",
+            message: "Flagged for Zach to follow up.",
+          });
+        },
+      };
+    }
+    if (tool.name === "submit_process_request") {
+      return {
+        ...tool,
+        run: async (input: { title: string; description: string }) => {
+          if (!prisma) {
+            return JSON.stringify({
+              submitted: false,
+              message: "Couldn't log that right now — the database is unavailable.",
+            });
+          }
+
+          // Stored as FEATURE_REQUEST under the hood; surfaced to the team
+          // as a "process request" (same BugReport table as the in-app form).
+          const report = await prisma.bugReport.create({
+            data: {
+              type: "FEATURE_REQUEST",
+              title: input.title.slice(0, 200),
+              description: input.description.slice(0, 5000),
+              pageUrl: "via assistant bot (Google Chat)",
+              reporterEmail: senderEmail,
+              reporterName: senderName,
+            },
+          });
+
+          // Notify the team (fire-and-forget; don't fail the request on email).
+          try {
+            const emailResult = await sendBugReportEmail({
+              reportId: report.id,
+              type: report.type,
+              title: report.title,
+              description: report.description,
+              pageUrl: report.pageUrl || undefined,
+              reporterName: report.reporterName || undefined,
+              reporterEmail: report.reporterEmail,
+            });
+            await prisma.bugReport.update({
+              where: { id: report.id },
+              data: { emailSent: emailResult.success },
+            });
+          } catch (err) {
+            console.warn("[ooo-bot] process request email failed:", err);
+          }
+
+          try {
+            await logActivity({
+              type: "FEATURE_REQUESTED",
+              description: `Process request submitted via assistant bot: ${input.title}`,
+              userEmail: senderEmail,
+              userName: senderName,
+              entityType: "bug_report",
+              entityId: report.id,
+              entityName: input.title,
+              metadata: { type: "FEATURE_REQUEST", source: "assistant-bot", spaceId: spaceName },
+              ipAddress: "google-chat",
+              userAgent: "assistant-bot",
+            });
+          } catch (err) {
+            console.warn("[ooo-bot] process request activity log failed:", err);
+          }
+
+          return JSON.stringify({
+            submitted: true,
+            reportId: report.id,
+            title: report.title,
+            message: "Logged your process request — the team's been notified.",
           });
         },
       };
@@ -215,7 +288,7 @@ export async function processOooBotMessage(params: ProcessMessageParams): Promis
           spaceId: spaceName,
           threadId: threadName,
           senderEmail: "bot",
-          senderName: "Zach's OOO Bot",
+          senderName: "Zach's Assistant",
           role: "assistant",
           content: responseText,
           model: CLAUDE_MODELS.sonnet,

@@ -102,9 +102,9 @@ interface NormalizedEvent {
 
 // ── Welcome messages ──
 
-const DM_WELCOME = `Hey — Zach's off pretending mountains exist outside of Colorado. I'm his AI stand-in. I've got his playbook, access to the live data, and zero ability to approve PTO. What's up?`;
+const DM_WELCOME = `Hey — I'm Zach's AI assistant. I've got his playbook, access to the live data, and zero ability to approve PTO. What's up?`;
 
-const SPACE_WELCOME = `👋 Zach's OOO bot reporting for duty. I've got his playbook loaded and can look up projects, schedules, and pipeline status. I can't approve anything or make promises, but I can usually point you in the right direction. If I'm stumped, I'll flag it for Zach when he's back June 10th.`;
+const SPACE_WELCOME = `👋 Zach's assistant bot, reporting for duty. I've got his playbook loaded and can look up projects, schedules, and pipeline status. I can't approve anything or make promises, but I can usually point you in the right direction — and if I'm stumped, I'll flag it for Zach.`;
 
 const THINKING_MESSAGE = `🤔 Let me check on that...`;
 
@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
   // ── Kill switch ──
   const enabled = (process.env.GOOGLE_CHAT_ENABLED || "false").toLowerCase().trim();
   if (enabled !== "true" && enabled !== "1") {
-    return NextResponse.json({ text: "OOO bot is currently disabled." });
+    return NextResponse.json({ text: "The assistant bot is currently disabled." });
   }
 
   // ── JWT auth ──
@@ -289,7 +289,7 @@ export async function POST(request: NextRequest) {
     const config = await prisma.oooBotConfig.findFirst();
     if (config && !config.enabled) {
       return chatTextResponse(
-        "The OOO bot is currently turned off. Reach out to Caleb or Patrick if you need help.",
+        "The assistant bot is currently turned off. Reach out to Caleb or Patrick if you need help.",
         isAddOn
       );
     }
