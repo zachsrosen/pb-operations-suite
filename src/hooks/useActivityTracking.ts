@@ -59,6 +59,7 @@ interface ActivityTracker {
   trackFilter: (dashboard: string, filters: Record<string, unknown>) => void;
   trackExport: (exportType: string, recordCount: number, dashboard?: string, filters?: Record<string, unknown>) => void;
   trackFeature: (feature: string, description?: string, metadata?: Record<string, unknown>) => void;
+  trackPageDwell: (path: string, durationMs: number) => void;
 }
 
 /**
@@ -118,6 +119,26 @@ export function useActivityTracking(): ActivityTracker {
       source: source || "app-navigation",
     });
   }, [logActivity]);
+
+  const trackPageDwell = useCallback((path: string, durationMs: number) => {
+    if (status !== "authenticated") return;
+    if (!path || durationMs < 1000) return;            // ignore sub-1s bounces
+    const ms = Math.min(durationMs, 30 * 60 * 1000);   // clamp 30 min
+    const payload = JSON.stringify({
+      action: "page_dwell",
+      sessionId: sessionId.current,
+      deviceFingerprint: getDeviceFingerprint(),
+      path,
+      durationMs: Math.round(ms),
+    });
+    try {
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon("/api/activity/log", new Blob([payload], { type: "application/json" }));
+      } else {
+        void fetch("/api/activity/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+      }
+    } catch { /* analytics must never break the app */ }
+  }, [status]);
 
   const trackDashboardView = useCallback((
     dashboard: string,
@@ -206,6 +227,7 @@ export function useActivityTracking(): ActivityTracker {
     trackFilter,
     trackExport,
     trackFeature,
+    trackPageDwell,
   };
 }
 
