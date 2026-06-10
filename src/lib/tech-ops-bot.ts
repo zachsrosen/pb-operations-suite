@@ -102,13 +102,15 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
   } = params;
 
   // ── Load conversation history ──
+  // Scope by spaceId only (NOT threadId). In Google Chat DMs every message
+  // lands in its own thread, so filtering by threadId fragmented history to a
+  // single message and the bot had no memory between turns. The conversation
+  // table only stores this bot's own Q&A pairs, so spaceId-scoped history is
+  // exactly the prior conversation in this DM/room. (Fixes ticket #749.)
   let history: Array<{ role: "user" | "assistant"; content: string }> = [];
   if (prisma) {
     const rows = await prisma.techOpsBotConversation.findMany({
-      where: {
-        spaceId: spaceName,
-        ...(threadName ? { threadId: threadName } : {}),
-      },
+      where: { spaceId: spaceName },
       orderBy: { createdAt: "desc" },
       take: 20,
       select: { role: true, content: true },
