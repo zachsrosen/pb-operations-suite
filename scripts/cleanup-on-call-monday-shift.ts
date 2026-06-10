@@ -1,5 +1,6 @@
 /**
- * 2026-06 on-call schedule cleanup: Monday-start weeks + drop California Sundays.
+ * 2026-06 on-call schedule cleanup: Monday-start weeks + drop California Sundays,
+ * WITHOUT reshuffling who owns which week.
  *
  * Two policy changes landed in the rotation engine:
  *   1. Weekly rotations now run Mon-Sun (electrician shifts start Monday,
@@ -7,11 +8,23 @@
  *   2. California no longer carries Sunday on-call (coversSundays=false) — the
  *      weekly assignee covers Mon-Sat and Sundays get no row.
  *
- * This script cleans up what is ALREADY on the schedule so it matches the new
- * rules, WITHOUT touching anything an electrician or admin set by hand:
- *   - Flips California's coversSundays flag to false (idempotent).
+ * KEEPING THE SAME PEOPLE
+ * -----------------------
+ * Naively regenerating a Mon-Sun rotation would re-phase ownership (the person
+ * on "the week of July 6" would change). To avoid that, this script re-anchors
+ * each pool's rotation forward by exactly one day: it sets startDate to the
+ * Monday immediately after the pool's current Sunday anchor. That preserves the
+ * existing rotation order and phase, so:
+ *   - Every Mon-Sat keeps its CURRENT owner (no change at all).
+ *   - Sundays move with the boundary: a Sunday flips from "first day of the next
+ *     person's week" to "last day of the current person's week" (Colorado), or
+ *     is dropped entirely (California).
+ *
+ * This cleans up what is ALREADY on the schedule so it matches the new rules,
+ * WITHOUT touching anything an electrician or admin set by hand:
+ *   - Re-anchors startDate (phase-preserving) and flips California coversSundays.
  *   - For every active pool, re-aligns existing *generated* future assignments
- *     to the Mon-Sun rotation and removes generated California Sunday rows.
+ *     and removes generated California Sunday rows.
  *   - Mirrors each change into the pool's Google Calendar (best-effort).
  *
  * What it will NOT do — by design, to avoid surprises:
@@ -36,7 +49,7 @@ dotenv.config({ path: ".env" });
 
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
-import { generateAssignments, dayOfWeek } from "../src/lib/on-call-rotation";
+import { generateAssignments, dayOfWeek, addDays } from "../src/lib/on-call-rotation";
 import { upsertAssignmentEvent, deleteAssignmentEvent } from "../src/lib/on-call-google-calendar";
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
@@ -61,37 +74,26 @@ function todayInTz(tz: string): string {
   return `${y}-${m}-${d}`;
 }
 
+// Phase-preserving Monday anchor: the Monday immediately after the Sunday that
+// the pool's old Sun-Sat rotation was anchored on. Aligning the new Mon-Sun
+// rotation to this Monday keeps every existing Mon-Sat owner unchanged.
+function phasePreservingMonday(startDate: string): string {
+  const sundayAnchor = addDays(startDate, -dayOfWeek(startDate)); // Sunday of startDate's week
+  return addDays(sundayAnchor, 1); // the following Monday
+}
+
 async function main() {
   console.warn(APPLY ? "Mode: APPLY (writing changes)\n" : "Mode: DRY RUN (no changes) — pass --apply to write\n");
 
-  // 1. Flip the Sunday-coverage flag for the configured pools.
-  for (const poolName of NO_SUNDAY_POOLS) {
-    const pool = await prisma.onCallPool.findFirst({
-      where: { name: { equals: poolName, mode: "insensitive" } },
-    });
-    if (!pool) {
-      console.warn(`[skip] no pool named "${poolName}"`);
-      continue;
-    }
-    if (pool.coversSundays) {
-      console.warn(`${pool.name}: coversSundays true → false`);
-      if (APPLY) {
-        await prisma.onCallPool.update({ where: { id: pool.id }, data: { coversSundays: false } });
-      }
-    } else {
-      console.warn(`${pool.name}: coversSundays already false`);
-    }
-  }
-
-  // 2. Reconcile existing generated future rows for every active pool.
   const pools = await prisma.onCallPool.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
 
   let totalUpdated = 0;
   let totalDeleted = 0;
 
   for (const pool of pools) {
-    // Reflect the flag change for this run even in dry-run mode.
-    const coversSundays = NO_SUNDAY_POOLS.has(pool.name.toLowerCase()) ? false : pool.coversSundays;
+    const dropSundays = NO_SUNDAY_POOLS.has(pool.name.toLowerCase());
+    const coversSundays = dropSundays ? false : pool.coversSundays;
+    const newStartDate = phasePreservingMonday(pool.startDate);
     const today = todayInTz(pool.timezone);
 
     const members = await prisma.onCallPoolMember.findMany({
@@ -103,8 +105,23 @@ async function main() {
       orderIndex: m.orderIndex,
       isActive: m.isActive,
     }));
+
+    console.warn(`\n=== ${pool.name} ===`);
+    console.warn(
+      `  startDate ${pool.startDate} → ${newStartDate} (phase-preserving Monday); ` +
+        `coversSundays ${pool.coversSundays} → ${coversSundays}`,
+    );
+
+    // Persist config changes (startDate re-anchor + Sunday flag).
+    if (APPLY && (newStartDate !== pool.startDate || coversSundays !== pool.coversSundays)) {
+      await prisma.onCallPool.update({
+        where: { id: pool.id },
+        data: { startDate: newStartDate, coversSundays },
+      });
+    }
+
     if (rotationMembers.filter((m) => m.isActive).length === 0) {
-      console.warn(`\n=== ${pool.name} === (no active members — skipped)`);
+      console.warn("  (no active members — skipped row reconcile)");
       continue;
     }
 
@@ -114,14 +131,13 @@ async function main() {
       include: { crewMember: { select: { name: true, email: true } } },
       orderBy: { date: "asc" },
     });
-
-    console.warn(`\n=== ${pool.name} === (${existing.length} generated rows from ${today}, coversSundays=${coversSundays})`);
+    console.warn(`  ${existing.length} generated rows from ${today}`);
     if (existing.length === 0) continue;
 
     const fromDate = existing[0].date;
     const toDate = existing[existing.length - 1].date;
     const generated = generateAssignments({
-      startDate: pool.startDate,
+      startDate: newStartDate, // re-anchored: preserves Mon-Sat ownership
       fromDate,
       toDate,
       members: rotationMembers,
@@ -142,6 +158,9 @@ async function main() {
       googleCalendarId: pool.googleCalendarId,
     };
 
+    let poolUpdated = 0;
+    let poolDeleted = 0;
+
     for (const row of existing) {
       const want = wantByDate.get(row.date);
 
@@ -149,7 +168,7 @@ async function main() {
       if (want === undefined) {
         const why = !coversSundays && dayOfWeek(row.date) === 0 ? "Sunday dropped" : "no longer in rotation";
         console.warn(`  - DELETE ${row.date} (${row.crewMember.name}) [${why}]`);
-        totalDeleted++;
+        poolDeleted++;
         if (APPLY) {
           await prisma.onCallAssignment.delete({ where: { id: row.id } });
           await deleteAssignmentEvent(poolForCal, row.id);
@@ -157,11 +176,14 @@ async function main() {
         continue;
       }
 
-      // Assignee changed under Mon-Sun alignment → update in place.
+      // Assignee changed under the Mon-Sun boundary → update in place.
+      // With phase-preserving re-anchor this should only ever be a Sunday.
       if (want !== row.crewMemberId) {
         const newCm = await prisma.crewMember.findUnique({ where: { id: want } });
-        console.warn(`  ~ UPDATE ${row.date} ${row.crewMember.name} → ${newCm?.name ?? want}`);
-        totalUpdated++;
+        const dow = dayOfWeek(row.date);
+        const note = dow === 0 ? "Sunday → prior week's owner" : "boundary shift";
+        console.warn(`  ~ UPDATE ${row.date} ${row.crewMember.name} → ${newCm?.name ?? want} [${note}]`);
+        poolUpdated++;
         if (APPLY) {
           await prisma.onCallAssignment.update({ where: { id: row.id }, data: { crewMemberId: want } });
           if (newCm) {
@@ -175,6 +197,10 @@ async function main() {
         }
       }
     }
+
+    console.warn(`  → ${poolUpdated} reassigned, ${poolDeleted} deleted (Mon-Sat owners unchanged)`);
+    totalUpdated += poolUpdated;
+    totalDeleted += poolDeleted;
   }
 
   console.warn(
