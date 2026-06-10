@@ -258,20 +258,73 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
           }
 
           try {
-            // Resolve deal from PROJ-XXXX (optional)
+            const { searchWithRetry, hubspotClient } = await import("@/lib/hubspot");
+
+            // ── Resolve the target deal (optional) ──
+            // PROJ numbers live inside the deal NAME, so a fuzzy search can grab
+            // the wrong record. Match the exact PROJ token (word-boundary so
+            // PROJ-123 ≠ PROJ-1234), refuse to guess when ambiguous, and surface
+            // the deal name so the requester can confirm the right record.
             let dealId: string | undefined;
+            let dealName: string | undefined;
             if (input.projectId) {
-              if (/^\d+$/.test(input.projectId)) {
-                dealId = input.projectId;
+              const raw = input.projectId.trim();
+              if (/^\d{8,}$/.test(raw)) {
+                // Long numeric → treat as a raw HubSpot deal ID; fetch its name.
+                try {
+                  const d = await hubspotClient.crm.deals.basicApi.getById(raw, [
+                    "dealname",
+                  ]);
+                  dealId = raw;
+                  dealName = d.properties?.dealname ?? undefined;
+                } catch {
+                  return JSON.stringify({
+                    created: false,
+                    message: `I couldn't find a deal with ID ${raw} — double-check the project and try again.`,
+                  });
+                }
               } else {
-                const { searchWithRetry } = await import("@/lib/hubspot");
+                const digits = raw.match(/(\d{3,})/)?.[1];
+                if (!digits) {
+                  return JSON.stringify({
+                    created: false,
+                    message: `"${raw}" doesn't look like a project number — give me a PROJ-#### and I'll attach the task to it.`,
+                  });
+                }
+                const token = `PROJ-${digits}`;
                 const res = await searchWithRetry({
-                  query: input.projectId,
-                  limit: 1,
+                  query: token,
+                  limit: 20,
                   properties: ["dealname"],
-                  sorts: ["createdate"],
                 });
-                if (res.results.length) dealId = res.results[0].id;
+                const boundary = new RegExp(`(^|[^0-9])PROJ-${digits}([^0-9]|$)`, "i");
+                const matches = Array.from(
+                  new Map(
+                    (res.results ?? [])
+                      .filter((r) => boundary.test(r.properties?.dealname ?? ""))
+                      .map((r) => [r.id, r])
+                  ).values()
+                );
+                if (matches.length === 0) {
+                  return JSON.stringify({
+                    created: false,
+                    message: `I couldn't find a deal for ${token}. Want me to create the task without attaching it to a project, or can you double-check the number?`,
+                  });
+                }
+                if (matches.length > 1) {
+                  // Don't guess — let the user pick.
+                  return JSON.stringify({
+                    created: false,
+                    needsClarification: true,
+                    message: `I found ${matches.length} deals matching ${token} — which one should the task go on?`,
+                    candidates: matches.slice(0, 5).map((m) => ({
+                      dealId: m.id,
+                      name: m.properties?.dealname,
+                    })),
+                  });
+                }
+                dealId = matches[0].id;
+                dealName = matches[0].properties?.dealname ?? undefined;
               }
             }
 
@@ -353,8 +406,9 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               subject: input.subject,
               dueInDays: input.dueInDays ?? 1,
               assignedTo: ownerId ? senderEmail : "unassigned",
-              attachedToDeal: dealId ?? null,
-              message: "Task created in HubSpot.",
+              attachedTo: dealName ?? (dealId ? `deal ${dealId}` : "no project (standalone task)"),
+              message:
+                "Task created in HubSpot. Read back the subject and the project/deal name so they can confirm it's on the right record.",
             });
           } catch (err) {
             console.error("[tech-ops-bot] create_hubspot_task error:", err);
