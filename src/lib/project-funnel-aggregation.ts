@@ -155,6 +155,10 @@ export interface ProjectFunnelResponse {
   medianDays: ProjectFunnelMedianDays;
   /** Distinct PM / deal-owner names available in the current location+timeframe scope. */
   filterOptions: { projectManagers: string[]; dealOwners: string[] };
+  /** Cohort stage totals broken out per PB location (for the funnel hero matrix). */
+  summaryByLocation: Record<string, Record<ProjectFunnelStageKey, ProjectFunnelStageData>>;
+  /** Throughput activity totals broken out per PB location (for the activity hero matrix). */
+  activityByLocation: Record<string, ProjectMonthlyActivity>;
   generatedAt: string;
 }
 
@@ -275,6 +279,45 @@ function emptySummary(): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
 
 function emptyCohort(month: string): ProjectFunnelCohort {
   return { month, ...emptySummary() };
+}
+
+/** Zeroed activity bucket. `label` lands in the `month` field (a month key or a location name). */
+function emptyActivity(label: string): ProjectMonthlyActivity {
+  return {
+    month: label,
+    salesClosed: 0,
+    salesClosedAmount: 0,
+    surveysScheduled: 0,
+    surveysScheduledAmount: 0,
+    surveysCompleted: 0,
+    surveysCompletedAmount: 0,
+    dasSent: 0,
+    dasSentAmount: 0,
+    dasApproved: 0,
+    dasApprovedAmount: 0,
+    designsCompleted: 0,
+    designsCompletedAmount: 0,
+    permitsSubmitted: 0,
+    permitsSubmittedAmount: 0,
+    permitsIssued: 0,
+    permitsIssuedAmount: 0,
+    icSubmitted: 0,
+    icSubmittedAmount: 0,
+    icApproved: 0,
+    icApprovedAmount: 0,
+    constructionsScheduled: 0,
+    constructionsScheduledAmount: 0,
+    constructionsComplete: 0,
+    constructionsCompleteAmount: 0,
+    inspectionsPassed: 0,
+    inspectionsPassedAmount: 0,
+    ptosGranted: 0,
+    ptosGrantedAmount: 0,
+    closedOut: 0,
+    closedOutAmount: 0,
+    cancelled: 0,
+    cancelledAmount: 0,
+  };
 }
 
 /**
@@ -445,6 +488,16 @@ export function buildProjectFunnelData(
   });
   const previousSummary = tallyStageSummary(previousFiltered);
 
+  // Cohort stage totals grouped by PB location (for the hero location matrix).
+  const dealsByLocation = new Map<string, Project[]>();
+  for (const p of filtered) {
+    const loc = normalizeLocation(p.pbLocation) || "Unknown";
+    if (!dealsByLocation.has(loc)) dealsByLocation.set(loc, []);
+    dealsByLocation.get(loc)!.push(p);
+  }
+  const summaryByLocation: Record<string, Record<ProjectFunnelStageKey, ProjectFunnelStageData>> = {};
+  for (const [loc, deals] of dealsByLocation) summaryByLocation[loc] = tallyStageSummary(deals);
+
   const summary = emptySummary();
   const cohortMap = new Map<string, ProjectFunnelCohort>();
 
@@ -544,47 +597,17 @@ export function buildProjectFunnelData(
 
   const cohorts = [...cohortMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
-  // Activity-based counts: bin milestones by the month they happened
+  // Activity-based counts: bin milestones by the month they happened, and
+  // separately accumulate per-PB-location totals for the location matrix.
   const activityMap = new Map<string, ProjectMonthlyActivity>();
   function ensureActivity(mk: string): ProjectMonthlyActivity {
-    if (!activityMap.has(mk)) {
-      activityMap.set(mk, {
-        month: mk,
-        salesClosed: 0,
-        salesClosedAmount: 0,
-        surveysScheduled: 0,
-        surveysScheduledAmount: 0,
-        surveysCompleted: 0,
-        surveysCompletedAmount: 0,
-        dasSent: 0,
-        dasSentAmount: 0,
-        dasApproved: 0,
-        dasApprovedAmount: 0,
-        designsCompleted: 0,
-        designsCompletedAmount: 0,
-        permitsSubmitted: 0,
-        permitsSubmittedAmount: 0,
-        permitsIssued: 0,
-        permitsIssuedAmount: 0,
-        icSubmitted: 0,
-        icSubmittedAmount: 0,
-        icApproved: 0,
-        icApprovedAmount: 0,
-        constructionsScheduled: 0,
-        constructionsScheduledAmount: 0,
-        constructionsComplete: 0,
-        constructionsCompleteAmount: 0,
-        inspectionsPassed: 0,
-        inspectionsPassedAmount: 0,
-        ptosGranted: 0,
-        ptosGrantedAmount: 0,
-        closedOut: 0,
-        closedOutAmount: 0,
-        cancelled: 0,
-        cancelledAmount: 0,
-      });
-    }
+    if (!activityMap.has(mk)) activityMap.set(mk, emptyActivity(mk));
     return activityMap.get(mk)!;
+  }
+  const activityLocMap = new Map<string, ProjectMonthlyActivity>();
+  function ensureLocActivity(loc: string): ProjectMonthlyActivity {
+    if (!activityLocMap.has(loc)) activityLocMap.set(loc, emptyActivity(loc));
+    return activityLocMap.get(loc)!;
   }
 
   const dateMilestones: Array<{
@@ -610,6 +633,7 @@ export function buildProjectFunnelData(
 
   for (const p of projects) {
     if (!matchesLocation(p) || !matchesStaff(p)) continue;
+    const locAct = ensureLocActivity(normalizeLocation(p.pbLocation) || "Unknown");
     for (const { field, activityKey, amountKey } of dateMilestones) {
       const dateVal = p[field] as string | null;
       if (dateVal) {
@@ -617,7 +641,11 @@ export function buildProjectFunnelData(
         if (inWindow(d)) {
           const act = ensureActivity(monthKey(dateVal));
           (act[activityKey] as number)++;
-          if (amountKey) (act[amountKey] as number) += p.amount || 0;
+          (locAct[activityKey] as number)++;
+          if (amountKey) {
+            (act[amountKey] as number) += p.amount || 0;
+            (locAct[amountKey] as number) += p.amount || 0;
+          }
         }
       }
     }
@@ -628,6 +656,8 @@ export function buildProjectFunnelData(
         const act = ensureActivity(monthKey(p.projectCompleteDate));
         act.closedOut++;
         act.closedOutAmount += p.amount || 0;
+        locAct.closedOut++;
+        locAct.closedOutAmount += p.amount || 0;
       }
     }
     // Cancelled: binned by the date the deal entered Cancelled stage
@@ -637,6 +667,8 @@ export function buildProjectFunnelData(
         const act = ensureActivity(monthKey(p.cancelledDate));
         act.cancelled++;
         act.cancelledAmount += p.amount || 0;
+        locAct.cancelled++;
+        locAct.cancelledAmount += p.amount || 0;
       }
     }
   }
@@ -774,6 +806,9 @@ export function buildProjectFunnelData(
   drillDown.awaitingPto.sort(byWaitDesc);
   drillDown.awaitingCloseOut.sort(byWaitDesc);
 
+  const activityByLocation: Record<string, ProjectMonthlyActivity> = {};
+  for (const [loc, act] of activityLocMap) activityByLocation[loc] = act;
+
   return {
     summary,
     previousSummary,
@@ -782,6 +817,8 @@ export function buildProjectFunnelData(
     stageDistribution,
     drillDown,
     filterOptions,
+    summaryByLocation,
+    activityByLocation,
     medianDays: {
       closedToSurveyScheduled: median(dClosedToSurveyScheduled),
       surveyScheduledToComplete: median(dSurveyScheduledToComplete),

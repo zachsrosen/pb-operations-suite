@@ -111,6 +111,8 @@ function ProjectPipelineFunnelInner() {
   const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
   const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
+  const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
+  const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -214,18 +216,40 @@ function ProjectPipelineFunnelInner() {
             ))}
           </select>
         </div>
+        <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
+          <button
+            type="button"
+            onClick={() => setHeroView("cards")}
+            className={`px-3 py-1.5 transition-colors ${heroView === "cards" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            Cards
+          </button>
+          <button
+            type="button"
+            onClick={() => setHeroView("loc")}
+            className={`px-3 py-1.5 transition-colors ${heroView === "loc" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            By location
+          </button>
+        </div>
       </div>
 
       {isLoading || !s ? (
         <LoadingSpinner />
       ) : (
         <>
-          {/* Pre-construction: Sales → DA Sent (4) */}
-          <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
-          {/* Design & Permitting: DA Approved → Permits Issued (4) */}
-          <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} />
-          {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
-          <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(8)} />
+          {heroView === "loc" ? (
+            <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} />
+          ) : (
+            <>
+              {/* Pre-construction: Sales → DA Sent (4) */}
+              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
+              {/* Design & Permitting: DA Approved → Permits Issued (4) */}
+              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} />
+              {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
+              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(8)} />
+            </>
+          )}
 
           {/* Backlog */}
           <BacklogSection summary={s} drillDown={data.drillDown} />
@@ -302,6 +326,80 @@ function HeroCards({
           />
         );
       })}
+    </div>
+  );
+}
+
+function sortLocationKeys(keys: string[]): string[] {
+  const order = new Map<string, number>(CANONICAL_LOCATIONS.map((l, i) => [l, i]));
+  return [...keys].sort(
+    (a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b)
+  );
+}
+
+/** Hero "By location" matrix — rows = PB locations, cols = funnel stages. */
+function HeroLocationMatrix({
+  summaryByLocation,
+  totalSummary,
+}: {
+  summaryByLocation: ProjectFunnelResponse["summaryByLocation"];
+  totalSummary: ProjectFunnelResponse["summary"];
+}) {
+  const locs = sortLocationKeys(Object.keys(summaryByLocation));
+
+  const cell = (d: ProjectFunnelStageData) => {
+    const t = total(d);
+    return t > 0 ? (
+      <>
+        <div className="font-semibold">{t}</div>
+        <div className="text-muted">{formatCurrencyCompact(d.amount + d.cancelledAmount)}</div>
+      </>
+    ) : (
+      <span className="text-muted/40">—</span>
+    );
+  };
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-3">Stage Counts by Location</h3>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-t-border">
+            <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Location</th>
+            {STAGE_CONFIG.map((s) => (
+              <th key={s.key} className={`text-center py-2 px-1.5 font-medium ${s.textColor} whitespace-nowrap`}>
+                {s.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {locs.map((loc, i) => (
+            <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}>
+              <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
+                {loc}
+              </td>
+              {STAGE_CONFIG.map((stage) => (
+                <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
+                  {cell(summaryByLocation[loc][stage.key])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        {locs.length > 1 && (
+          <tfoot>
+            <tr className="border-t-2 border-t-border font-semibold">
+              <td className="py-2 px-2 text-foreground sticky left-0 bg-surface z-10">Total</td>
+              {STAGE_CONFIG.map((stage) => (
+                <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
+                  {cell(totalSummary[stage.key])}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
+      </table>
     </div>
   );
 }
