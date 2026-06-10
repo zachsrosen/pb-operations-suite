@@ -32,7 +32,9 @@ You have Zach's operational playbook and access to live project data. You help Z
 RULES:
 - Always identify yourself as Zach's assistant bot, never pretend to be Zach
 - You CANNOT: approve things, make commitments, change data, reassign crews, move deals, send emails, or override anyone's decisions
-- The one exception: when someone EXPLICITLY asks you to log a request, you can file a "process request" with the submit_process_request tool — a request to add, change, or fix a process, workflow, or tool. Never file one on your own initiative; read the title back so they know what was logged.
+- Two exceptions, both ONLY when someone EXPLICITLY asks:
+  - File a "process request" with submit_process_request — a request to add, change, or fix a process, workflow, or tool. Never file one on your own initiative; read the title back so they know what was logged.
+  - Create a HubSpot task with create_hubspot_task — e.g. "make me a task to follow up on PROJ-1234." You can CREATE tasks only (never edit, complete, or delete). The task is assigned to whoever's asking. Always read back exactly what you created (subject, due date, project) so they can confirm.
 - If you're not confident in an answer, use the escalate tool to flag it for Zach to follow up on
 - When you escalate, tell the person it's been flagged for Zach
 - For process/how-to questions, use the search_sop tool first — the SOP guides have most standard procedures documented
@@ -55,6 +57,7 @@ AVAILABLE TOOLS:
 - escalate(question, context) — flag for Zach to follow up
 - search_sop(query) — search SOP guides for process docs
 - submit_process_request(title, description) — file a process/tool request when someone explicitly asks
+- create_hubspot_task(subject, body?, projectId?, dueInDays?) — create a HubSpot task (assigned to the requester) when someone explicitly asks
 
 KEY CONTEXT:
 - Projects are identified by PROJ-XXXX numbers in deal names
@@ -234,6 +237,132 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             title: report.title,
             message: "Logged your process request — the team's been notified.",
           });
+        },
+      };
+    }
+    if (tool.name === "create_hubspot_task") {
+      return {
+        ...tool,
+        run: async (input: {
+          subject: string;
+          body?: string;
+          projectId?: string;
+          dueInDays?: number;
+        }) => {
+          const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+          if (!accessToken) {
+            return JSON.stringify({
+              created: false,
+              message: "Task creation isn't configured right now.",
+            });
+          }
+
+          try {
+            // Resolve deal from PROJ-XXXX (optional)
+            let dealId: string | undefined;
+            if (input.projectId) {
+              if (/^\d+$/.test(input.projectId)) {
+                dealId = input.projectId;
+              } else {
+                const { searchWithRetry } = await import("@/lib/hubspot");
+                const res = await searchWithRetry({
+                  query: input.projectId,
+                  limit: 1,
+                  properties: ["dealname"],
+                  sorts: ["createdate"],
+                });
+                if (res.results.length) dealId = res.results[0].id;
+              }
+            }
+
+            // Resolve the requester's HubSpot owner id from their email
+            let ownerId: string | undefined;
+            try {
+              const ownerRes = await fetch(
+                `https://api.hubapi.com/crm/v3/owners?email=${encodeURIComponent(senderEmail)}`,
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+              );
+              if (ownerRes.ok) {
+                const ownerData = (await ownerRes.json()) as {
+                  results?: Array<{ id: string }>;
+                };
+                ownerId = ownerData.results?.[0]?.id;
+              }
+            } catch {
+              // non-fatal — create unassigned
+            }
+
+            // Due timestamp: now + dueInDays (default 1)
+            const dueMs =
+              Date.now() + (input.dueInDays ?? 1) * 24 * 60 * 60 * 1000;
+
+            const properties: Record<string, string> = {
+              hs_task_subject: input.subject.slice(0, 500),
+              hs_task_body: (input.body ?? "").slice(0, 65535),
+              hs_task_status: "NOT_STARTED",
+              hs_task_priority: "MEDIUM",
+              hs_task_type: "TODO",
+              hs_timestamp: String(dueMs),
+            };
+            if (ownerId) properties.hubspot_owner_id = ownerId;
+
+            const body: Record<string, unknown> = { properties };
+            // HubSpot standard association type id: deal -> task
+            if (dealId) {
+              body.associations = [
+                {
+                  to: { id: dealId },
+                  types: [
+                    {
+                      associationCategory: "HUBSPOT_DEFINED",
+                      associationTypeId: 216,
+                    },
+                  ],
+                },
+              ];
+            }
+
+            const res = await fetch(
+              "https://api.hubapi.com/crm/v3/objects/tasks",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(body),
+              }
+            );
+
+            if (!res.ok) {
+              const errText = await res.text().catch(() => "");
+              console.error(
+                `[tech-ops-bot] create task failed: ${res.status} ${errText.slice(0, 200)}`
+              );
+              return JSON.stringify({
+                created: false,
+                message:
+                  "I couldn't create that task — HubSpot rejected the request. Try again or create it manually.",
+              });
+            }
+
+            const data = (await res.json()) as { id: string };
+            return JSON.stringify({
+              created: true,
+              taskId: data.id,
+              subject: input.subject,
+              dueInDays: input.dueInDays ?? 1,
+              assignedTo: ownerId ? senderEmail : "unassigned",
+              attachedToDeal: dealId ?? null,
+              message: "Task created in HubSpot.",
+            });
+          } catch (err) {
+            console.error("[tech-ops-bot] create_hubspot_task error:", err);
+            return JSON.stringify({
+              created: false,
+              message: "Something went wrong creating that task.",
+            });
+          }
         },
       };
     }
