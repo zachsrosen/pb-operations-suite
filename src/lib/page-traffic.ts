@@ -306,3 +306,37 @@ export function aggregatePageTraffic(rows: TrafficRow[]): PageTrafficResult {
     pages, suites, deadPages, users,
   };
 }
+
+// ─── DB WRAPPER ──────────────────────────────────────────────────────────────────
+
+const WINDOW_DAYS: Record<Exclude<TrafficWindow, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
+
+export interface GetPageTrafficOpts { window: TrafficWindow; roles?: string[]; locations?: string[]; }
+
+export async function getPageTraffic(opts: GetPageTrafficOpts): Promise<PageTrafficResult> {
+  // Lazy import so pure-function tests can import this module without a DB connection.
+  const { prisma } = await import("@/lib/db");
+  if (!prisma) return aggregatePageTraffic([]);
+  const since = opts.window === "all" ? undefined : new Date(Date.now() - WINDOW_DAYS[opts.window] * 86_400_000);
+
+  // Optional role filter → resolve to userIds.
+  let userIdFilter: string[] | undefined;
+  if (opts.roles?.length) {
+    const users = await prisma.user.findMany({ where: { roles: { hasSome: opts.roles as never } }, select: { id: true } });
+    userIdFilter = users.map((u) => u.id);
+    if (userIdFilter.length === 0) return aggregatePageTraffic([]); // no matching users → empty
+  }
+
+  const rows = await prisma.activityLog.findMany({
+    where: {
+      type: { in: ["DASHBOARD_VIEWED", "PAGE_DWELL", "FEATURE_USED"] as never },
+      ...(since ? { createdAt: { gte: since } } : {}),
+      ...(opts.locations?.length ? { pbLocation: { in: opts.locations } } : {}),
+      ...(userIdFilter ? { userId: { in: userIdFilter } } : {}),
+    },
+    select: { type: true, entityId: true, userId: true, userEmail: true, userName: true, durationMs: true },
+    take: 200_000, // safety cap; admin-only, low cardinality windows
+  });
+
+  return aggregatePageTraffic(rows as unknown as TrafficRow[]);
+}
