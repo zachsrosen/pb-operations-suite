@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
@@ -83,9 +84,33 @@ const MEDIAN_KEYS: Array<{
   { key: "inspectionToPto" },
 ];
 
-export default function ProjectPipelineFunnelPage() {
-  const [timeframe, setTimeframe] = useState("6");
-  const [locations, setLocations] = useState<string[]>([]);
+function ProjectPipelineFunnelInner() {
+  // The URL query string is the source of truth for filters, so views are
+  // shareable and reload-safe.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const timeframe = searchParams.get("tf") || "6";
+  const locations = useMemo(() => (searchParams.get("loc") || "").split(",").filter(Boolean), [searchParams]);
+  const pms = useMemo(() => (searchParams.get("pm") || "").split(",").filter(Boolean), [searchParams]);
+  const owners = useMemo(() => (searchParams.get("own") || "").split(",").filter(Boolean), [searchParams]);
+
+  const setParam = useCallback(
+    (key: string, value: string | string[]) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const v = Array.isArray(value) ? value.join(",") : value;
+      if (v) params.set(key, v);
+      else params.delete(key);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [searchParams, router, pathname]
+  );
+  const setTimeframe = useCallback((v: string) => setParam("tf", v === "6" ? "" : v), [setParam]);
+  const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
+  const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
+  const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -95,10 +120,12 @@ export default function ProjectPipelineFunnelPage() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe),
+    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe, pms, owners),
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
+      if (pms.length > 0) params.set("pms", pms.join(","));
+      if (owners.length > 0) params.set("owners", owners.join(","));
       // Calendar timeframes (This Year, Last Year, …) pass exact month bounds so
       // the server clamps to real calendar boundaries instead of N-months-back.
       const range = calendarMonthRange(timeframe);
@@ -113,6 +140,15 @@ export default function ProjectPipelineFunnelPage() {
     },
     refetchInterval: 5 * 60 * 1000,
   });
+
+  const pmOptions = useMemo(
+    () => (data?.filterOptions?.projectManagers ?? []).map((v) => ({ value: v, label: v })),
+    [data]
+  );
+  const ownerOptions = useMemo(
+    () => (data?.filterOptions?.dealOwners ?? []).map((v) => ({ value: v, label: v })),
+    [data]
+  );
 
   useSSE(() => refetch(), { cacheKeyFilter: "funnel" });
 
@@ -147,6 +183,22 @@ export default function ProjectPipelineFunnelPage() {
           placeholder="All Locations"
           accentColor="cyan"
         />
+        <MultiSelectFilter
+          label="PM"
+          options={pmOptions}
+          selected={pms}
+          onChange={setPms}
+          placeholder="All PMs"
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Owner"
+          options={ownerOptions}
+          selected={owners}
+          onChange={setOwners}
+          placeholder="All Owners"
+          accentColor="cyan"
+        />
         <div className="flex items-center gap-2">
           <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
           <select
@@ -169,11 +221,11 @@ export default function ProjectPipelineFunnelPage() {
       ) : (
         <>
           {/* Pre-construction: Sales → DA Sent (4) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 4)} />
+          <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
           {/* Design & Permitting: DA Approved → Permits Issued (4) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(4, 8)} />
+          <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} />
           {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} />
+          <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(8)} />
 
           {/* Backlog */}
           <BacklogSection summary={s} drillDown={data.drillDown} />
@@ -209,9 +261,11 @@ function total(d: ProjectFunnelStageData) {
 
 function HeroCards({
   summary,
+  previousSummary,
   stages,
 }: {
   summary: ProjectFunnelResponse["summary"];
+  previousSummary?: ProjectFunnelResponse["previousSummary"];
   stages: StageConfig[];
 }) {
   return (
@@ -232,6 +286,11 @@ function HeroCards({
           ? `${formatCurrencyCompact(d.amount + d.cancelledAmount)}${cancelNote}`
           : `${formatCurrencyCompact(d.amount + d.cancelledAmount)} · ${convPct}% conv.${cancelNote}`;
 
+        // Trend vs the prior equal-length period (total reaching this stage).
+        const trend = previousSummary
+          ? { delta: stageTotal - total(previousSummary[stage.key]), label: "vs prior" }
+          : null;
+
         return (
           <StatCard
             key={stage.key}
@@ -239,6 +298,7 @@ function HeroCards({
             value={stageTotal}
             subtitle={subtitle}
             color={stage.color.replace("bg-", "").replace("-500", "") as "orange"}
+            trend={trend}
           />
         );
       })}
@@ -864,5 +924,14 @@ function StageDistribution({
         })}
       </div>
     </div>
+  );
+}
+
+// useSearchParams requires a Suspense boundary.
+export default function ProjectPipelineFunnelPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ProjectPipelineFunnelInner />
+    </Suspense>
   );
 }

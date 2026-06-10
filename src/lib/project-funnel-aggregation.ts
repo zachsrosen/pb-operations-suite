@@ -146,11 +146,15 @@ export interface ProjectFunnelDrillDown {
 
 export interface ProjectFunnelResponse {
   summary: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
+  /** Same stage totals over the immediately-preceding equal-length window, for trend deltas. */
+  previousSummary: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
   cohorts: ProjectFunnelCohort[];
   monthlyActivity: ProjectMonthlyActivity[];
   stageDistribution: ProjectFunnelStageGroup[];
   drillDown: ProjectFunnelDrillDown;
   medianDays: ProjectFunnelMedianDays;
+  /** Distinct PM / deal-owner names available in the current location+timeframe scope. */
+  filterOptions: { projectManagers: string[]; dealOwners: string[] };
   generatedAt: string;
 }
 
@@ -342,6 +346,33 @@ function resolveMilestones(p: Project) {
   };
 }
 
+/**
+ * Tally stage totals (count + amount, active vs cancelled) for a set of deals,
+ * using the same milestone resolution as the main funnel. Used for the
+ * prior-period trend comparison.
+ */
+function tallyStageSummary(deals: Project[]): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
+  const summary = emptySummary();
+  for (const p of deals) {
+    const cancelled = p.stageId === CANCELLED_STAGE_ID;
+    const amt = p.amount || 0;
+    const m = resolveMilestones(p);
+    addToStage(summary.salesClosed, amt, cancelled);
+    if (m.hasSurveyScheduled) addToStage(summary.surveyScheduled, amt, cancelled);
+    if (m.hasSurvey) addToStage(summary.surveyDone, amt, cancelled);
+    if (m.hasDaSent) addToStage(summary.daSent, amt, cancelled);
+    if (m.hasDaApproved) addToStage(summary.daApproved, amt, cancelled);
+    if (m.hasDesignComplete) addToStage(summary.designCompleted, amt, cancelled);
+    if (m.hasPermitSubmit) addToStage(summary.permitsSubmitted, amt, cancelled);
+    if (m.hasPermitIssued) addToStage(summary.permitsIssued, amt, cancelled);
+    if (m.hasConstructionScheduled) addToStage(summary.constructionScheduled, amt, cancelled);
+    if (m.hasConstructionComplete) addToStage(summary.constructionComplete, amt, cancelled);
+    if (m.hasInspectionPassed) addToStage(summary.inspectionPassed, amt, cancelled);
+    if (m.hasPtoGranted) addToStage(summary.ptoGranted, amt, cancelled);
+  }
+  return summary;
+}
+
 export function buildProjectFunnelData(
   projects: Project[],
   months: number,
@@ -352,7 +383,9 @@ export function buildProjectFunnelData(
    * timeframes (This Year, Last Year, …) map to real month boundaries instead
    * of "N months back from today".
    */
-  range?: { start: string; end: string }
+  range?: { start: string; end: string },
+  /** Optional PM / deal-owner filters (names). Empty/omitted = no filter. */
+  filters?: { projectManagers?: string[]; dealOwners?: string[] }
 ): ProjectFunnelResponse {
   const now = new Date();
   const cutoff = range
@@ -369,13 +402,48 @@ export function buildProjectFunnelData(
     return canonical != null && locSet.has(canonical);
   }
 
-  const filtered = projects.filter((p) => {
+  const pmSet = filters?.projectManagers && filters.projectManagers.length > 0 ? new Set(filters.projectManagers) : null;
+  const ownerSet = filters?.dealOwners && filters.dealOwners.length > 0 ? new Set(filters.dealOwners) : null;
+  function matchesStaff(p: Project): boolean {
+    if (pmSet && !pmSet.has(p.projectManager || "")) return false;
+    if (ownerSet && !ownerSet.has(p.dealOwner || "")) return false;
+    return true;
+  }
+
+  // PM / owner options reflect the location + timeframe scope (before the staff
+  // filter narrows it), so the dropdowns stay populated while you filter.
+  const scopeForOptions = projects.filter((p) => {
     if (!p.closeDate) return false;
     if (p.stageId === ON_HOLD_STAGE_ID) return false;
     if (!inWindow(new Date(p.closeDate + "T12:00:00"))) return false;
-    if (!matchesLocation(p)) return false;
-    return true;
+    return matchesLocation(p);
   });
+  const filterOptions = {
+    projectManagers: [...new Set(scopeForOptions.map((p) => p.projectManager).filter((v): v is string => !!v))].sort(),
+    dealOwners: [...new Set(scopeForOptions.map((p) => p.dealOwner).filter((v): v is string => !!v))].sort(),
+  };
+
+  const filtered = scopeForOptions.filter(matchesStaff);
+
+  // Prior equal-length window (immediately preceding) for trend deltas.
+  const spanMonths = range
+    ? (() => {
+        const [sy, sm] = range.start.split("-").map(Number);
+        const [ey, em] = range.end.split("-").map(Number);
+        return (ey - sy) * 12 + (em - sm) + 1;
+      })()
+    : months;
+  const prevCutoff = new Date(cutoff);
+  prevCutoff.setMonth(prevCutoff.getMonth() - spanMonths);
+  const prevEnd = new Date(cutoff.getTime() - 1);
+  const previousFiltered = projects.filter((p) => {
+    if (!p.closeDate) return false;
+    if (p.stageId === ON_HOLD_STAGE_ID) return false;
+    const cd = new Date(p.closeDate + "T12:00:00");
+    if (cd < prevCutoff || cd > prevEnd) return false;
+    return matchesLocation(p) && matchesStaff(p);
+  });
+  const previousSummary = tallyStageSummary(previousFiltered);
 
   const summary = emptySummary();
   const cohortMap = new Map<string, ProjectFunnelCohort>();
@@ -541,7 +609,7 @@ export function buildProjectFunnelData(
   ];
 
   for (const p of projects) {
-    if (!matchesLocation(p)) continue;
+    if (!matchesLocation(p) || !matchesStaff(p)) continue;
     for (const { field, activityKey, amountKey } of dateMilestones) {
       const dateVal = p[field] as string | null;
       if (dateVal) {
@@ -708,10 +776,12 @@ export function buildProjectFunnelData(
 
   return {
     summary,
+    previousSummary,
     cohorts,
     monthlyActivity,
     stageDistribution,
     drillDown,
+    filterOptions,
     medianDays: {
       closedToSurveyScheduled: median(dClosedToSurveyScheduled),
       surveyScheduledToComplete: median(dSurveyScheduledToComplete),
