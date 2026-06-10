@@ -221,8 +221,10 @@ describe("PATH_TO_SUITE drift guard", () => {
 
 Run (informational, to author the map — not committed):
 ```bash
-for d in src/app/suites/*/; do s=$(basename "$d"); grep -oE 'href:\s*"(/dashboards/[^"?#]+)"' "$d/page.tsx" 2>/dev/null | grep -oE '/dashboards/[^"?#]+'; done
+# Confirm suite pages declare object-literal `href:` keys (verified: service/page.tsx uses `href: "/dashboards/..."`).
+for d in src/app/suites/*/; do s=$(basename "$d"); echo "## $s"; grep -oE 'href:\s*"(/dashboards/[^"?#]+)"' "$d/page.tsx" 2>/dev/null | grep -oE '/dashboards/[^"?#]+'; done
 ```
+If any suite instead uses JSX `<Link href="...">` (no `href:` key), the harvest + drift regex (`/href:\s*["']/`) will miss it — extend the regex to `/href[:=]\s*["']/` in both the map-authoring and the drift test if so.
 
 Then add to `src/lib/page-traffic.ts` a `PATH_TO_SUITE: Record<string, string>` literal mapping each harvested `/dashboards/*` route (normalized, no trailing slash) to a human suite label (`"Operations"`, `"Service"`, `"Design & Engineering"`, `"Permitting & Interconnection"`, `"D&R + Roofing"`, `"Intelligence"`, `"Executive"`, `"Accounting"`, `"Sales & Marketing"`, `"Project Management"`, `"Admin"`, `"Testing"`). For a page that appears in more than one suite, pick its **primary** suite (documented inline). Then:
 
@@ -617,12 +619,14 @@ git commit -m "feat(activity): measure + emit page dwell on nav and tab-hide"
     case "page_dwell": return "PAGE_DWELL";
 ```
 
-- [ ] **Step 2: Force LOW risk + skip anomaly scoring for dwell.** After the existing risk computation (`const risk = getActivityRiskLevel(...)`), add:
+- [ ] **Step 2: Declare `isDwell` + skip anomaly scoring for dwell.** Immediately after the existing risk computation (`const risk = getActivityRiskLevel(...)` ~line 95), add the declaration. It MUST be declared here because both this step and Step 4 (the anomaly block ~line 265) reference it:
 
 ```ts
     const isDwell = action === "page_dwell";
     if (isDwell) { activityRiskLevel = "LOW"; activityRiskScore = 1; }
 ```
+
+> Note: `LOW`/`1` are already the initialized defaults, so this line is belt-and-suspenders — the load-bearing change is Step 4 (skipping the anomaly check). Keep it for clarity.
 
 - [ ] **Step 3: Add the `page_dwell` case** to the POST `switch` (mirrors `page_view`, persists `durationMs`):
 
@@ -741,11 +745,11 @@ git commit -m "feat(admin): add Page traffic to admin sidebar (Audit)"
 **Files:**
 - Create: `src/app/admin/page-traffic/page.tsx`
 
-- [ ] **Step 1: Implement the page.** A `"use client"` component modeled on `src/app/admin/activity/page.tsx`:
-  - State: `window` (default `30d`), `roleFilters: string[]`, `locationFilters: string[]`, `data`, `loading`, `error`.
-  - `useEffect` (re)fetches `/api/admin/page-traffic?window=...&roles=...&locations=...` whenever filters change; aborts in-flight requests.
-  - Render: `AdminPageHeader` (title "Page Traffic", `breadcrumb={["Admin","Audit","Page traffic"]}`, subtitle = totals); `AdminFilterBar` with `DateRangeChip` (options 7d/30d/90d/all), two `MultiSelectFilter`s (roles from the same `USER_ROLES` list used by the activity page; locations from `CANONICAL_LOCATIONS`), and a CSV button; summary tiles (views / unique users / active pages / avg dwell — format dwell with a `mm:ss` or `Ns` helper); a **Top pages** `AdminTable`; a **Suites** section (rows with width-% bars); a **Dead weight** `AdminTable` or list; a **Per-user** `AdminTable`. Use `AdminLoading`/`AdminError`/`AdminEmpty` for states. Theme tokens only.
-  - CSV export: flatten `pages` to rows (path, suite, views, uniqueUsers, clicks, avgDwellMs) and download, same inline pattern as the activity page's `exportToCSV`.
+- [ ] **Step 1: Implement the page.** Create `src/app/admin/page-traffic/page.tsx` with the COMPLETE component below. Notes that make it compile against the real components:
+  - `MultiSelectFilter` requires `options: FilterOption[]` (`{ value, label }`) — the role/location string arrays are mapped to that shape (do NOT pass raw `string[]`).
+  - `AdminTable<T>` requires `rows`, `rowKey`, `columns` (`AdminTableColumn<T> = { key, label, render?, align?, sortable?, width? }`), and `caption`.
+  - Role option values are REAL `UserRole` enum members (so the `roles: { hasSome }` filter in Task 2.4 matches users). The list below excludes legacy aliases (`OWNER`, `MANAGER`, `DESIGNER`, `PERMITTING`). Source of truth: `enum UserRole` in `prisma/schema.prisma`.
+  - `AdminFilterBar` props (from `src/app/admin/activity/page.tsx`): `hasActiveFilters`, `onClearAll`, children. `DateRangeChip` props: `label`, `selected`, `options` (`{value,label}[]`), `onChange`.
 
 ```tsx
 "use client";
@@ -756,26 +760,186 @@ import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 import { AdminFilterBar, DateRangeChip } from "@/components/admin-shell/AdminFilterBar";
 import { AdminTable, type AdminTableColumn } from "@/components/admin-shell/AdminTable";
 import { AdminError } from "@/components/admin-shell/AdminError";
-import { AdminLoading } from "@/components/admin-shell/AdminLoading";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import type { PageTrafficResult, PageRow, UserRow, TrafficWindow } from "@/lib/page-traffic";
 
-const USER_ROLES = ["ADMIN", "EXECUTIVE", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS", "DESIGN", "PERMIT", "INTERCONNECT", "INTELLIGENCE", "SERVICE", "ROOFING", "SALES", "SALES_MANAGER", "ACCOUNTING", "MARKETING", "VIEWER"];
-const WINDOW_OPTS = [{ value: "7d" as const, label: "7d" }, { value: "30d" as const, label: "30d" }, { value: "90d" as const, label: "90d" }, { value: "all" as const, label: "All" }];
+// Real UserRole enum members (no legacy aliases) — must match prisma enum so the
+// API's `roles: { hasSome }` filter resolves to actual users.
+const USER_ROLES = ["ADMIN", "EXECUTIVE", "OPERATIONS", "OPERATIONS_MANAGER", "SERVICE", "PROJECT_MANAGER", "SALES_MANAGER", "TECH_OPS", "DESIGN", "PERMIT", "INTERCONNECT", "INTELLIGENCE", "ROOFING", "MARKETING", "VIEWER", "SALES", "ACCOUNTING"] as const;
+const WINDOW_OPTS = [{ value: "7d", label: "7d" }, { value: "30d", label: "30d" }, { value: "90d", label: "90d" }, { value: "all", label: "All" }];
+const ROLE_OPTIONS = USER_ROLES.map((r) => ({ value: r, label: r }));
+const LOCATION_OPTIONS = CANONICAL_LOCATIONS.map((l) => ({ value: l, label: l }));
 
 function fmtDwell(ms: number | null): string {
   if (ms == null) return "—";
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+function fmtNum(n: number): string { return n.toLocaleString(); }
+
+function toCSV(pages: PageRow[]): string {
+  const head = ["Path", "Suite", "Views", "Unique Users", "Clicks", "Avg Dwell (s)"];
+  const lines = pages.map((p) => [p.path, p.suite, p.views, p.uniqueUsers, p.clicks, p.avgDwellMs == null ? "" : Math.round(p.avgDwellMs / 1000)]
+    .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
+  return [head.join(","), ...lines].join("\n");
 }
 
-// ...columns, state, fetch effect, render (see Step 1 description). Keep all colors as theme tokens.
+export default function PageTrafficPage() {
+  const [window, setWindow] = useState<TrafficWindow>("30d");
+  const [roleFilters, setRoleFilters] = useState<string[]>([]);
+  const [locationFilters, setLocationFilters] = useState<string[]>([]);
+  const [data, setData] = useState<(PageTrafficResult & { generatedAt: string }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchData = useCallback(async () => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setLoading(true); setError(null);
+    try {
+      const qs = new URLSearchParams({ window });
+      if (roleFilters.length) qs.set("roles", roleFilters.join(","));
+      if (locationFilters.length) qs.set("locations", locationFilters.join(","));
+      const res = await fetch(`/api/admin/page-traffic?${qs}`, { signal: ac.signal });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      setData(await res.json());
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+    } finally {
+      if (!ac.signal.aborted) setLoading(false);
+    }
+  }, [window, roleFilters, locationFilters]);
+
+  useEffect(() => { void fetchData(); return () => abortRef.current?.abort(); }, [fetchData]);
+
+  const hasActiveFilters = roleFilters.length > 0 || locationFilters.length > 0 || window !== "30d";
+  const clearAll = () => { setWindow("30d"); setRoleFilters([]); setLocationFilters([]); };
+
+  const exportCSV = () => {
+    if (!data) return;
+    const blob = new Blob([toCSV(data.pages)], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `page-traffic-${window}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const pageColumns: AdminTableColumn<PageRow>[] = useMemo(() => [
+    { key: "path", label: "Page", render: (r) => <span className="font-mono text-xs text-foreground">{r.path}</span> },
+    { key: "suite", label: "Suite", render: (r) => <span className="text-muted">{r.suite}</span> },
+    { key: "views", label: "Views", align: "right", sortable: true, render: (r) => fmtNum(r.views) },
+    { key: "uniqueUsers", label: "Users", align: "right", sortable: true, render: (r) => fmtNum(r.uniqueUsers) },
+    { key: "clicks", label: "Clicks", align: "right", render: (r) => fmtNum(r.clicks) },
+    { key: "avgDwellMs", label: "Avg dwell", align: "right", render: (r) => fmtDwell(r.avgDwellMs) },
+  ], []);
+
+  const userColumns: AdminTableColumn<UserRow>[] = useMemo(() => [
+    { key: "user", label: "User", render: (r) => <span className="text-foreground">{r.userName || r.userEmail || r.userId || "Unknown"}</span> },
+    { key: "views", label: "Views", align: "right", sortable: true, render: (r) => fmtNum(r.views) },
+    { key: "avgDwellMs", label: "Avg dwell", align: "right", render: (r) => fmtDwell(r.avgDwellMs) },
+  ], []);
+
+  const maxSuiteViews = Math.max(1, ...(data?.suites.map((s) => s.views) ?? [1]));
+
+  return (
+    <div>
+      <AdminPageHeader
+        title="Page Traffic"
+        breadcrumb={["Admin", "Audit", "Page traffic"]}
+        subtitle={data ? `${fmtNum(data.totals.views)} views · ${fmtNum(data.totals.uniqueUsers)} users` : undefined}
+      />
+
+      <div className="px-4 py-3">
+        <AdminFilterBar hasActiveFilters={hasActiveFilters} onClearAll={clearAll}>
+          <DateRangeChip label="Window" selected={window} options={WINDOW_OPTS} onChange={(v) => setWindow(v as TrafficWindow)} />
+          <MultiSelectFilter label="Role" options={ROLE_OPTIONS} selected={roleFilters} onChange={setRoleFilters} />
+          <MultiSelectFilter label="Location" options={LOCATION_OPTIONS} selected={locationFilters} onChange={setLocationFilters} />
+          <button type="button" onClick={exportCSV} className="rounded px-2 py-1 text-xs text-muted hover:text-foreground hover:bg-surface-2 transition-colors">CSV</button>
+        </AdminFilterBar>
+      </div>
+
+      {error ? (
+        <AdminError message={error} onRetry={fetchData} />
+      ) : (
+        <div className="space-y-6 px-4 pb-8">
+          {/* Summary tiles */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: "Views", value: fmtNum(data?.totals.views ?? 0) },
+              { label: "Unique users", value: fmtNum(data?.totals.uniqueUsers ?? 0) },
+              { label: "Active pages", value: fmtNum(data?.totals.activePages ?? 0) },
+              { label: "Avg dwell", value: fmtDwell(data?.totals.avgDwellMs ?? null) },
+            ].map((t) => (
+              <div key={t.label} className="rounded-lg border border-t-border bg-surface p-3">
+                <div className="text-xs text-muted">{t.label}</div>
+                <div className="mt-1 text-xl font-semibold text-foreground">{t.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Suite breakdown bars */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">By suite</h2>
+            <div className="space-y-1.5">
+              {(data?.suites ?? []).map((s) => (
+                <div key={s.suite} className="flex items-center gap-2">
+                  <div className="w-40 shrink-0 truncate text-xs text-muted">{s.suite}</div>
+                  <div className="h-4 flex-1 rounded bg-surface-2">
+                    <div className="h-4 rounded bg-purple-500/60" style={{ width: `${(s.views / maxSuiteViews) * 100}%` }} />
+                  </div>
+                  <div className="w-16 shrink-0 text-right text-xs text-foreground">{fmtNum(s.views)}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Top pages */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Top pages</h2>
+            <AdminTable<PageRow>
+              caption="Top pages by traffic"
+              rows={data?.pages ?? []}
+              rowKey={(r) => r.path}
+              columns={pageColumns}
+              loading={loading && !data}
+            />
+          </section>
+
+          {/* Dead weight */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">Dead weight (little/no traffic)</h2>
+            <AdminTable<PageRow>
+              caption="Pages with little or no traffic"
+              rows={(data?.deadPages ?? []).map((d) => ({ ...d, uniqueUsers: 0, clicks: 0, avgDwellMs: null }))}
+              rowKey={(r) => r.path}
+              columns={[pageColumns[0], pageColumns[1], pageColumns[2]]}
+              loading={loading && !data}
+            />
+          </section>
+
+          {/* Per-user */}
+          <section>
+            <h2 className="mb-2 text-sm font-semibold text-foreground">By user</h2>
+            <AdminTable<UserRow>
+              caption="Usage by user"
+              rows={data?.users ?? []}
+              rowKey={(r) => r.userId || r.userEmail || "unknown"}
+              columns={userColumns}
+              loading={loading && !data}
+            />
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
 ```
 
-  (Implement the full component following the Activity Log's structure; the snippet above fixes the imports, role list, window options, and dwell formatter so the rest is mechanical.)
+> Before writing, confirm `AdminError` and `AdminFilterBar`/`DateRangeChip` prop names by opening `src/app/admin/activity/page.tsx` (the canonical usage) and `src/components/admin-shell/AdminError.tsx`. If `AdminError` expects different props (e.g. `error` instead of `message`/`onRetry`), match the real signature. Likewise verify `AdminTable` accepts `loading` (it does per `AdminTableProps`). These are mechanical prop-name confirmations, not design changes.
 
-- [ ] **Step 2: Typecheck + lint.** Run: `npx tsc --noEmit && npx eslint src/app/admin/page-traffic/page.tsx`. Expected: no errors/warnings.
+- [ ] **Step 2: Typecheck + lint.** Run: `npx tsc --noEmit && npm run lint`. Expected: no errors/warnings. Fix any prop-name mismatches surfaced against the real admin-shell components.
 
 - [ ] **Step 3: Commit.**
 
