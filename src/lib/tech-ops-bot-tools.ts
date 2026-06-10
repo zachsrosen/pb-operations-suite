@@ -332,7 +332,12 @@ export function createTechOpsBotTools() {
       projectId: z
         .string()
         .optional()
-        .describe("Optional PROJ-XXXX number or HubSpot deal ID to attach the task to"),
+        .describe(
+          "Optional project to attach the task to. Accepts a PROJ-XXXX number, " +
+            "a HubSpot deal ID, a customer name, or a property address. If it " +
+            "matches more than one deal the bot will ask which one — so pass " +
+            "whatever the user gave you."
+        ),
       dueInDays: z
         .number()
         .optional()

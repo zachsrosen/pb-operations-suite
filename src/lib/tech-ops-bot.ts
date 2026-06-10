@@ -261,14 +261,17 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             const { searchWithRetry, hubspotClient } = await import("@/lib/hubspot");
 
             // ── Resolve the target deal (optional) ──
-            // PROJ numbers live inside the deal NAME, so a fuzzy search can grab
-            // the wrong record. Match the exact PROJ token (word-boundary so
-            // PROJ-123 ≠ PROJ-1234), refuse to guess when ambiguous, and surface
-            // the deal name so the requester can confirm the right record.
+            // Accepts a PROJ number, a raw deal ID, OR a customer name / address.
+            // The safety net is the same in every case: match exactly one deal or
+            // don't guess (return candidates), and always surface the deal name so
+            // the requester can confirm the task landed on the right record.
             let dealId: string | undefined;
             let dealName: string | undefined;
             if (input.projectId) {
               const raw = input.projectId.trim();
+              const projMatch = raw.match(/PROJ[-\s]?(\d{2,})/i);
+              const bareNum = raw.match(/^(\d{3,7})$/); // bare project number
+
               if (/^\d{8,}$/.test(raw)) {
                 // Long numeric → treat as a raw HubSpot deal ID; fetch its name.
                 try {
@@ -283,14 +286,10 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
                     message: `I couldn't find a deal with ID ${raw} — double-check the project and try again.`,
                   });
                 }
-              } else {
-                const digits = raw.match(/(\d{3,})/)?.[1];
-                if (!digits) {
-                  return JSON.stringify({
-                    created: false,
-                    message: `"${raw}" doesn't look like a project number — give me a PROJ-#### and I'll attach the task to it.`,
-                  });
-                }
+              } else if (projMatch || bareNum) {
+                // PROJ number (explicit "PROJ-1234" or a bare project number).
+                // Exact-match the token (word boundary) so PROJ-123 ≠ PROJ-1234.
+                const digits = (projMatch?.[1] ?? bareNum?.[1])!;
                 const token = `PROJ-${digits}`;
                 const res = await searchWithRetry({
                   query: token,
@@ -312,12 +311,42 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
                   });
                 }
                 if (matches.length > 1) {
-                  // Don't guess — let the user pick.
                   return JSON.stringify({
                     created: false,
                     needsClarification: true,
                     message: `I found ${matches.length} deals matching ${token} — which one should the task go on?`,
                     candidates: matches.slice(0, 5).map((m) => ({
+                      dealId: m.id,
+                      name: m.properties?.dealname,
+                    })),
+                  });
+                }
+                dealId = matches[0].id;
+                dealName = matches[0].properties?.dealname ?? undefined;
+              } else {
+                // Customer name or address → full-text deal search. Fuzzier than
+                // a PROJ number, so be strict: exactly one match or ask which one
+                // (showing names so the user can pick).
+                const res = await searchWithRetry({
+                  query: raw,
+                  limit: 20,
+                  properties: ["dealname"],
+                });
+                const matches = Array.from(
+                  new Map((res.results ?? []).map((r) => [r.id, r])).values()
+                );
+                if (matches.length === 0) {
+                  return JSON.stringify({
+                    created: false,
+                    message: `I couldn't find a deal matching "${raw}". Want me to create the task without attaching it to a project, or can you give me the PROJ number?`,
+                  });
+                }
+                if (matches.length > 1) {
+                  return JSON.stringify({
+                    created: false,
+                    needsClarification: true,
+                    message: `"${raw}" matches ${matches.length} deals — which one should the task go on?`,
+                    candidates: matches.slice(0, 6).map((m) => ({
                       dealId: m.id,
                       name: m.properties?.dealname,
                     })),
