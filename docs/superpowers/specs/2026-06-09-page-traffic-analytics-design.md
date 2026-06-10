@@ -145,40 +145,52 @@ These are pure functions — unit-tested with no DB.
 Heavy lifting is `Prisma.groupBy` where possible; path normalization happens in
 JS because the dynamic-segment collapse can't be expressed in SQL.
 
-### 4. API route (`src/app/api/admin/analytics/page-traffic/route.ts`)
+### 4. API route (`src/app/api/admin/page-traffic/route.ts`)
 
 `GET` with query params `window` (default `30d`), `roles` (comma-separated, optional),
 `locations` (comma-separated, optional). Parses the CSV params into arrays and calls
-`getPageTraffic`. Returns the `PageTrafficResult` JSON. Under `/api/admin/*`, so it's
-already behind the admin-only middleware prefix check — no new middleware wiring.
-Validates/normalizes params and rejects unknown window values.
+`getPageTraffic`. Returns the `PageTrafficResult` JSON. Mirrors the sibling
+`/api/admin/activity/route.ts` auth pattern (`auth()` + `getUserByEmail` + admin check
+done by middleware). Under `/api/admin/*`, so it's already behind the admin-only
+middleware prefix check — no new middleware wiring. Validates/normalizes params and
+rejects unknown window values.
 
-### 5. Page (`src/app/dashboards/admin/page-traffic/page.tsx`)
+### 5. Page (`src/app/admin/page-traffic/page.tsx`)
 
-Wrapped in `<DashboardShell title="Page Traffic" accentColor="purple"
-exportData={...} lastUpdated={generatedAt}>`. React Query fetches the API route.
+**Placement correction (post-spec codebase grounding):** this is admin *tooling*, and
+its direct sibling — the Activity Log — lives at `src/app/admin/activity/page.tsx`
+using the **`admin-shell`** component family, NOT `/dashboards/admin/` with
+`DashboardShell`. The new page follows the Activity Log exactly: a `"use client"`
+component under `src/app/admin/page-traffic/`, fetching from the API route with
+`useState`/`useEffect`/`fetch` (the admin pages do not use React Query), inside the
+shared admin chrome provided by `src/app/admin/layout.tsx`.
 
-Sections:
-- **Summary row** (`MiniStat`): total views · unique users · active pages · avg dwell
-- **Top pages** — ranked table/bar: page label · suite · views · unique users · avg dwell · clicks
-- **Suite breakdown** — grouped rollup (views + unique users per suite)
-- **Dead weight** — known pages with little/no traffic in the window
-- **Per-user usage** — table of users by views + avg dwell
-- **Controls**: time-window selector; `MultiSelectFilter` for role and PB location;
-  CSV export via `DashboardShell`'s `exportData`.
+Components (all from `src/components/admin-shell/`):
+- `AdminPageHeader` — title "Page Traffic", `breadcrumb={["Admin","Audit","Page traffic"]}`, subtitle with totals
+- `AdminFilterBar` + `DateRangeChip` (window: 7d/30d/90d/all) + `MultiSelectFilter` (role, PB location) + a CSV export button (local `exportToCSV`, same pattern as the Activity Log)
+- `AdminTable` (`AdminTableColumn<T>`) for the **Top pages** table (page label · suite · views · unique users · avg dwell · clicks) and the **Per-user usage** table
+- Summary tiles + **Suite breakdown** + **Dead weight** rendered as themed rows/bars (simple `<div>` width-% bars using theme tokens — admin pages are table/tile-centric, no chart lib)
+- `AdminEmpty` / `AdminError` / `AdminLoading` for the non-data states
 
-Use theme tokens throughout; `key={String(value)}` + `animate-value-flash` on
-metric cards per house style.
+Use theme tokens throughout (`bg-surface`, `text-foreground`, `text-muted`, etc.).
+
+**Sidebar registration:** add an item to the **Audit** group in
+`src/components/admin-shell/nav.ts` (`ADMIN_NAV`):
+`{ label: "Page traffic", href: "/admin/page-traffic", iconName: "eye" }`
+(next to "Activity log" and "Audit sessions"). This is required for the page to appear
+in the admin sidebar and for breadcrumb/active-link resolution.
 
 ## Access control
 
-- **Page route** `/dashboards/admin/page-traffic`: `ADMIN.allowedRoutes` is
-  `["*"]`, so the route is already permitted — no `roles.ts` allowlist edit
-  needed. (Confirmed in `src/lib/roles.ts`.)
+- **Page route** `/admin/page-traffic`: `ADMIN.allowedRoutes` is `["*"]`, so the route
+  is already permitted — no `roles.ts` allowlist edit needed. (Confirmed in
+  `src/lib/roles.ts`.) The `src/app/admin/layout.tsx` admin chrome + middleware already
+  gate `/admin/*` to admins.
 - **API route**: under `/api/admin/*`, covered by the existing `ADMIN_ONLY_ROUTES`
   middleware prefix — no new allowlist entry.
-- **Admin suite card**: add a "Page Traffic" card to the Admin suite landing page
-  linking to the new route.
+- **Discoverability**: registered in `ADMIN_NAV` (sidebar). Optionally also add a card to
+  the admin hub's `ADMIN_DASHBOARDS`/links in `src/app/admin/page.tsx`, but the sidebar
+  entry is the primary surface.
 
 ## Data model / migration
 
