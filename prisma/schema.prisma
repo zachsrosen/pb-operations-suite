@@ -184,6 +184,7 @@ enum ActivityType {
   ERROR_OCCURRED
   API_ERROR
   FEATURE_USED
+  PAGE_DWELL
 
   // Inventory
   INVENTORY_RECEIVED
@@ -404,7 +405,7 @@ model ActivityLog {
   requestPath    String? // The URL/route accessed
   requestMethod  String? // GET, POST, PUT, DELETE
   responseStatus Int? // HTTP status code
-  durationMs     Int? // How long the request took
+  durationMs     Int? // Request duration in ms; for PAGE_DWELL rows, client-measured time-on-page in ms
 
   // Session tracking
   sessionId String? // To group actions in a session
@@ -427,6 +428,7 @@ model ActivityLog {
   @@index([createdAt])
   @@index([sessionId])
   @@index([auditSessionId, createdAt])
+  @@index([type, createdAt])
 }
 
 // ===========================================

@@ -38,6 +38,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       { label: "Activity log", href: "/admin/activity", iconName: "activity" },
       { label: "Audit sessions", href: "/admin/audit", iconName: "eye" },
       { label: "Security alerts", href: "/admin/security", iconName: "alert" },
+      { label: "Page traffic", href: "/admin/page-traffic", iconName: "eye" },
     ],
   },
 ];
