@@ -785,7 +785,7 @@ function toCSV(pages: PageRow[]): string {
 }
 
 export default function PageTrafficPage() {
-  const [window, setWindow] = useState<TrafficWindow>("30d");
+  const [trafficWindow, setTrafficWindow] = useState<TrafficWindow>("30d"); // not `window` — avoids shadowing the global
   const [roleFilters, setRoleFilters] = useState<string[]>([]);
   const [locationFilters, setLocationFilters] = useState<string[]>([]);
   const [data, setData] = useState<(PageTrafficResult & { generatedAt: string }) | null>(null);
@@ -799,7 +799,7 @@ export default function PageTrafficPage() {
     abortRef.current = ac;
     setLoading(true); setError(null);
     try {
-      const qs = new URLSearchParams({ window });
+      const qs = new URLSearchParams({ window: trafficWindow });
       if (roleFilters.length) qs.set("roles", roleFilters.join(","));
       if (locationFilters.length) qs.set("locations", locationFilters.join(","));
       const res = await fetch(`/api/admin/page-traffic?${qs}`, { signal: ac.signal });
@@ -810,19 +810,19 @@ export default function PageTrafficPage() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [window, roleFilters, locationFilters]);
+  }, [trafficWindow, roleFilters, locationFilters]);
 
   useEffect(() => { void fetchData(); return () => abortRef.current?.abort(); }, [fetchData]);
 
-  const hasActiveFilters = roleFilters.length > 0 || locationFilters.length > 0 || window !== "30d";
-  const clearAll = () => { setWindow("30d"); setRoleFilters([]); setLocationFilters([]); };
+  const hasActiveFilters = roleFilters.length > 0 || locationFilters.length > 0 || trafficWindow !== "30d";
+  const clearAll = () => { setTrafficWindow("30d"); setRoleFilters([]); setLocationFilters([]); };
 
   const exportCSV = () => {
     if (!data) return;
     const blob = new Blob([toCSV(data.pages)], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `page-traffic-${window}.csv`; a.click();
+    a.href = url; a.download = `page-traffic-${trafficWindow}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -853,7 +853,7 @@ export default function PageTrafficPage() {
 
       <div className="px-4 py-3">
         <AdminFilterBar hasActiveFilters={hasActiveFilters} onClearAll={clearAll}>
-          <DateRangeChip label="Window" selected={window} options={WINDOW_OPTS} onChange={(v) => setWindow(v as TrafficWindow)} />
+          <DateRangeChip label="Window" selected={trafficWindow} options={WINDOW_OPTS} onChange={(v) => setTrafficWindow(v as TrafficWindow)} />
           <MultiSelectFilter label="Role" options={ROLE_OPTIONS} selected={roleFilters} onChange={setRoleFilters} />
           <MultiSelectFilter label="Location" options={LOCATION_OPTIONS} selected={locationFilters} onChange={setLocationFilters} />
           <button type="button" onClick={exportCSV} className="rounded px-2 py-1 text-xs text-muted hover:text-foreground hover:bg-surface-2 transition-colors">CSV</button>
@@ -861,7 +861,7 @@ export default function PageTrafficPage() {
       </div>
 
       {error ? (
-        <AdminError message={error} onRetry={fetchData} />
+        <AdminError error={error} onRetry={fetchData} />
       ) : (
         <div className="space-y-6 px-4 pb-8">
           {/* Summary tiles */}
