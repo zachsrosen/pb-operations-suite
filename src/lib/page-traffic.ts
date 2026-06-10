@@ -266,7 +266,11 @@ export function aggregatePageTraffic(rows: TrafficRow[]): PageTrafficResult {
       acc(byPath, clickPath).clicks++;
     } else if (r.type === "DASHBOARD_VIEWED") {
       const path = normalizePath(r.entityId || "");
-      if (!path) continue;
+      // Only PageViewTracker rows (entityId is a real path starting with "/").
+      // Legacy trackDashboardView() calls also write DASHBOARD_VIEWED but with a
+      // bare slug entityId (e.g. "master-scheduler") — skip those to avoid
+      // double-counting every visit and polluting the "Other" suite bucket.
+      if (!path.startsWith("/")) continue;
       const a = acc(byPath, path);
       const uid = r.userId || r.userEmail || "";
       a.views++; if (uid) { a.users.add(uid); globalUsers.add(uid); }

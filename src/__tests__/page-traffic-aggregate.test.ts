@@ -91,3 +91,18 @@ describe("aggregatePageTraffic – per-user dwell upsert", () => {
     expect(u!.avgDwellMs).toBe(5000);
   });
 });
+
+describe("aggregatePageTraffic – skips legacy slug DASHBOARD_VIEWED rows", () => {
+  it("ignores DASHBOARD_VIEWED rows whose entityId is a bare slug (not a path)", () => {
+    const r: TrafficRow[] = [
+      // PageViewTracker row (real path) — counts
+      { type: "DASHBOARD_VIEWED", entityId: "/dashboards/scheduler", userId: "u1", userEmail: "a@x.com", userName: "A", durationMs: null },
+      // legacy trackDashboardView row (bare slug) — must be skipped, not counted or bucketed to "Other"
+      { type: "DASHBOARD_VIEWED", entityId: "master-scheduler", userId: "u1", userEmail: "a@x.com", userName: "A", durationMs: null },
+    ];
+    const res = aggregatePageTraffic(r);
+    expect(res.totals.views).toBe(1); // not 2 — slug row dropped
+    expect(res.pages.find((p) => p.path === "master-scheduler")).toBeUndefined();
+    expect(res.suites.find((s) => s.suite === "Other")).toBeUndefined();
+  });
+});
