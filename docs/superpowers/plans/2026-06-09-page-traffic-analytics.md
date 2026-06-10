@@ -970,3 +970,4 @@ git commit -m "feat(admin): Page Traffic analytics view"
 - **Dwell keyed on `pathname`** (no query string) so it matches `normalizePath` buckets; views are logged with full path but aggregation normalizes both.
 - **`PATH_TO_SUITE` drift** is guarded by a test that reads the suite `.tsx` files — keep the map current or the test fails.
 - **No new env vars, no feature flag** — this is read-only admin analytics over data we already collect; gating adds no value (per YAGNI).
+- **Clicks are keyed by `metadata.page`, not `entityId`** (corrected during Chunk 2 review). `ClickTracker` logs `FEATURE_USED` with `entityId = "click:<type>"` and the page path in `metadata.page`. So `aggregatePageTraffic` counts only `FEATURE_USED` rows whose `entityId` starts with `"click:"`, keyed by `normalizePath(metadata.page)`; `getPageTraffic`'s Prisma `select` includes `metadata`. Views/dwell still key by `entityId` (page_view/page_dwell write the path there).
