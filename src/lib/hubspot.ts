@@ -1058,7 +1058,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       if (!raw) return "";
       return ownerMap?.[raw] || raw;
     })(),
-    operationsManager: String(deal.operations_manager || ""),
+    operationsManager: (() => {
+      const raw = String(deal.operations_manager || "");
+      if (!raw) return "";
+      return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
+    })(),
     dealOwner: ownerMap?.[String(deal.hubspot_owner_id || "")] || "",
     siteSurveyor: (() => {
       const raw = String(deal.site_surveyor || "");
