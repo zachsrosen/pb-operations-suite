@@ -25,6 +25,7 @@ function getActionActivityType(action: string): string {
     case "filter": return "DASHBOARD_FILTERED";
     case "export": return "DATA_EXPORTED";
     case "feature_used": return "FEATURE_USED";
+    case "page_dwell": return "PAGE_DWELL";
     default: return "FEATURE_USED";
   }
 }
@@ -95,6 +96,9 @@ export async function POST(request: NextRequest) {
     const risk = getActivityRiskLevel(mappedType || "FEATURE_USED");
     activityRiskLevel = risk.riskLevel as typeof activityRiskLevel;
     activityRiskScore = risk.riskScore;
+
+    const isDwell = action === "page_dwell";
+    if (isDwell) { activityRiskLevel = "LOW"; activityRiskScore = 1; }
 
     // Handle different action types
     switch (action) {
@@ -253,6 +257,26 @@ export async function POST(request: NextRequest) {
         });
         break;
 
+      case "page_dwell":
+        await logActivity({
+          type: "PAGE_DWELL",
+          description: `Dwell ${Math.round(Number(data.durationMs) || 0)}ms on ${data.path || "unknown"}`,
+          userId: userIdForLog,
+          userEmail,
+          userName,
+          entityType: "page",
+          entityId: data.path,
+          entityName: data.path,
+          durationMs: Math.round(Number(data.durationMs) || 0),
+          ipAddress,
+          userAgent,
+          sessionId: data.sessionId,
+          auditSessionId,
+          riskLevel: activityRiskLevel,
+          riskScore: activityRiskScore,
+        });
+        break;
+
       default:
         return NextResponse.json(
           { error: `Unknown action: ${action}` },
@@ -261,8 +285,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Amendment A4: Run anomaly checks on EVERY activity (both new and reused sessions).
-    // Fire-and-forget — don't block the response.
-    if (auditSessionData && prisma) {
+    // Fire-and-forget — don't block the response. Skip for dwell events (high-frequency, low signal).
+    if (!isDwell && auditSessionData && prisma) {
       runSessionAnomalyChecks(auditSessionData, activityRiskScore, prisma).catch(
         (e: unknown) => console.error("Anomaly check failed:", e)
       );
