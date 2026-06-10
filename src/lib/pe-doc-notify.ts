@@ -3,7 +3,7 @@ import { sendEmailMessage } from "@/lib/email";
 import { PeDocDigest, type PeDocChange } from "@/emails/PeDocDigest";
 import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
-import type { DocChange } from "@/lib/pe-scraper-sync";
+import { meaningfulNote, type DocChange } from "@/lib/pe-scraper-sync";
 
 const RECIPIENT = "zach@photonbrothers.com";
 // Strip any stray whitespace/escape chars — env var has been seen with a trailing newline
@@ -84,7 +84,9 @@ export async function sendPeDocChangeNotification(
       docName: c.docName,
       oldStatus: c.oldStatus,
       newStatus: c.newStatus,
-      notes: c.newNotes,
+      // Strip our "Synced from PE portal scraper (…)" boilerplate so the email
+      // only shows a real PE note (or none).
+      notes: meaningfulNote(c.newNotes) || null,
       hubspotUrl: `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${c.dealId}`,
       pePortalUrl: portalUrlMap.get(c.dealId) ?? null,
     }));
@@ -108,7 +110,19 @@ export async function sendPeDocChangeNotification(
     let sinceLastEmail: string | undefined;
     try {
       const row = await prisma.systemConfig.findUnique({ where: { key: LAST_SENT_KEY } });
-      const prev = row?.value ? new Date(row.value) : null;
+      let prev: Date | null = row?.value ? new Date(row.value) : null;
+      if (!prev || Number.isNaN(prev.getTime())) {
+        // No anchor yet (first email after deploy) — fall back to the most
+        // recent prior change in the log. The current batch is already written
+        // by now, so exclude the last 2 minutes to skip it.
+        const cutoff = new Date(now.getTime() - 2 * 60_000);
+        const last = await prisma.peDocChangeLog.findFirst({
+          where: { createdAt: { lt: cutoff } },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+        prev = last?.createdAt ?? null;
+      }
       if (prev && !Number.isNaN(prev.getTime())) {
         sinceLastEmail = formatGap(now.getTime() - prev.getTime());
       }
