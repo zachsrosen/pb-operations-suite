@@ -55,6 +55,12 @@ export interface PeDocDigestProps {
   actionRequired: ActionRequiredDeal[];
   changes: PeDocChange[];
   /**
+   * Changes-mode only. Human-readable gap since the previous PE Doc Update
+   * email (e.g. "3h 12m"), so the reader sees how long it's been since the
+   * last reported batch of changes.
+   */
+  sinceLastEmail?: string;
+  /**
    * Daily-digest only. When set, the email renders a compact actionable
    * summary + a button to the full PE Document Tracker instead of inlining
    * every deal (Gmail clips messages over ~102KB; the full list is 300KB+).
@@ -107,6 +113,7 @@ export function PeDocDigest({
   notUploaded,
   actionRequired,
   changes,
+  sinceLastEmail,
   reportUrl,
 }: PeDocDigestProps) {
   // Changes mode (real-time alert): the email is built around status changes
@@ -174,10 +181,15 @@ export function PeDocDigest({
       <Section style={summaryCard}>
         <Text style={summaryDate}>{date}</Text>
         {isChangesMode ? (
-          <Text style={summaryCount}>
-            {changes.length} document change{changes.length !== 1 ? "s" : ""} across{" "}
-            {dealEntries.length} deal{dealEntries.length !== 1 ? "s" : ""}
-          </Text>
+          <>
+            <Text style={summaryCount}>
+              {changes.length} document change{changes.length !== 1 ? "s" : ""} across{" "}
+              {dealEntries.length} deal{dealEntries.length !== 1 ? "s" : ""}
+            </Text>
+            {sinceLastEmail && (
+              <Text style={summaryMeta}>{sinceLastEmail} since last update</Text>
+            )}
+          </>
         ) : (
           <>
             <Text style={summaryCount}>{totalDealsTracked} PE deals tracked</Text>

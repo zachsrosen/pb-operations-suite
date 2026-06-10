@@ -9,6 +9,22 @@ const RECIPIENT = "zach@photonbrothers.com";
 // Strip any stray whitespace/escape chars — env var has been seen with a trailing newline
 const PORTAL_ID = (process.env.HUBSPOT_PORTAL_ID || "21710069").replace(/[^0-9]/g, "") || "21710069";
 
+// Persists the timestamp of the last PE Doc Update email so each new one can
+// show the gap since the previous reported batch of changes.
+const LAST_SENT_KEY = "pe-doc-notify:last-sent-at";
+
+/** Compact human gap, e.g. "<1m", "8m", "3h 12m", "2d 4h". */
+function formatGap(ms: number): string {
+  const totalMin = Math.round(ms / 60_000);
+  if (totalMin < 1) return "<1m";
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  return `${mins}m`;
+}
+
 /**
  * Send a real-time PE doc change notification email.
  * Called from both the webhook and cron sync handlers whenever changes are detected.
@@ -88,10 +104,23 @@ export async function sendPeDocChangeNotification(
 
     const dealCount = dealIds.length;
 
+    // Gap since the previous PE Doc Update email (time between reported batches).
+    let sinceLastEmail: string | undefined;
+    try {
+      const row = await prisma.systemConfig.findUnique({ where: { key: LAST_SENT_KEY } });
+      const prev = row?.value ? new Date(row.value) : null;
+      if (prev && !Number.isNaN(prev.getTime())) {
+        sinceLastEmail = formatGap(now.getTime() - prev.getTime());
+      }
+    } catch {
+      // Best-effort — omit the line if the timestamp can't be read.
+    }
+
     const html = await render(
       PeDocDigest({
         date: `${dateStr} at ${timeStr}`,
         changes: emailChanges,
+        sinceLastEmail,
         totalDealsTracked: 0, // not computed for instant notifications
         nearlyComplete: [],
         notUploaded: [],
@@ -139,6 +168,7 @@ export async function sendPeDocChangeNotification(
     const plainLines = [
       `PE Doc Changes — ${dateStr} at ${timeStr}`,
       `${changes.length} change(s) across ${dealCount} deal(s)`,
+      ...(sinceLastEmail ? [`${sinceLastEmail} since last update`] : []),
       `Source: ${source}`,
       "",
       `Overview: ${overviewLine}`,
@@ -163,6 +193,18 @@ export async function sendPeDocChangeNotification(
       debugFallbackTitle: "PE Doc Change Notification",
       debugFallbackBody: plainLines.join("\n"),
     });
+
+    // Record this send as the new "last update" anchor (only on success, so a
+    // failed send doesn't reset the gap measured by the next email).
+    if (result.success) {
+      await prisma.systemConfig
+        .upsert({
+          where: { key: LAST_SENT_KEY },
+          create: { key: LAST_SENT_KEY, value: now.toISOString() },
+          update: { value: now.toISOString() },
+        })
+        .catch(() => {});
+    }
 
     console.warn(
       `[pe-doc-notify] Sent ${changes.length} changes to ${RECIPIENT} (${source}): ${result.success ? "delivered" : "failed"}`,
