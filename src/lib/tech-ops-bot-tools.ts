@@ -355,5 +355,37 @@ export function createTechOpsBotTools() {
     },
   });
 
-  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest, createHubspotTask];
+  const logCorrection = betaZodTool({
+    name: "log_correction",
+    description:
+      "Log a correction when someone tells you a factual or process answer you gave was " +
+      "WRONG and provides the right information (e.g. \"no, Review In Progress means we " +
+      "review internally before sending\"). This captures the correction for the team to " +
+      "review and fold into your permanent knowledge. Use it whenever you're corrected on " +
+      "something factual/procedural — not for opinions or one-off preferences. You can't " +
+      "rewrite your own knowledge on the spot, but logging it means the fix will stick, and " +
+      "you should respect the correction for the rest of THIS conversation.",
+    inputSchema: z.object({
+      topic: z
+        .string()
+        .describe("Short subject of what was being discussed, e.g. 'DA status meaning'"),
+      whatIGotWrong: z
+        .string()
+        .describe("The incorrect thing you said"),
+      correctInfo: z
+        .string()
+        .describe("The correct information the person gave you"),
+    }),
+    run: async (_input) => {
+      // NOTE: The orchestrator in tech-ops-bot.ts wraps this tool to inject
+      // request context (senderEmail, senderName, spaceName) and persist the
+      // correction. This default impl is only hit in tests / standalone use.
+      return JSON.stringify({
+        logged: true,
+        message: "Correction noted for review.",
+      });
+    },
+  });
+
+  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest, createHubspotTask, logCorrection];
 }
