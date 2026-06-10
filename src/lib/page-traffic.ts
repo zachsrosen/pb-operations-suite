@@ -1,3 +1,5 @@
+import type { UserRole, ActivityType } from "@/lib/db";
+
 // ─── PATH_TO_SUITE ──────────────────────────────────────────────────────────────
 // Exhaustive map of every /dashboards/* href used in suite landing pages →
 // human suite label. Run the harvest command in the plan to refresh if pages change.
@@ -212,11 +214,12 @@ export type TrafficWindow = "7d" | "30d" | "90d" | "all";
 /** Minimal shape of an ActivityLog row needed for aggregation. */
 export interface TrafficRow {
   type: string;              // DASHBOARD_VIEWED | PAGE_DWELL | FEATURE_USED
-  entityId: string | null;   // normalized or raw path
+  entityId: string | null;   // normalized or raw path (for FEATURE_USED: the feature name e.g. "click:button")
   userId: string | null;
   userEmail: string | null;
   userName: string | null;
   durationMs: number | null; // dwell ms for PAGE_DWELL
+  metadata?: { page?: string } | null; // FEATURE_USED rows store page path here
 }
 
 export interface PageRow {
@@ -239,6 +242,7 @@ export interface PageTrafficResult {
 
 // ─── AGGREGATION ─────────────────────────────────────────────────────────────────
 
+// a page is "dead" if it received fewer than this many views in the window (currently: zero views)
 const DEAD_VIEW_FLOOR = 1;
 
 export function aggregatePageTraffic(rows: TrafficRow[]): PageTrafficResult {
@@ -253,21 +257,31 @@ export function aggregatePageTraffic(rows: TrafficRow[]): PageTrafficResult {
   };
 
   for (const r of rows) {
-    const path = normalizePath(r.entityId || "");
-    if (!path) continue;
-    const a = acc(byPath, path);
-    const uid = r.userId || r.userEmail || "";
-    if (r.type === "DASHBOARD_VIEWED") {
+    if (r.type === "FEATURE_USED") {
+      // Only count ClickTracker clicks (entityId starts with "click:"); key by metadata.page.
+      if (!r.entityId?.startsWith("click:")) continue;
+      const meta = r.metadata as { page?: string } | null | undefined;
+      const clickPath = normalizePath(meta?.page || "");
+      if (!clickPath) continue;
+      acc(byPath, clickPath).clicks++;
+    } else if (r.type === "DASHBOARD_VIEWED") {
+      const path = normalizePath(r.entityId || "");
+      if (!path) continue;
+      const a = acc(byPath, path);
+      const uid = r.userId || r.userEmail || "";
       a.views++; if (uid) { a.users.add(uid); globalUsers.add(uid); }
       const ukey = r.userId || r.userEmail || "unknown";
       let u = byUser.get(ukey); if (!u) { u = { userEmail: r.userEmail, userName: r.userName, views: 0, dwellSum: 0, dwellN: 0 }; byUser.set(ukey, u); }
       u.views++;
-    } else if (r.type === "FEATURE_USED") {
-      a.clicks++;
     } else if (r.type === "PAGE_DWELL" && typeof r.durationMs === "number") {
+      const path = normalizePath(r.entityId || "");
+      if (!path) continue;
+      const a = acc(byPath, path);
       a.dwellSum += r.durationMs; a.dwellN++;
       const ukey = r.userId || r.userEmail || "unknown";
-      const u = byUser.get(ukey); if (u) { u.dwellSum += r.durationMs; u.dwellN++; }
+      let u = byUser.get(ukey);
+      if (!u) { u = { userEmail: r.userEmail, userName: r.userName, views: 0, dwellSum: 0, dwellN: 0 }; byUser.set(ukey, u); }
+      u.dwellSum += r.durationMs; u.dwellN++;
     }
   }
 
@@ -298,8 +312,10 @@ export function aggregatePageTraffic(rows: TrafficRow[]): PageTrafficResult {
     .map(([userId, u]) => ({ userId: userId === "unknown" ? null : userId, userEmail: u.userEmail, userName: u.userName, views: u.views, avgDwellMs: u.dwellN ? Math.round(u.dwellSum / u.dwellN) : null }))
     .sort((x, y) => y.views - x.views);
 
-  const totalDwellRows = rows.filter((r) => r.type === "PAGE_DWELL" && typeof r.durationMs === "number");
-  const avgDwellMs = totalDwellRows.length ? Math.round(totalDwellRows.reduce((s, r) => s + (r.durationMs || 0), 0) / totalDwellRows.length) : null;
+  // Derive global avg dwell from the same per-path accumulated data used for per-page averages.
+  let totalDwellSum = 0; let totalDwellN = 0;
+  for (const a of byPath.values()) { totalDwellSum += a.dwellSum; totalDwellN += a.dwellN; }
+  const avgDwellMs = totalDwellN > 0 ? Math.round(totalDwellSum / totalDwellN) : null;
 
   return {
     totals: { views: pages.reduce((s, p) => s + p.views, 0), uniqueUsers: globalUsers.size, activePages: pages.filter((p) => p.views > 0).length, avgDwellMs },
@@ -322,19 +338,19 @@ export async function getPageTraffic(opts: GetPageTrafficOpts): Promise<PageTraf
   // Optional role filter → resolve to userIds.
   let userIdFilter: string[] | undefined;
   if (opts.roles?.length) {
-    const users = await prisma.user.findMany({ where: { roles: { hasSome: opts.roles as never } }, select: { id: true } });
+    const users = await prisma.user.findMany({ where: { roles: { hasSome: opts.roles as UserRole[] } }, select: { id: true } });
     userIdFilter = users.map((u) => u.id);
     if (userIdFilter.length === 0) return aggregatePageTraffic([]); // no matching users → empty
   }
 
   const rows = await prisma.activityLog.findMany({
     where: {
-      type: { in: ["DASHBOARD_VIEWED", "PAGE_DWELL", "FEATURE_USED"] as never },
+      type: { in: ["DASHBOARD_VIEWED", "PAGE_DWELL", "FEATURE_USED"] as ActivityType[] },
       ...(since ? { createdAt: { gte: since } } : {}),
       ...(opts.locations?.length ? { pbLocation: { in: opts.locations } } : {}),
       ...(userIdFilter ? { userId: { in: userIdFilter } } : {}),
     },
-    select: { type: true, entityId: true, userId: true, userEmail: true, userName: true, durationMs: true },
+    select: { type: true, entityId: true, userId: true, userEmail: true, userName: true, durationMs: true, metadata: true },
     take: 200_000, // safety cap; admin-only, low cardinality windows
   });
 
