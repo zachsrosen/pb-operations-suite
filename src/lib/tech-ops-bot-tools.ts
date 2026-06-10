@@ -312,5 +312,43 @@ export function createTechOpsBotTools() {
     },
   });
 
-  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest];
+  const createHubspotTask = betaZodTool({
+    name: "create_hubspot_task",
+    description:
+      "Create a HubSpot task on behalf of the person you're chatting with — e.g. " +
+      "\"make me a task to follow up on PROJ-1234 next week.\" The task is assigned to " +
+      "the requester (resolved from their email) and, if a project is given, attached to " +
+      "that deal. You can CREATE tasks only — you cannot edit, complete, or delete them. " +
+      "Only use this when the person explicitly asks for a task to be created. Always read " +
+      "back exactly what you created (subject, due date, project) so they can confirm.",
+    inputSchema: z.object({
+      subject: z
+        .string()
+        .describe("Short task title, e.g. 'Follow up on Miller permit status'"),
+      body: z
+        .string()
+        .optional()
+        .describe("Optional task notes / additional detail"),
+      projectId: z
+        .string()
+        .optional()
+        .describe("Optional PROJ-XXXX number or HubSpot deal ID to attach the task to"),
+      dueInDays: z
+        .number()
+        .optional()
+        .describe("Optional days from now the task is due (e.g. 3 = due in 3 days). Defaults to 1 (tomorrow)."),
+    }),
+    run: async (_input) => {
+      // NOTE: The orchestrator in tech-ops-bot.ts wraps this tool and replaces
+      // `run` entirely to inject request context (senderEmail) and perform the
+      // actual HubSpot write. This default implementation is only hit in unit
+      // tests or standalone use — it does NOT create anything.
+      return JSON.stringify({
+        created: false,
+        message: "Task creation is only available in the live bot context.",
+      });
+    },
+  });
+
+  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest, createHubspotTask];
 }
