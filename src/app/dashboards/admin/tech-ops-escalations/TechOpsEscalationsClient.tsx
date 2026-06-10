@@ -32,12 +32,23 @@ interface EscalationRow {
 
 interface Props {
   initialEscalations: EscalationRow[];
-  currentFilter: "PENDING" | "RESOLVED" | "DISMISSED" | "all";
-  counts: { pending: number; resolved: number; dismissed: number };
+  currentFilter: "PENDING" | "RESOLVED" | "DISMISSED" | "all" | "CORRECTIONS";
+  counts: {
+    pending: number;
+    resolved: number;
+    dismissed: number;
+    corrections: number;
+  };
 }
 
 const isDebugRow = (e: EscalationRow) =>
   e.senderName === "async-error" || e.senderEmail === "DEBUG";
+
+const CORRECTION_PREFIX = "[CORRECTION]";
+const isCorrectionRow = (e: EscalationRow) =>
+  e.question.startsWith(CORRECTION_PREFIX);
+const correctionTopic = (q: string) =>
+  q.replace(CORRECTION_PREFIX, "").trim();
 
 const statusBadge = (status: string) => {
   const map: Record<string, { bg: string; text: string; label: string }> = {
@@ -134,6 +145,7 @@ export default function TechOpsEscalationsClient({
             ["RESOLVED", `Resolved (${counts.resolved})`],
             ["DISMISSED", `Dismissed (${counts.dismissed})`],
             ["all", `All (${counts.pending + counts.resolved + counts.dismissed})`],
+            ["CORRECTIONS", `🎓 Corrections (${counts.corrections})`],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -154,7 +166,9 @@ export default function TechOpsEscalationsClient({
       {/* Empty state */}
       {initialEscalations.length === 0 && (
         <div className="bg-surface border border-t-border rounded-lg p-12 text-center text-muted">
-          No escalations in this view.
+          {currentFilter === "CORRECTIONS"
+            ? "No corrections logged yet. When someone tells the bot it got something wrong, it'll show up here."
+            : "No escalations in this view."}
         </div>
       )}
 
@@ -179,7 +193,12 @@ export default function TechOpsEscalationsClient({
                   className="border-t border-t-border cursor-pointer hover:bg-surface-2 transition-colors"
                 >
                   <td className="px-4 py-3 text-foreground font-medium max-w-md truncate">
-                    {e.question}
+                    {isCorrectionRow(e) && (
+                      <span className="inline-flex mr-2 px-2 py-0.5 text-xs font-semibold rounded bg-purple-500/15 text-purple-300 align-middle">
+                        🎓 Correction
+                      </span>
+                    )}
+                    {isCorrectionRow(e) ? correctionTopic(e.question) : e.question}
                   </td>
                   <td className="px-4 py-3 text-muted">
                     {isDebugRow(e) ? (
@@ -213,7 +232,11 @@ export default function TechOpsEscalationsClient({
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-lg font-semibold text-foreground">
-                      {isDebugRow(detail) ? "Async processing error" : "Escalation"}
+                      {isDebugRow(detail)
+                        ? "Async processing error"
+                        : isCorrectionRow(detail)
+                          ? "🎓 Correction"
+                          : "Escalation"}
                     </h2>
                     <div className="text-xs text-muted mt-1">
                       {isDebugRow(detail)
@@ -236,16 +259,28 @@ export default function TechOpsEscalationsClient({
               {/* Question / error message */}
               <div className="px-6 py-4 border-b border-t-border bg-purple-500/5">
                 <div className="text-xs uppercase tracking-wide text-muted mb-1">
-                  {isDebugRow(detail) ? "Message that failed" : "Question"}
+                  {isDebugRow(detail)
+                    ? "Message that failed"
+                    : isCorrectionRow(detail)
+                      ? "Topic"
+                      : "Question"}
                 </div>
-                <p className="text-sm text-foreground whitespace-pre-wrap">{detail.question}</p>
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {isCorrectionRow(detail)
+                    ? correctionTopic(detail.question)
+                    : detail.question}
+                </p>
               </div>
 
               {/* Bot context */}
               {detail.botContext && (
                 <div className="px-6 py-4 border-b border-t-border">
                   <div className="text-xs uppercase tracking-wide text-muted mb-1">
-                    {isDebugRow(detail) ? "Error detail" : "Bot context"}
+                    {isDebugRow(detail)
+                      ? "Error detail"
+                      : isCorrectionRow(detail)
+                        ? "What it got wrong / the correction"
+                        : "Bot context"}
                   </div>
                   <p className="text-sm text-foreground whitespace-pre-wrap">{detail.botContext}</p>
                 </div>

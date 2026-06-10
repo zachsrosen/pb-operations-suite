@@ -27,10 +27,12 @@ export default async function TechOpsEscalationsPage({
   if (!isAdmin) redirect("/");
 
   const { status: statusFilter } = await searchParams;
-  const filter =
-    statusFilter === "RESOLVED" ||
-    statusFilter === "DISMISSED" ||
-    statusFilter === "all"
+  const isCorrections = statusFilter === "CORRECTIONS";
+  const filter = isCorrections
+    ? "CORRECTIONS"
+    : statusFilter === "RESOLVED" ||
+        statusFilter === "DISMISSED" ||
+        statusFilter === "all"
       ? statusFilter
       : "PENDING";
 
@@ -44,7 +46,19 @@ export default async function TechOpsEscalationsPage({
     );
   }
 
-  const where: { status?: string } = filter === "all" ? {} : { status: filter };
+  // Corrections (logged via log_correction) live in the same table, marked
+  // with a [CORRECTION] question prefix. They get their own tab; the status
+  // tabs (Pending/Resolved/etc.) show escalations only.
+  const CORRECTION_PREFIX = "[CORRECTION]";
+  const notCorrection = {
+    NOT: { question: { startsWith: CORRECTION_PREFIX } },
+  } as const;
+
+  const where = isCorrections
+    ? { question: { startsWith: CORRECTION_PREFIX } }
+    : filter === "all"
+      ? notCorrection
+      : { status: filter, ...notCorrection };
 
   const escalations = await prisma.techOpsBotEscalation.findMany({
     where,
@@ -65,11 +79,21 @@ export default async function TechOpsEscalationsPage({
     },
   });
 
-  const [pendingCount, resolvedCount, dismissedCount] = await Promise.all([
-    prisma.techOpsBotEscalation.count({ where: { status: "PENDING" } }),
-    prisma.techOpsBotEscalation.count({ where: { status: "RESOLVED" } }),
-    prisma.techOpsBotEscalation.count({ where: { status: "DISMISSED" } }),
-  ]);
+  const [pendingCount, resolvedCount, dismissedCount, correctionsCount] =
+    await Promise.all([
+      prisma.techOpsBotEscalation.count({
+        where: { status: "PENDING", ...notCorrection },
+      }),
+      prisma.techOpsBotEscalation.count({
+        where: { status: "RESOLVED", ...notCorrection },
+      }),
+      prisma.techOpsBotEscalation.count({
+        where: { status: "DISMISSED", ...notCorrection },
+      }),
+      prisma.techOpsBotEscalation.count({
+        where: { question: { startsWith: CORRECTION_PREFIX } },
+      }),
+    ]);
 
   return (
     <DashboardShell title="Bot Escalations" accentColor="purple">
@@ -84,6 +108,7 @@ export default async function TechOpsEscalationsPage({
           pending: pendingCount,
           resolved: resolvedCount,
           dismissed: dismissedCount,
+          corrections: correctionsCount,
         }}
       />
     </DashboardShell>
