@@ -1,3 +1,180 @@
+// ─── PATH_TO_SUITE ──────────────────────────────────────────────────────────────
+// Exhaustive map of every /dashboards/* href used in suite landing pages →
+// human suite label. Run the harvest command in the plan to refresh if pages change.
+// Duplicates: path appears in multiple suites — primary suite chosen, dup noted inline.
+export const PATH_TO_SUITE: Record<string, string> = {
+  // ── Accounting ──────────────────────────────────────────────────────────────
+  "/dashboards/payment-action-queue": "Accounting",
+  "/dashboards/payment-tracking": "Accounting",
+  "/dashboards/ready-to-invoice": "Accounting",
+  "/dashboards/accounts-receivable": "Accounting",
+  "/dashboards/payment-timeline": "Accounting",
+  "/dashboards/pe-docs": "Accounting",              // also pe-compliance
+  "/dashboards/pe-report": "Accounting",            // also pe-compliance
+  "/dashboards/pe-submission-gap": "Accounting",    // also pe-compliance
+  "/dashboards/pe-deals": "Accounting",             // also pe-compliance
+  "/dashboards/pe": "Accounting",                   // also pe-compliance
+
+  // ── Accounting (PE Compliance rolls under Accounting) ────────────────────
+  "/dashboards/pe-action-queue": "Accounting",
+  "/dashboards/pe-prep": "Accounting",
+  "/dashboards/pe-avl": "Accounting",
+  "/dashboards/pe-pipeline": "Accounting",          // also operations, pe-compliance
+
+  // ── Design & Engineering ─────────────────────────────────────────────────
+  "/dashboards/de-overview": "Design & Engineering",
+  "/dashboards/plan-review": "Design & Engineering",
+  "/dashboards/pending-approval": "Design & Engineering", // also project-management
+  "/dashboards/design-revisions": "Design & Engineering", // also project-management
+  "/dashboards/design-pipeline-funnel": "Design & Engineering", // also executive
+  "/dashboards/de-metrics": "Design & Engineering",
+  "/dashboards/clipping-analytics": "Design & Engineering",
+  "/dashboards/production-issues": "Design & Engineering",
+  "/dashboards/design-engineering": "Design & Engineering",
+  "/dashboards/ahj-requirements": "Design & Engineering", // also pe-compliance
+  "/dashboards/utility-design-requirements": "Design & Engineering",
+  "/dashboards/tsrf-calculator": "Design & Engineering",  // also service
+  "/dashboards/idr-meeting": "Design & Engineering",      // also operations, project-management
+  "/dashboards/eagleview-orders": "Design & Engineering", // also operations, service
+  "/dashboards/design": "Design & Engineering",
+  "/dashboards/powerhub": "Design & Engineering",         // also service
+
+  // ── D&R + Roofing ────────────────────────────────────────────────────────
+  "/dashboards/dnr": "D&R + Roofing",
+  "/dashboards/dnr-scheduler": "D&R + Roofing",
+  "/dashboards/roofing": "D&R + Roofing",
+  "/dashboards/roofing-scheduler": "D&R + Roofing",
+
+  // ── Executive ────────────────────────────────────────────────────────────
+  "/dashboards/revenue": "Executive",
+  "/dashboards/executive": "Executive",
+  "/dashboards/executive-calendar": "Executive",
+  "/dashboards/preconstruction-metrics": "Executive",
+  "/dashboards/executive-calls": "Executive",
+  "/dashboards/territory-map": "Executive",
+  "/dashboards/project-pipeline-funnel": "Executive",
+  "/dashboards/forecast-accuracy": "Executive",
+  "/dashboards/forecast-timeline": "Executive",
+  "/dashboards/office-performance/all": "Executive",       // also operations
+  "/dashboards/office-performance/westminster": "Executive",
+  "/dashboards/office-performance/centennial": "Executive",
+  "/dashboards/office-performance/colorado-springs": "Executive",
+  "/dashboards/office-performance/san-luis-obispo": "Executive",
+  "/dashboards/office-performance/camarillo": "Executive",
+  "/dashboards/shop-health": "Executive",
+
+  // ── Operations ───────────────────────────────────────────────────────────
+  "/dashboards/scheduler": "Operations",            // also project-management
+  "/dashboards/crew-schedule": "Operations",        // also dnr-roofing, service
+  "/dashboards/map": "Operations",                  // also project-management
+  "/dashboards/forecast-schedule": "Operations",    // also project-management
+  "/dashboards/equipment-backlog": "Operations",
+  "/dashboards/site-survey-scheduler": "Operations", // also project-management, sales-marketing
+  "/dashboards/site-survey": "Operations",
+  "/dashboards/survey-metrics": "Operations",       // also project-management
+  "/dashboards/construction-scheduler": "Operations", // also project-management
+  "/dashboards/construction": "Operations",
+  "/dashboards/construction-metrics": "Operations", // also project-management
+  "/dashboards/pipeline-tracker": "Operations",     // also accounting
+  "/dashboards/inspection-scheduler": "Operations", // also project-management
+  "/dashboards/inspections": "Operations",
+  "/dashboards/inspection-metrics": "Operations",   // also project-management
+  "/dashboards/product-catalog": "Operations",
+  "/dashboards/bom": "Operations",
+  "/dashboards/submit-product": "Operations",
+  "/dashboards/catalog": "Operations",
+  "/dashboards/product-requests-review": "Operations",
+  "/dashboards/comms": "Operations",
+  "/dashboards/my-tasks": "Operations",             // also project-management
+  "/dashboards/on-call": "Operations",
+
+  // ── Permitting & Interconnection ─────────────────────────────────────────
+  "/dashboards/permit-hub": "Permitting & Interconnection",
+  "/dashboards/ic-hub": "Permitting & Interconnection",
+  "/dashboards/pi-overview": "Permitting & Interconnection",
+  "/dashboards/pi-permit-action-queue": "Permitting & Interconnection",
+  "/dashboards/pi-ic-action-queue": "Permitting & Interconnection",
+  "/dashboards/pi-permit-revisions": "Permitting & Interconnection",
+  "/dashboards/pi-ic-revisions": "Permitting & Interconnection",
+  "/dashboards/pi-metrics": "Permitting & Interconnection",
+  "/dashboards/pi-timeline": "Permitting & Interconnection",
+  "/dashboards/permitting-interconnection": "Permitting & Interconnection",
+  "/dashboards/ahj-tracker": "Permitting & Interconnection", // also pe-compliance
+  "/dashboards/utility-tracker": "Permitting & Interconnection", // also pe-compliance
+  "/dashboards/incentives": "Permitting & Interconnection",  // also pe-compliance
+  "/dashboards/pi-action-queue": "Permitting & Interconnection",
+  "/dashboards/pi-revisions": "Permitting & Interconnection",
+  "/dashboards/permitting": "Permitting & Interconnection",
+  "/dashboards/interconnection": "Permitting & Interconnection",
+
+  // ── Project Management ───────────────────────────────────────────────────
+  "/dashboards/pm-action-queue": "Project Management",
+  "/dashboards/my-tickets": "Project Management",
+  "/dashboards/da-drift": "Project Management",
+  "/dashboards/zuper-drift": "Project Management",
+  "/dashboards/shit-show-meeting": "Project Management",    // also executive
+
+  // ── Sales & Marketing ────────────────────────────────────────────────────
+  "/dashboards/request-product": "Sales & Marketing",
+  "/dashboards/sales": "Sales & Marketing",                 // also executive
+  "/dashboards/pricing-calculator": "Sales & Marketing",
+  "/dashboards/adders": "Sales & Marketing",
+
+  // ── Service ──────────────────────────────────────────────────────────────
+  "/dashboards/service-overview": "Service",
+  "/dashboards/service-tickets": "Service",
+  "/dashboards/service-scheduler": "Service",
+  "/dashboards/service-unscheduled": "Service",
+  "/dashboards/service-customers": "Service",
+  "/dashboards/service": "Service",
+  "/dashboards/service-backlog": "Service",
+  "/dashboards/service-bom": "Service",
+  "/dashboards/service-catalog": "Service",
+
+  // ── Testing ──────────────────────────────────────────────────────────────
+  "/dashboards/at-risk": "Testing",
+  "/dashboards/qc": "Testing",
+  "/dashboards/alerts": "Testing",
+  "/dashboards/timeline": "Testing",
+  "/dashboards/pipeline": "Testing",
+  "/dashboards/optimizer": "Testing",
+  "/dashboards/project-management": "Testing",
+  "/dashboards/ai": "Testing",
+  "/dashboards/product-comparison": "Testing",
+  "/dashboards/inventory": "Testing",
+  "/dashboards/inventory/cost-audit": "Testing",
+  "/dashboards/inventory/sync-health": "Testing",
+  "/dashboards/mobile": "Testing",
+  "/dashboards/command-center": "Testing",
+  "/dashboards/capacity": "Testing",
+  "/dashboards/locations": "Testing",
+  "/dashboards/zuper-status-comparison": "Testing",
+  "/dashboards/zuper-compliance": "Testing",        // also pe-compliance
+  "/dashboards/admin/calls": "Testing",
+};
+
+// Suite landing routes are also "known pages".
+const SUITE_LANDING_ROUTES = [
+  "/suites/operations", "/suites/service", "/suites/design-engineering",
+  "/suites/permitting-interconnection", "/suites/dnr-roofing", "/suites/intelligence",
+  "/suites/executive", "/suites/accounting", "/suites/sales-marketing",
+  "/suites/project-management", "/suites/testing",
+];
+// Admin tooling pages worth tracking for dead-weight (extend as needed).
+const ADMIN_PAGES = ["/admin/page-traffic", "/admin/activity", "/admin/audit", "/admin/security", "/admin/users", "/admin/roles"];
+
+export function suiteForPath(path: string): string {
+  const norm = normalizePath(path);
+  if (norm in PATH_TO_SUITE) return PATH_TO_SUITE[norm];
+  if (norm.startsWith("/suites/") || norm.startsWith("/admin")) return "Admin";
+  return "Other";
+}
+
+export const KNOWN_PAGES: string[] = Array.from(
+  new Set([...Object.keys(PATH_TO_SUITE), ...SUITE_LANDING_ROUTES, ...ADMIN_PAGES]),
+);
+
+// ─── DYNAMIC_ROUTES ─────────────────────────────────────────────────────────────
 // Known dynamic-route patterns: prefix → param label. Order matters (longest prefix first).
 const DYNAMIC_ROUTES: Array<{ prefix: string; param: string }> = [
   { prefix: "/dashboards/reviews", param: "[dealId]" },
