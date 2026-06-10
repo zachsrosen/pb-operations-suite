@@ -3,10 +3,10 @@ import { assertOnCallEnabled } from "@/lib/on-call-guard";
 import { canAdminOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { getPool, getActiveMembersForRotation } from "@/lib/on-call-db";
-import { generateAssignments, addDays } from "@/lib/on-call-rotation";
+import { generateAssignments, addDays, dayOfWeek } from "@/lib/on-call-rotation";
 import { prisma, logActivity } from "@/lib/db";
 import { appCache } from "@/lib/cache";
-import { syncRangeForPool } from "@/lib/on-call-google-calendar";
+import { syncRangeForPool, deleteAssignmentEvent } from "@/lib/on-call-google-calendar";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -51,6 +51,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       toDate: to,
       members,
       rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
+      coversSundays: pool.coversSundays,
     });
 
     // Existing rows in range keyed by date — used to partition into net-new
@@ -71,8 +72,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
         toUpdate.push({ date: g.date, crewMemberId: g.crewMemberId });
       }
     }
+
+    // When the pool no longer covers Sundays, generation emits no Sunday rows.
+    // Any previously-generated Sunday rows in range are now orphaned — drop them
+    // (and their calendar events). Manual/swap/pto rows on Sundays are left alone.
+    const staleSundays = pool.coversSundays
+      ? []
+      : existing.filter((e) => e.source === "generated" && dayOfWeek(e.date) === 0);
+
     const rowsCreated = toCreate.length;
     const rowsUpdated = toUpdate.length;
+    const rowsDeleted = staleSundays.length;
 
     // Concurrent-publish safety comes from:
     // 1. @@unique([poolId, date]) + skipDuplicates on createMany — idempotent
@@ -89,6 +99,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
             data: { crewMemberId: u.crewMemberId },
           });
         }
+        if (staleSundays.length > 0) {
+          await tx.onCallAssignment.deleteMany({
+            where: { id: { in: staleSundays.map((s) => s.id) } },
+          });
+        }
         await tx.onCallPool.update({
           where: { id },
           data: {
@@ -102,14 +117,33 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     );
 
     appCache.invalidateByPrefix("on-call:tonight");
+
+    // Drop calendar events for the Sunday rows we just removed (best-effort).
+    for (const s of staleSundays) {
+      await deleteAssignmentEvent(
+        {
+          id: pool.id,
+          name: pool.name,
+          region: pool.region,
+          timezone: pool.timezone,
+          shiftStart: pool.shiftStart,
+          shiftEnd: pool.shiftEnd,
+          weekendShiftStart: pool.weekendShiftStart,
+          weekendShiftEnd: pool.weekendShiftEnd,
+          googleCalendarId: pool.googleCalendarId,
+        },
+        s.id,
+      );
+    }
+
     await logActivity({
       type: "ON_CALL_PUBLISHED",
-      description: `Published ${pool.name}: +${rowsCreated} created, ${rowsUpdated} updated, through ${to}`,
+      description: `Published ${pool.name}: +${rowsCreated} created, ${rowsUpdated} updated, ${rowsDeleted} deleted, through ${to}`,
       userId: user?.id,
       userEmail: user?.email,
       entityType: "OnCallPool",
       entityId: id,
-      metadata: { rowsCreated, rowsUpdated, from, to },
+      metadata: { rowsCreated, rowsUpdated, rowsDeleted, from, to },
     });
 
     // Push the synced range to the pool's Google Calendar (creates the calendar
@@ -146,7 +180,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       console.warn("[on-call/publish] Google Calendar sync failed", err);
     }
 
-    return NextResponse.json({ rowsCreated, rowsUpdated, from, to, gcal });
+    return NextResponse.json({ rowsCreated, rowsUpdated, rowsDeleted, from, to, gcal });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Publish failed";
     console.error("[on-call/publish] error", err);

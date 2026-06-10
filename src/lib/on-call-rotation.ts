@@ -63,15 +63,17 @@ function mod(a: number, n: number): number {
   return ((a % n) + n) % n;
 }
 
-// Sunday of the week containing dateStr. PB on-call weeks run Sun → Sat.
-// Kept exported under both names for back-compat with prior callers; mondayOf
-// is now an alias that points to the Sunday-of helper since we shifted the
-// weekly anchor on 2026-04-22.
-export function sundayOf(dateStr: string): string {
+// Monday of the week containing dateStr. PB on-call weeks run Mon → Sun:
+// electrician shifts start Monday (shifted back from Sun → Sat on 2026-06).
+export function mondayOf(dateStr: string): string {
   const dow = dayOfWeek(dateStr); // 0=Sun, 1=Mon, ..., 6=Sat
-  return addDays(dateStr, -dow);
+  // Sunday belongs to the week that started the previous Monday (6 days back);
+  // every other day steps back to the Monday at the start of its week.
+  const offset = dow === 0 ? -6 : 1 - dow;
+  return addDays(dateStr, offset);
 }
-export const mondayOf = sundayOf;
+// Back-compat alias for prior callers that referenced sundayOf.
+export const sundayOf = mondayOf;
 
 export type RotationUnit = "daily" | "weekly";
 
@@ -81,15 +83,23 @@ export type GenerateOpts = {
   toDate: string;
   members: RotationMember[];
   rotationUnit?: RotationUnit; // defaults to "daily" for backwards-compat with existing callers
+  /**
+   * When false, Sundays get no assignment — the weekly assignee covers Mon-Sat
+   * only and no row is emitted for Sundays. Defaults true (cover all 7 days).
+   * The rotation index is unaffected: the next Monday still advances to the
+   * next member, so dropping Sundays only removes coverage, not rotation slots.
+   */
+  coversSundays?: boolean;
 };
 
 /**
  * Strict round-robin rotation.
  * - Daily: day N's assignment = activeMembers[(anchorOffset + N) % length].
  * - Weekly: the rotation index advances once per week (Monday boundary).
- *   All 7 days in a week share the same assignee. Anchors on the Monday
+ *   All days in a week share the same assignee. Anchors on the Monday
  *   of startDate so e.g. a pool starting mid-week still produces clean
  *   Mon→Sun groupings.
+ * When coversSundays is false, Sunday dates are skipped (no row emitted).
  * Inactive members are skipped entirely. Throws when no members are active.
  */
 export function generateAssignments(opts: GenerateOpts): GeneratedAssignment[] {
@@ -105,22 +115,23 @@ export function generateAssignments(opts: GenerateOpts): GeneratedAssignment[] {
   if (totalDays <= 0) return [];
 
   const unit = opts.rotationUnit ?? "daily";
+  const coversSundays = opts.coversSundays ?? true;
 
   const out: GeneratedAssignment[] = [];
   if (unit === "daily") {
     const anchorOffset = daysBetween(opts.startDate, opts.fromDate);
     for (let i = 0; i < totalDays; i++) {
+      const date = addDays(opts.fromDate, i);
+      if (!coversSundays && dayOfWeek(date) === 0) continue;
       const memberIdx = mod(anchorOffset + i, active.length);
-      out.push({
-        date: addDays(opts.fromDate, i),
-        crewMemberId: active[memberIdx].crewMemberId,
-      });
+      out.push({ date, crewMemberId: active[memberIdx].crewMemberId });
     }
   } else {
     // Weekly: align to Monday of startDate.
     const anchorMonday = mondayOf(opts.startDate);
     for (let i = 0; i < totalDays; i++) {
       const date = addDays(opts.fromDate, i);
+      if (!coversSundays && dayOfWeek(date) === 0) continue;
       const daysFromAnchor = daysBetween(anchorMonday, date);
       const weekOffset = Math.floor(daysFromAnchor / 7);
       const memberIdx = mod(weekOffset, active.length);

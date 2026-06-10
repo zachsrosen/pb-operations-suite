@@ -23,6 +23,7 @@ type PatchBody = {
   timezone?: string;
   startDate?: string;
   horizonMonths?: number;
+  coversSundays?: boolean;
   isActive?: boolean;
 };
 
@@ -43,6 +44,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       timezone: body.timezone,
       startDate: body.startDate,
       horizonMonths: body.horizonMonths,
+      coversSundays: body.coversSundays,
       isActive: body.isActive,
     },
   });

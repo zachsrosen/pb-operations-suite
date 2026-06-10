@@ -248,49 +248,96 @@ describe("rankReplacements", () => {
   });
 });
 
-describe("weekly rotation (Sun-Sat weeks)", () => {
+describe("weekly rotation (Mon-Sun weeks)", () => {
   const WEEKLY_OPTS = (from: string, to: string) => ({
-    startDate: "2026-05-03", // Sunday
+    startDate: "2026-05-04", // Monday
     fromDate: from,
     toDate: to,
     members: CA_MEMBERS,
     rotationUnit: "weekly" as const,
   });
 
-  it("assigns all 7 days of a Sun-Sat week to the same member", () => {
-    const out = generateAssignments(WEEKLY_OPTS("2026-05-03", "2026-05-09"));
+  it("assigns all 7 days of a Mon-Sun week to the same member", () => {
+    const out = generateAssignments(WEEKLY_OPTS("2026-05-04", "2026-05-10"));
     const unique = new Set(out.map((a) => a.crewMemberId));
     expect(unique.size).toBe(1);
     expect(out[0].crewMemberId).toBe("nick");
     expect(out).toHaveLength(7);
   });
 
-  it("cycles to the next member at Sunday boundary", () => {
-    const out = generateAssignments(WEEKLY_OPTS("2026-05-03", "2026-05-16"));
-    // Week 1 (May 3-9) = nick, Week 2 (May 10-16) = lucas.
-    expect(out[0].crewMemberId).toBe("nick");  // Sun
-    expect(out[6].crewMemberId).toBe("nick");  // Sat
-    expect(out[7].crewMemberId).toBe("lucas"); // next Sun
-    expect(out[13].crewMemberId).toBe("lucas");
+  it("cycles to the next member at Monday boundary", () => {
+    const out = generateAssignments(WEEKLY_OPTS("2026-05-04", "2026-05-17"));
+    // Week 1 (May 4-10) = nick, Week 2 (May 11-17) = lucas.
+    expect(out[0].crewMemberId).toBe("nick");  // Mon
+    expect(out[6].crewMemberId).toBe("nick");  // Sun
+    expect(out[7].crewMemberId).toBe("lucas"); // next Mon
+    expect(out[13].crewMemberId).toBe("lucas"); // Sun
   });
 
   it("wraps through 4-member pool in 4 weeks and restarts", () => {
-    const out = generateAssignments(WEEKLY_OPTS("2026-05-03", "2026-06-06"));
-    // 5 Sun-Sat weeks: nick, lucas, charlie, ruben, nick.
-    const bySunday = [0, 7, 14, 21, 28].map((i) => out[i].crewMemberId);
-    expect(bySunday).toEqual(["nick", "lucas", "charlie", "ruben", "nick"]);
+    const out = generateAssignments(WEEKLY_OPTS("2026-05-04", "2026-06-07"));
+    // 5 Mon-Sun weeks: nick, lucas, charlie, ruben, nick.
+    const byMonday = [0, 7, 14, 21, 28].map((i) => out[i].crewMemberId);
+    expect(byMonday).toEqual(["nick", "lucas", "charlie", "ruben", "nick"]);
   });
 
-  it("aligns to Sunday even when pool startDate is mid-week", () => {
+  it("aligns to Monday even when pool startDate is mid-week", () => {
     const out = generateAssignments({
       startDate: "2026-05-06", // Wednesday
-      fromDate: "2026-05-03",  // Sunday of same week
-      toDate:   "2026-05-16",
+      fromDate: "2026-05-04",  // Monday of same week
+      toDate:   "2026-05-17",
       members: CA_MEMBERS,
       rotationUnit: "weekly",
     });
-    // anchor Sunday = 2026-05-03. Week 1 = nick, Week 2 = lucas.
+    // anchor Monday = 2026-05-04. Week 1 = nick, Week 2 = lucas.
     expect(out[0].crewMemberId).toBe("nick");
     expect(out[7].crewMemberId).toBe("lucas");
+  });
+});
+
+describe("coversSundays=false (no Sunday on-call)", () => {
+  it("omits the Sunday from a weekly block, keeping Mon-Sat for one member", () => {
+    const out = generateAssignments({
+      startDate: "2026-05-04", // Monday
+      fromDate: "2026-05-04",
+      toDate: "2026-05-10", // Sunday
+      members: CA_MEMBERS,
+      rotationUnit: "weekly",
+      coversSundays: false,
+    });
+    // Mon-Sat only: 6 days, all nick, no row for the Sunday (May 10).
+    expect(out).toHaveLength(6);
+    expect(new Set(out.map((a) => a.crewMemberId)).size).toBe(1);
+    expect(out.map((a) => a.date)).not.toContain("2026-05-10");
+    expect(out[out.length - 1].date).toBe("2026-05-09"); // Sat
+  });
+
+  it("skips every Sunday across multiple weeks but keeps the Monday rotation", () => {
+    const out = generateAssignments({
+      startDate: "2026-05-04",
+      fromDate: "2026-05-04",
+      toDate: "2026-05-17",
+      members: CA_MEMBERS,
+      rotationUnit: "weekly",
+      coversSundays: false,
+    });
+    // No Sundays at all (May 10, May 17 dropped).
+    expect(out.some((a) => isWeekend(a.date) && dayOfWeek(a.date) === 0)).toBe(false);
+    // Still 12 days (two 6-day Mon-Sat blocks) and the Monday boundary advances.
+    expect(out).toHaveLength(12);
+    expect(out.find((a) => a.date === "2026-05-04")?.crewMemberId).toBe("nick");
+    expect(out.find((a) => a.date === "2026-05-11")?.crewMemberId).toBe("lucas");
+  });
+
+  it("defaults to covering Sundays when the flag is omitted", () => {
+    const out = generateAssignments({
+      startDate: "2026-05-04",
+      fromDate: "2026-05-04",
+      toDate: "2026-05-10",
+      members: CA_MEMBERS,
+      rotationUnit: "weekly",
+    });
+    expect(out).toHaveLength(7);
+    expect(out.map((a) => a.date)).toContain("2026-05-10");
   });
 });
