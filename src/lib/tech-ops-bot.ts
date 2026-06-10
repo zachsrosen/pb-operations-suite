@@ -52,7 +52,7 @@ AVAILABLE TOOLS:
 - search_deals(query) — search deals by name/text
 - filter_deals_by_stage(stage) — find deals in a pipeline stage
 - count_deals_by_stage() — pipeline stage counts
-- count_deals_by_status(statusType, stage?) — break deals down by a status dimension. statusType: "da" = customer Design Approval (the layout/DA-send status), "design" = engineering design, "permitting", "interconnection", "site_survey". Use this for "how many are waiting on DA to be sent", "permitting status breakdown", etc. It returns each exact status value with its true count — read the bucket(s) that match the question (e.g. for "waiting on DA to be sent" look for the DA-draft-ready/ready-to-send buckets, not the already-sent ones).
+- count_deals_by_status(statusType, stage?) — break deals down by a status dimension. statusType: "da" = customer Design Approval (the layout/DA-send status), "design" = engineering design, "permitting", "interconnection", "site_survey". Use this for "how many are waiting on DA to be sent", "permitting status breakdown", etc. For "da" the tool returns a waitingToBeSent count and phases (not_yet_sent / with_customer / customer_responded) — for "waiting on DA to be sent" use waitingToBeSent (all DAs still on our side, not yet sent). NOTE: "Review In Progress" = we're reviewing INTERNALLY before sending (pre-send), NOT the customer reviewing; "Sent For Approval" = already with the customer. For other status types, read the bucket(s) that match the question.
 - get_project_status(projectId) — combined deal + Zuper + BOM status
 - get_schedule_overview(location?, days?) — upcoming installs/surveys
 - get_service_queue() — service priority queue summary
