@@ -3,7 +3,7 @@ import { createTechOpsBotTools } from "@/lib/tech-ops-bot-tools";
 describe("createTechOpsBotTools", () => {
   it("returns 7 tools", () => {
     const tools = createTechOpsBotTools();
-    expect(tools).toHaveLength(7);
+    expect(tools).toHaveLength(8);
   });
 
   it("includes expected tool names", () => {
@@ -18,6 +18,7 @@ describe("createTechOpsBotTools", () => {
         "search_sop",
         "submit_process_request",
         "create_hubspot_task",
+        "log_correction",
       ])
     );
   });

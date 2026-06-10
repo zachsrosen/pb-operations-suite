@@ -35,6 +35,7 @@ RULES:
 - Two exceptions, both ONLY when someone EXPLICITLY asks:
   - File a "process request" with submit_process_request — a request to add, change, or fix a process, workflow, or tool. Never file one on your own initiative; read the title back so they know what was logged.
   - Create a HubSpot task — when someone explicitly asks you to make/create a task, you MUST actually call the create_hubspot_task tool. This is critical: NEVER say "done" or claim a task was created unless that tool ran and returned a taskId. If you didn't call the tool, no task exists — do not fabricate it. When they reference a project by PROJ number, customer name, OR address, pass that string as projectId so the tool can find and attach the right deal — do NOT skip attachment by claiming you lack info; let the tool do the search (it will ask you to pick if there are several). You can CREATE tasks only (never edit, complete, or delete). After the tool returns, read back exactly what it reported — subject, due date, and the deal NAME it attached to — so they can confirm it landed on the right record.
+- If someone tells you a factual or process answer you gave was WRONG and gives the right info, call log_correction (topic, whatIGotWrong, correctInfo). This captures it for the team to make permanent. Be gracious — thank them. You can't rewrite your own knowledge instantly, but say it's logged and you'll go with their correction for the rest of this conversation. Don't log opinions or one-off preferences — only genuine factual/process corrections.
 - If you're not confident in an answer, use the escalate tool to flag it for Zach to follow up on
 - When you escalate, tell the person it's been flagged for Zach
 - For process/how-to questions, use the search_sop tool first — the SOP guides have most standard procedures documented
@@ -60,6 +61,7 @@ AVAILABLE TOOLS:
 - search_sop(query) — search SOP guides for process docs
 - submit_process_request(title, description) — file a process/tool request when someone explicitly asks
 - create_hubspot_task(subject, body?, projectId?, dueInDays?) — create a HubSpot task (assigned to the requester) when someone explicitly asks
+- log_correction(topic, whatIGotWrong, correctInfo) — log a correction when someone tells you a factual/process answer was wrong
 
 KEY CONTEXT:
 - Projects are identified by PROJ-XXXX numbers in deal names
@@ -444,6 +446,46 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               message: "Something went wrong creating that task.",
             });
           }
+        },
+      };
+    }
+    if (tool.name === "log_correction") {
+      return {
+        ...tool,
+        run: async (input: {
+          topic: string;
+          whatIGotWrong: string;
+          correctInfo: string;
+        }) => {
+          if (!prisma) {
+            return JSON.stringify({
+              logged: false,
+              message: "Couldn't log that right now — the database is unavailable.",
+            });
+          }
+          // Reuse the escalation review queue; a [CORRECTION] marker keeps it
+          // distinct from "couldn't answer" escalations so the team can fold
+          // confirmed corrections into the tools / SOPs / prompt.
+          await prisma.techOpsBotEscalation.create({
+            data: {
+              senderEmail,
+              senderName,
+              question: `[CORRECTION] ${input.topic}`.slice(0, 300),
+              botContext:
+                `WRONG: ${input.whatIGotWrong}\nCORRECT: ${input.correctInfo}`.slice(
+                  0,
+                  2000
+                ),
+              spaceId: spaceName,
+              threadId: threadName,
+              status: "PENDING",
+            },
+          });
+          return JSON.stringify({
+            logged: true,
+            message:
+              "Logged the correction for the team to review and make permanent. I'll go with your correction for the rest of this conversation.",
+          });
         },
       };
     }
