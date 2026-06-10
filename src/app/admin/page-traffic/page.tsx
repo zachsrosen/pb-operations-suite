@@ -6,6 +6,7 @@ import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 import { AdminFilterBar, DateRangeChip } from "@/components/admin-shell/AdminFilterBar";
 import { AdminTable, type AdminTableColumn } from "@/components/admin-shell/AdminTable";
 import { AdminError } from "@/components/admin-shell/AdminError";
+import { AdminLoading } from "@/components/admin-shell/AdminLoading";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import type { PageTrafficResult, PageRow, UserRow, TrafficWindow } from "@/lib/page-traffic";
 
@@ -87,6 +88,12 @@ export default function PageTrafficPage() {
     { key: "avgDwellMs", label: "Avg dwell", align: "right", render: (r) => fmtDwell(r.avgDwellMs) },
   ], []);
 
+  // Dead-weight table shows path/suite/views — derive by key (robust to column reordering).
+  const deadColumns = useMemo(
+    () => pageColumns.filter((c) => ["path", "suite", "views"].includes(c.key)),
+    [pageColumns],
+  );
+
   const maxSuiteViews = Math.max(1, ...(data?.suites.map((s) => s.views) ?? [1]));
 
   return (
@@ -108,6 +115,8 @@ export default function PageTrafficPage() {
 
       {error ? (
         <AdminError error={error} onRetry={fetchData} />
+      ) : loading && !data ? (
+        <AdminLoading label="Loading page traffic…" />
       ) : (
         <div className="space-y-6 px-4 pb-8">
           {/* Summary tiles */}
@@ -160,7 +169,7 @@ export default function PageTrafficPage() {
               caption="Pages with little or no traffic"
               rows={(data?.deadPages ?? []).map((d) => ({ ...d, uniqueUsers: 0, clicks: 0, avgDwellMs: null }))}
               rowKey={(r) => r.path}
-              columns={[pageColumns[0], pageColumns[1], pageColumns[2]]}
+              columns={deadColumns}
               loading={loading && !data}
             />
           </section>
