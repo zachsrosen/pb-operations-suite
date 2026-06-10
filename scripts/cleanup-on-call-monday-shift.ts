@@ -49,7 +49,8 @@ dotenv.config({ path: ".env" });
 
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
-import { generateAssignments, dayOfWeek, addDays } from "../src/lib/on-call-rotation";
+import { dayOfWeek } from "../src/lib/on-call-rotation";
+import { planPoolCleanup } from "../src/lib/on-call-cleanup";
 import { upsertAssignmentEvent, deleteAssignmentEvent } from "../src/lib/on-call-google-calendar";
 
 const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
@@ -74,14 +75,6 @@ function todayInTz(tz: string): string {
   return `${y}-${m}-${d}`;
 }
 
-// Phase-preserving Monday anchor: the Monday immediately after the Sunday that
-// the pool's old Sun-Sat rotation was anchored on. Aligning the new Mon-Sun
-// rotation to this Monday keeps every existing Mon-Sat owner unchanged.
-function phasePreservingMonday(startDate: string): string {
-  const sundayAnchor = addDays(startDate, -dayOfWeek(startDate)); // Sunday of startDate's week
-  return addDays(sundayAnchor, 1); // the following Monday
-}
-
 async function main() {
   console.warn(APPLY ? "Mode: APPLY (writing changes)\n" : "Mode: DRY RUN (no changes) — pass --apply to write\n");
 
@@ -93,7 +86,6 @@ async function main() {
   for (const pool of pools) {
     const dropSundays = NO_SUNDAY_POOLS.has(pool.name.toLowerCase());
     const coversSundays = dropSundays ? false : pool.coversSundays;
-    const newStartDate = phasePreservingMonday(pool.startDate);
     const today = todayInTz(pool.timezone);
 
     const members = await prisma.onCallPoolMember.findMany({
@@ -106,17 +98,33 @@ async function main() {
       isActive: m.isActive,
     }));
 
+    // Only existing *generated* rows from today forward are in scope.
+    const existing = await prisma.onCallAssignment.findMany({
+      where: { poolId: pool.id, source: "generated", date: { gte: today } },
+      include: { crewMember: { select: { name: true, email: true } } },
+      orderBy: { date: "asc" },
+    });
+
+    const plan = planPoolCleanup({
+      startDate: pool.startDate,
+      rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
+      members: rotationMembers,
+      coversSundays,
+      existing: existing.map((e) => ({ date: e.date, crewMemberId: e.crewMemberId })),
+    });
+
     console.warn(`\n=== ${pool.name} ===`);
     console.warn(
-      `  startDate ${pool.startDate} → ${newStartDate} (phase-preserving Monday); ` +
+      `  startDate ${pool.startDate} → ${plan.newStartDate} (phase-preserving Monday); ` +
         `coversSundays ${pool.coversSundays} → ${coversSundays}`,
     );
+    console.warn(`  ${existing.length} generated rows from ${today}`);
 
     // Persist config changes (startDate re-anchor + Sunday flag).
-    if (APPLY && (newStartDate !== pool.startDate || coversSundays !== pool.coversSundays)) {
+    if (APPLY && (plan.newStartDate !== pool.startDate || coversSundays !== pool.coversSundays)) {
       await prisma.onCallPool.update({
         where: { id: pool.id },
-        data: { startDate: newStartDate, coversSundays },
+        data: { startDate: plan.newStartDate, coversSundays },
       });
     }
 
@@ -125,27 +133,7 @@ async function main() {
       continue;
     }
 
-    // Only existing *generated* rows from today forward are in scope.
-    const existing = await prisma.onCallAssignment.findMany({
-      where: { poolId: pool.id, source: "generated", date: { gte: today } },
-      include: { crewMember: { select: { name: true, email: true } } },
-      orderBy: { date: "asc" },
-    });
-    console.warn(`  ${existing.length} generated rows from ${today}`);
-    if (existing.length === 0) continue;
-
-    const fromDate = existing[0].date;
-    const toDate = existing[existing.length - 1].date;
-    const generated = generateAssignments({
-      startDate: newStartDate, // re-anchored: preserves Mon-Sat ownership
-      fromDate,
-      toDate,
-      members: rotationMembers,
-      rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
-      coversSundays,
-    });
-    const wantByDate = new Map(generated.map((g) => [g.date, g.crewMemberId]));
-
+    const rowByDate = new Map(existing.map((e) => [e.date, e]));
     const poolForCal = {
       id: pool.id,
       name: pool.name,
@@ -158,59 +146,58 @@ async function main() {
       googleCalendarId: pool.googleCalendarId,
     };
 
-    let poolUpdated = 0;
-    let poolDeleted = 0;
+    // Names for the "to" side of each reassignment (for logging + calendar).
+    const toIds = Array.from(new Set(plan.updates.map((u) => u.to)));
+    const toCm = toIds.length
+      ? await prisma.crewMember.findMany({ where: { id: { in: toIds } }, select: { id: true, name: true, email: true } })
+      : [];
+    const cmById = new Map(toCm.map((c) => [c.id, c]));
 
-    for (const row of existing) {
-      const want = wantByDate.get(row.date);
+    for (const del of plan.deletes) {
+      const row = rowByDate.get(del.date);
+      if (!row) continue;
+      const why = !coversSundays && dayOfWeek(del.date) === 0 ? "Sunday dropped" : "no longer in rotation";
+      console.warn(`  - DELETE ${del.date} (${row.crewMember.name}) [${why}]`);
+      if (APPLY) {
+        await prisma.onCallAssignment.delete({ where: { id: row.id } });
+        // Calendar sync is best-effort — never let it abort the DB cleanup.
+        try {
+          await deleteAssignmentEvent(poolForCal, row.id);
+        } catch (err) {
+          console.warn(`    [gcal] failed to delete event for ${del.date}:`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
 
-      // No generated assignment for this date → it's a dropped Sunday. Delete it.
-      if (want === undefined) {
-        const why = !coversSundays && dayOfWeek(row.date) === 0 ? "Sunday dropped" : "no longer in rotation";
-        console.warn(`  - DELETE ${row.date} (${row.crewMember.name}) [${why}]`);
-        poolDeleted++;
-        if (APPLY) {
-          await prisma.onCallAssignment.delete({ where: { id: row.id } });
+    for (const upd of plan.updates) {
+      const row = rowByDate.get(upd.date);
+      if (!row) continue;
+      const newCm = cmById.get(upd.to);
+      const note = dayOfWeek(upd.date) === 0 ? "Sunday → prior week's owner" : "boundary shift";
+      console.warn(`  ~ UPDATE ${upd.date} ${row.crewMember.name} → ${newCm?.name ?? upd.to} [${note}]`);
+      if (APPLY) {
+        await prisma.onCallAssignment.update({ where: { id: row.id }, data: { crewMemberId: upd.to } });
+        if (newCm) {
           // Calendar sync is best-effort — never let it abort the DB cleanup.
           try {
-            await deleteAssignmentEvent(poolForCal, row.id);
+            await upsertAssignmentEvent(poolForCal, {
+              id: row.id,
+              date: upd.date,
+              poolId: pool.id,
+              crewMember: { name: newCm.name, email: newCm.email },
+            });
           } catch (err) {
-            console.warn(`    [gcal] failed to delete event for ${row.date}:`, err instanceof Error ? err.message : err);
-          }
-        }
-        continue;
-      }
-
-      // Assignee changed under the Mon-Sun boundary → update in place.
-      // With phase-preserving re-anchor this should only ever be a Sunday.
-      if (want !== row.crewMemberId) {
-        const newCm = await prisma.crewMember.findUnique({ where: { id: want } });
-        const dow = dayOfWeek(row.date);
-        const note = dow === 0 ? "Sunday → prior week's owner" : "boundary shift";
-        console.warn(`  ~ UPDATE ${row.date} ${row.crewMember.name} → ${newCm?.name ?? want} [${note}]`);
-        poolUpdated++;
-        if (APPLY) {
-          await prisma.onCallAssignment.update({ where: { id: row.id }, data: { crewMemberId: want } });
-          if (newCm) {
-            // Calendar sync is best-effort — never let it abort the DB cleanup.
-            try {
-              await upsertAssignmentEvent(poolForCal, {
-                id: row.id,
-                date: row.date,
-                poolId: pool.id,
-                crewMember: { name: newCm.name, email: newCm.email },
-              });
-            } catch (err) {
-              console.warn(`    [gcal] failed to update event for ${row.date}:`, err instanceof Error ? err.message : err);
-            }
+            console.warn(`    [gcal] failed to update event for ${upd.date}:`, err instanceof Error ? err.message : err);
           }
         }
       }
     }
 
-    console.warn(`  → ${poolUpdated} reassigned, ${poolDeleted} deleted (Mon-Sat owners unchanged)`);
-    totalUpdated += poolUpdated;
-    totalDeleted += poolDeleted;
+    console.warn(
+      `  → ${plan.updates.length} reassigned, ${plan.deletes.length} deleted, ${plan.unchanged} unchanged (Mon-Sat owners untouched)`,
+    );
+    totalUpdated += plan.updates.length;
+    totalDeleted += plan.deletes.length;
   }
 
   console.warn(
