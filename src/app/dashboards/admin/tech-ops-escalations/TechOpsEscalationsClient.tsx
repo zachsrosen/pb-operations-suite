@@ -98,6 +98,30 @@ export default function TechOpsEscalationsClient({
     setActionError(null);
   };
 
+  const handleApplyToPlaybook = useCallback(async () => {
+    if (!detail) return;
+    setActionInFlight(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/admin/tech-ops-bot/escalations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: detail.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || "Couldn't apply to playbook");
+        return;
+      }
+      router.refresh();
+      closePanel();
+    } catch {
+      setActionError("Network error");
+    } finally {
+      setActionInFlight(false);
+    }
+  }, [detail, router]);
+
   const handleAction = useCallback(
     async (status: "RESOLVED" | "DISMISSED") => {
       if (!detail) return;
@@ -339,6 +363,15 @@ export default function TechOpsEscalationsClient({
                     />
                   </div>
 
+                  {isCorrectionRow(detail) && (
+                    <p className="text-xs text-muted">
+                      <span className="text-purple-300 font-medium">Apply to playbook</span>{" "}
+                      adds this to the bot&apos;s knowledge so it respects the
+                      correction immediately — best for facts, terms, and rules.
+                      Tool/logic fixes still need a code change.
+                    </p>
+                  )}
+
                   <div className="flex justify-end gap-2 pt-2">
                     <button
                       type="button"
@@ -348,14 +381,25 @@ export default function TechOpsEscalationsClient({
                     >
                       {actionInFlight ? "..." : "Dismiss"}
                     </button>
-                    <button
-                      type="button"
-                      disabled={actionInFlight}
-                      onClick={() => handleAction("RESOLVED")}
-                      className="px-4 py-2 text-sm font-medium rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {actionInFlight ? "..." : "Mark Resolved"}
-                    </button>
+                    {isCorrectionRow(detail) ? (
+                      <button
+                        type="button"
+                        disabled={actionInFlight}
+                        onClick={handleApplyToPlaybook}
+                        className="px-4 py-2 text-sm font-medium rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        {actionInFlight ? "..." : "🎓 Apply to playbook"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={actionInFlight}
+                        onClick={() => handleAction("RESOLVED")}
+                        className="px-4 py-2 text-sm font-medium rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {actionInFlight ? "..." : "Mark Resolved"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
