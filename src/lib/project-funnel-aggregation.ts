@@ -292,7 +292,14 @@ function emptyCohort(month: string): ProjectFunnelCohort {
  *   Project Complete   → all milestones
  */
 function resolveMilestones(p: Project) {
-  const sp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
+  const rawSp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
+  // Cancelled and On Hold sit at the TOP of the priority map, but that does NOT
+  // mean the deal progressed through every milestone — it was cancelled/held
+  // from somewhere mid-pipeline. Their current stage says nothing about how far
+  // they got, so drop the stage-based floor for them and rely purely on the
+  // actual milestone date fields (+ the implied-progression cascade below).
+  const sp =
+    p.stageId === CANCELLED_STAGE_ID || p.stageId === ON_HOLD_STAGE_ID ? 0 : rawSp;
 
   // Stage-based floor: what must be true given the deal's current stage
   const stageSurvey = sp >= 2;
