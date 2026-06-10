@@ -98,6 +98,7 @@ export default function MonthlyActivityPage() {
   const [locations, setLocations] = useState<string[]>([]);
   const [chartMetric, setChartMetric] = useState<keyof ProjectMonthlyActivity>("dasApproved");
   const [chartValueMode, setChartValueMode] = useState<"count" | "revenue">("count");
+  const [heroView, setHeroView] = useState<"cards" | "loc">("cards");
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -186,6 +187,22 @@ export default function MonthlyActivityPage() {
             ))}
           </select>
         </div>
+        <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
+          <button
+            type="button"
+            onClick={() => setHeroView("cards")}
+            className={`px-3 py-1.5 transition-colors ${heroView === "cards" ? "bg-emerald-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            Cards
+          </button>
+          <button
+            type="button"
+            onClick={() => setHeroView("loc")}
+            className={`px-3 py-1.5 transition-colors ${heroView === "loc" ? "bg-emerald-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            By location
+          </button>
+        </div>
       </div>
 
       <p className="text-xs text-muted mb-6 max-w-3xl">
@@ -199,21 +216,25 @@ export default function MonthlyActivityPage() {
       ) : (
         <>
           {/* Window totals */}
-          <div className="grid gap-4 mb-6 grid-cols-2 lg:grid-cols-4">
-            {HERO_KEYS.map((h) => {
-              const count = totals[h.key] || 0;
-              const amount = h.amountKey ? totals[h.amountKey] || 0 : 0;
-              return (
-                <StatCard
-                  key={h.key}
-                  label={h.label}
-                  value={count}
-                  subtitle={h.amountKey && amount > 0 ? formatCurrencyCompact(amount) : null}
-                  color={h.color}
-                />
-              );
-            })}
-          </div>
+          {heroView === "loc" ? (
+            <HeroLocationMatrix activityByLocation={data.activityByLocation} totals={totals} />
+          ) : (
+            <div className="grid gap-4 mb-6 grid-cols-2 lg:grid-cols-4">
+              {HERO_KEYS.map((h) => {
+                const count = totals[h.key] || 0;
+                const amount = h.amountKey ? totals[h.amountKey] || 0 : 0;
+                return (
+                  <StatCard
+                    key={h.key}
+                    label={h.label}
+                    value={count}
+                    subtitle={h.amountKey && amount > 0 ? formatCurrencyCompact(amount) : null}
+                    color={h.color}
+                  />
+                );
+              })}
+            </div>
+          )}
 
           {/* Throughput chart */}
           <ThroughputChart
@@ -229,6 +250,84 @@ export default function MonthlyActivityPage() {
         </>
       )}
     </DashboardShell>
+  );
+}
+
+function sortLocationKeys(keys: string[]): string[] {
+  const order = new Map<string, number>(CANONICAL_LOCATIONS.map((l, i) => [l, i]));
+  return [...keys].sort(
+    (a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b)
+  );
+}
+
+/** Hero "By location" matrix — rows = PB locations, cols = the hero throughput metrics. */
+function HeroLocationMatrix({
+  activityByLocation,
+  totals,
+}: {
+  activityByLocation: ProjectFunnelResponse["activityByLocation"];
+  totals: Totals;
+}) {
+  const locs = sortLocationKeys(Object.keys(activityByLocation));
+  const renderCell = (count: number, amount: number, showAmount: boolean) =>
+    count > 0 ? (
+      <>
+        <div className="font-semibold text-foreground">{count}</div>
+        {showAmount && amount > 0 && <div className="text-muted">{formatCurrencyCompact(amount)}</div>}
+      </>
+    ) : (
+      <span className="text-muted/40">—</span>
+    );
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-3">Throughput by Location</h3>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-t-border">
+            <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Location</th>
+            {HERO_KEYS.map((c) => (
+              <th key={c.key} className="text-center py-2 px-1.5 font-medium text-muted whitespace-nowrap">
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {locs.map((loc, i) => {
+            const row = activityByLocation[loc];
+            return (
+              <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}>
+                <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
+                  {loc}
+                </td>
+                {HERO_KEYS.map((c) => (
+                  <td key={c.key} className="text-center py-2 px-1.5">
+                    {renderCell(
+                      (row[c.key] as number) || 0,
+                      c.amountKey ? (row[c.amountKey] as number) || 0 : 0,
+                      !!c.amountKey
+                    )}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+        {locs.length > 1 && (
+          <tfoot>
+            <tr className="border-t-2 border-t-border font-semibold">
+              <td className="py-2 px-2 text-foreground sticky left-0 bg-surface z-10">Total</td>
+              {HERO_KEYS.map((c) => (
+                <td key={c.key} className="text-center py-2 px-1.5">
+                  {renderCell(totals[c.key] || 0, c.amountKey ? totals[c.amountKey] || 0 : 0, !!c.amountKey)}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
   );
 }
 

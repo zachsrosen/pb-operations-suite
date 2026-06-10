@@ -32,10 +32,15 @@ export async function GET(request: NextRequest) {
         ? { start: startParam, end: endParam }
         : undefined;
 
+    const pms = (searchParams.get("pms") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const owners = (searchParams.get("owners") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const filters = pms.length > 0 || owners.length > 0 ? { projectManagers: pms, dealOwners: owners } : undefined;
+    const staffKey = filters ? `pm:${[...pms].sort().join("|")};own:${[...owners].sort().join("|")}` : "all";
+
     const cacheKey = CACHE_KEYS.PROJECT_FUNNEL(
       months,
       cacheLocation,
-      range ? `${range.start}_${range.end}` : "rolling"
+      `${range ? `${range.start}_${range.end}` : "rolling"}:${staffKey}`
     );
 
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
@@ -46,7 +51,8 @@ export async function GET(request: NextRequest) {
           projects,
           months,
           locations.length > 0 ? locations : undefined,
-          range
+          range,
+          filters
         );
       }
     );

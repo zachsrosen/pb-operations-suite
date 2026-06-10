@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
@@ -83,9 +84,35 @@ const MEDIAN_KEYS: Array<{
   { key: "inspectionToPto" },
 ];
 
-export default function ProjectPipelineFunnelPage() {
-  const [timeframe, setTimeframe] = useState("6");
-  const [locations, setLocations] = useState<string[]>([]);
+function ProjectPipelineFunnelInner() {
+  // The URL query string is the source of truth for filters, so views are
+  // shareable and reload-safe.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const timeframe = searchParams.get("tf") || "6";
+  const locations = useMemo(() => (searchParams.get("loc") || "").split(",").filter(Boolean), [searchParams]);
+  const pms = useMemo(() => (searchParams.get("pm") || "").split(",").filter(Boolean), [searchParams]);
+  const owners = useMemo(() => (searchParams.get("own") || "").split(",").filter(Boolean), [searchParams]);
+
+  const setParam = useCallback(
+    (key: string, value: string | string[]) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const v = Array.isArray(value) ? value.join(",") : value;
+      if (v) params.set(key, v);
+      else params.delete(key);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [searchParams, router, pathname]
+  );
+  const setTimeframe = useCallback((v: string) => setParam("tf", v === "6" ? "" : v), [setParam]);
+  const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
+  const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
+  const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
+  const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
+  const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -95,10 +122,12 @@ export default function ProjectPipelineFunnelPage() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe),
+    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe, pms, owners),
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
+      if (pms.length > 0) params.set("pms", pms.join(","));
+      if (owners.length > 0) params.set("owners", owners.join(","));
       // Calendar timeframes (This Year, Last Year, …) pass exact month bounds so
       // the server clamps to real calendar boundaries instead of N-months-back.
       const range = calendarMonthRange(timeframe);
@@ -113,6 +142,15 @@ export default function ProjectPipelineFunnelPage() {
     },
     refetchInterval: 5 * 60 * 1000,
   });
+
+  const pmOptions = useMemo(
+    () => (data?.filterOptions?.projectManagers ?? []).map((v) => ({ value: v, label: v })),
+    [data]
+  );
+  const ownerOptions = useMemo(
+    () => (data?.filterOptions?.dealOwners ?? []).map((v) => ({ value: v, label: v })),
+    [data]
+  );
 
   useSSE(() => refetch(), { cacheKeyFilter: "funnel" });
 
@@ -147,6 +185,22 @@ export default function ProjectPipelineFunnelPage() {
           placeholder="All Locations"
           accentColor="cyan"
         />
+        <MultiSelectFilter
+          label="PM"
+          options={pmOptions}
+          selected={pms}
+          onChange={setPms}
+          placeholder="All PMs"
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Owner"
+          options={ownerOptions}
+          selected={owners}
+          onChange={setOwners}
+          placeholder="All Owners"
+          accentColor="cyan"
+        />
         <div className="flex items-center gap-2">
           <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
           <select
@@ -162,18 +216,40 @@ export default function ProjectPipelineFunnelPage() {
             ))}
           </select>
         </div>
+        <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
+          <button
+            type="button"
+            onClick={() => setHeroView("cards")}
+            className={`px-3 py-1.5 transition-colors ${heroView === "cards" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            Cards
+          </button>
+          <button
+            type="button"
+            onClick={() => setHeroView("loc")}
+            className={`px-3 py-1.5 transition-colors ${heroView === "loc" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+          >
+            By location
+          </button>
+        </div>
       </div>
 
       {isLoading || !s ? (
         <LoadingSpinner />
       ) : (
         <>
-          {/* Pre-construction: Sales → DA Sent (4) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 4)} />
-          {/* Design & Permitting: DA Approved → Permits Issued (4) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(4, 8)} />
-          {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
-          <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} />
+          {heroView === "loc" ? (
+            <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} />
+          ) : (
+            <>
+              {/* Pre-construction: Sales → DA Sent (4) */}
+              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
+              {/* Design & Permitting: DA Approved → Permits Issued (4) */}
+              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} />
+              {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
+              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(8)} />
+            </>
+          )}
 
           {/* Backlog */}
           <BacklogSection summary={s} drillDown={data.drillDown} />
@@ -209,9 +285,11 @@ function total(d: ProjectFunnelStageData) {
 
 function HeroCards({
   summary,
+  previousSummary,
   stages,
 }: {
   summary: ProjectFunnelResponse["summary"];
+  previousSummary?: ProjectFunnelResponse["previousSummary"];
   stages: StageConfig[];
 }) {
   return (
@@ -232,6 +310,11 @@ function HeroCards({
           ? `${formatCurrencyCompact(d.amount + d.cancelledAmount)}${cancelNote}`
           : `${formatCurrencyCompact(d.amount + d.cancelledAmount)} · ${convPct}% conv.${cancelNote}`;
 
+        // Trend vs the prior equal-length period (total reaching this stage).
+        const trend = previousSummary
+          ? { delta: stageTotal - total(previousSummary[stage.key]), label: "vs prior" }
+          : null;
+
         return (
           <StatCard
             key={stage.key}
@@ -239,9 +322,84 @@ function HeroCards({
             value={stageTotal}
             subtitle={subtitle}
             color={stage.color.replace("bg-", "").replace("-500", "") as "orange"}
+            trend={trend}
           />
         );
       })}
+    </div>
+  );
+}
+
+function sortLocationKeys(keys: string[]): string[] {
+  const order = new Map<string, number>(CANONICAL_LOCATIONS.map((l, i) => [l, i]));
+  return [...keys].sort(
+    (a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b)
+  );
+}
+
+/** Hero "By location" matrix — rows = PB locations, cols = funnel stages. */
+function HeroLocationMatrix({
+  summaryByLocation,
+  totalSummary,
+}: {
+  summaryByLocation: ProjectFunnelResponse["summaryByLocation"];
+  totalSummary: ProjectFunnelResponse["summary"];
+}) {
+  const locs = sortLocationKeys(Object.keys(summaryByLocation));
+
+  const cell = (d: ProjectFunnelStageData) => {
+    const t = total(d);
+    return t > 0 ? (
+      <>
+        <div className="font-semibold">{t}</div>
+        <div className="text-muted">{formatCurrencyCompact(d.amount + d.cancelledAmount)}</div>
+      </>
+    ) : (
+      <span className="text-muted/40">—</span>
+    );
+  };
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-3">Stage Counts by Location</h3>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-t-border">
+            <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Location</th>
+            {STAGE_CONFIG.map((s) => (
+              <th key={s.key} className={`text-center py-2 px-1.5 font-medium ${s.textColor} whitespace-nowrap`}>
+                {s.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {locs.map((loc, i) => (
+            <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}>
+              <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
+                {loc}
+              </td>
+              {STAGE_CONFIG.map((stage) => (
+                <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
+                  {cell(summaryByLocation[loc][stage.key])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        {locs.length > 1 && (
+          <tfoot>
+            <tr className="border-t-2 border-t-border font-semibold">
+              <td className="py-2 px-2 text-foreground sticky left-0 bg-surface z-10">Total</td>
+              {STAGE_CONFIG.map((stage) => (
+                <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
+                  {cell(totalSummary[stage.key])}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
+      </table>
     </div>
   );
 }
@@ -864,5 +1022,14 @@ function StageDistribution({
         })}
       </div>
     </div>
+  );
+}
+
+// useSearchParams requires a Suspense boundary.
+export default function ProjectPipelineFunnelPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ProjectPipelineFunnelInner />
+    </Suspense>
   );
 }

@@ -11,6 +11,8 @@ interface StatCardProps {
   subtitle?: string | null;
   color: string;
   href?: string;
+  /** Optional trend vs a prior period. delta>0 renders green ▲, <0 red ▼, 0 muted. */
+  trend?: { delta: number; label?: string } | null;
 }
 
 const ACCENT_CLASSES: Record<string, string> = {
@@ -32,6 +34,7 @@ export const StatCard = memo(function StatCard({
   subtitle,
   color,
   href,
+  trend,
 }: StatCardProps) {
   const content = (
     <>
@@ -45,6 +48,15 @@ export const StatCard = memo(function StatCard({
       <div className="text-sm text-muted">{label}</div>
       {subtitle && (
         <div className="text-xs text-muted mt-0.5">{subtitle}</div>
+      )}
+      {trend && (
+        <div
+          className={`text-xs mt-0.5 font-medium ${trend.delta > 0 ? "text-green-400" : trend.delta < 0 ? "text-red-400" : "text-muted"}`}
+        >
+          {trend.delta > 0 ? "▲" : trend.delta < 0 ? "▼" : "—"} {trend.delta > 0 ? "+" : ""}
+          {trend.delta}
+          {trend.label ? ` ${trend.label}` : ""}
+        </div>
       )}
     </>
   );
