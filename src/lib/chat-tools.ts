@@ -555,6 +555,50 @@ export function createReadOnlyChatTools() {
         Object.entries(counts).sort((a, b) => b[1] - a[1])
       );
 
+      // DA (layout) lifecycle phases. "Review In Progress" = INTERNAL review
+      // before the DA is sent — pre-send, NOT the customer reviewing. Keyed by
+      // display label (what `counts` uses). Confirmed taxonomy w/ Zach 2026-06.
+      const DA_PHASE: Record<string, "not_yet_sent" | "with_customer" | "customer_responded"> = {
+        "Review In Progress": "not_yet_sent",
+        "Draft Complete": "not_yet_sent",
+        "DA Revision Ready To Send": "not_yet_sent",
+        "In Revision": "not_yet_sent",
+        "Pending Review": "not_yet_sent",
+        "Pending Sales Changes": "not_yet_sent",
+        "Pending Ops Changes": "not_yet_sent",
+        "Pending Design Changes": "not_yet_sent",
+        "Pending Resurvey": "not_yet_sent",
+        "Needs Clarification": "not_yet_sent",
+        "Sent For Approval": "with_customer",
+        "Resent For Approval": "with_customer",
+        "Design Approved": "customer_responded",
+        "Design Rejected": "customer_responded",
+      };
+
+      if (input.statusType === "da") {
+        const phases = {
+          not_yet_sent: { total: 0, statuses: {} as Record<string, number> },
+          with_customer: { total: 0, statuses: {} as Record<string, number> },
+          customer_responded: { total: 0, statuses: {} as Record<string, number> },
+          unclassified: { total: 0, statuses: {} as Record<string, number> },
+        };
+        for (const [label, n] of Object.entries(counts)) {
+          const phase = DA_PHASE[label] ?? "unclassified";
+          phases[phase].total += n;
+          phases[phase].statuses[label] = n;
+        }
+        return JSON.stringify({
+          statusType: "da",
+          stage: input.stage ?? "all stages",
+          totalDealsConsidered: projects.length,
+          dealsWithThisStatus,
+          waitingToBeSent: phases.not_yet_sent.total, // = all pre-send (still on us)
+          phases,
+          counts: sorted,
+          note: "DA = customer Design Approval (layout_status). 'Review In Progress' means we're reviewing INTERNALLY before sending — it is PRE-SEND, not the customer reviewing. 'Waiting on DA to be sent' = waitingToBeSent (phases.not_yet_sent: everything not yet with the customer). 'with_customer' = already sent.",
+        });
+      }
+
       return JSON.stringify({
         statusType: input.statusType,
         stage: input.stage ?? "all stages",
