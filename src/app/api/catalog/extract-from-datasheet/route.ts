@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { CLAUDE_MODELS } from "@/lib/anthropic";
 import { FORM_CATEGORIES, CATEGORY_CONFIGS, type FieldDef } from "@/lib/catalog-fields";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
   try {
     const client = new Anthropic({ apiKey: anthropicKey });
     const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: CLAUDE_MODELS.sonnet,
       max_tokens: 1024,
       tools: [tool],
       tool_choice: { type: "tool", name: "extract_product_info" },
