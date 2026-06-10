@@ -278,7 +278,9 @@ export function createChatTools(context: ChatToolContext) {
   const filterDealsByStage = betaZodTool({
     name: "filter_deals_by_stage",
     description:
-      "Find deals in a specific pipeline stage by stage display name, returning up to 20 matches",
+      "List deals in a specific pipeline stage. Returns the TRUE total count for the " +
+      "stage plus a sample of up to 20 deals. For 'how many' questions, use the `total` " +
+      "field — never the number of deals in the sample.",
     inputSchema: z.object({
       stage: z.string().describe("Stage display name, e.g. 'Construction'"),
     }),
@@ -326,9 +328,17 @@ export function createChatTools(context: ChatToolContext) {
         pb_location: deal.properties?.pb_location ?? "",
       }));
 
+      const total = response.total ?? deals.length;
       return JSON.stringify({
         stage: stageName,
-        count: deals.length,
+        total, // true number of deals in this stage
+        returned: deals.length, // how many are in the sample below
+        truncated: total > deals.length,
+        ...(total > deals.length
+          ? {
+              note: `Showing ${deals.length} of ${total}. This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
+            }
+          : {}),
         deals,
       });
     },
@@ -411,7 +421,10 @@ export function createReadOnlyChatTools() {
 
   const filterDealsByStage = betaZodTool({
     name: "filter_deals_by_stage",
-    description: "Find deals in a specific pipeline stage by stage display name, returning up to 20 matches",
+    description:
+      "List deals in a specific pipeline stage. Returns the TRUE total count for the " +
+      "stage plus a sample of up to 20 deals. For 'how many' questions, use the `total` " +
+      "field — never the number of deals in the sample.",
     inputSchema: z.object({
       stage: z.string().describe("Stage display name, e.g. 'Construction'"),
     }),
@@ -445,9 +458,18 @@ export function createReadOnlyChatTools() {
         sorts: ["createdate"],
       });
 
+      const total = response.total ?? response.results.length;
+      const returned = response.results.length;
       return JSON.stringify({
         stage: stageName,
-        count: response.results.length,
+        total, // true number of deals in this stage
+        returned, // how many are in the `deals` sample below
+        truncated: total > returned,
+        ...(total > returned
+          ? {
+              note: `Showing ${returned} of ${total}. This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
+            }
+          : {}),
         deals: response.results.map((deal) => ({
           dealId: deal.id,
           dealname: deal.properties?.dealname ?? "",
