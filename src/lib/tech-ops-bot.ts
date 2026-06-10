@@ -357,19 +357,15 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               }
             }
 
-            // Resolve the requester's HubSpot owner id from their email
+            // Resolve the requester's HubSpot owner id. Uses the shared
+            // resolver, which lists all owners (the ?email= filter returns
+            // nothing in our tenant) and falls back to a first.last@domain
+            // heuristic from the display name — handling Google Workspace
+            // aliases like zach@ → zach.rosen@.
             let ownerId: string | undefined;
             try {
-              const ownerRes = await fetch(
-                `https://api.hubapi.com/crm/v3/owners?email=${encodeURIComponent(senderEmail)}`,
-                { headers: { Authorization: `Bearer ${accessToken}` } }
-              );
-              if (ownerRes.ok) {
-                const ownerData = (await ownerRes.json()) as {
-                  results?: Array<{ id: string }>;
-                };
-                ownerId = ownerData.results?.[0]?.id;
-              }
+              const { resolveOwnerIdByEmail } = await import("@/lib/hubspot-tasks");
+              ownerId = (await resolveOwnerIdByEmail(senderEmail, senderName)) ?? undefined;
             } catch {
               // non-fatal — create unassigned
             }
