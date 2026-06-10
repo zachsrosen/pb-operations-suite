@@ -171,7 +171,12 @@ async function main() {
         poolDeleted++;
         if (APPLY) {
           await prisma.onCallAssignment.delete({ where: { id: row.id } });
-          await deleteAssignmentEvent(poolForCal, row.id);
+          // Calendar sync is best-effort — never let it abort the DB cleanup.
+          try {
+            await deleteAssignmentEvent(poolForCal, row.id);
+          } catch (err) {
+            console.warn(`    [gcal] failed to delete event for ${row.date}:`, err instanceof Error ? err.message : err);
+          }
         }
         continue;
       }
@@ -187,12 +192,17 @@ async function main() {
         if (APPLY) {
           await prisma.onCallAssignment.update({ where: { id: row.id }, data: { crewMemberId: want } });
           if (newCm) {
-            await upsertAssignmentEvent(poolForCal, {
-              id: row.id,
-              date: row.date,
-              poolId: pool.id,
-              crewMember: { name: newCm.name, email: newCm.email },
-            });
+            // Calendar sync is best-effort — never let it abort the DB cleanup.
+            try {
+              await upsertAssignmentEvent(poolForCal, {
+                id: row.id,
+                date: row.date,
+                poolId: pool.id,
+                crewMember: { name: newCm.name, email: newCm.email },
+              });
+            } catch (err) {
+              console.warn(`    [gcal] failed to update event for ${row.date}:`, err instanceof Error ? err.message : err);
+            }
           }
         }
       }
