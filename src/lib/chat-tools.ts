@@ -497,5 +497,80 @@ export function createReadOnlyChatTools() {
     },
   });
 
-  return [getDeal, searchDeals, filterDealsByStage, countDealsByStage];
+  const countDealsByStatus = betaZodTool({
+    name: "count_deals_by_status",
+    description:
+      "Break down active project-pipeline deals by a status dimension. Use this for " +
+      "questions like 'how many are waiting on DA to be sent' or 'permitting status " +
+      "breakdown'. statusType: 'da' = the customer-facing Design Approval (layout_status), " +
+      "'design' = engineering design status, 'permitting', 'interconnection', or " +
+      "'site_survey'. Optionally scope to one pipeline stage. Returns the TRUE count for " +
+      "each exact status value — match the user's wording to the right bucket.",
+    inputSchema: z.object({
+      statusType: z.enum([
+        "da",
+        "design",
+        "permitting",
+        "interconnection",
+        "site_survey",
+      ]),
+      stage: z
+        .string()
+        .optional()
+        .describe(
+          "Optional pipeline stage display name to scope to, e.g. 'Design & Engineering'"
+        ),
+    }),
+    run: async (input) => {
+      const { fetchAllProjects } = await import("@/lib/hubspot");
+      const { statusLabel } = await import("@/lib/deal-status-labels");
+
+      const FIELD_MAP: Record<string, [string, string]> = {
+        da: ["layoutStatus", "layout_status"],
+        design: ["designStatus", "design_status"],
+        permitting: ["permittingStatus", "permitting_status"],
+        interconnection: ["interconnectionStatus", "interconnection_status"],
+        site_survey: ["siteSurveyStatus", "site_survey_status"],
+      };
+      const [projField, propKey] = FIELD_MAP[input.statusType];
+
+      let projects = await fetchAllProjects({ activeOnly: true });
+      if (input.stage) {
+        const want = input.stage.trim().toLowerCase();
+        projects = projects.filter(
+          (p) => (p.stage || "").toLowerCase() === want
+        );
+      }
+
+      const counts: Record<string, number> = {};
+      let dealsWithThisStatus = 0;
+      for (const p of projects) {
+        const raw = (p as unknown as Record<string, string | null>)[projField];
+        const label = statusLabel(propKey, raw);
+        if (!label) continue;
+        counts[label] = (counts[label] ?? 0) + 1;
+        dealsWithThisStatus++;
+      }
+      const sorted = Object.fromEntries(
+        Object.entries(counts).sort((a, b) => b[1] - a[1])
+      );
+
+      return JSON.stringify({
+        statusType: input.statusType,
+        stage: input.stage ?? "all stages",
+        totalDealsConsidered: projects.length,
+        dealsWithThisStatus,
+        counts: sorted,
+        note: "Each key is an exact status value with its true count. Match the user's wording to the right bucket(s); if nothing fits, say so rather than guessing.",
+      });
+    },
+  });
+
+  return [
+    getDeal,
+    searchDeals,
+    filterDealsByStage,
+    countDealsByStage,
+    countDealsByStatus,
+  ];
 }
