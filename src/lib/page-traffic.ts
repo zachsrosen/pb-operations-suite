@@ -204,3 +204,105 @@ export function normalizePath(raw: string): string {
   }
   return path;
 }
+
+// ─── TYPES ───────────────────────────────────────────────────────────────────────
+
+export type TrafficWindow = "7d" | "30d" | "90d" | "all";
+
+/** Minimal shape of an ActivityLog row needed for aggregation. */
+export interface TrafficRow {
+  type: string;              // DASHBOARD_VIEWED | PAGE_DWELL | FEATURE_USED
+  entityId: string | null;   // normalized or raw path
+  userId: string | null;
+  userEmail: string | null;
+  userName: string | null;
+  durationMs: number | null; // dwell ms for PAGE_DWELL
+}
+
+export interface PageRow {
+  path: string;
+  suite: string;
+  views: number;
+  uniqueUsers: number;
+  clicks: number;
+  avgDwellMs: number | null;
+}
+export interface SuiteRow { suite: string; views: number; uniqueUsers: number; }
+export interface UserRow { userId: string | null; userEmail: string | null; userName: string | null; views: number; avgDwellMs: number | null; }
+export interface PageTrafficResult {
+  totals: { views: number; uniqueUsers: number; activePages: number; avgDwellMs: number | null };
+  pages: PageRow[];
+  suites: SuiteRow[];
+  deadPages: { path: string; suite: string; views: number }[];
+  users: UserRow[];
+}
+
+// ─── AGGREGATION ─────────────────────────────────────────────────────────────────
+
+const DEAD_VIEW_FLOOR = 1;
+
+export function aggregatePageTraffic(rows: TrafficRow[]): PageTrafficResult {
+  type Acc = { views: number; clicks: number; users: Set<string>; dwellSum: number; dwellN: number };
+  const byPath = new Map<string, Acc>();
+  const globalUsers = new Set<string>();
+  type UAcc = { userEmail: string | null; userName: string | null; views: number; dwellSum: number; dwellN: number };
+  const byUser = new Map<string, UAcc>();
+
+  const acc = (m: Map<string, Acc>, k: string): Acc => {
+    let a = m.get(k); if (!a) { a = { views: 0, clicks: 0, users: new Set(), dwellSum: 0, dwellN: 0 }; m.set(k, a); } return a;
+  };
+
+  for (const r of rows) {
+    const path = normalizePath(r.entityId || "");
+    if (!path) continue;
+    const a = acc(byPath, path);
+    const uid = r.userId || r.userEmail || "";
+    if (r.type === "DASHBOARD_VIEWED") {
+      a.views++; if (uid) { a.users.add(uid); globalUsers.add(uid); }
+      const ukey = r.userId || r.userEmail || "unknown";
+      let u = byUser.get(ukey); if (!u) { u = { userEmail: r.userEmail, userName: r.userName, views: 0, dwellSum: 0, dwellN: 0 }; byUser.set(ukey, u); }
+      u.views++;
+    } else if (r.type === "FEATURE_USED") {
+      a.clicks++;
+    } else if (r.type === "PAGE_DWELL" && typeof r.durationMs === "number") {
+      a.dwellSum += r.durationMs; a.dwellN++;
+      const ukey = r.userId || r.userEmail || "unknown";
+      const u = byUser.get(ukey); if (u) { u.dwellSum += r.durationMs; u.dwellN++; }
+    }
+  }
+
+  const pages: PageRow[] = [...byPath.entries()]
+    .filter(([, a]) => a.views > 0 || a.clicks > 0 || a.dwellN > 0)
+    .map(([path, a]) => ({
+      path, suite: suiteForPath(path), views: a.views, uniqueUsers: a.users.size,
+      clicks: a.clicks, avgDwellMs: a.dwellN ? Math.round(a.dwellSum / a.dwellN) : null,
+    }))
+    .sort((x, y) => y.views - x.views);
+
+  const suiteMap = new Map<string, { views: number; users: Set<string> }>();
+  for (const [path, a] of byPath) {
+    const s = suiteForPath(path);
+    let sa = suiteMap.get(s); if (!sa) { sa = { views: 0, users: new Set() }; suiteMap.set(s, sa); }
+    sa.views += a.views; a.users.forEach((u) => sa!.users.add(u));
+  }
+  const suites: SuiteRow[] = [...suiteMap.entries()]
+    .map(([suite, v]) => ({ suite, views: v.views, uniqueUsers: v.users.size }))
+    .sort((x, y) => y.views - x.views);
+
+  const deadPages = KNOWN_PAGES
+    .filter((p) => (byPath.get(p)?.views ?? 0) < DEAD_VIEW_FLOOR)
+    .map((p) => ({ path: p, suite: suiteForPath(p), views: byPath.get(p)?.views ?? 0 }))
+    .sort((x, y) => x.views - y.views);
+
+  const users: UserRow[] = [...byUser.entries()]
+    .map(([userId, u]) => ({ userId: userId === "unknown" ? null : userId, userEmail: u.userEmail, userName: u.userName, views: u.views, avgDwellMs: u.dwellN ? Math.round(u.dwellSum / u.dwellN) : null }))
+    .sort((x, y) => y.views - x.views);
+
+  const totalDwellRows = rows.filter((r) => r.type === "PAGE_DWELL" && typeof r.durationMs === "number");
+  const avgDwellMs = totalDwellRows.length ? Math.round(totalDwellRows.reduce((s, r) => s + (r.durationMs || 0), 0) / totalDwellRows.length) : null;
+
+  return {
+    totals: { views: pages.reduce((s, p) => s + p.views, 0), uniqueUsers: globalUsers.size, activePages: pages.filter((p) => p.views > 0).length, avgDwellMs },
+    pages, suites, deadPages, users,
+  };
+}
