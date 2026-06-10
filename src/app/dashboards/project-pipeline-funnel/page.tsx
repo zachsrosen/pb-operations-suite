@@ -294,12 +294,17 @@ function HeroCards({
 }) {
   return (
     <div className="grid gap-4 mb-4 grid-cols-2 lg:grid-cols-4">
-      {stages.map((stage, i) => {
+      {stages.map((stage) => {
         const d = summary[stage.key];
         const stageTotal = total(d);
-        const prevKey = i > 0 ? stages[i - 1].key : null;
+        // Conversion chains across the full funnel order, not the local row
+        // slice — so the first card in a row still divides by the stage
+        // immediately above it (e.g. Construction Sched. vs Permits Issued),
+        // not by Sales Closed.
+        const globalIdx = STAGE_CONFIG.findIndex((c) => c.key === stage.key);
+        const prevKey = globalIdx > 0 ? STAGE_CONFIG[globalIdx - 1].key : null;
         // Conversion is computed on active deals only — cancelled excluded.
-        const prevActive = prevKey ? summary[prevKey].count : summary.salesClosed.count;
+        const prevActive = prevKey ? summary[prevKey].count : 0;
         const convPct = prevActive > 0 ? Math.round((d.count / prevActive) * 100) : 0;
 
         const cancelNote = d.cancelledCount > 0
