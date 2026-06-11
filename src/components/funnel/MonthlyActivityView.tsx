@@ -24,24 +24,26 @@ const ACTIVITY_COLUMNS: Array<{
   key: keyof ProjectMonthlyActivity;
   label: string;
   color: string;
+  /** Literal bar class so Tailwind always generates it (don't derive at runtime). */
+  bar: string;
   amountKey?: keyof ProjectMonthlyActivity;
 }> = [
-  { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", amountKey: "salesClosedAmount" },
-  { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400", amountKey: "surveysScheduledAmount" },
-  { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400", amountKey: "surveysCompletedAmount" },
-  { key: "dasSent", label: "DAs Sent", color: "text-lime-400", amountKey: "dasSentAmount" },
-  { key: "dasApproved", label: "DAs Approved", color: "text-blue-400", amountKey: "dasApprovedAmount" },
-  { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", amountKey: "designsCompletedAmount" },
-  { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400", amountKey: "permitsSubmittedAmount" },
-  { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400", amountKey: "permitsIssuedAmount" },
-  { key: "icSubmitted", label: "IC Submitted", color: "text-fuchsia-400", amountKey: "icSubmittedAmount" },
-  { key: "icApproved", label: "IC Approved", color: "text-pink-400", amountKey: "icApprovedAmount" },
-  { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400", amountKey: "constructionsScheduledAmount" },
-  { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
-  { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", amountKey: "inspectionsPassedAmount" },
-  { key: "ptosGranted", label: "PTOs", color: "text-teal-400", amountKey: "ptosGrantedAmount" },
-  { key: "closedOut", label: "Closed Out", color: "text-sky-400", amountKey: "closedOutAmount" },
-  { key: "cancelled", label: "Cancelled", color: "text-red-400", amountKey: "cancelledAmount" },
+  { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", bar: "bg-orange-500", amountKey: "salesClosedAmount" },
+  { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400", bar: "bg-amber-500", amountKey: "surveysScheduledAmount" },
+  { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400", bar: "bg-yellow-500", amountKey: "surveysCompletedAmount" },
+  { key: "dasSent", label: "DAs Sent", color: "text-lime-400", bar: "bg-lime-500", amountKey: "dasSentAmount" },
+  { key: "dasApproved", label: "DAs Approved", color: "text-blue-400", bar: "bg-blue-500", amountKey: "dasApprovedAmount" },
+  { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", bar: "bg-indigo-500", amountKey: "designsCompletedAmount" },
+  { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400", bar: "bg-purple-500", amountKey: "permitsSubmittedAmount" },
+  { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400", bar: "bg-violet-500", amountKey: "permitsIssuedAmount" },
+  { key: "icSubmitted", label: "IC Submitted", color: "text-fuchsia-400", bar: "bg-fuchsia-500", amountKey: "icSubmittedAmount" },
+  { key: "icApproved", label: "IC Approved", color: "text-pink-400", bar: "bg-pink-500", amountKey: "icApprovedAmount" },
+  { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400", bar: "bg-cyan-500", amountKey: "constructionsScheduledAmount" },
+  { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", bar: "bg-green-500", amountKey: "constructionsCompleteAmount" },
+  { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", bar: "bg-emerald-500", amountKey: "inspectionsPassedAmount" },
+  { key: "ptosGranted", label: "PTOs", color: "text-teal-400", bar: "bg-teal-500", amountKey: "ptosGrantedAmount" },
+  { key: "closedOut", label: "Closed Out", color: "text-sky-400", bar: "bg-sky-500", amountKey: "closedOutAmount" },
+  { key: "cancelled", label: "Cancelled", color: "text-red-400", bar: "bg-red-500", amountKey: "cancelledAmount" },
 ];
 
 /** Hero cards — the milestones teams most often track output against. */
@@ -247,7 +249,7 @@ function ThroughputChart({
 }) {
   const chronological = useMemo(() => [...activity].reverse(), [activity]);
   const col = ACTIVITY_COLUMNS.find((c) => c.key === metric) ?? ACTIVITY_COLUMNS[0];
-  const barColor = col.color.replace("text-", "bg-").replace("-400", "-500");
+  const barColor = col.bar;
 
   const valueKey: keyof ProjectMonthlyActivity =
     valueMode === "revenue" && col.amountKey ? col.amountKey : metric;
