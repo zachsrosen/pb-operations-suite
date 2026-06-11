@@ -289,6 +289,7 @@ function ProjectPipelineFunnelInner() {
         <>
           {/* Cohort trend + detail (by close month) and the milestone cohort. */}
           <MonthlyFunnelChart cohorts={data.cohorts} />
+          <RevenueConversionTable cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} />
           <MilestoneCohortSection locations={locations} pms={pms} owners={owners} />
         </>
@@ -937,6 +938,75 @@ function DrillDownTable({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * Revenue conversion by cohort: of each close-month's Sales Closed revenue,
+ * the % (and $) that has reached DA Approved and Construction Complete. Recent
+ * cohorts read low — those deals haven't had time to get there yet.
+ */
+function RevenueConversionTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] }) {
+  const MAX_MONTHS = 18;
+  const rows = useMemo(() => [...cohorts].slice(0, MAX_MONTHS), [cohorts]);
+  const TARGETS: Array<{ key: ProjectFunnelStageKey; label: string; bar: string; text: string }> = [
+    { key: "daApproved", label: "DA Approved", bar: "bg-blue-500", text: "text-blue-400" },
+    { key: "constructionComplete", label: "Constr. Complete", bar: "bg-green-500", text: "text-green-400" },
+  ];
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">Revenue Conversion by Cohort</h3>
+      <p className="text-xs text-muted mb-4">
+        Of each month&apos;s Sales Closed revenue, the share that has reached each milestone. Recent
+        months read low — those deals haven&apos;t had time to get there yet.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-t-border">
+              <th className="text-left py-2 px-2 text-muted font-medium">Cohort</th>
+              <th className="text-center py-2 px-2 text-orange-400 font-medium whitespace-nowrap">Sales Closed</th>
+              {TARGETS.map((t) => (
+                <th key={t.key} className={`text-center py-2 px-2 font-medium whitespace-nowrap ${t.text}`}>
+                  → {t.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c, i) => {
+              const closed = c.salesClosed.amount;
+              return (
+                <tr key={c.month} className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}>
+                  <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap">{monthLabel(c.month)}</td>
+                  <td className="text-center py-2 px-2 text-muted tabular-nums">{formatCurrencyCompact(closed)}</td>
+                  {TARGETS.map((t) => {
+                    const rev = c[t.key].amount;
+                    const pct = closed > 0 ? Math.min(100, Math.round((rev / closed) * 100)) : 0;
+                    return (
+                      <td key={t.key} className="py-2 px-2">
+                        {closed > 0 ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={`font-semibold tabular-nums ${t.text}`}>{pct}%</span>
+                            <div className="w-full max-w-[90px] h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                              <div className={`${t.bar} h-full`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] text-muted tabular-nums">{formatCurrencyCompact(rev)}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted/40 block text-center">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
