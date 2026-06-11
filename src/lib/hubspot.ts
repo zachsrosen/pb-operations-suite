@@ -277,6 +277,8 @@ export interface Project {
   tags: string[];
   isParticipateEnergy: boolean;
   participateEnergyStatus: string | null;
+  peM1Status: string | null;
+  peM2Status: string | null;
 
   // Preconstruction milestone booleans
   isSiteSurveyScheduled: boolean;
@@ -599,6 +601,8 @@ const DEAL_PROPERTIES = [
   "is_participate_energy",
   "pe_portal_url",
   "pe_project_id",
+  "pe_m1_status",
+  "pe_m2_status",
 
   // Tesla PowerHub (populated by powerhub-crosslink push)
   "tesla_portal_url",
@@ -931,6 +935,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     tags,
     isParticipateEnergy: isPE,
     participateEnergyStatus: deal.participate_energy_status ? String(deal.participate_energy_status) : null,
+    peM1Status: deal.pe_m1_status ? String(deal.pe_m1_status) : null,
+    peM2Status: deal.pe_m2_status ? String(deal.pe_m2_status) : null,
 
     // Preconstruction milestone booleans
     isSiteSurveyScheduled: String(deal.is_site_survey_scheduled_ || "").toLowerCase() === "true",
