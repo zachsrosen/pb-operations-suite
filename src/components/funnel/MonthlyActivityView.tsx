@@ -168,7 +168,8 @@ function ActivityByLocationMatrix({
   activityByLocation: ProjectFunnelResponse["activityByLocation"];
   totals: Totals;
 }) {
-  const locs = sortLocationKeys(Object.keys(activityByLocation));
+  // Every deal should carry a PB location; drop the "Unknown" catch-all row.
+  const locs = sortLocationKeys(Object.keys(activityByLocation).filter((k) => k !== "Unknown"));
   const renderCell = (count: number, amount: number, showAmount: boolean) =>
     count > 0 ? (
       <>
