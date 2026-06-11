@@ -500,12 +500,15 @@ export function createReadOnlyChatTools() {
   const countDealsByStatus = betaZodTool({
     name: "count_deals_by_status",
     description:
-      "Break down active project-pipeline deals by a status dimension. Use this for " +
-      "questions like 'how many are waiting on DA to be sent' or 'permitting status " +
-      "breakdown'. statusType: 'da' = the customer-facing Design Approval (layout_status), " +
-      "'design' = engineering design status, 'permitting', 'interconnection', or " +
-      "'site_survey'. Optionally scope to one pipeline stage. Returns the TRUE count for " +
-      "each exact status value — match the user's wording to the right bucket.",
+      "Break down active project-pipeline deals by a status dimension, covering the FULL " +
+      "pipeline from survey to PTO. Use this for questions like 'how many are waiting on " +
+      "DA to be sent', 'permitting status breakdown', 'construction status', 'how many " +
+      "are waiting on inspection', or 'PTO status'. statusType: 'da' = the customer-facing " +
+      "Design Approval (layout_status), 'design' = engineering design status, 'permitting', " +
+      "'interconnection', 'site_survey', 'construction' (install status), 'inspection' " +
+      "(final inspection), or 'pto' (Permission To Operate — the utility milestone). " +
+      "Optionally scope to one pipeline stage. Returns the TRUE count for each exact " +
+      "status value — match the user's wording to the right bucket.",
     inputSchema: z.object({
       statusType: z.enum([
         "da",
@@ -513,6 +516,9 @@ export function createReadOnlyChatTools() {
         "permitting",
         "interconnection",
         "site_survey",
+        "construction",
+        "inspection",
+        "pto",
       ]),
       stage: z
         .string()
@@ -531,6 +537,11 @@ export function createReadOnlyChatTools() {
         permitting: ["permittingStatus", "permitting_status"],
         interconnection: ["interconnectionStatus", "interconnection_status"],
         site_survey: ["siteSurveyStatus", "site_survey_status"],
+        // Downstream phases — HubSpot property "install_status" is labeled
+        // "Construction Status" in the UI.
+        construction: ["constructionStatus", "install_status"],
+        inspection: ["finalInspectionStatus", "final_inspection_status"],
+        pto: ["ptoStatus", "pto_status"],
       };
       const [projField, propKey] = FIELD_MAP[input.statusType];
 
