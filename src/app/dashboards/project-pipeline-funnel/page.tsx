@@ -17,7 +17,6 @@ import type {
   ProjectFunnelDrillDownDeal,
   ProjectFunnelDrillDown,
   ProjectFunnelStageGroup,
-  ProjectMonthlyActivity,
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -261,11 +260,6 @@ function ProjectPipelineFunnelInner() {
           <MonthlyFunnelChart cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} />
 
-          {/* Monthly activity — milestones by the month they happened */}
-          <div className="mt-6">
-            <MonthlyActivityTable activity={data.monthlyActivity} />
-          </div>
-
           {/* Stage distribution */}
           <div className="mt-6">
             <StageDistribution
@@ -337,11 +331,6 @@ function HeroCards({
           ? { delta: stageTotal - total(previousSummary[stage.key]), label: "vs prior" }
           : null;
 
-        // Trend vs the prior equal-length period (total reaching this stage).
-        const trend = previousSummary
-          ? { delta: stageTotal - total(previousSummary[stage.key]), label: "vs prior" }
-          : null;
-
         return (
           <StatCard
             key={stage.key}
@@ -374,12 +363,26 @@ function HeroLocationMatrix({
 }) {
   const locs = sortLocationKeys(Object.keys(summaryByLocation));
 
-  const cell = (d: ProjectFunnelStageData) => {
+  // Step conversion for a stage in a given row: active deals here as a share of
+  // everything that reached the prior stage (active + cancelled). Same basis as
+  // the hero cards. Null for Sales Closed (no prior stage) or an empty prior.
+  const convFor = (
+    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
+    i: number
+  ): number | null => {
+    if (i === 0) return null;
+    const prevReached = total(row[STAGE_CONFIG[i - 1].key]);
+    if (prevReached === 0) return null;
+    return Math.round((row[STAGE_CONFIG[i].key].count / prevReached) * 100);
+  };
+
+  const cell = (d: ProjectFunnelStageData, conv: number | null) => {
     const t = total(d);
     return t > 0 ? (
       <>
         <div className="font-semibold">{t}</div>
         <div className="text-muted">{formatCurrencyCompact(d.amount + d.cancelledAmount)}</div>
+        {conv != null && <div className="text-[10px] opacity-70">{conv}% conv.</div>}
       </>
     ) : (
       <span className="text-muted/40">—</span>
@@ -388,7 +391,8 @@ function HeroLocationMatrix({
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
-      <h3 className="text-sm font-semibold text-foreground/80 mb-3">Stage Counts by Location</h3>
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">Stage Counts by Location</h3>
+      <p className="text-xs text-muted mb-3">% is step conversion from the prior stage (active reaching this stage ÷ total reaching the prior stage).</p>
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-t-border">
@@ -406,9 +410,9 @@ function HeroLocationMatrix({
               <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
                 {loc}
               </td>
-              {STAGE_CONFIG.map((stage) => (
+              {STAGE_CONFIG.map((stage, si) => (
                 <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
-                  {cell(summaryByLocation[loc][stage.key])}
+                  {cell(summaryByLocation[loc][stage.key], convFor(summaryByLocation[loc], si))}
                 </td>
               ))}
             </tr>
@@ -418,9 +422,9 @@ function HeroLocationMatrix({
           <tfoot>
             <tr className="border-t-2 border-t-border font-semibold">
               <td className="py-2 px-2 text-foreground sticky left-0 bg-surface z-10">Total</td>
-              {STAGE_CONFIG.map((stage) => (
+              {STAGE_CONFIG.map((stage, si) => (
                 <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
-                  {cell(totalSummary[stage.key])}
+                  {cell(totalSummary[stage.key], convFor(totalSummary, si))}
                 </td>
               ))}
             </tr>
@@ -897,87 +901,6 @@ function CohortTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] })
                 </tr>
               );
             })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-const ACTIVITY_COLUMNS: Array<{
-  key: keyof ProjectMonthlyActivity;
-  label: string;
-  color: string;
-  amountKey?: keyof ProjectMonthlyActivity;
-}> = [
-  { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", amountKey: "salesClosedAmount" },
-  { key: "surveysScheduled", label: "Surveys Sched.", color: "text-amber-400", amountKey: "surveysScheduledAmount" },
-  { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400", amountKey: "surveysCompletedAmount" },
-  { key: "dasSent", label: "DAs Sent", color: "text-lime-400", amountKey: "dasSentAmount" },
-  { key: "dasApproved", label: "DAs Approved", color: "text-blue-400", amountKey: "dasApprovedAmount" },
-  { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", amountKey: "designsCompletedAmount" },
-  { key: "permitsSubmitted", label: "Permits Sub.", color: "text-purple-400", amountKey: "permitsSubmittedAmount" },
-  { key: "permitsIssued", label: "Permits Issued", color: "text-violet-400", amountKey: "permitsIssuedAmount" },
-  { key: "icSubmitted", label: "IC Submitted", color: "text-fuchsia-400", amountKey: "icSubmittedAmount" },
-  { key: "icApproved", label: "IC Approved", color: "text-pink-400", amountKey: "icApprovedAmount" },
-  { key: "constructionsScheduled", label: "Constr. Sched.", color: "text-cyan-400", amountKey: "constructionsScheduledAmount" },
-  { key: "constructionsComplete", label: "Constr. Done", color: "text-green-400", amountKey: "constructionsCompleteAmount" },
-  { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", amountKey: "inspectionsPassedAmount" },
-  { key: "ptosGranted", label: "PTOs", color: "text-teal-400", amountKey: "ptosGrantedAmount" },
-  { key: "closedOut", label: "Closed Out", color: "text-sky-400", amountKey: "closedOutAmount" },
-  { key: "cancelled", label: "Cancelled", color: "text-red-400", amountKey: "cancelledAmount" },
-];
-
-function MonthlyActivityTable({ activity }: { activity: ProjectMonthlyActivity[] }) {
-  return (
-    <div className="bg-surface rounded-xl border border-t-border p-5">
-      <h3 className="text-sm font-semibold text-foreground/80 mb-1">
-        Monthly Activity
-      </h3>
-      <p className="text-xs text-muted mb-4">
-        Sales Closed by close date · Closed Out &amp; Cancelled by date entered stage — all other milestones by the month they happened
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-t-border">
-              <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Month</th>
-              {ACTIVITY_COLUMNS.map((col) => (
-                <th key={col.key} className={`text-center py-2 px-1.5 font-medium ${col.color} whitespace-nowrap`}>
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {activity.map((row, i) => (
-              <tr
-                key={row.month}
-                className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}
-              >
-                <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
-                  {monthLabel(row.month)}
-                </td>
-                {ACTIVITY_COLUMNS.map((col) => {
-                  const count = row[col.key] as number;
-                  const amount = col.amountKey ? (row[col.amountKey] as number) : 0;
-                  return (
-                    <td key={col.key} className="text-center py-2 px-1.5">
-                      {count > 0 ? (
-                        <>
-                          <div className={`font-semibold ${col.color}`}>{count}</div>
-                          {col.amountKey && amount > 0 && (
-                            <div className="text-muted">{formatCurrencyCompact(amount)}</div>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-muted/40">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
           </tbody>
         </table>
       </div>
