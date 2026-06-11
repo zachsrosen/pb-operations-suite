@@ -1106,6 +1106,65 @@ export class ZuperClient {
   }
 
   /**
+   * Fetch every job scheduled within [fromDate, toDate] (YYYY-MM-DD, inclusive),
+   * paginating through the full window.
+   *
+   * IMPORTANT: this uses Zuper's `filter.from_date` / `filter.to_date` params,
+   * which are the ONLY working server-side filters on GET /jobs. The bare
+   * `from_date` / `to_date` params and the `search` param are silently ignored
+   * (they return the default first page of ALL jobs), and `filter.category_uid`
+   * is ignored too — so category matching must be done client-side. Date
+   * filtering keys on a job's SCHEDULED date, so UNSCHEDULED jobs are not
+   * returned here; call getUnscheduledJobs() separately when those are needed.
+   *
+   * @param opts.match optional early-exit predicate — pagination stops as soon
+   *   as a returned job satisfies it (the matching job is still included).
+   *   Use this to avoid walking the whole window once the target is found.
+   */
+  async getScheduledJobsInWindow(
+    fromDate: string,
+    toDate: string,
+    opts: { maxPages?: number; pageSize?: number; match?: (job: ZuperJob) => boolean } = {},
+    caller?: string,
+  ): Promise<ZuperApiResponse<ZuperJob[]>> {
+    const pageSize = opts.pageSize ?? 100;
+    const maxPages = opts.maxPages ?? 35;
+    const all: ZuperJob[] = [];
+
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams({
+        "filter.from_date": fromDate,
+        "filter.to_date": toDate,
+        count: String(pageSize),
+        page: String(page),
+      });
+
+      const result = await this.request<{ type: string; data: ZuperJob[]; total_records?: number }>(
+        `/jobs?${params.toString()}`,
+        {},
+        30000,
+        caller ?? "getScheduledJobsInWindow",
+      );
+
+      if (result.type !== "success") {
+        // Return whatever we've gathered so far rather than discarding it; only
+        // surface the error when we have nothing (so callers can degrade safely).
+        return all.length > 0 ? { type: "success", data: all } : { type: "error", error: result.error };
+      }
+
+      // request() wraps the Zuper response: result.data = { type, data: [...], total_records }
+      const resp = (result.data ?? {}) as { data?: ZuperJob[] };
+      const jobs: ZuperJob[] = Array.isArray(resp?.data) ? resp.data : [];
+      all.push(...jobs);
+
+      if (opts.match && jobs.some(opts.match)) break; // found it — stop early
+      if (jobs.length < pageSize) break; // last page
+    }
+
+    return { type: "success", data: all };
+  }
+
+  /**
    * Get available time slots via Assisted Scheduling
    * This queries Zuper for available slots based on date range, location, and job requirements
    */
