@@ -486,17 +486,29 @@ function BacklogSection({
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
 
+  // Revenue per backlog = sum of its drill-down deals (the bucket membership).
+  const backlogRevenue = (b: { deals: ProjectFunnelDrillDownDeal[] }) =>
+    b.deals.reduce((sum, d) => sum + (d.amount || 0), 0);
+  const totalBacklogRevenue = backlogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
+
   function toggle(key: string) {
     setExpanded((prev) => (prev === key ? null : key));
   }
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
-      <h3 className="text-sm font-semibold text-foreground/80 mb-4">
-        Pipeline Backlog
-      </h3>
+      <div className="flex items-baseline justify-between mb-4">
+        <h3 className="text-sm font-semibold text-foreground/80">
+          Pipeline Backlog
+        </h3>
+        <span className="text-xs text-muted">
+          {formatCurrencyCompact(totalBacklogRevenue)} in backlog
+        </span>
+      </div>
       <div className="space-y-1">
-        {backlogs.map((b) => (
+        {backlogs.map((b) => {
+          const revenue = backlogRevenue(b);
+          return (
           <div key={b.key}>
             <button
               type="button"
@@ -523,13 +535,19 @@ function BacklogSection({
                 ) : (
                   <span className="text-xs text-muted/60 italic">—</span>
                 )}
+                {b.count > 0 && (
+                  <span className="text-xs text-muted shrink-0 tabular-nums">
+                    {formatCurrencyCompact(revenue)}
+                  </span>
+                )}
               </div>
             </button>
             {expanded === b.key && b.deals.length > 0 && (
               <DrillDownTable deals={b.deals} staffCols={b.staffCols} />
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
