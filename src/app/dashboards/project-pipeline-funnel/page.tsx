@@ -94,7 +94,7 @@ function ProjectPipelineFunnelInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const timeframe = searchParams.get("tf") || "6";
+  const timeframe = searchParams.get("tf") || "active";
   const locations = useMemo(() => (searchParams.get("loc") || "").split(",").filter(Boolean), [searchParams]);
   const pms = useMemo(() => (searchParams.get("pm") || "").split(",").filter(Boolean), [searchParams]);
   const owners = useMemo(() => (searchParams.get("own") || "").split(",").filter(Boolean), [searchParams]);
@@ -110,14 +110,16 @@ function ProjectPipelineFunnelInner() {
     },
     [searchParams, router, pathname]
   );
-  const setTimeframe = useCallback((v: string) => setParam("tf", v === "6" ? "" : v), [setParam]);
+  const setTimeframe = useCallback((v: string) => setParam("tf", v === "active" ? "" : v), [setParam]);
   const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
   const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
-  const tab: "funnel" | "activity" = searchParams.get("tab") === "activity" ? "activity" : "funnel";
-  const setTab = useCallback((v: "funnel" | "activity") => setParam("tab", v === "activity" ? "activity" : ""), [setParam]);
+  const tabParam = searchParams.get("tab");
+  const tab: "funnel" | "activity" | "cohorts" =
+    tabParam === "activity" ? "activity" : tabParam === "cohorts" ? "cohorts" : "funnel";
+  const setTab = useCallback((v: "funnel" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v), [setParam]);
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -187,6 +189,7 @@ function ProjectPipelineFunnelInner() {
         {([
           { key: "funnel", label: "Funnel" },
           { key: "activity", label: "Monthly Activity" },
+          { key: "cohorts", label: "Cohorts" },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -268,6 +271,13 @@ function ProjectPipelineFunnelInner() {
         <LoadingSpinner />
       ) : tab === "activity" ? (
         <MonthlyActivityView data={data} timeframe={timeframe} />
+      ) : tab === "cohorts" ? (
+        <>
+          {/* Cohort trend + detail (by close month) and the milestone cohort. */}
+          <MonthlyFunnelChart cohorts={data.cohorts} />
+          <CohortTable cohorts={data.cohorts} />
+          <MilestoneCohortSection locations={locations} pms={pms} owners={owners} />
+        </>
       ) : (
         <>
           {heroView === "loc" ? (
@@ -292,14 +302,7 @@ function ProjectPipelineFunnelInner() {
           {/* Funnel bars */}
           <FunnelBars summary={s} medianDays={data.medianDays} />
 
-          {/* Cohort chart + table */}
-          <MonthlyFunnelChart cohorts={data.cohorts} />
-          <CohortTable cohorts={data.cohorts} />
-
-          {/* Milestone cohort — "deals that hit milestone X in window W, where are they now?" */}
-          <MilestoneCohortSection locations={locations} pms={pms} owners={owners} />
-
-          {/* Stage distribution */}
+          {/* Current pipeline position */}
           <div className="mt-6">
             <StageDistribution
               stages={data.stageDistribution}
@@ -925,7 +928,11 @@ function MonthlyFunnelChart({
 }: {
   cohorts: ProjectFunnelResponse["cohorts"];
 }) {
-  const chronological = useMemo(() => [...cohorts].reverse(), [cohorts]);
+  // cohorts arrive newest-first. Cap the chart to the most recent months so an
+  // all-time (All active deals) scope doesn't cram years of bars together.
+  const MAX_MONTHS = 18;
+  const capped = cohorts.length > MAX_MONTHS;
+  const chronological = useMemo(() => [...cohorts].slice(0, MAX_MONTHS).reverse(), [cohorts]);
 
   const maxCount = useMemo(
     () =>
@@ -938,9 +945,13 @@ function MonthlyFunnelChart({
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
-      <h3 className="text-sm font-semibold text-foreground/80 mb-4">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">
         Monthly Cohort Trend
       </h3>
+      <p className="text-xs text-muted mb-4">
+        Deals grouped by the month they sold, then how far each cohort progressed.
+        {capped ? ` Showing the most recent ${MAX_MONTHS} months.` : ""}
+      </p>
       <div className="flex items-end justify-around gap-1" style={{ height: 160 }}>
         {chronological.map((cohort) => (
           <div key={cohort.month} className="flex flex-col items-center gap-1 flex-1 min-w-0">
