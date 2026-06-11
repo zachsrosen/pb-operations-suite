@@ -677,6 +677,7 @@ function BacklogSection({
   const backlogRevenue = (b: { deals: ProjectFunnelDrillDownDeal[] }) =>
     b.deals.reduce((sum, d) => sum + (d.amount || 0), 0);
   const totalBacklogRevenue = backlogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
+  const totalBacklogCount = backlogs.reduce((sum, b) => sum + Math.max(0, b.count), 0);
 
   function toggle(key: string) {
     onToggle(expanded === key ? null : key);
@@ -696,7 +697,7 @@ function BacklogSection({
           Pipeline Backlog
         </h3>
         <span className="text-xs text-muted">
-          {formatCurrencyCompact(totalBacklogRevenue)} in backlog
+          <span className="text-foreground font-semibold">{totalBacklogCount}</span> deals · {formatCurrencyCompact(totalBacklogRevenue)} in backlog
         </span>
       </div>
       <div className="space-y-1">
