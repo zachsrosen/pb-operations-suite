@@ -483,6 +483,20 @@ function HeroLocationMatrix({
   hideCancelled?: boolean;
 }) {
   const locs = sortLocationKeys(Object.keys(summaryByLocation));
+  const showTotal = locs.length > 1;
+
+  // Transposed: milestones run down the rows, PB locations across the columns
+  // (+ a Total column). With only a handful of locations this avoids the wide
+  // horizontal scroll the stage-columns layout required.
+  const columns: Array<{
+    key: string;
+    label: string;
+    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
+    isTotal?: boolean;
+  }> = [
+    ...locs.map((loc) => ({ key: loc, label: loc, row: summaryByLocation[loc] })),
+    ...(showTotal ? [{ key: "__total", label: "Total", row: totalSummary, isTotal: true }] : []),
+  ];
 
   const cell = (d: ProjectFunnelStageData) => {
     const t = total(d);
@@ -496,39 +510,6 @@ function HeroLocationMatrix({
     );
   };
 
-  // Arrow connector between two stage columns: conv / cancelled / pending for
-  // the transition into stage `si`, relative to the prior stage's cohort.
-  const arrowCell = (
-    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
-    si: number
-  ) => {
-    const ts = transitionStats(row, si);
-    return (
-      <td className="px-1 py-2 text-center align-middle whitespace-nowrap">
-        {ts ? (
-          <div className="flex flex-col items-center leading-none gap-0.5">
-            <span className="text-muted/50 text-xs">→</span>
-            <span className="text-[10px]"><ConvNumbers stats={ts} hideCancelled={hideCancelled} /></span>
-          </div>
-        ) : (
-          <span className="text-muted/30">→</span>
-        )}
-      </td>
-    );
-  };
-
-  const renderStageCells = (
-    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>
-  ) =>
-    STAGE_CONFIG.map((stage, si) => (
-      <Fragment key={stage.key}>
-        {si > 0 && arrowCell(row, si)}
-        <td className={`text-center py-2 px-1.5 ${stage.textColor}`}>
-          {cell(row[stage.key])}
-        </td>
-      </Fragment>
-    ));
-
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
       <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
@@ -538,39 +519,64 @@ function HeroLocationMatrix({
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-t-border">
-            <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Location</th>
-            {STAGE_CONFIG.map((s, si) => (
-              <Fragment key={s.key}>
-                {si > 0 && <th className="px-1" aria-hidden />}
-                <th className={`text-center py-2 px-1.5 font-medium ${s.textColor} whitespace-nowrap`}>
-                  {s.label}
-                </th>
-              </Fragment>
+            <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Milestone</th>
+            {columns.map((c) => (
+              <th
+                key={c.key}
+                className={`text-center py-2 px-2 font-medium whitespace-nowrap ${c.isTotal ? "text-foreground" : "text-muted"}`}
+              >
+                {c.label}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {locs.map((loc, i) => (
-            <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}>
-              <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
-                {loc}
-              </td>
-              {renderStageCells(summaryByLocation[loc])}
-            </tr>
+          {STAGE_CONFIG.map((stage, si) => (
+            <Fragment key={stage.key}>
+              {/* Conversion row: transition INTO this stage, per column. */}
+              {si > 0 && (
+                <tr className="text-[10px]">
+                  <td className="py-0.5 px-2 text-right text-muted/40 sticky left-0 bg-surface z-10" aria-hidden>↓</td>
+                  {columns.map((c) => {
+                    const ts = transitionStats(c.row, si);
+                    return (
+                      <td key={c.key} className="text-center py-0.5 px-2 whitespace-nowrap">
+                        {ts ? <ConvNumbers stats={ts} hideCancelled={hideCancelled} /> : <span className="text-muted/30">·</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              )}
+              <tr className="border-b border-t-border/50">
+                <td className={`py-2 px-2 font-semibold whitespace-nowrap sticky left-0 bg-surface z-10 ${stage.textColor}`}>
+                  {stage.label}
+                </td>
+                {columns.map((c) => (
+                  <td key={c.key} className={`text-center py-2 px-2 ${c.isTotal ? "font-semibold" : ""}`}>
+                    {cell(c.row[stage.key])}
+                  </td>
+                ))}
+              </tr>
+            </Fragment>
           ))}
         </tbody>
-        {locs.length > 1 && (
-          <tfoot>
-            <tr className="border-t-2 border-t-border font-semibold">
-              <td className="py-2 px-2 text-foreground sticky left-0 bg-surface z-10">Total</td>
-              {renderStageCells(totalSummary)}
-            </tr>
-          </tfoot>
-        )}
       </table>
     </div>
   );
 }
+
+/** Group a backlog's deals by their status label (descending by count). */
+function statusBreakdown(deals: ProjectFunnelDrillDownDeal[]): Array<{ status: string; count: number }> {
+  const m = new Map<string, number>();
+  for (const d of deals) {
+    const st = d.status && d.status.trim() ? d.status : "No status";
+    m.set(st, (m.get(st) || 0) + 1);
+  }
+  return [...m.entries()].map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+}
+
+// Stepped opacity so stacked status segments of one backlog color stay distinct.
+const segOpacity = (i: number) => Math.max(0.4, 1 - i * 0.18);
 
 function BacklogSection({
   summary,
@@ -640,6 +646,8 @@ function BacklogSection({
       <div className="space-y-1">
         {backlogs.map((b) => {
           const revenue = backlogRevenue(b);
+          const segs = statusBreakdown(b.deals);
+          const segTotal = b.deals.length || 1;
           return (
           <div key={b.key}>
             <button
@@ -658,12 +666,23 @@ function BacklogSection({
               </span>
               <div className="flex items-center gap-2 flex-1">
                 {b.count > 0 ? (
-                  <div
-                    className={`${b.color} h-6 rounded-md flex items-center px-2.5`}
-                    style={{ width: `${Math.max(8, (b.count / maxBacklog) * 100)}%` }}
-                  >
-                    <span className="text-white text-xs font-bold">{b.count}</span>
-                  </div>
+                  <>
+                    {/* Stacked by status so the composition is visible at a glance. */}
+                    <div
+                      className="flex h-6 rounded-md overflow-hidden"
+                      style={{ width: `${Math.max(8, (b.count / maxBacklog) * 100)}%` }}
+                    >
+                      {segs.map((seg, i) => (
+                        <div
+                          key={seg.status}
+                          className={`${b.color} h-full ${i > 0 ? "border-l border-black/25" : ""}`}
+                          style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: segOpacity(i) }}
+                          title={`${seg.status}: ${seg.count}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs font-bold text-foreground shrink-0">{b.count}</span>
+                  </>
                 ) : (
                   <span className="text-xs text-muted/60 italic">—</span>
                 )}
@@ -674,6 +693,16 @@ function BacklogSection({
                 )}
               </div>
             </button>
+            {/* Per-status counts, aligned under the bar. */}
+            {b.count > 0 && segs.length > 0 && (
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-[11.75rem] pb-1 text-[10px] text-muted">
+                {segs.map((seg) => (
+                  <span key={seg.status} className="whitespace-nowrap">
+                    <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}
+                  </span>
+                ))}
+              </div>
+            )}
             {expanded === b.key && b.deals.length > 0 && (
               <DrillDownTable deals={b.deals} staffCols={b.staffCols} />
             )}
