@@ -303,17 +303,27 @@ function HeroCards({
         // not by Sales Closed.
         const globalIdx = STAGE_CONFIG.findIndex((c) => c.key === stage.key);
         const prevKey = globalIdx > 0 ? STAGE_CONFIG[globalIdx - 1].key : null;
-        // Conversion is computed on active deals only — cancelled excluded.
+        // Both rates share the prior stage's active count as the denominator:
+        // conv% = active that advanced here, cancel% = cancelled that reached
+        // here — step attrition parallel to conversion.
         const prevActive = prevKey ? summary[prevKey].count : 0;
         const convPct = prevActive > 0 ? Math.round((d.count / prevActive) * 100) : 0;
+        const cancelPct = prevActive > 0 ? Math.round((d.cancelledCount / prevActive) * 100) : 0;
 
-        const cancelNote = d.cancelledCount > 0
-          ? ` · ${d.cancelledCount} cancelled (${formatCurrencyCompact(d.cancelledAmount)})`
+        const cancelRaw = d.cancelledCount > 0
+          ? `${d.cancelledCount} cancelled (${formatCurrencyCompact(d.cancelledAmount)})`
           : "";
+        const amountStr = formatCurrencyCompact(d.amount + d.cancelledAmount);
 
+        // Sales Closed has no prior stage, so it has no conv/cancel rate —
+        // fall back to the raw cancelled count there.
         const subtitle = stage.key === "salesClosed"
-          ? `${formatCurrencyCompact(d.amount + d.cancelledAmount)}${cancelNote}`
-          : `${formatCurrencyCompact(d.amount + d.cancelledAmount)} · ${convPct}% conv.${cancelNote}`;
+          ? [amountStr, cancelRaw].filter(Boolean).join(" · ")
+          : [
+              amountStr,
+              `${convPct}% conv.`,
+              `${cancelPct}% cancelled${d.cancelledCount > 0 ? ` (${d.cancelledCount} · ${formatCurrencyCompact(d.cancelledAmount)})` : ""}`,
+            ].join(" · ");
 
         // Trend vs the prior equal-length period (total reaching this stage).
         const trend = previousSummary
