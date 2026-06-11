@@ -455,9 +455,11 @@ export function buildProjectFunnelData(
 
   // PM / owner options reflect the location + timeframe scope (before the staff
   // filter narrows it), so the dropdowns stay populated while you filter.
+  // On-Hold deals are closed-won and counted at whatever milestones they
+  // actually reached (resolveMilestones drops their stage floor and relies on
+  // real date fields), so the funnel reconciles with HubSpot's closed totals.
   const scopeForOptions = projects.filter((p) => {
     if (!p.closeDate) return false;
-    if (p.stageId === ON_HOLD_STAGE_ID) return false;
     if (!inWindow(new Date(p.closeDate + "T12:00:00"))) return false;
     return matchesLocation(p);
   });
@@ -481,7 +483,6 @@ export function buildProjectFunnelData(
   const prevEnd = new Date(cutoff.getTime() - 1);
   const previousFiltered = projects.filter((p) => {
     if (!p.closeDate) return false;
-    if (p.stageId === ON_HOLD_STAGE_ID) return false;
     const cd = new Date(p.closeDate + "T12:00:00");
     if (cd < prevCutoff || cd > prevEnd) return false;
     return matchesLocation(p) && matchesStaff(p);
