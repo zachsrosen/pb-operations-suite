@@ -303,12 +303,19 @@ function HeroCards({
         // not by Sales Closed.
         const globalIdx = STAGE_CONFIG.findIndex((c) => c.key === stage.key);
         const prevKey = globalIdx > 0 ? STAGE_CONFIG[globalIdx - 1].key : null;
-        // Both rates share the prior stage's active count as the denominator:
-        // conv% = active that advanced here, cancel% = cancelled that reached
-        // here — step attrition parallel to conversion.
-        const prevActive = prevKey ? summary[prevKey].count : 0;
-        const convPct = prevActive > 0 ? Math.round((d.count / prevActive) * 100) : 0;
-        const cancelPct = prevActive > 0 ? Math.round((d.cancelledCount / prevActive) * 100) : 0;
+        // Both rates partition the same cohort — every deal that reached the
+        // prior stage (active + cancelled) — so they sum to ≤ 100%:
+        //   conv%   = of that cohort, the share now active at this stage
+        //   cancel% = of that cohort, the share that reached this stage but
+        //             has since cancelled
+        // The remainder (100% − conv − cancel) is deals lost or stuck at the
+        // prior stage without reaching this one.
+        const prevReached = prevKey ? total(summary[prevKey]) : 0;
+        const convPct = prevReached > 0 ? Math.round((d.count / prevReached) * 100) : 0;
+        // Clamp so rounding can never display a pair that exceeds 100%.
+        const cancelPct = prevReached > 0
+          ? Math.min(Math.round((d.cancelledCount / prevReached) * 100), 100 - convPct)
+          : 0;
 
         const cancelRaw = d.cancelledCount > 0
           ? `${d.cancelledCount} cancelled (${formatCurrencyCompact(d.cancelledAmount)})`
