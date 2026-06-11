@@ -85,7 +85,7 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
-    href: "/dashboards/monthly-activity",
+    href: "/dashboards/project-pipeline-funnel?tab=activity",
     title: "Monthly Activity",
     description: "Throughput by the month each milestone actually happened — what hit each stage in a window, regardless of when the deal was sold.",
     tag: "PIPELINE",

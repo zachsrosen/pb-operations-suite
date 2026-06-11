@@ -23,6 +23,7 @@ import type {
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
+import { MonthlyActivityView } from "@/components/funnel/MonthlyActivityView";
 
 const TIMEFRAMES = [
   { label: "All active deals", value: "active" },
@@ -115,6 +116,8 @@ function ProjectPipelineFunnelInner() {
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
+  const tab: "funnel" | "activity" = searchParams.get("tab") === "activity" ? "activity" : "funnel";
+  const setTab = useCallback((v: "funnel" | "activity") => setParam("tab", v === "activity" ? "activity" : ""), [setParam]);
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -174,12 +177,33 @@ function ProjectPipelineFunnelInner() {
 
   return (
     <DashboardShell
-      title="Project Pipeline Funnel"
+      title="Project Pipeline"
       accentColor="cyan"
       fullWidth
       lastUpdated={lastUpdated}
     >
-      {/* Filters */}
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 border-b border-t-border">
+        {([
+          { key: "funnel", label: "Funnel" },
+          { key: "activity", label: "Monthly Activity" },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+              tab === t.key
+                ? "border-cyan-500 text-foreground"
+                : "border-transparent text-muted hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Filters (shared across tabs) */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <MultiSelectFilter
           label="Location"
@@ -220,26 +244,30 @@ function ProjectPipelineFunnelInner() {
             ))}
           </select>
         </div>
-        <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
-          <button
-            type="button"
-            onClick={() => setHeroView("cards")}
-            className={`px-3 py-1.5 transition-colors ${heroView === "cards" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
-          >
-            Cards
-          </button>
-          <button
-            type="button"
-            onClick={() => setHeroView("loc")}
-            className={`px-3 py-1.5 transition-colors ${heroView === "loc" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
-          >
-            By location
-          </button>
-        </div>
+        {tab === "funnel" && (
+          <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
+            <button
+              type="button"
+              onClick={() => setHeroView("cards")}
+              className={`px-3 py-1.5 transition-colors ${heroView === "cards" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setHeroView("loc")}
+              className={`px-3 py-1.5 transition-colors ${heroView === "loc" ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+            >
+              By location
+            </button>
+          </div>
+        )}
       </div>
 
-      {isLoading || !s ? (
+      {isLoading || !data || !s ? (
         <LoadingSpinner />
+      ) : tab === "activity" ? (
+        <MonthlyActivityView data={data} timeframe={timeframe} />
       ) : (
         <>
           {heroView === "loc" ? (
