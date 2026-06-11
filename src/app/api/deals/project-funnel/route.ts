@@ -6,6 +6,11 @@ import { fetchAllProjects, type Project } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { buildProjectFunnelData } from "@/lib/project-funnel-aggregation";
 
+// Cold-cache loads must fetch all ~6,500 deals to populate the shared
+// PROJECTS_ALL cache — the same expensive fetch office-performance/all does.
+// It needs the matching 300s budget; the default 60s 504s on a cold cache.
+export const maxDuration = 300;
+
 export async function GET(request: NextRequest) {
   tagSentryRequest(request);
   try {
