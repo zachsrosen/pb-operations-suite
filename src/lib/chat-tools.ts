@@ -546,15 +546,22 @@ export function createReadOnlyChatTools() {
           (p) => normalizeLocation(p.pbLocation) === canonicalLocation
         );
       }
-      const counts = projects.reduce<Record<string, number>>((acc, project) => {
+      const counts: Record<string, number> = {};
+      const revenueByStage: Record<string, number> = {};
+      let totalRevenue = 0;
+      for (const project of projects) {
         const stage = project.stage || "Unknown";
-        acc[stage] = (acc[stage] ?? 0) + 1;
-        return acc;
-      }, {});
+        const amount = Number(project.amount) || 0;
+        counts[stage] = (counts[stage] ?? 0) + 1;
+        revenueByStage[stage] = Math.round((revenueByStage[stage] ?? 0) + amount);
+        totalRevenue += amount;
+      }
       return JSON.stringify({
         location: canonicalLocation ?? "all locations",
         total: projects.length,
+        totalRevenue: Math.round(totalRevenue),
         counts,
+        revenueByStage,
       });
     },
   });
@@ -655,13 +662,18 @@ export function createReadOnlyChatTools() {
       }
 
       const counts: Record<string, number> = {};
+      const revenueByStatus: Record<string, number> = {};
       let dealsWithThisStatus = 0;
+      let totalRevenue = 0;
       for (const p of projects) {
         const raw = (p as unknown as Record<string, string | null>)[projField];
         const label = statusLabel(propKey, raw);
         if (!label) continue;
+        const amount = Number(p.amount) || 0;
         counts[label] = (counts[label] ?? 0) + 1;
+        revenueByStatus[label] = Math.round((revenueByStatus[label] ?? 0) + amount);
         dealsWithThisStatus++;
+        totalRevenue += amount;
       }
       const sorted = Object.fromEntries(
         Object.entries(counts).sort((a, b) => b[1] - a[1])
@@ -702,12 +714,14 @@ export function createReadOnlyChatTools() {
         return JSON.stringify({
           statusType: "da",
           stage: input.stage ?? "all stages",
-        location: canonicalLocation ?? "all locations",
+          location: canonicalLocation ?? "all locations",
           totalDealsConsidered: projects.length,
           dealsWithThisStatus,
+          totalRevenue: Math.round(totalRevenue),
           waitingToBeSent: phases.not_yet_sent.total, // = all pre-send (still on us)
           phases,
           counts: sorted,
+          revenueByStatus,
           note: "DA = customer Design Approval (layout_status). 'Review In Progress' means we're reviewing INTERNALLY before sending — it is PRE-SEND, not the customer reviewing. 'Waiting on DA to be sent' = waitingToBeSent (phases.not_yet_sent: everything not yet with the customer). 'with_customer' = already sent.",
         });
       }
@@ -718,10 +732,187 @@ export function createReadOnlyChatTools() {
         location: canonicalLocation ?? "all locations",
         totalDealsConsidered: projects.length,
         dealsWithThisStatus,
+        totalRevenue: Math.round(totalRevenue),
         counts: sorted,
+        revenueByStatus,
         note: isPeMilestone
           ? "Scoped to active Participate Energy deals only (totalDealsConsidered = active PE deals). Deals with no status for this milestone haven't started it. Status flow: Ready to Submit → Waiting on Information → Submitted → Rejected → Ready to Resubmit → Resubmitted → Approved → Paid."
           : "Each key is an exact status value with its true count. Match the user's wording to the right bucket(s); if nothing fits, say so rather than guessing.",
+      });
+    },
+  });
+
+  const countMilestoneInDateRange = betaZodTool({
+    name: "count_milestone_in_date_range",
+    description:
+      "Count project-pipeline deals that hit a milestone within a date range — e.g. " +
+      "'how many DAs were approved June 1–10', 'permits issued last week', 'PTOs granted " +
+      "this month'. Unlike the status tools, this searches ALL project deals (including " +
+      "ones that have since completed or cancelled), so historical counts are accurate. " +
+      "Returns the true total, a by-location breakdown, and total revenue. Milestones: " +
+      "site_survey_completed, da_sent, da_approved, design_completed, permit_submitted, " +
+      "permit_issued, interconnection_submitted, interconnection_approved, rtb, " +
+      "construction_completed, inspection_passed, pto_submitted, pto_granted, " +
+      "sales_closed, pe_m1_submitted, pe_m1_approved, pe_m2_submitted, pe_m2_approved.",
+    inputSchema: z.object({
+      milestone: z.enum([
+        "site_survey_completed",
+        "da_sent",
+        "da_approved",
+        "design_completed",
+        "permit_submitted",
+        "permit_issued",
+        "interconnection_submitted",
+        "interconnection_approved",
+        "rtb",
+        "construction_completed",
+        "inspection_passed",
+        "pto_submitted",
+        "pto_granted",
+        "sales_closed",
+        "pe_m1_submitted",
+        "pe_m1_approved",
+        "pe_m2_submitted",
+        "pe_m2_approved",
+      ]),
+      fromDate: z.string().describe("Start date, YYYY-MM-DD (inclusive)"),
+      toDate: z.string().describe("End date, YYYY-MM-DD (inclusive)"),
+      location: z
+        .string()
+        .optional()
+        .describe(
+          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
+            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+        ),
+    }),
+    run: async (input) => {
+      const { searchWithRetry } = await import("@/lib/hubspot");
+
+      // Milestone → HubSpot date property (names verified against the
+      // DEAL_PROPERTIES fetch list / payment-tracking usage).
+      const MILESTONE_DATE_PROP: Record<string, string> = {
+        site_survey_completed: "site_survey_date",
+        da_sent: "design_approval_sent_date",
+        da_approved: "layout_approval_date",
+        design_completed: "design_completion_date",
+        permit_submitted: "permit_submit_date",
+        permit_issued: "permit_completion_date",
+        interconnection_submitted: "interconnections_submit_date",
+        interconnection_approved: "interconnections_completion_date",
+        rtb: "ready_to_build_date",
+        construction_completed: "construction_complete_date",
+        inspection_passed: "inspections_completion_date",
+        pto_submitted: "pto_start_date",
+        pto_granted: "pto_completion_date",
+        sales_closed: "closedate",
+        pe_m1_submitted: "pe_m1_submission_date",
+        pe_m1_approved: "pe_m1_approval_date",
+        pe_m2_submitted: "pe_m2_submission_date",
+        pe_m2_approved: "pe_m2_approval_date",
+      };
+      const dateProp = MILESTONE_DATE_PROP[input.milestone];
+
+      const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      if (!DATE_RE.test(input.fromDate) || !DATE_RE.test(input.toDate)) {
+        return JSON.stringify({
+          error: "Dates must be YYYY-MM-DD",
+        });
+      }
+      const fromMs = Date.parse(`${input.fromDate}T00:00:00.000Z`);
+      const toMs = Date.parse(`${input.toDate}T23:59:59.999Z`);
+      if (Number.isNaN(fromMs) || Number.isNaN(toMs) || fromMs > toMs) {
+        return JSON.stringify({
+          error: `Invalid date range: ${input.fromDate} → ${input.toDate}`,
+        });
+      }
+
+      let canonicalLocation: string | null = null;
+      if (input.location) {
+        const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
+          return JSON.stringify({
+            error: `Unknown location: ${input.location}`,
+            knownLocations: CANONICAL_LOCATIONS,
+          });
+        }
+      }
+
+      type RangeFilter = {
+        propertyName: string;
+        operator: typeof FilterOperatorEnum.Between;
+        value: string;
+        highValue: string;
+      };
+      type EqFilter = {
+        propertyName: string;
+        operator: typeof FilterOperatorEnum.Eq;
+        value: string;
+      };
+      const filters: Array<RangeFilter | EqFilter> = [
+        { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
+        {
+          propertyName: dateProp,
+          operator: FilterOperatorEnum.Between,
+          value: String(fromMs),
+          highValue: String(toMs),
+        },
+      ];
+      if (canonicalLocation) {
+        filters.push({
+          propertyName: "pb_location",
+          operator: FilterOperatorEnum.Eq,
+          value: canonicalLocation,
+        });
+      }
+
+      // Paginate (capped) to build location + revenue rollups; the headline
+      // total comes from HubSpot and is always true.
+      let total = 0;
+      let scanned = 0;
+      let totalRevenue = 0;
+      const byLocation: Record<string, number> = {};
+      let after: string | undefined;
+      for (let page = 0; page < 5; page++) {
+        const req: {
+          filterGroups: { filters: typeof filters }[];
+          properties: string[];
+          limit: number;
+          after?: string;
+        } = {
+          filterGroups: [{ filters }],
+          properties: ["pb_location", "amount"],
+          limit: 200,
+        };
+        if (after) req.after = after;
+        const res = await searchWithRetry(req);
+        total = res.total ?? total;
+        for (const d of res.results) {
+          scanned++;
+          const loc = d.properties?.pb_location || "Unknown";
+          byLocation[loc] = (byLocation[loc] ?? 0) + 1;
+          totalRevenue += Number(d.properties?.amount) || 0;
+        }
+        after = res.paging?.next?.after;
+        if (!after) break;
+      }
+
+      return JSON.stringify({
+        milestone: input.milestone,
+        dateProperty: dateProp,
+        from: input.fromDate,
+        to: input.toDate,
+        location: canonicalLocation ?? "all locations",
+        total, // true count from HubSpot
+        totalRevenue: Math.round(totalRevenue),
+        byLocation,
+        ...(scanned < total
+          ? {
+              note: `Revenue and by-location rollups cover the first ${scanned} of ${total} deals; the total count is exact.`,
+            }
+          : {}),
+        includes:
+          "All project-pipeline deals, including ones that have since completed or cancelled — the milestone still happened in this window.",
       });
     },
   });
@@ -732,5 +923,6 @@ export function createReadOnlyChatTools() {
     filterDealsByStage,
     countDealsByStage,
     countDealsByStatus,
+    countMilestoneInDateRange,
   ];
 }
