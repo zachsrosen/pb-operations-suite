@@ -139,6 +139,15 @@ export const queryKeys = {
       [...queryKeys.funnel.root, "project-pipeline", months, locations, timeframe, pms, owners] as const,
     monthlyActivity: (months?: number, locations?: string[]) =>
       [...queryKeys.funnel.root, "monthly-activity", months, locations] as const,
+    milestoneCohort: (
+      milestone?: string,
+      start?: string,
+      end?: string,
+      locations?: string[],
+      pms?: string[],
+      owners?: string[]
+    ) =>
+      [...queryKeys.funnel.root, "milestone-cohort", milestone, start, end, locations, pms, owners] as const,
   },
   territoryMap: {
     root: ["territory-map"] as const,

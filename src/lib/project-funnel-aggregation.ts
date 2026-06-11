@@ -836,3 +836,192 @@ export function buildProjectFunnelData(
     generatedAt: new Date().toISOString(),
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Milestone Cohort
+//
+// "Of the deals that hit milestone X during window W, where are they now?"
+// Unlike the funnel (which windows every deal on its close date), this windows
+// on a chosen milestone's own date, then buckets the matching deals two ways:
+//   • by current pipeline stage   (live HubSpot stage)
+//   • by furthest milestone reached (funnel-derived progression)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Funnel stage → the Project date field that marks when it was reached. */
+const MILESTONE_DATE_FIELD: Record<ProjectFunnelStageKey, keyof Project> = {
+  salesClosed: "closeDate",
+  surveyScheduled: "siteSurveyScheduleDate",
+  surveyDone: "siteSurveyCompletionDate",
+  daSent: "designApprovalSentDate",
+  daApproved: "designApprovalDate",
+  designCompleted: "designCompletionDate",
+  permitsSubmitted: "permitSubmitDate",
+  permitsIssued: "permitIssueDate",
+  constructionScheduled: "constructionScheduleDate",
+  constructionComplete: "constructionCompleteDate",
+  inspectionPassed: "inspectionPassDate",
+  ptoGranted: "ptoGrantedDate",
+};
+
+/** Display labels for the 12 funnel milestones (shared with the UI). */
+export const FUNNEL_STAGE_LABELS: Record<ProjectFunnelStageKey, string> = {
+  salesClosed: "Sales Closed",
+  surveyScheduled: "Survey Scheduled",
+  surveyDone: "Survey Done",
+  daSent: "DA Sent",
+  daApproved: "DA Approved",
+  designCompleted: "Design Complete",
+  permitsSubmitted: "Permits Submitted",
+  permitsIssued: "Permits Issued",
+  constructionScheduled: "Construction Sched.",
+  constructionComplete: "Construction Complete",
+  inspectionPassed: "Inspection Passed",
+  ptoGranted: "PTO Granted",
+};
+
+export interface MilestoneCohortBucket {
+  /** stageId (current-stage buckets) or funnel stage key (furthest buckets). */
+  key: string;
+  label: string;
+  count: number;
+  amount: number;
+}
+
+export interface MilestoneCohortDeal {
+  id: number;
+  name: string;
+  projectNumber: string;
+  amount: number;
+  pbLocation: string;
+  url: string;
+  /** The selected milestone's date (the value that put the deal in this cohort). */
+  milestoneDate: string;
+  currentStageId: string;
+  currentStage: string;
+  furthestMilestone: ProjectFunnelStageKey;
+  furthestMilestoneLabel: string;
+  projectManager: string;
+  dealOwner: string;
+}
+
+export interface MilestoneCohortResponse {
+  milestone: ProjectFunnelStageKey;
+  milestoneLabel: string;
+  rangeStart: string;
+  rangeEnd: string;
+  totalCount: number;
+  totalAmount: number;
+  byCurrentStage: MilestoneCohortBucket[];
+  byFurthestMilestone: MilestoneCohortBucket[];
+  deals: MilestoneCohortDeal[];
+  generatedAt: string;
+}
+
+/** Highest funnel milestone a deal has actually reached (defaults to Sales Closed). */
+function furthestMilestoneKey(p: Project): ProjectFunnelStageKey {
+  const m = resolveMilestones(p);
+  if (m.hasPtoGranted) return "ptoGranted";
+  if (m.hasInspectionPassed) return "inspectionPassed";
+  if (m.hasConstructionComplete) return "constructionComplete";
+  if (m.hasConstructionScheduled) return "constructionScheduled";
+  if (m.hasPermitIssued) return "permitsIssued";
+  if (m.hasPermitSubmit) return "permitsSubmitted";
+  if (m.hasDesignComplete) return "designCompleted";
+  if (m.hasDaApproved) return "daApproved";
+  if (m.hasDaSent) return "daSent";
+  if (m.hasSurvey) return "surveyDone";
+  if (m.hasSurveyScheduled) return "surveyScheduled";
+  return "salesClosed";
+}
+
+export function buildMilestoneCohort(
+  projects: Project[],
+  milestone: ProjectFunnelStageKey,
+  range: { start: string; end: string },
+  locations?: string[],
+  filters?: { projectManagers?: string[]; dealOwners?: string[] }
+): MilestoneCohortResponse {
+  const cutoff = new Date(range.start + "T00:00:00");
+  const endBound = new Date(range.end + "T23:59:59");
+  const field = MILESTONE_DATE_FIELD[milestone];
+
+  const locSet = locations && locations.length > 0 ? new Set(locations) : null;
+  const pmSet = filters?.projectManagers && filters.projectManagers.length > 0 ? new Set(filters.projectManagers) : null;
+  const ownerSet = filters?.dealOwners && filters.dealOwners.length > 0 ? new Set(filters.dealOwners) : null;
+
+  const byCurrent = new Map<string, MilestoneCohortBucket>();
+  const byFurthest = new Map<string, MilestoneCohortBucket>();
+  const deals: MilestoneCohortDeal[] = [];
+  let totalCount = 0;
+  let totalAmount = 0;
+
+  for (const p of projects) {
+    const dateVal = p[field] as string | null;
+    if (!dateVal) continue;
+    const d = new Date(dateVal + "T12:00:00");
+    if (d < cutoff || d > endBound) continue;
+
+    if (locSet) {
+      const canon = normalizeLocation(p.pbLocation);
+      if (!canon || !locSet.has(canon)) continue;
+    }
+    if (pmSet && !pmSet.has(p.projectManager || "")) continue;
+    if (ownerSet && !ownerSet.has(p.dealOwner || "")) continue;
+
+    const amt = p.amount || 0;
+    totalCount++;
+    totalAmount += amt;
+
+    const sid = p.stageId || "unknown";
+    const stageName = p.stage || DEAL_STAGE_MAP[sid] || sid;
+    if (!byCurrent.has(sid)) byCurrent.set(sid, { key: sid, label: stageName, count: 0, amount: 0 });
+    const cb = byCurrent.get(sid)!;
+    cb.count++;
+    cb.amount += amt;
+
+    const fk = furthestMilestoneKey(p);
+    if (!byFurthest.has(fk)) byFurthest.set(fk, { key: fk, label: FUNNEL_STAGE_LABELS[fk], count: 0, amount: 0 });
+    const fb = byFurthest.get(fk)!;
+    fb.count++;
+    fb.amount += amt;
+
+    deals.push({
+      id: p.id,
+      name: p.name,
+      projectNumber: p.projectNumber,
+      amount: amt,
+      pbLocation: p.pbLocation,
+      url: p.url,
+      milestoneDate: dateVal,
+      currentStageId: sid,
+      currentStage: stageName,
+      furthestMilestone: fk,
+      furthestMilestoneLabel: FUNNEL_STAGE_LABELS[fk],
+      projectManager: p.projectManager || "",
+      dealOwner: p.dealOwner || "",
+    });
+  }
+
+  const byCurrentStage = [...byCurrent.values()].sort(
+    (a, b) => (STAGE_PRIORITY_MAP[a.key] ?? 99) - (STAGE_PRIORITY_MAP[b.key] ?? 99)
+  );
+  const byFurthestMilestone = [...byFurthest.values()].sort(
+    (a, b) =>
+      PROJECT_FUNNEL_STAGES.indexOf(a.key as ProjectFunnelStageKey) -
+      PROJECT_FUNNEL_STAGES.indexOf(b.key as ProjectFunnelStageKey)
+  );
+  deals.sort((a, b) => b.milestoneDate.localeCompare(a.milestoneDate));
+
+  return {
+    milestone,
+    milestoneLabel: FUNNEL_STAGE_LABELS[milestone],
+    rangeStart: range.start,
+    rangeEnd: range.end,
+    totalCount,
+    totalAmount,
+    byCurrentStage,
+    byFurthestMilestone,
+    deals,
+    generatedAt: new Date().toISOString(),
+  };
+}
