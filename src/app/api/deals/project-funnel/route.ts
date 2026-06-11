@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { requireApiAuth } from "@/lib/api-auth";
-import { fetchAllProjects } from "@/lib/hubspot";
+import { fetchAllProjects, type Project } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { buildProjectFunnelData } from "@/lib/project-funnel-aggregation";
 
@@ -19,7 +19,6 @@ export async function GET(request: NextRequest) {
     );
     const locationParam = searchParams.get("locations") || "";
     const locations = locationParam ? locationParam.split(",").filter(Boolean) : [];
-    const cacheLocation = locations.length > 0 ? locations.sort().join(",") : "all";
 
     // Optional explicit calendar window (YYYY-MM-DD). Only honored when both
     // bounds are present and well-formed; otherwise fall back to the rolling
@@ -35,26 +34,25 @@ export async function GET(request: NextRequest) {
     const pms = (searchParams.get("pms") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const owners = (searchParams.get("owners") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const filters = pms.length > 0 || owners.length > 0 ? { projectManagers: pms, dealOwners: owners } : undefined;
-    const staffKey = filters ? `pm:${[...pms].sort().join("|")};own:${[...owners].sort().join("|")}` : "all";
 
-    const cacheKey = CACHE_KEYS.PROJECT_FUNNEL(
-      months,
-      cacheLocation,
-      `${range ? `${range.start}_${range.end}` : "rolling"}:${staffKey}`
+    // Cache only the expensive, filter-independent project fetch (~6,500 deals)
+    // under the shared PROJECTS_ALL key that other metrics routes already warm.
+    // All filters (location / PM / owner / timeframe) are applied in-memory by
+    // buildProjectFunnelData on each request, so changing a filter is cheap and
+    // never triggers a fresh HubSpot fetch. Previously the cache key included
+    // the filters, so every filter change forced a live fetch of all deals,
+    // which exceeded the serverless timeout (504 → "page not work").
+    const { data: projects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
+      CACHE_KEYS.PROJECTS_ALL,
+      () => fetchAllProjects({ activeOnly: false })
     );
 
-    const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
-      cacheKey,
-      async () => {
-        const projects = await fetchAllProjects({ activeOnly: false });
-        return buildProjectFunnelData(
-          projects,
-          months,
-          locations.length > 0 ? locations : undefined,
-          range,
-          filters
-        );
-      }
+    const data = buildProjectFunnelData(
+      projects || [],
+      months,
+      locations.length > 0 ? locations : undefined,
+      range,
+      filters
     );
 
     return NextResponse.json({
