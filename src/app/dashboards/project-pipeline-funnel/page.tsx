@@ -443,7 +443,8 @@ function HeroLocationMatrix({
   summaryByLocation: ProjectFunnelResponse["summaryByLocation"];
   totalSummary: ProjectFunnelResponse["summary"];
 }) {
-  const locs = sortLocationKeys(Object.keys(summaryByLocation));
+  // Every deal should carry a PB location; drop the "Unknown" catch-all bucket.
+  const locs = sortLocationKeys(Object.keys(summaryByLocation).filter((k) => k !== "Unknown"));
 
   const cell = (d: ProjectFunnelStageData) => {
     const t = total(d);
