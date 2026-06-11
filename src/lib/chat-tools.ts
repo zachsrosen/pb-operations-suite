@@ -506,7 +506,10 @@ export function createReadOnlyChatTools() {
       "are waiting on inspection', or 'PTO status'. statusType: 'da' = the customer-facing " +
       "Design Approval (layout_status), 'design' = engineering design status, 'permitting', " +
       "'interconnection', 'site_survey', 'construction' (install status), 'inspection' " +
-      "(final inspection), or 'pto' (Permission To Operate — the utility milestone). " +
+      "(final inspection), 'pto' (Permission To Operate — the utility milestone), " +
+      "'pe_m1' or 'pe_m2' (Participate Energy milestone 1 / milestone 2 submission " +
+      "statuses — PE deals only; values run Ready to Submit → Waiting on Information → " +
+      "Submitted → Rejected → Ready to Resubmit → Resubmitted → Approved → Paid). " +
       "Optionally scope to one pipeline stage. Returns the TRUE count for each exact " +
       "status value — match the user's wording to the right bucket.",
     inputSchema: z.object({
@@ -519,6 +522,8 @@ export function createReadOnlyChatTools() {
         "construction",
         "inspection",
         "pto",
+        "pe_m1",
+        "pe_m2",
       ]),
       stage: z
         .string()
@@ -542,10 +547,20 @@ export function createReadOnlyChatTools() {
         construction: ["constructionStatus", "install_status"],
         inspection: ["finalInspectionStatus", "final_inspection_status"],
         pto: ["ptoStatus", "pto_status"],
+        // Participate Energy milestones (PE deals only). statusLabel has no
+        // map for these — it falls back to the raw value, which IS the
+        // display value (Ready to Submit … Approved, Paid).
+        pe_m1: ["peM1Status", "pe_m1_status"],
+        pe_m2: ["peM2Status", "pe_m2_status"],
       };
       const [projField, propKey] = FIELD_MAP[input.statusType];
+      const isPeMilestone =
+        input.statusType === "pe_m1" || input.statusType === "pe_m2";
 
       let projects = await fetchAllProjects({ activeOnly: true });
+      if (isPeMilestone) {
+        projects = projects.filter((p) => p.isParticipateEnergy);
+      }
       if (input.stage) {
         const want = input.stage.trim().toLowerCase();
         projects = projects.filter(
@@ -616,7 +631,9 @@ export function createReadOnlyChatTools() {
         totalDealsConsidered: projects.length,
         dealsWithThisStatus,
         counts: sorted,
-        note: "Each key is an exact status value with its true count. Match the user's wording to the right bucket(s); if nothing fits, say so rather than guessing.",
+        note: isPeMilestone
+          ? "Scoped to active Participate Energy deals only (totalDealsConsidered = active PE deals). Deals with no status for this milestone haven't started it. Status flow: Ready to Submit → Waiting on Information → Submitted → Rejected → Ready to Resubmit → Resubmitted → Approved → Paid."
+          : "Each key is an exact status value with its true count. Match the user's wording to the right bucket(s); if nothing fits, say so rather than guessing.",
       });
     },
   });
