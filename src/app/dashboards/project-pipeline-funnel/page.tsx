@@ -482,7 +482,8 @@ function HeroLocationMatrix({
   totalSummary: ProjectFunnelResponse["summary"];
   hideCancelled?: boolean;
 }) {
-  const locs = sortLocationKeys(Object.keys(summaryByLocation));
+  // Every deal should carry a PB location; drop the "Unknown" catch-all column.
+  const locs = sortLocationKeys(Object.keys(summaryByLocation).filter((k) => k !== "Unknown"));
   const showTotal = locs.length > 1;
 
   // Transposed: milestones run down the rows, PB locations across the columns
