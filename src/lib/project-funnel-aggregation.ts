@@ -98,6 +98,8 @@ export interface ProjectFunnelStageGroup {
   stageName: string;
   count: number;
   amount: number;
+  /** Deals in this current stage broken down by their stage-relevant status. */
+  statusBreakdown: Array<{ status: string; count: number }>;
 }
 
 export interface ProjectFunnelDrillDownDeal {
@@ -190,6 +192,21 @@ const STAGE_PRIORITY_MAP: Record<string, number> = {
   "20440343": 10, // Project Complete
   "68229433": 11, // Cancelled
   "20440344": 12, // On Hold
+};
+
+/**
+ * Which deal status field is relevant to each current pipeline stage — used to
+ * break down the "Current Pipeline Position" by status. Stages not listed
+ * (RTB, Close Out, On Hold, …) fall back to "No status".
+ */
+const STAGE_STATUS_SOURCE: Record<string, { field: keyof Project; labelKey: string }> = {
+  "20461936": { field: "siteSurveyStatus", labelKey: "site_survey_status" },        // Site Survey
+  "20461937": { field: "designStatus", labelKey: "design_status" },                 // Design & Engineering
+  "20461938": { field: "permittingStatus", labelKey: "permitting_status" },         // Permitting & Interconnection
+  "71052436": { field: "permittingStatus", labelKey: "permitting_status" },         // RTB - Blocked
+  "20440342": { field: "constructionStatus", labelKey: "install_status" },          // Construction
+  "22580872": { field: "finalInspectionStatus", labelKey: "final_inspection_status" }, // Inspection
+  "20461940": { field: "ptoStatus", labelKey: "pto_status" },                       // Permission To Operate
 };
 
 function todayStr(): string {
@@ -699,8 +716,10 @@ export function buildProjectFunnelData(
 
   const monthlyActivity = [...activityMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
-  // Stage distribution — sorted by pipeline order (STAGE_PRIORITY_MAP)
+  // Stage distribution — sorted by pipeline order (STAGE_PRIORITY_MAP), with a
+  // per-stage breakdown by the status that's relevant to that stage.
   const stageMap = new Map<string, ProjectFunnelStageGroup>();
+  const stageStatusMap = new Map<string, Map<string, number>>();
   for (const p of filtered) {
     const sid = p.stageId || "unknown";
     if (!stageMap.has(sid)) {
@@ -709,11 +728,23 @@ export function buildProjectFunnelData(
         stageName: p.stage || DEAL_STAGE_MAP[sid] || sid,
         count: 0,
         amount: 0,
+        statusBreakdown: [],
       });
+      stageStatusMap.set(sid, new Map());
     }
     const sg = stageMap.get(sid)!;
     sg.count++;
     sg.amount += p.amount || 0;
+
+    const src = STAGE_STATUS_SOURCE[sid];
+    const label = (src && statusLabel(src.labelKey, p[src.field] as string | null)) || "No status";
+    const sm = stageStatusMap.get(sid)!;
+    sm.set(label, (sm.get(label) || 0) + 1);
+  }
+  for (const [sid, sg] of stageMap) {
+    sg.statusBreakdown = [...stageStatusMap.get(sid)!.entries()]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count);
   }
   const stageDistribution = [...stageMap.values()].sort(
     (a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99)

@@ -70,22 +70,6 @@ const STAGE_CONFIG: StageConfig[] = [
   { key: "ptoGranted", label: "PTO Granted", color: "bg-teal-500", textColor: "text-teal-400" },
 ];
 
-const MEDIAN_KEYS: Array<{
-  key: keyof ProjectFunnelResponse["medianDays"];
-}> = [
-  { key: "closedToSurveyScheduled" },
-  { key: "surveyScheduledToComplete" },
-  { key: "surveyToDaSent" },
-  { key: "daSentToApproved" },
-  { key: "approvedToDesignComplete" },
-  { key: "designCompleteToPermitSubmit" },
-  { key: "permitSubmitToIssued" },
-  { key: "permitIssuedToConstructionScheduled" },
-  { key: "constructionScheduledToComplete" },
-  { key: "constructionCompleteToInspection" },
-  { key: "inspectionToPto" },
-];
-
 function ProjectPipelineFunnelInner() {
   // The URL query string is the source of truth for filters, so views are
   // shareable and reload-safe.
@@ -122,6 +106,22 @@ function ProjectPipelineFunnelInner() {
   // The Funnel tab is always the live active-pipeline snapshot (no date window).
   // Only the Cohorts and Monthly Activity tabs are time-based.
   const useActiveScope = tab === "funnel";
+
+  // Which backlog row is expanded — lifted so the hero connectors can open one.
+  const [expandedBacklog, setExpandedBacklog] = useState<string | null>(null);
+  const openBacklog = useCallback((backlogKey: string) => {
+    setExpandedBacklog(backlogKey);
+    setTimeout(() => {
+      document.getElementById(`backlog-${backlogKey}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }, []);
+  const handleConvClick = useCallback(
+    (stageKey: ProjectFunnelStageKey) => {
+      const bk = STAGE_TO_BACKLOG[stageKey];
+      if (bk) openBacklog(bk);
+    },
+    [openBacklog]
+  );
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -302,19 +302,16 @@ function ProjectPipelineFunnelInner() {
                 <ConversionLegend hideCancelled />
               </div>
               {/* Pre-construction: Sales → DA Sent (4) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 4)} hideCancelled />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 4)} hideCancelled onConvClick={handleConvClick} />
               {/* Design & Permitting: DA Approved → Permits Issued (4) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(4, 8)} hideCancelled />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(4, 8)} hideCancelled onConvClick={handleConvClick} />
               {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} hideCancelled />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} hideCancelled onConvClick={handleConvClick} />
             </>
           )}
 
           {/* Backlog */}
-          <BacklogSection summary={s} drillDown={data.drillDown} />
-
-          {/* Funnel bars */}
-          <FunnelBars summary={s} medianDays={data.medianDays} />
+          <BacklogSection summary={s} drillDown={data.drillDown} expanded={expandedBacklog} onToggle={setExpandedBacklog} />
 
           {/* Current pipeline position */}
           <div className="mt-6">
@@ -365,15 +362,15 @@ function ConvNumbers({
 }) {
   return (
     <span className="font-semibold tabular-nums whitespace-nowrap">
-      <span className="text-emerald-400">{stats.conv}</span>
+      <span className="text-emerald-400">{stats.conv}%</span>
       {!hideCancelled && (
         <>
-          <span className="text-muted/40">·</span>
-          <span className="text-red-400/80">{stats.cancelled}</span>
+          <span className="text-muted/40"> · </span>
+          <span className="text-red-400/80">{stats.cancelled}%</span>
         </>
       )}
-      <span className="text-muted/40">·</span>
-      <span className="text-zinc-400">{stats.pending}</span>
+      <span className="text-muted/40"> · </span>
+      <span className="text-zinc-400">{stats.pending}%</span>
     </span>
   );
 }
@@ -396,28 +393,67 @@ function ConversionLegend({ className = "", hideCancelled }: { className?: strin
 function ConvConnector({
   stats,
   hideCancelled,
+  onClick,
+  title,
 }: {
   stats: { conv: number; cancelled: number; pending: number } | null;
   hideCancelled?: boolean;
+  onClick?: () => void;
+  title?: string;
 }) {
-  return (
-    <div className="shrink-0 flex flex-col items-center justify-center px-1 self-center">
+  const inner = (
+    <>
       <span className="text-muted/50 text-sm leading-none">→</span>
       {stats && <span className="text-[10px] mt-1"><ConvNumbers stats={stats} hideCancelled={hideCancelled} /></span>}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        className="shrink-0 flex flex-col items-center justify-center px-1.5 self-center rounded-md hover:bg-surface-2 transition-colors cursor-pointer"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div className="shrink-0 flex flex-col items-center justify-center px-1 self-center">
+      {inner}
     </div>
   );
 }
+
+/** Each between-card connector maps to the backlog of deals stuck at that transition. */
+const STAGE_TO_BACKLOG: Partial<Record<ProjectFunnelStageKey, string>> = {
+  surveyScheduled: "awaitingSurveySchedule",
+  surveyDone: "awaitingSurvey",
+  daSent: "awaitingDaSend",
+  daApproved: "awaitingApproval",
+  designCompleted: "awaitingDesignComplete",
+  permitsSubmitted: "awaitingPermitSubmit",
+  permitsIssued: "awaitingPermitIssue",
+  constructionScheduled: "awaitingConstructionSchedule",
+  constructionComplete: "awaitingConstructionComplete",
+  inspectionPassed: "awaitingInspection",
+  ptoGranted: "awaitingPto",
+};
 
 function HeroCards({
   summary,
   previousSummary,
   stages,
   hideCancelled,
+  onConvClick,
 }: {
   summary: ProjectFunnelResponse["summary"];
   previousSummary?: ProjectFunnelResponse["previousSummary"];
   stages: StageConfig[];
   hideCancelled?: boolean;
+  /** Click a between-card connector to open the matching backlog. */
+  onConvClick?: (stageKey: ProjectFunnelStageKey) => void;
 }) {
   // Horizontal flow with arrow connectors between cards; scrolls on small
   // screens. conv/cancelled/pending live in the connector now (see legend),
@@ -448,7 +484,14 @@ function HeroCards({
 
         return (
           <Fragment key={stage.key}>
-            {globalIdx > 0 && <ConvConnector stats={ts} hideCancelled={hideCancelled} />}
+            {globalIdx > 0 && (
+              <ConvConnector
+                stats={ts}
+                hideCancelled={hideCancelled}
+                onClick={onConvClick && STAGE_TO_BACKLOG[stage.key] ? () => onConvClick(stage.key) : undefined}
+                title={STAGE_TO_BACKLOG[stage.key] ? `Open backlog: pending ${stage.label}` : undefined}
+              />
+            )}
             <div className="flex-1 min-w-[150px]">
               <StatCard
                 label={stage.label}
@@ -582,11 +625,14 @@ const segOpacity = (i: number) => Math.max(0.4, 1 - i * 0.18);
 function BacklogSection({
   summary,
   drillDown,
+  expanded,
+  onToggle,
 }: {
   summary: ProjectFunnelResponse["summary"];
   drillDown: ProjectFunnelDrillDown;
+  expanded: string | null;
+  onToggle: (key: string | null) => void;
 }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   type StaffCol = { key: keyof ProjectFunnelDrillDownDeal; label: string };
   const PM: StaffCol = { key: "projectManager", label: "PM" };
@@ -631,8 +677,16 @@ function BacklogSection({
   const totalBacklogRevenue = backlogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
 
   function toggle(key: string) {
-    setExpanded((prev) => (prev === key ? null : key));
+    onToggle(expanded === key ? null : key);
   }
+
+  // Median days the pending deals have been waiting at this stage.
+  const medianDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
+    const days = deals.map((d) => d.daysWaiting).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+    if (days.length === 0) return null;
+    const mid = Math.floor(days.length / 2);
+    return days.length % 2 ? days[mid] : Math.round((days[mid - 1] + days[mid]) / 2);
+  };
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
@@ -649,8 +703,9 @@ function BacklogSection({
           const revenue = backlogRevenue(b);
           const segs = statusBreakdown(b.deals);
           const segTotal = b.deals.length || 1;
+          const medDays = medianDaysInStage(b.deals);
           return (
-          <div key={b.key}>
+          <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
               type="button"
               className="flex items-center gap-3 w-full py-1.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer"
@@ -690,6 +745,11 @@ function BacklogSection({
                 {b.count > 0 && (
                   <span className="text-xs text-muted shrink-0 tabular-nums">
                     {formatCurrencyCompact(revenue)}
+                  </span>
+                )}
+                {b.count > 0 && medDays != null && (
+                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Median days the pending deals have been at this stage">
+                    {medDays}d in stage
                   </span>
                 )}
               </div>
@@ -877,96 +937,6 @@ function DrillDownTable({
   );
 }
 
-function FunnelBars({
-  summary,
-  medianDays,
-}: {
-  summary: ProjectFunnelResponse["summary"];
-  medianDays: ProjectFunnelResponse["medianDays"];
-}) {
-  const maxTotal = total(summary.salesClosed) || 1;
-
-  const conversions = STAGE_CONFIG.slice(1).map((stage, i) => {
-    const prevStage = STAGE_CONFIG[i];
-    // Conversion is computed on active deals only — cancelled excluded.
-    const prevActive = summary[prevStage.key].count;
-    const curActive = summary[stage.key].count;
-    return {
-      pct: prevActive > 0 ? Math.round((curActive / prevActive) * 100) : 0,
-      days: medianDays[MEDIAN_KEYS[i].key],
-    };
-  });
-
-  return (
-    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
-      <h3 className="text-sm font-semibold text-foreground/80 mb-4">
-        Pipeline Throughput
-      </h3>
-      {STAGE_CONFIG.map((stage, i) => {
-        const d = summary[stage.key];
-        const active = d.count;
-        const cancelled = d.cancelledCount;
-        const stageTotal = active + cancelled;
-
-        return (
-          <div key={stage.key}>
-            <div className="flex items-center gap-3 mb-1">
-              <span className="w-36 text-xs text-muted text-right shrink-0">
-                {stage.label}
-              </span>
-              {stageTotal === 0 ? (
-                <span className="text-xs text-muted/60 italic">—</span>
-              ) : (
-                <div className="flex h-7" style={{ width: `${Math.max(2, (stageTotal / maxTotal) * 100)}%` }}>
-                  <div
-                    className={`${stage.color} rounded-l-md flex items-center px-2.5 min-w-0`}
-                    style={{ width: `${(active / stageTotal) * 100}%` }}
-                  >
-                    <span className="text-white text-xs font-semibold truncate">
-                      {active} · {formatCurrencyCompact(d.amount)}
-                    </span>
-                  </div>
-                  {cancelled > 0 && (
-                    <div
-                      className="bg-zinc-600 rounded-r-md flex items-center justify-center px-1.5 min-w-0"
-                      style={{ width: `${(cancelled / stageTotal) * 100}%` }}
-                      title={`${cancelled} cancelled · ${formatCurrencyCompact(d.cancelledAmount)}`}
-                    >
-                      <span className="text-zinc-300 text-[10px] truncate">
-                        {cancelled} · {formatCurrencyCompact(d.cancelledAmount)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            {i < STAGE_CONFIG.length - 1 && (
-              <div className="flex items-center gap-3 mb-2">
-                <span className="w-36" />
-                <div className="flex items-center gap-1.5 pl-2 text-muted">
-                  <span className="text-base">↓</span>
-                  <span className="text-[11px]">
-                    {conversions[i].pct}% conversion
-                    {conversions[i].days != null && ` · median ${conversions[i].days}d`}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <div className="flex gap-4 mt-3 text-[11px] text-muted">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 bg-cyan-500 rounded-sm" /> Active
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 bg-zinc-600 rounded-sm" /> Cancelled
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function MonthlyFunnelChart({
   cohorts,
 }: {
@@ -1134,32 +1104,52 @@ function StageDistribution({
       <p className="text-xs text-muted mb-4">
         Where all {totalDeals} deals from this period currently sit
       </p>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {stages.map((stage) => {
           const pct = totalDeals > 0 ? Math.round((stage.count / totalDeals) * 100) : 0;
           const color = STAGE_COLORS[stage.stageName] || "bg-zinc-500";
+          const segs = stage.statusBreakdown.length ? stage.statusBreakdown : [{ status: "No status", count: stage.count }];
+          const segTotal = stage.count || 1;
+          const hasRealStatus = stage.statusBreakdown.some((s) => s.status !== "No status");
           return (
-            <div key={stage.stageId} className="flex items-center gap-3">
-              <span className="w-44 text-xs text-muted text-right shrink-0 truncate" title={stage.stageName}>
-                {stage.stageName}
-              </span>
-              <div className="flex items-center gap-2 flex-1">
-                {stage.count > 0 ? (
-                  <div
-                    className={`${color} h-6 rounded-md flex items-center px-2.5`}
-                    style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }}
-                  >
-                    <span className="text-white text-xs font-bold truncate">
-                      {stage.count}
-                    </span>
-                  </div>
-                ) : (
-                  <span className="text-xs text-muted/60 italic">—</span>
-                )}
-                <span className="text-[11px] text-muted shrink-0">
-                  {formatCurrencyCompact(stage.amount)} · {pct}%
+            <div key={stage.stageId}>
+              <div className="flex items-center gap-3">
+                <span className="w-44 text-xs text-muted text-right shrink-0 truncate" title={stage.stageName}>
+                  {stage.stageName}
                 </span>
+                <div className="flex items-center gap-2 flex-1">
+                  {stage.count > 0 ? (
+                    <div
+                      className="flex h-6 rounded-md overflow-hidden"
+                      style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }}
+                    >
+                      {segs.map((seg, i) => (
+                        <div
+                          key={seg.status}
+                          className={`${color} h-full ${i > 0 ? "border-l border-black/25" : ""}`}
+                          style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: segOpacity(i) }}
+                          title={`${seg.status}: ${seg.count}`}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted/60 italic">—</span>
+                  )}
+                  <span className="text-[11px] text-muted shrink-0 tabular-nums">
+                    <span className="text-foreground font-semibold">{stage.count}</span> · {formatCurrencyCompact(stage.amount)} · {pct}%
+                  </span>
+                </div>
               </div>
+              {/* Per-status counts, aligned under the bar. */}
+              {stage.count > 0 && hasRealStatus && (
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-[11.75rem] pt-0.5 text-[10px] text-muted">
+                  {stage.statusBreakdown.map((seg) => (
+                    <span key={seg.status} className="whitespace-nowrap">
+                      <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
