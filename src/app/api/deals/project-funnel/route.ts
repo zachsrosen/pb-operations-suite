@@ -40,6 +40,9 @@ export async function GET(request: NextRequest) {
     const owners = (searchParams.get("owners") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const filters = pms.length > 0 || owners.length > 0 ? { projectManagers: pms, dealOwners: owners } : undefined;
 
+    // scope=active → snapshot of all currently-active deals, ignoring the date window.
+    const scope = searchParams.get("scope") === "active" ? "active" : "cohort";
+
     // Cache only the expensive, filter-independent project fetch (~6,500 deals)
     // under the shared PROJECTS_ALL key that other metrics routes already warm.
     // All filters (location / PM / owner / timeframe) are applied in-memory by
@@ -57,7 +60,8 @@ export async function GET(request: NextRequest) {
       months,
       locations.length > 0 ? locations : undefined,
       range,
-      filters
+      filters,
+      { scope }
     );
 
     return NextResponse.json({

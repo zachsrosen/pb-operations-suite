@@ -164,6 +164,12 @@ export interface ProjectFunnelResponse {
 
 const CANCELLED_STAGE_ID = "68229433";
 const ON_HOLD_STAGE_ID = "20440344";
+const PROJECT_COMPLETE_STAGE_ID = "20440343";
+
+/** Active = still in flight: not cancelled and not project-complete. */
+function isActiveDeal(p: Project): boolean {
+  return p.stageId !== CANCELLED_STAGE_ID && p.stageId !== PROJECT_COMPLETE_STAGE_ID;
+}
 
 /**
  * Stage priority from DEAL_STAGE_MAP / STAGE_PRIORITY.
@@ -428,13 +434,25 @@ export function buildProjectFunnelData(
    */
   range?: { start: string; end: string },
   /** Optional PM / deal-owner filters (names). Empty/omitted = no filter. */
-  filters?: { projectManagers?: string[]; dealOwners?: string[] }
+  filters?: { projectManagers?: string[]; dealOwners?: string[] },
+  /**
+   * scope "active" ignores the date window entirely and instead includes every
+   * currently-active deal (not cancelled / not project-complete), regardless of
+   * when any milestone happened — a snapshot of the live pipeline. Default
+   * "cohort" windows deals by close date as before.
+   */
+  options?: { scope?: "cohort" | "active" }
 ): ProjectFunnelResponse {
+  const activeScope = options?.scope === "active";
   const now = new Date();
-  const cutoff = range
-    ? new Date(range.start + "T00:00:00")
-    : new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
-  const endBound = range ? new Date(range.end + "T23:59:59") : null;
+  // Active scope spans all time (epoch → no end), so every date-based filter
+  // below passes; deal selection is gated on isActiveDeal instead.
+  const cutoff = activeScope
+    ? new Date(0)
+    : range
+      ? new Date(range.start + "T00:00:00")
+      : new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  const endBound = activeScope ? null : range ? new Date(range.end + "T23:59:59") : null;
   /** A milestone/close date falls inside the active window. */
   const inWindow = (d: Date): boolean => d >= cutoff && (!endBound || d <= endBound);
 
@@ -460,7 +478,11 @@ export function buildProjectFunnelData(
   // real date fields), so the funnel reconciles with HubSpot's closed totals.
   const scopeForOptions = projects.filter((p) => {
     if (!p.closeDate) return false;
-    if (!inWindow(new Date(p.closeDate + "T12:00:00"))) return false;
+    if (activeScope) {
+      if (!isActiveDeal(p)) return false;
+    } else if (!inWindow(new Date(p.closeDate + "T12:00:00"))) {
+      return false;
+    }
     return matchesLocation(p);
   });
   const filterOptions = {
@@ -634,6 +656,7 @@ export function buildProjectFunnelData(
 
   for (const p of projects) {
     if (!matchesLocation(p) || !matchesStaff(p)) continue;
+    if (activeScope && !isActiveDeal(p)) continue;
     const locAct = ensureLocActivity(normalizeLocation(p.pbLocation) || "Unknown");
     for (const { field, activityKey, amountKey } of dateMilestones) {
       const dateVal = p[field] as string | null;

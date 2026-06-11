@@ -25,6 +25,7 @@ import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 
 const TIMEFRAMES = [
+  { label: "All active deals", value: "active" },
   { label: "This Month", value: "this-month" },
   { label: "This Quarter", value: "this-quarter" },
   { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
@@ -129,6 +130,8 @@ function ProjectPipelineFunnelInner() {
       if (locations.length > 0) params.set("locations", locations.join(","));
       if (pms.length > 0) params.set("pms", pms.join(","));
       if (owners.length > 0) params.set("owners", owners.join(","));
+      // "All active deals" snapshot — ignores the date window server-side.
+      if (timeframe === "active") params.set("scope", "active");
       // Calendar timeframes (This Year, Last Year, …) pass exact month bounds so
       // the server clamps to real calendar boundaries instead of N-months-back.
       const range = calendarMonthRange(timeframe);
@@ -244,11 +247,11 @@ function ProjectPipelineFunnelInner() {
           ) : (
             <>
               {/* Pre-construction: Sales → DA Sent (4) */}
-              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
+              <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
               {/* Design & Permitting: DA Approved → Permits Issued (4) */}
-              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} />
+              <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} />
               {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
-              <HeroCards summary={s} previousSummary={data.previousSummary} stages={STAGE_CONFIG.slice(8)} />
+              <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(8)} />
             </>
           )}
 
