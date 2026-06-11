@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, Fragment, useCallback, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
@@ -282,6 +282,28 @@ function total(d: ProjectFunnelStageData) {
   return d.count + d.cancelledCount;
 }
 
+/**
+ * Shares for the transition INTO stage index `i`, all relative to everything
+ * that reached the prior stage (active + cancelled):
+ *   conv     — advanced to this stage (active)
+ *   cancelled — reached this stage but has since cancelled
+ *   pending  — reached the prior stage but neither advanced nor cancelled (stuck)
+ * The three sum to 100%. Returns null for Sales Closed (no prior) or empty prior.
+ */
+function transitionStats(
+  row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
+  i: number
+): { conv: number; cancelled: number; pending: number } | null {
+  if (i === 0) return null;
+  const prevReached = total(row[STAGE_CONFIG[i - 1].key]);
+  if (prevReached === 0) return null;
+  const cur = row[STAGE_CONFIG[i].key];
+  const conv = Math.round((cur.count / prevReached) * 100);
+  const cancelled = Math.min(Math.round((cur.cancelledCount / prevReached) * 100), 100 - conv);
+  const pending = Math.max(0, 100 - conv - cancelled);
+  return { conv, cancelled, pending };
+}
+
 function HeroCards({
   summary,
   previousSummary,
@@ -299,37 +321,26 @@ function HeroCards({
         // Conversion chains across the full funnel order, not the local row
         // slice — so the first card in a row still divides by the stage
         // immediately above it (e.g. Construction Sched. vs Permits Issued),
-        // not by Sales Closed.
+        // not by Sales Closed. conv/cancelled/pending partition the prior
+        // stage's cohort and sum to 100%.
         const globalIdx = STAGE_CONFIG.findIndex((c) => c.key === stage.key);
-        const prevKey = globalIdx > 0 ? STAGE_CONFIG[globalIdx - 1].key : null;
-        // Both rates partition the same cohort — every deal that reached the
-        // prior stage (active + cancelled) — so they sum to ≤ 100%:
-        //   conv%   = of that cohort, the share now active at this stage
-        //   cancel% = of that cohort, the share that reached this stage but
-        //             has since cancelled
-        // The remainder (100% − conv − cancel) is deals lost or stuck at the
-        // prior stage without reaching this one.
-        const prevReached = prevKey ? total(summary[prevKey]) : 0;
-        const convPct = prevReached > 0 ? Math.round((d.count / prevReached) * 100) : 0;
-        // Clamp so rounding can never display a pair that exceeds 100%.
-        const cancelPct = prevReached > 0
-          ? Math.min(Math.round((d.cancelledCount / prevReached) * 100), 100 - convPct)
-          : 0;
+        const ts = transitionStats(summary, globalIdx);
 
         const cancelRaw = d.cancelledCount > 0
           ? `${d.cancelledCount} cancelled (${formatCurrencyCompact(d.cancelledAmount)})`
           : "";
         const amountStr = formatCurrencyCompact(d.amount + d.cancelledAmount);
 
-        // Sales Closed has no prior stage, so it has no conv/cancel rate —
+        // Sales Closed has no prior stage, so it has no conv/cancel/pending —
         // fall back to the raw cancelled count there.
         const subtitle = stage.key === "salesClosed"
           ? [amountStr, cancelRaw].filter(Boolean).join(" · ")
           : [
               amountStr,
-              `${convPct}% conv.`,
-              `${cancelPct}% cancelled${d.cancelledCount > 0 ? ` (${d.cancelledCount} · ${formatCurrencyCompact(d.cancelledAmount)})` : ""}`,
-            ].join(" · ");
+              ts ? `${ts.conv}% conv.` : "",
+              ts ? `${ts.cancelled}% canc.` : "",
+              ts ? `${ts.pending}% pend.` : "",
+            ].filter(Boolean).join(" · ");
 
         // Trend vs the prior equal-length period (total reaching this stage).
         const trend = previousSummary
@@ -368,44 +379,71 @@ function HeroLocationMatrix({
 }) {
   const locs = sortLocationKeys(Object.keys(summaryByLocation));
 
-  // Step conversion for a stage in a given row: active deals here as a share of
-  // everything that reached the prior stage (active + cancelled). Same basis as
-  // the hero cards. Null for Sales Closed (no prior stage) or an empty prior.
-  const convFor = (
-    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
-    i: number
-  ): number | null => {
-    if (i === 0) return null;
-    const prevReached = total(row[STAGE_CONFIG[i - 1].key]);
-    if (prevReached === 0) return null;
-    return Math.round((row[STAGE_CONFIG[i].key].count / prevReached) * 100);
-  };
-
-  const cell = (d: ProjectFunnelStageData, conv: number | null) => {
+  const cell = (d: ProjectFunnelStageData) => {
     const t = total(d);
     return t > 0 ? (
       <>
         <div className="font-semibold">{t}</div>
         <div className="text-muted">{formatCurrencyCompact(d.amount + d.cancelledAmount)}</div>
-        {conv != null && <div className="text-[10px] opacity-70">{conv}% conv.</div>}
       </>
     ) : (
       <span className="text-muted/40">—</span>
     );
   };
 
+  // Arrow connector between two stage columns: conv / cancelled / pending for
+  // the transition into stage `si`, relative to the prior stage's cohort.
+  const arrowCell = (
+    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
+    si: number
+  ) => {
+    const ts = transitionStats(row, si);
+    return (
+      <td className="px-1 py-2 text-center align-middle whitespace-nowrap">
+        {ts ? (
+          <div className="leading-tight">
+            <div className="text-emerald-400 text-[10px] font-semibold">{ts.conv}%</div>
+            <div className="text-red-400/80 text-[9px]">{ts.cancelled}% canc</div>
+            <div className="text-muted/70 text-[9px]">{ts.pending}% pend</div>
+          </div>
+        ) : (
+          <span className="text-muted/30">→</span>
+        )}
+      </td>
+    );
+  };
+
+  const renderStageCells = (
+    row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>
+  ) =>
+    STAGE_CONFIG.map((stage, si) => (
+      <Fragment key={stage.key}>
+        {si > 0 && arrowCell(row, si)}
+        <td className={`text-center py-2 px-1.5 ${stage.textColor}`}>
+          {cell(row[stage.key])}
+        </td>
+      </Fragment>
+    ));
+
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
       <h3 className="text-sm font-semibold text-foreground/80 mb-1">Stage Counts by Location</h3>
-      <p className="text-xs text-muted mb-3">% is step conversion from the prior stage (active reaching this stage ÷ total reaching the prior stage).</p>
+      <p className="text-xs text-muted mb-3">
+        Between each stage: <span className="text-emerald-400">conversion</span> ·{" "}
+        <span className="text-red-400/80">cancelled</span> ·{" "}
+        <span className="text-muted/70">pending</span> — each as a share of everything that reached the prior stage.
+      </p>
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-t-border">
             <th className="text-left py-2 px-2 text-muted font-medium sticky left-0 bg-surface z-10">Location</th>
-            {STAGE_CONFIG.map((s) => (
-              <th key={s.key} className={`text-center py-2 px-1.5 font-medium ${s.textColor} whitespace-nowrap`}>
-                {s.label}
-              </th>
+            {STAGE_CONFIG.map((s, si) => (
+              <Fragment key={s.key}>
+                {si > 0 && <th className="px-1" aria-hidden />}
+                <th className={`text-center py-2 px-1.5 font-medium ${s.textColor} whitespace-nowrap`}>
+                  {s.label}
+                </th>
+              </Fragment>
             ))}
           </tr>
         </thead>
@@ -415,11 +453,7 @@ function HeroLocationMatrix({
               <td className="py-2 px-2 font-semibold text-foreground whitespace-nowrap sticky left-0 bg-inherit z-10">
                 {loc}
               </td>
-              {STAGE_CONFIG.map((stage, si) => (
-                <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
-                  {cell(summaryByLocation[loc][stage.key], convFor(summaryByLocation[loc], si))}
-                </td>
-              ))}
+              {renderStageCells(summaryByLocation[loc])}
             </tr>
           ))}
         </tbody>
@@ -427,11 +461,7 @@ function HeroLocationMatrix({
           <tfoot>
             <tr className="border-t-2 border-t-border font-semibold">
               <td className="py-2 px-2 text-foreground sticky left-0 bg-surface z-10">Total</td>
-              {STAGE_CONFIG.map((stage, si) => (
-                <td key={stage.key} className={`text-center py-2 px-1.5 ${stage.textColor}`}>
-                  {cell(totalSummary[stage.key], convFor(totalSummary, si))}
-                </td>
-              ))}
+              {renderStageCells(totalSummary)}
             </tr>
           </tfoot>
         )}
