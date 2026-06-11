@@ -274,6 +274,9 @@ function ProjectPipelineFunnelInner() {
             <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} />
           ) : (
             <>
+              <div className="flex justify-end mb-2">
+                <ConversionLegend />
+              </div>
               {/* Pre-construction: Sales → DA Sent (4) */}
               <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} />
               {/* Design & Permitting: DA Approved → Permits Issued (4) */}
@@ -335,6 +338,41 @@ function transitionStats(
   return { conv, cancelled, pending };
 }
 
+/** Compact colored conversion numbers: green conv · red cancelled · gray pending. */
+function ConvNumbers({ stats }: { stats: { conv: number; cancelled: number; pending: number } }) {
+  return (
+    <span className="font-semibold tabular-nums whitespace-nowrap">
+      <span className="text-emerald-400">{stats.conv}</span>
+      <span className="text-muted/40">·</span>
+      <span className="text-red-400/80">{stats.cancelled}</span>
+      <span className="text-muted/40">·</span>
+      <span className="text-zinc-400">{stats.pending}</span>
+    </span>
+  );
+}
+
+/** Legend explaining the conversion arrow colors (the numbers are % of prior stage). */
+function ConversionLegend({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex items-center gap-2.5 text-[11px] text-muted ${className}`}>
+      <span className="text-muted/70">→ % of prior stage:</span>
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />conv</span>
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400/80" />canc</span>
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-400" />pend</span>
+    </div>
+  );
+}
+
+/** Arrow connector with the compact colored numbers, used between cards. */
+function ConvConnector({ stats }: { stats: { conv: number; cancelled: number; pending: number } | null }) {
+  return (
+    <div className="shrink-0 flex flex-col items-center justify-center px-1 self-center">
+      <span className="text-muted/50 text-sm leading-none">→</span>
+      {stats && <span className="text-[10px] mt-1"><ConvNumbers stats={stats} /></span>}
+    </div>
+  );
+}
+
 function HeroCards({
   summary,
   previousSummary,
@@ -344,16 +382,17 @@ function HeroCards({
   previousSummary?: ProjectFunnelResponse["previousSummary"];
   stages: StageConfig[];
 }) {
+  // Horizontal flow with arrow connectors between cards; scrolls on small
+  // screens. conv/cancelled/pending live in the connector now (see legend),
+  // not in the card subtitle — keeps cards clean.
   return (
-    <div className="grid gap-4 mb-4 grid-cols-2 lg:grid-cols-4">
+    <div className="flex items-stretch gap-2 mb-4 overflow-x-auto pb-1">
       {stages.map((stage) => {
         const d = summary[stage.key];
         const stageTotal = total(d);
         // Conversion chains across the full funnel order, not the local row
-        // slice — so the first card in a row still divides by the stage
-        // immediately above it (e.g. Construction Sched. vs Permits Issued),
-        // not by Sales Closed. conv/cancelled/pending partition the prior
-        // stage's cohort and sum to 100%.
+        // slice. The connector before each card shows the transition INTO it,
+        // so cross-row transitions stay visible at the start of later rows.
         const globalIdx = STAGE_CONFIG.findIndex((c) => c.key === stage.key);
         const ts = transitionStats(summary, globalIdx);
 
@@ -361,17 +400,9 @@ function HeroCards({
           ? `${d.cancelledCount} cancelled (${formatCurrencyCompact(d.cancelledAmount)})`
           : "";
         const amountStr = formatCurrencyCompact(d.amount + d.cancelledAmount);
-
-        // Sales Closed has no prior stage, so it has no conv/cancel/pending —
-        // fall back to the raw cancelled count there.
         const subtitle = stage.key === "salesClosed"
           ? [amountStr, cancelRaw].filter(Boolean).join(" · ")
-          : [
-              amountStr,
-              ts ? `${ts.conv}% conv.` : "",
-              ts ? `${ts.cancelled}% canc.` : "",
-              ts ? `${ts.pending}% pend.` : "",
-            ].filter(Boolean).join(" · ");
+          : amountStr;
 
         // Trend vs the prior equal-length period (total reaching this stage).
         const trend = previousSummary
@@ -379,14 +410,18 @@ function HeroCards({
           : null;
 
         return (
-          <StatCard
-            key={stage.key}
-            label={stage.label}
-            value={stageTotal}
-            subtitle={subtitle}
-            color={stage.color.replace("bg-", "").replace("-500", "") as "orange"}
-            trend={trend}
-          />
+          <Fragment key={stage.key}>
+            {globalIdx > 0 && <ConvConnector stats={ts} />}
+            <div className="flex-1 min-w-[150px]">
+              <StatCard
+                label={stage.label}
+                value={stageTotal}
+                subtitle={subtitle}
+                color={stage.color.replace("bg-", "").replace("-500", "") as "orange"}
+                trend={trend}
+              />
+            </div>
+          </Fragment>
         );
       })}
     </div>
@@ -432,10 +467,9 @@ function HeroLocationMatrix({
     return (
       <td className="px-1 py-2 text-center align-middle whitespace-nowrap">
         {ts ? (
-          <div className="leading-tight">
-            <div className="text-emerald-400 text-[10px] font-semibold">{ts.conv}%</div>
-            <div className="text-red-400/80 text-[9px]">{ts.cancelled}% canc</div>
-            <div className="text-muted/70 text-[9px]">{ts.pending}% pend</div>
+          <div className="flex flex-col items-center leading-none gap-0.5">
+            <span className="text-muted/50 text-xs">→</span>
+            <span className="text-[10px]"><ConvNumbers stats={ts} /></span>
           </div>
         ) : (
           <span className="text-muted/30">→</span>
@@ -458,12 +492,10 @@ function HeroLocationMatrix({
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6 overflow-x-auto">
-      <h3 className="text-sm font-semibold text-foreground/80 mb-1">Stage Counts by Location</h3>
-      <p className="text-xs text-muted mb-3">
-        Between each stage: <span className="text-emerald-400">conversion</span> ·{" "}
-        <span className="text-red-400/80">cancelled</span> ·{" "}
-        <span className="text-muted/70">pending</span> — each as a share of everything that reached the prior stage.
-      </p>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <h3 className="text-sm font-semibold text-foreground/80">Stage Counts by Location</h3>
+        <ConversionLegend />
+      </div>
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-t-border">
