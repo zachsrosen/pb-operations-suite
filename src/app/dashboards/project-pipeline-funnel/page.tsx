@@ -26,7 +26,6 @@ import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dash
 import { MonthlyActivityView } from "@/components/funnel/MonthlyActivityView";
 
 const TIMEFRAMES = [
-  { label: "All active deals", value: "active" },
   { label: "This Month", value: "this-month" },
   { label: "This Quarter", value: "this-quarter" },
   { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
@@ -94,7 +93,7 @@ function ProjectPipelineFunnelInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const timeframe = searchParams.get("tf") || "active";
+  const timeframe = searchParams.get("tf") || "6";
   const locations = useMemo(() => (searchParams.get("loc") || "").split(",").filter(Boolean), [searchParams]);
   const pms = useMemo(() => (searchParams.get("pm") || "").split(",").filter(Boolean), [searchParams]);
   const owners = useMemo(() => (searchParams.get("own") || "").split(",").filter(Boolean), [searchParams]);
@@ -110,7 +109,7 @@ function ProjectPipelineFunnelInner() {
     },
     [searchParams, router, pathname]
   );
-  const setTimeframe = useCallback((v: string) => setParam("tf", v === "active" ? "" : v), [setParam]);
+  const setTimeframe = useCallback((v: string) => setParam("tf", v === "6" ? "" : v), [setParam]);
   const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
   const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
@@ -120,6 +119,9 @@ function ProjectPipelineFunnelInner() {
   const tab: "funnel" | "activity" | "cohorts" =
     tabParam === "activity" ? "activity" : tabParam === "cohorts" ? "cohorts" : "funnel";
   const setTab = useCallback((v: "funnel" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v), [setParam]);
+  // The Funnel tab is always the live active-pipeline snapshot (no date window).
+  // Only the Cohorts and Monthly Activity tabs are time-based.
+  const useActiveScope = tab === "funnel";
 
   const months = useMemo(() => resolveMonths(timeframe), [timeframe]);
 
@@ -129,21 +131,25 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: queryKeys.funnel.projectPipeline(months, locations, timeframe, pms, owners),
+    queryKey: queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners),
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
       if (pms.length > 0) params.set("pms", pms.join(","));
       if (owners.length > 0) params.set("owners", owners.join(","));
-      // "All active deals" snapshot — ignores the date window server-side.
-      if (timeframe === "active") params.set("scope", "active");
-      // Calendar timeframes (This Year, Last Year, …) pass exact month bounds so
-      // the server clamps to real calendar boundaries instead of N-months-back.
-      const range = calendarMonthRange(timeframe);
-      if (range) {
-        const dates = monthRangeToDates(range);
-        params.set("start", dates.start);
-        params.set("end", dates.end);
+      if (useActiveScope) {
+        // Funnel tab: live snapshot of all active deals, no date window.
+        params.set("scope", "active");
+      } else {
+        // Cohorts / Monthly Activity tabs are time-based. Calendar timeframes
+        // (This Year, Last Year, …) pass exact month bounds so the server
+        // clamps to real calendar boundaries instead of N-months-back.
+        const range = calendarMonthRange(timeframe);
+        if (range) {
+          const dates = monthRangeToDates(range);
+          params.set("start", dates.start);
+          params.set("end", dates.end);
+        }
       }
       const res = await fetch(`/api/deals/project-funnel?${params}`);
       if (!res.ok) throw new Error("Failed to fetch project funnel data");
@@ -232,21 +238,27 @@ function ProjectPipelineFunnelInner() {
           placeholder="All Owners"
           accentColor="cyan"
         />
-        <div className="flex items-center gap-2">
-          <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
-          <select
-            id="timeframe"
-            value={timeframe}
-            onChange={(e) => setTimeframe(e.target.value)}
-            className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
-          >
-            {TIMEFRAMES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {tab === "funnel" ? (
+          <span className="text-xs text-muted font-medium px-1">
+            Live snapshot · all active deals
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
+            <select
+              id="timeframe"
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value)}
+              className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
+            >
+              {TIMEFRAMES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {tab === "funnel" && (
           <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
             <button
@@ -280,19 +292,21 @@ function ProjectPipelineFunnelInner() {
         </>
       ) : (
         <>
+          {/* Funnel tab is always the active snapshot: no prior-period trend,
+              and cancelled is always 0 so it's hidden. */}
           {heroView === "loc" ? (
-            <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} hideCancelled={timeframe === "active"} />
+            <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} hideCancelled />
           ) : (
             <>
               <div className="flex justify-end mb-2">
-                <ConversionLegend hideCancelled={timeframe === "active"} />
+                <ConversionLegend hideCancelled />
               </div>
               {/* Pre-construction: Sales → DA Sent (4) */}
-              <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(0, 4)} hideCancelled={timeframe === "active"} />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 4)} hideCancelled />
               {/* Design & Permitting: DA Approved → Permits Issued (4) */}
-              <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(4, 8)} hideCancelled={timeframe === "active"} />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(4, 8)} hideCancelled />
               {/* Construction & Closeout: Construction Sched → PTO Granted (4) */}
-              <HeroCards summary={s} previousSummary={timeframe === "active" ? undefined : data.previousSummary} stages={STAGE_CONFIG.slice(8)} hideCancelled={timeframe === "active"} />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} hideCancelled />
             </>
           )}
 
