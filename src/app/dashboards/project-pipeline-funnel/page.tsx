@@ -197,7 +197,7 @@ function ProjectPipelineFunnelInner() {
         {([
           { key: "funnel", label: "Funnel" },
           { key: "activity", label: "Monthly Activity" },
-          { key: "cohorts", label: "Cohorts" },
+          { key: "cohorts", label: "Analysis" },
         ] as const).map((t) => (
           <button
             key={t.key}
