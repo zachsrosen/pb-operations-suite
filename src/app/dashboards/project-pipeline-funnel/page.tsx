@@ -24,6 +24,7 @@ import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 import { MonthlyActivityView } from "@/components/funnel/MonthlyActivityView";
+import { AnalysisOverview } from "@/components/funnel/AnalysisOverview";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
@@ -287,7 +288,8 @@ function ProjectPipelineFunnelInner() {
         <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
       ) : tab === "cohorts" ? (
         <>
-          {/* Cohort trend + detail (by close month) and the milestone cohort. */}
+          {/* Bottlenecks + highlights (live pipeline) */}
+          <AnalysisOverview locations={locations} pms={pms} owners={owners} />
           <MonthlyFunnelChart cohorts={data.cohorts} />
           <RevenueConversionTable cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} />
