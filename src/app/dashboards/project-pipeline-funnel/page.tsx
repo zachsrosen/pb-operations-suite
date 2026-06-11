@@ -17,6 +17,8 @@ import type {
   ProjectFunnelDrillDownDeal,
   ProjectFunnelDrillDown,
   ProjectFunnelStageGroup,
+  MilestoneCohortResponse,
+  MilestoneCohortBucket,
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -259,6 +261,9 @@ function ProjectPipelineFunnelInner() {
           {/* Cohort chart + table */}
           <MonthlyFunnelChart cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} />
+
+          {/* Milestone cohort — "deals that hit milestone X in window W, where are they now?" */}
+          <MilestoneCohortSection locations={locations} pms={pms} owners={owners} />
 
           {/* Stage distribution */}
           <div className="mt-6">
@@ -971,6 +976,179 @@ function StageDistribution({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const MILESTONE_COHORT_TIMEFRAMES = [
+  { label: "Last Month", value: "last-month" },
+  { label: "This Month", value: "this-month" },
+  { label: "This Quarter", value: "this-quarter" },
+  { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
+  { label: `Last Year (${new Date().getFullYear() - 1})`, value: "last-year" },
+  { label: "3 months", value: "3" },
+  { label: "6 months", value: "6" },
+  { label: "12 months", value: "12" },
+] as const;
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** One breakdown column (current stage OR furthest milestone) as a bar list. */
+function BucketBars({
+  title,
+  subtitle,
+  buckets,
+  total,
+  color,
+}: {
+  title: string;
+  subtitle: string;
+  buckets: MilestoneCohortBucket[];
+  total: number;
+  color: string;
+}) {
+  const max = Math.max(1, ...buckets.map((b) => b.count));
+  return (
+    <div className="flex-1 min-w-0">
+      <h4 className="text-xs font-semibold text-foreground/80">{title}</h4>
+      <p className="text-[11px] text-muted mb-2">{subtitle}</p>
+      {buckets.length === 0 ? (
+        <p className="text-xs text-muted/60 italic">No deals in this window.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {buckets.map((b) => {
+            const pct = total > 0 ? Math.round((b.count / total) * 100) : 0;
+            return (
+              <div key={b.key} className="flex items-center gap-2">
+                <span className="w-36 text-xs text-muted text-right shrink-0 truncate" title={b.label}>
+                  {b.label}
+                </span>
+                <div className="flex-1 flex items-center gap-2 min-w-0">
+                  <div
+                    className={`${color} h-5 rounded flex items-center px-2`}
+                    style={{ width: `${Math.max(6, (b.count / max) * 100)}%` }}
+                  >
+                    <span className="text-white text-[11px] font-semibold">{b.count}</span>
+                  </div>
+                  <span className="text-[11px] text-muted shrink-0">
+                    {formatCurrencyCompact(b.amount)} · {pct}%
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Milestone Cohort: pick a milestone + a window on that milestone's own date,
+ * then see where those deals are now — both by current pipeline stage and by
+ * furthest milestone reached. Respects the page's location / PM / owner filters.
+ */
+function MilestoneCohortSection({
+  locations,
+  pms,
+  owners,
+}: {
+  locations: string[];
+  pms: string[];
+  owners: string[];
+}) {
+  const [milestone, setMilestone] = useState<ProjectFunnelStageKey>("surveyDone");
+  const [timeframe, setTimeframe] = useState<string>("last-month");
+
+  const { start, end } = useMemo(() => {
+    const r = calendarMonthRange(timeframe);
+    if (r) return monthRangeToDates(r);
+    const n = resolveMonths(timeframe);
+    const now = new Date();
+    return { start: isoDate(new Date(now.getFullYear(), now.getMonth() - n, now.getDate())), end: isoDate(now) };
+  }, [timeframe]);
+
+  const { data, isLoading, error } = useQuery<MilestoneCohortResponse>({
+    queryKey: queryKeys.funnel.milestoneCohort(milestone, start, end, locations, pms, owners),
+    queryFn: async () => {
+      const params = new URLSearchParams({ milestone, start, end });
+      if (locations.length > 0) params.set("locations", locations.join(","));
+      if (pms.length > 0) params.set("pms", pms.join(","));
+      if (owners.length > 0) params.set("owners", owners.join(","));
+      const res = await fetch(`/api/deals/project-funnel/milestone-cohort?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch milestone cohort data");
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const milestoneLabel = STAGE_CONFIG.find((s) => s.key === milestone)?.label || milestone;
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h3 className="text-sm font-semibold text-foreground/80">Milestone Cohort — where are they now?</h3>
+        <div className="flex items-center gap-2">
+          <select
+            aria-label="Milestone"
+            value={milestone}
+            onChange={(e) => setMilestone(e.target.value as ProjectFunnelStageKey)}
+            className="bg-surface-2 border border-t-border rounded-lg px-2.5 py-1.5 text-sm text-foreground/80 focus:outline-none focus:border-muted"
+          >
+            {STAGE_CONFIG.map((s) => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Milestone timeframe"
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value)}
+            className="bg-surface-2 border border-t-border rounded-lg px-2.5 py-1.5 text-sm text-foreground/80 focus:outline-none focus:border-muted"
+          >
+            {MILESTONE_COHORT_TIMEFRAMES.map((tf) => (
+              <option key={tf.value} value={tf.value}>{tf.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <p className="text-xs text-muted mb-4">
+        Deals that reached <span className="text-foreground/80 font-medium">{milestoneLabel}</span> in the selected window, bucketed by where they sit today.
+      </p>
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : error ? (
+        <p className="text-xs text-red-400">Failed to load milestone cohort.</p>
+      ) : data ? (
+        <>
+          <div className="mb-4 text-sm">
+            <span className="font-semibold text-foreground">{data.totalCount}</span>
+            <span className="text-muted"> deals · {formatCurrencyCompact(data.totalAmount)}</span>
+          </div>
+          {data.totalCount === 0 ? (
+            <p className="text-xs text-muted/60 italic">No deals reached this milestone in the selected window.</p>
+          ) : (
+            <div className="flex flex-col lg:flex-row gap-6">
+              <BucketBars
+                title="Current pipeline stage"
+                subtitle="Live HubSpot stage today"
+                buckets={data.byCurrentStage}
+                total={data.totalCount}
+                color="bg-cyan-500"
+              />
+              <BucketBars
+                title="Furthest milestone reached"
+                subtitle="Deepest funnel milestone hit"
+                buckets={data.byFurthestMilestone}
+                total={data.totalCount}
+                color="bg-indigo-500"
+              />
+            </div>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }
