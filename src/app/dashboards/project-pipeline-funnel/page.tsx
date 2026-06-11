@@ -683,9 +683,11 @@ function BacklogSection({
     onToggle(expanded === key ? null : key);
   }
 
-  // Average days the pending deals have been waiting at this stage.
+  // Average days the pending deals have been waiting at this stage. Clamp each
+  // deal at 0 so future-dated references (e.g. construction scheduled ahead)
+  // don't produce a negative "days in stage".
   const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
-    const days = deals.map((d) => d.daysWaiting).filter((n) => Number.isFinite(n));
+    const days = deals.map((d) => Math.max(0, d.daysWaiting)).filter((n) => Number.isFinite(n));
     if (days.length === 0) return null;
     return Math.round(days.reduce((sum, n) => sum + n, 0) / days.length);
   };
