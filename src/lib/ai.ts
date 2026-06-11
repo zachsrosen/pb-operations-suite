@@ -15,6 +15,7 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { CLAUDE_MODELS } from "@/lib/anthropic";
 
 // ============================================================
 // Client
@@ -30,7 +31,7 @@ export function getAIClient() {
   return createAnthropic({ apiKey });
 }
 
-export const AI_MODEL = "claude-haiku-4-5-20251001";
+export const AI_MODEL = CLAUDE_MODELS.haiku;
 
 // ============================================================
 // Role guard

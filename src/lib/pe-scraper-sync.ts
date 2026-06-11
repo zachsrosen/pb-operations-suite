@@ -796,6 +796,19 @@ function buildNotesString(doc: ParsedDocument, projNumber: string): string {
   return parts.join(" | ");
 }
 
+// buildNotesString() always prepends a "Synced from PE portal scraper
+// (PROJ-XXXX)" boilerplate that we add ourselves — it is NOT a PE reviewer
+// note. Strip it (plus the leading separator) so a change consisting only of
+// that boilerplate isn't treated as a note update, and so it never renders as
+// the note body in the email. Real PE content (Submitted/Partner/Approver/
+// Responded) is preserved.
+export function meaningfulNote(notes: string | null | undefined): string {
+  if (!notes) return "";
+  return notes
+    .replace(/^Synced from PE portal scraper \([^)]*\)\s*(\|\s*)?/, "")
+    .trim();
+}
+
 // ---------------------------------------------------------------------------
 // Sync to database
 // ---------------------------------------------------------------------------
@@ -929,7 +942,7 @@ export async function syncPeDocStatuses(
           result.docsNew++;
         } else if (
           canonicalPeStatus(prev.status) !== canonicalPeStatus(op.status) ||
-          prev.notes !== op.notes
+          meaningfulNote(prev.notes) !== meaningfulNote(op.notes)
         ) {
           result.docsChanged++;
           result.changes.push({

@@ -11,6 +11,7 @@ type Pool = {
   timezone: string;
   startDate: string;
   horizonMonths: number;
+  coversSundays: boolean;
 };
 
 type Member = {
@@ -27,6 +28,7 @@ export function PoolConfigCard({ pool }: { pool: Pool }) {
   const [shiftEnd, setShiftEnd] = useState(pool.shiftEnd);
   const [timezone, setTimezone] = useState(pool.timezone);
   const [horizonMonths, setHorizonMonths] = useState(pool.horizonMonths);
+  const [coversSundays, setCoversSundays] = useState(pool.coversSundays);
   const [members, setMembers] = useState<Member[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -66,7 +68,7 @@ export function PoolConfigCard({ pool }: { pool: Pool }) {
       const metaRes = await fetch(`/api/on-call/pools/${pool.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate, shiftStart, shiftEnd, timezone, horizonMonths }),
+        body: JSON.stringify({ startDate, shiftStart, shiftEnd, timezone, horizonMonths, coversSundays }),
       });
       if (!metaRes.ok) throw new Error("Failed to save pool metadata");
 
@@ -120,6 +122,19 @@ export function PoolConfigCard({ pool }: { pool: Pool }) {
           </select>
         </Field>
       </div>
+
+      <label className="flex items-center gap-2 mb-4 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={coversSundays}
+          onChange={(e) => setCoversSundays(e.target.checked)}
+          className="h-4 w-4 rounded border-t-border bg-surface-2 accent-orange-500"
+        />
+        <span className="text-sm text-foreground">Cover Sundays</span>
+        <span className="text-xs text-muted">
+          {coversSundays ? "Mon–Sun coverage" : "Mon–Sat only (no Sunday on-call)"}
+        </span>
+      </label>
 
       <div className="mb-3">
         <div className="text-xs uppercase tracking-wider text-muted mb-2">Rotation Order ({members.length} members)</div>

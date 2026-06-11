@@ -592,7 +592,7 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
   teamActionCount: number;
   teamDocs: { doc: DocRequirement; review: DocReview | undefined }[];
 }) {
-  const [expanded, setExpanded] = useState(teamActionCount > 0);
+  const [expanded, setExpanded] = useState(false);
   const { deal } = summary;
 
   return (
@@ -756,6 +756,16 @@ export default function PeDocsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team">("sections");
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set());
+
+  const toggleTeam = useCallback((team: DocTeam) => {
+    setCollapsedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(team)) next.delete(team);
+      else next.add(team);
+      return next;
+    });
+  }, []);
 
   const filterOptions = useMemo(() => {
     const locations = [...new Set(summaries.map((s) => s.deal.pbLocation).filter(Boolean))].sort();
@@ -852,6 +862,9 @@ export default function PeDocsPage() {
           }
           docsWithReviews.push({ doc, review });
         }
+
+        // Only show deals where this team actually has something to do
+        if (teamActionCount === 0) continue;
 
         dealsWithIssues.push({ summary: s, teamActionCount, teamDocs: docsWithReviews });
       }
@@ -1112,36 +1125,48 @@ export default function PeDocsPage() {
 
       {!isLoading && viewMode === "by-team" && (
         <div className="space-y-6">
-          {teamGrouped.map(({ team, dealsWithIssues, totalActionable, totalApproved, totalDocs }) => (
-            <div key={team}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`w-2.5 h-2.5 rounded-full ${TEAM_DOT[team]}`} />
-                <h3 className={`text-sm font-semibold ${TEAM_COLORS[team]}`}>{TEAM_LABELS[team]}</h3>
-                <span className="text-xs text-muted">
-                  {dealsWithIssues.length} deals
-                </span>
-                <span className="text-[10px] text-muted/60">
-                  {totalApproved}/{totalDocs} approved
-                </span>
-                {totalActionable > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
-                    {totalActionable} to do
+          {teamGrouped.map(({ team, dealsWithIssues, totalActionable, totalApproved, totalDocs }) => {
+            const collapsed = collapsedTeams.has(team);
+            return (
+              <div key={team}>
+                <button
+                  className="flex items-center gap-2 mb-3 w-full text-left hover:opacity-80 transition-opacity"
+                  onClick={() => toggleTeam(team)}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full ${TEAM_DOT[team]}`} />
+                  <h3 className={`text-sm font-semibold ${TEAM_COLORS[team]}`}>{TEAM_LABELS[team]}</h3>
+                  <span className="text-xs text-muted">
+                    {dealsWithIssues.length} deals
                   </span>
+                  <span className="text-[10px] text-muted/60">
+                    {totalApproved}/{totalDocs} approved
+                  </span>
+                  {totalActionable > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+                      {totalActionable} to do
+                    </span>
+                  )}
+                  <svg className={`w-3.5 h-3.5 text-muted transition-transform ${collapsed ? "" : "rotate-180"}`}
+                    fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                {!collapsed && (
+                  <div className="space-y-1.5">
+                    {dealsWithIssues.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
+                      <TeamDealRow
+                        key={s.deal.dealId}
+                        summary={s}
+                        team={team}
+                        teamActionCount={teamActionCount}
+                        teamDocs={tDocs}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="space-y-1.5">
-                {dealsWithIssues.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
-                  <TeamDealRow
-                    key={s.deal.dealId}
-                    summary={s}
-                    team={team}
-                    teamActionCount={teamActionCount}
-                    teamDocs={tDocs}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

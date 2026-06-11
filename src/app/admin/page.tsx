@@ -36,8 +36,8 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
   },
   {
     href: "/dashboards/admin/tech-ops-escalations",
-    title: "Bot Escalations",
-    description: "Review questions the Google Chat Tech Ops bot flagged for follow-up.",
+    title: "Bot Escalations & Corrections",
+    description: "Review questions the Tech Ops bot flagged for follow-up, plus corrections the team taught it (Corrections tab).",
     icon: "🤖",
   },
 ];

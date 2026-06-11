@@ -2,7 +2,7 @@
  * BOM Extraction — Shared Logic
  *
  * Extracts a structured BOM from a planset PDF using the Anthropic Files API
- * (claude-opus-4-5). Used by both:
+ * (CLAUDE_MODELS.opus). Used by both:
  *   - POST /api/bom/extract (HTTP route, SSE-streaming wrapper)
  *   - BOM pipeline orchestrator (automated, returns JSON directly)
  *
@@ -20,6 +20,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { CLAUDE_MODELS } from "@/lib/anthropic";
 import { PDFDocument } from "pdf-lib";
 import { logActivity } from "@/lib/db";
 import type { ActorContext } from "@/lib/actor-context";
@@ -447,8 +448,10 @@ export async function extractBomFromPdf(
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
           message = await client.beta.messages.create({
-            model: "claude-opus-4-5",
-            max_tokens: 8000,
+            model: CLAUDE_MODELS.opus,
+            // Opus 4.7+ tokenizer counts ~30% more tokens for the same text —
+            // 12000 keeps headroom so large BOMs don't truncate mid-JSON.
+            max_tokens: 12000,
             system: systemPrompt,
             messages: [
               {
@@ -496,8 +499,8 @@ export async function extractBomFromPdf(
         try {
           const base64Data = uploadBuffer.toString("base64");
           const fallbackMessage = await client.messages.create({
-            model: "claude-opus-4-5",
-            max_tokens: 8000,
+            model: CLAUDE_MODELS.opus,
+            max_tokens: 12000,
             system: BOM_EXTRACTION_SYSTEM_PROMPT,
             messages: [
               {

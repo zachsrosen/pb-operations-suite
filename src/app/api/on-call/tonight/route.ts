@@ -98,6 +98,7 @@ export async function GET() {
             toDate: date,
             members,
             rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
+            coversSundays: pool.coversSundays,
           });
           if (gen.length > 0) {
             const cm = await prisma.crewMember.findUnique({

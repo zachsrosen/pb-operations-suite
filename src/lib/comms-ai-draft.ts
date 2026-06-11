@@ -3,6 +3,8 @@
  * Claude primary, Gemini fallback.
  */
 
+import { CLAUDE_MODELS } from "@/lib/anthropic";
+
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -40,7 +42,7 @@ async function generateWithClaude(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+      model: process.env.ANTHROPIC_MODEL || CLAUDE_MODELS.sonnet,
       max_tokens: 1024,
       system: systemPrompt,
       messages: [

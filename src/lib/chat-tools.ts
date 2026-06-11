@@ -278,7 +278,9 @@ export function createChatTools(context: ChatToolContext) {
   const filterDealsByStage = betaZodTool({
     name: "filter_deals_by_stage",
     description:
-      "Find deals in a specific pipeline stage by stage display name, returning up to 20 matches",
+      "List deals in a specific pipeline stage. Returns the TRUE total count for the " +
+      "stage plus a sample of up to 20 deals. For 'how many' questions, use the `total` " +
+      "field — never the number of deals in the sample.",
     inputSchema: z.object({
       stage: z.string().describe("Stage display name, e.g. 'Construction'"),
     }),
@@ -326,9 +328,17 @@ export function createChatTools(context: ChatToolContext) {
         pb_location: deal.properties?.pb_location ?? "",
       }));
 
+      const total = response.total ?? deals.length;
       return JSON.stringify({
         stage: stageName,
-        count: deals.length,
+        total, // true number of deals in this stage
+        returned: deals.length, // how many are in the sample below
+        truncated: total > deals.length,
+        ...(total > deals.length
+          ? {
+              note: `Showing ${deals.length} of ${total}. This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
+            }
+          : {}),
         deals,
       });
     },
@@ -411,7 +421,10 @@ export function createReadOnlyChatTools() {
 
   const filterDealsByStage = betaZodTool({
     name: "filter_deals_by_stage",
-    description: "Find deals in a specific pipeline stage by stage display name, returning up to 20 matches",
+    description:
+      "List deals in a specific pipeline stage. Returns the TRUE total count for the " +
+      "stage plus a sample of up to 20 deals. For 'how many' questions, use the `total` " +
+      "field — never the number of deals in the sample.",
     inputSchema: z.object({
       stage: z.string().describe("Stage display name, e.g. 'Construction'"),
     }),
@@ -445,9 +458,18 @@ export function createReadOnlyChatTools() {
         sorts: ["createdate"],
       });
 
+      const total = response.total ?? response.results.length;
+      const returned = response.results.length;
       return JSON.stringify({
         stage: stageName,
-        count: response.results.length,
+        total, // true number of deals in this stage
+        returned, // how many are in the `deals` sample below
+        truncated: total > returned,
+        ...(total > returned
+          ? {
+              note: `Showing ${returned} of ${total}. This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
+            }
+          : {}),
         deals: response.results.map((deal) => ({
           dealId: deal.id,
           dealname: deal.properties?.dealname ?? "",
@@ -475,5 +497,152 @@ export function createReadOnlyChatTools() {
     },
   });
 
-  return [getDeal, searchDeals, filterDealsByStage, countDealsByStage];
+  const countDealsByStatus = betaZodTool({
+    name: "count_deals_by_status",
+    description:
+      "Break down active project-pipeline deals by a status dimension, covering the FULL " +
+      "pipeline from survey to PTO. Use this for questions like 'how many are waiting on " +
+      "DA to be sent', 'permitting status breakdown', 'construction status', 'how many " +
+      "are waiting on inspection', or 'PTO status'. statusType: 'da' = the customer-facing " +
+      "Design Approval (layout_status), 'design' = engineering design status, 'permitting', " +
+      "'interconnection', 'site_survey', 'construction' (install status), 'inspection' " +
+      "(final inspection), 'pto' (Permission To Operate — the utility milestone), " +
+      "'pe_m1' or 'pe_m2' (Participate Energy milestone 1 / milestone 2 submission " +
+      "statuses — PE deals only; values run Ready to Submit → Waiting on Information → " +
+      "Submitted → Rejected → Ready to Resubmit → Resubmitted → Approved → Paid). " +
+      "Optionally scope to one pipeline stage. Returns the TRUE count for each exact " +
+      "status value — match the user's wording to the right bucket.",
+    inputSchema: z.object({
+      statusType: z.enum([
+        "da",
+        "design",
+        "permitting",
+        "interconnection",
+        "site_survey",
+        "construction",
+        "inspection",
+        "pto",
+        "pe_m1",
+        "pe_m2",
+      ]),
+      stage: z
+        .string()
+        .optional()
+        .describe(
+          "Optional pipeline stage display name to scope to, e.g. 'Design & Engineering'"
+        ),
+    }),
+    run: async (input) => {
+      const { fetchAllProjects } = await import("@/lib/hubspot");
+      const { statusLabel } = await import("@/lib/deal-status-labels");
+
+      const FIELD_MAP: Record<string, [string, string]> = {
+        da: ["layoutStatus", "layout_status"],
+        design: ["designStatus", "design_status"],
+        permitting: ["permittingStatus", "permitting_status"],
+        interconnection: ["interconnectionStatus", "interconnection_status"],
+        site_survey: ["siteSurveyStatus", "site_survey_status"],
+        // Downstream phases — HubSpot property "install_status" is labeled
+        // "Construction Status" in the UI.
+        construction: ["constructionStatus", "install_status"],
+        inspection: ["finalInspectionStatus", "final_inspection_status"],
+        pto: ["ptoStatus", "pto_status"],
+        // Participate Energy milestones (PE deals only). statusLabel has no
+        // map for these — it falls back to the raw value, which IS the
+        // display value (Ready to Submit … Approved, Paid).
+        pe_m1: ["peM1Status", "pe_m1_status"],
+        pe_m2: ["peM2Status", "pe_m2_status"],
+      };
+      const [projField, propKey] = FIELD_MAP[input.statusType];
+      const isPeMilestone =
+        input.statusType === "pe_m1" || input.statusType === "pe_m2";
+
+      let projects = await fetchAllProjects({ activeOnly: true });
+      if (isPeMilestone) {
+        projects = projects.filter((p) => p.isParticipateEnergy);
+      }
+      if (input.stage) {
+        const want = input.stage.trim().toLowerCase();
+        projects = projects.filter(
+          (p) => (p.stage || "").toLowerCase() === want
+        );
+      }
+
+      const counts: Record<string, number> = {};
+      let dealsWithThisStatus = 0;
+      for (const p of projects) {
+        const raw = (p as unknown as Record<string, string | null>)[projField];
+        const label = statusLabel(propKey, raw);
+        if (!label) continue;
+        counts[label] = (counts[label] ?? 0) + 1;
+        dealsWithThisStatus++;
+      }
+      const sorted = Object.fromEntries(
+        Object.entries(counts).sort((a, b) => b[1] - a[1])
+      );
+
+      // DA (layout) lifecycle phases. "Review In Progress" = INTERNAL review
+      // before the DA is sent — pre-send, NOT the customer reviewing. Keyed by
+      // display label (what `counts` uses). Confirmed taxonomy w/ Zach 2026-06.
+      const DA_PHASE: Record<string, "not_yet_sent" | "with_customer" | "customer_responded"> = {
+        "Review In Progress": "not_yet_sent",
+        "Draft Complete": "not_yet_sent",
+        "DA Revision Ready To Send": "not_yet_sent",
+        "In Revision": "not_yet_sent",
+        "Pending Review": "not_yet_sent",
+        "Pending Sales Changes": "not_yet_sent",
+        "Pending Ops Changes": "not_yet_sent",
+        "Pending Design Changes": "not_yet_sent",
+        "Pending Resurvey": "not_yet_sent",
+        "Needs Clarification": "not_yet_sent",
+        "Sent For Approval": "with_customer",
+        "Resent For Approval": "with_customer",
+        "Design Approved": "customer_responded",
+        "Design Rejected": "customer_responded",
+      };
+
+      if (input.statusType === "da") {
+        const phases = {
+          not_yet_sent: { total: 0, statuses: {} as Record<string, number> },
+          with_customer: { total: 0, statuses: {} as Record<string, number> },
+          customer_responded: { total: 0, statuses: {} as Record<string, number> },
+          unclassified: { total: 0, statuses: {} as Record<string, number> },
+        };
+        for (const [label, n] of Object.entries(counts)) {
+          const phase = DA_PHASE[label] ?? "unclassified";
+          phases[phase].total += n;
+          phases[phase].statuses[label] = n;
+        }
+        return JSON.stringify({
+          statusType: "da",
+          stage: input.stage ?? "all stages",
+          totalDealsConsidered: projects.length,
+          dealsWithThisStatus,
+          waitingToBeSent: phases.not_yet_sent.total, // = all pre-send (still on us)
+          phases,
+          counts: sorted,
+          note: "DA = customer Design Approval (layout_status). 'Review In Progress' means we're reviewing INTERNALLY before sending — it is PRE-SEND, not the customer reviewing. 'Waiting on DA to be sent' = waitingToBeSent (phases.not_yet_sent: everything not yet with the customer). 'with_customer' = already sent.",
+        });
+      }
+
+      return JSON.stringify({
+        statusType: input.statusType,
+        stage: input.stage ?? "all stages",
+        totalDealsConsidered: projects.length,
+        dealsWithThisStatus,
+        counts: sorted,
+        note: isPeMilestone
+          ? "Scoped to active Participate Energy deals only (totalDealsConsidered = active PE deals). Deals with no status for this milestone haven't started it. Status flow: Ready to Submit → Waiting on Information → Submitted → Rejected → Ready to Resubmit → Resubmitted → Approved → Paid."
+          : "Each key is an exact status value with its true count. Match the user's wording to the right bucket(s); if nothing fits, say so rather than guessing.",
+      });
+    },
+  });
+
+  return [
+    getDeal,
+    searchDeals,
+    filterDealsByStage,
+    countDealsByStage,
+    countDealsByStatus,
+  ];
 }

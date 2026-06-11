@@ -337,6 +337,11 @@ function HeroCards({
           ? { delta: stageTotal - total(previousSummary[stage.key]), label: "vs prior" }
           : null;
 
+        // Trend vs the prior equal-length period (total reaching this stage).
+        const trend = previousSummary
+          ? { delta: stageTotal - total(previousSummary[stage.key]), label: "vs prior" }
+          : null;
+
         return (
           <StatCard
             key={stage.key}

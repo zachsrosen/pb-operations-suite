@@ -312,5 +312,80 @@ export function createTechOpsBotTools() {
     },
   });
 
-  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest];
+  const createHubspotTask = betaZodTool({
+    name: "create_hubspot_task",
+    description:
+      "Create a HubSpot task on behalf of the person you're chatting with — e.g. " +
+      "\"make me a task to follow up on PROJ-1234 next week.\" The task is assigned to " +
+      "the requester (resolved from their email) and, if a project is given, attached to " +
+      "that deal. You can CREATE tasks only — you cannot edit, complete, or delete them. " +
+      "Only use this when the person explicitly asks for a task to be created. Always read " +
+      "back exactly what you created (subject, due date, project) so they can confirm.",
+    inputSchema: z.object({
+      subject: z
+        .string()
+        .describe("Short task title, e.g. 'Follow up on Miller permit status'"),
+      body: z
+        .string()
+        .optional()
+        .describe("Optional task notes / additional detail"),
+      projectId: z
+        .string()
+        .optional()
+        .describe(
+          "Optional project to attach the task to. Accepts a PROJ-XXXX number, " +
+            "a HubSpot deal ID, a customer name, or a property address. If it " +
+            "matches more than one deal the bot will ask which one — so pass " +
+            "whatever the user gave you."
+        ),
+      dueInDays: z
+        .number()
+        .optional()
+        .describe("Optional days from now the task is due (e.g. 3 = due in 3 days). Defaults to 1 (tomorrow)."),
+    }),
+    run: async (_input) => {
+      // NOTE: The orchestrator in tech-ops-bot.ts wraps this tool and replaces
+      // `run` entirely to inject request context (senderEmail) and perform the
+      // actual HubSpot write. This default implementation is only hit in unit
+      // tests or standalone use — it does NOT create anything.
+      return JSON.stringify({
+        created: false,
+        message: "Task creation is only available in the live bot context.",
+      });
+    },
+  });
+
+  const logCorrection = betaZodTool({
+    name: "log_correction",
+    description:
+      "Log a correction when someone tells you a factual or process answer you gave was " +
+      "WRONG and provides the right information (e.g. \"no, Review In Progress means we " +
+      "review internally before sending\"). This captures the correction for the team to " +
+      "review and fold into your permanent knowledge. Use it whenever you're corrected on " +
+      "something factual/procedural — not for opinions or one-off preferences. You can't " +
+      "rewrite your own knowledge on the spot, but logging it means the fix will stick, and " +
+      "you should respect the correction for the rest of THIS conversation.",
+    inputSchema: z.object({
+      topic: z
+        .string()
+        .describe("Short subject of what was being discussed, e.g. 'DA status meaning'"),
+      whatIGotWrong: z
+        .string()
+        .describe("The incorrect thing you said"),
+      correctInfo: z
+        .string()
+        .describe("The correct information the person gave you"),
+    }),
+    run: async (_input) => {
+      // NOTE: The orchestrator in tech-ops-bot.ts wraps this tool to inject
+      // request context (senderEmail, senderName, spaceName) and persist the
+      // correction. This default impl is only hit in tests / standalone use.
+      return JSON.stringify({
+        logged: true,
+        message: "Correction noted for review.",
+      });
+    },
+  });
+
+  return [getProjectStatus, getScheduleOverview, getServiceQueue, escalate, searchSop, submitProcessRequest, createHubspotTask, logCorrection];
 }

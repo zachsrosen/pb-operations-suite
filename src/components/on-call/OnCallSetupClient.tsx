@@ -14,6 +14,7 @@ type Pool = {
   timezone: string;
   startDate: string;
   horizonMonths: number;
+  coversSundays: boolean;
   isActive: boolean;
   lastPublishedAt: Date | string | null;
   lastPublishedThrough: string | null;
