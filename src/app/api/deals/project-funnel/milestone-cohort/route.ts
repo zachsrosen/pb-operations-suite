@@ -10,6 +10,9 @@ import {
   type ProjectFunnelStageKey,
 } from "@/lib/project-funnel-aggregation";
 
+// Same cold-cache fetch dependency as the funnel route (shared PROJECTS_ALL).
+export const maxDuration = 300;
+
 export async function GET(request: NextRequest) {
   tagSentryRequest(request);
   try {
