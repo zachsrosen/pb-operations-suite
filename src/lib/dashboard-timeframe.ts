@@ -22,6 +22,12 @@ export function resolveMonths(key: string): number {
       const qStart = Math.floor(thisMonth / 3) * 3; // 0, 3, 6, 9
       return thisMonth - qStart + 1;
     }
+    case "last-quarter": {
+      // Offset into the current quarter + a full prior quarter; the calendar
+      // clamp then narrows the display to that prior quarter.
+      const qStart = Math.floor(thisMonth / 3) * 3;
+      return thisMonth - qStart + 4;
+    }
     case "this-year":
       return thisMonth + 1;
     case "last-year":
@@ -59,6 +65,15 @@ export function calendarMonthRange(key: string): MonthRange | null {
     case "this-quarter": {
       const qStart = Math.floor(m / 3) * 3;
       return { start: mk(y, qStart), end: mk(y, m) };
+    }
+    case "last-quarter": {
+      const qStart = Math.floor(m / 3) * 3;
+      const end = new Date(y, qStart - 1, 1); // last month of the previous quarter (year-wraps)
+      const start = new Date(end.getFullYear(), end.getMonth() - 2, 1);
+      return {
+        start: mk(start.getFullYear(), start.getMonth()),
+        end: mk(end.getFullYear(), end.getMonth()),
+      };
     }
     case "this-year":
       return { start: mk(y, 0), end: mk(y, m) };

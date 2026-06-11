@@ -1,14 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { StatCard } from "@/components/ui/MetricCard";
 import { formatCurrencyCompact } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 import type {
   ProjectFunnelResponse,
   ProjectMonthlyActivity,
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
-import { calendarMonthRange } from "@/lib/dashboard-timeframe";
+import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
+
+const THROUGHPUT_TIMEFRAMES = [
+  { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
+  { label: `Last Year (${new Date().getFullYear() - 1})`, value: "last-year" },
+  { label: "This Quarter", value: "this-quarter" },
+  { label: "Last Quarter", value: "last-quarter" },
+  { label: "6 months", value: "6" },
+  { label: "12 months", value: "12" },
+  { label: "24 months", value: "24" },
+] as const;
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function monthLabel(month: string, includeYear = true): string {
@@ -86,12 +98,16 @@ function sortLocationKeys(keys: string[]): string[] {
 export function MonthlyActivityView({
   data,
   timeframe,
+  locations,
+  pms,
+  owners,
 }: {
   data: ProjectFunnelResponse;
   timeframe: string;
+  locations: string[];
+  pms: string[];
+  owners: string[];
 }) {
-  const [chartMetric, setChartMetric] = useState<keyof ProjectMonthlyActivity>("dasApproved");
-  const [chartValueMode, setChartValueMode] = useState<"count" | "revenue">("count");
   const [heroView, setHeroView] = useState<"cards" | "loc">("cards");
 
   // Calendar timeframes are clamped to exact month boundaries so the rolling
@@ -149,13 +165,7 @@ export function MonthlyActivityView({
         </div>
       )}
 
-      <ThroughputChart
-        activity={activity}
-        metric={chartMetric}
-        onMetricChange={setChartMetric}
-        valueMode={chartValueMode}
-        onValueModeChange={setChartValueMode}
-      />
+      <ThroughputChart locations={locations} pms={pms} owners={owners} />
 
       <MonthlyActivityTable activity={activity} totals={totals} />
     </>
@@ -234,56 +244,71 @@ function ActivityByLocationMatrix({
   );
 }
 
+/**
+ * Self-contained throughput chart with its own timeframe (default This Year),
+ * independent of the tab. Each bar shows count AND revenue together for the
+ * selected milestone, by the month it happened.
+ */
 function ThroughputChart({
-  activity,
-  metric,
-  onMetricChange,
-  valueMode,
-  onValueModeChange,
+  locations,
+  pms,
+  owners,
 }: {
-  activity: ProjectMonthlyActivity[];
-  metric: keyof ProjectMonthlyActivity;
-  onMetricChange: (m: keyof ProjectMonthlyActivity) => void;
-  valueMode: "count" | "revenue";
-  onValueModeChange: (m: "count" | "revenue") => void;
+  locations: string[];
+  pms: string[];
+  owners: string[];
 }) {
+  const [metric, setMetric] = useState<keyof ProjectMonthlyActivity>("dasApproved");
+  const [timeframe, setTimeframe] = useState<string>("this-year");
+
+  const months = resolveMonths(timeframe);
+  const { data, isLoading } = useQuery<ProjectFunnelResponse>({
+    queryKey: [...queryKeys.funnel.root, "throughput", months, timeframe, locations, pms, owners],
+    queryFn: async () => {
+      const params = new URLSearchParams({ months: String(months) });
+      if (locations.length > 0) params.set("locations", locations.join(","));
+      if (pms.length > 0) params.set("pms", pms.join(","));
+      if (owners.length > 0) params.set("owners", owners.join(","));
+      const range = calendarMonthRange(timeframe);
+      if (range) {
+        const dates = monthRangeToDates(range);
+        params.set("start", dates.start);
+        params.set("end", dates.end);
+      }
+      const res = await fetch(`/api/deals/project-funnel?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch throughput data");
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const activity = useMemo(() => {
+    const rows = data?.monthlyActivity ?? [];
+    const range = calendarMonthRange(timeframe);
+    if (!range) return rows;
+    return rows.filter((r) => r.month >= range.start && r.month <= range.end);
+  }, [data, timeframe]);
+
   const chronological = useMemo(() => [...activity].reverse(), [activity]);
   const col = ACTIVITY_COLUMNS.find((c) => c.key === metric) ?? ACTIVITY_COLUMNS[0];
   const barColor = col.bar;
-
-  const valueKey: keyof ProjectMonthlyActivity =
-    valueMode === "revenue" && col.amountKey ? col.amountKey : metric;
-  const fmt = (v: number) => (valueMode === "revenue" ? formatCurrencyCompact(v) : String(v));
-
+  const amountKey = col.amountKey;
   const maxValue = useMemo(
-    () => Math.max(1, ...chronological.map((c) => c[valueKey] as number)),
-    [chronological, valueKey]
+    () => Math.max(1, ...chronological.map((c) => c[metric] as number)),
+    [chronological, metric]
   );
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <h3 className="text-sm font-semibold text-foreground/80">Monthly Throughput</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-foreground/80">Monthly Throughput</h3>
+          <p className="text-[11px] text-muted">Count (bar height) and revenue per month — own timeframe.</p>
+        </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg border border-t-border overflow-hidden text-xs">
-            <button
-              type="button"
-              onClick={() => onValueModeChange("count")}
-              className={`px-3 py-1.5 transition-colors ${valueMode === "count" ? "bg-emerald-500 text-white" : "bg-surface-2 text-muted hover:text-foreground"}`}
-            >
-              Count
-            </button>
-            <button
-              type="button"
-              onClick={() => onValueModeChange("revenue")}
-              className={`px-3 py-1.5 transition-colors ${valueMode === "revenue" ? "bg-emerald-500 text-white" : "bg-surface-2 text-muted hover:text-foreground"}`}
-            >
-              Revenue
-            </button>
-          </div>
           <select
             value={metric}
-            onChange={(e) => onMetricChange(e.target.value as keyof ProjectMonthlyActivity)}
+            onChange={(e) => setMetric(e.target.value as keyof ProjectMonthlyActivity)}
             className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
           >
             {ACTIVITY_COLUMNS.map((c) => (
@@ -292,23 +317,42 @@ function ThroughputChart({
               </option>
             ))}
           </select>
+          <select
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value)}
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
+          >
+            {THROUGHPUT_TIMEFRAMES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
-      {chronological.length === 0 ? (
+      {isLoading ? (
+        <p className="text-xs text-muted/60 italic">Loading…</p>
+      ) : chronological.length === 0 ? (
         <p className="text-xs text-muted/60 italic">No activity in this window.</p>
       ) : (
-        <div className="flex items-end justify-around gap-1" style={{ height: 180 }}>
+        <div className="flex items-end justify-around gap-1" style={{ height: 200 }}>
           {chronological.map((row) => {
-            const value = row[valueKey] as number;
-            const heightPct = (value / maxValue) * 100;
+            const count = row[metric] as number;
+            const revenue = amountKey ? (row[amountKey] as number) : 0;
+            const heightPct = (count / maxValue) * 100;
             return (
               <div key={row.month} className="flex flex-col items-center gap-1 flex-1 min-w-0">
-                <span className="text-[10px] text-muted tabular-nums">{value > 0 ? fmt(value) : ""}</span>
+                <div className="flex flex-col items-center leading-tight">
+                  <span className="text-[11px] text-foreground font-semibold tabular-nums">{count > 0 ? count : ""}</span>
+                  {amountKey && revenue > 0 && (
+                    <span className="text-[9px] text-muted tabular-nums">{formatCurrencyCompact(revenue)}</span>
+                  )}
+                </div>
                 <div className="w-full flex justify-center" style={{ height: 130 }}>
                   <div
-                    className={`${barColor} rounded-t-sm w-4 lg:w-6 transition-all duration-300 mt-auto`}
-                    style={{ height: `${Math.max(heightPct, value > 0 ? 3 : 0)}%` }}
-                    title={`${monthLabel(row.month)}: ${fmt(value)}`}
+                    className={`${barColor} rounded-t-sm w-5 lg:w-7 transition-all duration-300 mt-auto`}
+                    style={{ height: `${Math.max(heightPct, count > 0 ? 3 : 0)}%` }}
+                    title={`${monthLabel(row.month)}: ${count} · ${formatCurrencyCompact(revenue)}`}
                   />
                 </div>
                 <span className="text-[9px] text-muted truncate">{monthLabel(row.month, false)}</span>

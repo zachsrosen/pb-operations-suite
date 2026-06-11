@@ -27,7 +27,9 @@ import { MonthlyActivityView } from "@/components/funnel/MonthlyActivityView";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
+  { label: "Last Month", value: "last-month" },
   { label: "This Quarter", value: "this-quarter" },
+  { label: "Last Quarter", value: "last-quarter" },
   { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
   { label: `Last Year (${new Date().getFullYear() - 1})`, value: "last-year" },
   { label: "1 month", value: "1" },
@@ -282,7 +284,7 @@ function ProjectPipelineFunnelInner() {
       {isLoading || !data || !s ? (
         <LoadingSpinner />
       ) : tab === "activity" ? (
-        <MonthlyActivityView data={data} timeframe={timeframe} />
+        <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
       ) : tab === "cohorts" ? (
         <>
           {/* Cohort trend + detail (by close month) and the milestone cohort. */}
@@ -665,7 +667,7 @@ function BacklogSection({
     { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OWNER, OPS, ICSTATUS] },
     { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OWNER, OPS] },
     { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OWNER, INSP] },
-    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC] },
+    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC, ICSTATUS] },
     { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM, OWNER] },
   ];
 
@@ -680,12 +682,11 @@ function BacklogSection({
     onToggle(expanded === key ? null : key);
   }
 
-  // Median days the pending deals have been waiting at this stage.
-  const medianDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
-    const days = deals.map((d) => d.daysWaiting).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+  // Average days the pending deals have been waiting at this stage.
+  const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
+    const days = deals.map((d) => d.daysWaiting).filter((n) => Number.isFinite(n));
     if (days.length === 0) return null;
-    const mid = Math.floor(days.length / 2);
-    return days.length % 2 ? days[mid] : Math.round((days[mid - 1] + days[mid]) / 2);
+    return Math.round(days.reduce((sum, n) => sum + n, 0) / days.length);
   };
 
   return (
@@ -703,7 +704,7 @@ function BacklogSection({
           const revenue = backlogRevenue(b);
           const segs = statusBreakdown(b.deals);
           const segTotal = b.deals.length || 1;
-          const medDays = medianDaysInStage(b.deals);
+          const avgDays = avgDaysInStage(b.deals);
           return (
           <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
@@ -747,9 +748,9 @@ function BacklogSection({
                     {formatCurrencyCompact(revenue)}
                   </span>
                 )}
-                {b.count > 0 && medDays != null && (
-                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Median days the pending deals have been at this stage">
-                    {medDays}d in stage
+                {b.count > 0 && avgDays != null && (
+                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the pending deals have been at this stage">
+                    {avgDays}d in stage
                   </span>
                 )}
               </div>
@@ -1162,6 +1163,7 @@ const MILESTONE_COHORT_TIMEFRAMES = [
   { label: "Last Month", value: "last-month" },
   { label: "This Month", value: "this-month" },
   { label: "This Quarter", value: "this-quarter" },
+  { label: "Last Quarter", value: "last-quarter" },
   { label: `This Year (${new Date().getFullYear()})`, value: "this-year" },
   { label: `Last Year (${new Date().getFullYear() - 1})`, value: "last-year" },
   { label: "3 months", value: "3" },
