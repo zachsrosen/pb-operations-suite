@@ -422,11 +422,18 @@ export function createReadOnlyChatTools() {
   const filterDealsByStage = betaZodTool({
     name: "filter_deals_by_stage",
     description:
-      "List deals in a specific pipeline stage. Returns the TRUE total count for the " +
-      "stage plus a sample of up to 20 deals. For 'how many' questions, use the `total` " +
-      "field — never the number of deals in the sample.",
+      "List deals in a specific pipeline stage, optionally filtered to one PB location. " +
+      "Returns the TRUE total count for the stage plus a sample of up to 20 deals. For " +
+      "'how many' questions, use the `total` field — never the number of deals in the sample.",
     inputSchema: z.object({
       stage: z.string().describe("Stage display name, e.g. 'Construction'"),
+      location: z
+        .string()
+        .optional()
+        .describe(
+          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
+            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+        ),
     }),
     run: async (input) => {
       const { DEAL_STAGE_MAP, searchWithRetry } = await import("@/lib/hubspot");
@@ -444,15 +451,37 @@ export function createReadOnlyChatTools() {
         });
       }
 
+      // Resolve the optional location through the canonical normalizer
+      // (handles aliases like Westy/DTC/COSP/SLO). Refuse rather than guess.
+      let canonicalLocation: string | null = null;
+      if (input.location) {
+        const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
+          return JSON.stringify({
+            error: `Unknown location: ${input.location}`,
+            knownLocations: CANONICAL_LOCATIONS,
+          });
+        }
+      }
+
       const [stageId, stageName] = stageEntry;
+      const filters = [
+        {
+          propertyName: "dealstage",
+          operator: FilterOperatorEnum.Eq,
+          value: stageId,
+        },
+      ];
+      if (canonicalLocation) {
+        filters.push({
+          propertyName: "pb_location",
+          operator: FilterOperatorEnum.Eq,
+          value: canonicalLocation,
+        });
+      }
       const response = await searchWithRetry({
-        filterGroups: [{
-          filters: [{
-            propertyName: "dealstage",
-            operator: FilterOperatorEnum.Eq,
-            value: stageId,
-          }],
-        }],
+        filterGroups: [{ filters }],
         limit: 20,
         properties: ["dealname", "dealstage", "amount", "pb_location"],
         sorts: ["createdate"],
@@ -462,7 +491,8 @@ export function createReadOnlyChatTools() {
       const returned = response.results.length;
       return JSON.stringify({
         stage: stageName,
-        total, // true number of deals in this stage
+        location: canonicalLocation ?? "all locations",
+        total, // true number of deals in this stage (within the location, if given)
         returned, // how many are in the `deals` sample below
         truncated: total > returned,
         ...(total > returned
@@ -483,17 +513,49 @@ export function createReadOnlyChatTools() {
 
   const countDealsByStage = betaZodTool({
     name: "count_deals_by_stage",
-    description: "Count active deals by stage in the project pipeline",
-    inputSchema: z.object({}),
-    run: async () => {
+    description:
+      "Count active deals by stage in the project pipeline, optionally filtered to one PB location",
+    inputSchema: z.object({
+      location: z
+        .string()
+        .optional()
+        .describe(
+          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
+            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+        ),
+    }),
+    run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
-      const projects = await fetchAllProjects({ activeOnly: true });
+
+      let canonicalLocation: string | null = null;
+      if (input.location) {
+        const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
+          return JSON.stringify({
+            error: `Unknown location: ${input.location}`,
+            knownLocations: CANONICAL_LOCATIONS,
+          });
+        }
+      }
+
+      let projects = await fetchAllProjects({ activeOnly: true });
+      if (canonicalLocation) {
+        const { normalizeLocation } = await import("@/lib/locations");
+        projects = projects.filter(
+          (p) => normalizeLocation(p.pbLocation) === canonicalLocation
+        );
+      }
       const counts = projects.reduce<Record<string, number>>((acc, project) => {
         const stage = project.stage || "Unknown";
         acc[stage] = (acc[stage] ?? 0) + 1;
         return acc;
       }, {});
-      return JSON.stringify({ total: projects.length, counts });
+      return JSON.stringify({
+        location: canonicalLocation ?? "all locations",
+        total: projects.length,
+        counts,
+      });
     },
   });
 
@@ -531,10 +593,29 @@ export function createReadOnlyChatTools() {
         .describe(
           "Optional pipeline stage display name to scope to, e.g. 'Design & Engineering'"
         ),
+      location: z
+        .string()
+        .optional()
+        .describe(
+          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
+            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+        ),
     }),
     run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
       const { statusLabel } = await import("@/lib/deal-status-labels");
+      const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+
+      let canonicalLocation: string | null = null;
+      if (input.location) {
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
+          return JSON.stringify({
+            error: `Unknown location: ${input.location}`,
+            knownLocations: CANONICAL_LOCATIONS,
+          });
+        }
+      }
 
       const FIELD_MAP: Record<string, [string, string]> = {
         da: ["layoutStatus", "layout_status"],
@@ -560,6 +641,11 @@ export function createReadOnlyChatTools() {
       let projects = await fetchAllProjects({ activeOnly: true });
       if (isPeMilestone) {
         projects = projects.filter((p) => p.isParticipateEnergy);
+      }
+      if (canonicalLocation) {
+        projects = projects.filter(
+          (p) => normalizeLocation(p.pbLocation) === canonicalLocation
+        );
       }
       if (input.stage) {
         const want = input.stage.trim().toLowerCase();
@@ -616,6 +702,7 @@ export function createReadOnlyChatTools() {
         return JSON.stringify({
           statusType: "da",
           stage: input.stage ?? "all stages",
+        location: canonicalLocation ?? "all locations",
           totalDealsConsidered: projects.length,
           dealsWithThisStatus,
           waitingToBeSent: phases.not_yet_sent.total, // = all pre-send (still on us)
@@ -628,6 +715,7 @@ export function createReadOnlyChatTools() {
       return JSON.stringify({
         statusType: input.statusType,
         stage: input.stage ?? "all stages",
+        location: canonicalLocation ?? "all locations",
         totalDealsConsidered: projects.length,
         dealsWithThisStatus,
         counts: sorted,
