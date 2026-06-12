@@ -151,6 +151,8 @@ export interface ProjectFunnelDrillDownDeal {
   interconnectionsLead: string;
   /** Interconnection workstream status (runs parallel to permitting) */
   interconnectionStatus: string | null;
+  /** Free-text note (e.g. the on-hold explanation), shown inline in the drill-down. */
+  notes?: string | null;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -243,7 +245,7 @@ function toDrillDown(
   p: Project,
   daysWaiting: number,
   status: string | null,
-  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
+  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string; notes?: string | null },
 ): ProjectFunnelDrillDownDeal {
   return {
     id: p.id,
@@ -258,6 +260,7 @@ function toDrillDown(
     status,
     ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
     ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
+    ...(extra?.notes ? { notes: extra.notes } : {}),
     projectManager: p.projectManager || "",
     dealOwner: p.dealOwner || "",
     siteSurveyor: p.siteSurveyor || "",
@@ -841,7 +844,9 @@ export function buildProjectFunnelData(
     // on-hold reason and how long they've been on hold.
     if (p.stageId === ON_HOLD_STAGE_ID) {
       drillDown.onHold.push(
-        toDrillDown(p, Math.max(0, p.daysSinceStageMovement || 0), p.onHoldReason || "On hold")
+        toDrillDown(p, Math.max(0, p.daysSinceStageMovement || 0), p.onHoldReason || "On hold", {
+          notes: p.onHoldNotes,
+        })
       );
       continue;
     }

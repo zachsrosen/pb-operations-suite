@@ -1007,9 +1007,9 @@ function DrillDownTable({
         </thead>
         <tbody>
           {sorted.map((d) => (
+            <Fragment key={d.id}>
             <tr
-              key={d.id}
-              className={`border-b border-t-border/30 ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+              className={`${d.notes ? "" : "border-b border-t-border/30"} ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
             >
               <td className="py-1 px-1.5">
                 <a
@@ -1061,6 +1061,14 @@ function DrillDownTable({
                 {d.status || <span className="italic text-muted/60">—</span>}
               </td>
             </tr>
+            {d.notes && (
+              <tr className="border-b border-t-border/30">
+                <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
+                  <span className="text-[11px] text-muted/80 italic">↳ {d.notes}</span>
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>
