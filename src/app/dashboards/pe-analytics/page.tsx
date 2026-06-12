@@ -564,7 +564,13 @@ export default function PeAnalyticsPage() {
   const funnelTotals = useMemo(() => {
     const sum = (arr?: WeeklyPayments[]) =>
       (arr ?? []).reduce((s, w) => ({ count: s.count + w.m1Count + w.m2Count, amount: s.amount + w.m1Amount + w.m2Amount }), { count: 0, amount: 0 });
+    // Current backlog, not cumulative: milestones ready but not yet submitted.
+    const readyNow = (data?.weeklyReadiness ?? []).reduce(
+      (s, w) => ({ count: s.count + w.waitingCount, amount: s.amount + w.waitingAmount }),
+      { count: 0, amount: 0 },
+    );
     return {
+      readyNow,
       submitted: sum(data?.weeklySubmissions),
       approved: sum(data?.weeklyApprovals),
       paid: sum(data?.weekly),
@@ -651,7 +657,8 @@ export default function PeAnalyticsPage() {
               </div>
             }
           >
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+              <MiniStat label="Ready, Not Submitted" value={fmtUsd(funnelTotals.readyNow.amount)} subtitle={`${funnelTotals.readyNow.count} milestones today`} />
               <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
               <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
               <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
