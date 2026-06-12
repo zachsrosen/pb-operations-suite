@@ -1088,8 +1088,24 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
       }),
       { count: 0, amount: 0, waitingCount: 0, waitingAmount: 0 },
     );
+    // Distinct deal counts per stage (from the drill rows, which carry deal
+    // IDs; the weekly series don't). Predicates mirror the aggregate drills.
+    const ms = data?.milestones ?? [];
+    const PRE_SUB = new Set([
+      "Ready to Submit", "Waiting on Information", "Ready for Onboarding", "Onboarding Submitted",
+      "Onboarding Rejected", "Onboarding Ready to Resubmit", "Onboarding Resubmitted",
+    ]);
+    const distinct = (rows: typeof ms) => new Set(rows.map((r) => r.dealId)).size;
+    const deals = {
+      ready: distinct(ms.filter((r) => !!r.readyOn)),
+      waiting: distinct(ms.filter((r) => !!r.readyOn && !r.submittedOn && (!r.status || PRE_SUB.has(r.status)))),
+      submitted: distinct(ms.filter((r) => !!r.submittedOn)),
+      approved: distinct(ms.filter((r) => !!r.approvedOn)),
+      paid: distinct(ms.filter((r) => !!r.paidOn || r.status === "Paid")),
+    };
     return {
       ready,
+      deals,
       submitted: sum(data?.weeklySubmissions),
       approved: sum(data?.weeklyApprovals),
       paid: sum(data?.weekly),
@@ -1223,22 +1239,22 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 <MiniStat
                   label="Total Ready to Submit"
                   value={fmtUsd(funnelTotals.ready.amount)}
-                  subtitle={`${funnelTotals.ready.count} milestones — ${
+                  subtitle={`${funnelTotals.ready.count} milestones · ${funnelTotals.deals.ready} deals — ${
                     funnelTotals.ready.amount > 0
                       ? Math.round(((funnelTotals.ready.amount - funnelTotals.ready.waitingAmount) / funnelTotals.ready.amount) * 100)
                       : 0
-                  }% already submitted, ${funnelTotals.ready.waitingCount} (${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
+                  }% already submitted — ${funnelTotals.ready.waitingCount} milestones (${funnelTotals.deals.waiting} deals · ${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
                 />
                 </button>
               )}
               <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitApproval")} title="Click: all awaiting PE approval">
-                <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
+                <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones · ${funnelTotals.deals.submitted} deals`} />
               </button>
               <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitPayment")} title="Click: all awaiting payment">
-                <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
+                <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones · ${funnelTotals.deals.approved} deals`} />
               </button>
               <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("paidAll")} title="Click: all paid">
-                <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
+                <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones · ${funnelTotals.deals.paid} deals`} />
               </button>
             </div>
             {weeklyMode === "lifecycle" ? (
