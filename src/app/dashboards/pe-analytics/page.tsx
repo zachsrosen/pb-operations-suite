@@ -1099,8 +1099,8 @@ export default function PeAnalyticsPage() {
           >
             {/* Ready stat (and its waiting backlog) only on the internal Ready view —
                 screenshots of the other views stay safe to share externally. */}
-            <div className={`grid grid-cols-2 gap-2 mb-4 ${weeklyMode === "ready" ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
-              {weeklyMode === "ready" && (
+            <div className={`grid grid-cols-2 gap-2 mb-4 ${weeklyMode === "ready" || weeklyMode === "lifecycle" ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+              {(weeklyMode === "ready" || weeklyMode === "lifecycle") && (
                 <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitSubmission")} title="Click: all waiting on submission">
                 <MiniStat
                   label="Total Ready to Submit"
