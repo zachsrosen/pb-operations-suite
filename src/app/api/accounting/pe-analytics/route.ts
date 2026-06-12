@@ -54,6 +54,8 @@ const DEAL_PROPERTIES = [
   "pe_m2_submission_date",
   "pe_m1_approval_date",
   "pe_m2_approval_date",
+  "pe_m1_paid_date",
+  "pe_m2_paid_date",
 ];
 
 interface PeDealRow {
@@ -71,6 +73,8 @@ interface PeDealRow {
   m2SubmissionDate: string | null;
   m1ApprovalDate: string | null;
   m2ApprovalDate: string | null;
+  m1PaidDate: string | null;
+  m2PaidDate: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +152,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2SubmissionDate: p.pe_m2_submission_date ? String(p.pe_m2_submission_date) : null,
         m1ApprovalDate: p.pe_m1_approval_date ? String(p.pe_m1_approval_date) : null,
         m2ApprovalDate: p.pe_m2_approval_date ? String(p.pe_m2_approval_date) : null,
+        m1PaidDate: p.pe_m1_paid_date ? String(p.pe_m1_paid_date) : null,
+        m2PaidDate: p.pe_m2_paid_date ? String(p.pe_m2_paid_date) : null,
       });
     }
     after = response.paging?.next?.after;
@@ -205,6 +211,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     /** Date-prop preferred, history fallback — used for chart bucketing. */
     submittedOn: string | null;
     approvedOn: string | null;
+    paidOn: string | null;
   }
   const records: MilestoneRecord[] = [];
   for (const deal of deals) {
@@ -216,11 +223,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         deal, milestone: "M1", amount: deal.paymentIC, status: deal.m1Status, timing: m1Timing,
         submittedOn: deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
         approvedOn: deal.m1ApprovalDate ?? m1Timing.firstApproved,
+        paidOn: deal.m1PaidDate ?? m1Timing.firstPaid,
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
         submittedOn: deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
         approvedOn: deal.m2ApprovalDate ?? m2Timing.firstApproved,
+        paidOn: deal.m2PaidDate ?? m2Timing.firstPaid,
       },
     );
   }
@@ -244,7 +253,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
     return [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   };
-  const weekly = bucketByWeek((r) => r.timing.firstPaid); // no paid-date prop exists; Paid flips same-day as deposit
+  const weekly = bucketByWeek((r) => r.paidOn);
   const weeklyApprovals = bucketByWeek((r) => r.approvedOn);
   const weeklySubmissions = bucketByWeek((r) => r.submittedOn);
 
@@ -270,7 +279,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       }
     }
   };
-  markDone(weeklyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.timing.firstPaid);
+  markDone(weeklyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(
     weeklySubmissions,
     (r) => r.submittedOn,
