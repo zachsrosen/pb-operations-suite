@@ -18,6 +18,7 @@ import {
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
+  type WeeklyReadiness,
   type PipelineGroupRow,
   type TimingSummary,
   type MonthlyTiming,
@@ -280,6 +281,24 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       }
     }
   };
+  // Readiness view: ready-to-submit-week cohorts — has it been submitted yet?
+  const readinessMap = new Map<string, WeeklyReadiness>();
+  for (const r of records) {
+    if (!r.timing.firstReadyToSubmit) continue;
+    const wk = weekStartUTC(new Date(r.timing.firstReadyToSubmit));
+    const w = readinessMap.get(wk) || { weekStart: wk, submittedCount: 0, submittedAmount: 0, waitingCount: 0, waitingAmount: 0 };
+    const amt = r.amount || 0;
+    if (r.submittedOn || (r.status && groupForStatus(r.status) !== "Onboarding" && groupForStatus(r.status) !== "Ready to Submit")) {
+      w.submittedCount++;
+      w.submittedAmount += amt;
+    } else {
+      w.waitingCount++;
+      w.waitingAmount += amt;
+    }
+    readinessMap.set(wk, w);
+  }
+  const weeklyReadiness = [...readinessMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
   // Lifecycle view: submission-week cohorts, colored by where each milestone
   // stands today (paid → approved-unpaid → still in review).
   const lifecycleMap = new Map<string, WeeklyLifecycle>();
@@ -466,6 +485,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     weeklyApprovals,
     weeklySubmissions,
     weeklyLifecycle,
+    weeklyReadiness,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },

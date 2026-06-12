@@ -10,6 +10,7 @@ import {
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
+  type WeeklyReadiness,
 } from "@/lib/pe-analytics";
 
 // ---------------------------------------------------------------------------
@@ -294,6 +295,109 @@ function WeeklyLifecycleChart({ weekly }: { weekly: WeeklyLifecycle[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Readiness chart — ready-to-submit cohorts: submitted (progress) vs waiting
+// ---------------------------------------------------------------------------
+
+function WeeklyReadinessChart({ weekly }: { weekly: WeeklyReadiness[] }) {
+  const series = useMemo(() => {
+    if (weekly.length === 0) return [];
+    const out: WeeklyReadiness[] = [];
+    const start = new Date(weekly[0].weekStart + "T00:00:00Z");
+    const end = new Date(weekly[weekly.length - 1].weekStart + "T00:00:00Z");
+    const byWeek = new Map(weekly.map((w) => [w.weekStart, w]));
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
+      const key = d.toISOString().split("T")[0];
+      out.push(byWeek.get(key) || { weekStart: key, submittedCount: 0, submittedAmount: 0, waitingCount: 0, waitingAmount: 0 });
+    }
+    return out;
+  }, [weekly]);
+
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  if (series.length === 0) {
+    return <div className="text-sm text-muted py-8 text-center">No milestones have reached Ready to Submit yet.</div>;
+  }
+
+  const W = 900;
+  const H = 280;
+  const PAD_L = 56;
+  const PAD_B = 28;
+  const PAD_T = 36;
+  const chartW = W - PAD_L - 8;
+  const chartH = H - PAD_T - PAD_B;
+  const total = (w: WeeklyReadiness) => w.submittedAmount + w.waitingAmount;
+  const maxTotal = Math.max(...series.map(total), 1);
+  const barW = Math.min(48, (chartW / series.length) * 0.7);
+  const step = chartW / series.length;
+  const yTicks = 4;
+
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
+        aria-label="Stacked weekly bar chart of ready-to-submit cohorts: submitted progress vs still waiting on submission">
+        {[...Array(yTicks + 1)].map((_, i) => {
+          const y = PAD_T + chartH - (chartH * i) / yTicks;
+          const val = (maxTotal * i) / yTicks;
+          return (
+            <g key={i}>
+              <line x1={PAD_L} x2={W - 8} y1={y} y2={y} className="stroke-t-border" strokeWidth={0.5} strokeDasharray="3 4" />
+              <text x={PAD_L - 8} y={y + 3} textAnchor="end" className="fill-muted text-[10px]">
+                {fmtUsdK(val)}
+              </text>
+            </g>
+          );
+        })}
+        {series.map((w, i) => {
+          const x = PAD_L + step * i + (step - barW) / 2;
+          const count = w.submittedCount + w.waitingCount;
+          const dim = hovered === null || hovered === i ? 1 : 0.45;
+          const subH = (w.submittedAmount / maxTotal) * chartH;
+          const waitH = (w.waitingAmount / maxTotal) * chartH;
+          const ySub = PAD_T + chartH - subH;
+          const yWait = ySub - waitH;
+          return (
+            <g key={w.weekStart}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}>
+              <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
+              {subH > 0 && <rect x={x} y={ySub} width={barW} height={subH} rx={2} className="fill-emerald-500" opacity={dim} />}
+              {waitH > 0 && <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className="fill-zinc-500" opacity={0.55 * dim} />}
+              {count > 0 && (
+                <>
+                  <text x={x + barW / 2} y={yWait - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
+                    {fmtUsdK(total(w))}
+                  </text>
+                  <text x={x + barW / 2} y={yWait - 6} textAnchor="middle" className="fill-muted text-[9px]">
+                    {count}
+                  </text>
+                </>
+              )}
+              <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
+                {weekLabel(w.weekStart)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {hovered !== null && series[hovered] && (
+        <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
+          <div className="font-semibold text-foreground mb-1">Ready week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="text-emerald-400">Submitted: {series[hovered].submittedCount} · {fmtUsd(series[hovered].submittedAmount)}</div>
+          <div className="text-muted">Waiting on submission: {series[hovered].waitingCount} · {fmtUsd(series[hovered].waitingAmount)}</div>
+          <div className="text-foreground mt-1 border-t border-t-border pt-1">
+            Total: {fmtUsd(total(series[hovered]))}
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-4 mt-1 text-[11px] text-muted">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Submitted</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/55" /> Waiting on submission</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Section wrapper
 // ---------------------------------------------------------------------------
 
@@ -377,12 +481,19 @@ function MilestoneFunnel({ deals, milestone, locFilter }: {
 // Weekly chart modes
 // ---------------------------------------------------------------------------
 
-type WeeklyMode = "submitted" | "approved" | "paid" | "lifecycle";
+type WeeklyMode = "ready" | "submitted" | "approved" | "paid" | "lifecycle";
 
 const WEEKLY_MODES: Record<
   WeeklyMode,
   { label: string; title: string; subtitle: string; empty: string; weekPrefix: string; split?: DoneSplit }
 > = {
+  ready: {
+    label: "Ready to Submit",
+    title: "Ready-to-Submit Cohorts",
+    subtitle: "Bars dated by week each milestone became READY TO SUBMIT. Green = submitted since; gray = still waiting on submission.",
+    empty: "No milestones have reached Ready to Submit yet.",
+    weekPrefix: "Ready",
+  },
   submitted: {
     label: "Submissions",
     title: "Submissions per Week",
@@ -425,7 +536,7 @@ const WEEKLY_MODES: Record<
   },
 };
 
-const WEEKLY_MODE_ORDER: WeeklyMode[] = ["submitted", "approved", "paid", "lifecycle"];
+const WEEKLY_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "paid", "lifecycle"];
 
 // ---------------------------------------------------------------------------
 // Page
@@ -531,6 +642,8 @@ export default function PeAnalyticsPage() {
           >
             {weeklyMode === "lifecycle" ? (
               <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} />
+            ) : weeklyMode === "ready" ? (
+              <WeeklyReadinessChart weekly={data.weeklyReadiness ?? []} />
             ) : (
               <WeeklyPaymentsChart
                 weekly={
