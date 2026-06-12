@@ -15,7 +15,7 @@ App users now cover the whole Workspace domain (226 accounts synced 2026-06-12),
 
 1. **Admin visibility** — each user's HubSpot owner ID, Zuper user UID, and CrewMember link visible and editable in /admin/users.
 2. **Personalized views** — "my stuff" features resolve identity from stored links, not runtime email heuristics.
-3. **Unify CrewMember + User** — field-crew records connect to app users so crew and office staff form one directory.
+3. **Unify CrewMember + User** — field-crew records connect to app users via a link. (v1 delivers the link + admin visibility only — no merged directory view.)
 
 Out of scope (v1): Zoho Inventory users (no per-user use case yet), Aircall/Freshservice identities, offboarding automation, any change to scheduling code that consumes CrewMember.
 
@@ -42,7 +42,7 @@ Migration ships and applies to prod **before** the code that reads the new colum
 `POST /api/admin/sync-workspace` (route path unchanged for back-compat; button label becomes **"Sync Directory"**) runs four phases:
 
 1. **Google Workspace upsert** — existing behavior, unchanged.
-2. **HubSpot owners** — fetch all owners via the existing owners API wrapper (which already handles 403 backoff + pagination). Match on lowercased email. Fill `User.hubspotOwnerId` where null.
+2. **HubSpot owners** — fetch all owners. The 403-backoff + pagination logic exists inline in hubspot.ts's owner-map builder; extract/export a `fetchAllOwners()` from it rather than duplicating. Match on lowercased email. Fill `User.hubspotOwnerId` where null.
 3. **Zuper users** — fetch via existing `zuper.getUsers()`. Match on lowercased email. Fill `User.zuperUserUid` where null.
 4. **CrewMember links** — for each active CrewMember:
    - has email → match to User on lowercased email, fill `CrewMember.userId` where null.
@@ -58,12 +58,12 @@ If phase 2 or 3 fails (e.g., owners API 403 window), the sync reports that phase
 
 - **User detail drawer** (`/admin/users` → drawer): new "Linked accounts" section showing HubSpot owner, Zuper user, CrewMember — each with the matched display name, or "Not linked". Each row is editable via a searchable dropdown populated from the live owner/user/crew lists (fetched on drawer open through admin API endpoints). Saving writes the link directly; an explicit "Unlink" clears it.
 - **Users table**: small badges (HS / ZP / Crew) per row indicating which links are present.
-- **Sync toast**: per-system counts, plus a "N crew need manual review" line when name-match candidates exist.
+- **Sync toast**: per-system counts. When name-match candidates exist, the result panel lists the actual pairs (CrewMember → suggested User) with a one-click "open in drawer" per pair — count-only would force the admin to rediscover the matches by hand.
 
 New admin API endpoints live under `/api/admin/*` (covered by the existing `ADMIN_ONLY_ROUTES` middleware prefix — no roles.ts allowlist changes needed):
 
 - `GET /api/admin/identity/options` — `{ hubspotOwners[], zuperUsers[], crewMembers[] }` for the dropdowns (cached ~5 min).
-- `PATCH /api/admin/users/[id]/links` — set/clear `hubspotOwnerId`, `zuperUserUid`, crew link. Validates the external ID exists in the options set. Logs admin activity.
+- `PATCH /api/admin/users/[id]/links` — set/clear `hubspotOwnerId`, `zuperUserUid`, crew link. Validates the external ID exists in the options set. Relink conflicts are rejected, not stolen: linking to a CrewMember already linked to a different User returns 409 with the conflicting user named — the admin must unlink there first. Logs admin activity.
 
 ### Consumers
 
@@ -73,7 +73,7 @@ New admin API endpoints live under `/api/admin/*` (covered by the existing `ADMI
 ### Error handling
 
 - Email comparison: trim + lowercase both sides; ignore external users with no email.
-- Duplicate external emails (two HubSpot owners sharing an email): skip + report in `unmatched` with reason rather than guessing.
+- Duplicate external emails (two HubSpot owners sharing an email): skip + report in `unmatched` with reason rather than guessing. Same rule generalized to crew links: `CrewMember.userId` is `@unique` per User, so if a User is already claimed by another CrewMember, skip + report instead of violating the constraint.
 - Shared mailboxes (accounting@ etc.) simply won't match anything — they stay unlinked, which is correct.
 
 ### Testing
