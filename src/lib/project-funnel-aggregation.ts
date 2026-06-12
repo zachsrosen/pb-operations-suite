@@ -8,6 +8,9 @@ export interface ProjectFunnelStageData {
   amount: number;
   cancelledCount: number;
   cancelledAmount: number;
+  /** Reached this milestone but is currently On Hold (parked, not actively worked). */
+  onHoldCount: number;
+  onHoldAmount: number;
 }
 
 export const PROJECT_FUNNEL_STAGES = [
@@ -148,6 +151,8 @@ export interface ProjectFunnelDrillDownDeal {
   interconnectionsLead: string;
   /** Interconnection workstream status (runs parallel to permitting) */
   interconnectionStatus: string | null;
+  /** Free-text note (e.g. the on-hold explanation), shown inline in the drill-down. */
+  notes?: string | null;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -163,6 +168,8 @@ export interface ProjectFunnelDrillDown {
   awaitingInspection: ProjectFunnelDrillDownDeal[];
   awaitingPto: ProjectFunnelDrillDownDeal[];
   awaitingCloseOut: ProjectFunnelDrillDownDeal[];
+  /** On-hold deals, pulled out of the active backlog into their own group. */
+  onHold: ProjectFunnelDrillDownDeal[];
 }
 
 export interface ProjectFunnelResponse {
@@ -238,7 +245,7 @@ function toDrillDown(
   p: Project,
   daysWaiting: number,
   status: string | null,
-  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
+  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string; notes?: string | null },
 ): ProjectFunnelDrillDownDeal {
   return {
     id: p.id,
@@ -253,6 +260,7 @@ function toDrillDown(
     status,
     ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
     ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
+    ...(extra?.notes ? { notes: extra.notes } : {}),
     projectManager: p.projectManager || "",
     dealOwner: p.dealOwner || "",
     siteSurveyor: p.siteSurveyor || "",
@@ -266,7 +274,15 @@ function toDrillDown(
 }
 
 function emptyStage(): ProjectFunnelStageData {
-  return { count: 0, amount: 0, cancelledCount: 0, cancelledAmount: 0 };
+  return { count: 0, amount: 0, cancelledCount: 0, cancelledAmount: 0, onHoldCount: 0, onHoldAmount: 0 };
+}
+
+/** Classify a deal by its current stage for stage tallies: active vs cancelled vs on-hold. */
+type StageKind = "active" | "cancelled" | "onHold";
+function classifyKind(p: Project): StageKind {
+  if (p.stageId === CANCELLED_STAGE_ID) return "cancelled";
+  if (p.stageId === ON_HOLD_STAGE_ID) return "onHold";
+  return "active";
 }
 
 function daysBetween(a: string, b: string): number {
@@ -292,11 +308,14 @@ function monthKey(dateStr: string): string {
 function addToStage(
   stage: ProjectFunnelStageData,
   amount: number,
-  cancelled: boolean
+  kind: StageKind
 ): void {
-  if (cancelled) {
+  if (kind === "cancelled") {
     stage.cancelledCount += 1;
     stage.cancelledAmount += amount;
+  } else if (kind === "onHold") {
+    stage.onHoldCount += 1;
+    stage.onHoldAmount += amount;
   } else {
     stage.count += 1;
     stage.amount += amount;
@@ -440,21 +459,21 @@ function resolveMilestones(p: Project) {
 function tallyStageSummary(deals: Project[]): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
   const summary = emptySummary();
   for (const p of deals) {
-    const cancelled = p.stageId === CANCELLED_STAGE_ID;
+    const kind = classifyKind(p);
     const amt = p.amount || 0;
     const m = resolveMilestones(p);
-    addToStage(summary.salesClosed, amt, cancelled);
-    if (m.hasSurveyScheduled) addToStage(summary.surveyScheduled, amt, cancelled);
-    if (m.hasSurvey) addToStage(summary.surveyDone, amt, cancelled);
-    if (m.hasDaSent) addToStage(summary.daSent, amt, cancelled);
-    if (m.hasDaApproved) addToStage(summary.daApproved, amt, cancelled);
-    if (m.hasDesignComplete) addToStage(summary.designCompleted, amt, cancelled);
-    if (m.hasPermitSubmit) addToStage(summary.permitsSubmitted, amt, cancelled);
-    if (m.hasPermitIssued) addToStage(summary.permitsIssued, amt, cancelled);
-    if (m.hasConstructionScheduled) addToStage(summary.constructionScheduled, amt, cancelled);
-    if (m.hasConstructionComplete) addToStage(summary.constructionComplete, amt, cancelled);
-    if (m.hasInspectionPassed) addToStage(summary.inspectionPassed, amt, cancelled);
-    if (m.hasPtoGranted) addToStage(summary.ptoGranted, amt, cancelled);
+    addToStage(summary.salesClosed, amt, kind);
+    if (m.hasSurveyScheduled) addToStage(summary.surveyScheduled, amt, kind);
+    if (m.hasSurvey) addToStage(summary.surveyDone, amt, kind);
+    if (m.hasDaSent) addToStage(summary.daSent, amt, kind);
+    if (m.hasDaApproved) addToStage(summary.daApproved, amt, kind);
+    if (m.hasDesignComplete) addToStage(summary.designCompleted, amt, kind);
+    if (m.hasPermitSubmit) addToStage(summary.permitsSubmitted, amt, kind);
+    if (m.hasPermitIssued) addToStage(summary.permitsIssued, amt, kind);
+    if (m.hasConstructionScheduled) addToStage(summary.constructionScheduled, amt, kind);
+    if (m.hasConstructionComplete) addToStage(summary.constructionComplete, amt, kind);
+    if (m.hasInspectionPassed) addToStage(summary.inspectionPassed, amt, kind);
+    if (m.hasPtoGranted) addToStage(summary.ptoGranted, amt, kind);
   }
   return summary;
 }
@@ -576,6 +595,7 @@ export function buildProjectFunnelData(
 
   for (const p of filtered) {
     const cancelled = p.stageId === CANCELLED_STAGE_ID;
+    const kind = classifyKind(p);
     const amt = p.amount || 0;
     const mk = monthKey(p.closeDate!);
 
@@ -584,72 +604,72 @@ export function buildProjectFunnelData(
 
     const m = resolveMilestones(p);
 
-    addToStage(summary.salesClosed, amt, cancelled);
-    addToStage(cohort.salesClosed, amt, cancelled);
+    addToStage(summary.salesClosed, amt, kind);
+    addToStage(cohort.salesClosed, amt, kind);
 
     if (m.hasSurveyScheduled) {
-      addToStage(summary.surveyScheduled, amt, cancelled);
-      addToStage(cohort.surveyScheduled, amt, cancelled);
+      addToStage(summary.surveyScheduled, amt, kind);
+      addToStage(cohort.surveyScheduled, amt, kind);
       if (!cancelled && p.siteSurveyScheduleDate)
         dClosedToSurveyScheduled.push(daysBetween(p.closeDate!, p.siteSurveyScheduleDate));
     }
     if (m.hasSurvey) {
-      addToStage(summary.surveyDone, amt, cancelled);
-      addToStage(cohort.surveyDone, amt, cancelled);
+      addToStage(summary.surveyDone, amt, kind);
+      addToStage(cohort.surveyDone, amt, kind);
       if (!cancelled && p.siteSurveyScheduleDate && p.siteSurveyCompletionDate)
         dSurveyScheduledToComplete.push(daysBetween(p.siteSurveyScheduleDate, p.siteSurveyCompletionDate));
     }
     if (m.hasDaSent) {
-      addToStage(summary.daSent, amt, cancelled);
-      addToStage(cohort.daSent, amt, cancelled);
+      addToStage(summary.daSent, amt, kind);
+      addToStage(cohort.daSent, amt, kind);
       if (!cancelled && p.siteSurveyCompletionDate && p.designApprovalSentDate)
         dSurveyToDaSent.push(daysBetween(p.siteSurveyCompletionDate, p.designApprovalSentDate));
     }
     if (m.hasDaApproved) {
-      addToStage(summary.daApproved, amt, cancelled);
-      addToStage(cohort.daApproved, amt, cancelled);
+      addToStage(summary.daApproved, amt, kind);
+      addToStage(cohort.daApproved, amt, kind);
       if (!cancelled && p.designApprovalSentDate && p.designApprovalDate)
         dDaSentToApproved.push(daysBetween(p.designApprovalSentDate, p.designApprovalDate));
     }
     if (m.hasDesignComplete) {
-      addToStage(summary.designCompleted, amt, cancelled);
-      addToStage(cohort.designCompleted, amt, cancelled);
+      addToStage(summary.designCompleted, amt, kind);
+      addToStage(cohort.designCompleted, amt, kind);
       if (!cancelled && p.designApprovalDate && p.designCompletionDate)
         dApprovedToDesignComplete.push(daysBetween(p.designApprovalDate, p.designCompletionDate));
     }
     if (m.hasPermitSubmit) {
-      addToStage(summary.permitsSubmitted, amt, cancelled);
-      addToStage(cohort.permitsSubmitted, amt, cancelled);
+      addToStage(summary.permitsSubmitted, amt, kind);
+      addToStage(cohort.permitsSubmitted, amt, kind);
       if (!cancelled && p.designCompletionDate && p.permitSubmitDate)
         dDesignCompleteToPermitSubmit.push(daysBetween(p.designCompletionDate, p.permitSubmitDate));
     }
     if (m.hasPermitIssued) {
-      addToStage(summary.permitsIssued, amt, cancelled);
-      addToStage(cohort.permitsIssued, amt, cancelled);
+      addToStage(summary.permitsIssued, amt, kind);
+      addToStage(cohort.permitsIssued, amt, kind);
       if (!cancelled && p.permitSubmitDate && p.permitIssueDate)
         dPermitSubmitToIssued.push(daysBetween(p.permitSubmitDate, p.permitIssueDate));
     }
     if (m.hasConstructionScheduled) {
-      addToStage(summary.constructionScheduled, amt, cancelled);
-      addToStage(cohort.constructionScheduled, amt, cancelled);
+      addToStage(summary.constructionScheduled, amt, kind);
+      addToStage(cohort.constructionScheduled, amt, kind);
       if (!cancelled && p.permitIssueDate && p.constructionScheduleDate)
         dPermitIssuedToConstructionScheduled.push(daysBetween(p.permitIssueDate, p.constructionScheduleDate));
     }
     if (m.hasConstructionComplete) {
-      addToStage(summary.constructionComplete, amt, cancelled);
-      addToStage(cohort.constructionComplete, amt, cancelled);
+      addToStage(summary.constructionComplete, amt, kind);
+      addToStage(cohort.constructionComplete, amt, kind);
       if (!cancelled && p.constructionScheduleDate && p.constructionCompleteDate)
         dConstructionScheduledToComplete.push(daysBetween(p.constructionScheduleDate, p.constructionCompleteDate));
     }
     if (m.hasInspectionPassed) {
-      addToStage(summary.inspectionPassed, amt, cancelled);
-      addToStage(cohort.inspectionPassed, amt, cancelled);
+      addToStage(summary.inspectionPassed, amt, kind);
+      addToStage(cohort.inspectionPassed, amt, kind);
       if (!cancelled && p.constructionCompleteDate && p.inspectionPassDate)
         dConstructionCompleteToInspection.push(daysBetween(p.constructionCompleteDate, p.inspectionPassDate));
     }
     if (m.hasPtoGranted) {
-      addToStage(summary.ptoGranted, amt, cancelled);
-      addToStage(cohort.ptoGranted, amt, cancelled);
+      addToStage(summary.ptoGranted, amt, kind);
+      addToStage(cohort.ptoGranted, amt, kind);
       if (!cancelled && p.inspectionPassDate && p.ptoGrantedDate)
         dInspectionToPto.push(daysBetween(p.inspectionPassDate, p.ptoGrantedDate));
     }
@@ -813,10 +833,23 @@ export function buildProjectFunnelData(
     awaitingInspection: [],
     awaitingPto: [],
     awaitingCloseOut: [],
+    onHold: [],
   };
 
   for (const p of filtered) {
     if (p.stageId === CANCELLED_STAGE_ID) continue;
+    // On-hold deals are parked — not actively being worked — so pull them out of
+    // the active "Awaiting X" buckets (where their long parked time unfairly
+    // inflated the stage that owns them) into their own group, tagged with the
+    // on-hold reason and how long they've been on hold.
+    if (p.stageId === ON_HOLD_STAGE_ID) {
+      drillDown.onHold.push(
+        toDrillDown(p, Math.max(0, p.daysSinceStageMovement || 0), p.onHoldReason || "On hold", {
+          notes: p.onHoldNotes,
+        })
+      );
+      continue;
+    }
     const m = resolveMilestones(p);
 
     if (!m.hasSurveyScheduled) {
@@ -908,6 +941,7 @@ export function buildProjectFunnelData(
   drillDown.awaitingInspection.sort(byWaitDesc);
   drillDown.awaitingPto.sort(byWaitDesc);
   drillDown.awaitingCloseOut.sort(byWaitDesc);
+  drillDown.onHold.sort(byWaitDesc);
 
   const activityByLocation: Record<string, ProjectMonthlyActivity> = {};
   for (const [loc, act] of activityLocMap) activityByLocation[loc] = act;

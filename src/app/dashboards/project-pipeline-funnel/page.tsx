@@ -350,37 +350,41 @@ function ProjectPipelineFunnelInner() {
 }
 
 function total(d: ProjectFunnelStageData) {
-  return d.count + d.cancelledCount;
+  return d.count + d.cancelledCount + d.onHoldCount;
 }
 
 /**
  * Shares for the transition INTO stage index `i`, all relative to everything
- * that reached the prior stage (active + cancelled):
- *   conv     — advanced to this stage (active)
+ * that reached the prior stage (active + cancelled + on-hold):
+ *   conv      — advanced to this stage (active)
  *   cancelled — reached this stage but has since cancelled
- *   pending  — reached the prior stage but neither advanced nor cancelled (stuck)
- * The three sum to 100%. Returns null for Sales Closed (no prior) or empty prior.
+ *   onHold    — reached this stage but is now parked On Hold
+ *   pending   — reached the prior stage but none of the above (stuck, active)
+ * The four sum to 100%. Returns null for Sales Closed (no prior) or empty prior.
  */
 function transitionStats(
   row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
   i: number
-): { conv: number; cancelled: number; pending: number } | null {
+): { conv: number; cancelled: number; onHold: number; pending: number } | null {
   if (i === 0) return null;
   const prevReached = total(row[STAGE_CONFIG[i - 1].key]);
   if (prevReached === 0) return null;
   const cur = row[STAGE_CONFIG[i].key];
   const conv = Math.round((cur.count / prevReached) * 100);
   const cancelled = Math.min(Math.round((cur.cancelledCount / prevReached) * 100), 100 - conv);
-  const pending = Math.max(0, 100 - conv - cancelled);
-  return { conv, cancelled, pending };
+  const onHold = Math.min(Math.round((cur.onHoldCount / prevReached) * 100), 100 - conv - cancelled);
+  const pending = Math.max(0, 100 - conv - cancelled - onHold);
+  return { conv, cancelled, onHold, pending };
 }
 
-/** Compact colored conversion numbers: green conv · red cancelled · gray pending. */
+type ConvStats = { conv: number; cancelled: number; onHold: number; pending: number };
+
+/** Compact colored conversion numbers: green conv · red cancelled · yellow on-hold · gray pending. */
 function ConvNumbers({
   stats,
   hideCancelled,
 }: {
-  stats: { conv: number; cancelled: number; pending: number };
+  stats: ConvStats;
   hideCancelled?: boolean;
 }) {
   return (
@@ -390,6 +394,12 @@ function ConvNumbers({
         <>
           <span className="text-muted/40"> · </span>
           <span className="text-red-400/80">{stats.cancelled}%</span>
+        </>
+      )}
+      {stats.onHold > 0 && (
+        <>
+          <span className="text-muted/40"> · </span>
+          <span className="text-yellow-400/80">{stats.onHold}%</span>
         </>
       )}
       <span className="text-muted/40"> · </span>
@@ -407,6 +417,7 @@ function ConversionLegend({ className = "", hideCancelled }: { className?: strin
       {!hideCancelled && (
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400/80" />cancelled</span>
       )}
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400/80" />on hold</span>
       <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-400" />pending</span>
     </div>
   );
@@ -419,7 +430,7 @@ function ConvConnector({
   onClick,
   title,
 }: {
-  stats: { conv: number; cancelled: number; pending: number } | null;
+  stats: ConvStats | null;
   hideCancelled?: boolean;
   onClick?: () => void;
   title?: string;
@@ -748,16 +759,23 @@ function BacklogSection({
     { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, cancelled: cancelledAtGate("constructionComplete", "inspectionPassed"), color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OWNER, INSP] },
     { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, cancelled: cancelledAtGate("inspectionPassed", "ptoGranted"), color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC, ICSTATUS] },
     { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, cancelled: 0, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM, OWNER] },
+    // On Hold is its own group — parked deals pulled out of the active buckets so
+    // their long wait doesn't unfairly inflate whatever stage owns them. The
+    // Status column carries the on-hold reason.
+    { key: "onHold", label: "On Hold", count: drillDown.onHold.length, cancelled: 0, color: "bg-yellow-500", deals: drillDown.onHold, staffCols: [PM, OWNER] },
   ];
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
   const anyCancelled = backlogs.some((b) => b.cancelled > 0);
+  const anyOnHold = drillDown.onHold.length > 0;
 
   // Revenue per backlog = sum of its drill-down deals (the bucket membership).
   const backlogRevenue = (b: { deals: ProjectFunnelDrillDownDeal[] }) =>
     b.deals.reduce((sum, d) => sum + (d.amount || 0), 0);
-  const totalBacklogRevenue = backlogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
-  const totalBacklogCount = backlogs.reduce((sum, b) => sum + Math.max(0, b.count), 0);
+  // Header totals = active backlog only; On Hold is parked, counted in its own row.
+  const activeBacklogs = backlogs.filter((b) => b.key !== "onHold");
+  const totalBacklogRevenue = activeBacklogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
+  const totalBacklogCount = activeBacklogs.reduce((sum, b) => sum + Math.max(0, b.count), 0);
 
   function toggle(key: string) {
     onToggle(expanded === key ? null : key);
@@ -782,10 +800,15 @@ function BacklogSection({
           <span className="text-foreground font-semibold">{totalBacklogCount}</span> deals · {formatCurrencyCompact(totalBacklogRevenue)} in backlog
         </span>
       </div>
-      {anyCancelled ? (
+      {anyCancelled || anyOnHold ? (
         <p className="text-[11px] text-muted/70 mb-4">
-          Live deals stuck before each milestone. A funnel card&apos;s drop to the next stage also counts deals
-          that <span className="text-red-400/70">cancelled at that gate</span> — shown here in red — so the card drop = this backlog + cancelled.
+          Live deals stuck before each milestone.
+          {anyCancelled && (
+            <> A funnel card&apos;s drop to the next stage also counts deals that <span className="text-red-400/70">cancelled at that gate</span> (shown in red).</>
+          )}
+          {anyOnHold && (
+            <> Deals <span className="text-yellow-400/80">on hold</span> are pulled out of the active backlog into the Parked group below, so they don&apos;t inflate the stage they were sitting in.</>
+          )}
         </p>
       ) : (
         <div className="mb-4" />
@@ -797,7 +820,14 @@ function BacklogSection({
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
           return (
-          <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
+          <Fragment key={b.key}>
+          {b.key === "onHold" && b.count > 0 && (
+            <div className="flex items-center gap-2 pt-3 mt-2 border-t border-t-border/60">
+              <span className="text-[11px] font-medium text-yellow-400/80">Parked</span>
+              <span className="text-[10px] text-muted/70">— pulled out of the active backlog above; tracked here so nothing gets forgotten</span>
+            </div>
+          )}
+          <div id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
               type="button"
               className="flex items-center gap-3 w-full py-1.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer"
@@ -868,6 +898,7 @@ function BacklogSection({
               <DrillDownTable deals={b.deals} staffCols={b.staffCols} />
             )}
           </div>
+          </Fragment>
           );
         })}
       </div>
@@ -976,9 +1007,9 @@ function DrillDownTable({
         </thead>
         <tbody>
           {sorted.map((d) => (
+            <Fragment key={d.id}>
             <tr
-              key={d.id}
-              className={`border-b border-t-border/30 ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+              className={`${d.notes ? "" : "border-b border-t-border/30"} ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
             >
               <td className="py-1 px-1.5">
                 <a
@@ -1030,6 +1061,14 @@ function DrillDownTable({
                 {d.status || <span className="italic text-muted/60">—</span>}
               </td>
             </tr>
+            {d.notes && (
+              <tr className="border-b border-t-border/30">
+                <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
+                  <span className="text-[11px] text-muted/80 italic">↳ {d.notes}</span>
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>
