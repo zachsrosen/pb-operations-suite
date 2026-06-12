@@ -272,6 +272,15 @@ export interface DocStats {
   scopedDeals: number; // tracked deals in PTO or Close Out
 }
 
+/** Document-level rejection event (PE reviewer response), one per deal+doc+day. */
+export interface DocRejectionEvent {
+  date: string; // YYYY-MM-DD — PE's Responded date (scrape date fallback)
+  dealId: string;
+  dealName: string;
+  docName: string;
+  note: string | null;
+}
+
 /** Per-milestone record powering the chart drill-down. */
 export interface MilestoneDrillRow {
   dealId: string;
@@ -311,6 +320,7 @@ export interface PeAnalyticsPayload {
   weeklyReadiness: WeeklySplitCohort[];
   weeklyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];
+  docRejectionEvents: DocRejectionEvent[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };

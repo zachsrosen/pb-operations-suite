@@ -13,6 +13,7 @@ import {
   type WeeklyLifecycle,
   type WeeklySplitCohort,
   type MilestoneDrillRow,
+  type DocRejectionEvent,
 } from "@/lib/pe-analytics";
 
 // ---------------------------------------------------------------------------
@@ -436,6 +437,119 @@ function SplitCohortChart({
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> {doneLabel}</span>
         <span className="flex items-center gap-1.5"><span className={`w-2.5 h-2.5 rounded-sm ${pendingSwatch}`} /> {pendingLabel}</span>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Daily doc-rejections chart — document-level reviewer responses per day
+// ---------------------------------------------------------------------------
+
+function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  const days = useMemo(() => {
+    if (events.length === 0) return [] as { date: string; count: number }[];
+    const byDay = new Map<string, number>();
+    for (const e of events) byDay.set(e.date, (byDay.get(e.date) ?? 0) + 1);
+    const out: { date: string; count: number }[] = [];
+    const start = new Date(events[0].date + "T00:00:00Z");
+    const end = new Date(events[events.length - 1].date + "T00:00:00Z");
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const key = d.toISOString().split("T")[0];
+      out.push({ date: key, count: byDay.get(key) ?? 0 });
+    }
+    return out;
+  }, [events]);
+
+  if (days.length === 0) {
+    return <div className="text-sm text-muted py-8 text-center">No document rejections recorded yet.</div>;
+  }
+
+  const W = 900;
+  const H = 180;
+  const PAD_L = 36;
+  const PAD_B = 24;
+  const PAD_T = 14;
+  const chartW = W - PAD_L - 8;
+  const chartH = H - PAD_T - PAD_B;
+  const maxCount = Math.max(...days.map((d) => d.count), 1);
+  const step = chartW / days.length;
+  const barW = Math.max(2, Math.min(14, step * 0.75));
+  const labelEvery = Math.max(1, Math.ceil(days.length / 12));
+  const selectedEvents = selectedDay ? events.filter((e) => e.date === selectedDay) : [];
+
+  return (
+    <div>
+      <div className="relative">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
+          aria-label="Daily bar chart of document-level PE rejections">
+          {[0.5, 1].map((f) => {
+            const y = PAD_T + chartH - chartH * f;
+            return (
+              <g key={f}>
+                <line x1={PAD_L} x2={W - 8} y1={y} y2={y} className="stroke-t-border" strokeWidth={0.5} strokeDasharray="3 4" />
+                <text x={PAD_L - 6} y={y + 3} textAnchor="end" className="fill-muted text-[9px]">{Math.round(maxCount * f)}</text>
+              </g>
+            );
+          })}
+          {days.map((d, i) => {
+            const x = PAD_L + step * i + (step - barW) / 2;
+            const h = (d.count / maxCount) * chartH;
+            const y = PAD_T + chartH - h;
+            const active = selectedDay === d.date;
+            return (
+              <g key={d.date}
+                onMouseEnter={() => setHovered(i)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => d.count > 0 && setSelectedDay(active ? null : d.date)}
+                className={d.count > 0 ? "cursor-pointer" : undefined}>
+                <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
+                {h > 0 && (
+                  <rect x={x} y={y} width={barW} height={h} rx={1.5} className="fill-orange-500"
+                    opacity={(active ? 1 : 0.8) * (hovered === null || hovered === i ? 1 : 0.45)} />
+                )}
+                {i % labelEvery === 0 && (
+                  <text x={PAD_L + step * i + step / 2} y={H - 8} textAnchor="middle" className="fill-muted text-[9px]">
+                    {weekLabel(d.date)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+        {hovered !== null && days[hovered] && days[hovered].count > 0 && (
+          <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
+            <div className="font-semibold text-foreground">{weekLabel(days[hovered].date)}</div>
+            <div className="text-orange-400">{days[hovered].count} doc rejection{days[hovered].count === 1 ? "" : "s"}</div>
+            <div className="text-muted mt-0.5">click for details</div>
+          </div>
+        )}
+      </div>
+      {selectedDay && (
+        <div className="mt-3 rounded-lg border border-t-border bg-surface-2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-medium text-foreground">
+              {weekLabel(selectedDay)} — {selectedEvents.length} document rejection{selectedEvents.length === 1 ? "" : "s"}
+            </div>
+            <button onClick={() => setSelectedDay(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
+              Close
+            </button>
+          </div>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+            {selectedEvents.map((e, i) => (
+              <div key={i} className="rounded bg-surface px-2.5 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-foreground truncate">{DOC_SHORT[e.docName] ?? e.docName}</span>
+                  <span className="text-[10px] text-muted truncate max-w-56" title={e.dealName}>{e.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                </div>
+                {e.note && <div className="text-[11px] text-orange-400/90 mt-0.5 line-clamp-2" title={e.note}>{e.note}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -986,6 +1100,14 @@ export default function PeAnalyticsPage() {
                 </div>
               </div>
             )}
+          </Section>
+
+          {/* 3.5 Doc-level rejections per day */}
+          <Section
+            title="Doc Rejections per Day"
+            subtitle="Document-level rejections dated by PE's reviewer response. Click a day for the docs, deals, and notes."
+          >
+            <DailyDocRejectionsChart events={data.docRejectionEvents ?? []} />
           </Section>
 
           {/* 4. Rejection analysis */}
