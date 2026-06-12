@@ -350,29 +350,34 @@ function ProjectPipelineFunnelInner() {
 }
 
 function total(d: ProjectFunnelStageData) {
-  return d.count + d.cancelledCount + d.onHoldCount;
+  return d.count + d.cancelledCount;
 }
 
 /**
  * Shares for the transition INTO stage index `i`, all relative to everything
- * that reached the prior stage (active + cancelled + on-hold):
- *   conv      — advanced to this stage (active)
+ * that reached the prior stage (active + cancelled):
+ *   conv     — advanced to this stage (active)
  *   cancelled — reached this stage but has since cancelled
- *   onHold    — reached this stage but is now parked On Hold
- *   pending   — reached the prior stage but none of the above (stuck, active)
- * The four sum to 100%. Returns null for Sales Closed (no prior) or empty prior.
+ *   onHold   — reached the prior stage, then parked On Hold before advancing
+ *   pending  — reached the prior stage but none of the above (still actively stuck)
+ * The four sum to 100%. on-hold is a split of what would otherwise be "pending"
+ * (on-hold deals stay counted as active, so the counts still reconcile).
+ * Returns null for Sales Closed (no prior) or empty prior.
  */
 function transitionStats(
   row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
   i: number
 ): { conv: number; cancelled: number; onHold: number; pending: number } | null {
   if (i === 0) return null;
-  const prevReached = total(row[STAGE_CONFIG[i - 1].key]);
+  const prev = row[STAGE_CONFIG[i - 1].key];
+  const prevReached = total(prev);
   if (prevReached === 0) return null;
   const cur = row[STAGE_CONFIG[i].key];
   const conv = Math.round((cur.count / prevReached) * 100);
   const cancelled = Math.min(Math.round((cur.cancelledCount / prevReached) * 100), 100 - conv);
-  const onHold = Math.min(Math.round((cur.onHoldCount / prevReached) * 100), 100 - conv - cancelled);
+  // On-hold deals stuck at this gate = reached prior but not this stage, and on hold.
+  const onHoldStuck = Math.max(0, prev.onHoldCount - cur.onHoldCount);
+  const onHold = Math.min(Math.round((onHoldStuck / prevReached) * 100), 100 - conv - cancelled);
   const pending = Math.max(0, 100 - conv - cancelled - onHold);
   return { conv, cancelled, onHold, pending };
 }
@@ -759,23 +764,16 @@ function BacklogSection({
     { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, cancelled: cancelledAtGate("constructionComplete", "inspectionPassed"), color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OWNER, INSP] },
     { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, cancelled: cancelledAtGate("inspectionPassed", "ptoGranted"), color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC, ICSTATUS] },
     { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, cancelled: 0, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM, OWNER] },
-    // On Hold is its own group — parked deals pulled out of the active buckets so
-    // their long wait doesn't unfairly inflate whatever stage owns them. The
-    // Status column carries the on-hold reason.
-    { key: "onHold", label: "On Hold", count: drillDown.onHold.length, cancelled: 0, color: "bg-yellow-500", deals: drillDown.onHold, staffCols: [PM, OWNER] },
   ];
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
   const anyCancelled = backlogs.some((b) => b.cancelled > 0);
-  const anyOnHold = drillDown.onHold.length > 0;
 
   // Revenue per backlog = sum of its drill-down deals (the bucket membership).
   const backlogRevenue = (b: { deals: ProjectFunnelDrillDownDeal[] }) =>
     b.deals.reduce((sum, d) => sum + (d.amount || 0), 0);
-  // Header totals = active backlog only; On Hold is parked, counted in its own row.
-  const activeBacklogs = backlogs.filter((b) => b.key !== "onHold");
-  const totalBacklogRevenue = activeBacklogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
-  const totalBacklogCount = activeBacklogs.reduce((sum, b) => sum + Math.max(0, b.count), 0);
+  const totalBacklogRevenue = backlogs.reduce((sum, b) => sum + backlogRevenue(b), 0);
+  const totalBacklogCount = backlogs.reduce((sum, b) => sum + Math.max(0, b.count), 0);
 
   function toggle(key: string) {
     onToggle(expanded === key ? null : key);
@@ -784,11 +782,17 @@ function BacklogSection({
   // Average days the pending deals have been waiting at this stage. Clamp each
   // deal at 0 so future-dated references (e.g. construction scheduled ahead)
   // don't produce a negative "days in stage".
+  // Average is over actionable deals only — on-hold deals are parked, so their
+  // long wait shouldn't inflate the stage's "days in stage".
   const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
-    const days = deals.map((d) => Math.max(0, d.daysWaiting)).filter((n) => Number.isFinite(n));
+    const days = deals
+      .filter((d) => !d.isOnHold)
+      .map((d) => Math.max(0, d.daysWaiting))
+      .filter((n) => Number.isFinite(n));
     if (days.length === 0) return null;
     return Math.round(days.reduce((sum, n) => sum + n, 0) / days.length);
   };
+  const onHoldInBucket = (deals: ProjectFunnelDrillDownDeal[]) => deals.filter((d) => d.isOnHold).length;
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
@@ -800,15 +804,10 @@ function BacklogSection({
           <span className="text-foreground font-semibold">{totalBacklogCount}</span> deals · {formatCurrencyCompact(totalBacklogRevenue)} in backlog
         </span>
       </div>
-      {anyCancelled || anyOnHold ? (
+      {anyCancelled ? (
         <p className="text-[11px] text-muted/70 mb-4">
-          Live deals stuck before each milestone.
-          {anyCancelled && (
-            <> A funnel card&apos;s drop to the next stage also counts deals that <span className="text-red-400/70">cancelled at that gate</span> (shown in red).</>
-          )}
-          {anyOnHold && (
-            <> Deals <span className="text-yellow-400/80">on hold</span> are pulled out of the active backlog into the Parked group below, so they don&apos;t inflate the stage they were sitting in.</>
-          )}
+          Live deals stuck before each milestone. A funnel card&apos;s drop to the next stage also counts deals
+          that <span className="text-red-400/70">cancelled at that gate</span> — shown here in red — so the card drop = this backlog + cancelled.
         </p>
       ) : (
         <div className="mb-4" />
@@ -819,15 +818,9 @@ function BacklogSection({
           const segs = statusBreakdown(b.deals);
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
+          const onHold = onHoldInBucket(b.deals);
           return (
-          <Fragment key={b.key}>
-          {b.key === "onHold" && b.count > 0 && (
-            <div className="flex items-center gap-2 pt-3 mt-2 border-t border-t-border/60">
-              <span className="text-[11px] font-medium text-yellow-400/80">Parked</span>
-              <span className="text-[10px] text-muted/70">— pulled out of the active backlog above; tracked here so nothing gets forgotten</span>
-            </div>
-          )}
-          <div id={`backlog-${b.key}`} className="scroll-mt-24">
+          <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
               type="button"
               className="flex items-center gap-3 w-full py-1.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer"
@@ -870,8 +863,16 @@ function BacklogSection({
                   </span>
                 )}
                 {b.count > 0 && avgDays != null && (
-                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the pending deals have been at this stage">
+                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the actionable (non-on-hold) deals have been at this stage">
                     {avgDays}d in stage
+                  </span>
+                )}
+                {onHold > 0 && (
+                  <span
+                    className="text-xs text-yellow-400/80 shrink-0 tabular-nums"
+                    title="Deals here that are On Hold — counted in this bucket but parked, so not actionable and excluded from the average above"
+                  >
+                    · {onHold} on hold
                   </span>
                 )}
                 {b.cancelled > 0 && (
@@ -898,7 +899,6 @@ function BacklogSection({
               <DrillDownTable deals={b.deals} staffCols={b.staffCols} />
             )}
           </div>
-          </Fragment>
           );
         })}
       </div>
@@ -1009,7 +1009,7 @@ function DrillDownTable({
           {sorted.map((d) => (
             <Fragment key={d.id}>
             <tr
-              className={`${d.notes ? "" : "border-b border-t-border/30"} ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+              className={`${d.onHoldReason || d.isOnHold ? "" : "border-b border-t-border/30"} ${d.isOnHold ? "opacity-60" : d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
             >
               <td className="py-1 px-1.5">
                 <a
@@ -1022,6 +1022,11 @@ function DrillDownTable({
                   {d.projectNumber ? `${d.projectNumber} — ` : ""}
                   <span className="max-w-[180px] truncate inline-block align-bottom">{d.name}</span>
                 </a>
+                {d.isOnHold && (
+                  <span className="ml-1.5 align-middle inline-block px-1.5 py-px rounded text-[9px] font-semibold uppercase tracking-wide bg-yellow-500/20 text-yellow-300">
+                    On hold
+                  </span>
+                )}
               </td>
               <td className="text-right py-1 px-1.5 text-muted">
                 {formatCurrencyCompact(d.amount)}
@@ -1054,17 +1059,19 @@ function DrillDownTable({
                   )}
                 </td>
               )}
-              <td className={`text-right py-1 px-1.5 font-medium ${d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
+              <td className={`text-right py-1 px-1.5 font-medium ${d.isOnHold ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
               </td>
               <td className="py-1 px-1.5 text-muted truncate max-w-[120px]" title={d.status || "—"}>
                 {d.status || <span className="italic text-muted/60">—</span>}
               </td>
             </tr>
-            {d.notes && (
+            {d.isOnHold && (d.onHoldReason || d.onHoldNotes) && (
               <tr className="border-b border-t-border/30">
                 <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
-                  <span className="text-[11px] text-muted/80 italic">↳ {d.notes}</span>
+                  <span className="text-[11px] text-yellow-400/70">↳ On hold</span>
+                  {d.onHoldReason && <span className="text-[11px] text-muted/80"> · {d.onHoldReason}</span>}
+                  {d.onHoldNotes && <span className="text-[11px] text-muted/70 italic"> — {d.onHoldNotes}</span>}
                 </td>
               </tr>
             )}
