@@ -50,7 +50,7 @@ function WeeklyPaymentsChart({
   emptyMessage?: string;
   doneSplit?: DoneSplit;
   weekPrefix: string; // tooltip header: "Approved week of Jun 8"
-  onBarClick?: (weekStart: string) => void;
+  onBarClick?: (weekStart: string, segment?: string) => void;
 }) {
   // Fill gaps so empty weeks render as gaps in time, not skipped
   const series = useMemo(() => {
@@ -109,17 +109,20 @@ function WeeklyPaymentsChart({
           const doneAmt = (w.m1DoneAmount ?? 0) + (w.m2DoneAmount ?? 0);
           // Progress fill: solid green = progressed past this stage, muted
           // gray = still outstanding. M1/M2 split lives in the tooltip.
-          const segments = doneSplit
+          const segments: { seg?: string; amount: number; cls: string; op: number }[] = doneSplit
             ? [
-                { amount: doneAmt, cls: "fill-emerald-500", op: 1 },
-                { amount: totalAmt - doneAmt, cls: "fill-zinc-500", op: 0.45 },
+                { seg: "done", amount: doneAmt, cls: "fill-emerald-500", op: 1 },
+                { seg: "remainder", amount: totalAmt - doneAmt, cls: "fill-zinc-500", op: 0.45 },
               ]
             : [{ amount: totalAmt, cls: "fill-emerald-500", op: 1 }];
           let yCursor = PAD_T + chartH;
           const rects = segments.map((s, j) => {
             const h = (Math.max(0, s.amount) / maxTotal) * chartH;
             yCursor -= h;
-            return h > 0 ? <rect key={j} x={x} y={yCursor} width={barW} height={h} rx={2} className={s.cls} opacity={s.op * dim} /> : null;
+            return h > 0 ? (
+              <rect key={j} x={x} y={yCursor} width={barW} height={h} rx={2} className={s.cls} opacity={s.op * dim}
+                onClick={(e) => { e.stopPropagation(); onBarClick?.(w.weekStart, s.seg); }} />
+            ) : null;
           });
           const yTop = yCursor;
           return (
@@ -192,7 +195,7 @@ const EMPTY_LIFECYCLE_WEEK = (weekStart: string): WeeklyLifecycle => ({
   weekStart, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0,
 });
 
-function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string) => void }) {
+function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string, segment?: string) => void }) {
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
     const out: WeeklyLifecycle[] = [];
@@ -246,15 +249,18 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
           const count = w.paidCount + w.approvedCount + w.inReviewCount;
           const dim = hovered === null || hovered === i ? 1 : 0.45;
           const segments = [
-            { amount: w.paidAmount, cls: "fill-emerald-500", op: 1 },
-            { amount: w.approvedAmount, cls: "fill-amber-500", op: 1 },
-            { amount: w.inReviewAmount, cls: "fill-zinc-500", op: 0.55 },
+            { seg: "paid", amount: w.paidAmount, cls: "fill-emerald-500", op: 1 },
+            { seg: "approved", amount: w.approvedAmount, cls: "fill-amber-500", op: 1 },
+            { seg: "inReview", amount: w.inReviewAmount, cls: "fill-zinc-500", op: 0.55 },
           ];
           let yCursor = PAD_T + chartH;
           const rects = segments.map((s, j) => {
             const h = (Math.max(0, s.amount) / maxTotal) * chartH;
             yCursor -= h;
-            return h > 0 ? <rect key={j} x={x} y={yCursor} width={barW} height={h} rx={2} className={s.cls} opacity={s.op * dim} /> : null;
+            return h > 0 ? (
+              <rect key={j} x={x} y={yCursor} width={barW} height={h} rx={2} className={s.cls} opacity={s.op * dim}
+                onClick={(e) => { e.stopPropagation(); onBarClick?.(w.weekStart, s.seg); }} />
+            ) : null;
           });
           const yTop = yCursor;
           return (
@@ -319,7 +325,7 @@ function SplitCohortChart({
   emptyMessage,
 }: {
   weekly: WeeklySplitCohort[];
-  onBarClick?: (weekStart: string) => void;
+  onBarClick?: (weekStart: string, segment?: string) => void;
   weekPrefix: string;
   doneLabel: string;
   pendingLabel: string;
@@ -391,8 +397,14 @@ function SplitCohortChart({
               onClick={() => onBarClick?.(w.weekStart)}
               className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
-              {subH > 0 && <rect x={x} y={ySub} width={barW} height={subH} rx={2} className="fill-emerald-500" opacity={dim} />}
-              {waitH > 0 && <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className={pendingClass} opacity={pendingOpacity * dim} />}
+              {subH > 0 && (
+                <rect x={x} y={ySub} width={barW} height={subH} rx={2} className="fill-emerald-500" opacity={dim}
+                  onClick={(e) => { e.stopPropagation(); onBarClick?.(w.weekStart, "done"); }} />
+              )}
+              {waitH > 0 && (
+                <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className={pendingClass} opacity={pendingOpacity * dim}
+                  onClick={(e) => { e.stopPropagation(); onBarClick?.(w.weekStart, "pending"); }} />
+              )}
               {count > 0 && (
                 <>
                   <text x={x + barW / 2} y={yWait - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
@@ -530,10 +542,11 @@ const DOC_SHORT: Record<string, string> = {
   "Permission to Operate (PTO)": "PTO",
 };
 
-function DrillPanel({ rows, weekStart, weekPrefix, onClose }: {
+function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, onClose }: {
   rows: MilestoneDrillRow[];
   weekStart: string;
   weekPrefix: string;
+  segmentLabel?: string;
   onClose: () => void;
 }) {
   const total = rows.reduce((s, r) => s + r.amount, 0);
@@ -541,7 +554,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, onClose }: {
     <div className="mt-4 rounded-lg border border-t-border bg-surface-2 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs font-medium text-foreground">
-          {weekPrefix} week of {weekLabel(weekStart)} — {rows.length} milestones · {fmtUsd(total)}
+          {weekPrefix} week of {weekLabel(weekStart)}{segmentLabel ? ` — ${segmentLabel}` : ""} — {rows.length} milestones · {fmtUsd(total)}
         </div>
         <button onClick={onClose} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
           Close
@@ -688,22 +701,56 @@ export default function PeAnalyticsPage() {
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
-  const [drillWeek, setDrillWeek] = useState<string | null>(null);
+  const [drill, setDrill] = useState<{ week: string; segment: string | null } | null>(null);
+  const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
 
-  // Rows behind the clicked bar — date field depends on the active view.
+  // Rows behind the clicked bar/segment — date field + segment predicate
+  // depend on the active view; predicates mirror the route's bucketing.
   const drillRows = useMemo(() => {
-    if (!drillWeek || !data?.milestones) return [];
+    if (!drill || !data?.milestones) return [];
     const dateOf = (r: MilestoneDrillRow) =>
       weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "rejections" ? r.rejectedOn
         : weeklyMode === "approved" ? r.approvedOn
           : weeklyMode === "paid" ? r.paidOn
             : r.submittedOn; // submitted + lifecycle
+    const isPaid = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
+    const isApprovedPlus = (r: MilestoneDrillRow) => !!r.approvedOn || r.status === "Approved" || isPaid(r);
+    const segOk = (r: MilestoneDrillRow) => {
+      if (!drill.segment) return true;
+      switch (weeklyMode) {
+        case "ready":
+          return drill.segment === "done" ? !!r.submittedOn : !r.submittedOn;
+        case "rejections": {
+          const pending = r.status === "Rejected" || r.status === "Ready to Resubmit";
+          return drill.segment === "pending" ? pending : !pending;
+        }
+        case "submitted":
+          return drill.segment === "done" ? isApprovedPlus(r) : !isApprovedPlus(r);
+        case "approved":
+          return drill.segment === "done" ? isPaid(r) : !isPaid(r);
+        case "lifecycle": {
+          const paid = isPaid(r);
+          const approved = isApprovedPlus(r) && !paid;
+          return drill.segment === "paid" ? paid : drill.segment === "approved" ? approved : !paid && !approved;
+        }
+        default:
+          return true;
+      }
+    };
     return data.milestones.filter((r) => {
       const d = dateOf(r);
-      return d ? weekStartUTC(new Date(d + "T00:00:00Z")) === drillWeek : false;
+      return d ? weekStartUTC(new Date(d + "T00:00:00Z")) === drill.week && segOk(r) : false;
     });
-  }, [drillWeek, weeklyMode, data]);
+  }, [drill, weeklyMode, data]);
+
+  const SEGMENT_LABELS: Record<string, Record<string, string>> = {
+    ready: { done: "Submitted", pending: "Waiting on submission" },
+    rejections: { done: "Resolved since", pending: "Still pending fix" },
+    submitted: { done: "Approved since", remainder: "Awaiting approval" },
+    approved: { done: "Paid since", remainder: "Awaiting payment" },
+    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "Still in review" },
+  };
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
     [data],
@@ -802,7 +849,7 @@ export default function PeAnalyticsPage() {
                 {WEEKLY_MODE_ORDER.map((mode) => (
                   <button
                     key={mode}
-                    onClick={() => { setWeeklyMode(mode); setDrillWeek(null); }}
+                    onClick={() => { setWeeklyMode(mode); setDrill(null); }}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
                   >
                     {WEEKLY_MODES[mode].label}
@@ -830,11 +877,11 @@ export default function PeAnalyticsPage() {
               <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
             </div>
             {weeklyMode === "lifecycle" ? (
-              <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={setDrillWeek} />
+              <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={openDrill} />
             ) : weeklyMode === "ready" ? (
               <SplitCohortChart
                 weekly={data.weeklyReadiness ?? []}
-                onBarClick={setDrillWeek}
+                onBarClick={openDrill}
                 weekPrefix="Ready"
                 doneLabel="Submitted"
                 pendingLabel="Waiting on submission"
@@ -843,7 +890,7 @@ export default function PeAnalyticsPage() {
             ) : weeklyMode === "rejections" ? (
               <SplitCohortChart
                 weekly={data.weeklyRejections ?? []}
-                onBarClick={setDrillWeek}
+                onBarClick={openDrill}
                 weekPrefix="Rejected"
                 doneLabel="Resolved since"
                 pendingLabel="Still pending fix"
@@ -864,15 +911,16 @@ export default function PeAnalyticsPage() {
                 emptyMessage={WEEKLY_MODES[weeklyMode].empty}
                 doneSplit={WEEKLY_MODES[weeklyMode].split}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
-                onBarClick={setDrillWeek}
+                onBarClick={openDrill}
               />
             )}
-            {drillWeek && (
+            {drill && (
               <DrillPanel
                 rows={drillRows}
-                weekStart={drillWeek}
+                weekStart={drill.week}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
-                onClose={() => setDrillWeek(null)}
+                segmentLabel={drill.segment ? SEGMENT_LABELS[weeklyMode]?.[drill.segment] : undefined}
+                onClose={() => setDrill(null)}
               />
             )}
           </Section>
