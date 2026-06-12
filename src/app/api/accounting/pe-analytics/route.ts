@@ -63,6 +63,8 @@ const DEAL_PROPERTIES = [
   "pe_m2_paid_date",
   "pe_m1_rejection_date",
   "pe_m2_rejection_date",
+  "inspections_completion_date",
+  "pto_completion_date",
 ];
 
 interface PeDealRow {
@@ -84,6 +86,8 @@ interface PeDealRow {
   m2PaidDate: string | null;
   m1RejectionDate: string | null;
   m2RejectionDate: string | null;
+  inspectionPassDate: string | null; // M1 operational ready
+  ptoGrantedDate: string | null; // M2 operational ready
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +169,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2PaidDate: p.pe_m2_paid_date ? String(p.pe_m2_paid_date) : null,
         m1RejectionDate: p.pe_m1_rejection_date ? String(p.pe_m1_rejection_date) : null,
         m2RejectionDate: p.pe_m2_rejection_date ? String(p.pe_m2_rejection_date) : null,
+        inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
+        ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
       });
     }
     after = response.paging?.next?.after;
@@ -224,6 +230,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     approvedOn: string | null;
     paidOn: string | null;
     rejectedOn: string | null;
+    readyOn: string | null;
   }
   const records: MilestoneRecord[] = [];
   for (const deal of deals) {
@@ -237,6 +244,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         approvedOn: deal.m1ApprovalDate ?? m1Timing.firstApproved,
         paidOn: deal.m1PaidDate ?? m1Timing.firstPaid,
         rejectedOn: deal.m1RejectionDate ?? m1Timing.firstRejected,
+        readyOn: deal.inspectionPassDate ?? m1Timing.firstReadyToSubmit ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
@@ -244,6 +252,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         approvedOn: deal.m2ApprovalDate ?? m2Timing.firstApproved,
         paidOn: deal.m2PaidDate ?? m2Timing.firstPaid,
         rejectedOn: deal.m2RejectionDate ?? m2Timing.firstRejected,
+        readyOn: deal.ptoGrantedDate ?? m2Timing.firstReadyToSubmit ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
       },
     );
   }
@@ -299,7 +308,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // week, so Total Ready − waiting always equals Total Submitted.
   const readinessMap = new Map<string, WeeklySplitCohort>();
   for (const r of records) {
-    const readyDate = r.timing.firstReadyToSubmit ?? r.submittedOn;
+    const readyDate = r.readyOn;
     if (!readyDate) continue;
     // Submitted-since requires an actual submission date so Ready − waiting
     // always equals Total Submitted exactly; waiting means the status is
@@ -347,7 +356,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // readiness view), colored by where each milestone stands today.
   const lifecycleMap = new Map<string, WeeklyLifecycle>();
   for (const r of records) {
-    const readyDate = r.timing.firstReadyToSubmit ?? r.submittedOn;
+    const readyDate = r.readyOn;
     if (!readyDate) continue;
     const waiting =
       !r.submittedOn &&
@@ -542,7 +551,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   }
   const portalId = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
   const milestones: MilestoneDrillRow[] = records
-    .filter((r) => r.status || r.timing.firstReadyToSubmit)
+    .filter((r) => r.status || r.readyOn)
     .map((r) => {
       const docMap = docStatusByDeal.get(r.deal.dealId);
       const names = r.milestone === "M1" ? [...PE_M1_DOC_NAMES] : M2_DOC_NAMES;
@@ -567,7 +576,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         status: r.status,
         // Submission implies readiness — milestones that skipped the RTS
         // status get their submission date (same rule as the cohort charts).
-        readyOn: (r.timing.firstReadyToSubmit ?? r.submittedOn)?.slice(0, 10) ?? null,
+        readyOn: r.readyOn?.slice(0, 10) ?? null,
         rejectedOn: r.rejectedOn?.slice(0, 10) ?? null,
         submittedOn: r.submittedOn?.slice(0, 10) ?? null,
         approvedOn: r.approvedOn?.slice(0, 10) ?? null,
