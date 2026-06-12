@@ -73,6 +73,7 @@ export interface HistoryEntry {
 }
 
 export interface MilestoneTiming {
+  firstReadyToSubmit: string | null;
   firstSubmitted: string | null;
   firstApproved: string | null;
   firstPaid: string | null;
@@ -103,12 +104,14 @@ export function computeMilestoneTiming(history: HistoryEntry[]): MilestoneTiming
   const firstWith = (values: string[]): string | null =>
     sorted.find((h) => values.includes(h.value))?.timestamp ?? null;
 
+  const firstReadyToSubmit = firstWith(["Ready to Submit"]);
   const firstSubmitted = firstWith(["Submitted", "Resubmitted"]);
   const firstApproved = firstWith(["Approved"]);
   const firstPaid = firstWith(["Paid"]);
   const rejectionCount = sorted.filter((h) => h.value === "Rejected").length;
 
   return {
+    firstReadyToSubmit,
     firstSubmitted,
     firstApproved,
     firstPaid,
@@ -154,6 +157,15 @@ export interface WeeklyPayments {
   m2DoneCount?: number;
   m1DoneAmount?: number;
   m2DoneAmount?: number;
+}
+
+/** Readiness view: ready-to-submit-week cohorts — submitted vs still waiting. */
+export interface WeeklyReadiness {
+  weekStart: string;
+  submittedCount: number; // progressed: submitted (or beyond) since going ready
+  submittedAmount: number;
+  waitingCount: number; // still waiting on submission
+  waitingAmount: number;
 }
 
 /** Lifecycle view: submission-week cohorts colored by current outcome. */
@@ -267,6 +279,7 @@ export interface PeAnalyticsPayload {
   weeklyApprovals: WeeklyPayments[];
   weeklySubmissions: WeeklyPayments[];
   weeklyLifecycle: WeeklyLifecycle[];
+  weeklyReadiness: WeeklyReadiness[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
