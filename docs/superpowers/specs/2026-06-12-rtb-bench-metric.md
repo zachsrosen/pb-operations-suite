@@ -30,6 +30,8 @@ This adds a compact **Capacity & Backlog** hero row to the Active Pipeline tab, 
 | Install pace basis | **Trailing-actual** (8-wk avg completions) as the headline; configured capacity as a secondary comparison | Trailing-actual is robust and doesn't depend on `CREWS_CONFIG` being current |
 | RTB bench definition | Active deals in **"Ready To Build"** stage (`22580871`) only | "Shovel-ready"; excludes RTB-Blocked, which is surfaced separately as a risk |
 | Blocked surfaced separately | RTB-Blocked count + $ + top reason | We now have `rtb_blocked_reason`; the blocked bench is *not* available capacity |
+| Forecast basis | **DA Approved** cohort, aged forward by median leg times | Forecasting from permitting buys ~1–2 wks; DA gives the full design→permit→RTB lead time (the window needed to actually feed the bench) |
+| Forecast method | Cohort-aging (bottom-up) with a conversion haircut | Grounded in actual WIP position + trailing cycle times; lag-shifted DA throughput is a cross-check, not the headline |
 
 ---
 
@@ -80,6 +82,67 @@ configuredWeeklyCapacity = Σ over selected locations of CREWS_CONFIG[loc].month
 - `weeksOfRtbCoverage` (mirror shop-health hero #3 "Ready-to-Build Jobs"): **green ≥ 2.0**, **yellow 1.0–2.0**, **red < 1.0**.
 
 > Rationale for the RTB-coverage bands: shop-health scores the RTB hero as green when ready jobs ≥ 2× weekly capacity. Expressed as weeks-of-coverage that's ≥ 2 weeks green, 1–2 yellow, <1 red.
+
+---
+
+## RTB inflow forecast (from DA Approved)
+
+The bench cards above are a now-cast (depletion). This is the **leading indicator**: how many jobs will *arrive* in Ready-to-Build over the coming weeks, so a thinning bench is visible early enough to act on.
+
+**Why DA, not permitting:** forecasting from the permitting step only sees ~1–2 weeks ahead. Anchoring on **DA Approved** captures the full design → permit → RTB chain, giving weeks-to-months of visibility — the horizon you need to chase more work into the bench (the literal 6/11 action item).
+
+**Population:** active deals that have reached **DA Approved** but not yet Ready-to-Build (`hasDaApproved && !hasReachedRtb`), **excluding RTB-Blocked** (their timing is unpredictable; shown separately as upside).
+
+**Method — cohort-aging (bottom-up).** Project each deal's expected RTB date by aging it forward from its furthest milestone using the trailing median leg times (all already in `medianDays`):
+
+```
+L1 = medianDays.approvedToDesignComplete
+L2 = medianDays.designCompleteToPermitSubmit
+L3 = medianDays.permitSubmitToIssued        // reaching permits issued ⇒ enters Ready To Build
+
+remaining(deal) =
+    reached permitsIssued       ? 0
+  : reached permitsSubmitted     ? L3
+  : reached designComplete       ? L2 + L3
+  : /* at DA approved */           L1 + L2 + L3
+
+expectedRtbDate = max(today, lastMilestoneDate + remaining)   // overdue vs medians ⇒ buckets as "now"
+```
+
+**Conversion haircut:** not every DA-approved deal reaches RTB (some cancel). Weight each projected arrival by the trailing **DA-Approved → Permits-Issued conversion rate** (`summary.permitsIssued.count / summary.daApproved.count`) so the forecast isn't inflated by deals that will die before RTB.
+
+**Buckets:** weekly arrival count + $ for the next ~8 weeks, plus rolled-up next-2-week and next-4-week totals.
+
+**Net flow (the headline):**
+
+```
+netFlow(window) = projectedInflow(window) − installPace × weeks(window)
+// ▲ bench filling · ▼ shortage worsening
+```
+
+If 4-week projected inflow < 4-week install pace, the bench is draining faster than it refills — flag it red weeks before the install calendar shows a hole.
+
+**Chaseable list:** the deals driving the forecast are exactly the Design & Engineering / Permitting drill-downs already on the page — i.e., "the jobs to push to refill RTB."
+
+**Caveats (state on the card):**
+- Median-aging assumes typical flow; stalled deals arrive late and bucket as overdue/"now". It's a planning estimate, not a commitment.
+- Excludes RTB-Blocked (shown separately as potential upside).
+- Cross-check: lag-shifting the DA-approved weekly throughput by the DA→RTB median should roughly track the cohort-aging curve; large divergence = a stalled cohort worth investigating.
+
+**Response addition:**
+
+```ts
+export interface RtbForecast {
+  weekly: Array<{ weekStart: string; count: number; amount: number }>; // next 8 weeks
+  next2wk: { count: number; amount: number };
+  next4wk: { count: number; amount: number };
+  conversionRate: number;   // DA-approved → permits-issued, trailing
+  netFlow4wk: number;       // next4wk.count − installPace × 4
+}
+// ProjectFunnelResponse.rtbForecast?: RtbForecast  (active scope only)
+```
+
+**UI:** a forward mini bar chart — *"Projected RTB arrivals (next 8 weeks)"* — with the install-pace line overlaid, rendered on the Active Pipeline tab directly beneath the Capacity & Backlog row; the **RTB Net Flow** figure also appears as a card in that row (▲/▼ colored).
 
 ---
 
@@ -149,9 +212,10 @@ Notes:
 
 ## Out of scope (follow-ups)
 
-- Per-location `rtbBenchByLocation` for the "By location" matrix.
+- Per-location `rtbBenchByLocation` / per-location forecast for the "By location" matrix.
 - Goal pacing against `OfficeGoal` `installs_completed` (separate "are we on track for the month/$3M" metric).
-- Forecast-aware coverage (using `forecastedInstallDate` for scheduled-but-not-complete jobs).
+- Predicting when RTB-Blocked jobs unblock (depends on blocker reason; shown as upside, not forecast).
+- Refining expected-RTB dates with `forecastedInstallDate` / explicit scheduled dates where present, instead of pure median-aging.
 
 ---
 
@@ -167,3 +231,5 @@ Notes:
 1. **Pace basis** — headline on trailing-actual (recommended) or on `CREWS_CONFIG` capacity? (Spec assumes trailing-actual, capacity as secondary.)
 2. **Bench definition** — Ready To Build only (recommended), or Ready To Build + RTB-Blocked-without-blocker? The latter counts "could be ready if unblocked."
 3. **Coverage bands** — confirm green ≥ 2w / yellow 1–2w / red < 1w, or set PB-specific targets.
+4. **Forecast conversion haircut** — apply the historical DA-Approved → Permits-Issued attrition (recommended, avoids overpromising) or show gross projected arrivals?
+5. **Forecast horizon** — 8 weeks (default) sufficient, or extend (e.g. 12) given some DA→RTB chains run longer?
