@@ -335,30 +335,44 @@ function ThroughputChart({
       ) : chronological.length === 0 ? (
         <p className="text-xs text-muted/60 italic">No activity in this window.</p>
       ) : (
-        <div className="flex items-end justify-around gap-1" style={{ height: 200 }}>
-          {chronological.map((row) => {
-            const count = row[metric] as number;
-            const revenue = amountKey ? (row[amountKey] as number) : 0;
-            const heightPct = (count / maxValue) * 100;
-            return (
-              <div key={row.month} className="flex flex-col items-center gap-1 flex-1 min-w-0">
-                <div className="flex flex-col items-center leading-tight">
-                  <span className="text-[11px] text-foreground font-semibold tabular-nums">{count > 0 ? count : ""}</span>
-                  {amountKey && revenue > 0 && (
-                    <span className="text-[9px] text-muted tabular-nums">{formatCurrencyCompact(revenue)}</span>
-                  )}
+        // Columns cap their width and center as a group, so a short window
+        // (e.g. one quarter = 3 bars) reads as a tight cluster instead of a few
+        // skinny bars lost in an empty box. Faint gridlines + baseline anchor
+        // the bar heights.
+        <div className="relative">
+          <div className="absolute inset-x-0 top-[46px] bottom-[18px] pointer-events-none">
+            {[0, 1, 2, 3].map((g) => (
+              <div key={g} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${g * 33.33}%` }} />
+            ))}
+          </div>
+          <div className="relative flex items-end justify-center gap-3 sm:gap-5">
+            {chronological.map((row) => {
+              const count = row[metric] as number;
+              const revenue = amountKey ? (row[amountKey] as number) : 0;
+              const heightPct = (count / maxValue) * 100;
+              return (
+                <div
+                  key={row.month}
+                  className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
+                  title={`${monthLabel(row.month)}: ${count} · ${formatCurrencyCompact(revenue)}`}
+                >
+                  <div className="flex flex-col items-center leading-tight h-[40px] justify-end pb-0.5">
+                    <span className="text-sm text-foreground font-bold tabular-nums">{count > 0 ? count : ""}</span>
+                    {amountKey && revenue > 0 && (
+                      <span className="text-[10px] text-muted tabular-nums">{formatCurrencyCompact(revenue)}</span>
+                    )}
+                  </div>
+                  <div className="w-full flex justify-center border-b border-t-border" style={{ height: 130 }}>
+                    <div
+                      className={`${barColor} rounded-t-md w-9 sm:w-11 transition-all duration-300 mt-auto opacity-90 group-hover:opacity-100`}
+                      style={{ height: `${Math.max(heightPct, count > 0 ? 3 : 0)}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
                 </div>
-                <div className="w-full flex justify-center" style={{ height: 130 }}>
-                  <div
-                    className={`${barColor} rounded-t-sm w-5 lg:w-7 transition-all duration-300 mt-auto`}
-                    style={{ height: `${Math.max(heightPct, count > 0 ? 3 : 0)}%` }}
-                    title={`${monthLabel(row.month)}: ${count} · ${formatCurrencyCompact(revenue)}`}
-                  />
-                </div>
-                <span className="text-[9px] text-muted truncate">{monthLabel(row.month, false)}</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

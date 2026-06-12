@@ -166,6 +166,44 @@ export async function searchWithRetry(
   throw new Error("Max retries exceeded");
 }
 
+/**
+ * Batch-read deals with the same rate-limit backoff as searchWithRetry.
+ * Phase 2 of fetchAllProjects previously called the batch API bare — a single
+ * 429 dropped a whole batch of 100 deals, and the incomplete snapshot was
+ * cached as if complete (silently undercounting every dashboard fed by it).
+ */
+async function batchReadDealsWithRetry(
+  ids: string[],
+  properties: string[],
+  maxRetries = 5
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await hubspotClient.crm.deals.batchApi.read({
+        inputs: ids.map((id) => ({ id })),
+        properties,
+        propertiesWithHistory: [],
+      });
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429 || (statusCode != null && statusCode >= 500)) && attempt < maxRetries - 1) {
+        const base = Math.pow(2, attempt) * 1100;
+        const jitter = Math.random() * 400;
+        const delay = Math.round(base + jitter);
+        console.log(`[hubspot] Batch read rate limited (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`);
+        await sleep(delay);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
 // Project Pipeline ID
 const PROJECT_PIPELINE_ID = "6900017";
 
@@ -1253,19 +1291,18 @@ export async function fetchAllProjects(options?: {
     batches.push(allDealIds.slice(i, i + BATCH_SIZE));
   }
 
-  // Process batches with limited concurrency to respect rate limits
+  // Process batches with limited concurrency to respect rate limits. Each
+  // batch retries on 429/5xx with backoff; if any batch STILL fails we throw
+  // rather than return a partial snapshot — a partial result would be cached
+  // and silently undercount every dashboard fed by PROJECTS_ALL. (Background
+  // cache refresh keeps serving the last complete snapshot on failure.)
   const CONCURRENCY = 3;
   let batchFailures = 0;
+  let firstFailure: unknown = null;
   for (let i = 0; i < batches.length; i += CONCURRENCY) {
     const batchGroup = batches.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
-      batchGroup.map((batch) =>
-        hubspotClient.crm.deals.batchApi.read({
-          inputs: batch.map((id) => ({ id })),
-          properties: DEAL_PROPERTIES,
-          propertiesWithHistory: [],
-        })
-      )
+      batchGroup.map((batch) => batchReadDealsWithRetry(batch, DEAL_PROPERTIES))
     );
 
     for (const result of results) {
@@ -1273,7 +1310,8 @@ export async function fetchAllProjects(options?: {
         allDeals.push(...result.value.results.map((deal) => deal.properties));
       } else {
         batchFailures++;
-        console.error("[HubSpot] Batch read failed:", result.reason?.message || result.reason);
+        firstFailure = firstFailure ?? result.reason;
+        console.error("[HubSpot] Batch read failed after retries:", result.reason?.message || result.reason);
       }
     }
 
@@ -1281,7 +1319,9 @@ export async function fetchAllProjects(options?: {
   }
 
   if (batchFailures > 0) {
-    console.warn(`[HubSpot] Phase 2 complete with ${batchFailures} failed batch(es) — data may be incomplete`);
+    const msg = `[HubSpot] Phase 2 incomplete: ${batchFailures}/${batches.length} batch(es) failed after retries — refusing to return a partial snapshot`;
+    console.error(msg, firstFailure);
+    throw new Error(msg);
   }
   console.log(`[HubSpot] Phase 2 complete: ${allDeals.length} deals with full properties`);
 
