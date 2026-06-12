@@ -422,6 +422,11 @@ export interface Project {
   isActive: boolean;
   isBlocked: boolean;
 
+  // Blocked / On-Hold reasons
+  rtbBlockedReason: string | null;
+  onHoldReason: string | null; // dropdown selection
+  onHoldNotes: string | null;  // free-text explanation
+
   // Priority & Scoring
   priorityScore: number;
 
@@ -687,6 +692,11 @@ const DEAL_PROPERTIES = [
   // Status fields for dashboards
   "install_status", // labeled "Construction Status" in HubSpot
   "site_survey_status",
+
+  // Blocked / On-Hold reasons
+  "rtb_blocked_reason",   // RTB - Blocked stage: free-text reason
+  "on_hold_selection",    // On Hold stage: dropdown reason
+  "on_hold_reason",       // On Hold stage: free-text notes
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -1079,6 +1089,11 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     isSchedulable,
     isActive,
     isBlocked,
+
+    // Blocked / On-Hold reasons
+    rtbBlockedReason: deal.rtb_blocked_reason ? String(deal.rtb_blocked_reason) : null,
+    onHoldReason: deal.on_hold_selection ? String(deal.on_hold_selection) : null,
+    onHoldNotes: deal.on_hold_reason ? String(deal.on_hold_reason) : null,
 
     // Priority
     priorityScore,
