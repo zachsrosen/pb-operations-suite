@@ -8,17 +8,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
-import { hubspotClient } from "@/lib/hubspot";
+import { fetchAllOwnersMinimal, type MinimalHubSpotOwner } from "@/lib/hubspot";
 import { appCache } from "@/lib/cache";
 
 const CACHE_KEY = "hubspot:owners:admin-picker";
 
-interface OwnerItem {
-  id: string;
-  email: string | null;
-  firstName: string | null;
-  lastName: string | null;
-}
+type OwnerItem = MinimalHubSpotOwner;
 
 export async function GET() {
   const session = await auth();
@@ -36,23 +31,7 @@ export async function GET() {
     return NextResponse.json({ owners: cached.data });
   }
 
-  const owners: OwnerItem[] = [];
-  let after: string | undefined = undefined;
-  for (let i = 0; i < 10; i++) {
-    const page: { results?: Array<{ id?: string; email?: string; firstName?: string; lastName?: string }>; paging?: { next?: { after?: string } } } =
-      await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false);
-    for (const o of page.results ?? []) {
-      if (!o.id) continue;
-      owners.push({
-        id: o.id,
-        email: o.email ?? null,
-        firstName: o.firstName ?? null,
-        lastName: o.lastName ?? null,
-      });
-    }
-    after = page.paging?.next?.after;
-    if (!after) break;
-  }
+  const owners: OwnerItem[] = await fetchAllOwnersMinimal();
 
   owners.sort((a, b) => {
     const an = `${a.lastName ?? ""} ${a.firstName ?? ""}`.trim().toLowerCase();
