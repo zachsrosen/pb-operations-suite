@@ -658,7 +658,7 @@ const DOC_SHORT: Record<string, string> = {
 
 function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, onClose }: {
   rows: MilestoneDrillRow[];
-  weekStart: string;
+  weekStart: string | null;
   weekPrefix: string;
   segmentLabel?: string;
   onClose: () => void;
@@ -668,7 +668,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, onClose }: {
     <div className="mt-4 rounded-lg border border-t-border bg-surface-2 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs font-medium text-foreground">
-          {weekPrefix} week of {weekLabel(weekStart)}{segmentLabel ? ` — ${segmentLabel}` : ""} — {rows.length} milestones · {fmtUsd(total)}
+          {weekStart ? `${weekPrefix} week of ${weekLabel(weekStart)}${segmentLabel ? ` — ${segmentLabel}` : ""}` : segmentLabel} — {rows.length} milestones · {fmtUsd(total)}
         </div>
         <button onClick={onClose} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
           Close
@@ -815,13 +815,34 @@ export default function PeAnalyticsPage() {
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
-  const [drill, setDrill] = useState<{ week: string; segment: string | null } | null>(null);
+  const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
+  const openAggregate = (key: string) => setDrill({ week: null, segment: key });
 
   // Rows behind the clicked bar/segment — date field + segment predicate
   // depend on the active view; predicates mirror the route's bucketing.
   const drillRows = useMemo(() => {
     if (!drill || !data?.milestones) return [];
+    const isPaidAgg = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
+    const isApprovedAgg = (r: MilestoneDrillRow) => !!r.approvedOn || r.status === "Approved" || isPaidAgg(r);
+    if (drill.week === null) {
+      const PRE_SUB = new Set([
+        "Ready to Submit", "Waiting on Information", "Ready for Onboarding", "Onboarding Submitted",
+        "Onboarding Rejected", "Onboarding Ready to Resubmit", "Onboarding Resubmitted",
+      ]);
+      switch (drill.segment) {
+        case "waitSubmission":
+          return data.milestones.filter((r) => !!r.readyOn && !r.submittedOn && (!r.status || PRE_SUB.has(r.status)));
+        case "waitApproval":
+          return data.milestones.filter((r) => !!r.submittedOn && !isApprovedAgg(r));
+        case "waitPayment":
+          return data.milestones.filter((r) => isApprovedAgg(r) && !isPaidAgg(r));
+        case "paidAll":
+          return data.milestones.filter(isPaidAgg);
+        default:
+          return [];
+      }
+    }
     const dateOf = (r: MilestoneDrillRow) =>
       weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "rejections" ? r.rejectedOn
@@ -857,6 +878,13 @@ export default function PeAnalyticsPage() {
       return d ? weekStartUTC(new Date(d + "T00:00:00Z")) === drill.week && segOk(r) : false;
     });
   }, [drill, weeklyMode, data]);
+
+  const AGGREGATE_LABELS: Record<string, string> = {
+    waitSubmission: "All waiting on submission",
+    waitApproval: "All submitted, awaiting PE approval",
+    waitPayment: "All approved, awaiting payment",
+    paidAll: "All paid",
+  };
 
   const SEGMENT_LABELS: Record<string, Record<string, string>> = {
     ready: { done: "Submitted", pending: "Waiting on submission" },
@@ -976,6 +1004,7 @@ export default function PeAnalyticsPage() {
                 screenshots of the other views stay safe to share externally. */}
             <div className={`grid grid-cols-2 gap-2 mb-4 ${weeklyMode === "ready" ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
               {weeklyMode === "ready" && (
+                <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitSubmission")} title="Click: all waiting on submission">
                 <MiniStat
                   label="Total Ready to Submit"
                   value={fmtUsd(funnelTotals.ready.amount)}
@@ -985,10 +1014,17 @@ export default function PeAnalyticsPage() {
                       : 0
                   }% already submitted, ${funnelTotals.ready.waitingCount} (${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
                 />
+                </button>
               )}
-              <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
-              <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
-              <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
+              <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitApproval")} title="Click: all awaiting PE approval">
+                <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
+              </button>
+              <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitPayment")} title="Click: all awaiting payment">
+                <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
+              </button>
+              <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("paidAll")} title="Click: all paid">
+                <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
+              </button>
             </div>
             {weeklyMode === "lifecycle" ? (
               <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={openDrill} />
@@ -1033,7 +1069,13 @@ export default function PeAnalyticsPage() {
                 rows={drillRows}
                 weekStart={drill.week}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
-                segmentLabel={drill.segment ? SEGMENT_LABELS[weeklyMode]?.[drill.segment] : undefined}
+                segmentLabel={
+                  drill.week === null
+                    ? AGGREGATE_LABELS[drill.segment ?? ""]
+                    : drill.segment
+                      ? SEGMENT_LABELS[weeklyMode]?.[drill.segment]
+                      : undefined
+                }
                 onClose={() => setDrill(null)}
               />
             )}
