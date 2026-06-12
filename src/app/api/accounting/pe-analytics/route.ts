@@ -342,22 +342,33 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   }
   const weeklyRejections = [...rejectionsMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
-  // Lifecycle view: submission-week cohorts, colored by where each milestone
-  // stands today (paid → approved-unpaid → still in review).
+  // Lifecycle view: ready-to-submit-week cohorts (same inclusion rules as the
+  // readiness view), colored by where each milestone stands today.
   const lifecycleMap = new Map<string, WeeklyLifecycle>();
   for (const r of records) {
-    if (!r.submittedOn) continue;
-    const wk = weekStartUTC(new Date(r.submittedOn));
+    const readyDate = r.timing.firstReadyToSubmit ?? r.submittedOn;
+    if (!readyDate) continue;
+    const waiting =
+      !r.submittedOn &&
+      (!r.status || groupForStatus(r.status) === "Onboarding" || groupForStatus(r.status) === "Ready to Submit");
+    if (!r.submittedOn && !waiting) continue; // status anomalies excluded (matches readiness)
+    const wk = weekStartUTC(new Date(readyDate));
     const w =
       lifecycleMap.get(wk) ||
-      { weekStart: wk, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0 };
+      { weekStart: wk, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0, rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0 };
     const amt = r.amount || 0;
-    if (r.status === "Paid" || r.paidOn) {
+    if (waiting) {
+      w.waitingCount++;
+      w.waitingAmount += amt;
+    } else if (r.status === "Paid" || r.paidOn) {
       w.paidCount++;
       w.paidAmount += amt;
     } else if (r.status === "Approved" || r.approvedOn) {
       w.approvedCount++;
       w.approvedAmount += amt;
+    } else if (groupForStatus(r.status) === "Rejected — pending fix") {
+      w.rejectedCount++;
+      w.rejectedAmount += amt;
     } else {
       w.inReviewCount++;
       w.inReviewAmount += amt;

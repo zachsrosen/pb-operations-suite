@@ -181,15 +181,19 @@ export interface WeeklySplitCohort {
   pendingAmount: number;
 }
 
-/** Lifecycle view: submission-week cohorts colored by current outcome. */
+/** Lifecycle view: ready-to-submit-week cohorts colored by current outcome. */
 export interface WeeklyLifecycle {
   weekStart: string;
   paidCount: number;
   paidAmount: number;
   approvedCount: number; // approved, awaiting payment
   approvedAmount: number;
-  inReviewCount: number; // submitted, not yet approved (incl. rejected/pending fix)
+  inReviewCount: number; // submitted, in PE review
   inReviewAmount: number;
+  rejectedCount: number; // currently rejected / pending fix
+  rejectedAmount: number;
+  waitingCount: number; // ready but not yet submitted
+  waitingAmount: number;
 }
 
 export interface PipelineGroupRow {
