@@ -195,6 +195,26 @@ export interface FunnelDeal {
   m2: string | null;
 }
 
+/**
+ * Doc → milestone mapping. M1 includes the 4 onboarding docs plus the
+ * inspection package (12 total); M2 is only IC agreement, final lien
+ * waiver, and PTO. The PE_DOC_HUBSPOT_MAP order does NOT encode this.
+ */
+export const PE_M1_DOC_NAMES = [
+  "Customer Agreement (PPA/ESA)",
+  "Installation Order",
+  "State Disclosures",
+  "Utility Bill",
+  "Signed Proposal",
+  "Design Plan",
+  "Photos per Policy",
+  "Signed Final Permit",
+  "Access to Monitoring",
+  "Certificate of Acceptance",
+  "Attestation of Customer Payment",
+  "Conditional Progress Lien Waiver",
+] as const;
+
 export interface DocStatusStat {
   docs: number;
   deals: number;
@@ -205,8 +225,12 @@ export interface DocStats {
   underReview: DocStatusStat; // incl. legacy UPLOADED — waiting on PE
   approvedDocs: number;
   uploadedDocs: number; // any status except NOT_UPLOADED
-  notUploaded: DocStatusStat;
-  trackedDeals: number;
+  /**
+   * Expected-but-missing docs, scoped by deal stage: PTO-stage deals owe the
+   * 12 M1 docs, Close Out deals owe all 15. Other stages don't count.
+   */
+  missingExpected: DocStatusStat;
+  scopedDeals: number; // tracked deals in PTO or Close Out
 }
 
 export interface PeAnalyticsPayload {
