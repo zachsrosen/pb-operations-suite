@@ -18,7 +18,7 @@ import {
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
-  type WeeklyReadiness,
+  type WeeklySplitCohort,
   type MilestoneDrillRow,
   type PipelineGroupRow,
   type TimingSummary,
@@ -59,6 +59,8 @@ const DEAL_PROPERTIES = [
   "pe_m2_approval_date",
   "pe_m1_paid_date",
   "pe_m2_paid_date",
+  "pe_m1_rejection_date",
+  "pe_m2_rejection_date",
 ];
 
 interface PeDealRow {
@@ -78,6 +80,8 @@ interface PeDealRow {
   m2ApprovalDate: string | null;
   m1PaidDate: string | null;
   m2PaidDate: string | null;
+  m1RejectionDate: string | null;
+  m2RejectionDate: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +161,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2ApprovalDate: p.pe_m2_approval_date ? String(p.pe_m2_approval_date) : null,
         m1PaidDate: p.pe_m1_paid_date ? String(p.pe_m1_paid_date) : null,
         m2PaidDate: p.pe_m2_paid_date ? String(p.pe_m2_paid_date) : null,
+        m1RejectionDate: p.pe_m1_rejection_date ? String(p.pe_m1_rejection_date) : null,
+        m2RejectionDate: p.pe_m2_rejection_date ? String(p.pe_m2_rejection_date) : null,
       });
     }
     after = response.paging?.next?.after;
@@ -215,6 +221,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     submittedOn: string | null;
     approvedOn: string | null;
     paidOn: string | null;
+    rejectedOn: string | null;
   }
   const records: MilestoneRecord[] = [];
   for (const deal of deals) {
@@ -227,12 +234,14 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         submittedOn: deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
         approvedOn: deal.m1ApprovalDate ?? m1Timing.firstApproved,
         paidOn: deal.m1PaidDate ?? m1Timing.firstPaid,
+        rejectedOn: deal.m1RejectionDate ?? m1Timing.firstRejected,
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
         submittedOn: deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
         approvedOn: deal.m2ApprovalDate ?? m2Timing.firstApproved,
         paidOn: deal.m2PaidDate ?? m2Timing.firstPaid,
+        rejectedOn: deal.m2RejectionDate ?? m2Timing.firstRejected,
       },
     );
   }
@@ -286,7 +295,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // Submission implies readiness: milestones that skipped the Ready to Submit
   // status (straight from onboarding to Submitted) bucket at their submission
   // week, so Total Ready − waiting always equals Total Submitted.
-  const readinessMap = new Map<string, WeeklyReadiness>();
+  const readinessMap = new Map<string, WeeklySplitCohort>();
   for (const r of records) {
     const readyDate = r.timing.firstReadyToSubmit ?? r.submittedOn;
     if (!readyDate) continue;
@@ -300,18 +309,37 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       (!r.status || groupForStatus(r.status) === "Onboarding" || groupForStatus(r.status) === "Ready to Submit");
     if (!submittedSince && !waiting) continue;
     const wk = weekStartUTC(new Date(readyDate));
-    const w = readinessMap.get(wk) || { weekStart: wk, submittedCount: 0, submittedAmount: 0, waitingCount: 0, waitingAmount: 0 };
+    const w = readinessMap.get(wk) || { weekStart: wk, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 };
     const amt = r.amount || 0;
     if (submittedSince) {
-      w.submittedCount++;
-      w.submittedAmount += amt;
+      w.doneCount++;
+      w.doneAmount += amt;
     } else {
-      w.waitingCount++;
-      w.waitingAmount += amt;
+      w.pendingCount++;
+      w.pendingAmount += amt;
     }
     readinessMap.set(wk, w);
   }
   const weeklyReadiness = [...readinessMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
+  // Rejections view: first-rejection-week cohorts — fixed since (resubmitted/
+  // approved/paid) vs still pending fix.
+  const rejectionsMap = new Map<string, WeeklySplitCohort>();
+  for (const r of records) {
+    if (!r.rejectedOn) continue;
+    const wk = weekStartUTC(new Date(r.rejectedOn));
+    const w = rejectionsMap.get(wk) || { weekStart: wk, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 };
+    const amt = r.amount || 0;
+    if (groupForStatus(r.status) === "Rejected — pending fix") {
+      w.pendingCount++;
+      w.pendingAmount += amt;
+    } else {
+      w.doneCount++;
+      w.doneAmount += amt;
+    }
+    rejectionsMap.set(wk, w);
+  }
+  const weeklyRejections = [...rejectionsMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
   // Lifecycle view: submission-week cohorts, colored by where each milestone
   // stands today (paid → approved-unpaid → still in review).
@@ -404,7 +432,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       ? prisma.peDocChangeLog.findMany({
           where: { newStatus: { in: ["REJECTED", "ACTION_REQUIRED"] } },
           orderBy: { createdAt: "desc" },
-          select: { docName: true, dealName: true, newNotes: true, createdAt: true },
+          select: { dealId: true, docName: true, dealName: true, newNotes: true, createdAt: true },
         })
       : Promise.resolve([]),
   ]);
@@ -480,6 +508,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       const missingDocs = docMap
         ? names.filter((n) => (docMap.get(n) ?? "NOT_UPLOADED") === "NOT_UPLOADED")
         : [];
+      const actionRequiredDocs = docMap
+        ? names.filter((n) => ["ACTION_REQUIRED", "REJECTED"].includes(docMap.get(n) ?? ""))
+        : [];
+      const latestRejectionNote =
+        changeLog.find(
+          (ev) => ev.dealId === r.deal.dealId && ev.newNotes && names.includes(ev.docName),
+        )?.newNotes ?? null;
       return {
         dealId: r.deal.dealId,
         dealName: r.deal.dealName,
@@ -490,10 +525,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         amount: r.amount || 0,
         status: r.status,
         readyOn: r.timing.firstReadyToSubmit?.slice(0, 10) ?? null,
+        rejectedOn: r.rejectedOn?.slice(0, 10) ?? null,
         submittedOn: r.submittedOn?.slice(0, 10) ?? null,
         approvedOn: r.approvedOn?.slice(0, 10) ?? null,
         paidOn: r.paidOn?.slice(0, 10) ?? null,
         missingDocs,
+        actionRequiredDocs,
+        latestRejectionNote,
       };
     });
 
@@ -532,6 +570,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     weeklySubmissions,
     weeklyLifecycle,
     weeklyReadiness,
+    weeklyRejections,
     milestones,
     pipeline,
     timing: { overall, monthly },
