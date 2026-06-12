@@ -358,29 +358,38 @@ function total(d: ProjectFunnelStageData) {
  * that reached the prior stage (active + cancelled):
  *   conv     — advanced to this stage (active)
  *   cancelled — reached this stage but has since cancelled
- *   pending  — reached the prior stage but neither advanced nor cancelled (stuck)
- * The three sum to 100%. Returns null for Sales Closed (no prior) or empty prior.
+ *   onHold   — reached the prior stage, then parked On Hold before advancing
+ *   pending  — reached the prior stage but none of the above (still actively stuck)
+ * The four sum to 100%. on-hold is a split of what would otherwise be "pending"
+ * (on-hold deals stay counted as active, so the counts still reconcile).
+ * Returns null for Sales Closed (no prior) or empty prior.
  */
 function transitionStats(
   row: Record<ProjectFunnelStageKey, ProjectFunnelStageData>,
   i: number
-): { conv: number; cancelled: number; pending: number } | null {
+): { conv: number; cancelled: number; onHold: number; pending: number } | null {
   if (i === 0) return null;
-  const prevReached = total(row[STAGE_CONFIG[i - 1].key]);
+  const prev = row[STAGE_CONFIG[i - 1].key];
+  const prevReached = total(prev);
   if (prevReached === 0) return null;
   const cur = row[STAGE_CONFIG[i].key];
   const conv = Math.round((cur.count / prevReached) * 100);
   const cancelled = Math.min(Math.round((cur.cancelledCount / prevReached) * 100), 100 - conv);
-  const pending = Math.max(0, 100 - conv - cancelled);
-  return { conv, cancelled, pending };
+  // On-hold deals stuck at this gate = reached prior but not this stage, and on hold.
+  const onHoldStuck = Math.max(0, prev.onHoldCount - cur.onHoldCount);
+  const onHold = Math.min(Math.round((onHoldStuck / prevReached) * 100), 100 - conv - cancelled);
+  const pending = Math.max(0, 100 - conv - cancelled - onHold);
+  return { conv, cancelled, onHold, pending };
 }
 
-/** Compact colored conversion numbers: green conv · red cancelled · gray pending. */
+type ConvStats = { conv: number; cancelled: number; onHold: number; pending: number };
+
+/** Compact colored conversion numbers: green conv · red cancelled · yellow on-hold · gray pending. */
 function ConvNumbers({
   stats,
   hideCancelled,
 }: {
-  stats: { conv: number; cancelled: number; pending: number };
+  stats: ConvStats;
   hideCancelled?: boolean;
 }) {
   return (
@@ -390,6 +399,12 @@ function ConvNumbers({
         <>
           <span className="text-muted/40"> · </span>
           <span className="text-red-400/80">{stats.cancelled}%</span>
+        </>
+      )}
+      {stats.onHold > 0 && (
+        <>
+          <span className="text-muted/40"> · </span>
+          <span className="text-yellow-400/80">{stats.onHold}%</span>
         </>
       )}
       <span className="text-muted/40"> · </span>
@@ -407,6 +422,7 @@ function ConversionLegend({ className = "", hideCancelled }: { className?: strin
       {!hideCancelled && (
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400/80" />cancelled</span>
       )}
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400/80" />on hold</span>
       <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-400" />pending</span>
     </div>
   );
@@ -419,7 +435,7 @@ function ConvConnector({
   onClick,
   title,
 }: {
-  stats: { conv: number; cancelled: number; pending: number } | null;
+  stats: ConvStats | null;
   hideCancelled?: boolean;
   onClick?: () => void;
   title?: string;
