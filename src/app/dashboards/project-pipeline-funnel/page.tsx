@@ -16,6 +16,7 @@ import type {
   ProjectFunnelDrillDownDeal,
   ProjectFunnelDrillDown,
   ProjectFunnelStageGroup,
+  ProjectFunnelStageDeal,
   MilestoneCohortResponse,
   MilestoneCohortBucket,
 } from "@/lib/project-funnel-aggregation";
@@ -123,6 +124,7 @@ function ProjectPipelineFunnelInner() {
 
   // Which backlog row is expanded — lifted so the hero connectors can open one.
   const [expandedBacklog, setExpandedBacklog] = useState<string | null>(null);
+  const [expandedStage, setExpandedStage] = useState<string | null>(null);
   const openBacklog = useCallback((backlogKey: string) => {
     setExpandedBacklog(backlogKey);
     setTimeout(() => {
@@ -337,6 +339,8 @@ function ProjectPipelineFunnelInner() {
             <StageDistribution
               stages={data.stageDistribution}
               totalDeals={s.salesClosed.count + s.salesClosed.cancelledCount}
+              expanded={expandedStage}
+              onToggle={setExpandedStage}
             />
           </div>
         </>
@@ -1236,12 +1240,19 @@ function CohortTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] })
   );
 }
 
+/** RTB-Blocked and On Hold break down by reason, so label the drill-down column "Reason". */
+const REASON_STAGES = new Set(["RTB - Blocked", "On Hold"]);
+
 function StageDistribution({
   stages,
   totalDeals,
+  expanded,
+  onToggle,
 }: {
   stages: ProjectFunnelStageGroup[];
   totalDeals: number;
+  expanded: string | null;
+  onToggle: (key: string | null) => void;
 }) {
   const maxCount = Math.max(1, ...stages.map((s) => s.count));
 
@@ -1276,11 +1287,20 @@ function StageDistribution({
           const segs = stage.statusBreakdown.length ? stage.statusBreakdown : [{ status: "No status", count: stage.count }];
           const segTotal = stage.count || 1;
           const hasRealStatus = stage.statusBreakdown.some((s) => s.status !== "No status");
+          const isReasonStage = REASON_STAGES.has(stage.stageName);
           return (
-            <div key={stage.stageId}>
-              <div className="flex items-center gap-3">
-                <span className="w-44 text-xs text-muted text-right shrink-0 truncate" title={stage.stageName}>
-                  {stage.stageName}
+            <div key={stage.stageId} id={`stage-${stage.stageId}`} className="scroll-mt-24">
+              <button
+                type="button"
+                className="flex items-center gap-3 w-full py-0.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                onClick={() => stage.count > 0 && onToggle(expanded === stage.stageId ? null : stage.stageId)}
+                disabled={stage.count <= 0}
+              >
+                <span className="w-44 text-xs text-muted text-right shrink-0 flex items-center justify-end gap-1">
+                  {stage.count > 0 && (
+                    <span className={`text-[10px] transition-transform ${expanded === stage.stageId ? "rotate-90" : ""}`}>▶</span>
+                  )}
+                  <span className="truncate" title={stage.stageName}>{stage.stageName}</span>
                 </span>
                 <div className="flex items-center gap-2 flex-1">
                   {stage.count > 0 ? (
@@ -1304,8 +1324,8 @@ function StageDistribution({
                     <span className="text-foreground font-semibold">{stage.count}</span> · {formatCurrencyCompact(stage.amount)} · {pct}%
                   </span>
                 </div>
-              </div>
-              {/* Per-status counts, aligned under the bar. */}
+              </button>
+              {/* Per-status (or per-reason) counts, aligned under the bar. */}
               {stage.count > 0 && hasRealStatus && (
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-[11.75rem] pt-0.5 text-[10px] text-muted">
                   {stage.statusBreakdown.map((seg) => (
@@ -1315,10 +1335,58 @@ function StageDistribution({
                   ))}
                 </div>
               )}
+              {expanded === stage.stageId && stage.deals.length > 0 && (
+                <StagePositionTable deals={stage.deals} detailLabel={isReasonStage ? "Reason" : "Status"} />
+              )}
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Drill-down table for one stage in the Current Pipeline Position chart. */
+function StagePositionTable({
+  deals,
+  detailLabel,
+}: {
+  deals: ProjectFunnelStageDeal[];
+  detailLabel: string;
+}) {
+  return (
+    <div className="pl-[11.75rem] pt-1 pb-2 overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="text-muted border-b border-t-border">
+            <th className="text-left font-medium py-1 pr-3">Project</th>
+            <th className="text-left font-medium py-1 pr-3">Owner</th>
+            <th className="text-left font-medium py-1 pr-3">PM</th>
+            <th className="text-right font-medium py-1 pr-3">Amount</th>
+            <th className="text-right font-medium py-1 pr-3">Days in stage</th>
+            <th className="text-left font-medium py-1">{detailLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deals.map((d) => (
+            <tr key={d.id} className="border-b border-t-border/40 hover:bg-surface-2/40">
+              <td className="py-1 pr-3 whitespace-nowrap">
+                <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 font-medium hover:text-cyan-400">
+                  {d.projectNumber || d.name}
+                </a>
+              </td>
+              <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.dealOwner || "—"}</td>
+              <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.projectManager || "—"}</td>
+              <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(d.amount)}</td>
+              <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{d.daysInStage}d</td>
+              <td className="py-1 text-foreground/80" title={d.notes || undefined}>
+                {d.detail}
+                {d.notes && <span className="text-muted/70 italic"> · {d.notes}</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

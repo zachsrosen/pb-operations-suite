@@ -93,6 +93,23 @@ export interface ProjectMonthlyActivity {
   cancelledAmount: number;
 }
 
+/** One deal in a current-stage drill-down (Current Pipeline Position chart). */
+export interface ProjectFunnelStageDeal {
+  id: number;
+  name: string;
+  projectNumber: string;
+  amount: number;
+  pbLocation: string;
+  url: string;
+  daysInStage: number;
+  projectManager: string;
+  dealOwner: string;
+  /** Stage-relevant status, or the blocked / on-hold reason for those stages. */
+  detail: string;
+  /** Free-text on-hold notes, if any (On Hold stage only). */
+  notes: string | null;
+}
+
 export interface ProjectFunnelStageGroup {
   stageId: string;
   stageName: string;
@@ -100,6 +117,8 @@ export interface ProjectFunnelStageGroup {
   amount: number;
   /** Deals in this current stage broken down by their stage-relevant status. */
   statusBreakdown: Array<{ status: string; count: number }>;
+  /** The deals sitting in this stage right now, for drill-down. */
+  deals: ProjectFunnelStageDeal[];
 }
 
 export interface ProjectFunnelDrillDownDeal {
@@ -166,6 +185,7 @@ export interface ProjectFunnelResponse {
 
 const CANCELLED_STAGE_ID = "68229433";
 const ON_HOLD_STAGE_ID = "20440344";
+const RTB_BLOCKED_STAGE_ID = "71052436";
 const PROJECT_COMPLETE_STAGE_ID = "20440343";
 
 /** Active = still in flight: not cancelled and not project-complete. */
@@ -717,7 +737,8 @@ export function buildProjectFunnelData(
   const monthlyActivity = [...activityMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
   // Stage distribution — sorted by pipeline order (STAGE_PRIORITY_MAP), with a
-  // per-stage breakdown by the status that's relevant to that stage.
+  // per-stage breakdown + drill-down. RTB-Blocked and On Hold break down by their
+  // reason (not a generic status), so the "why" is visible at a glance.
   const stageMap = new Map<string, ProjectFunnelStageGroup>();
   const stageStatusMap = new Map<string, Map<string, number>>();
   for (const p of filtered) {
@@ -729,6 +750,7 @@ export function buildProjectFunnelData(
         count: 0,
         amount: 0,
         statusBreakdown: [],
+        deals: [],
       });
       stageStatusMap.set(sid, new Map());
     }
@@ -736,15 +758,41 @@ export function buildProjectFunnelData(
     sg.count++;
     sg.amount += p.amount || 0;
 
+    // Blocked / On Hold stages surface their reason; everything else its
+    // stage-relevant status. `detail` drives both the bar breakdown and the
+    // drill-down's Status/Reason column.
+    const reason =
+      sid === RTB_BLOCKED_STAGE_ID
+        ? p.rtbBlockedReason?.trim() || null
+        : sid === ON_HOLD_STAGE_ID
+          ? p.onHoldReason?.trim() || null
+          : null;
     const src = STAGE_STATUS_SOURCE[sid];
-    const label = (src && statusLabel(src.labelKey, p[src.field] as string | null)) || "No status";
+    const statusLbl = (src && statusLabel(src.labelKey, p[src.field] as string | null)) || "No status";
+    const detail = reason ?? statusLbl;
+
     const sm = stageStatusMap.get(sid)!;
-    sm.set(label, (sm.get(label) || 0) + 1);
+    sm.set(detail, (sm.get(detail) || 0) + 1);
+
+    sg.deals.push({
+      id: p.id,
+      name: p.name,
+      projectNumber: p.projectNumber,
+      amount: p.amount || 0,
+      pbLocation: p.pbLocation,
+      url: p.url,
+      daysInStage: Math.max(0, p.daysSinceStageMovement || 0),
+      projectManager: p.projectManager || "",
+      dealOwner: p.dealOwner || "",
+      detail,
+      notes: sid === ON_HOLD_STAGE_ID ? p.onHoldNotes?.trim() || null : null,
+    });
   }
   for (const [sid, sg] of stageMap) {
     sg.statusBreakdown = [...stageStatusMap.get(sid)!.entries()]
       .map(([status, count]) => ({ status, count }))
       .sort((a, b) => b.count - a.count);
+    sg.deals.sort((a, b) => b.daysInStage - a.daysInStage);
   }
   const stageDistribution = [...stageMap.values()].sort(
     (a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99)
