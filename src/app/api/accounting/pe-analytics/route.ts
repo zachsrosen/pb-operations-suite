@@ -565,7 +565,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         milestone: r.milestone,
         amount: r.amount || 0,
         status: r.status,
-        readyOn: r.timing.firstReadyToSubmit?.slice(0, 10) ?? null,
+        // Submission implies readiness — milestones that skipped the RTS
+        // status get their submission date (same rule as the cohort charts).
+        readyOn: (r.timing.firstReadyToSubmit ?? r.submittedOn)?.slice(0, 10) ?? null,
         rejectedOn: r.rejectedOn?.slice(0, 10) ?? null,
         submittedOn: r.submittedOn?.slice(0, 10) ?? null,
         approvedOn: r.approvedOn?.slice(0, 10) ?? null,
