@@ -794,12 +794,12 @@ function BacklogSection({
   // Average days the pending deals have been waiting at this stage. Clamp each
   // deal at 0 so future-dated references (e.g. construction scheduled ahead)
   // don't produce a negative "days in stage".
-  // Average is over actionable deals only — flagged deals (on hold / RTB blocked /
-  // pending sales change) are parked or waiting on someone else, so their long
-  // wait shouldn't inflate the stage's "days in stage".
+  // Average excludes only "parked" deals (On Hold) — a genuine pause we don't
+  // hold against the clock. RTB-Blocked and Sales Change still count: we want to
+  // see how long they've been blocked/pending.
   const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
     const days = deals
-      .filter((d) => !d.flag)
+      .filter((d) => !d.flag?.parked)
       .map((d) => Math.max(0, d.daysWaiting))
       .filter((n) => Number.isFinite(n));
     if (days.length === 0) return null;
@@ -807,10 +807,10 @@ function BacklogSection({
   };
   // Per-bucket summary of flagged (not-actionable) deals, grouped by label.
   const flagsInBucket = (deals: ProjectFunnelDrillDownDeal[]) => {
-    const m = new Map<string, { count: number; tone: string }>();
+    const m = new Map<string, { count: number; tone: string; parked: boolean }>();
     for (const d of deals) {
       if (!d.flag) continue;
-      const e = m.get(d.flag.label) || { count: 0, tone: d.flag.tone };
+      const e = m.get(d.flag.label) || { count: 0, tone: d.flag.tone, parked: d.flag.parked };
       e.count++;
       m.set(d.flag.label, e);
     }
@@ -894,7 +894,9 @@ function BacklogSection({
                   <span
                     key={f.label}
                     className={`text-xs shrink-0 tabular-nums ${FLAG_TEXT[f.tone] || "text-muted"}`}
-                    title="Counted in this bucket but parked / blocked / waiting on someone else, so not actionable and excluded from the average above"
+                    title={f.parked
+                      ? "On hold — counted in this bucket but parked, so excluded from the average above"
+                      : "Counted in this bucket and in the average; flagged so you can see why it's been waiting"}
                   >
                     · {f.count} {f.label.toLowerCase()}
                   </span>
@@ -1033,7 +1035,7 @@ function DrillDownTable({
           {sorted.map((d) => (
             <Fragment key={d.id}>
             <tr
-              className={`${d.flag ? "" : "border-b border-t-border/30"} ${d.flag ? "opacity-60" : d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+              className={`${d.flag ? "" : "border-b border-t-border/30"} ${d.flag?.parked ? "opacity-60" : d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
             >
               <td className="py-1 px-1.5">
                 <a
@@ -1083,7 +1085,7 @@ function DrillDownTable({
                   )}
                 </td>
               )}
-              <td className={`text-right py-1 px-1.5 font-medium ${d.flag ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
+              <td className={`text-right py-1 px-1.5 font-medium ${d.flag?.parked ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
               </td>
               <td className="py-1 px-1.5 text-muted truncate max-w-[120px]" title={d.status || "—"}>

@@ -172,6 +172,13 @@ export interface ProjectFunnelDrillDownFlag {
   reason: string | null;
   /** Optional secondary free-text note (on-hold notes). */
   note: string | null;
+  /**
+   * Parked = a genuine pause we don't hold against the clock (On Hold). Its time
+   * is muted and excluded from the stage average. Non-parked flags (RTB-Blocked,
+   * Sales Change) are still tracked: their days show age-colored and count toward
+   * the average — we want to see how long they've been blocked/pending.
+   */
+  parked: boolean;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -297,13 +304,13 @@ function toDrillDown(
 /** Flag a deal that's parked/blocked/awaiting-someone, with the reason to show. */
 function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
   if (p.stageId === ON_HOLD_STAGE_ID) {
-    return { label: "On hold", tone: "yellow", reason: p.onHoldReason || null, note: p.onHoldNotes || null };
+    return { label: "On hold", tone: "yellow", reason: p.onHoldReason || null, note: p.onHoldNotes || null, parked: true };
   }
   if (p.stageId === RTB_BLOCKED_STAGE_ID) {
-    return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || null, note: null };
+    return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || null, note: null, parked: false };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
-    return { label: "Sales change", tone: "orange", reason: p.salesChangeOrderNotes || null, note: null };
+    return { label: "Sales change", tone: "orange", reason: p.salesChangeOrderNotes || null, note: null, parked: false };
   }
   return null;
 }
