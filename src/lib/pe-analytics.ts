@@ -146,6 +146,11 @@ export interface WeeklyPayments {
   m2Count: number;
   m1Amount: number;
   m2Amount: number;
+  /** Approvals view only: the subset of this week's approvals already paid. */
+  m1PaidCount?: number;
+  m2PaidCount?: number;
+  m1PaidAmount?: number;
+  m2PaidAmount?: number;
 }
 
 export interface PipelineGroupRow {
