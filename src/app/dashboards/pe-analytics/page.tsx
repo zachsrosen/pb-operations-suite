@@ -11,7 +11,7 @@ import {
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
-  type WeeklyReadiness,
+  type WeeklySplitCohort,
   type MilestoneDrillRow,
 } from "@/lib/pe-analytics";
 
@@ -303,19 +303,40 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
 }
 
 // ---------------------------------------------------------------------------
-// Readiness chart — ready-to-submit cohorts: submitted (progress) vs waiting
+// Two-segment cohort chart — done (green progress) vs still pending.
+// Powers the Ready-to-Submit and Rejections views.
 // ---------------------------------------------------------------------------
 
-function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[]; onBarClick?: (weekStart: string) => void }) {
+function SplitCohortChart({
+  weekly,
+  onBarClick,
+  weekPrefix,
+  doneLabel,
+  pendingLabel,
+  pendingClass = "fill-zinc-500",
+  pendingOpacity = 0.55,
+  pendingSwatch = "bg-zinc-500/55",
+  emptyMessage,
+}: {
+  weekly: WeeklySplitCohort[];
+  onBarClick?: (weekStart: string) => void;
+  weekPrefix: string;
+  doneLabel: string;
+  pendingLabel: string;
+  pendingClass?: string;
+  pendingOpacity?: number;
+  pendingSwatch?: string;
+  emptyMessage: string;
+}) {
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
-    const out: WeeklyReadiness[] = [];
+    const out: WeeklySplitCohort[] = [];
     const start = new Date(weekly[0].weekStart + "T00:00:00Z");
     const end = new Date(weekly[weekly.length - 1].weekStart + "T00:00:00Z");
     const byWeek = new Map(weekly.map((w) => [w.weekStart, w]));
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
       const key = d.toISOString().split("T")[0];
-      out.push(byWeek.get(key) || { weekStart: key, submittedCount: 0, submittedAmount: 0, waitingCount: 0, waitingAmount: 0 });
+      out.push(byWeek.get(key) || { weekStart: key, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 });
     }
     return out;
   }, [weekly]);
@@ -323,7 +344,7 @@ function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[
   const [hovered, setHovered] = useState<number | null>(null);
 
   if (series.length === 0) {
-    return <div className="text-sm text-muted py-8 text-center">No milestones have reached Ready to Submit yet.</div>;
+    return <div className="text-sm text-muted py-8 text-center">{emptyMessage}</div>;
   }
 
   const W = 900;
@@ -333,7 +354,7 @@ function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[
   const PAD_T = 36;
   const chartW = W - PAD_L - 8;
   const chartH = H - PAD_T - PAD_B;
-  const total = (w: WeeklyReadiness) => w.submittedAmount + w.waitingAmount;
+  const total = (w: WeeklySplitCohort) => w.doneAmount + w.pendingAmount;
   const maxTotal = Math.max(...series.map(total), 1);
   const barW = Math.min(48, (chartW / series.length) * 0.7);
   const step = chartW / series.length;
@@ -342,7 +363,7 @@ function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[
   return (
     <div className="relative">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
-        aria-label="Stacked weekly bar chart of ready-to-submit cohorts: submitted progress vs still waiting on submission">
+        aria-label={`Stacked weekly cohort chart: ${doneLabel} (progress) vs ${pendingLabel}`}>
         {[...Array(yTicks + 1)].map((_, i) => {
           const y = PAD_T + chartH - (chartH * i) / yTicks;
           const val = (maxTotal * i) / yTicks;
@@ -357,10 +378,10 @@ function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[
         })}
         {series.map((w, i) => {
           const x = PAD_L + step * i + (step - barW) / 2;
-          const count = w.submittedCount + w.waitingCount;
+          const count = w.doneCount + w.pendingCount;
           const dim = hovered === null || hovered === i ? 1 : 0.45;
-          const subH = (w.submittedAmount / maxTotal) * chartH;
-          const waitH = (w.waitingAmount / maxTotal) * chartH;
+          const subH = (w.doneAmount / maxTotal) * chartH;
+          const waitH = (w.pendingAmount / maxTotal) * chartH;
           const ySub = PAD_T + chartH - subH;
           const yWait = ySub - waitH;
           return (
@@ -371,7 +392,7 @@ function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[
               className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {subH > 0 && <rect x={x} y={ySub} width={barW} height={subH} rx={2} className="fill-emerald-500" opacity={dim} />}
-              {waitH > 0 && <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className="fill-zinc-500" opacity={0.55 * dim} />}
+              {waitH > 0 && <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className={pendingClass} opacity={pendingOpacity * dim} />}
               {count > 0 && (
                 <>
                   <text x={x + barW / 2} y={yWait - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
@@ -391,17 +412,17 @@ function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[
       </svg>
       {hovered !== null && series[hovered] && (
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-          <div className="font-semibold text-foreground mb-1">Ready week of {weekLabel(series[hovered].weekStart)}</div>
-          <div className="text-emerald-400">Submitted: {series[hovered].submittedCount} · {fmtUsd(series[hovered].submittedAmount)}</div>
-          <div className="text-muted">Waiting on submission: {series[hovered].waitingCount} · {fmtUsd(series[hovered].waitingAmount)}</div>
+          <div className="font-semibold text-foreground mb-1">{weekPrefix} week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="text-emerald-400">{doneLabel}: {series[hovered].doneCount} · {fmtUsd(series[hovered].doneAmount)}</div>
+          <div className="text-muted">{pendingLabel}: {series[hovered].pendingCount} · {fmtUsd(series[hovered].pendingAmount)}</div>
           <div className="text-foreground mt-1 border-t border-t-border pt-1">
             Total: {fmtUsd(total(series[hovered]))}
           </div>
         </div>
       )}
       <div className="flex items-center gap-4 mt-1 text-[11px] text-muted">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Submitted</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/55" /> Waiting on submission</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> {doneLabel}</span>
+        <span className="flex items-center gap-1.5"><span className={`w-2.5 h-2.5 rounded-sm ${pendingSwatch}`} /> {pendingLabel}</span>
       </div>
     </div>
   );
@@ -541,7 +562,9 @@ function DrillPanel({ rows, weekStart, weekPrefix, onClose }: {
                 <th className="py-1 pr-3 font-normal">Submitted</th>
                 <th className="py-1 pr-3 font-normal">Approved</th>
                 <th className="py-1 pr-3 font-normal">Paid</th>
-                <th className="py-1 font-normal">Missing docs</th>
+                <th className="py-1 pr-3 font-normal">Rejected</th>
+                <th className="py-1 pr-3 font-normal">Missing docs</th>
+                <th className="py-1 font-normal">Action required</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/20">
@@ -563,8 +586,12 @@ function DrillPanel({ rows, weekStart, weekPrefix, onClose }: {
                   <td className="py-1.5 pr-3 text-muted">{r.submittedOn ?? "—"}</td>
                   <td className="py-1.5 pr-3 text-muted">{r.approvedOn ?? "—"}</td>
                   <td className="py-1.5 pr-3 text-muted">{r.paidOn ?? "—"}</td>
-                  <td className="py-1.5 text-orange-400/90">
+                  <td className="py-1.5 pr-3 text-muted">{r.rejectedOn ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-orange-400/90">
                     {r.missingDocs.length ? r.missingDocs.map((d) => DOC_SHORT[d] ?? d).join(", ") : ""}
+                  </td>
+                  <td className="py-1.5 text-orange-400/90 max-w-48 truncate" title={r.latestRejectionNote ?? undefined}>
+                    {(r.actionRequiredDocs ?? []).length ? (r.actionRequiredDocs ?? []).map((d) => DOC_SHORT[d] ?? d).join(", ") : ""}
                   </td>
                 </tr>
               ))}
@@ -580,7 +607,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, onClose }: {
 // Weekly chart modes
 // ---------------------------------------------------------------------------
 
-type WeeklyMode = "ready" | "submitted" | "approved" | "paid" | "lifecycle";
+type WeeklyMode = "ready" | "submitted" | "approved" | "paid" | "lifecycle" | "rejections";
 
 const WEEKLY_MODES: Record<
   WeeklyMode,
@@ -626,6 +653,13 @@ const WEEKLY_MODES: Record<
     empty: "No payments recorded yet.",
     weekPrefix: "Paid",
   },
+  rejections: {
+    label: "Rejections",
+    title: "Rejection Cohorts",
+    subtitle: "Bars dated by week of first REJECTION. Green = resolved since (resubmitted/approved/paid); orange = still pending fix.",
+    empty: "No rejections recorded.",
+    weekPrefix: "Rejected",
+  },
   lifecycle: {
     label: "Lifecycle",
     title: "Submission Cohorts by Outcome",
@@ -635,7 +669,7 @@ const WEEKLY_MODES: Record<
   },
 };
 
-const WEEKLY_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "paid", "lifecycle"];
+const WEEKLY_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "paid", "lifecycle", "rejections"];
 
 // ---------------------------------------------------------------------------
 // Page
@@ -661,6 +695,7 @@ export default function PeAnalyticsPage() {
     if (!drillWeek || !data?.milestones) return [];
     const dateOf = (r: MilestoneDrillRow) =>
       weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
+        : weeklyMode === "rejections" ? r.rejectedOn
         : weeklyMode === "approved" ? r.approvedOn
           : weeklyMode === "paid" ? r.paidOn
             : r.submittedOn; // submitted + lifecycle
@@ -681,10 +716,10 @@ export default function PeAnalyticsPage() {
     // Cumulative ever-ready, plus the slice still waiting on submission.
     const ready = (data?.weeklyReadiness ?? []).reduce(
       (s, w) => ({
-        count: s.count + w.submittedCount + w.waitingCount,
-        amount: s.amount + w.submittedAmount + w.waitingAmount,
-        waitingCount: s.waitingCount + w.waitingCount,
-        waitingAmount: s.waitingAmount + w.waitingAmount,
+        count: s.count + w.doneCount + w.pendingCount,
+        amount: s.amount + w.doneAmount + w.pendingAmount,
+        waitingCount: s.waitingCount + w.pendingCount,
+        waitingAmount: s.waitingAmount + w.pendingAmount,
       }),
       { count: 0, amount: 0, waitingCount: 0, waitingAmount: 0 },
     );
@@ -797,7 +832,26 @@ export default function PeAnalyticsPage() {
             {weeklyMode === "lifecycle" ? (
               <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={setDrillWeek} />
             ) : weeklyMode === "ready" ? (
-              <WeeklyReadinessChart weekly={data.weeklyReadiness ?? []} onBarClick={setDrillWeek} />
+              <SplitCohortChart
+                weekly={data.weeklyReadiness ?? []}
+                onBarClick={setDrillWeek}
+                weekPrefix="Ready"
+                doneLabel="Submitted"
+                pendingLabel="Waiting on submission"
+                emptyMessage={WEEKLY_MODES.ready.empty}
+              />
+            ) : weeklyMode === "rejections" ? (
+              <SplitCohortChart
+                weekly={data.weeklyRejections ?? []}
+                onBarClick={setDrillWeek}
+                weekPrefix="Rejected"
+                doneLabel="Resolved since"
+                pendingLabel="Still pending fix"
+                pendingClass="fill-orange-500"
+                pendingOpacity={0.85}
+                pendingSwatch="bg-orange-500/85"
+                emptyMessage={WEEKLY_MODES.rejections.empty}
+              />
             ) : (
               <WeeklyPaymentsChart
                 weekly={

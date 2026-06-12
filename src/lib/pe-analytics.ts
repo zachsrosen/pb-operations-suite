@@ -74,6 +74,7 @@ export interface HistoryEntry {
 
 export interface MilestoneTiming {
   firstReadyToSubmit: string | null;
+  firstRejected: string | null;
   firstSubmitted: string | null;
   firstApproved: string | null;
   firstPaid: string | null;
@@ -105,6 +106,7 @@ export function computeMilestoneTiming(history: HistoryEntry[]): MilestoneTiming
     sorted.find((h) => values.includes(h.value))?.timestamp ?? null;
 
   const firstReadyToSubmit = firstWith(["Ready to Submit"]);
+  const firstRejected = firstWith(["Rejected"]);
   const firstSubmitted = firstWith(["Submitted", "Resubmitted"]);
   const firstApproved = firstWith(["Approved"]);
   const firstPaid = firstWith(["Paid"]);
@@ -112,6 +114,7 @@ export function computeMilestoneTiming(history: HistoryEntry[]): MilestoneTiming
 
   return {
     firstReadyToSubmit,
+    firstRejected,
     firstSubmitted,
     firstApproved,
     firstPaid,
@@ -159,13 +162,18 @@ export interface WeeklyPayments {
   m2DoneAmount?: number;
 }
 
-/** Readiness view: ready-to-submit-week cohorts — submitted vs still waiting. */
-export interface WeeklyReadiness {
+/**
+ * Two-segment cohort weeks: done = progressed past the stage (green),
+ * pending = still stuck at it. Used by the Ready-to-Submit view
+ * (done = submitted since, pending = waiting on submission) and the
+ * Rejections view (done = resolved since, pending = still pending fix).
+ */
+export interface WeeklySplitCohort {
   weekStart: string;
-  submittedCount: number; // progressed: submitted (or beyond) since going ready
-  submittedAmount: number;
-  waitingCount: number; // still waiting on submission
-  waitingAmount: number;
+  doneCount: number;
+  doneAmount: number;
+  pendingCount: number;
+  pendingAmount: number;
 }
 
 /** Lifecycle view: submission-week cohorts colored by current outcome. */
@@ -273,11 +281,16 @@ export interface MilestoneDrillRow {
   amount: number;
   status: string | null;
   readyOn: string | null;
+  rejectedOn: string | null;
   submittedOn: string | null;
   approvedOn: string | null;
   paidOn: string | null;
   /** Milestone-relevant docs not yet uploaded (empty when fully uploaded or untracked). */
   missingDocs: string[];
+  /** Milestone-relevant docs currently flagged ACTION_REQUIRED/REJECTED by PE. */
+  actionRequiredDocs: string[];
+  /** Latest PE reviewer note on an action-required doc for this milestone. */
+  latestRejectionNote: string | null;
 }
 
 export interface PeAnalyticsPayload {
@@ -295,7 +308,8 @@ export interface PeAnalyticsPayload {
   weeklyApprovals: WeeklyPayments[];
   weeklySubmissions: WeeklyPayments[];
   weeklyLifecycle: WeeklyLifecycle[];
-  weeklyReadiness: WeeklyReadiness[];
+  weeklyReadiness: WeeklySplitCohort[];
+  weeklyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
