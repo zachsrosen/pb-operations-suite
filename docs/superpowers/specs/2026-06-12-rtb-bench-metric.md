@@ -1,4 +1,6 @@
-# RTB Bench / Weeks-of-Backlog Metric (Project Pipeline)
+# Pipeline Health: RTB Bench, RTB Forecast & Backlog Aging (Project Pipeline)
+
+> Scope grew from the initial "RTB bench metric" to a coherent pipeline-health set, since the pieces share one primitive (average stage duration): RTB bench + weeks-of-backlog, a DA-based RTB inflow forecast, per-deal backlog aging vs the stage average, and on-hold % in the conversion arrows.
 
 **Date**: 2026-06-12
 **Author**: Zach Rosen (IT)
@@ -30,8 +32,11 @@ This adds a compact **Capacity & Backlog** hero row to the Active Pipeline tab, 
 | Install pace basis | **Trailing-actual** (8-wk avg completions) as the headline; configured capacity as a secondary comparison | Trailing-actual is robust and doesn't depend on `CREWS_CONFIG` being current |
 | RTB bench definition | Active deals in **"Ready To Build"** stage (`22580871`) only | "Shovel-ready"; excludes RTB-Blocked, which is surfaced separately as a risk |
 | Blocked surfaced separately | RTB-Blocked count + $ + top reason | We now have `rtb_blocked_reason`; the blocked bench is *not* available capacity |
-| Forecast basis | **DA Approved** cohort, aged forward by median leg times | Forecasting from permitting buys ~1–2 wks; DA gives the full design→permit→RTB lead time (the window needed to actually feed the bench) |
+| Forecast basis | **DA Approved** cohort, aged forward by average leg times | Forecasting from permitting buys ~1–2 wks; DA gives the full design→permit→RTB lead time (the window needed to actually feed the bench) |
 | Forecast method | Cohort-aging (bottom-up) with a conversion haircut | Grounded in actual WIP position + trailing cycle times; lag-shifted DA throughput is a cross-check, not the headline |
+| Stage-duration stat | **Average** (mean), not median | Per request; the aggregation's leg-time stat switches from `median()` to mean. One shared primitive feeds the forecast and the backlog-aging benchmark below |
+| On-hold visibility | Carve **on-hold %** out of "pending" in the conversion arrows | On-hold deals are currently hidden inside pending; surfaced as a 4th segment (converted / cancelled / on-hold / pending) colored like the On Hold stage |
+| Backlog aging | Compare each waiting deal to the **average** time its stage takes; flag overdue | Turns the backlog from "how many" into "how many are *late*" — the actionable cut |
 
 ---
 
@@ -93,12 +98,12 @@ The bench cards above are a now-cast (depletion). This is the **leading indicato
 
 **Population:** active deals that have reached **DA Approved** but not yet Ready-to-Build (`hasDaApproved && !hasReachedRtb`), **excluding RTB-Blocked** (their timing is unpredictable; shown separately as upside).
 
-**Method — cohort-aging (bottom-up).** Project each deal's expected RTB date by aging it forward from its furthest milestone using the trailing median leg times (all already in `medianDays`):
+**Method — cohort-aging (bottom-up).** Project each deal's expected RTB date by aging it forward from its furthest milestone using the trailing **average** leg times (the aggregation's leg-time stat, switched from median to mean — exposed as `averageDays`):
 
 ```
-L1 = medianDays.approvedToDesignComplete
-L2 = medianDays.designCompleteToPermitSubmit
-L3 = medianDays.permitSubmitToIssued        // reaching permits issued ⇒ enters Ready To Build
+L1 = averageDays.approvedToDesignComplete
+L2 = averageDays.designCompleteToPermitSubmit
+L3 = averageDays.permitSubmitToIssued        // reaching permits issued ⇒ enters Ready To Build
 
 remaining(deal) =
     reached permitsIssued       ? 0
@@ -143,6 +148,46 @@ export interface RtbForecast {
 ```
 
 **UI:** a forward mini bar chart — *"Projected RTB arrivals (next 8 weeks)"* — with the install-pace line overlaid, rendered on the Active Pipeline tab directly beneath the Capacity & Backlog row; the **RTB Net Flow** figure also appears as a card in that row (▲/▼ colored).
+
+## Backlog aging vs average
+
+Each backlog bucket already shows the count and the average wait. Add a per-deal **aging-vs-benchmark**: compare a deal's current wait to the average time *that stage* takes, and color it. Turns "how many are waiting" into "how many are *late*."
+
+Bucket → average leg (1:1; `waiting since` is already the drill-down's `daysWaiting` anchor):
+
+| Backlog bucket | waiting since | benchmark (`averageDays`) |
+|---|---|---|
+| Awaiting Survey Schedule | close date | closedToSurveyScheduled |
+| Awaiting Survey Complete | survey scheduled | surveyScheduledToComplete |
+| Awaiting DA Send | survey complete | surveyToDaSent |
+| Awaiting DA Approval | DA sent | daSentToApproved |
+| Awaiting Design Complete | DA approved | approvedToDesignComplete |
+| Awaiting Permit Submit | design complete | designCompleteToPermitSubmit |
+| **Awaiting Permit Issue** | **permit submitted** | **permitSubmitToIssued** |
+| Awaiting Construction Schedule | permit issued | permitIssuedToConstructionScheduled |
+| Awaiting Construction Complete | construction scheduled | constructionScheduledToComplete |
+| Awaiting Inspection | construction complete | constructionCompleteToInspection |
+| Awaiting PTO | inspection passed | inspectionToPto |
+
+Per-deal flag: `ratio = daysWaiting / avgLeg`
+- **green** < 1.0× (within normal)
+- **amber** 1.0–1.5× (over average)
+- **red** > 1.5× (well past — chase now)
+
+Each drill-down row shows `{daysWaiting}d / avg {avgLeg}d` with the days badge colored by band; the bucket header gains `N over average`. No `avgLeg` (too few completions) ⇒ no flag, show days only.
+
+**Permit example (the case you raised):** a deal in Awaiting Permit Issue, submitted 38 days ago, when submit→issue averages 21 days → ratio 1.8 → **red**, "38d / avg 21d". That's the AHJ to call today. (This same per-leg average is exactly what the forecast uses, so the two stay consistent.)
+
+Pure presentation on top of data we already ship (`daysWaiting` per deal + `averageDays.<leg>`).
+
+## On-hold % in the conversion arrows
+
+On-hold deals are active (not cancelled, not complete), so today they sit silently inside **pending** in each transition. Carve them out as a 4th segment.
+
+- `ProjectFunnelStageData` gains `onHoldCount` / `onHoldAmount`, populated parallel to `cancelledCount`: a reached milestone is classified active / cancelled / **on-hold** by current stage id (On Hold = `20440344`).
+- Arrow reads **converted · cancelled · on-hold · pending** (= 100%); `pending` shrinks by the on-hold share. On-hold colored like the On Hold stage (yellow); legend updated.
+- Backlog consistency (mirrors the cancelled-at-gate treatment shipped in #962): on-hold deals drop out of the live backlog bars and surface as "**N on hold here**" on the row, so card-drop = live backlog + cancelled + on-hold.
+- Card totals unchanged (`total = count + cancelledCount + onHoldCount`).
 
 ---
 
@@ -221,10 +266,13 @@ Notes:
 
 ## Rollout
 
-1. Aggregation: add `RtbBench` computation in `buildProjectFunnelData` (active scope only) — small, pure addition; reuse `shop-health` thresholds (export `scoreBacklogWeeks` or duplicate the bands with a shared comment).
-2. Page: add the `CapacityBacklogRow` component, gated on `tab === "funnel" && data.rtbBench`.
-3. No migration, no new env, no new route. Label/data-only deploy.
-4. `tsc` + `eslint`; verify full-project typecheck (not filtered) given a shared response-type change.
+Independent chunks — can ship as separate PRs to limit blast radius:
+
+1. **Aggregation primitives**: rename `medianDays`→`averageDays` (`median()`→mean()); add `onHoldCount`/`onHoldAmount` to `ProjectFunnelStageData` (classify each reached milestone active / cancelled / on-hold by stage id).
+2. **Conversion arrows**: on-hold segment in `transitionStats` / `ConvNumbers` / `ConversionLegend`; on-hold-at-gate on backlog rows (parallel to the cancelled-at-gate from #962).
+3. **Backlog aging**: per-deal `daysWaiting` vs `averageDays[bucket]` coloring + "N over average" header.
+4. **RTB bench + forecast**: `RtbBench` + `RtbForecast` in `buildProjectFunnelData` (active scope); `CapacityBacklogRow` + arrivals chart, gated on `tab === "funnel" && data.rtbBench`. Reuse `shop-health` `scoreBacklogWeeks` thresholds.
+5. No migration, no new env, no new route — data/label only. **Run the FULL-project `tsc` (not filtered)** for chunks 1/4: they change shared response types, and `deal-reader.ts` builds the same `Project`/response shapes (this is the exact gap that broke the build in #968 → #969).
 
 ## Open questions
 
