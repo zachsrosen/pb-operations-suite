@@ -280,13 +280,13 @@ export default function PeAnalyticsPage() {
         <StatCard
           label="Action Required"
           value={isLoading || !data ? null : String(data.docStats?.actionRequired.docs ?? 0)}
-          subtitle={data ? `docs across ${data.docStats?.actionRequired.deals ?? 0} deals — fixes owed to PE` : undefined}
+          subtitle={data ? `docs across ${data.docStats?.actionRequired.deals ?? 0} PTO/Close Out deals — fixes owed to PE` : undefined}
           color="orange"
         />
         <StatCard
           label="In Review"
           value={isLoading || !data ? null : String(data.docStats?.underReview.docs ?? 0)}
-          subtitle={data ? `docs across ${data.docStats?.underReview.deals ?? 0} deals — waiting on PE` : undefined}
+          subtitle={data ? `docs across ${data.docStats?.underReview.deals ?? 0} PTO/Close Out deals — waiting on PE` : undefined}
           color="cyan"
         />
         <StatCard
@@ -296,7 +296,7 @@ export default function PeAnalyticsPage() {
               ? null
               : `${data.docStats?.uploadedDocs ? Math.round(((data.docStats.approvedDocs) / data.docStats.uploadedDocs) * 100) : 0}%`
           }
-          subtitle={data ? `${data.docStats?.approvedDocs ?? 0} of ${data.docStats?.uploadedDocs ?? 0} uploaded docs` : undefined}
+          subtitle={data ? `${data.docStats?.approvedDocs ?? 0} of ${data.docStats?.uploadedDocs ?? 0} uploaded docs (PTO/Close Out)` : undefined}
           color="emerald"
         />
         <StatCard

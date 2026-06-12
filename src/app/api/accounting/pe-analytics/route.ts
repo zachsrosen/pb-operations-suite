@@ -308,33 +308,27 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .sort((a, b) => b.totalEvents + b.currentlyRejected + b.currentActionRequired - (a.totalEvents + a.currentlyRejected + a.currentActionRequired));
 
   // --- Doc-status header stats -----------------------------------------------
-  const docStat = (statuses: string[]) => {
-    const rows = docRows.filter((r) => statuses.includes(r.status));
-    return { docs: rows.length, deals: new Set(rows.map((r) => r.dealId)).size };
-  };
-  // Missing docs only count when the deal's stage owes them: PTO-stage deals
-  // owe the 12 M1 docs, Close Out deals owe all 15.
+  // All four cards are scoped to deals actively in a milestone (PTO stage owes
+  // the 12 M1 docs, Close Out owes all 15); other stages owe nothing yet.
   const stageById = new Map(deals.map((d) => [d.dealId, d.stage]));
   const m1DocSet = new Set<string>(PE_M1_DOC_NAMES);
-  const missingDeals = new Set<string>();
   const scopedDeals = new Set<string>();
-  let missingDocs = 0;
-  for (const r of docRows) {
+  const relevantRows = docRows.filter((r) => {
     const stage = stageById.get(r.dealId);
-    if (stage !== PTO_STAGE_ID && stage !== CLOSEOUT_STAGE_ID) continue;
+    if (stage !== PTO_STAGE_ID && stage !== CLOSEOUT_STAGE_ID) return false;
     scopedDeals.add(r.dealId);
-    const owed = stage === CLOSEOUT_STAGE_ID || m1DocSet.has(r.docName);
-    if (owed && r.status === "NOT_UPLOADED") {
-      missingDocs++;
-      missingDeals.add(r.dealId);
-    }
-  }
+    return stage === CLOSEOUT_STAGE_ID || m1DocSet.has(r.docName);
+  });
+  const docStat = (statuses: string[]) => {
+    const rows = relevantRows.filter((r) => statuses.includes(r.status));
+    return { docs: rows.length, deals: new Set(rows.map((r) => r.dealId)).size };
+  };
   const docStats = {
     actionRequired: docStat(["ACTION_REQUIRED", "REJECTED"]),
     underReview: docStat(["UNDER_REVIEW", "UPLOADED"]),
-    approvedDocs: docRows.filter((r) => r.status === "APPROVED").length,
-    uploadedDocs: docRows.filter((r) => r.status !== "NOT_UPLOADED").length,
-    missingExpected: { docs: missingDocs, deals: missingDeals.size },
+    approvedDocs: relevantRows.filter((r) => r.status === "APPROVED").length,
+    uploadedDocs: relevantRows.filter((r) => r.status !== "NOT_UPLOADED").length,
+    missingExpected: docStat(["NOT_UPLOADED"]),
     scopedDeals: scopedDeals.size,
   };
 
