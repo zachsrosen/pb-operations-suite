@@ -372,6 +372,22 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     (r) => r.submittedOn,
     (r) => !!r.approvedOn || r.status === "Approved" || r.status === "Paid",
   );
+  // Submissions view also splits out the currently-rejected slice (our court).
+  {
+    const byWeek = new Map(weeklySubmissions.map((w) => [w.weekStart, w]));
+    for (const r of records) {
+      if (!r.submittedOn || groupForStatus(r.status) !== "Rejected — pending fix") continue;
+      const w = byWeek.get(weekStartUTC(new Date(r.submittedOn)));
+      if (!w) continue;
+      if (r.milestone === "M1") {
+        w.m1RejCount = (w.m1RejCount ?? 0) + 1;
+        w.m1RejAmount = (w.m1RejAmount ?? 0) + (r.amount || 0);
+      } else {
+        w.m2RejCount = (w.m2RejCount ?? 0) + 1;
+        w.m2RejAmount = (w.m2RejAmount ?? 0) + (r.amount || 0);
+      }
+    }
+  }
 
   // --- Report 2: pipeline groups ----------------------------------------------
   const pipelineMap = new Map<string, PipelineGroupRow>();
