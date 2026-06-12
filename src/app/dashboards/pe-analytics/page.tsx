@@ -84,6 +84,7 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
           const m2H = (w.m2Amount / maxTotal) * chartH;
           const yM1 = PAD_T + chartH - m1H;
           const yM2 = yM1 - m2H;
+          const count = w.m1Count + w.m2Count;
           return (
             <g key={w.weekStart}
               onMouseEnter={() => setHovered(i)}
@@ -91,6 +92,11 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               <rect x={x} y={yM1} width={barW} height={m1H} rx={2} className="fill-emerald-500" opacity={hovered === null || hovered === i ? 1 : 0.45} />
               <rect x={x} y={yM2} width={barW} height={m2H} rx={2} className="fill-cyan-500" opacity={hovered === null || hovered === i ? 1 : 0.45} />
+              {count > 0 && (
+                <text x={x + barW / 2} y={yM2 - 5} textAnchor="middle" className="fill-muted text-[10px] font-medium">
+                  {count}
+                </text>
+              )}
               <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
                 {weekLabel(w.weekStart)}
               </text>
@@ -202,23 +208,20 @@ function MilestoneFunnel({ deals, milestone, locFilter }: {
 
 type WeeklyMode = "submitted" | "approved" | "paid";
 
-const WEEKLY_MODES: Record<WeeklyMode, { label: string; title: string; subtitle: string; empty: string }> = {
+const WEEKLY_MODES: Record<WeeklyMode, { label: string; title: string; empty: string }> = {
   submitted: {
     label: "Submissions",
     title: "Submissions per Week",
-    subtitle: "When M1/M2 first flipped to Submitted in HubSpot × the milestone payment amount sent for review.",
     empty: "No submissions recorded yet.",
   },
   approved: {
     label: "Approvals",
     title: "Approvals per Week",
-    subtitle: "When M1/M2 flipped to Approved in HubSpot × the milestone payment amount that approval unlocked.",
     empty: "No approvals recorded yet.",
   },
   paid: {
     label: "Payments",
     title: "Payments per Week",
-    subtitle: "When M1/M2 flipped to Paid in HubSpot (status-change date, not bank-deposit date) × the milestone payment amount.",
     empty: "No payments recorded yet.",
   },
 };
@@ -302,7 +305,6 @@ export default function PeAnalyticsPage() {
           {/* 1. Submissions / approvals / payments per week */}
           <Section
             title={WEEKLY_MODES[weeklyMode].title}
-            subtitle={WEEKLY_MODES[weeklyMode].subtitle}
             actions={
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {WEEKLY_MODE_ORDER.map((mode) => (
