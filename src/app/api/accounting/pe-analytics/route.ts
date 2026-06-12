@@ -38,6 +38,7 @@ const ANALYTICS_TTL_MS = 15 * 60 * 1000;
 // Project-pipeline stages that gate doc expectations (same IDs as pe-doc-digest)
 const PTO_STAGE_ID = "20461940"; // in M1 — owes the 12 M1 docs
 const CLOSEOUT_STAGE_ID = "24743347"; // in M2 — owes all 15 docs
+const COMPLETE_STAGE_ID = "20440343"; // Project Complete
 
 const DEAL_PROPERTIES = [
   "hs_object_id",
@@ -658,11 +659,15 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   docApprovalEvents.sort((a, b) => a.date.localeCompare(b.date));
 
   // --- Report 5: funnel ----------------------------------------------------------
-  const funnelDeals: FunnelDeal[] = deals.map((d) => ({
-    location: d.location,
-    m1: d.m1Status,
-    m2: d.m2Status,
-  }));
+  // Funnel scope: only deals actually in milestone stages (PTO / Close Out /
+  // Complete) — pre-milestone deals would drown the funnel in onboarding rows.
+  const funnelDeals: FunnelDeal[] = deals
+    .filter((d) => [PTO_STAGE_ID, CLOSEOUT_STAGE_ID, COMPLETE_STAGE_ID].includes(d.stage))
+    .map((d) => ({
+      location: d.location,
+      m1: d.m1Status,
+      m2: d.m2Status,
+    }));
 
   // --- Header totals ---------------------------------------------------------------
   const paid = records.filter((r) => r.status === "Paid");

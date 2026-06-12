@@ -1382,7 +1382,7 @@ export default function PeAnalyticsPage() {
           </div>
 
           {/* 5. Milestone funnel */}
-          <Section title="Milestone Funnel" subtitle="Deal counts by current M1/M2 status.">
+          <Section title="Milestone Funnel" subtitle="Deal counts by current M1/M2 status — deals in PTO, Close Out, or Complete stages only.">
             <div className="flex flex-wrap items-center gap-1.5 mb-4">
               <button
                 onClick={() => setLocFilter(null)}
