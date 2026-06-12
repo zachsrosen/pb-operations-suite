@@ -486,24 +486,24 @@ function FunnelStatCard({
 }) {
   const style = FUNNEL_CARD_STYLES[stage.color] || FUNNEL_CARD_STYLES["bg-blue-500"];
   return (
-    <div className={`relative h-full bg-gradient-to-br ${style} to-transparent border rounded-xl px-4 py-3.5 shadow-card`}>
-      <span className={`block w-7 h-1 rounded-full mb-2 ${stage.color}`} />
-      <div
-        key={String(value)}
-        className="text-2xl xl:text-3xl font-bold text-foreground tracking-tight tabular-nums animate-value-flash leading-none"
-      >
-        {value}
-      </div>
-      <div className={`text-xs font-semibold mt-1.5 ${stage.textColor}`}>{stage.label}</div>
-      {subtitle && <div className="text-[11px] text-muted mt-0.5 truncate" title={subtitle}>{subtitle}</div>}
-      {trend && (
-        <div
-          className={`text-[11px] mt-0.5 font-medium ${trend.delta > 0 ? "text-green-400" : trend.delta < 0 ? "text-red-400" : "text-muted"}`}
+    <div className={`relative h-full bg-gradient-to-br ${style} to-transparent border rounded-lg px-3 py-2`}>
+      <div className="flex items-baseline gap-1.5">
+        <span
+          key={String(value)}
+          className="text-xl xl:text-2xl font-bold text-foreground tracking-tight tabular-nums animate-value-flash leading-none"
         >
-          {trend.delta > 0 ? "▲" : trend.delta < 0 ? "▼" : "—"} {trend.delta > 0 ? "+" : ""}
-          {trend.delta} {trend.label}
-        </div>
-      )}
+          {value}
+        </span>
+        {trend && (
+          <span
+            className={`text-[10px] font-medium ${trend.delta > 0 ? "text-green-400" : trend.delta < 0 ? "text-red-400" : "text-muted"}`}
+          >
+            {trend.delta > 0 ? "▲" : trend.delta < 0 ? "▼" : "—"}{trend.delta > 0 ? "+" : ""}{trend.delta}
+          </span>
+        )}
+      </div>
+      <div className={`text-[11px] font-semibold mt-1 leading-tight ${stage.textColor}`}>{stage.label}</div>
+      {subtitle && <div className="text-[10px] text-muted leading-tight truncate" title={subtitle}>{subtitle}</div>}
     </div>
   );
 }
@@ -526,7 +526,7 @@ function HeroCards({
   // screens. conv/cancelled/pending live in the connector now (see legend),
   // not in the card subtitle — keeps cards clean.
   return (
-    <div className="flex items-stretch gap-2 mb-4 overflow-x-auto pb-1">
+    <div className="flex items-stretch gap-2 mb-2 overflow-x-auto pb-1">
       {stages.map((stage) => {
         const d = summary[stage.key];
         const stageTotal = total(d);
