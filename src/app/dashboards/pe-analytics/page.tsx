@@ -28,7 +28,7 @@ function weekLabel(iso: string): string {
 // Weekly stacked bar chart (inline SVG, no deps)
 // ---------------------------------------------------------------------------
 
-function WeeklyPaymentsChart({ weekly }: { weekly: WeeklyPayments[] }) {
+function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet." }: { weekly: WeeklyPayments[]; emptyMessage?: string }) {
   // Fill gaps so empty weeks render as gaps in time, not skipped
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
@@ -46,7 +46,7 @@ function WeeklyPaymentsChart({ weekly }: { weekly: WeeklyPayments[] }) {
   const [hovered, setHovered] = useState<number | null>(null);
 
   if (series.length === 0) {
-    return <div className="text-sm text-muted py-8 text-center">No payments recorded yet.</div>;
+    return <div className="text-sm text-muted py-8 text-center">{emptyMessage}</div>;
   }
 
   const W = 900;
@@ -120,12 +120,15 @@ function WeeklyPaymentsChart({ weekly }: { weekly: WeeklyPayments[] }) {
 // Section wrapper
 // ---------------------------------------------------------------------------
 
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+function Section({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-xl bg-surface border border-t-border shadow-card p-5">
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+        </div>
+        {actions}
       </div>
       {children}
     </div>
@@ -209,6 +212,7 @@ export default function PeAnalyticsPage() {
   });
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
+  const [weeklyMode, setWeeklyMode] = useState<"paid" | "approved">("paid");
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
     [data],
@@ -266,12 +270,32 @@ export default function PeAnalyticsPage() {
 
       {!isLoading && data && (
         <div className="space-y-6">
-          {/* 1. Payments per week */}
+          {/* 1. Payments / approvals per week */}
           <Section
-            title="Payments per Week"
-            subtitle="When M1/M2 flipped to Paid in HubSpot (status-change date, not bank-deposit date) × the milestone payment amount."
+            title={weeklyMode === "paid" ? "Payments per Week" : "Approvals per Week"}
+            subtitle={
+              weeklyMode === "paid"
+                ? "When M1/M2 flipped to Paid in HubSpot (status-change date, not bank-deposit date) × the milestone payment amount."
+                : "When M1/M2 flipped to Approved in HubSpot × the milestone payment amount that approval unlocked."
+            }
+            actions={
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {([["paid", "Payments"], ["approved", "Approvals"]] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setWeeklyMode(mode)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            }
           >
-            <WeeklyPaymentsChart weekly={data.weekly} />
+            <WeeklyPaymentsChart
+              weekly={weeklyMode === "paid" ? data.weekly : data.weeklyApprovals ?? []}
+              emptyMessage={weeklyMode === "paid" ? "No payments recorded yet." : "No approvals recorded yet."}
+            />
           </Section>
 
           {/* 2. Expected revenue pipeline */}
