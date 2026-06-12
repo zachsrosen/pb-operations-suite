@@ -660,7 +660,7 @@ export default function PeAnalyticsPage() {
   const drillRows = useMemo(() => {
     if (!drillWeek || !data?.milestones) return [];
     const dateOf = (r: MilestoneDrillRow) =>
-      weeklyMode === "ready" ? r.readyOn
+      weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "approved" ? r.approvedOn
           : weeklyMode === "paid" ? r.paidOn
             : r.submittedOn; // submitted + lifecycle

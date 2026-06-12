@@ -283,13 +283,26 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
   };
   // Readiness view: ready-to-submit-week cohorts — has it been submitted yet?
+  // Submission implies readiness: milestones that skipped the Ready to Submit
+  // status (straight from onboarding to Submitted) bucket at their submission
+  // week, so Total Ready − waiting always equals Total Submitted.
   const readinessMap = new Map<string, WeeklyReadiness>();
   for (const r of records) {
-    if (!r.timing.firstReadyToSubmit) continue;
-    const wk = weekStartUTC(new Date(r.timing.firstReadyToSubmit));
+    const readyDate = r.timing.firstReadyToSubmit ?? r.submittedOn;
+    if (!readyDate) continue;
+    // Submitted-since requires an actual submission date so Ready − waiting
+    // always equals Total Submitted exactly; waiting means the status is
+    // still pre-submission. Status anomalies (past-submission status with no
+    // submission date) are excluded rather than miscounted.
+    const submittedSince = !!r.submittedOn;
+    const waiting =
+      !submittedSince &&
+      (!r.status || groupForStatus(r.status) === "Onboarding" || groupForStatus(r.status) === "Ready to Submit");
+    if (!submittedSince && !waiting) continue;
+    const wk = weekStartUTC(new Date(readyDate));
     const w = readinessMap.get(wk) || { weekStart: wk, submittedCount: 0, submittedAmount: 0, waitingCount: 0, waitingAmount: 0 };
     const amt = r.amount || 0;
-    if (r.submittedOn || (r.status && groupForStatus(r.status) !== "Onboarding" && groupForStatus(r.status) !== "Ready to Submit")) {
+    if (submittedSince) {
       w.submittedCount++;
       w.submittedAmount += amt;
     } else {
