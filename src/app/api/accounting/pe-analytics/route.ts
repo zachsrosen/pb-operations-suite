@@ -20,6 +20,7 @@ import {
   type WeeklyLifecycle,
   type WeeklySplitCohort,
   type MilestoneDrillRow,
+  type DocRejectionEvent,
   type PipelineGroupRow,
   type TimingSummary,
   type MonthlyTiming,
@@ -535,6 +536,32 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       };
     });
 
+  // --- Doc-level rejection events per day --------------------------------------
+  // One event per deal+doc+day, dated by PE's "Responded:" timestamp embedded
+  // in the reviewer note (true response date, goes back well before scrape
+  // coverage); falls back to the scrape date.
+  const dealNameById = new Map(deals.map((d) => [d.dealId, d.dealName]));
+  const docRejectionSeen = new Set<string>();
+  const docRejectionEvents: DocRejectionEvent[] = [];
+  for (const ev of changeLog) {
+    const responded = (ev.newNotes ?? "").match(/Responded:\s*(\d{4}-\d{2}-\d{2})/)?.[1];
+    const date = responded ?? ev.createdAt.toISOString().slice(0, 10);
+    const key = `${ev.dealId}|${ev.docName}|${date}`;
+    if (docRejectionSeen.has(key)) continue;
+    docRejectionSeen.add(key);
+    const note = (ev.newNotes ?? "")
+      .replace(/^Synced from PE portal scraper \([^)]*\)\s*\|\s*/, "")
+      .slice(0, 240) || null;
+    docRejectionEvents.push({
+      date,
+      dealId: ev.dealId,
+      dealName: dealNameById.get(ev.dealId) ?? ev.dealName ?? ev.dealId,
+      docName: ev.docName,
+      note,
+    });
+  }
+  docRejectionEvents.sort((a, b) => a.date.localeCompare(b.date));
+
   // --- Report 5: funnel ----------------------------------------------------------
   const funnelDeals: FunnelDeal[] = deals.map((d) => ({
     location: d.location,
@@ -572,6 +599,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     weeklyReadiness,
     weeklyRejections,
     milestones,
+    docRejectionEvents,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },
