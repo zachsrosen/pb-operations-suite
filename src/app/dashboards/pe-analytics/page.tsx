@@ -776,16 +776,20 @@ export default function PeAnalyticsPage() {
               </div>
             }
           >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-              <MiniStat
-                label="Total Ready to Submit"
-                value={fmtUsd(funnelTotals.ready.amount)}
-                subtitle={`${funnelTotals.ready.count} milestones — ${
-                  funnelTotals.ready.amount > 0
-                    ? Math.round(((funnelTotals.ready.amount - funnelTotals.ready.waitingAmount) / funnelTotals.ready.amount) * 100)
-                    : 0
-                }% already submitted, ${funnelTotals.ready.waitingCount} (${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
-              />
+            {/* Ready stat (and its waiting backlog) only on the internal Ready view —
+                screenshots of the other views stay safe to share externally. */}
+            <div className={`grid grid-cols-2 gap-2 mb-4 ${weeklyMode === "ready" ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+              {weeklyMode === "ready" && (
+                <MiniStat
+                  label="Total Ready to Submit"
+                  value={fmtUsd(funnelTotals.ready.amount)}
+                  subtitle={`${funnelTotals.ready.count} milestones — ${
+                    funnelTotals.ready.amount > 0
+                      ? Math.round(((funnelTotals.ready.amount - funnelTotals.ready.waitingAmount) / funnelTotals.ready.amount) * 100)
+                      : 0
+                  }% already submitted, ${funnelTotals.ready.waitingCount} (${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
+                />
+              )}
               <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
               <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
               <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
