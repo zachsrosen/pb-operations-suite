@@ -207,6 +207,7 @@ export interface PeAnalyticsPayload {
   };
   weekly: WeeklyPayments[];
   weeklyApprovals: WeeklyPayments[];
+  weeklySubmissions: WeeklyPayments[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };

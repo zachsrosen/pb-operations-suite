@@ -211,6 +211,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   };
   const weekly = bucketByWeek((r) => r.timing.firstPaid);
   const weeklyApprovals = bucketByWeek((r) => r.timing.firstApproved);
+  const weeklySubmissions = bucketByWeek((r) => r.timing.firstSubmitted);
 
   // --- Report 2: pipeline groups ----------------------------------------------
   const pipelineMap = new Map<string, PipelineGroupRow>();
@@ -339,6 +340,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     },
     weekly,
     weeklyApprovals,
+    weeklySubmissions,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },
