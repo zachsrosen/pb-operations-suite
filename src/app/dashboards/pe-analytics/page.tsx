@@ -483,7 +483,14 @@ function SplitCohortChart({
 // Daily doc-rejections chart — document-level reviewer responses per day
 // ---------------------------------------------------------------------------
 
-function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
+function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatchText }: {
+  events: DocRejectionEvent[];
+  noun: string; // "doc rejection"
+  statLabel: string; // "Doc Rejections"
+  barClass: string; // "fill-orange-500"
+  pillClass: string; // active range-pill classes
+  swatchText: string; // tooltip count text color
+}) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const [range, setRange] = useState<"8w" | "all">("8w");
@@ -539,7 +546,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
     <div>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="grid grid-cols-2 gap-2 flex-1 max-w-md">
-          <MiniStat label="Doc Rejections" value={String(filtered.length)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
+          <MiniStat label={statLabel} value={String(filtered.length)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
           <MiniStat label="Deals Affected" value={String(dealCount)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -547,7 +554,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
             <button
               key={key}
               onClick={() => { setRange(key); setSelectedDay(null); }}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${range === key ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${range === key ? pillClass : "border-t-border text-muted hover:text-foreground"}`}
             >
               {label}
             </button>
@@ -556,7 +563,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
       </div>
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
-          aria-label="Daily bar chart of document-level PE rejections">
+          aria-label={`Weekly bar chart of document-level PE activity: ${statLabel}`}>
           {[0.5, 1].map((f) => {
             const y = PAD_T + chartH - chartH * f;
             return (
@@ -580,7 +587,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
                 <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
                 {h > 0 && (
                   <>
-                    <rect x={x} y={y} width={barW} height={h} rx={1.5} className="fill-orange-500"
+                    <rect x={x} y={y} width={barW} height={h} rx={1.5} className={barClass}
                       opacity={(active ? 1 : 0.8) * (hovered === null || hovered === i ? 1 : 0.45)} />
                     <text x={PAD_L + step * i + step / 2} y={y - 5} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
                       {d.count}
@@ -599,7 +606,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
         {hovered !== null && days[hovered] && days[hovered].count > 0 && (
           <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
             <div className="font-semibold text-foreground">Week of {weekLabel(days[hovered].date)}</div>
-            <div className="text-orange-400">{days[hovered].count} doc rejection{days[hovered].count === 1 ? "" : "s"}</div>
+            <div className={swatchText}>{days[hovered].count} {noun}{days[hovered].count === 1 ? "" : "s"}</div>
             <div className="text-muted mt-0.5">click for details</div>
           </div>
         )}
@@ -608,7 +615,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
         <div className="mt-3 rounded-lg border border-t-border bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-medium text-foreground">
-              Week of {weekLabel(selectedDay)} — {selectedEvents.length} document rejection{selectedEvents.length === 1 ? "" : "s"}
+              Week of {weekLabel(selectedDay)} — {selectedEvents.length} {noun}{selectedEvents.length === 1 ? "" : "s"}
             </div>
             <button onClick={() => setSelectedDay(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
               Close
@@ -897,6 +904,7 @@ export default function PeAnalyticsPage() {
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
+  const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected">("submitted");
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
   const openAggregate = (key: string) => setDrill({ week: null, segment: key });
@@ -1243,10 +1251,42 @@ export default function PeAnalyticsPage() {
 
           {/* 3.5 Doc-level rejections per day */}
           <Section
-            title="Doc Rejections per Week"
-            subtitle="Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
+            title={
+              docMode === "submitted" ? "Doc Submissions per Week"
+                : docMode === "approved" ? "Doc Approvals per Week"
+                  : "Doc Rejections per Week"
+            }
+            subtitle={
+              docMode === "submitted"
+                ? "Document-level uploads to the PE portal, dated by the portal's Submitted stamp. Click a week for the docs and deals."
+                : docMode === "approved"
+                  ? "Document-level approvals, dated by PE's reviewer response. Click a week for the docs and deals."
+                  : "Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
+            }
+            actions={
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {([["submitted", "Submitted"], ["approved", "Approved"], ["rejected", "Rejected"]] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setDocMode(mode)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${docMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            }
           >
-            <DailyDocRejectionsChart events={data.docRejectionEvents ?? []} />
+            {docMode === "submitted" ? (
+              <DocActivityChart key="sub" events={data.docSubmissionEvents ?? []} noun="doc submission" statLabel="Docs Submitted"
+                barClass="fill-cyan-500" pillClass="bg-cyan-500/20 text-cyan-400 border-cyan-500/40" swatchText="text-cyan-400" />
+            ) : docMode === "approved" ? (
+              <DocActivityChart key="app" events={data.docApprovalEvents ?? []} noun="doc approval" statLabel="Docs Approved"
+                barClass="fill-emerald-500" pillClass="bg-emerald-500/20 text-emerald-400 border-emerald-500/40" swatchText="text-emerald-400" />
+            ) : (
+              <DocActivityChart key="rej" events={data.docRejectionEvents ?? []} noun="doc rejection" statLabel="Doc Rejections"
+                barClass="fill-orange-500" pillClass="bg-orange-500/20 text-orange-400 border-orange-500/40" swatchText="text-orange-400" />
+            )}
           </Section>
 
           {/* 4. Rejection analysis */}

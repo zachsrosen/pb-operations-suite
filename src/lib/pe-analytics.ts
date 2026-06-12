@@ -335,6 +335,8 @@ export interface PeAnalyticsPayload {
   weeklyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];
   docRejectionEvents: DocRejectionEvent[];
+  docSubmissionEvents: DocRejectionEvent[];
+  docApprovalEvents: DocRejectionEvent[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
