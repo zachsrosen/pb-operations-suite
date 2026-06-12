@@ -264,6 +264,22 @@ export interface DocStats {
   scopedDeals: number; // tracked deals in PTO or Close Out
 }
 
+/** Per-milestone record powering the chart drill-down. */
+export interface MilestoneDrillRow {
+  dealId: string;
+  dealName: string;
+  hubspotUrl: string;
+  milestone: "M1" | "M2";
+  amount: number;
+  status: string | null;
+  readyOn: string | null;
+  submittedOn: string | null;
+  approvedOn: string | null;
+  paidOn: string | null;
+  /** Milestone-relevant docs not yet uploaded (empty when fully uploaded or untracked). */
+  missingDocs: string[];
+}
+
 export interface PeAnalyticsPayload {
   lastUpdated: string;
   totals: {
@@ -280,6 +296,7 @@ export interface PeAnalyticsPayload {
   weeklySubmissions: WeeklyPayments[];
   weeklyLifecycle: WeeklyLifecycle[];
   weeklyReadiness: WeeklyReadiness[];
+  milestones: MilestoneDrillRow[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };

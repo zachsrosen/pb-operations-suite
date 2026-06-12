@@ -19,6 +19,7 @@ import {
   type WeeklyPayments,
   type WeeklyLifecycle,
   type WeeklyReadiness,
+  type MilestoneDrillRow,
   type PipelineGroupRow,
   type TimingSummary,
   type MonthlyTiming,
@@ -451,6 +452,38 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       date: ev.createdAt.toISOString().split("T")[0],
     }));
 
+  // --- Drill-down rows ---------------------------------------------------------
+  const M2_DOC_NAMES = ["Signed Interconnection Agreement", "Conditional Waiver — Final Payment", "Permission to Operate (PTO)"];
+  const docStatusByDeal = new Map<string, Map<string, string>>();
+  for (const r of docRows) {
+    (docStatusByDeal.get(r.dealId) || docStatusByDeal.set(r.dealId, new Map()).get(r.dealId)!).set(r.docName, r.status);
+  }
+  const portalId = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
+  const milestones: MilestoneDrillRow[] = records
+    .filter((r) => r.status || r.timing.firstReadyToSubmit)
+    .map((r) => {
+      const docMap = docStatusByDeal.get(r.deal.dealId);
+      const names = r.milestone === "M1" ? [...PE_M1_DOC_NAMES] : M2_DOC_NAMES;
+      const missingDocs = docMap
+        ? names.filter((n) => (docMap.get(n) ?? "NOT_UPLOADED") === "NOT_UPLOADED")
+        : [];
+      return {
+        dealId: r.deal.dealId,
+        dealName: r.deal.dealName,
+        hubspotUrl: portalId
+          ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${r.deal.dealId}`
+          : "",
+        milestone: r.milestone,
+        amount: r.amount || 0,
+        status: r.status,
+        readyOn: r.timing.firstReadyToSubmit?.slice(0, 10) ?? null,
+        submittedOn: r.submittedOn?.slice(0, 10) ?? null,
+        approvedOn: r.approvedOn?.slice(0, 10) ?? null,
+        paidOn: r.paidOn?.slice(0, 10) ?? null,
+        missingDocs,
+      };
+    });
+
   // --- Report 5: funnel ----------------------------------------------------------
   const funnelDeals: FunnelDeal[] = deals.map((d) => ({
     location: d.location,
@@ -486,6 +519,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     weeklySubmissions,
     weeklyLifecycle,
     weeklyReadiness,
+    milestones,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },

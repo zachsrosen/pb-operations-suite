@@ -7,10 +7,12 @@ import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
 import {
   PIPELINE_GROUP_ORDER,
+  weekStartUTC,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
   type WeeklyReadiness,
+  type MilestoneDrillRow,
 } from "@/lib/pe-analytics";
 
 // ---------------------------------------------------------------------------
@@ -42,11 +44,13 @@ function WeeklyPaymentsChart({
   emptyMessage = "No payments recorded yet.",
   doneSplit,
   weekPrefix,
+  onBarClick,
 }: {
   weekly: WeeklyPayments[];
   emptyMessage?: string;
   doneSplit?: DoneSplit;
   weekPrefix: string; // tooltip header: "Approved week of Jun 8"
+  onBarClick?: (weekStart: string) => void;
 }) {
   // Fill gaps so empty weeks render as gaps in time, not skipped
   const series = useMemo(() => {
@@ -121,7 +125,9 @@ function WeeklyPaymentsChart({
           return (
             <g key={w.weekStart}
               onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}>
+              onMouseLeave={() => setHovered(null)}
+              onClick={() => onBarClick?.(w.weekStart)}
+              className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {rects}
               {count > 0 && (
@@ -186,7 +192,7 @@ const EMPTY_LIFECYCLE_WEEK = (weekStart: string): WeeklyLifecycle => ({
   weekStart, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0,
 });
 
-function WeeklyLifecycleChart({ weekly }: { weekly: WeeklyLifecycle[] }) {
+function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string) => void }) {
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
     const out: WeeklyLifecycle[] = [];
@@ -254,7 +260,9 @@ function WeeklyLifecycleChart({ weekly }: { weekly: WeeklyLifecycle[] }) {
           return (
             <g key={w.weekStart}
               onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}>
+              onMouseLeave={() => setHovered(null)}
+              onClick={() => onBarClick?.(w.weekStart)}
+              className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {rects}
               {count > 0 && (
@@ -298,7 +306,7 @@ function WeeklyLifecycleChart({ weekly }: { weekly: WeeklyLifecycle[] }) {
 // Readiness chart — ready-to-submit cohorts: submitted (progress) vs waiting
 // ---------------------------------------------------------------------------
 
-function WeeklyReadinessChart({ weekly }: { weekly: WeeklyReadiness[] }) {
+function WeeklyReadinessChart({ weekly, onBarClick }: { weekly: WeeklyReadiness[]; onBarClick?: (weekStart: string) => void }) {
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
     const out: WeeklyReadiness[] = [];
@@ -358,7 +366,9 @@ function WeeklyReadinessChart({ weekly }: { weekly: WeeklyReadiness[] }) {
           return (
             <g key={w.weekStart}
               onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}>
+              onMouseLeave={() => setHovered(null)}
+              onClick={() => onBarClick?.(w.weekStart)}
+              className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {subH > 0 && <rect x={x} y={ySub} width={barW} height={subH} rx={2} className="fill-emerald-500" opacity={dim} />}
               {waitH > 0 && <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className="fill-zinc-500" opacity={0.55 * dim} />}
@@ -478,6 +488,95 @@ function MilestoneFunnel({ deals, milestone, locFilter }: {
 }
 
 // ---------------------------------------------------------------------------
+// Drill-down panel — milestones behind a clicked bar
+// ---------------------------------------------------------------------------
+
+const DOC_SHORT: Record<string, string> = {
+  "Customer Agreement (PPA/ESA)": "CustAgmt",
+  "Installation Order": "InstOrder",
+  "State Disclosures": "Disclosures",
+  "Utility Bill": "UtilBill",
+  "Signed Proposal": "Proposal",
+  "Design Plan": "Design",
+  "Photos per Policy": "Photos",
+  "Signed Final Permit": "Permit",
+  "Access to Monitoring": "Monitoring",
+  "Certificate of Acceptance": "CoA",
+  "Attestation of Customer Payment": "Attestation",
+  "Conditional Progress Lien Waiver": "ProgLien",
+  "Signed Interconnection Agreement": "IC Agmt",
+  "Conditional Waiver — Final Payment": "FinalLien",
+  "Permission to Operate (PTO)": "PTO",
+};
+
+function DrillPanel({ rows, weekStart, weekPrefix, onClose }: {
+  rows: MilestoneDrillRow[];
+  weekStart: string;
+  weekPrefix: string;
+  onClose: () => void;
+}) {
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  return (
+    <div className="mt-4 rounded-lg border border-t-border bg-surface-2 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-medium text-foreground">
+          {weekPrefix} week of {weekLabel(weekStart)} — {rows.length} milestones · {fmtUsd(total)}
+        </div>
+        <button onClick={onClose} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
+          Close
+        </button>
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-xs text-muted py-3">No milestones in this week.</div>
+      ) : (
+        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="text-xs w-full">
+            <thead className="sticky top-0 bg-surface-2">
+              <tr className="text-muted text-left">
+                <th className="py-1 pr-3 font-normal">Deal</th>
+                <th className="py-1 pr-3 font-normal">MS</th>
+                <th className="py-1 pr-3 font-normal text-right">Amount</th>
+                <th className="py-1 pr-3 font-normal">Status</th>
+                <th className="py-1 pr-3 font-normal">Ready</th>
+                <th className="py-1 pr-3 font-normal">Submitted</th>
+                <th className="py-1 pr-3 font-normal">Approved</th>
+                <th className="py-1 pr-3 font-normal">Paid</th>
+                <th className="py-1 font-normal">Missing docs</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/20">
+              {[...rows].sort((a, b) => b.amount - a.amount).map((r) => (
+                <tr key={`${r.dealId}-${r.milestone}`}>
+                  <td className="py-1.5 pr-3 max-w-64 truncate">
+                    {r.hubspotUrl ? (
+                      <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline" title={r.dealName}>
+                        {r.dealName.split("|").slice(0, 2).join("|").trim()}
+                      </a>
+                    ) : (
+                      <span title={r.dealName}>{r.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3 text-muted">{r.milestone}</td>
+                  <td className="py-1.5 pr-3 text-right text-foreground">{fmtUsd(r.amount)}</td>
+                  <td className="py-1.5 pr-3 text-foreground">{r.status ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-muted">{r.readyOn ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-muted">{r.submittedOn ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-muted">{r.approvedOn ?? "—"}</td>
+                  <td className="py-1.5 pr-3 text-muted">{r.paidOn ?? "—"}</td>
+                  <td className="py-1.5 text-orange-400/90">
+                    {r.missingDocs.length ? r.missingDocs.map((d) => DOC_SHORT[d] ?? d).join(", ") : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Weekly chart modes
 // ---------------------------------------------------------------------------
 
@@ -555,6 +654,21 @@ export default function PeAnalyticsPage() {
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
+  const [drillWeek, setDrillWeek] = useState<string | null>(null);
+
+  // Rows behind the clicked bar — date field depends on the active view.
+  const drillRows = useMemo(() => {
+    if (!drillWeek || !data?.milestones) return [];
+    const dateOf = (r: MilestoneDrillRow) =>
+      weeklyMode === "ready" ? r.readyOn
+        : weeklyMode === "approved" ? r.approvedOn
+          : weeklyMode === "paid" ? r.paidOn
+            : r.submittedOn; // submitted + lifecycle
+    return data.milestones.filter((r) => {
+      const d = dateOf(r);
+      return d ? weekStartUTC(new Date(d + "T00:00:00Z")) === drillWeek : false;
+    });
+  }, [drillWeek, weeklyMode, data]);
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
     [data],
@@ -653,7 +767,7 @@ export default function PeAnalyticsPage() {
                 {WEEKLY_MODE_ORDER.map((mode) => (
                   <button
                     key={mode}
-                    onClick={() => setWeeklyMode(mode)}
+                    onClick={() => { setWeeklyMode(mode); setDrillWeek(null); }}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
                   >
                     {WEEKLY_MODES[mode].label}
@@ -673,9 +787,9 @@ export default function PeAnalyticsPage() {
               <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
             </div>
             {weeklyMode === "lifecycle" ? (
-              <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} />
+              <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={setDrillWeek} />
             ) : weeklyMode === "ready" ? (
-              <WeeklyReadinessChart weekly={data.weeklyReadiness ?? []} />
+              <WeeklyReadinessChart weekly={data.weeklyReadiness ?? []} onBarClick={setDrillWeek} />
             ) : (
               <WeeklyPaymentsChart
                 weekly={
@@ -688,6 +802,15 @@ export default function PeAnalyticsPage() {
                 emptyMessage={WEEKLY_MODES[weeklyMode].empty}
                 doneSplit={WEEKLY_MODES[weeklyMode].split}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
+                onBarClick={setDrillWeek}
+              />
+            )}
+            {drillWeek && (
+              <DrillPanel
+                rows={drillRows}
+                weekStart={drillWeek}
+                weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
+                onClose={() => setDrillWeek(null)}
               />
             )}
           </Section>
