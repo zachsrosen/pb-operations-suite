@@ -119,11 +119,11 @@ function WeeklyPaymentsChart({
                 ...(doneSplit.paidLegend
                   ? [
                       { seg: "paidSeg", amount: paidAmt, cls: "fill-emerald-500", op: 1 },
-                      { seg: "done", amount: doneAmt - paidAmt, cls: "fill-amber-500", op: 1 },
+                      { seg: "done", amount: doneAmt - paidAmt, cls: "fill-cyan-500", op: 1 },
                     ]
                   : [{ seg: "done", amount: doneAmt, cls: "fill-emerald-500", op: 1 }]),
                 { seg: "rejected", amount: rejAmt, cls: "fill-orange-500", op: 0.85 },
-                { seg: "remainder", amount: totalAmt - doneAmt - rejAmt, cls: "fill-zinc-500", op: 0.45 },
+                { seg: "remainder", amount: totalAmt - doneAmt - rejAmt, cls: "fill-zinc-400", op: 0.7 },
               ]
             : [{ amount: totalAmt, cls: "fill-emerald-500", op: 1 }];
           let yCursor = PAD_T + chartH;
@@ -199,11 +199,11 @@ function WeeklyPaymentsChart({
             {doneSplit.paidLegend && (
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> {doneSplit.paidLegend}</span>
             )}
-            <span className="flex items-center gap-1.5"><span className={`w-2.5 h-2.5 rounded-sm ${doneSplit.paidLegend ? "bg-amber-500" : "bg-emerald-500"}`} /> {doneSplit.doneLegend}</span>
+            <span className="flex items-center gap-1.5"><span className={`w-2.5 h-2.5 rounded-sm ${doneSplit.paidLegend ? "bg-cyan-500" : "bg-emerald-500"}`} /> {doneSplit.doneLegend}</span>
             {doneSplit.rejectedLegend && (
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> {doneSplit.rejectedLegend}</span>
             )}
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/45" /> {doneSplit.remainderLegend}</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/70" /> {doneSplit.remainderLegend}</span>
           </>
         ) : (
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Paid</span>
@@ -279,10 +279,10 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
           const dim = hovered === null || hovered === i ? 1 : 0.45;
           const segments = [
             { seg: "paid", amount: w.paidAmount, cls: "fill-emerald-500", op: 1 },
-            { seg: "approved", amount: w.approvedAmount, cls: "fill-amber-500", op: 1 },
-            { seg: "inReview", amount: w.inReviewAmount, cls: "fill-zinc-500", op: 0.55 },
+            { seg: "approved", amount: w.approvedAmount, cls: "fill-cyan-500", op: 1 },
+            { seg: "inReview", amount: w.inReviewAmount, cls: "fill-zinc-400", op: 0.7 },
             { seg: "rejected", amount: w.rejectedAmount ?? 0, cls: "fill-orange-500", op: 0.85 },
-            { seg: "waiting", amount: w.waitingAmount ?? 0, cls: "fill-zinc-500", op: 0.25 },
+            { seg: "waiting", amount: w.waitingAmount ?? 0, cls: "fill-none stroke-zinc-500 [stroke-dasharray:3_2]", op: 0.9 },
           ];
           let yCursor = PAD_T + chartH;
           const rects = segments.map((s, j) => {
@@ -323,7 +323,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
           <div className="font-semibold text-foreground mb-1">Ready week of {weekLabel(series[hovered].weekStart)}</div>
           <div className="text-emerald-400">Paid: {series[hovered].paidCount} · {fmtUsd(series[hovered].paidAmount)}</div>
-          <div className="text-amber-400">Approved, awaiting payment: {series[hovered].approvedCount} · {fmtUsd(series[hovered].approvedAmount)}</div>
+          <div className="text-cyan-400">Approved, awaiting payment: {series[hovered].approvedCount} · {fmtUsd(series[hovered].approvedAmount)}</div>
           <div className="text-muted">In PE review: {series[hovered].inReviewCount} · {fmtUsd(series[hovered].inReviewAmount)}</div>
           {(series[hovered].rejectedCount ?? 0) > 0 && (
             <div className="text-orange-400">Rejected — pending fix: {series[hovered].rejectedCount} · {fmtUsd(series[hovered].rejectedAmount ?? 0)}</div>
@@ -338,10 +338,10 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
       )}
       <div className="flex items-center gap-4 mt-1 text-[11px] text-muted">
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Paid</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Approved, awaiting payment</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/55" /> In PE review</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-cyan-500" /> Approved, awaiting payment</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/70" /> In PE review</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> Rejected — pending fix</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/25" /> Not yet submitted</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm border border-dashed border-zinc-500" /> Not yet submitted</span>
       </div>
     </div>
   );
@@ -358,9 +358,9 @@ function SplitCohortChart({
   weekPrefix,
   doneLabel,
   pendingLabel,
-  pendingClass = "fill-zinc-500",
-  pendingOpacity = 0.55,
-  pendingSwatch = "bg-zinc-500/55",
+  pendingClass = "fill-zinc-400",
+  pendingOpacity = 0.7,
+  pendingSwatch = "bg-zinc-400/70",
   emptyMessage,
 }: {
   weekly: WeeklySplitCohort[];
