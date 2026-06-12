@@ -466,13 +466,12 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // --- Report 4: rejections (DB) ------------------------------------------------
   const [docRows, changeLog] = await Promise.all([
     prisma
-      ? prisma.peDocumentReview.findMany({ select: { dealId: true, docName: true, status: true } })
+      ? prisma.peDocumentReview.findMany({ select: { dealId: true, docName: true, status: true, notes: true } })
       : Promise.resolve([]),
     prisma
       ? prisma.peDocChangeLog.findMany({
-          where: { newStatus: { in: ["REJECTED", "ACTION_REQUIRED"] } },
           orderBy: { createdAt: "desc" },
-          select: { dealId: true, docName: true, dealName: true, newNotes: true, createdAt: true },
+          select: { dealId: true, docName: true, dealName: true, newNotes: true, newStatus: true, oldStatus: true, createdAt: true },
         })
       : Promise.resolve([]),
   ]);
@@ -488,7 +487,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     if (row.status === "ACTION_REQUIRED") d.currentActionRequired++;
     byDocMap.set(row.docName, d);
   }
-  for (const ev of changeLog) {
+  const rejectionLog = changeLog.filter((ev) => ev.newStatus === "REJECTED" || ev.newStatus === "ACTION_REQUIRED");
+  for (const ev of rejectionLog) {
     const d = byDocMap.get(ev.docName) || { totalEvents: 0, currentlyRejected: 0, currentActionRequired: 0, trackedDeals: 0 };
     d.totalEvents++;
     byDocMap.set(ev.docName, d);
@@ -523,7 +523,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     scopedDeals: scopedDeals.size,
   };
 
-  const recentNotes = changeLog
+  const recentNotes = rejectionLog
     .filter((ev) => ev.newNotes)
     .slice(0, 20)
     .map((ev) => ({
@@ -552,7 +552,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         ? names.filter((n) => ["ACTION_REQUIRED", "REJECTED"].includes(docMap.get(n) ?? ""))
         : [];
       const latestRejectionNote =
-        changeLog.find(
+        rejectionLog.find(
           (ev) => ev.dealId === r.deal.dealId && ev.newNotes && names.includes(ev.docName),
         )?.newNotes ?? null;
       return {
@@ -582,7 +582,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const dealNameById = new Map(deals.map((d) => [d.dealId, d.dealName]));
   const docRejectionSeen = new Set<string>();
   const docRejectionEvents: DocRejectionEvent[] = [];
-  for (const ev of changeLog) {
+  for (const ev of rejectionLog) {
     const responded = (ev.newNotes ?? "").match(/Responded:\s*(\d{4}-\d{2}-\d{2})/)?.[1];
     const date = responded ?? ev.createdAt.toISOString().slice(0, 10);
     const key = `${ev.dealId}|${ev.docName}|${date}`;
@@ -600,6 +600,54 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     });
   }
   docRejectionEvents.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Doc submissions per day: "Submitted:" stamps from portal notes (current
+  // rows + change-log history) plus first transitions into review; deduped
+  // per deal+doc+date so re-scrapes don't inflate counts.
+  const SUBMITTED_DOC_STATES = new Set(["UNDER_REVIEW", "UPLOADED", "ACTION_REQUIRED", "REJECTED", "APPROVED"]);
+  const cleanNote = (n: string | null | undefined) =>
+    (n ?? "").replace(/^Synced from PE portal scraper \([^)]*\)\s*\|\s*/, "").slice(0, 240) || null;
+  const subSeen = new Set<string>();
+  const docSubmissionEvents: DocRejectionEvent[] = [];
+  const pushSub = (dealId: string, docName: string, date: string, note: string | null) => {
+    const key = `${dealId}|${docName}|${date}`;
+    if (subSeen.has(key)) return;
+    subSeen.add(key);
+    docSubmissionEvents.push({ date, dealId, dealName: dealNameById.get(dealId) ?? dealId, docName, note });
+  };
+  for (const r of docRows) {
+    for (const m of (r.notes ?? "").matchAll(/Submitted:\s*(\d{4}-\d{2}-\d{2})/g)) pushSub(r.dealId, r.docName, m[1], null);
+  }
+  for (const ev of changeLog) {
+    for (const m of (ev.newNotes ?? "").matchAll(/Submitted:\s*(\d{4}-\d{2}-\d{2})/g)) pushSub(ev.dealId, ev.docName, m[1], null);
+    if (SUBMITTED_DOC_STATES.has(ev.newStatus) && !SUBMITTED_DOC_STATES.has(ev.oldStatus)) {
+      pushSub(ev.dealId, ev.docName, ev.createdAt.toISOString().slice(0, 10), null);
+    }
+  }
+  docSubmissionEvents.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Doc approvals per day: transitions to APPROVED (change log) dated by PE's
+  // "Responded:" stamp when present, plus currently-approved rows whose notes
+  // carry a response date (pre-tracking approvals).
+  const appSeen = new Set<string>();
+  const docApprovalEvents: DocRejectionEvent[] = [];
+  const pushApp = (dealId: string, docName: string, date: string, note: string | null) => {
+    const key = `${dealId}|${docName}`;
+    if (appSeen.has(key)) return; // a doc is approved once — keep earliest-seen
+    appSeen.add(key);
+    docApprovalEvents.push({ date, dealId, dealName: dealNameById.get(dealId) ?? dealId, docName, note });
+  };
+  for (const ev of [...changeLog].reverse()) {
+    if (ev.newStatus !== "APPROVED") continue;
+    const responded = (ev.newNotes ?? "").match(/Responded:\s*(\d{4}-\d{2}-\d{2})/)?.[1];
+    pushApp(ev.dealId, ev.docName, responded ?? ev.createdAt.toISOString().slice(0, 10), cleanNote(ev.newNotes));
+  }
+  for (const r of docRows) {
+    if (r.status !== "APPROVED") continue;
+    const responded = (r.notes ?? "").match(/Responded:\s*(\d{4}-\d{2}-\d{2})/)?.[1];
+    if (responded) pushApp(r.dealId, r.docName, responded, cleanNote(r.notes));
+  }
+  docApprovalEvents.sort((a, b) => a.date.localeCompare(b.date));
 
   // --- Report 5: funnel ----------------------------------------------------------
   const funnelDeals: FunnelDeal[] = deals.map((d) => ({
@@ -639,6 +687,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     weeklyRejections,
     milestones,
     docRejectionEvents,
+    docSubmissionEvents,
+    docApprovalEvents,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },
