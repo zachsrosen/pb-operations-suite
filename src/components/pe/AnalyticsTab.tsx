@@ -901,7 +901,7 @@ const WEEKLY_MODES: Record<
   ready: {
     label: "Ready to Submit",
     title: "Ready-to-Submit Cohorts",
-    subtitle: "Bars dated by week each milestone became READY TO SUBMIT. Green = submitted since; gray = still waiting on submission.",
+    subtitle: "Bars dated by week each milestone became READY — inspection passed (M1) / PTO granted (M2). Green = submitted since; gray = still waiting on submission.",
     empty: "No milestones have reached Ready to Submit yet.",
     weekPrefix: "Ready",
   },
@@ -950,7 +950,7 @@ const WEEKLY_MODES: Record<
   lifecycle: {
     label: "Lifecycle",
     title: "Ready-to-Submit Cohorts by Outcome",
-    subtitle: "Bars dated by week each milestone became READY TO SUBMIT; colored by where it stands today, rejections included.",
+    subtitle: "Bars dated by week each milestone became READY — inspection passed (M1) / PTO granted (M2); colored by where it stands today, rejections included.",
     empty: "No milestones have reached Ready to Submit yet.",
     weekPrefix: "Ready",
   },
