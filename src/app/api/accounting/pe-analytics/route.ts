@@ -14,6 +14,7 @@ import {
   median,
   percentile,
   PIPELINE_GROUP_ORDER,
+  PE_M1_DOC_NAMES,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type PipelineGroupRow,
@@ -30,9 +31,14 @@ export const maxDuration = 120;
 const PE_TAG_VALUE = "Participate Energy";
 const ANALYTICS_TTL_MS = 15 * 60 * 1000;
 
+// Project-pipeline stages that gate doc expectations (same IDs as pe-doc-digest)
+const PTO_STAGE_ID = "20461940"; // in M1 — owes the 12 M1 docs
+const CLOSEOUT_STAGE_ID = "24743347"; // in M2 — owes all 15 docs
+
 const DEAL_PROPERTIES = [
   "hs_object_id",
   "dealname",
+  "dealstage",
   "amount",
   "pb_location",
   "postal_code",
@@ -49,6 +55,7 @@ const DEAL_PROPERTIES = [
 interface PeDealRow {
   dealId: string;
   dealName: string;
+  stage: string;
   location: string;
   m1Status: string | null;
   m2Status: string | null;
@@ -121,6 +128,7 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
       deals.push({
         dealId: String(p.hs_object_id),
         dealName: String(p.dealname || ""),
+        stage: String(p.dealstage || ""),
         location: String(p.pb_location || "Unknown"),
         m1Status: p.pe_m1_status ? String(p.pe_m1_status) : null,
         m2Status: p.pe_m2_status ? String(p.pe_m2_status) : null,
@@ -304,13 +312,30 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const rows = docRows.filter((r) => statuses.includes(r.status));
     return { docs: rows.length, deals: new Set(rows.map((r) => r.dealId)).size };
   };
+  // Missing docs only count when the deal's stage owes them: PTO-stage deals
+  // owe the 12 M1 docs, Close Out deals owe all 15.
+  const stageById = new Map(deals.map((d) => [d.dealId, d.stage]));
+  const m1DocSet = new Set<string>(PE_M1_DOC_NAMES);
+  const missingDeals = new Set<string>();
+  const scopedDeals = new Set<string>();
+  let missingDocs = 0;
+  for (const r of docRows) {
+    const stage = stageById.get(r.dealId);
+    if (stage !== PTO_STAGE_ID && stage !== CLOSEOUT_STAGE_ID) continue;
+    scopedDeals.add(r.dealId);
+    const owed = stage === CLOSEOUT_STAGE_ID || m1DocSet.has(r.docName);
+    if (owed && r.status === "NOT_UPLOADED") {
+      missingDocs++;
+      missingDeals.add(r.dealId);
+    }
+  }
   const docStats = {
     actionRequired: docStat(["ACTION_REQUIRED", "REJECTED"]),
     underReview: docStat(["UNDER_REVIEW", "UPLOADED"]),
     approvedDocs: docRows.filter((r) => r.status === "APPROVED").length,
     uploadedDocs: docRows.filter((r) => r.status !== "NOT_UPLOADED").length,
-    notUploaded: docStat(["NOT_UPLOADED"]),
-    trackedDeals: new Set(docRows.map((r) => r.dealId)).size,
+    missingExpected: { docs: missingDocs, deals: missingDeals.size },
+    scopedDeals: scopedDeals.size,
   };
 
   const recentNotes = changeLog

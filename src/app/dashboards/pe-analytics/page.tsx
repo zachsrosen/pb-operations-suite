@@ -300,9 +300,9 @@ export default function PeAnalyticsPage() {
           color="emerald"
         />
         <StatCard
-          label="Not Uploaded"
-          value={isLoading || !data ? null : String(data.docStats?.notUploaded.docs ?? 0)}
-          subtitle={data ? `docs across ${data.docStats?.notUploaded.deals ?? 0} of ${data.docStats?.trackedDeals ?? 0} tracked deals` : undefined}
+          label="Missing Docs"
+          value={isLoading || !data ? null : String(data.docStats?.missingExpected?.docs ?? 0)}
+          subtitle={data ? `owed for milestone, across ${data.docStats?.missingExpected?.deals ?? 0} of ${data.docStats?.scopedDeals ?? 0} PTO/Close Out deals` : undefined}
           color="blue"
         />
       </div>
