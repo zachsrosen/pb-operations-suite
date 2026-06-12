@@ -44,6 +44,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/design",
   "/dashboards/design-engineering",
   "/dashboards/design-pipeline-funnel",
+  "/dashboards/design-engineering-funnel",
   "/dashboards/design-revisions",
   "/dashboards/dnr",
   "/dashboards/dnr-scheduler",

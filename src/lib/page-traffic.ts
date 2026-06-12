@@ -29,6 +29,7 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/pending-approval": "Design & Engineering", // also project-management
   "/dashboards/design-revisions": "Design & Engineering", // also project-management
   "/dashboards/design-pipeline-funnel": "Design & Engineering", // also executive
+  "/dashboards/design-engineering-funnel": "Design & Engineering", // also executive
   "/dashboards/de-metrics": "Design & Engineering",
   "/dashboards/clipping-analytics": "Design & Engineering",
   "/dashboards/production-issues": "Design & Engineering",
