@@ -766,11 +766,17 @@ function BacklogSection({
   // Average days the pending deals have been waiting at this stage. Clamp each
   // deal at 0 so future-dated references (e.g. construction scheduled ahead)
   // don't produce a negative "days in stage".
+  // Average is over actionable deals only — on-hold deals are parked, so their
+  // long wait shouldn't inflate the stage's "days in stage".
   const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
-    const days = deals.map((d) => Math.max(0, d.daysWaiting)).filter((n) => Number.isFinite(n));
+    const days = deals
+      .filter((d) => !d.isOnHold)
+      .map((d) => Math.max(0, d.daysWaiting))
+      .filter((n) => Number.isFinite(n));
     if (days.length === 0) return null;
     return Math.round(days.reduce((sum, n) => sum + n, 0) / days.length);
   };
+  const onHoldInBucket = (deals: ProjectFunnelDrillDownDeal[]) => deals.filter((d) => d.isOnHold).length;
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
@@ -796,6 +802,7 @@ function BacklogSection({
           const segs = statusBreakdown(b.deals);
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
+          const onHold = onHoldInBucket(b.deals);
           return (
           <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
@@ -840,8 +847,16 @@ function BacklogSection({
                   </span>
                 )}
                 {b.count > 0 && avgDays != null && (
-                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the pending deals have been at this stage">
+                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the actionable (non-on-hold) deals have been at this stage">
                     {avgDays}d in stage
+                  </span>
+                )}
+                {onHold > 0 && (
+                  <span
+                    className="text-xs text-yellow-400/80 shrink-0 tabular-nums"
+                    title="Deals here that are On Hold — counted in this bucket but parked, so not actionable and excluded from the average above"
+                  >
+                    · {onHold} on hold
                   </span>
                 )}
                 {b.cancelled > 0 && (
@@ -976,9 +991,9 @@ function DrillDownTable({
         </thead>
         <tbody>
           {sorted.map((d) => (
+            <Fragment key={d.id}>
             <tr
-              key={d.id}
-              className={`border-b border-t-border/30 ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+              className={`${d.onHoldReason || d.isOnHold ? "" : "border-b border-t-border/30"} ${d.isOnHold ? "opacity-60" : d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
             >
               <td className="py-1 px-1.5">
                 <a
@@ -991,6 +1006,11 @@ function DrillDownTable({
                   {d.projectNumber ? `${d.projectNumber} — ` : ""}
                   <span className="max-w-[180px] truncate inline-block align-bottom">{d.name}</span>
                 </a>
+                {d.isOnHold && (
+                  <span className="ml-1.5 align-middle inline-block px-1.5 py-px rounded text-[9px] font-semibold uppercase tracking-wide bg-yellow-500/20 text-yellow-300">
+                    On hold
+                  </span>
+                )}
               </td>
               <td className="text-right py-1 px-1.5 text-muted">
                 {formatCurrencyCompact(d.amount)}
@@ -1023,13 +1043,23 @@ function DrillDownTable({
                   )}
                 </td>
               )}
-              <td className={`text-right py-1 px-1.5 font-medium ${d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
+              <td className={`text-right py-1 px-1.5 font-medium ${d.isOnHold ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
               </td>
               <td className="py-1 px-1.5 text-muted truncate max-w-[120px]" title={d.status || "—"}>
                 {d.status || <span className="italic text-muted/60">—</span>}
               </td>
             </tr>
+            {d.isOnHold && (d.onHoldReason || d.onHoldNotes) && (
+              <tr className="border-b border-t-border/30">
+                <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
+                  <span className="text-[11px] text-yellow-400/70">↳ On hold</span>
+                  {d.onHoldReason && <span className="text-[11px] text-muted/80"> · {d.onHoldReason}</span>}
+                  {d.onHoldNotes && <span className="text-[11px] text-muted/70 italic"> — {d.onHoldNotes}</span>}
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

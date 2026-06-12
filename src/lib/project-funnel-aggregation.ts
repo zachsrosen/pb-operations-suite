@@ -148,6 +148,11 @@ export interface ProjectFunnelDrillDownDeal {
   interconnectionsLead: string;
   /** Interconnection workstream status (runs parallel to permitting) */
   interconnectionStatus: string | null;
+  /** Deal is currently On Hold — kept in its bucket but flagged as not actionable. */
+  isOnHold?: boolean;
+  /** On-hold dropdown reason + free-text note (only set when isOnHold). */
+  onHoldReason?: string | null;
+  onHoldNotes?: string | null;
 }
 
 export interface ProjectFunnelDrillDown {
@@ -262,6 +267,12 @@ function toDrillDown(
     inspectionsLead: p.inspectionsLead || "",
     interconnectionsLead: p.interconnectionsLead || "",
     interconnectionStatus: statusLabel("interconnection_status", p.interconnectionStatus),
+    // On-hold deals stay in their normal bucket (so milestone counts still
+    // reconcile), but are flagged so the UI can mark them parked/not-actionable
+    // and surface why — without their parked time skewing the bucket average.
+    ...(p.stageId === ON_HOLD_STAGE_ID
+      ? { isOnHold: true, onHoldReason: p.onHoldReason || null, onHoldNotes: p.onHoldNotes || null }
+      : {}),
   };
 }
 
