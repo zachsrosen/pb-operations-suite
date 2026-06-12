@@ -50,6 +50,10 @@ const DEAL_PROPERTIES = [
   "pe_m2_status",
   "pe_payment_ic",
   "pe_payment_pc",
+  "pe_m1_submission_date",
+  "pe_m2_submission_date",
+  "pe_m1_approval_date",
+  "pe_m2_approval_date",
 ];
 
 interface PeDealRow {
@@ -61,6 +65,12 @@ interface PeDealRow {
   m2Status: string | null;
   paymentIC: number | null;
   paymentPC: number | null;
+  // Accounting-maintained date props (YYYY-MM-DD) — preferred over status
+  // history for chart bucketing since backfilled corrections live here.
+  m1SubmissionDate: string | null;
+  m2SubmissionDate: string | null;
+  m1ApprovalDate: string | null;
+  m2ApprovalDate: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +144,10 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2Status: p.pe_m2_status ? String(p.pe_m2_status) : null,
         paymentIC: storedIC ?? fallback?.ic ?? null,
         paymentPC: storedPC ?? fallback?.pc ?? null,
+        m1SubmissionDate: p.pe_m1_submission_date ? String(p.pe_m1_submission_date) : null,
+        m2SubmissionDate: p.pe_m2_submission_date ? String(p.pe_m2_submission_date) : null,
+        m1ApprovalDate: p.pe_m1_approval_date ? String(p.pe_m1_approval_date) : null,
+        m2ApprovalDate: p.pe_m2_approval_date ? String(p.pe_m2_approval_date) : null,
       });
     }
     after = response.paging?.next?.after;
@@ -188,13 +202,26 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     amount: number | null;
     status: string | null;
     timing: ReturnType<typeof computeMilestoneTiming>;
+    /** Date-prop preferred, history fallback — used for chart bucketing. */
+    submittedOn: string | null;
+    approvedOn: string | null;
   }
   const records: MilestoneRecord[] = [];
   for (const deal of deals) {
     const h = history.get(deal.dealId) || { m1: [], m2: [] };
+    const m1Timing = computeMilestoneTiming(h.m1);
+    const m2Timing = computeMilestoneTiming(h.m2);
     records.push(
-      { deal, milestone: "M1", amount: deal.paymentIC, status: deal.m1Status, timing: computeMilestoneTiming(h.m1) },
-      { deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: computeMilestoneTiming(h.m2) },
+      {
+        deal, milestone: "M1", amount: deal.paymentIC, status: deal.m1Status, timing: m1Timing,
+        submittedOn: deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
+        approvedOn: deal.m1ApprovalDate ?? m1Timing.firstApproved,
+      },
+      {
+        deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
+        submittedOn: deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
+        approvedOn: deal.m2ApprovalDate ?? m2Timing.firstApproved,
+      },
     );
   }
 
@@ -217,9 +244,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
     return [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   };
-  const weekly = bucketByWeek((r) => r.timing.firstPaid);
-  const weeklyApprovals = bucketByWeek((r) => r.timing.firstApproved);
-  const weeklySubmissions = bucketByWeek((r) => r.timing.firstSubmitted);
+  const weekly = bucketByWeek((r) => r.timing.firstPaid); // no paid-date prop exists; Paid flips same-day as deposit
+  const weeklyApprovals = bucketByWeek((r) => r.approvedOn);
+  const weeklySubmissions = bucketByWeek((r) => r.submittedOn);
 
   // Mark the subset that has progressed past each stage (rendered faded in
   // the UI — the vivid remainder is what's still outstanding).
@@ -243,11 +270,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       }
     }
   };
-  markDone(weeklyApprovals, (r) => r.timing.firstApproved, (r) => r.status === "Paid" || !!r.timing.firstPaid);
+  markDone(weeklyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.timing.firstPaid);
   markDone(
     weeklySubmissions,
-    (r) => r.timing.firstSubmitted,
-    (r) => !!r.timing.firstApproved || r.status === "Approved" || r.status === "Paid",
+    (r) => r.submittedOn,
+    (r) => !!r.approvedOn || r.status === "Approved" || r.status === "Paid",
   );
 
   // --- Report 2: pipeline groups ----------------------------------------------
