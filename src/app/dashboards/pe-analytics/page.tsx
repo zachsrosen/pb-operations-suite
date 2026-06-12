@@ -483,13 +483,14 @@ function SplitCohortChart({
 // Daily doc-rejections chart — document-level reviewer responses per day
 // ---------------------------------------------------------------------------
 
-function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatchText }: {
+function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatchText, stackOutcomes = false }: {
   events: DocRejectionEvent[];
   noun: string; // "doc rejection"
   statLabel: string; // "Doc Rejections"
   barClass: string; // "fill-orange-500"
   pillClass: string; // active range-pill classes
   swatchText: string; // tooltip count text color
+  stackOutcomes?: boolean; // submissions: color by each doc's current outcome
 }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -507,20 +508,26 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
 
   const dealCount = useMemo(() => new Set(filtered.map((e) => e.dealId)).size, [filtered]);
 
+  interface DocWeek { date: string; count: number; approved: number; inReview: number; rejected: number }
   const days = useMemo(() => {
-    if (filtered.length === 0) return [] as { date: string; count: number }[];
-    const byWeek = new Map<string, number>();
+    if (filtered.length === 0) return [] as DocWeek[];
+    const byWeek = new Map<string, DocWeek>();
     for (const e of filtered) {
       const wk = weekStartUTC(new Date(e.date + "T00:00:00Z"));
-      byWeek.set(wk, (byWeek.get(wk) ?? 0) + 1);
+      const w = byWeek.get(wk) ?? { date: wk, count: 0, approved: 0, inReview: 0, rejected: 0 };
+      w.count++;
+      if (e.outcome === "approved") w.approved++;
+      else if (e.outcome === "rejected") w.rejected++;
+      else w.inReview++;
+      byWeek.set(wk, w);
     }
     const keys = [...byWeek.keys()].sort();
-    const out: { date: string; count: number }[] = [];
+    const out: DocWeek[] = [];
     const start = new Date(keys[0] + "T00:00:00Z");
     const end = new Date(keys[keys.length - 1] + "T00:00:00Z");
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
       const key = d.toISOString().split("T")[0];
-      out.push({ date: key, count: byWeek.get(key) ?? 0 });
+      out.push(byWeek.get(key) ?? { date: key, count: 0, approved: 0, inReview: 0, rejected: 0 });
     }
     return out;
   }, [filtered]);
@@ -587,8 +594,25 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
                 <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
                 {h > 0 && (
                   <>
-                    <rect x={x} y={y} width={barW} height={h} rx={1.5} className={barClass}
-                      opacity={(active ? 1 : 0.8) * (hovered === null || hovered === i ? 1 : 0.45)} />
+                    {stackOutcomes ? (
+                      (() => {
+                        const segs = [
+                          { n: d.approved, cls: "fill-emerald-500", op: 1 },
+                          { n: d.inReview, cls: "fill-zinc-400", op: 0.7 },
+                          { n: d.rejected, cls: "fill-orange-500", op: 0.85 },
+                        ];
+                        let yCur = PAD_T + chartH;
+                        return segs.map((sg, j) => {
+                          const sh = (sg.n / maxCount) * chartH;
+                          yCur -= sh;
+                          return sh > 0 ? <rect key={j} x={x} y={yCur} width={barW} height={sh} rx={1.5} className={sg.cls}
+                            opacity={sg.op * (active ? 1 : 0.85) * (hovered === null || hovered === i ? 1 : 0.45)} /> : null;
+                        });
+                      })()
+                    ) : (
+                      <rect x={x} y={y} width={barW} height={h} rx={1.5} className={barClass}
+                        opacity={(active ? 1 : 0.8) * (hovered === null || hovered === i ? 1 : 0.45)} />
+                    )}
                     <text x={PAD_L + step * i + step / 2} y={y - 5} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
                       {d.count}
                     </text>
@@ -607,10 +631,24 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
           <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
             <div className="font-semibold text-foreground">Week of {weekLabel(days[hovered].date)}</div>
             <div className={swatchText}>{days[hovered].count} {noun}{days[hovered].count === 1 ? "" : "s"}</div>
+            {stackOutcomes && (
+              <>
+                <div className="text-emerald-400">Approved since: {days[hovered].approved}</div>
+                <div className="text-muted">Still in review: {days[hovered].inReview}</div>
+                <div className="text-orange-400">Rejected: {days[hovered].rejected}</div>
+              </>
+            )}
             <div className="text-muted mt-0.5">click for details</div>
           </div>
         )}
       </div>
+      {stackOutcomes && (
+        <div className="flex items-center gap-4 mt-1 text-[11px] text-muted">
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Approved since</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/70" /> Still in review</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> Rejected</span>
+        </div>
+      )}
       {selectedDay && (
         <div className="mt-3 rounded-lg border border-t-border bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
@@ -627,6 +665,11 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-medium text-foreground truncate">{DOC_SHORT[e.docName] ?? e.docName}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
+                    {stackOutcomes && e.outcome && (
+                      <span className={`text-[10px] ${e.outcome === "approved" ? "text-emerald-400" : e.outcome === "rejected" ? "text-orange-400" : "text-muted"}`}>
+                        {e.outcome === "approved" ? "approved" : e.outcome === "rejected" ? "rejected" : "in review"}
+                      </span>
+                    )}
                     <span className="text-[10px] text-muted truncate max-w-56" title={e.dealName}>{e.dealName.split("|").slice(0, 2).join("|").trim()}</span>
                     <span className="text-[10px] text-muted">{weekLabel(e.date)}</span>
                   </span>
@@ -1258,7 +1301,7 @@ export default function PeAnalyticsPage() {
             }
             subtitle={
               docMode === "submitted"
-                ? "Document-level uploads to the PE portal, dated by the portal's Submitted stamp. Click a week for the docs and deals."
+                ? "Document-level uploads dated by the portal's Submitted stamp, colored by each doc's CURRENT outcome. Click a week for the docs and deals."
                 : docMode === "approved"
                   ? "Document-level approvals, dated by PE's reviewer response. Click a week for the docs and deals."
                   : "Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
@@ -1278,7 +1321,7 @@ export default function PeAnalyticsPage() {
             }
           >
             {docMode === "submitted" ? (
-              <DocActivityChart key="sub" events={data.docSubmissionEvents ?? []} noun="doc submission" statLabel="Docs Submitted"
+              <DocActivityChart key="sub" events={data.docSubmissionEvents ?? []} noun="doc submission" statLabel="Docs Submitted" stackOutcomes
                 barClass="fill-cyan-500" pillClass="bg-cyan-500/20 text-cyan-400 border-cyan-500/40" swatchText="text-cyan-400" />
             ) : docMode === "approved" ? (
               <DocActivityChart key="app" events={data.docApprovalEvents ?? []} noun="doc approval" statLabel="Docs Approved"

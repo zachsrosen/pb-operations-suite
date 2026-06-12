@@ -293,6 +293,8 @@ export interface DocRejectionEvent {
   dealName: string;
   docName: string;
   note: string | null;
+  /** Submission events only: the doc's CURRENT outcome. */
+  outcome?: "approved" | "inReview" | "rejected";
 }
 
 /** Per-milestone record powering the chart drill-down. */
