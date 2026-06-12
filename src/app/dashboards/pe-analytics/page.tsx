@@ -780,7 +780,11 @@ export default function PeAnalyticsPage() {
               <MiniStat
                 label="Total Ready to Submit"
                 value={fmtUsd(funnelTotals.ready.amount)}
-                subtitle={`${funnelTotals.ready.count} milestones — ${funnelTotals.ready.waitingCount} (${fmtUsdK(funnelTotals.ready.waitingAmount)}) not yet submitted`}
+                subtitle={`${funnelTotals.ready.count} milestones — ${
+                  funnelTotals.ready.amount > 0
+                    ? Math.round(((funnelTotals.ready.amount - funnelTotals.ready.waitingAmount) / funnelTotals.ready.amount) * 100)
+                    : 0
+                }% already submitted, ${funnelTotals.ready.waitingCount} (${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
               />
               <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
               <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
