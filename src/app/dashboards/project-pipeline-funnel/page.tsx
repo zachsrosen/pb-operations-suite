@@ -67,7 +67,7 @@ const STAGE_CONFIG: StageConfig[] = [
   { key: "permitsSubmitted", label: "Permits Submitted", color: "bg-purple-500", textColor: "text-purple-400" },
   { key: "permitsIssued", label: "Permits Issued", color: "bg-violet-500", textColor: "text-violet-400" },
   // Construction & closeout
-  { key: "constructionScheduled", label: "Construction Sched.", color: "bg-cyan-500", textColor: "text-cyan-400" },
+  { key: "constructionScheduled", label: "Construction Scheduled", color: "bg-cyan-500", textColor: "text-cyan-400" },
   { key: "constructionComplete", label: "Construction Complete", color: "bg-green-500", textColor: "text-green-400" },
   { key: "inspectionPassed", label: "Inspection Passed", color: "bg-emerald-500", textColor: "text-emerald-400" },
   { key: "ptoGranted", label: "PTO Granted", color: "bg-teal-500", textColor: "text-teal-400" },
@@ -210,9 +210,9 @@ function ProjectPipelineFunnelInner() {
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-t-border">
         {([
-          { key: "funnel", label: "Funnel" },
+          { key: "funnel", label: "Active Pipeline" },
           { key: "sales-funnel", label: "Sales Funnel" },
-          { key: "activity", label: "Monthly Activity" },
+          { key: "activity", label: "Monthly Throughput" },
           // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
           // re-add { key: "bottlenecks", ... } / { key: "cohorts", label: "Analysis" } to restore.
         ] as const).map((t) => (
@@ -403,11 +403,11 @@ function ConversionLegend({ className = "", hideCancelled }: { className?: strin
   return (
     <div className={`flex items-center gap-2.5 text-[11px] text-muted ${className}`}>
       <span className="text-muted/70">→ % of prior stage:</span>
-      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />conv</span>
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />converted</span>
       {!hideCancelled && (
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400/80" />canc</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400/80" />cancelled</span>
       )}
-      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-400" />pend</span>
+      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-400" />pending</span>
     </div>
   );
 }
@@ -713,7 +713,7 @@ function BacklogSection({
   const DESIGN: StaffCol = { key: "designLead", label: "Design" };
   const PERMIT: StaffCol = { key: "permitLead", label: "Permit" };
   const OPS: StaffCol = { key: "operationsManager", label: "Ops Lead" };
-  const INSP: StaffCol = { key: "inspectionsLead", label: "Insp. Lead" };
+  const INSP: StaffCol = { key: "inspectionsLead", label: "Inspection Lead" };
   const IC: StaffCol = { key: "interconnectionsLead", label: "IC Lead" };
   // Interconnection runs parallel to permitting before construction — surface
   // its status in the pre-construction backlogs so blockers are visible.
@@ -736,15 +736,15 @@ function BacklogSection({
     deals: ProjectFunnelDrillDownDeal[];
     staffCols: StaffCol[];
   }> = [
-    { key: "awaitingSurveySchedule", label: "Awaiting Survey Sched.", count: summary.salesClosed.count - summary.surveyScheduled.count, cancelled: cancelledAtGate("salesClosed", "surveyScheduled"), color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule, staffCols: [PM, OWNER] },
+    { key: "awaitingSurveySchedule", label: "Awaiting Survey Schedule", count: summary.salesClosed.count - summary.surveyScheduled.count, cancelled: cancelledAtGate("salesClosed", "surveyScheduled"), color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule, staffCols: [PM, OWNER] },
     { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count, cancelled: cancelledAtGate("surveyScheduled", "surveyDone"), color: "bg-amber-500", deals: drillDown.awaitingSurvey, staffCols: [PM, OWNER, SURVEYOR] },
     { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, cancelled: cancelledAtGate("surveyDone", "daSent"), color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, OWNER, DESIGN] },
     { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count, cancelled: cancelledAtGate("daSent", "daApproved"), color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, OWNER, DESIGN] },
     { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count, cancelled: cancelledAtGate("daApproved", "designCompleted"), color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete, staffCols: [PM, OWNER, DESIGN] },
     { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, cancelled: cancelledAtGate("designCompleted", "permitsSubmitted"), color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
     { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, cancelled: cancelledAtGate("permitsSubmitted", "permitsIssued"), color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
-    { key: "awaitingConstructionSchedule", label: "Awaiting Constr. Sched.", count: summary.permitsIssued.count - summary.constructionScheduled.count, cancelled: cancelledAtGate("permitsIssued", "constructionScheduled"), color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OWNER, OPS, ICSTATUS] },
-    { key: "awaitingConstructionComplete", label: "Awaiting Constr. Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, cancelled: cancelledAtGate("constructionScheduled", "constructionComplete"), color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OWNER, OPS] },
+    { key: "awaitingConstructionSchedule", label: "Awaiting Construction Schedule", count: summary.permitsIssued.count - summary.constructionScheduled.count, cancelled: cancelledAtGate("permitsIssued", "constructionScheduled"), color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OWNER, OPS, ICSTATUS] },
+    { key: "awaitingConstructionComplete", label: "Awaiting Construction Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, cancelled: cancelledAtGate("constructionScheduled", "constructionComplete"), color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OWNER, OPS] },
     { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, cancelled: cancelledAtGate("constructionComplete", "inspectionPassed"), color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OWNER, INSP] },
     { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, cancelled: cancelledAtGate("inspectionPassed", "ptoGranted"), color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC, ICSTATUS] },
     { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, cancelled: 0, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM, OWNER] },
@@ -1047,7 +1047,7 @@ function RevenueConversionTable({ cohorts }: { cohorts: ProjectFunnelResponse["c
   const rows = useMemo(() => [...cohorts].slice(0, MAX_MONTHS), [cohorts]);
   const TARGETS: Array<{ key: ProjectFunnelStageKey; label: string; bar: string; text: string }> = [
     { key: "daApproved", label: "DA Approved", bar: "bg-blue-500", text: "text-blue-400" },
-    { key: "constructionComplete", label: "Constr. Complete", bar: "bg-green-500", text: "text-green-400" },
+    { key: "constructionComplete", label: "Construction Complete", bar: "bg-green-500", text: "text-green-400" },
   ];
 
   return (
@@ -1219,7 +1219,7 @@ function CohortTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] })
                         </div>
                         {d.cancelledCount > 0 && (
                           <div className="text-zinc-500">
-                            {d.cancelledCount} canc.
+                            {d.cancelledCount} cancelled
                           </div>
                         )}
                         {conversionPct != null && (
