@@ -383,19 +383,31 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     (r) => r.submittedOn,
     (r) => !!r.approvedOn || r.status === "Approved" || r.status === "Paid",
   );
-  // Submissions view also splits out the currently-rejected slice (our court).
+  // Submissions view also splits out the currently-rejected slice (our court)
+  // and the already-paid slice (so paid is distinguishable from approved).
   {
     const byWeek = new Map(weeklySubmissions.map((w) => [w.weekStart, w]));
     for (const r of records) {
-      if (!r.submittedOn || groupForStatus(r.status) !== "Rejected — pending fix") continue;
+      if (!r.submittedOn) continue;
       const w = byWeek.get(weekStartUTC(new Date(r.submittedOn)));
       if (!w) continue;
-      if (r.milestone === "M1") {
-        w.m1RejCount = (w.m1RejCount ?? 0) + 1;
-        w.m1RejAmount = (w.m1RejAmount ?? 0) + (r.amount || 0);
-      } else {
-        w.m2RejCount = (w.m2RejCount ?? 0) + 1;
-        w.m2RejAmount = (w.m2RejAmount ?? 0) + (r.amount || 0);
+      if (groupForStatus(r.status) === "Rejected — pending fix") {
+        if (r.milestone === "M1") {
+          w.m1RejCount = (w.m1RejCount ?? 0) + 1;
+          w.m1RejAmount = (w.m1RejAmount ?? 0) + (r.amount || 0);
+        } else {
+          w.m2RejCount = (w.m2RejCount ?? 0) + 1;
+          w.m2RejAmount = (w.m2RejAmount ?? 0) + (r.amount || 0);
+        }
+      }
+      if (r.status === "Paid" || r.paidOn) {
+        if (r.milestone === "M1") {
+          w.m1PaidCount = (w.m1PaidCount ?? 0) + 1;
+          w.m1PaidAmount = (w.m1PaidAmount ?? 0) + (r.amount || 0);
+        } else {
+          w.m2PaidCount = (w.m2PaidCount ?? 0) + 1;
+          w.m2PaidAmount = (w.m2PaidAmount ?? 0) + (r.amount || 0);
+        }
       }
     }
   }
