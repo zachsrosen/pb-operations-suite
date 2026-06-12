@@ -475,14 +475,18 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
 
   const days = useMemo(() => {
     if (filtered.length === 0) return [] as { date: string; count: number }[];
-    const byDay = new Map<string, number>();
-    for (const e of filtered) byDay.set(e.date, (byDay.get(e.date) ?? 0) + 1);
+    const byWeek = new Map<string, number>();
+    for (const e of filtered) {
+      const wk = weekStartUTC(new Date(e.date + "T00:00:00Z"));
+      byWeek.set(wk, (byWeek.get(wk) ?? 0) + 1);
+    }
+    const keys = [...byWeek.keys()].sort();
     const out: { date: string; count: number }[] = [];
-    const start = new Date(filtered[0].date + "T00:00:00Z");
-    const end = new Date(filtered[filtered.length - 1].date + "T00:00:00Z");
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const start = new Date(keys[0] + "T00:00:00Z");
+    const end = new Date(keys[keys.length - 1] + "T00:00:00Z");
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
       const key = d.toISOString().split("T")[0];
-      out.push({ date: key, count: byDay.get(key) ?? 0 });
+      out.push({ date: key, count: byWeek.get(key) ?? 0 });
     }
     return out;
   }, [filtered]);
@@ -492,17 +496,17 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
   }
 
   const W = 900;
-  const H = 180;
+  const H = 200;
   const PAD_L = 36;
   const PAD_B = 24;
-  const PAD_T = 14;
+  const PAD_T = 26;
   const chartW = W - PAD_L - 8;
   const chartH = H - PAD_T - PAD_B;
   const maxCount = Math.max(...days.map((d) => d.count), 1);
   const step = chartW / days.length;
-  const barW = Math.max(4, Math.min(22, step * 0.8));
+  const barW = Math.max(4, Math.min(48, step * 0.7));
   const labelEvery = Math.max(1, Math.ceil(days.length / 12));
-  const selectedEvents = selectedDay ? filtered.filter((e) => e.date === selectedDay) : [];
+  const selectedEvents = selectedDay ? filtered.filter((e) => weekStartUTC(new Date(e.date + "T00:00:00Z")) === selectedDay) : [];
 
   return (
     <div>
@@ -548,8 +552,13 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
                 className={d.count > 0 ? "cursor-pointer" : undefined}>
                 <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
                 {h > 0 && (
-                  <rect x={x} y={y} width={barW} height={h} rx={1.5} className="fill-orange-500"
-                    opacity={(active ? 1 : 0.8) * (hovered === null || hovered === i ? 1 : 0.45)} />
+                  <>
+                    <rect x={x} y={y} width={barW} height={h} rx={1.5} className="fill-orange-500"
+                      opacity={(active ? 1 : 0.8) * (hovered === null || hovered === i ? 1 : 0.45)} />
+                    <text x={PAD_L + step * i + step / 2} y={y - 5} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
+                      {d.count}
+                    </text>
+                  </>
                 )}
                 {i % labelEvery === 0 && (
                   <text x={PAD_L + step * i + step / 2} y={H - 8} textAnchor="middle" className="fill-muted text-[9px]">
@@ -562,7 +571,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
         </svg>
         {hovered !== null && days[hovered] && days[hovered].count > 0 && (
           <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-            <div className="font-semibold text-foreground">{weekLabel(days[hovered].date)}</div>
+            <div className="font-semibold text-foreground">Week of {weekLabel(days[hovered].date)}</div>
             <div className="text-orange-400">{days[hovered].count} doc rejection{days[hovered].count === 1 ? "" : "s"}</div>
             <div className="text-muted mt-0.5">click for details</div>
           </div>
@@ -572,7 +581,7 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
         <div className="mt-3 rounded-lg border border-t-border bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-medium text-foreground">
-              {weekLabel(selectedDay)} — {selectedEvents.length} document rejection{selectedEvents.length === 1 ? "" : "s"}
+              Week of {weekLabel(selectedDay)} — {selectedEvents.length} document rejection{selectedEvents.length === 1 ? "" : "s"}
             </div>
             <button onClick={() => setSelectedDay(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
               Close
@@ -583,7 +592,10 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
               <div key={i} className="rounded bg-surface px-2.5 py-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-medium text-foreground truncate">{DOC_SHORT[e.docName] ?? e.docName}</span>
-                  <span className="text-[10px] text-muted truncate max-w-56" title={e.dealName}>{e.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                  <span className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-[10px] text-muted truncate max-w-56" title={e.dealName}>{e.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                    <span className="text-[10px] text-muted">{weekLabel(e.date)}</span>
+                  </span>
                 </div>
                 {e.note && <div className="text-[11px] text-orange-400/90 mt-0.5 line-clamp-2" title={e.note}>{e.note}</div>}
               </div>
@@ -1192,8 +1204,8 @@ export default function PeAnalyticsPage() {
 
           {/* 3.5 Doc-level rejections per day */}
           <Section
-            title="Doc Rejections per Day"
-            subtitle="Document-level rejections dated by PE's reviewer response. Click a day for the docs, deals, and notes."
+            title="Doc Rejections per Week"
+            subtitle="Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
           >
             <DailyDocRejectionsChart events={data.docRejectionEvents ?? []} />
           </Section>
