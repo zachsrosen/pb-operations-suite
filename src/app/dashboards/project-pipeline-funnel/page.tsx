@@ -102,12 +102,17 @@ function ProjectPipelineFunnelInner() {
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
-  const tab: "funnel" | "activity" | "cohorts" =
-    tabParam === "activity" ? "activity" : tabParam === "cohorts" ? "cohorts" : "funnel";
-  const setTab = useCallback((v: "funnel" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v), [setParam]);
-  // The Funnel tab is always the live active-pipeline snapshot (no date window).
-  // Only the Cohorts and Monthly Activity tabs are time-based.
+  const tab: "funnel" | "bottlenecks" | "activity" | "cohorts" =
+    tabParam === "activity" ? "activity" : tabParam === "cohorts" ? "cohorts" : tabParam === "bottlenecks" ? "bottlenecks" : "funnel";
+  const setTab = useCallback(
+    (v: "funnel" | "bottlenecks" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v),
+    [setParam]
+  );
+  // Funnel + Bottlenecks are the live active-pipeline snapshot (no date window).
+  // Only the Analysis and Monthly Activity tabs are time-based.
   const useActiveScope = tab === "funnel";
+  // The Bottlenecks tab self-fetches its own data, so skip the page-level query.
+  const mainQueryEnabled = tab !== "bottlenecks";
 
   // Which backlog row is expanded — lifted so the hero connectors can open one.
   const [expandedBacklog, setExpandedBacklog] = useState<string | null>(null);
@@ -158,6 +163,7 @@ function ProjectPipelineFunnelInner() {
       return res.json();
     },
     refetchInterval: 5 * 60 * 1000,
+    enabled: mainQueryEnabled,
   });
 
   const pmOptions = useMemo(
@@ -196,6 +202,7 @@ function ProjectPipelineFunnelInner() {
       <div className="flex gap-1 mb-4 border-b border-t-border">
         {([
           { key: "funnel", label: "Funnel" },
+          { key: "bottlenecks", label: "Bottlenecks" },
           { key: "activity", label: "Monthly Activity" },
           { key: "cohorts", label: "Analysis" },
         ] as const).map((t) => (
@@ -240,7 +247,7 @@ function ProjectPipelineFunnelInner() {
           placeholder="All Owners"
           accentColor="cyan"
         />
-        {tab === "funnel" ? (
+        {tab === "funnel" || tab === "bottlenecks" ? (
           <span className="text-xs text-muted font-medium px-1">
             Live snapshot · all active deals
           </span>
@@ -281,14 +288,15 @@ function ProjectPipelineFunnelInner() {
         )}
       </div>
 
-      {isLoading || !data || !s ? (
+      {tab === "bottlenecks" ? (
+        /* Self-fetches the live pipeline — independent of the page query. */
+        <AnalysisOverview locations={locations} pms={pms} owners={owners} />
+      ) : isLoading || !data || !s ? (
         <LoadingSpinner />
       ) : tab === "activity" ? (
         <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
       ) : tab === "cohorts" ? (
         <>
-          {/* Bottlenecks + highlights (live pipeline) */}
-          <AnalysisOverview locations={locations} pms={pms} owners={owners} />
           <MonthlyFunnelChart cohorts={data.cohorts} />
           <RevenueConversionTable cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} />
