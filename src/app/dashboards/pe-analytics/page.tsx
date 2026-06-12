@@ -560,6 +560,17 @@ export default function PeAnalyticsPage() {
     [data],
   );
 
+  // All-time funnel totals shown above the weekly chart (same date basis as the views)
+  const funnelTotals = useMemo(() => {
+    const sum = (arr?: WeeklyPayments[]) =>
+      (arr ?? []).reduce((s, w) => ({ count: s.count + w.m1Count + w.m2Count, amount: s.amount + w.m1Amount + w.m2Amount }), { count: 0, amount: 0 });
+    return {
+      submitted: sum(data?.weeklySubmissions),
+      approved: sum(data?.weeklyApprovals),
+      paid: sum(data?.weekly),
+    };
+  }, [data]);
+
   const m1Timing = data?.timing.overall.find((t) => t.milestone === "M1");
   const m2Timing = data?.timing.overall.find((t) => t.milestone === "M2");
 
@@ -640,6 +651,11 @@ export default function PeAnalyticsPage() {
               </div>
             }
           >
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones`} />
+              <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones`} />
+              <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones`} />
+            </div>
             {weeklyMode === "lifecycle" ? (
               <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} />
             ) : weeklyMode === "ready" ? (
