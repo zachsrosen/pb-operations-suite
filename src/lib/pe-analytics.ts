@@ -160,6 +160,11 @@ export interface WeeklyPayments {
   m2DoneCount?: number;
   m1DoneAmount?: number;
   m2DoneAmount?: number;
+  /** Submissions view: subset currently rejected / pending fix (orange slice). */
+  m1RejCount?: number;
+  m2RejCount?: number;
+  m1RejAmount?: number;
+  m2RejAmount?: number;
 }
 
 /**

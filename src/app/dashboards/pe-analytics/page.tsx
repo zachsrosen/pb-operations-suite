@@ -38,6 +38,7 @@ interface DoneSplit {
   remainderLegend: string; // legend: gray = "Approved, awaiting payment"
   doneWord: string; // tooltip: "3 paid ($12k)"
   remainderLabel: string; // tooltip total line, e.g. "Awaiting payment"
+  rejectedLegend?: string; // when set, currently-rejected renders as an orange slice
 }
 
 function WeeklyPaymentsChart({
@@ -108,12 +109,14 @@ function WeeklyPaymentsChart({
           const dim = hovered === null || hovered === i ? 1 : 0.45;
           const totalAmt = w.m1Amount + w.m2Amount;
           const doneAmt = (w.m1DoneAmount ?? 0) + (w.m2DoneAmount ?? 0);
+          const rejAmt = doneSplit?.rejectedLegend ? (w.m1RejAmount ?? 0) + (w.m2RejAmount ?? 0) : 0;
           // Progress fill: solid green = progressed past this stage, muted
-          // gray = still outstanding. M1/M2 split lives in the tooltip.
+          // gray = still outstanding; optional orange = currently rejected.
           const segments: { seg?: string; amount: number; cls: string; op: number }[] = doneSplit
             ? [
                 { seg: "done", amount: doneAmt, cls: "fill-emerald-500", op: 1 },
-                { seg: "remainder", amount: totalAmt - doneAmt, cls: "fill-zinc-500", op: 0.45 },
+                { seg: "rejected", amount: rejAmt, cls: "fill-orange-500", op: 0.85 },
+                { seg: "remainder", amount: totalAmt - doneAmt - rejAmt, cls: "fill-zinc-500", op: 0.45 },
               ]
             : [{ amount: totalAmt, cls: "fill-emerald-500", op: 1 }];
           let yCursor = PAD_T + chartH;
@@ -166,6 +169,11 @@ function WeeklyPaymentsChart({
               <span className="text-muted"> — {series[hovered].m2DoneCount} {doneSplit.doneWord} ({fmtUsd(series[hovered].m2DoneAmount ?? 0)})</span>
             )}
           </div>
+          {doneSplit?.rejectedLegend && ((series[hovered].m1RejCount ?? 0) + (series[hovered].m2RejCount ?? 0)) > 0 && (
+            <div className="text-orange-400">
+              {doneSplit.rejectedLegend}: {(series[hovered].m1RejCount ?? 0) + (series[hovered].m2RejCount ?? 0)} · {fmtUsd((series[hovered].m1RejAmount ?? 0) + (series[hovered].m2RejAmount ?? 0))}
+            </div>
+          )}
           <div className="text-foreground mt-1 border-t border-t-border pt-1">
             {doneSplit
               ? `${doneSplit.remainderLabel}: ${fmtUsd(series[hovered].m1Amount + series[hovered].m2Amount - (series[hovered].m1DoneAmount ?? 0) - (series[hovered].m2DoneAmount ?? 0))}`
@@ -177,6 +185,9 @@ function WeeklyPaymentsChart({
         {doneSplit ? (
           <>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> {doneSplit.doneLegend}</span>
+            {doneSplit.rejectedLegend && (
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> {doneSplit.rejectedLegend}</span>
+            )}
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/45" /> {doneSplit.remainderLegend}</span>
           </>
         ) : (
@@ -750,14 +761,15 @@ const WEEKLY_MODES: Record<
   submitted: {
     label: "Submissions",
     title: "Submissions per Week",
-    subtitle: "Bars dated by week of SUBMISSION. Green = approved since; gray = still awaiting PE approval.",
+    subtitle: "Bars dated by week of SUBMISSION. Green = approved since; orange = currently rejected (our court); gray = in PE review.",
     empty: "No submissions recorded yet.",
     weekPrefix: "Submitted",
     split: {
       doneLegend: "Approved since",
-      remainderLegend: "Awaiting approval",
+      remainderLegend: "In PE review",
       doneWord: "approved",
       remainderLabel: "Not yet approved",
+      rejectedLegend: "Rejected — pending fix",
     },
   },
   approved: {
@@ -860,8 +872,12 @@ export default function PeAnalyticsPage() {
           const pending = r.status === "Rejected" || r.status === "Ready to Resubmit";
           return drill.segment === "pending" ? pending : !pending;
         }
-        case "submitted":
-          return drill.segment === "done" ? isApprovedPlus(r) : !isApprovedPlus(r);
+        case "submitted": {
+          const rejPending = r.status === "Rejected" || r.status === "Ready to Resubmit";
+          if (drill.segment === "done") return isApprovedPlus(r);
+          if (drill.segment === "rejected") return rejPending;
+          return !isApprovedPlus(r) && !rejPending;
+        }
         case "approved":
           return drill.segment === "done" ? isPaid(r) : !isPaid(r);
         case "lifecycle": {
@@ -889,7 +905,7 @@ export default function PeAnalyticsPage() {
   const SEGMENT_LABELS: Record<string, Record<string, string>> = {
     ready: { done: "Submitted", pending: "Waiting on submission" },
     rejections: { done: "Resolved since", pending: "Still pending fix" },
-    submitted: { done: "Approved since", remainder: "Awaiting approval" },
+    submitted: { done: "Approved since", rejected: "Rejected — pending fix", remainder: "In PE review" },
     approved: { done: "Paid since", remainder: "Awaiting payment" },
     lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "Still in review" },
   };
