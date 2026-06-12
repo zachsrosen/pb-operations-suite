@@ -47,6 +47,14 @@ const LINKS: SuitePageCard[] = [
 
   // ── Participate Energy ──
   {
+    href: "/dashboards/pe-analytics",
+    title: "PE Analytics",
+    description: "Program performance — payments per week, money in flight, PE timing, rejection analysis, milestone funnel.",
+    tag: "PE",
+    icon: "📊",
+    section: "Participate Energy",
+  },
+  {
     href: "/dashboards/pe-docs",
     title: "PE Document Tracker",
     description: "Live document checklist — see what needs uploading, what's rejected, and what's approved per deal.",

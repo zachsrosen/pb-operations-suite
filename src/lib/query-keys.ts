@@ -117,6 +117,10 @@ export const queryKeys = {
     root: ["peDocs"] as const,
     list: () => [...queryKeys.peDocs.root, "list"] as const,
   },
+  peAnalytics: {
+    root: ["peAnalytics"] as const,
+    list: () => [...queryKeys.peAnalytics.root, "list"] as const,
+  },
   peAvl: () => ["peAvl"] as const,
   pePipeline: () => ["pePipeline"] as const,
   pePrep: {

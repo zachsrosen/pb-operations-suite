@@ -285,6 +285,7 @@ export const CACHE_KEYS = {
   SERVICE_CUSTOMERS_SEARCH: (queryHash: string) => `service:customers:search:${queryHash}`,
   SERVICE_CUSTOMER_DETAIL: (contactId: string) => `service:customers:detail:${contactId}`,
   REVENUE_GOALS: (year: number) => `revenue-goals:${year}` as const,
+  PE_ANALYTICS: "pe:analytics",
   DESIGN_FUNNEL: (months: number, location: string) =>
     `funnel:design-pipeline:${months}:${location}` as const,
   PROJECT_FUNNEL: (months: number, location: string, range = "rolling") =>
