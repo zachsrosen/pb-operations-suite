@@ -208,7 +208,7 @@ function ProjectPipelineFunnelInner() {
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-t-border">
         {([
-          { key: "funnel", label: "Funnel" },
+          { key: "funnel", label: "Active Pipeline" },
           { key: "sales-funnel", label: "Sales Funnel" },
           { key: "activity", label: "Monthly Activity" },
           // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
