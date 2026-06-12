@@ -516,9 +516,10 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const scopedDeals = new Set<string>();
   const relevantRows = docRows.filter((r) => {
     const stage = stageById.get(r.dealId);
-    if (stage !== PTO_STAGE_ID && stage !== CLOSEOUT_STAGE_ID) return false;
+    if (stage !== PTO_STAGE_ID && stage !== CLOSEOUT_STAGE_ID && stage !== COMPLETE_STAGE_ID) return false;
     scopedDeals.add(r.dealId);
-    return stage === CLOSEOUT_STAGE_ID || m1DocSet.has(r.docName);
+    // PTO-stage deals owe the 12 M1 docs; Close Out and Complete owe all 15.
+    return stage !== PTO_STAGE_ID || m1DocSet.has(r.docName);
   });
   const docStat = (statuses: string[]) => {
     const rows = relevantRows.filter((r) => statuses.includes(r.status));
