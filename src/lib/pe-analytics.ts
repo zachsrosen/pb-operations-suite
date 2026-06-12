@@ -165,6 +165,11 @@ export interface WeeklyPayments {
   m2RejCount?: number;
   m1RejAmount?: number;
   m2RejAmount?: number;
+  /** Submissions view: subset already paid (deep-green slice under approved). */
+  m1PaidCount?: number;
+  m2PaidCount?: number;
+  m1PaidAmount?: number;
+  m2PaidAmount?: number;
 }
 
 /**
