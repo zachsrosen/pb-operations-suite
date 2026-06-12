@@ -609,11 +609,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     (n ?? "").replace(/^Synced from PE portal scraper \([^)]*\)\s*\|\s*/, "").slice(0, 240) || null;
   const subSeen = new Set<string>();
   const docSubmissionEvents: DocRejectionEvent[] = [];
+  const currentDocStatus = new Map<string, string>();
+  for (const r of docRows) currentDocStatus.set(`${r.dealId}|${r.docName}`, r.status);
+  const outcomeOf = (dealId: string, docName: string): "approved" | "inReview" | "rejected" => {
+    const st = currentDocStatus.get(`${dealId}|${docName}`) ?? "";
+    if (st === "APPROVED") return "approved";
+    if (st === "ACTION_REQUIRED" || st === "REJECTED") return "rejected";
+    return "inReview";
+  };
   const pushSub = (dealId: string, docName: string, date: string, note: string | null) => {
     const key = `${dealId}|${docName}|${date}`;
     if (subSeen.has(key)) return;
     subSeen.add(key);
-    docSubmissionEvents.push({ date, dealId, dealName: dealNameById.get(dealId) ?? dealId, docName, note });
+    docSubmissionEvents.push({ date, dealId, dealName: dealNameById.get(dealId) ?? dealId, docName, note, outcome: outcomeOf(dealId, docName) });
   };
   for (const r of docRows) {
     for (const m of (r.notes ?? "").matchAll(/Submitted:\s*(\d{4}-\d{2}-\d{2})/g)) pushSub(r.dealId, r.docName, m[1], null);
