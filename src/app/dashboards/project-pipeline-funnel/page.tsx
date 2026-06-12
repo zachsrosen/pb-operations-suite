@@ -4,7 +4,6 @@ import { Suspense, Fragment, useCallback, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
-import { StatCard } from "@/components/ui/MetricCard";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
@@ -446,6 +445,61 @@ const STAGE_TO_BACKLOG: Partial<Record<ProjectFunnelStageKey, string>> = {
   ptoGranted: "awaitingPto",
 };
 
+/**
+ * Per-stage gradient/border keyed by the stage's own color — covers amber /
+ * lime / violet, which the shared StatCard's accent map lacks (those silently
+ * fell back to blue). Tighter than StatCard so 12 cards don't read as empty.
+ */
+const FUNNEL_CARD_STYLES: Record<string, string> = {
+  "bg-orange-500": "from-orange-500/20 border-orange-500/30",
+  "bg-amber-500": "from-amber-500/20 border-amber-500/30",
+  "bg-yellow-500": "from-yellow-500/20 border-yellow-500/30",
+  "bg-lime-500": "from-lime-500/20 border-lime-500/30",
+  "bg-blue-500": "from-blue-500/20 border-blue-500/30",
+  "bg-indigo-500": "from-indigo-500/20 border-indigo-500/30",
+  "bg-purple-500": "from-purple-500/20 border-purple-500/30",
+  "bg-violet-500": "from-violet-500/20 border-violet-500/30",
+  "bg-cyan-500": "from-cyan-500/20 border-cyan-500/30",
+  "bg-green-500": "from-green-500/20 border-green-500/30",
+  "bg-emerald-500": "from-emerald-500/20 border-emerald-500/30",
+  "bg-teal-500": "from-teal-500/20 border-teal-500/30",
+};
+
+function FunnelStatCard({
+  stage,
+  value,
+  subtitle,
+  trend,
+}: {
+  stage: StageConfig;
+  value: number;
+  subtitle: string;
+  trend?: { delta: number; label: string } | null;
+}) {
+  const style = FUNNEL_CARD_STYLES[stage.color] || FUNNEL_CARD_STYLES["bg-blue-500"];
+  return (
+    <div className={`relative h-full bg-gradient-to-br ${style} to-transparent border rounded-xl px-4 py-3.5 shadow-card`}>
+      <span className={`block w-7 h-1 rounded-full mb-2 ${stage.color}`} />
+      <div
+        key={String(value)}
+        className="text-2xl xl:text-3xl font-bold text-foreground tracking-tight tabular-nums animate-value-flash leading-none"
+      >
+        {value}
+      </div>
+      <div className={`text-xs font-semibold mt-1.5 ${stage.textColor}`}>{stage.label}</div>
+      {subtitle && <div className="text-[11px] text-muted mt-0.5 truncate" title={subtitle}>{subtitle}</div>}
+      {trend && (
+        <div
+          className={`text-[11px] mt-0.5 font-medium ${trend.delta > 0 ? "text-green-400" : trend.delta < 0 ? "text-red-400" : "text-muted"}`}
+        >
+          {trend.delta > 0 ? "▲" : trend.delta < 0 ? "▼" : "—"} {trend.delta > 0 ? "+" : ""}
+          {trend.delta} {trend.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HeroCards({
   summary,
   previousSummary,
@@ -497,14 +551,8 @@ function HeroCards({
                 title={STAGE_TO_BACKLOG[stage.key] ? `Open backlog: pending ${stage.label}` : undefined}
               />
             )}
-            <div className="flex-1 min-w-[150px]">
-              <StatCard
-                label={stage.label}
-                value={stageTotal}
-                subtitle={subtitle}
-                color={stage.color.replace("bg-", "").replace("-500", "") as "orange"}
-                trend={trend}
-              />
+            <div className="flex-1 min-w-[140px]">
+              <FunnelStatCard stage={stage} value={stageTotal} subtitle={subtitle} trend={trend} />
             </div>
           </Fragment>
         );
