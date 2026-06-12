@@ -44,6 +44,14 @@ const LINKS: SuitePageCard[] = [
     section: "Design Pipeline",
   },
   {
+    href: "/dashboards/design-engineering-funnel",
+    title: "Design & Engineering Funnel",
+    description: "DA → design production chain with revision loops, backlog by gate, and live status depth.",
+    tag: "FUNNEL",
+    icon: "🛠️",
+    section: "Design Pipeline",
+  },
+  {
     href: "/dashboards/de-metrics",
     title: "D&E Metrics",
     description: "DA turnaround and revisions by office, approval pipeline, designer productivity, and monthly trends.",
