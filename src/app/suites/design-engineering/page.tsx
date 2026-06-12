@@ -46,7 +46,7 @@ const LINKS: SuitePageCard[] = [
   {
     href: "/dashboards/design-engineering-funnel",
     title: "Design & Engineering Funnel",
-    description: "DA → design production chain with revision loops, backlog by gate, and live status depth.",
+    description: "Active projects bucketed by design status (a funnel) and a deal-stage breakdown of design statuses.",
     tag: "FUNNEL",
     icon: "🛠️",
     section: "Design Pipeline",

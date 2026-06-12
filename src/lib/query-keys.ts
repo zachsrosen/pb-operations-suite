@@ -141,14 +141,8 @@ export const queryKeys = {
       owners?: string[]
     ) =>
       [...queryKeys.funnel.root, "project-pipeline", months, locations, timeframe, pms, owners] as const,
-    designFunnel: (
-      months?: number,
-      locations?: string[],
-      scope?: string,
-      leads?: string[],
-      pms?: string[]
-    ) =>
-      [...queryKeys.funnel.root, "design-funnel", months, locations, scope, leads, pms] as const,
+    designFunnel: (locations?: string[], leads?: string[], pms?: string[]) =>
+      [...queryKeys.funnel.root, "design-funnel", locations, leads, pms] as const,
     monthlyActivity: (months?: number, locations?: string[]) =>
       [...queryKeys.funnel.root, "monthly-activity", months, locations] as const,
     milestoneCohort: (
