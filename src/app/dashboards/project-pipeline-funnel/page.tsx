@@ -102,15 +102,22 @@ function ProjectPipelineFunnelInner() {
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
-  const tab: "funnel" | "bottlenecks" | "activity" | "cohorts" =
-    tabParam === "activity" ? "activity" : tabParam === "cohorts" ? "cohorts" : tabParam === "bottlenecks" ? "bottlenecks" : "funnel";
+  const tab: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts" =
+    tabParam === "activity" ? "activity"
+      : tabParam === "cohorts" ? "cohorts"
+      : tabParam === "bottlenecks" ? "bottlenecks"
+      : tabParam === "sales-funnel" ? "sales-funnel"
+      : "funnel";
   const setTab = useCallback(
-    (v: "funnel" | "bottlenecks" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v),
+    (v: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v),
     [setParam]
   );
-  // Funnel + Bottlenecks are the live active-pipeline snapshot (no date window).
-  // Only the Analysis and Monthly Activity tabs are time-based.
+  // The Funnel tab + Bottlenecks are the live active-pipeline snapshot (no date
+  // window). Sales Funnel, Analysis, and Monthly Activity are time-based: Sales
+  // Funnel is the same hero/backlog but windowed by close date (sales cohort).
   const useActiveScope = tab === "funnel";
+  // Funnel and Sales Funnel both render the stage-funnel hero + backlog.
+  const isFunnelView = tab === "funnel" || tab === "sales-funnel";
   // The Bottlenecks tab self-fetches its own data, so skip the page-level query.
   const mainQueryEnabled = tab !== "bottlenecks";
 
@@ -202,9 +209,10 @@ function ProjectPipelineFunnelInner() {
       <div className="flex gap-1 mb-4 border-b border-t-border">
         {([
           { key: "funnel", label: "Funnel" },
-          { key: "bottlenecks", label: "Bottlenecks" },
+          { key: "sales-funnel", label: "Sales Funnel" },
           { key: "activity", label: "Monthly Activity" },
-          { key: "cohorts", label: "Analysis" },
+          // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
+          // re-add { key: "bottlenecks", ... } / { key: "cohorts", label: "Analysis" } to restore.
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -268,7 +276,7 @@ function ProjectPipelineFunnelInner() {
             </select>
           </div>
         )}
-        {tab === "funnel" && (
+        {isFunnelView && (
           <div className="flex rounded-lg border border-t-border overflow-hidden text-xs ml-auto">
             <button
               type="button"
@@ -304,19 +312,20 @@ function ProjectPipelineFunnelInner() {
         </>
       ) : (
         <>
-          {/* Funnel tab is always the active snapshot: no prior-period trend,
-              and cancelled is always 0 so it's hidden. */}
+          {/* Funnel tab = active snapshot (cancelled always 0 → hidden, no prior-
+              period trend). Sales Funnel = the same hero windowed by close date
+              (sales cohort), so it shows cancelled + trend vs the prior window. */}
           {heroView === "loc" ? (
-            <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} hideCancelled />
+            <HeroLocationMatrix summaryByLocation={data.summaryByLocation} totalSummary={s} hideCancelled={tab === "funnel"} />
           ) : (
             <>
               <div className="flex justify-end mb-2">
-                <ConversionLegend hideCancelled />
+                <ConversionLegend hideCancelled={tab === "funnel"} />
               </div>
               {/* Sales Closed → Design Complete (6) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 6)} hideCancelled onConvClick={handleConvClick} />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 6)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
               {/* Permits Submitted → PTO Granted (6) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(6)} hideCancelled onConvClick={handleConvClick} />
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(6)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
             </>
           )}
 
