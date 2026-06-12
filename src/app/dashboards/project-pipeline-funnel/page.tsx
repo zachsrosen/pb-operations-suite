@@ -526,7 +526,7 @@ function HeroCards({
   // screens. conv/cancelled/pending live in the connector now (see legend),
   // not in the card subtitle — keeps cards clean.
   return (
-    <div className="flex items-stretch gap-2 mb-2 overflow-x-auto pb-1">
+    <div className="flex items-stretch justify-center gap-2 mb-2 overflow-x-auto pb-1">
       {stages.map((stage) => {
         const d = summary[stage.key];
         const stageTotal = total(d);
@@ -559,7 +559,7 @@ function HeroCards({
                 title={STAGE_TO_BACKLOG[stage.key] ? `Open backlog: pending ${stage.label}` : undefined}
               />
             )}
-            <div className="flex-1 min-w-[140px]">
+            <div className="flex-1 min-w-[110px] max-w-[190px]">
               <FunnelStatCard stage={stage} value={stageTotal} subtitle={subtitle} trend={trend} />
             </div>
           </Fragment>
