@@ -210,7 +210,7 @@ function ProjectPipelineFunnelInner() {
         {([
           { key: "funnel", label: "Active Pipeline" },
           { key: "sales-funnel", label: "Sales Funnel" },
-          { key: "activity", label: "Monthly Activity" },
+          { key: "activity", label: "Monthly Throughput" },
           // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
           // re-add { key: "bottlenecks", ... } / { key: "cohorts", label: "Analysis" } to restore.
         ] as const).map((t) => (
