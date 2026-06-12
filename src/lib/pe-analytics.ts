@@ -195,6 +195,20 @@ export interface FunnelDeal {
   m2: string | null;
 }
 
+export interface DocStatusStat {
+  docs: number;
+  deals: number;
+}
+
+export interface DocStats {
+  actionRequired: DocStatusStat; // incl. legacy REJECTED — fixes owed to PE
+  underReview: DocStatusStat; // incl. legacy UPLOADED — waiting on PE
+  approvedDocs: number;
+  uploadedDocs: number; // any status except NOT_UPLOADED
+  notUploaded: DocStatusStat;
+  trackedDeals: number;
+}
+
 export interface PeAnalyticsPayload {
   lastUpdated: string;
   totals: {
@@ -205,6 +219,7 @@ export interface PeAnalyticsPayload {
     medianApproveToPaidDays: number | null;
     rejectionRatePct: number | null; // % of submitted milestones rejected at least once
   };
+  docStats: DocStats;
   weekly: WeeklyPayments[];
   weeklyApprovals: WeeklyPayments[];
   weeklySubmissions: WeeklyPayments[];

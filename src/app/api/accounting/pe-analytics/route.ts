@@ -299,6 +299,20 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .filter((d) => d.totalEvents > 0 || d.currentlyRejected > 0 || d.currentActionRequired > 0)
     .sort((a, b) => b.totalEvents + b.currentlyRejected + b.currentActionRequired - (a.totalEvents + a.currentlyRejected + a.currentActionRequired));
 
+  // --- Doc-status header stats -----------------------------------------------
+  const docStat = (statuses: string[]) => {
+    const rows = docRows.filter((r) => statuses.includes(r.status));
+    return { docs: rows.length, deals: new Set(rows.map((r) => r.dealId)).size };
+  };
+  const docStats = {
+    actionRequired: docStat(["ACTION_REQUIRED", "REJECTED"]),
+    underReview: docStat(["UNDER_REVIEW", "UPLOADED"]),
+    approvedDocs: docRows.filter((r) => r.status === "APPROVED").length,
+    uploadedDocs: docRows.filter((r) => r.status !== "NOT_UPLOADED").length,
+    notUploaded: docStat(["NOT_UPLOADED"]),
+    trackedDeals: new Set(docRows.map((r) => r.dealId)).size,
+  };
+
   const recentNotes = changeLog
     .filter((ev) => ev.newNotes)
     .slice(0, 20)
@@ -338,6 +352,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         ? Math.round((rejectedAtLeastOnce.length / submittedAll.length) * 1000) / 10
         : null,
     },
+    docStats,
     weekly,
     weeklyApprovals,
     weeklySubmissions,
