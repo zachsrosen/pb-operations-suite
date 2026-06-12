@@ -205,6 +205,7 @@ function WeeklyPaymentsChart({
 
 const EMPTY_LIFECYCLE_WEEK = (weekStart: string): WeeklyLifecycle => ({
   weekStart, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0,
+  rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0,
 });
 
 function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string, segment?: string) => void }) {
@@ -234,7 +235,8 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
   const PAD_T = 36;
   const chartW = W - PAD_L - 8;
   const chartH = H - PAD_T - PAD_B;
-  const total = (w: WeeklyLifecycle) => w.paidAmount + w.approvedAmount + w.inReviewAmount;
+  const total = (w: WeeklyLifecycle) =>
+    w.paidAmount + w.approvedAmount + w.inReviewAmount + (w.rejectedAmount ?? 0) + (w.waitingAmount ?? 0);
   const maxTotal = Math.max(...series.map(total), 1);
   const barW = Math.min(48, (chartW / series.length) * 0.7);
   const step = chartW / series.length;
@@ -258,12 +260,14 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
         })}
         {series.map((w, i) => {
           const x = PAD_L + step * i + (step - barW) / 2;
-          const count = w.paidCount + w.approvedCount + w.inReviewCount;
+          const count = w.paidCount + w.approvedCount + w.inReviewCount + (w.rejectedCount ?? 0) + (w.waitingCount ?? 0);
           const dim = hovered === null || hovered === i ? 1 : 0.45;
           const segments = [
             { seg: "paid", amount: w.paidAmount, cls: "fill-emerald-500", op: 1 },
             { seg: "approved", amount: w.approvedAmount, cls: "fill-amber-500", op: 1 },
             { seg: "inReview", amount: w.inReviewAmount, cls: "fill-zinc-500", op: 0.55 },
+            { seg: "rejected", amount: w.rejectedAmount ?? 0, cls: "fill-orange-500", op: 0.85 },
+            { seg: "waiting", amount: w.waitingAmount ?? 0, cls: "fill-zinc-500", op: 0.25 },
           ];
           let yCursor = PAD_T + chartH;
           const rects = segments.map((s, j) => {
@@ -302,19 +306,27 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
       </svg>
       {hovered !== null && series[hovered] && (
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-          <div className="font-semibold text-foreground mb-1">Submitted week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="font-semibold text-foreground mb-1">Ready week of {weekLabel(series[hovered].weekStart)}</div>
           <div className="text-emerald-400">Paid: {series[hovered].paidCount} · {fmtUsd(series[hovered].paidAmount)}</div>
           <div className="text-amber-400">Approved, awaiting payment: {series[hovered].approvedCount} · {fmtUsd(series[hovered].approvedAmount)}</div>
-          <div className="text-muted">Still in review: {series[hovered].inReviewCount} · {fmtUsd(series[hovered].inReviewAmount)}</div>
+          <div className="text-muted">In PE review: {series[hovered].inReviewCount} · {fmtUsd(series[hovered].inReviewAmount)}</div>
+          {(series[hovered].rejectedCount ?? 0) > 0 && (
+            <div className="text-orange-400">Rejected — pending fix: {series[hovered].rejectedCount} · {fmtUsd(series[hovered].rejectedAmount ?? 0)}</div>
+          )}
+          {(series[hovered].waitingCount ?? 0) > 0 && (
+            <div className="text-muted">Not yet submitted: {series[hovered].waitingCount} · {fmtUsd(series[hovered].waitingAmount ?? 0)}</div>
+          )}
           <div className="text-foreground mt-1 border-t border-t-border pt-1">
-            Total submitted: {fmtUsd(total(series[hovered]))}
+            Total ready: {fmtUsd(total(series[hovered]))}
           </div>
         </div>
       )}
       <div className="flex items-center gap-4 mt-1 text-[11px] text-muted">
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Paid</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Approved, awaiting payment</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/55" /> Still in review</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/55" /> In PE review</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> Rejected — pending fix</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-500/25" /> Not yet submitted</span>
       </div>
     </div>
   );
@@ -843,10 +855,10 @@ const WEEKLY_MODES: Record<
   },
   lifecycle: {
     label: "Lifecycle",
-    title: "Submission Cohorts by Outcome",
-    subtitle: "Bars dated by week of SUBMISSION; colored by where each milestone stands today.",
-    empty: "No submissions recorded yet.",
-    weekPrefix: "Submitted",
+    title: "Ready-to-Submit Cohorts by Outcome",
+    subtitle: "Bars dated by week each milestone became READY TO SUBMIT; colored by where it stands today, rejections included.",
+    empty: "No milestones have reached Ready to Submit yet.",
+    weekPrefix: "Ready",
   },
 };
 
@@ -898,11 +910,12 @@ export default function PeAnalyticsPage() {
       }
     }
     const dateOf = (r: MilestoneDrillRow) =>
-      weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
+      weeklyMode === "ready" || weeklyMode === "lifecycle"
+        ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "rejections" ? r.rejectedOn
         : weeklyMode === "approved" ? r.approvedOn
           : weeklyMode === "paid" ? r.paidOn
-            : r.submittedOn; // submitted + lifecycle
+            : r.submittedOn; // submitted
     const isPaid = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
     const isApprovedPlus = (r: MilestoneDrillRow) => !!r.approvedOn || r.status === "Approved" || isPaid(r);
     const segOk = (r: MilestoneDrillRow) => {
@@ -925,7 +938,16 @@ export default function PeAnalyticsPage() {
         case "lifecycle": {
           const paid = isPaid(r);
           const approved = isApprovedPlus(r) && !paid;
-          return drill.segment === "paid" ? paid : drill.segment === "approved" ? approved : !paid && !approved;
+          const rejPending = !paid && !approved && (r.status === "Rejected" || r.status === "Ready to Resubmit");
+          const waiting = !r.submittedOn && !paid && !approved && !rejPending;
+          const inReview = !paid && !approved && !rejPending && !waiting;
+          switch (drill.segment) {
+            case "paid": return paid;
+            case "approved": return approved;
+            case "rejected": return rejPending;
+            case "waiting": return waiting;
+            default: return inReview;
+          }
         }
         default:
           return true;
@@ -949,7 +971,7 @@ export default function PeAnalyticsPage() {
     rejections: { done: "Resolved since", pending: "Still pending fix" },
     submitted: { done: "Approved since", rejected: "Rejected — pending fix", remainder: "In PE review" },
     approved: { done: "Paid since", remainder: "Awaiting payment" },
-    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "Still in review" },
+    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
   };
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
