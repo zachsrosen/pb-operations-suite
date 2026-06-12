@@ -156,6 +156,17 @@ export interface WeeklyPayments {
   m2DoneAmount?: number;
 }
 
+/** Lifecycle view: submission-week cohorts colored by current outcome. */
+export interface WeeklyLifecycle {
+  weekStart: string;
+  paidCount: number;
+  paidAmount: number;
+  approvedCount: number; // approved, awaiting payment
+  approvedAmount: number;
+  inReviewCount: number; // submitted, not yet approved (incl. rejected/pending fix)
+  inReviewAmount: number;
+}
+
 export interface PipelineGroupRow {
   group: PipelineGroup;
   m1Count: number;
@@ -255,6 +266,7 @@ export interface PeAnalyticsPayload {
   weekly: WeeklyPayments[];
   weeklyApprovals: WeeklyPayments[];
   weeklySubmissions: WeeklyPayments[];
+  weeklyLifecycle: WeeklyLifecycle[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
