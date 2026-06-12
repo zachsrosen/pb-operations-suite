@@ -197,6 +197,35 @@ function MilestoneFunnel({ deals, milestone, locFilter }: {
 }
 
 // ---------------------------------------------------------------------------
+// Weekly chart modes
+// ---------------------------------------------------------------------------
+
+type WeeklyMode = "submitted" | "approved" | "paid";
+
+const WEEKLY_MODES: Record<WeeklyMode, { label: string; title: string; subtitle: string; empty: string }> = {
+  submitted: {
+    label: "Submissions",
+    title: "Submissions per Week",
+    subtitle: "When M1/M2 first flipped to Submitted in HubSpot × the milestone payment amount sent for review.",
+    empty: "No submissions recorded yet.",
+  },
+  approved: {
+    label: "Approvals",
+    title: "Approvals per Week",
+    subtitle: "When M1/M2 flipped to Approved in HubSpot × the milestone payment amount that approval unlocked.",
+    empty: "No approvals recorded yet.",
+  },
+  paid: {
+    label: "Payments",
+    title: "Payments per Week",
+    subtitle: "When M1/M2 flipped to Paid in HubSpot (status-change date, not bank-deposit date) × the milestone payment amount.",
+    empty: "No payments recorded yet.",
+  },
+};
+
+const WEEKLY_MODE_ORDER: WeeklyMode[] = ["submitted", "approved", "paid"];
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -212,7 +241,7 @@ export default function PeAnalyticsPage() {
   });
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
-  const [weeklyMode, setWeeklyMode] = useState<"paid" | "approved">("paid");
+  const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
     [data],
@@ -270,31 +299,33 @@ export default function PeAnalyticsPage() {
 
       {!isLoading && data && (
         <div className="space-y-6">
-          {/* 1. Payments / approvals per week */}
+          {/* 1. Submissions / approvals / payments per week */}
           <Section
-            title={weeklyMode === "paid" ? "Payments per Week" : "Approvals per Week"}
-            subtitle={
-              weeklyMode === "paid"
-                ? "When M1/M2 flipped to Paid in HubSpot (status-change date, not bank-deposit date) × the milestone payment amount."
-                : "When M1/M2 flipped to Approved in HubSpot × the milestone payment amount that approval unlocked."
-            }
+            title={WEEKLY_MODES[weeklyMode].title}
+            subtitle={WEEKLY_MODES[weeklyMode].subtitle}
             actions={
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {([["paid", "Payments"], ["approved", "Approvals"]] as const).map(([mode, label]) => (
+                {WEEKLY_MODE_ORDER.map((mode) => (
                   <button
                     key={mode}
                     onClick={() => setWeeklyMode(mode)}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
                   >
-                    {label}
+                    {WEEKLY_MODES[mode].label}
                   </button>
                 ))}
               </div>
             }
           >
             <WeeklyPaymentsChart
-              weekly={weeklyMode === "paid" ? data.weekly : data.weeklyApprovals ?? []}
-              emptyMessage={weeklyMode === "paid" ? "No payments recorded yet." : "No approvals recorded yet."}
+              weekly={
+                weeklyMode === "paid"
+                  ? data.weekly
+                  : weeklyMode === "approved"
+                    ? data.weeklyApprovals ?? []
+                    : data.weeklySubmissions ?? []
+              }
+              emptyMessage={WEEKLY_MODES[weeklyMode].empty}
             />
           </Section>
 
