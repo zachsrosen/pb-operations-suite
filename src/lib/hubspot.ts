@@ -426,6 +426,7 @@ export interface Project {
   rtbBlockedReason: string | null;
   onHoldReason: string | null; // dropdown selection
   onHoldNotes: string | null;  // free-text explanation
+  salesChangeOrderNotes: string | null; // "Pending Sales Changes" DA status: the change requested
 
   // Priority & Scoring
   priorityScore: number;
@@ -697,6 +698,7 @@ const DEAL_PROPERTIES = [
   "rtb_blocked_reason",   // RTB - Blocked stage: free-text reason
   "on_hold_selection",    // On Hold stage: dropdown reason
   "on_hold_reason",       // On Hold stage: free-text notes
+  "sales_change_order_notes", // "Pending Sales Changes" DA status: the change requested
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -1094,6 +1096,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     rtbBlockedReason: deal.rtb_blocked_reason ? String(deal.rtb_blocked_reason) : null,
     onHoldReason: deal.on_hold_selection ? String(deal.on_hold_selection) : null,
     onHoldNotes: deal.on_hold_reason ? String(deal.on_hold_reason) : null,
+    salesChangeOrderNotes: deal.sales_change_order_notes ? String(deal.sales_change_order_notes) : null,
 
     // Priority
     priorityScore,

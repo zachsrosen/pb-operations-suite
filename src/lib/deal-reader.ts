@@ -338,6 +338,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     rtbBlockedReason: null,
     onHoldReason: null,
     onHoldNotes: null,
+    salesChangeOrderNotes: null,
 
     // Priority
     priorityScore,

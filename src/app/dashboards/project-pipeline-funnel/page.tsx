@@ -710,6 +710,18 @@ function statusBreakdown(deals: ProjectFunnelDrillDownDeal[]): Array<{ status: s
 // Stepped opacity so stacked status segments of one backlog color stay distinct.
 const segOpacity = (i: number) => Math.max(0.4, 1 - i * 0.18);
 
+/** Tone → Tailwind classes for backlog "not actionable" flags (literal so Tailwind keeps them). */
+const FLAG_PILL: Record<string, string> = {
+  yellow: "bg-yellow-500/20 text-yellow-300",
+  red: "bg-red-500/20 text-red-300",
+  orange: "bg-orange-500/20 text-orange-300",
+};
+const FLAG_TEXT: Record<string, string> = {
+  yellow: "text-yellow-400/80",
+  red: "text-red-400/80",
+  orange: "text-orange-400/80",
+};
+
 function BacklogSection({
   summary,
   drillDown,
@@ -782,17 +794,28 @@ function BacklogSection({
   // Average days the pending deals have been waiting at this stage. Clamp each
   // deal at 0 so future-dated references (e.g. construction scheduled ahead)
   // don't produce a negative "days in stage".
-  // Average is over actionable deals only — on-hold deals are parked, so their
-  // long wait shouldn't inflate the stage's "days in stage".
+  // Average is over actionable deals only — flagged deals (on hold / RTB blocked /
+  // pending sales change) are parked or waiting on someone else, so their long
+  // wait shouldn't inflate the stage's "days in stage".
   const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
     const days = deals
-      .filter((d) => !d.isOnHold)
+      .filter((d) => !d.flag)
       .map((d) => Math.max(0, d.daysWaiting))
       .filter((n) => Number.isFinite(n));
     if (days.length === 0) return null;
     return Math.round(days.reduce((sum, n) => sum + n, 0) / days.length);
   };
-  const onHoldInBucket = (deals: ProjectFunnelDrillDownDeal[]) => deals.filter((d) => d.isOnHold).length;
+  // Per-bucket summary of flagged (not-actionable) deals, grouped by label.
+  const flagsInBucket = (deals: ProjectFunnelDrillDownDeal[]) => {
+    const m = new Map<string, { count: number; tone: string }>();
+    for (const d of deals) {
+      if (!d.flag) continue;
+      const e = m.get(d.flag.label) || { count: 0, tone: d.flag.tone };
+      e.count++;
+      m.set(d.flag.label, e);
+    }
+    return [...m.entries()].map(([label, v]) => ({ label, ...v }));
+  };
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
@@ -818,7 +841,7 @@ function BacklogSection({
           const segs = statusBreakdown(b.deals);
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
-          const onHold = onHoldInBucket(b.deals);
+          const flags = flagsInBucket(b.deals);
           return (
           <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
@@ -867,14 +890,15 @@ function BacklogSection({
                     {avgDays}d in stage
                   </span>
                 )}
-                {onHold > 0 && (
+                {flags.map((f) => (
                   <span
-                    className="text-xs text-yellow-400/80 shrink-0 tabular-nums"
-                    title="Deals here that are On Hold — counted in this bucket but parked, so not actionable and excluded from the average above"
+                    key={f.label}
+                    className={`text-xs shrink-0 tabular-nums ${FLAG_TEXT[f.tone] || "text-muted"}`}
+                    title="Counted in this bucket but parked / blocked / waiting on someone else, so not actionable and excluded from the average above"
                   >
-                    · {onHold} on hold
+                    · {f.count} {f.label.toLowerCase()}
                   </span>
-                )}
+                ))}
                 {b.cancelled > 0 && (
                   <span
                     className="text-xs text-red-400/70 shrink-0 tabular-nums"
@@ -1009,7 +1033,7 @@ function DrillDownTable({
           {sorted.map((d) => (
             <Fragment key={d.id}>
             <tr
-              className={`${d.onHoldReason || d.isOnHold ? "" : "border-b border-t-border/30"} ${d.isOnHold ? "opacity-60" : d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+              className={`${d.flag ? "" : "border-b border-t-border/30"} ${d.flag ? "opacity-60" : d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
             >
               <td className="py-1 px-1.5">
                 <a
@@ -1022,9 +1046,9 @@ function DrillDownTable({
                   {d.projectNumber ? `${d.projectNumber} — ` : ""}
                   <span className="max-w-[180px] truncate inline-block align-bottom">{d.name}</span>
                 </a>
-                {d.isOnHold && (
-                  <span className="ml-1.5 align-middle inline-block px-1.5 py-px rounded text-[9px] font-semibold uppercase tracking-wide bg-yellow-500/20 text-yellow-300">
-                    On hold
+                {d.flag && (
+                  <span className={`ml-1.5 align-middle inline-block px-1.5 py-px rounded text-[9px] font-semibold uppercase tracking-wide ${FLAG_PILL[d.flag.tone] || "bg-zinc-500/20 text-zinc-300"}`}>
+                    {d.flag.label}
                   </span>
                 )}
               </td>
@@ -1059,19 +1083,19 @@ function DrillDownTable({
                   )}
                 </td>
               )}
-              <td className={`text-right py-1 px-1.5 font-medium ${d.isOnHold ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
+              <td className={`text-right py-1 px-1.5 font-medium ${d.flag ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
               </td>
               <td className="py-1 px-1.5 text-muted truncate max-w-[120px]" title={d.status || "—"}>
                 {d.status || <span className="italic text-muted/60">—</span>}
               </td>
             </tr>
-            {d.isOnHold && (d.onHoldReason || d.onHoldNotes) && (
+            {d.flag && (d.flag.reason || d.flag.note) && (
               <tr className="border-b border-t-border/30">
                 <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
-                  <span className="text-[11px] text-yellow-400/70">↳ On hold</span>
-                  {d.onHoldReason && <span className="text-[11px] text-muted/80"> · {d.onHoldReason}</span>}
-                  {d.onHoldNotes && <span className="text-[11px] text-muted/70 italic"> — {d.onHoldNotes}</span>}
+                  <span className={`text-[11px] ${FLAG_TEXT[d.flag.tone] || "text-muted"}`}>↳ {d.flag.label}</span>
+                  {d.flag.reason && <span className="text-[11px] text-muted/80"> · {d.flag.reason}</span>}
+                  {d.flag.note && <span className="text-[11px] text-muted/70 italic"> — {d.flag.note}</span>}
                 </td>
               </tr>
             )}
