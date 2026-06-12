@@ -146,6 +146,14 @@ export interface WeeklyPayments {
   m2Count: number;
   m1Amount: number;
   m2Amount: number;
+  /**
+   * Subset that has progressed past this stage (rendered faded):
+   * approvals view → already paid; submissions view → already approved.
+   */
+  m1DoneCount?: number;
+  m2DoneCount?: number;
+  m1DoneAmount?: number;
+  m2DoneAmount?: number;
 }
 
 export interface PipelineGroupRow {
