@@ -17,6 +17,7 @@ import {
   PE_M1_DOC_NAMES,
   type PeAnalyticsPayload,
   type WeeklyPayments,
+  type WeeklyLifecycle,
   type PipelineGroupRow,
   type TimingSummary,
   type MonthlyTiming,
@@ -279,6 +280,30 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       }
     }
   };
+  // Lifecycle view: submission-week cohorts, colored by where each milestone
+  // stands today (paid → approved-unpaid → still in review).
+  const lifecycleMap = new Map<string, WeeklyLifecycle>();
+  for (const r of records) {
+    if (!r.submittedOn) continue;
+    const wk = weekStartUTC(new Date(r.submittedOn));
+    const w =
+      lifecycleMap.get(wk) ||
+      { weekStart: wk, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0 };
+    const amt = r.amount || 0;
+    if (r.status === "Paid" || r.paidOn) {
+      w.paidCount++;
+      w.paidAmount += amt;
+    } else if (r.status === "Approved" || r.approvedOn) {
+      w.approvedCount++;
+      w.approvedAmount += amt;
+    } else {
+      w.inReviewCount++;
+      w.inReviewAmount += amt;
+    }
+    lifecycleMap.set(wk, w);
+  }
+  const weeklyLifecycle = [...lifecycleMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
   markDone(weeklyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(
     weeklySubmissions,
@@ -440,6 +465,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     weekly,
     weeklyApprovals,
     weeklySubmissions,
+    weeklyLifecycle,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },
