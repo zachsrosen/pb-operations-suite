@@ -60,10 +60,14 @@ If phase 2 or 3 fails (e.g., owners API 403 window), the sync reports that phase
 - **Users table**: small badges (HS / ZP / Crew) per row indicating which links are present.
 - **Sync toast**: per-system counts. When name-match candidates exist, the result panel lists the actual pairs (CrewMember → suggested User) with a one-click "open in drawer" per pair — count-only would force the admin to rediscover the matches by hand.
 
-New admin API endpoints live under `/api/admin/*` (covered by the existing `ADMIN_ONLY_ROUTES` middleware prefix — no roles.ts allowlist changes needed):
+**Existing infrastructure discovered during planning:** the HubSpot link picker already exists end-to-end — `GET /api/admin/hubspot-owners` (cached picker options) and `PATCH /api/admin/users/[userId]/hubspot-owner`, wired into the user detail drawer. New endpoints follow that per-system pattern rather than a combined `identity/options` route:
 
-- `GET /api/admin/identity/options` — `{ hubspotOwners[], zuperUsers[], crewMembers[] }` for the dropdowns (cached ~5 min).
-- `PATCH /api/admin/users/[id]/links` — set/clear `hubspotOwnerId`, `zuperUserUid`, crew link. Validates the external ID exists in the options set. Relink conflicts are rejected, not stolen: linking to a CrewMember already linked to a different User returns 409 with the conflicting user named — the admin must unlink there first. Logs admin activity.
+- `GET /api/admin/zuper-users` — `{ users: [{ uid, email, name }] }` for the Zuper picker (cached ~5 min, mirrors hubspot-owners).
+- `GET /api/admin/crew-options` — active CrewMembers `{ id, name, email, linkedUserId }` for the crew picker.
+- `PATCH /api/admin/users/[userId]/zuper-user` — set/clear `zuperUserUid` (mirrors hubspot-owner PATCH).
+- `PATCH /api/admin/users/[userId]/crew-link` — set/clear the CrewMember link. Relink conflicts are rejected, not stolen: linking to a CrewMember already linked to a different User returns 409 with the conflicting user named — the admin must unlink there first. Logs admin activity.
+
+All under `/api/admin/*` (covered by the existing `ADMIN_ONLY_ROUTES` middleware prefix — no roles.ts allowlist changes needed).
 
 ### Consumers
 
