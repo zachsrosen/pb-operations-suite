@@ -422,11 +422,6 @@ export function dealToProject(deal: PrismaDeal): Project {
     // Customer response metrics (deal-level rollups — not available from DB cache)
     noSameDayResponse: 0,
     averageCustomerResponseTime: null,
-
-    // Blocked/on-hold reasons (added in #968 — not mirrored in the DB cache)
-    rtbBlockedReason: null,
-    onHoldReason: null,
-    onHoldNotes: null,
   };
 }
 
