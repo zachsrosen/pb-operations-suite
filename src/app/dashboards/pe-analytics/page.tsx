@@ -459,20 +459,33 @@ function SplitCohortChart({
 function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [range, setRange] = useState<"8w" | "all">("8w");
+
+  // Default to the last 8 weeks — early sparse outliers stretch the axis
+  // and shrink the bars into illegibility.
+  const filtered = useMemo(() => {
+    if (range === "all" || events.length === 0) return events;
+    const cutoff = new Date(events[events.length - 1].date + "T00:00:00Z");
+    cutoff.setUTCDate(cutoff.getUTCDate() - 55);
+    const c = cutoff.toISOString().slice(0, 10);
+    return events.filter((e) => e.date >= c);
+  }, [events, range]);
+
+  const dealCount = useMemo(() => new Set(filtered.map((e) => e.dealId)).size, [filtered]);
 
   const days = useMemo(() => {
-    if (events.length === 0) return [] as { date: string; count: number }[];
+    if (filtered.length === 0) return [] as { date: string; count: number }[];
     const byDay = new Map<string, number>();
-    for (const e of events) byDay.set(e.date, (byDay.get(e.date) ?? 0) + 1);
+    for (const e of filtered) byDay.set(e.date, (byDay.get(e.date) ?? 0) + 1);
     const out: { date: string; count: number }[] = [];
-    const start = new Date(events[0].date + "T00:00:00Z");
-    const end = new Date(events[events.length - 1].date + "T00:00:00Z");
+    const start = new Date(filtered[0].date + "T00:00:00Z");
+    const end = new Date(filtered[filtered.length - 1].date + "T00:00:00Z");
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
       const key = d.toISOString().split("T")[0];
       out.push({ date: key, count: byDay.get(key) ?? 0 });
     }
     return out;
-  }, [events]);
+  }, [filtered]);
 
   if (days.length === 0) {
     return <div className="text-sm text-muted py-8 text-center">No document rejections recorded yet.</div>;
@@ -487,12 +500,29 @@ function DailyDocRejectionsChart({ events }: { events: DocRejectionEvent[] }) {
   const chartH = H - PAD_T - PAD_B;
   const maxCount = Math.max(...days.map((d) => d.count), 1);
   const step = chartW / days.length;
-  const barW = Math.max(2, Math.min(14, step * 0.75));
+  const barW = Math.max(4, Math.min(22, step * 0.8));
   const labelEvery = Math.max(1, Math.ceil(days.length / 12));
-  const selectedEvents = selectedDay ? events.filter((e) => e.date === selectedDay) : [];
+  const selectedEvents = selectedDay ? filtered.filter((e) => e.date === selectedDay) : [];
 
   return (
     <div>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="grid grid-cols-2 gap-2 flex-1 max-w-md">
+          <MiniStat label="Doc Rejections" value={String(filtered.length)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
+          <MiniStat label="Deals Affected" value={String(dealCount)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {([["8w", "Last 8 weeks"], ["all", "All time"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => { setRange(key); setSelectedDay(null); }}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${range === key ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img"
           aria-label="Daily bar chart of document-level PE rejections">
