@@ -221,22 +221,34 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const weeklyApprovals = bucketByWeek((r) => r.timing.firstApproved);
   const weeklySubmissions = bucketByWeek((r) => r.timing.firstSubmitted);
 
-  // Enrich approvals with the already-paid subset (rendered faded in the UI —
-  // the vivid remainder is approved money still awaiting payment).
-  const approvalsByWeek = new Map(weeklyApprovals.map((w) => [w.weekStart, w]));
-  for (const r of records) {
-    if (!r.timing.firstApproved) continue;
-    if (r.status !== "Paid" && !r.timing.firstPaid) continue;
-    const w = approvalsByWeek.get(weekStartUTC(new Date(r.timing.firstApproved)));
-    if (!w) continue;
-    if (r.milestone === "M1") {
-      w.m1PaidCount = (w.m1PaidCount ?? 0) + 1;
-      w.m1PaidAmount = (w.m1PaidAmount ?? 0) + (r.amount || 0);
-    } else {
-      w.m2PaidCount = (w.m2PaidCount ?? 0) + 1;
-      w.m2PaidAmount = (w.m2PaidAmount ?? 0) + (r.amount || 0);
+  // Mark the subset that has progressed past each stage (rendered faded in
+  // the UI — the vivid remainder is what's still outstanding).
+  const markDone = (
+    arr: WeeklyPayments[],
+    dateOf: (r: MilestoneRecord) => string | null,
+    isDone: (r: MilestoneRecord) => boolean,
+  ) => {
+    const byWeek = new Map(arr.map((w) => [w.weekStart, w]));
+    for (const r of records) {
+      const date = dateOf(r);
+      if (!date || !isDone(r)) continue;
+      const w = byWeek.get(weekStartUTC(new Date(date)));
+      if (!w) continue;
+      if (r.milestone === "M1") {
+        w.m1DoneCount = (w.m1DoneCount ?? 0) + 1;
+        w.m1DoneAmount = (w.m1DoneAmount ?? 0) + (r.amount || 0);
+      } else {
+        w.m2DoneCount = (w.m2DoneCount ?? 0) + 1;
+        w.m2DoneAmount = (w.m2DoneAmount ?? 0) + (r.amount || 0);
+      }
     }
-  }
+  };
+  markDone(weeklyApprovals, (r) => r.timing.firstApproved, (r) => r.status === "Paid" || !!r.timing.firstPaid);
+  markDone(
+    weeklySubmissions,
+    (r) => r.timing.firstSubmitted,
+    (r) => !!r.timing.firstApproved || r.status === "Approved" || r.status === "Paid",
+  );
 
   // --- Report 2: pipeline groups ----------------------------------------------
   const pipelineMap = new Map<string, PipelineGroupRow>();

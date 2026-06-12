@@ -28,7 +28,13 @@ function weekLabel(iso: string): string {
 // Weekly stacked bar chart (inline SVG, no deps)
 // ---------------------------------------------------------------------------
 
-function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.", paidSplit = false }: { weekly: WeeklyPayments[]; emptyMessage?: string; paidSplit?: boolean }) {
+interface DoneSplit {
+  legend: string; // e.g. "faded = already paid"
+  doneWord: string; // tooltip: "3 paid ($12k)"
+  remainderLabel: string; // tooltip total line, e.g. "Awaiting payment"
+}
+
+function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.", doneSplit }: { weekly: WeeklyPayments[]; emptyMessage?: string; doneSplit?: DoneSplit }) {
   // Fill gaps so empty weeks render as gaps in time, not skipped
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
@@ -82,14 +88,14 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
           const x = PAD_L + step * i + (step - barW) / 2;
           const count = w.m1Count + w.m2Count;
           const dim = hovered === null || hovered === i ? 1 : 0.45;
-          // Stack bottom-up; in paid-split mode each milestone subdivides into
-          // an already-paid (faded) segment under the awaiting-payment one.
-          const segments = paidSplit
+          // Stack bottom-up; in done-split mode each milestone subdivides into
+          // an already-progressed (faded) segment under the outstanding one.
+          const segments = doneSplit
             ? [
-                { amount: w.m1PaidAmount ?? 0, cls: "fill-emerald-500", op: 0.3 },
-                { amount: w.m1Amount - (w.m1PaidAmount ?? 0), cls: "fill-emerald-500", op: 1 },
-                { amount: w.m2PaidAmount ?? 0, cls: "fill-cyan-500", op: 0.3 },
-                { amount: w.m2Amount - (w.m2PaidAmount ?? 0), cls: "fill-cyan-500", op: 1 },
+                { amount: w.m1DoneAmount ?? 0, cls: "fill-emerald-500", op: 0.3 },
+                { amount: w.m1Amount - (w.m1DoneAmount ?? 0), cls: "fill-emerald-500", op: 1 },
+                { amount: w.m2DoneAmount ?? 0, cls: "fill-cyan-500", op: 0.3 },
+                { amount: w.m2Amount - (w.m2DoneAmount ?? 0), cls: "fill-cyan-500", op: 1 },
               ]
             : [
                 { amount: w.m1Amount, cls: "fill-emerald-500", op: 1 },
@@ -130,19 +136,19 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
           <div className="font-semibold text-foreground mb-1">Week of {weekLabel(series[hovered].weekStart)}</div>
           <div className="text-emerald-400">
             M1: {series[hovered].m1Count} · {fmtUsd(series[hovered].m1Amount)}
-            {paidSplit && (series[hovered].m1PaidCount ?? 0) > 0 && (
-              <span className="text-muted"> — {series[hovered].m1PaidCount} paid ({fmtUsd(series[hovered].m1PaidAmount ?? 0)})</span>
+            {doneSplit && (series[hovered].m1DoneCount ?? 0) > 0 && (
+              <span className="text-muted"> — {series[hovered].m1DoneCount} {doneSplit.doneWord} ({fmtUsd(series[hovered].m1DoneAmount ?? 0)})</span>
             )}
           </div>
           <div className="text-cyan-400">
             M2: {series[hovered].m2Count} · {fmtUsd(series[hovered].m2Amount)}
-            {paidSplit && (series[hovered].m2PaidCount ?? 0) > 0 && (
-              <span className="text-muted"> — {series[hovered].m2PaidCount} paid ({fmtUsd(series[hovered].m2PaidAmount ?? 0)})</span>
+            {doneSplit && (series[hovered].m2DoneCount ?? 0) > 0 && (
+              <span className="text-muted"> — {series[hovered].m2DoneCount} {doneSplit.doneWord} ({fmtUsd(series[hovered].m2DoneAmount ?? 0)})</span>
             )}
           </div>
           <div className="text-foreground mt-1 border-t border-t-border pt-1">
-            {paidSplit
-              ? `Awaiting payment: ${fmtUsd(series[hovered].m1Amount + series[hovered].m2Amount - (series[hovered].m1PaidAmount ?? 0) - (series[hovered].m2PaidAmount ?? 0))}`
+            {doneSplit
+              ? `${doneSplit.remainderLabel}: ${fmtUsd(series[hovered].m1Amount + series[hovered].m2Amount - (series[hovered].m1DoneAmount ?? 0) - (series[hovered].m2DoneAmount ?? 0))}`
               : `Total: ${fmtUsd(series[hovered].m1Amount + series[hovered].m2Amount)}`}
           </div>
         </div>
@@ -150,9 +156,9 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
       <div className="flex items-center gap-4 mt-1 text-[11px] text-muted">
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> M1 (Inspection Complete)</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-cyan-500" /> M2 (Project Complete)</span>
-        {paidSplit && (
+        {doneSplit && (
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30" /> faded = already paid
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/30" /> {doneSplit.legend}
           </span>
         )}
       </div>
@@ -246,16 +252,18 @@ function MilestoneFunnel({ deals, milestone, locFilter }: {
 
 type WeeklyMode = "submitted" | "approved" | "paid";
 
-const WEEKLY_MODES: Record<WeeklyMode, { label: string; title: string; empty: string }> = {
+const WEEKLY_MODES: Record<WeeklyMode, { label: string; title: string; empty: string; split?: DoneSplit }> = {
   submitted: {
     label: "Submissions",
     title: "Submissions per Week",
     empty: "No submissions recorded yet.",
+    split: { legend: "faded = already approved", doneWord: "approved", remainderLabel: "Not yet approved" },
   },
   approved: {
     label: "Approvals",
     title: "Approvals per Week",
     empty: "No approvals recorded yet.",
+    split: { legend: "faded = already paid", doneWord: "paid", remainderLabel: "Awaiting payment" },
   },
   paid: {
     label: "Payments",
@@ -376,7 +384,7 @@ export default function PeAnalyticsPage() {
                     : data.weeklySubmissions ?? []
               }
               emptyMessage={WEEKLY_MODES[weeklyMode].empty}
-              paidSplit={weeklyMode === "approved"}
+              doneSplit={WEEKLY_MODES[weeklyMode].split}
             />
           </Section>
 
