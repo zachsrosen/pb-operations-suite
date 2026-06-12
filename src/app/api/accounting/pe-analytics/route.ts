@@ -190,22 +190,27 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     );
   }
 
-  // --- Report 1: payments per week -------------------------------------------
-  const weeklyMap = new Map<string, WeeklyPayments>();
-  for (const r of records) {
-    if (!r.timing.firstPaid) continue;
-    const wk = weekStartUTC(new Date(r.timing.firstPaid));
-    const w = weeklyMap.get(wk) || { weekStart: wk, m1Count: 0, m2Count: 0, m1Amount: 0, m2Amount: 0 };
-    if (r.milestone === "M1") {
-      w.m1Count++;
-      w.m1Amount += r.amount || 0;
-    } else {
-      w.m2Count++;
-      w.m2Amount += r.amount || 0;
+  // --- Report 1: payments + approvals per week --------------------------------
+  const bucketByWeek = (dateOf: (r: MilestoneRecord) => string | null): WeeklyPayments[] => {
+    const map = new Map<string, WeeklyPayments>();
+    for (const r of records) {
+      const date = dateOf(r);
+      if (!date) continue;
+      const wk = weekStartUTC(new Date(date));
+      const w = map.get(wk) || { weekStart: wk, m1Count: 0, m2Count: 0, m1Amount: 0, m2Amount: 0 };
+      if (r.milestone === "M1") {
+        w.m1Count++;
+        w.m1Amount += r.amount || 0;
+      } else {
+        w.m2Count++;
+        w.m2Amount += r.amount || 0;
+      }
+      map.set(wk, w);
     }
-    weeklyMap.set(wk, w);
-  }
-  const weekly = [...weeklyMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    return [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  };
+  const weekly = bucketByWeek((r) => r.timing.firstPaid);
+  const weeklyApprovals = bucketByWeek((r) => r.timing.firstApproved);
 
   // --- Report 2: pipeline groups ----------------------------------------------
   const pipelineMap = new Map<string, PipelineGroupRow>();
@@ -333,6 +338,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         : null,
     },
     weekly,
+    weeklyApprovals,
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },

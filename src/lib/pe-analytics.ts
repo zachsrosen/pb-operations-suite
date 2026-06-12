@@ -206,6 +206,7 @@ export interface PeAnalyticsPayload {
     rejectionRatePct: number | null; // % of submitted milestones rejected at least once
   };
   weekly: WeeklyPayments[];
+  weeklyApprovals: WeeklyPayments[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
