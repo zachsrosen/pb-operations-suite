@@ -50,10 +50,10 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
   }
 
   const W = 900;
-  const H = 260;
+  const H = 280;
   const PAD_L = 56;
   const PAD_B = 28;
-  const PAD_T = 16;
+  const PAD_T = 36;
   const chartW = W - PAD_L - 8;
   const chartH = H - PAD_T - PAD_B;
   const maxTotal = Math.max(...series.map((w) => w.m1Amount + w.m2Amount), 1);
@@ -93,9 +93,14 @@ function WeeklyPaymentsChart({ weekly, emptyMessage = "No payments recorded yet.
               <rect x={x} y={yM1} width={barW} height={m1H} rx={2} className="fill-emerald-500" opacity={hovered === null || hovered === i ? 1 : 0.45} />
               <rect x={x} y={yM2} width={barW} height={m2H} rx={2} className="fill-cyan-500" opacity={hovered === null || hovered === i ? 1 : 0.45} />
               {count > 0 && (
-                <text x={x + barW / 2} y={yM2 - 5} textAnchor="middle" className="fill-muted text-[10px] font-medium">
-                  {count}
-                </text>
+                <>
+                  <text x={x + barW / 2} y={yM2 - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
+                    {fmtUsdK(w.m1Amount + w.m2Amount)}
+                  </text>
+                  <text x={x + barW / 2} y={yM2 - 6} textAnchor="middle" className="fill-muted text-[9px]">
+                    {count}
+                  </text>
+                </>
               )}
               <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
                 {weekLabel(w.weekStart)}
@@ -264,8 +269,8 @@ export default function PeAnalyticsPage() {
         </div>
       )}
 
-      {/* Header stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      {/* Header stats — doc-status driven */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         <StatCard
           label="Total Paid"
           value={isLoading || !data ? null : fmtUsd(data.totals.totalPaid)}
@@ -273,22 +278,32 @@ export default function PeAnalyticsPage() {
           color="green"
         />
         <StatCard
-          label="In Flight"
-          value={isLoading || !data ? null : fmtUsd(data.totals.inFlight)}
-          subtitle={data ? `${data.totals.inFlightCount} submitted or approved, unpaid` : undefined}
+          label="Action Required"
+          value={isLoading || !data ? null : String(data.docStats?.actionRequired.docs ?? 0)}
+          subtitle={data ? `docs across ${data.docStats?.actionRequired.deals ?? 0} deals — fixes owed to PE` : undefined}
+          color="orange"
+        />
+        <StatCard
+          label="In Review"
+          value={isLoading || !data ? null : String(data.docStats?.underReview.docs ?? 0)}
+          subtitle={data ? `docs across ${data.docStats?.underReview.deals ?? 0} deals — waiting on PE` : undefined}
           color="cyan"
         />
         <StatCard
-          label="Approval → Payment"
-          value={isLoading || !data ? null : fmtDays(data.totals.medianApproveToPaidDays)}
-          subtitle="Median days"
+          label="Docs Approved"
+          value={
+            isLoading || !data
+              ? null
+              : `${data.docStats?.uploadedDocs ? Math.round(((data.docStats.approvedDocs) / data.docStats.uploadedDocs) * 100) : 0}%`
+          }
+          subtitle={data ? `${data.docStats?.approvedDocs ?? 0} of ${data.docStats?.uploadedDocs ?? 0} uploaded docs` : undefined}
           color="emerald"
         />
         <StatCard
-          label="Rejection Rate"
-          value={isLoading || !data ? null : data.totals.rejectionRatePct === null ? "—" : `${data.totals.rejectionRatePct}%`}
-          subtitle="Submitted milestones rejected at least once"
-          color={data && (data.totals.rejectionRatePct ?? 0) > 25 ? "orange" : "blue"}
+          label="Not Uploaded"
+          value={isLoading || !data ? null : String(data.docStats?.notUploaded.docs ?? 0)}
+          subtitle={data ? `docs across ${data.docStats?.notUploaded.deals ?? 0} of ${data.docStats?.trackedDeals ?? 0} tracked deals` : undefined}
+          color="blue"
         />
       </div>
 
