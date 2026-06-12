@@ -430,7 +430,13 @@ export default auth((req) => {
   if (!isLoginPage && !isLoggedIn) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
-    return addSecurityHeaders(requestId, NextResponse.redirect(loginUrl));
+    const redirect = addSecurityHeaders(requestId, NextResponse.redirect(loginUrl));
+    // Never cache auth redirects. next.config.ts puts a public 1-hour
+    // Cache-Control on /dashboards/* — without this override, one logged-out
+    // visit caches the 307→/login for that URL (browser + Vercel edge) and
+    // locks logged-in users out of the page for up to an hour.
+    redirect.headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate");
+    return redirect;
   }
 
   // Auth-protected static files — any logged-in user can access (no role check)
