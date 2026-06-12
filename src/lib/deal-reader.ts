@@ -334,6 +334,11 @@ export function dealToProject(deal: PrismaDeal): Project {
     isActive,
     isBlocked,
 
+    // Blocked / On-Hold reasons (not mirrored in the project cache)
+    rtbBlockedReason: null,
+    onHoldReason: null,
+    onHoldNotes: null,
+
     // Priority
     priorityScore,
 
