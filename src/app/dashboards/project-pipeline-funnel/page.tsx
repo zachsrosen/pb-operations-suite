@@ -202,9 +202,9 @@ function ProjectPipelineFunnelInner() {
       <div className="flex gap-1 mb-4 border-b border-t-border">
         {([
           { key: "funnel", label: "Funnel" },
-          { key: "bottlenecks", label: "Bottlenecks" },
+          // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
+          // re-add the entries here to restore them.
           { key: "activity", label: "Monthly Activity" },
-          { key: "cohorts", label: "Analysis" },
         ] as const).map((t) => (
           <button
             key={t.key}
