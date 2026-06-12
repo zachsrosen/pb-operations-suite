@@ -483,7 +483,7 @@ function SplitCohortChart({
 // Daily doc-rejections chart — document-level reviewer responses per day
 // ---------------------------------------------------------------------------
 
-function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatchText, stackOutcomes = false }: {
+function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatchText, stackOutcomes = false, reviewStats }: {
   events: DocRejectionEvent[];
   noun: string; // "doc rejection"
   statLabel: string; // "Doc Rejections"
@@ -491,6 +491,7 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
   pillClass: string; // active range-pill classes
   swatchText: string; // tooltip count text color
   stackOutcomes?: boolean; // submissions: color by each doc's current outcome
+  reviewStats?: { avgApproveDays: number | null; avgRejectDays: number | null; avgInReviewAge: number | null };
 }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -507,6 +508,19 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
   }, [events, range]);
 
   const dealCount = useMemo(() => new Set(filtered.map((e) => e.dealId)).size, [filtered]);
+
+  // Outcome mix of the (range-scoped) submissions — % of submitted now
+  // approved / rejected / still in review.
+  const outcomes = useMemo(() => {
+    const o = { approved: 0, rejected: 0, inReview: 0 };
+    for (const e of filtered) {
+      if (e.outcome === "approved") o.approved++;
+      else if (e.outcome === "rejected") o.rejected++;
+      else o.inReview++;
+    }
+    const pct = (n: number) => (filtered.length ? Math.round((n / filtered.length) * 100) : 0);
+    return { ...o, pctApproved: pct(o.approved), pctRejected: pct(o.rejected), pctInReview: pct(o.inReview) };
+  }, [filtered]);
 
   interface DocWeek { date: string; count: number; approved: number; inReview: number; rejected: number }
   const days = useMemo(() => {
@@ -552,9 +566,23 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
   return (
     <div>
       <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="grid grid-cols-2 gap-2 flex-1 max-w-md">
+        <div className={stackOutcomes ? "grid grid-cols-2 md:grid-cols-4 gap-2 flex-1" : "grid grid-cols-2 gap-2 flex-1 max-w-md"}>
           <MiniStat label={statLabel} value={String(filtered.length)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
           <MiniStat label="Deals Affected" value={String(dealCount)} subtitle={range === "all" ? "all time" : "last 8 weeks"} />
+          {stackOutcomes && (
+            <>
+              <MiniStat label="% Approved" value={`${outcomes.pctApproved}%`} subtitle={`${outcomes.approved.toLocaleString("en-US")} docs`} />
+              <MiniStat label="% Rejected" value={`${outcomes.pctRejected}%`} subtitle={`${outcomes.rejected.toLocaleString("en-US")} docs currently`} />
+              <MiniStat label="% In Review" value={`${outcomes.pctInReview}%`} subtitle={`${outcomes.inReview.toLocaleString("en-US")} docs`} />
+              {reviewStats && (
+                <>
+                  <MiniStat label="Avg Submit → Approve" value={reviewStats.avgApproveDays === null ? "—" : `${reviewStats.avgApproveDays}d`} subtitle="per doc, all time" />
+                  <MiniStat label="Avg Submit → Reject" value={reviewStats.avgRejectDays === null ? "—" : `${reviewStats.avgRejectDays}d`} subtitle="per doc, all time" />
+                  <MiniStat label="Avg Age In Review" value={reviewStats.avgInReviewAge === null ? "—" : `${reviewStats.avgInReviewAge}d`} subtitle="docs awaiting PE today" />
+                </>
+              )}
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {([["8w", "Last 8 weeks"], ["all", "All time"]] as const).map(([key, label]) => (
@@ -1068,6 +1096,44 @@ export default function PeAnalyticsPage() {
     };
   }, [data]);
 
+  // Doc-level review timing: join each PE response to the doc's latest prior
+  // submission; in-review age = days since latest submission for pending docs.
+  const docReviewStats = useMemo(() => {
+    const subs = data?.docSubmissionEvents ?? [];
+    if (subs.length === 0) return { avgApproveDays: null, avgRejectDays: null, avgInReviewAge: null };
+    const byDoc = new Map<string, string[]>();
+    for (const e of subs) {
+      const k = `${e.dealId}|${e.docName}`;
+      (byDoc.get(k) ?? byDoc.set(k, []).get(k)!).push(e.date);
+    }
+    for (const dates of byDoc.values()) dates.sort();
+    const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
+    const diffsFor = (events: { dealId: string; docName: string; date: string }[]) => {
+      const out: number[] = [];
+      for (const e of events) {
+        const dates = byDoc.get(`${e.dealId}|${e.docName}`);
+        if (!dates) continue;
+        const prior = [...dates].reverse().find((d) => d <= e.date);
+        if (!prior) continue;
+        const diff = daysBetween(prior, e.date);
+        if (diff >= 0) out.push(diff);
+      }
+      return out;
+    };
+    const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
+    const approveDiffs = diffsFor(data?.docApprovalEvents ?? []);
+    const rejectDiffs = diffsFor(data?.docRejectionEvents ?? []);
+    const today = new Date().toISOString().slice(0, 10);
+    const latestSubOutcome = new Map<string, { date: string; outcome?: string }>();
+    for (const e of subs) {
+      const k = `${e.dealId}|${e.docName}`;
+      const cur = latestSubOutcome.get(k);
+      if (!cur || e.date > cur.date) latestSubOutcome.set(k, { date: e.date, outcome: e.outcome });
+    }
+    const ages = [...latestSubOutcome.values()].filter((v) => v.outcome === "inReview").map((v) => daysBetween(v.date, today)).filter((d) => d >= 0);
+    return { avgApproveDays: avg(approveDiffs), avgRejectDays: avg(rejectDiffs), avgInReviewAge: avg(ages) };
+  }, [data]);
+
   const m1Timing = data?.timing.overall.find((t) => t.milestone === "M1");
   const m2Timing = data?.timing.overall.find((t) => t.milestone === "M2");
 
@@ -1321,7 +1387,7 @@ export default function PeAnalyticsPage() {
             }
           >
             {docMode === "submitted" ? (
-              <DocActivityChart key="sub" events={data.docSubmissionEvents ?? []} noun="doc submission" statLabel="Docs Submitted" stackOutcomes
+              <DocActivityChart key="sub" events={data.docSubmissionEvents ?? []} noun="doc submission" statLabel="Docs Submitted" stackOutcomes reviewStats={docReviewStats}
                 barClass="fill-cyan-500" pillClass="bg-cyan-500/20 text-cyan-400 border-cyan-500/40" swatchText="text-cyan-400" />
             ) : docMode === "approved" ? (
               <DocActivityChart key="app" events={data.docApprovalEvents ?? []} noun="doc approval" statLabel="Docs Approved"
