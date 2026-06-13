@@ -142,6 +142,8 @@ export async function getAllUsers() {
 
   return prisma.user.findMany({
     orderBy: { lastLoginAt: { sort: "desc", nulls: "last" } },
+    // Crew link surfaces in the admin users payload (badges + drawer picker).
+    include: { crewMember: { select: { id: true, name: true } } },
   });
 }
 
