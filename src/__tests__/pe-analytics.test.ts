@@ -5,6 +5,8 @@ import {
   median,
   percentile,
   buildUploaderStats,
+  buildPaymentOwnership,
+  buildDailyUploads,
   UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
@@ -188,5 +190,60 @@ describe("buildUploaderStats", () => {
     const a = stats[0];
     expect(a.docsOwned).toBe(2);
     expect(a.approved + a.rejected + a.inReview).toBe(0);
+  });
+});
+
+describe("buildPaymentOwnership", () => {
+  it("credits the milestone to the top KNOWN uploader of its approved docs", () => {
+    const status = new Map([
+      ["d1|Design Plan", "APPROVED"],
+      ["d1|Photos per Policy", "APPROVED"],
+      ["d1|Utility Bill", "UNDER_REVIEW"], // not approved → ignored
+    ]);
+    const latest = new Map<string, string | null>([
+      ["d1|Design Plan", "a@pb.com"],
+      ["d1|Photos per Policy", null], // Unknown
+    ]);
+    const owned = buildPaymentOwnership(
+      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true }],
+      status,
+      latest,
+    );
+    // a@pb has 1 approved doc, Unknown has 1 — known wins the tie
+    expect(owned.get("a@pb.com")).toEqual({ amount: 9000, count: 1 });
+    expect(owned.get(UNKNOWN_UPLOADER)).toBeUndefined();
+  });
+
+  it("falls to Unknown only when no approved doc has a known uploader; skips unapproved milestones", () => {
+    const status = new Map([["d1|Design Plan", "APPROVED"], ["d2|Design Plan", "APPROVED"]]);
+    const latest = new Map<string, string | null>([["d1|Design Plan", null], ["d2|Design Plan", "z@pb.com"]]);
+    const owned = buildPaymentOwnership(
+      [
+        { dealId: "d1", docNames: ["Design Plan"], amount: 5000, isApprovedPayment: true }, // all-unknown
+        { dealId: "d2", docNames: ["Design Plan"], amount: 7000, isApprovedPayment: false }, // not approved → skip
+      ],
+      status,
+      latest,
+    );
+    expect(owned.get(UNKNOWN_UPLOADER)).toEqual({ amount: 5000, count: 1 });
+    expect(owned.get("z@pb.com")).toBeUndefined();
+  });
+});
+
+describe("buildDailyUploads", () => {
+  const now = new Date("2026-06-13T12:00:00Z");
+  it("buckets uploads per day, segmented by uploader, Unknown for null, within window", () => {
+    const rows = [
+      { uploadedAt: "2026-06-12T03:00:00Z", uploadedBy: "a@pb.com" },
+      { uploadedAt: "2026-06-12T20:00:00Z", uploadedBy: "a@pb.com" },
+      { uploadedAt: "2026-06-12T21:00:00Z", uploadedBy: null },
+      { uploadedAt: "2026-06-10T10:00:00Z", uploadedBy: "b@pb.com" },
+      { uploadedAt: "2026-01-01T00:00:00Z", uploadedBy: "a@pb.com" }, // outside 30d window
+    ];
+    const out = buildDailyUploads(rows, 30, now);
+    expect(out.map((d) => d.day)).toEqual(["2026-06-10", "2026-06-12"]); // sorted, old window dropped
+    const d12 = out.find((d) => d.day === "2026-06-12")!;
+    expect(d12.total).toBe(3);
+    expect(d12.byUploader).toEqual({ "a@pb.com": 2, [UNKNOWN_UPLOADER]: 1 });
   });
 });

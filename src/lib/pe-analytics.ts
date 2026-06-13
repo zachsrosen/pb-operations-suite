@@ -315,6 +315,97 @@ export interface UploaderStat {
   approved: number;
   rejected: number; // ACTION_REQUIRED or REJECTED
   inReview: number; // UNDER_REVIEW or UPLOADED
+  // Approved PE milestone payments this person "owns" — they uploaded the most
+  // approved docs on the milestone (top KNOWN uploader wins; Unknown only when
+  // no approved doc has a known uploader). Populated by buildPaymentOwnership.
+  paymentsOwned: number; // $ of approved/paid milestone payments owned
+  milestonesOwned: number; // count of those milestones
+}
+
+/** One approved/paid milestone with its payment amount and doc set. */
+export interface MilestonePayment {
+  dealId: string;
+  docNames: string[]; // the milestone's canonical doc set (M1 = 12, M2 = 3)
+  amount: number;
+  isApprovedPayment: boolean; // milestone status is Approved or Paid
+}
+
+/**
+ * Attribute each approved/paid milestone's payment to the person who uploaded
+ * the most of its APPROVED docs (by latest version). The top KNOWN uploader
+ * wins even if Unknown technically uploaded more — Unknown only owns a payment
+ * when no approved doc on it has a known uploader. Returns uploader → {amount,
+ * count}. Keys match UploaderStat.uploader (UNKNOWN_UPLOADER for the no-known
+ * case).
+ */
+export function buildPaymentOwnership(
+  milestones: MilestonePayment[],
+  statusByDoc: Map<string, string>, // `${dealId}|${docName}` → status
+  latestUploaderByDoc: Map<string, string | null>, // `${dealId}|${docName}` → uploader
+): Map<string, { amount: number; count: number }> {
+  const owned = new Map<string, { amount: number; count: number }>();
+  const add = (who: string, amt: number) => {
+    const e = owned.get(who) ?? { amount: 0, count: 0 };
+    e.amount += amt;
+    e.count += 1;
+    owned.set(who, e);
+  };
+  for (const m of milestones) {
+    if (!m.isApprovedPayment || m.amount <= 0) continue;
+    const approvedDocs = m.docNames.filter((n) => statusByDoc.get(`${m.dealId}|${n}`) === "APPROVED");
+    if (approvedDocs.length === 0) continue;
+    const tally = new Map<string, number>();
+    for (const n of approvedDocs) {
+      const by = latestUploaderByDoc.get(`${m.dealId}|${n}`)?.trim() || UNKNOWN_UPLOADER;
+      tally.set(by, (tally.get(by) ?? 0) + 1);
+    }
+    const knownTop = [...tally.entries()]
+      .filter(([w]) => w !== UNKNOWN_UPLOADER)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    add(knownTop ? knownTop[0] : UNKNOWN_UPLOADER, m.amount);
+  }
+  return owned;
+}
+
+/** Per-day upload counts segmented by uploader, for the "By Day" stacked bars. */
+export interface DailyUpload {
+  day: string; // YYYY-MM-DD (UTC)
+  total: number;
+  byUploader: Record<string, number>; // uploader → submissions that day
+}
+
+/**
+ * Bucket version uploads into per-day counts segmented by uploader, over the
+ * trailing `days` window. Days with no uploads are omitted. Null uploaders
+ * group under UNKNOWN_UPLOADER. Sorted oldest → newest.
+ */
+export function buildDailyUploads(
+  rows: { uploadedAt: Date | string; uploadedBy: string | null }[],
+  days = 30,
+  now: Date = new Date(),
+): DailyUpload[] {
+  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const byDay = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
+    if (isNaN(at.getTime()) || at < cutoff) continue;
+    const day = at.toISOString().slice(0, 10);
+    const who = r.uploadedBy?.trim() || UNKNOWN_UPLOADER;
+    const m = byDay.get(day) ?? new Map<string, number>();
+    m.set(who, (m.get(who) ?? 0) + 1);
+    byDay.set(day, m);
+  }
+  return [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([day, m]) => {
+      const byUploader: Record<string, number> = {};
+      let total = 0;
+      for (const [who, n] of m) {
+        byUploader[who] = n;
+        total += n;
+      }
+      return { day, total, byUploader };
+    });
 }
 
 type VersionRow = {
@@ -392,6 +483,8 @@ export function buildUploaderStats(
       approved: e.approved,
       rejected: e.rejected,
       inReview: e.inReview,
+      paymentsOwned: 0, // merged in by the route via buildPaymentOwnership
+      milestonesOwned: 0,
     }))
     .sort((a, b) => {
       if (a.uploader === UNKNOWN_UPLOADER) return 1;
@@ -444,6 +537,7 @@ export interface PeAnalyticsPayload {
   docApprovalEvents: DocRejectionEvent[];
   /** Doc uploads per person (PE version history); Unknown bucket = pre-tracking uploads. */
   uploaderStats: UploaderStat[];
+  dailyUploads: DailyUpload[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
