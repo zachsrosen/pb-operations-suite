@@ -4,6 +4,45 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-12
+
+### PE Analytics Dashboard (Major)
+- New PE Analytics dashboard live at `/dashboards/pe` with auth-redirect cache fix
+- Tabbed PE hub unifying deals, docs, and analytics views
+- Weekly chart with progress-fill style and date-basis labels
+- Lifecycle view on ready-to-submit basis with rejected segment
+- Submissions view with paid + rejected tracking and currently-rejected slice
+- Approvals-per-week and submissions-per-week toggles
+- Doc submissions stacked by current outcome with outcome %s and avg review times
+- Daily document-level rejections chart with weekly buckets and count/totals labels
+- Doc-status header cards scoped to milestone-relevant docs (incl. Project Complete)
+- Ready-to-Submit cohort view, Rejections cohort view, and action-required drill
+- Bar-level and segment-level drill-downs on weekly charts
+- Aggregate drill from totals strip cards (cumulative Total Ready to Submit, Ready-Not-Submitted backlog, deal counts, operational ready dates)
+- Submissions/approvals bucketed by accounting date props; payments bucketed by `pe_m*_paid_date`
+- Faded progressed milestones in Approvals + Submissions views
+- Clearer segment palette and Ready-stat scoping per view
+- Bar count/revenue labels with milestone-funnel scoping
+
+### Sales Funnel
+- New Sales Funnel tab (sales-cohort funnel) — Bottlenecks/Analysis tabs hidden
+- Bottlenecks tab with compact funnel hero cards (two rows of 6, full-width)
+- Drill down on Current Pipeline Position with blocked/on-hold reasons
+- Funnel backlog surfaces deals cancelled at each gate
+- On Hold pulled into its own group with on-hold % in conversion arrows
+- On Hold deals flagged in-bucket with on-hold % split of pending
+- Renamed tabs to "Active Pipeline" / "Monthly Throughput"; abbreviated labels spelled out
+- Milestone Funnel scoped to milestone stages
+
+### Bug Fixes
+- Cached Project reader missing `blocked`/`on-hold` reason fields (build fix)
+- Deduped blocked/on-hold fields in deal-reader; added #968 fields to Project mapping
+- Ready cohorts now reconcile exactly with Total Submitted in PE Analytics
+- Ready-date fallback in PE Analytics drill rows
+- Doc-status cards scoped to milestone-relevant docs (incl. Project Complete)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
