@@ -295,6 +295,49 @@ export interface DocRejectionEvent {
   note: string | null;
   /** Submission events only: the doc's CURRENT outcome. */
   outcome?: "approved" | "inReview" | "rejected";
+  /** Submission events only: uploader email from PE version history; null = unknown (pre-tracking). */
+  uploadedBy?: string | null;
+}
+
+/** Label used wherever an upload has no attribution (pre-tracking versions). */
+export const UNKNOWN_UPLOADER = "Unknown";
+
+/** Doc-upload counts per person, from PE portal version history. */
+export interface UploaderStat {
+  uploader: string; // email, or UNKNOWN_UPLOADER for null-attribution uploads
+  total: number; // all-time uploads
+  last8w: number; // uploads in the trailing 56 days
+  deals: number; // distinct deals touched (all time)
+}
+
+/**
+ * Roll PE doc version rows up into per-uploader stats. Null/empty uploadedBy
+ * groups under UNKNOWN_UPLOADER (PE only started attributing uploads partway
+ * through — we admit the gap rather than guess). Sorted by total descending,
+ * with the Unknown bucket always last.
+ */
+export function buildUploaderStats(
+  rows: { uploadedBy: string | null; uploadedAt: Date | string; dealId: string | null }[],
+  now: Date = new Date(),
+): UploaderStat[] {
+  const cutoff = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000);
+  const byUploader = new Map<string, { total: number; last8w: number; deals: Set<string> }>();
+  for (const r of rows) {
+    const key = r.uploadedBy?.trim() || UNKNOWN_UPLOADER;
+    const entry = byUploader.get(key) ?? { total: 0, last8w: 0, deals: new Set<string>() };
+    entry.total++;
+    const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
+    if (at >= cutoff) entry.last8w++;
+    if (r.dealId) entry.deals.add(r.dealId);
+    byUploader.set(key, entry);
+  }
+  return [...byUploader.entries()]
+    .map(([uploader, e]) => ({ uploader, total: e.total, last8w: e.last8w, deals: e.deals.size }))
+    .sort((a, b) => {
+      if (a.uploader === UNKNOWN_UPLOADER) return 1;
+      if (b.uploader === UNKNOWN_UPLOADER) return -1;
+      return b.total - a.total || a.uploader.localeCompare(b.uploader);
+    });
 }
 
 /** Per-milestone record powering the chart drill-down. */
@@ -339,6 +382,8 @@ export interface PeAnalyticsPayload {
   docRejectionEvents: DocRejectionEvent[];
   docSubmissionEvents: DocRejectionEvent[];
   docApprovalEvents: DocRejectionEvent[];
+  /** Doc uploads per person (PE version history); Unknown bucket = pre-tracking uploads. */
+  uploaderStats: UploaderStat[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };

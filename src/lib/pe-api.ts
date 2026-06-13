@@ -82,9 +82,29 @@ export interface PeTaxCredit {
   bessDcEligible: boolean | null;
 }
 
+/**
+ * One entry of a document's upload history. Added by Raceway 2026-06-12.
+ * uploadedBy is null on versions uploaded before PE tracked attribution.
+ */
+export interface PeDocVersionEntry {
+  version: number;
+  uploadedAt: string; // ISO timestamp
+  uploadedBy: string | null;
+  fileName?: string;
+  source?: string; // portal_upload | contract_upload
+}
+
 export interface PeDocumentInfo {
   present: boolean;
   version: number;
+  /**
+   * Review status, added by Raceway 2026-06-12.
+   * Observed values: APPROVED | PENDING_REVIEW | PENDING_APPROVAL |
+   * RESPONSE_NEEDED | null (not uploaded / not yet reviewed).
+   */
+  status?: string | null;
+  /** Full upload history (also added 2026-06-12). */
+  versions?: PeDocVersionEntry[];
 }
 
 export interface PeDocuments {

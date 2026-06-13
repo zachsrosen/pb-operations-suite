@@ -4,6 +4,8 @@ import {
   computeMilestoneTiming,
   median,
   percentile,
+  buildUploaderStats,
+  UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
 describe("weekStartUTC", () => {
@@ -100,5 +102,49 @@ describe("median / percentile", () => {
   it("computes p75", () => {
     expect(percentile([1, 2, 3, 4], 75)).toBe(3);
     expect(percentile([], 75)).toBeNull();
+  });
+});
+
+describe("buildUploaderStats", () => {
+  const now = new Date("2026-06-12T00:00:00Z");
+
+  it("groups by uploader with null/empty grouped as Unknown, Unknown sorted last", () => {
+    const stats = buildUploaderStats(
+      [
+        { uploadedBy: "lauren@pb.com", uploadedAt: "2026-06-01T00:00:00Z", dealId: "d1" },
+        { uploadedBy: "lauren@pb.com", uploadedAt: "2026-06-02T00:00:00Z", dealId: "d2" },
+        { uploadedBy: "layla@pb.com", uploadedAt: "2026-06-03T00:00:00Z", dealId: "d1" },
+        { uploadedBy: null, uploadedAt: "2026-01-01T00:00:00Z", dealId: "d3" },
+        { uploadedBy: "", uploadedAt: "2026-01-02T00:00:00Z", dealId: null },
+      ],
+      now,
+    );
+    expect(stats.map((s) => s.uploader)).toEqual(["lauren@pb.com", "layla@pb.com", UNKNOWN_UPLOADER]);
+    expect(stats[0]).toMatchObject({ total: 2, deals: 2 });
+    expect(stats[2]).toMatchObject({ uploader: UNKNOWN_UPLOADER, total: 2, deals: 1 });
+  });
+
+  it("counts trailing-8-week uploads separately from all time", () => {
+    const stats = buildUploaderStats(
+      [
+        { uploadedBy: "a@pb.com", uploadedAt: "2026-06-10T00:00:00Z", dealId: "d1" }, // recent
+        { uploadedBy: "a@pb.com", uploadedAt: "2026-01-10T00:00:00Z", dealId: "d1" }, // old
+      ],
+      now,
+    );
+    expect(stats[0].total).toBe(2);
+    expect(stats[0].last8w).toBe(1);
+  });
+
+  it("ties broken alphabetically, empty input yields empty output", () => {
+    expect(buildUploaderStats([], now)).toEqual([]);
+    const stats = buildUploaderStats(
+      [
+        { uploadedBy: "b@pb.com", uploadedAt: "2026-06-01T00:00:00Z", dealId: "d1" },
+        { uploadedBy: "a@pb.com", uploadedAt: "2026-06-01T00:00:00Z", dealId: "d1" },
+      ],
+      now,
+    );
+    expect(stats.map((s) => s.uploader)).toEqual(["a@pb.com", "b@pb.com"]);
   });
 });

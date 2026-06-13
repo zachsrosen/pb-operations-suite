@@ -4711,6 +4711,30 @@ model PeApiSyncRun {
   status          String    @default("running") // running | completed | failed
 }
 
+// Per-document upload history from the PE Paddock API `versions[]` array
+// (added by Raceway 2026-06-12). uploadedBy is null on versions uploaded
+// before PE started tracking attribution — surface those as "Unknown".
+model PeDocVersion {
+  id           String   @id @default(cuid())
+  peProjectId  String // PE project ID e.g. "CO2602-KRAF2"
+  peInternalId String? // Raceway internal UUID-like id
+  dealId       String? // linked HubSpot deal (nullable until matched)
+  docName      String // canonical doc name e.g. "Design Plan"
+  version      Int
+  uploadedAt   DateTime
+  uploadedBy   String? // uploader email; null = pre-tracking ("Unknown")
+  fileName     String?
+  source       String? // portal_upload | contract_upload
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([peProjectId, docName, version])
+  @@index([dealId])
+  @@index([uploadedAt])
+  @@index([uploadedBy])
+}
+
 // ---------------------------------------------------------------------------
 // Zuper ↔ HubSpot status drift — PM-facing flag list
 // ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@ export interface PeApiSyncResult {
   projectsFetched: number;
   projectsMatched: number;
   docsUpserted: number;
+  versionsUpserted: number;
   actionItemsUpserted: number;
   errors: string[];
   unmatchedProjects: string[];
@@ -142,21 +143,46 @@ export function isReviewPass(notes: string | null | undefined): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * Map the API's native document `status` field (added by Raceway 2026-06-12)
+ * to our PeDocStatus enum. Returns null when the API status is absent or
+ * unrecognized — callers fall back to action-item inference.
+ *
+ * Mapping verified empirically against 2,100 scrape-written rows (2026-06-12):
+ *   APPROVED         → APPROVED        (98% concordant; discords = scrape lag)
+ *   RESPONSE_NEEDED  → ACTION_REQUIRED (100% concordant)
+ *   PENDING_REVIEW   → UNDER_REVIEW
+ *   PENDING_APPROVAL → UNDER_REVIEW
+ *   null             → NOT_UPLOADED when present=false, else null (infer)
+ */
+export function mapApiDocStatus(
+  status: string | null | undefined,
+  present: boolean,
+): PeDocStatus | null {
+  if (!present) return PeDocStatus.NOT_UPLOADED;
+  switch (status) {
+    case "APPROVED":
+      return PeDocStatus.APPROVED;
+    case "RESPONSE_NEEDED":
+      return PeDocStatus.ACTION_REQUIRED;
+    case "PENDING_REVIEW":
+    case "PENDING_APPROVAL":
+      return PeDocStatus.UNDER_REVIEW;
+    default:
+      return null; // missing/unknown — fall back to inference
+  }
+}
+
+/**
  * Derive PeDocStatus from API document info + action items.
+ *
+ * FALLBACK ONLY — used when the document has no native `status` field
+ * (pre-2026-06-12 API behavior, or a null status on an uploaded doc).
  *
  * Logic:
  *   - Not present (present=false)                   → NOT_UPLOADED
  *   - Present + has active action item              → ACTION_REQUIRED
  *   - Present + has review pass (no active actions)  → APPROVED
  *   - Present + no action items at all               → UNDER_REVIEW ("In Review")
- *
- * Note: The API `version` field never exceeds 1 across the entire dataset,
- * so it cannot distinguish APPROVED from UNDER_REVIEW. We rely on review
- * pass action items ("No issues found") as the only API-based proof of
- * approval. Docs that are present but have no action items at all get
- * UNDER_REVIEW — the portal scrape or email sync can later upgrade to
- * APPROVED with real status data. (UPLOADED and UNDER_REVIEW are merged into
- * a single "In Review" status.)
  */
 function deriveDocStatus(
   present: boolean,
@@ -234,6 +260,7 @@ export async function syncFromPeApi(options?: {
     projectsFetched: 0,
     projectsMatched: 0,
     docsUpserted: 0,
+    versionsUpserted: 0,
     actionItemsUpserted: 0,
     errors: [],
     unmatchedProjects: [],
@@ -316,19 +343,30 @@ export async function syncFromPeApi(options?: {
 
     // Build a set of "protected" doc review keys — rows written by
     // higher-authority sources (portal scrape, email sync, manual review).
-    // The API sync must NOT overwrite these because the portal/email have
-    // real doc statuses while the API can only infer from action items.
+    // Historically the API could only infer statuses from action items, so
+    // it never overwrote these. Since 2026-06-12 the API carries native
+    // statuses; set PE_API_STATUS_AUTHORITY=true to let the API overwrite
+    // scrape-written rows (full cutover from the HTML scrape).
+    const apiAuthority = process.env.PE_API_STATUS_AUTHORITY === "true";
     const protectedRows = new Set<string>();
+    const existingRowMap = new Map<
+      string,
+      { status: string; notes: string | null; reviewedBy: string | null }
+    >();
     {
-      const nonApiRows = await prisma.peDocumentReview.findMany({
-        where: { reviewedBy: { not: "pe-api-sync" } },
-        select: { dealId: true, docName: true },
+      const existingRows = await prisma.peDocumentReview.findMany({
+        select: { dealId: true, docName: true, status: true, notes: true, reviewedBy: true },
       });
-      for (const row of nonApiRows) {
-        protectedRows.add(`${row.dealId}::${row.docName}`);
+      for (const row of existingRows) {
+        const key = `${row.dealId}::${row.docName}`;
+        existingRowMap.set(key, { status: row.status, notes: row.notes, reviewedBy: row.reviewedBy });
+        if (!apiAuthority && row.reviewedBy !== "pe-api-sync") {
+          protectedRows.add(key);
+        }
       }
       console.warn(
-        `[pe-api-sync] ${protectedRows.size} doc rows protected (portal/email/manual)`,
+        `[pe-api-sync] ${protectedRows.size} doc rows protected (portal/email/manual)` +
+          (apiAuthority ? " — API authority mode, nothing protected" : ""),
       );
     }
 
@@ -339,7 +377,20 @@ export async function syncFromPeApi(options?: {
       notes: string;
     }
 
+    interface VersionUpsertOp {
+      peProjectId: string;
+      peInternalId: string;
+      dealId: string | null;
+      docName: string;
+      version: number;
+      uploadedAt: Date;
+      uploadedBy: string | null;
+      fileName: string | null;
+      source: string | null;
+    }
+
     const docOps: DocUpsertOp[] = [];
+    const versionOps: VersionUpsertOp[] = [];
     let skippedProtected = 0;
 
     for (const project of projects) {
@@ -350,10 +401,9 @@ export async function syncFromPeApi(options?: {
         result.unmatchedProjects.push(
           `${project.projectId} (${project.customer.firstName} ${project.customer.lastName})`,
         );
-        continue;
+      } else {
+        result.projectsMatched++;
       }
-
-      result.projectsMatched++;
 
       const detail = detailMap.get(project.id);
 
@@ -362,21 +412,40 @@ export async function syncFromPeApi(options?: {
         const docInfo = project.documents[docKey];
         if (!docInfo) continue;
 
+        // Collect version history regardless of deal match — PeDocVersion
+        // is keyed by PE project ID, and dealId backfills once matched.
+        for (const v of docInfo.versions ?? []) {
+          const uploadedAt = new Date(v.uploadedAt);
+          if (isNaN(uploadedAt.getTime())) continue;
+          versionOps.push({
+            peProjectId: project.projectId,
+            peInternalId: project.id,
+            dealId: dealId ?? null,
+            docName: canonicalName,
+            version: v.version,
+            uploadedAt,
+            uploadedBy: v.uploadedBy ?? null,
+            fileName: v.fileName ?? null,
+            source: v.source ?? null,
+          });
+        }
+
+        if (!dealId) continue;
+
         // Skip docs that have been written by a higher-authority source
         if (protectedRows.has(`${dealId}::${canonicalName}`)) {
           skippedProtected++;
           continue;
         }
 
-        // Check action item status for this doc
-        const hasActiveAction = hasActiveActionForDoc(canonicalName, detail);
-        const hasPass = hasReviewPassForDoc(canonicalName, detail);
-
-        const status = deriveDocStatus(
-          docInfo.present,
-          hasActiveAction,
-          hasPass,
-        );
+        // Prefer the API's native status (added 2026-06-12); fall back to
+        // action-item inference when it's absent.
+        let status = mapApiDocStatus(docInfo.status, docInfo.present);
+        if (status === null) {
+          const hasActiveAction = hasActiveActionForDoc(canonicalName, detail);
+          const hasPass = hasReviewPassForDoc(canonicalName, detail);
+          status = deriveDocStatus(docInfo.present, hasActiveAction, hasPass);
+        }
 
         const noteParts: string[] = [
           `Synced from PE API (${project.projectId})`,
@@ -400,12 +469,25 @@ export async function syncFromPeApi(options?: {
     // Execute doc upserts in batches of 50
     const BATCH_SIZE = 50;
     const now = new Date();
+    const statusChanges: {
+      dealId: string;
+      docName: string;
+      oldStatus: string;
+      newStatus: string;
+      oldNotes: string | null;
+      newNotes: string | null;
+    }[] = [];
 
     for (let i = 0; i < docOps.length; i += BATCH_SIZE) {
       const batch = docOps.slice(i, i + BATCH_SIZE);
       const settled = await Promise.allSettled(
-        batch.map((op) =>
-          prisma.peDocumentReview.upsert({
+        batch.map((op) => {
+          // Preserve scrape/email-written notes — they carry "Submitted:" /
+          // "Responded:" stamps that analytics parses. API notes are
+          // mechanical and only written on rows the API itself created.
+          const existing = existingRowMap.get(`${op.dealId}::${op.docName}`);
+          const preserveNotes = !!existing && existing.reviewedBy !== "pe-api-sync";
+          return prisma.peDocumentReview.upsert({
             where: {
               dealId_docName: { dealId: op.dealId, docName: op.docName },
             },
@@ -419,23 +501,94 @@ export async function syncFromPeApi(options?: {
             },
             update: {
               status: op.status,
-              notes: op.notes,
+              ...(preserveNotes ? {} : { notes: op.notes }),
               reviewedBy: "pe-api-sync",
               reviewedAt: now,
             },
-          }),
-        ),
+          });
+        }),
       );
 
       for (let j = 0; j < settled.length; j++) {
         if (settled[j].status === "fulfilled") {
           result.docsUpserted++;
+          const op = batch[j];
+          const prev = existingRowMap.get(`${op.dealId}::${op.docName}`);
+          if (prev && prev.status !== op.status) {
+            statusChanges.push({
+              dealId: op.dealId,
+              docName: op.docName,
+              oldStatus: prev.status,
+              newStatus: op.status,
+              oldNotes: prev.notes,
+              newNotes: op.notes,
+            });
+          }
         } else {
           const err = (settled[j] as PromiseRejectedResult).reason;
           const op = batch[j];
           result.errors.push(
             `Doc upsert failed: ${op.docName} for deal ${op.dealId}: ${err instanceof Error ? err.message : String(err)}`,
           );
+        }
+      }
+    }
+
+    // Persist status transitions to the change log (best-effort) — analytics
+    // builds doc-level submission/rejection events from these rows.
+    if (statusChanges.length > 0) {
+      try {
+        await prisma.peDocChangeLog.createMany({
+          data: statusChanges.map((c) => ({ ...c, syncedBy: "pe-api-sync" })),
+        });
+        console.warn(`[pe-api-sync] Logged ${statusChanges.length} status changes`);
+      } catch (err) {
+        console.warn(
+          `[pe-api-sync] Failed to persist change log (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4b: Upsert document version history into PeDocVersion
+    // -----------------------------------------------------------------------
+    if (versionOps.length > 0) {
+      console.warn(`[pe-api-sync] Upserting ${versionOps.length} doc versions...`);
+      for (let i = 0; i < versionOps.length; i += BATCH_SIZE) {
+        const batch = versionOps.slice(i, i + BATCH_SIZE);
+        const settled = await Promise.allSettled(
+          batch.map((op) =>
+            prisma.peDocVersion.upsert({
+              where: {
+                peProjectId_docName_version: {
+                  peProjectId: op.peProjectId,
+                  docName: op.docName,
+                  version: op.version,
+                },
+              },
+              create: op,
+              update: {
+                // dealId can backfill once matching improves; attribution
+                // fields re-sync in case PE backfills them server-side.
+                dealId: op.dealId,
+                uploadedBy: op.uploadedBy,
+                fileName: op.fileName,
+                source: op.source,
+                uploadedAt: op.uploadedAt,
+              },
+            }),
+          ),
+        );
+        for (let j = 0; j < settled.length; j++) {
+          if (settled[j].status === "fulfilled") {
+            result.versionsUpserted++;
+          } else {
+            const err = (settled[j] as PromiseRejectedResult).reason;
+            const op = batch[j];
+            result.errors.push(
+              `Version upsert failed: ${op.docName} v${op.version} (${op.peProjectId}): ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
         }
       }
     }
@@ -625,6 +778,7 @@ export async function syncFromPeApi(options?: {
     console.warn(
       `[pe-api-sync] Sync complete: ${result.projectsFetched} projects, ` +
         `${result.projectsMatched} matched, ${result.docsUpserted} docs, ` +
+        `${result.versionsUpserted} versions, ` +
         `${result.actionItemsUpserted} action items, ${result.errors.length} errors ` +
         `(${result.durationMs}ms)`,
     );
