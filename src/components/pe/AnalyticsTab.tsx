@@ -734,16 +734,20 @@ function prettyUploader(email: string): string {
     .join(" ");
 }
 
-/** Horizontal approved/in-review/rejected outcome bar for one uploader. */
-function OutcomeBar({ approved, inReview, rejected }: { approved: number; inReview: number; rejected: number }) {
+/**
+ * Horizontal outcome bar for one uploader. Bar LENGTH encodes volume — every
+ * segment is scaled to a shared `scale` (the busiest uploader's doc count), so
+ * a 600-doc person's bar dwarfs a 2-doc person's. Segments within show the
+ * approved / in-review / rejected split. Overflows clip (e.g. the Unknown row).
+ */
+function OutcomeBar({ approved, inReview, rejected, scale }: { approved: number; inReview: number; rejected: number; scale: number }) {
   const total = approved + inReview + rejected;
-  if (total === 0) return <div className="flex-1 h-4 rounded bg-surface-2" />;
-  const pct = (n: number) => `${(n / total) * 100}%`;
+  const w = (n: number) => `${Math.min(100, (n / scale) * 100)}%`;
   return (
-    <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex" title={`${approved} approved · ${inReview} in review · ${rejected} rejected`}>
-      {approved > 0 && <div className="h-full bg-emerald-500/80" style={{ width: pct(approved) }} />}
-      {inReview > 0 && <div className="h-full bg-zinc-400/60" style={{ width: pct(inReview) }} />}
-      {rejected > 0 && <div className="h-full bg-orange-500/80" style={{ width: pct(rejected) }} />}
+    <div className="h-4 rounded bg-surface-2 overflow-hidden flex w-full" title={`${total} docs · ${approved} approved · ${inReview} in review · ${rejected} rejected`}>
+      {approved > 0 && <div className="h-full bg-emerald-500/80" style={{ width: w(approved), minWidth: 2 }} />}
+      {inReview > 0 && <div className="h-full bg-zinc-400/60" style={{ width: w(inReview), minWidth: 2 }} />}
+      {rejected > 0 && <div className="h-full bg-orange-500/80" style={{ width: w(rejected), minWidth: 2 }} />}
     </div>
   );
 }
@@ -771,6 +775,9 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
     const ruled = s.approved + s.rejected;
     return ruled ? s.approved / ruled : null;
   };
+  // Bar length encodes volume: scale every bar to the busiest attributed
+  // uploader's doc count so the Unknown bucket doesn't flatten everyone else.
+  const barScale = Math.max(...attributed.map((s) => s.approved + s.inReview + s.rejected), 1);
 
   // Shared column template so the header labels line up with every row.
   const COLS = "grid items-center gap-x-3 grid-cols-[8.5rem_1fr_3.5rem_3.5rem_3.5rem_3rem]";
@@ -782,7 +789,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
           {muted ? "Unknown" : prettyUploader(s.uploader)}
           {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
         </span>
-        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} />
+        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} />
         <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
         <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
@@ -805,7 +812,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
       {/* Column headers — align with each row via the shared COLS grid */}
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
-        <span>Outcome of latest upload per doc</span>
+        <span>Docs by outcome — bar length = volume</span>
         <span className="text-right text-emerald-400/80">Appr.</span>
         <span className="text-right">In rev.</span>
         <span className="text-right text-orange-400/80">Rej.</span>
