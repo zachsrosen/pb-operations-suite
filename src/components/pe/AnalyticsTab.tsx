@@ -728,7 +728,7 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
 // ---------------------------------------------------------------------------
 
 /** "lauren.soderholm@photonbrothers.com" → "Lauren Soderholm" */
-function prettyUploader(email: string): string {
+export function prettyUploader(email: string): string {
   if (email === UNKNOWN_UPLOADER) return email;
   const local = email.split("@")[0];
   return local
@@ -840,8 +840,8 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
 }
 
 /** Distinct colors per person for the By-Day stacked bars; Unknown = zinc. */
-const PERSON_COLORS = ["#22d3ee", "#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#fb923c", "#60a5fa", "#f87171", "#c084fc", "#2dd4bf"];
-function buildColorMap(orderedPeople: string[]): Map<string, string> {
+export const PERSON_COLORS = ["#22d3ee", "#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#fb923c", "#60a5fa", "#f87171", "#c084fc", "#2dd4bf"];
+export function buildColorMap(orderedPeople: string[]): Map<string, string> {
   const m = new Map<string, string>();
   orderedPeople.forEach((u, i) => m.set(u, PERSON_COLORS[i % PERSON_COLORS.length]));
   m.set(UNKNOWN_UPLOADER, "#71717a");
@@ -889,7 +889,16 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
         ))}
       </div>
       <div className="overflow-x-auto">
-        <svg width={chartW} height={chartH + padT + padB} className="block">
+        {/* When the natural width fits, stretch to fill the full page via the
+            viewBox (bars spread out, centered); when crowded, fixed width +
+            horizontal scroll. Fixes the left-weighted look on week/month. */}
+        <svg
+          viewBox={`0 0 ${chartW} ${chartH + padT + padB}`}
+          width={chartW <= 980 ? "100%" : chartW}
+          height={chartH + padT + padB}
+          preserveAspectRatio="xMidYMid meet"
+          className="block mx-auto"
+        >
           {Array.from({ length: yTicks + 1 }, (_, i) => {
             const val = Math.round((maxTotal * i) / yTicks);
             const y = padT + chartH - (chartH * i) / yTicks;
@@ -951,22 +960,22 @@ function DocTypeByUploaderPanel({ rows }: { rows: UploaderDocTypes[] }) {
   const cell = (n: number) => {
     if (!n) return <span className="text-t-border">·</span>;
     const a = 0.15 + 0.85 * (n / max); // heat
-    return <span className="px-1 rounded tabular-nums" style={{ background: `rgba(34,211,238,${a * 0.35})`, color: a > 0.6 ? "#e0f2fe" : undefined }}>{n}</span>;
+    return <span className="inline-block min-w-[1.75rem] px-1.5 py-0.5 rounded tabular-nums" style={{ background: `rgba(34,211,238,${a * 0.4})`, color: a > 0.55 ? "#e0f2fe" : undefined }}>{n}</span>;
   };
   return (
     <div className="overflow-x-auto">
-      <table className="text-[11px] border-separate" style={{ borderSpacing: "3px 2px" }}>
+      <table className="text-[13px] border-separate w-full" style={{ borderSpacing: "5px 4px" }}>
         <thead>
           <tr className="text-muted">
-            <th className="text-left font-medium pr-3 sticky left-0 bg-surface">Person</th>
-            {docs.map((d) => <th key={d} className="font-medium px-1 text-center whitespace-nowrap" title={d}>{SHORT[d] ?? d.slice(0, 8)}</th>)}
-            <th className="font-semibold px-1 text-right">Total</th>
+            <th className="text-left font-semibold pr-4 pb-1 sticky left-0 bg-surface text-xs uppercase tracking-wide">Person</th>
+            {docs.map((d) => <th key={d} className="font-medium px-1.5 pb-1 text-center whitespace-nowrap text-[11px]" title={d}>{SHORT[d] ?? d.slice(0, 8)}</th>)}
+            <th className="font-semibold px-1.5 pb-1 text-right text-xs">Total</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.uploader} className={r.uploader === UNKNOWN_UPLOADER ? "opacity-70" : ""}>
-              <td className="text-foreground pr-3 whitespace-nowrap sticky left-0 bg-surface">{r.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(r.uploader)}</td>
+              <td className="text-foreground pr-4 py-0.5 whitespace-nowrap sticky left-0 bg-surface font-medium">{r.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(r.uploader)}</td>
               {docs.map((d) => <td key={d} className="text-center text-foreground">{cell(r.byDoc[d] ?? 0)}</td>)}
               <td className="text-right font-semibold text-foreground tabular-nums">{r.total.toLocaleString("en-US")}</td>
             </tr>

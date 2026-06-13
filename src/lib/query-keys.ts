@@ -121,6 +121,10 @@ export const queryKeys = {
     root: ["peAnalytics"] as const,
     list: () => [...queryKeys.peAnalytics.root, "list"] as const,
   },
+  peRework: {
+    root: ["peRework"] as const,
+    list: () => [...queryKeys.peRework.root, "list"] as const,
+  },
   peAvl: () => ["peAvl"] as const,
   pePipeline: () => ["pePipeline"] as const,
   pePrep: {

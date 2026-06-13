@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import DealsTab from "@/components/pe/DealsTab";
 import DocsTab from "@/components/pe/DocsTab";
 import AnalyticsTab from "@/components/pe/AnalyticsTab";
+import DocReworkTab from "@/components/pe/DocReworkTab";
 
 const TABS = [
   { key: "deals", label: "Deals & Payments" },
   { key: "docs", label: "Documents" },
   { key: "analytics", label: "Analytics" },
+  { key: "rework", label: "Doc Rework" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -18,7 +20,7 @@ function PeHub() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const raw = searchParams.get("tab");
-  const tab: TabKey = raw === "docs" || raw === "analytics" ? raw : "deals";
+  const tab: TabKey = raw === "docs" || raw === "analytics" || raw === "rework" ? raw : "deals";
 
   const tabsSlot = (
     <div className="flex flex-wrap items-center gap-1.5 mb-5">
@@ -40,6 +42,7 @@ function PeHub() {
 
   if (tab === "docs") return <DocsTab tabsSlot={tabsSlot} />;
   if (tab === "analytics") return <AnalyticsTab tabsSlot={tabsSlot} />;
+  if (tab === "rework") return <DocReworkTab tabsSlot={tabsSlot} />;
   return <DealsTab tabsSlot={tabsSlot} />;
 }
 
