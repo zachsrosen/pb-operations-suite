@@ -15,6 +15,7 @@ import {
   type MilestoneDrillRow,
   type DocRejectionEvent,
   type UploaderStat,
+  type DailyUpload,
   UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
@@ -778,9 +779,11 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   // Bar length encodes volume: scale every bar to the busiest attributed
   // uploader's doc count so the Unknown bucket doesn't flatten everyone else.
   const barScale = Math.max(...attributed.map((s) => s.approved + s.inReview + s.rejected), 1);
+  const teamPayments = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
+  const fmtK = (n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${Math.round(n)}`);
 
   // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-3 grid-cols-[8.5rem_1fr_3.5rem_3.5rem_3.5rem_3rem]";
+  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_2.75rem_2.75rem_2.75rem_2.5rem_4rem]";
   const renderRow = (s: UploaderStat, muted: boolean) => {
     const rate = rateOf(s);
     return (
@@ -794,6 +797,9 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
         <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
         <span className="text-sm font-semibold text-foreground text-right tabular-nums">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
+        <span className="text-xs text-cyan-400 text-right tabular-nums" title={`Owns ${s.milestonesOwned} approved milestone payment(s)`}>
+          {s.paymentsOwned > 0 ? fmtK(s.paymentsOwned) : "—"}
+        </span>
       </div>
     );
   };
@@ -803,9 +809,9 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
         <MiniStat label="Attributed Uploads" value={attributedTotal.toLocaleString("en-US")}
           subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
-        <MiniStat label="People Uploading" value={String(attributed.length)} subtitle="all time" />
         <MiniStat label="Team Approval Rate" value={teamApprovalRate === null ? "—" : `${teamApprovalRate}%`}
           subtitle={`${agg.approved.toLocaleString("en-US")} approved · ${agg.rejected.toLocaleString("en-US")} rejected`} />
+        <MiniStat label="Approved $ Owned" value={fmtK(teamPayments)} subtitle="attributed approved payments" />
         <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
       </div>
 
@@ -817,6 +823,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         <span className="text-right">In rev.</span>
         <span className="text-right text-orange-400/80">Rej.</span>
         <span className="text-right" title="Approved ÷ (approved + rejected)">Rate</span>
+        <span className="text-right text-cyan-400/80" title="Approved milestone payments this person drove the most docs on">$ Owned</span>
       </div>
 
       <div className="space-y-2">
@@ -828,6 +835,107 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Distinct colors per person for the By-Day stacked bars; Unknown = zinc. */
+const PERSON_COLORS = ["#22d3ee", "#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#fb923c", "#60a5fa", "#f87171", "#c084fc", "#2dd4bf"];
+function buildColorMap(orderedPeople: string[]): Map<string, string> {
+  const m = new Map<string, string>();
+  orderedPeople.forEach((u, i) => m.set(u, PERSON_COLORS[i % PERSON_COLORS.length]));
+  m.set(UNKNOWN_UPLOADER, "#71717a");
+  return m;
+}
+
+/** Per-day uploads as stacked bars segmented by who uploaded (last 30 days). */
+function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: UploaderStat[] }) {
+  if (daily.length === 0) {
+    return <div className="text-sm text-muted py-8 text-center">No uploads in the last 30 days.</div>;
+  }
+  const order = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER).map((s) => s.uploader);
+  const stack = [...order, UNKNOWN_UPLOADER]; // Unknown stacks on top
+  const colors = buildColorMap(order);
+  const present = stack.filter((p) => daily.some((d) => (d.byUploader[p] ?? 0) > 0));
+  const maxTotal = Math.max(...daily.map((d) => d.total), 1);
+  const padL = 26, padT = 10, padB = 34, barW = 16, gap = 7, chartH = 190;
+  const chartW = padL + daily.length * (barW + gap) + 4;
+  const yTicks = 4;
+  const labelEvery = Math.ceil(daily.length / 10);
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3 text-[11px]">
+        {present.map((p) => (
+          <span key={p} className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: colors.get(p) }} />
+            <span className={p === UNKNOWN_UPLOADER ? "text-muted" : "text-foreground"}>{p === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(p)}</span>
+          </span>
+        ))}
+      </div>
+      <div className="overflow-x-auto">
+        <svg width={chartW} height={chartH + padT + padB} className="block">
+          {Array.from({ length: yTicks + 1 }, (_, i) => {
+            const val = Math.round((maxTotal * i) / yTicks);
+            const y = padT + chartH - (chartH * i) / yTicks;
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y} x2={chartW} y2={y} className="stroke-t-border" strokeWidth={i === 0 ? 1 : 0.5} strokeDasharray={i === 0 ? "" : "2 3"} />
+                <text x={padL - 5} y={y + 3} textAnchor="end" className="fill-muted text-[9px]">{val}</text>
+              </g>
+            );
+          })}
+          {daily.map((d, i) => {
+            const x = padL + i * (barW + gap);
+            let yCursor = padT + chartH;
+            return (
+              <g key={d.day}>
+                {stack.map((person) => {
+                  const n = d.byUploader[person] ?? 0;
+                  if (!n) return null;
+                  const h = (n / maxTotal) * chartH;
+                  yCursor -= h;
+                  return <rect key={person} x={x} y={yCursor} width={barW} height={h} fill={colors.get(person)} rx={1}>
+                    <title>{`${d.day} · ${person === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(person)}: ${n}`}</title>
+                  </rect>;
+                })}
+                <text x={x + barW / 2} y={yCursor - 3} textAnchor="middle" className="fill-foreground text-[9px] tabular-nums">{d.total}</text>
+                {i % labelEvery === 0 && (
+                  <text x={x + barW / 2} y={padT + chartH + 14} textAnchor="middle" className="fill-muted text-[9px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 14})`}>
+                    {d.day.slice(5)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function UploadersSection({ stats, daily }: { stats: UploaderStat[]; daily: DailyUpload[] }) {
+  const [tab, setTab] = useState<"person" | "day">("person");
+  return (
+    <Section
+      title="Doc Uploaders"
+      subtitle={
+        tab === "person"
+          ? "Who uploaded each doc, their approval rate, and the approved milestone payments they drove. PE began attributing uploads partway through — earlier uploads land in Unknown."
+          : "Documents uploaded per day, segmented by who uploaded them (last 30 days)."
+      }
+      actions={
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {([["person", "By Person"], ["day", "By Day"]] as const).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${tab === t ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {tab === "person" ? <UploaderPanel stats={stats} /> : <DailyUploadsChart daily={daily} stats={stats} />}
+    </Section>
   );
 }
 
@@ -1094,7 +1202,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
-  const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected" | "uploaders">("submitted");
+  const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected">("submitted");
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
   const openAggregate = (key: string) => setDrill({ week: null, segment: key });
@@ -1499,21 +1607,18 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             title={
               docMode === "submitted" ? "Doc Submissions per Week"
                 : docMode === "approved" ? "Doc Approvals per Week"
-                  : docMode === "rejected" ? "Doc Rejections per Week"
-                    : "Doc Uploads by Person"
+                  : "Doc Rejections per Week"
             }
             subtitle={
               docMode === "submitted"
                 ? "Document-level uploads dated by the portal's Submitted stamp, colored by each doc's CURRENT outcome. Click a week for the docs and deals."
                 : docMode === "approved"
                   ? "Document-level approvals, dated by PE's reviewer response. Click a week for the docs and deals."
-                  : docMode === "rejected"
-                    ? "Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
-                    : "Who uploaded each doc to the PE portal, from PE's version history. PE only started attributing uploads partway through — earlier uploads land in Unknown."
+                  : "Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
             }
             actions={
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {([["submitted", "Submitted"], ["approved", "Approved"], ["rejected", "Rejected"], ["uploaders", "Uploaders"]] as const).map(([mode, label]) => (
+                {([["submitted", "Submitted"], ["approved", "Approved"], ["rejected", "Rejected"]] as const).map(([mode, label]) => (
                   <button
                     key={mode}
                     onClick={() => setDocMode(mode)}
@@ -1531,13 +1636,14 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             ) : docMode === "approved" ? (
               <DocActivityChart key="app" events={data.docApprovalEvents ?? []} noun="doc approval" statLabel="Docs Approved"
                 barClass="fill-emerald-500" pillClass="bg-emerald-500/20 text-emerald-400 border-emerald-500/40" swatchText="text-emerald-400" />
-            ) : docMode === "rejected" ? (
+            ) : (
               <DocActivityChart key="rej" events={data.docRejectionEvents ?? []} noun="doc rejection" statLabel="Doc Rejections"
                 barClass="fill-orange-500" pillClass="bg-orange-500/20 text-orange-400 border-orange-500/40" swatchText="text-orange-400" />
-            ) : (
-              <UploaderPanel stats={data.uploaderStats ?? []} />
             )}
           </Section>
+
+          {/* 3.6 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
+          <UploadersSection stats={data.uploaderStats ?? []} daily={data.dailyUploads ?? []} />
 
           {/* 4. Rejection analysis */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

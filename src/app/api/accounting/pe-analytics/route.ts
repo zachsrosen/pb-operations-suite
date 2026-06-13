@@ -14,6 +14,8 @@ import {
   median,
   percentile,
   buildUploaderStats,
+  buildPaymentOwnership,
+  buildDailyUploads,
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
   type PeAnalyticsPayload,
@@ -753,6 +755,35 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const submittedAll = records.filter((r) => r.timing.firstSubmitted);
   const rejectedAtLeastOnce = submittedAll.filter((r) => r.timing.rejectionCount > 0);
 
+  // --- Uploader payment ownership ---------------------------------------------
+  // Latest-version uploader per (deal, doc), then credit each approved/paid
+  // milestone's payment to whoever owns the most of its approved docs.
+  const latestUploaderByDoc = new Map<string, string | null>();
+  {
+    const maxVer = new Map<string, number>();
+    for (const v of versionRows) {
+      if (!v.dealId) continue;
+      const k = `${v.dealId}|${v.docName}`;
+      if (!maxVer.has(k) || v.version > maxVer.get(k)!) {
+        maxVer.set(k, v.version);
+        latestUploaderByDoc.set(k, v.uploadedBy);
+      }
+    }
+  }
+  const APPROVED_PAY = new Set(["Approved", "Paid"]);
+  const milestonePayments = deals.flatMap((d) => [
+    { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status) },
+    { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status) },
+  ]);
+  const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDoc);
+  const withPaymentOwnership = buildUploaderStats(
+    versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
+    currentDocStatus,
+  ).map((s) => {
+    const pay = paymentOwnership.get(s.uploader);
+    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count } : s;
+  });
+
   return {
     lastUpdated: new Date().toISOString(),
     totals: {
@@ -779,10 +810,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // Scope uploader stats to docs on deals in this payload's PE deal set —
     // versionRows already excludes unmatched portal projects (dealId null).
     // currentDocStatus (keyed `${dealId}|${docName}`) drives the per-person
-    // approved / rejected / in-review outcome split.
-    uploaderStats: buildUploaderStats(
+    // approved / rejected / in-review outcome split, and the merged-in payment
+    // ownership ($ of approved milestone payments each person drove).
+    uploaderStats: withPaymentOwnership,
+    // Per-day uploads segmented by person — powers the "By Day" stacked bars.
+    dailyUploads: buildDailyUploads(
       versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
-      currentDocStatus,
+      30,
     ),
     pipeline,
     timing: { overall, monthly },
