@@ -17,27 +17,12 @@ export async function GET(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
 
     const searchParams = request.nextUrl.searchParams;
-    const months = Math.min(
-      24,
-      Math.max(1, parseInt(searchParams.get("months") || "6") || 6)
-    );
     const locationParam = searchParams.get("locations") || "";
     const locations = locationParam ? locationParam.split(",").filter(Boolean) : [];
-
-    const startParam = searchParams.get("start") || "";
-    const endParam = searchParams.get("end") || "";
-    const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-    const range =
-      dateRe.test(startParam) && dateRe.test(endParam)
-        ? { start: startParam, end: endParam }
-        : undefined;
 
     const leads = (searchParams.get("leads") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const pms = (searchParams.get("pms") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const filters = leads.length > 0 || pms.length > 0 ? { designLeads: leads, projectManagers: pms } : undefined;
-
-    // scope=active → snapshot of all currently-active deals that entered design.
-    const scope = searchParams.get("scope") === "cohort" ? "cohort" : "active";
 
     const { data: projects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
       CACHE_KEYS.PROJECTS_ALL,
@@ -46,11 +31,8 @@ export async function GET(request: NextRequest) {
 
     const data = buildDesignFunnelData(
       projects || [],
-      months,
       locations.length > 0 ? locations : undefined,
-      range,
-      filters,
-      { scope }
+      filters
     );
 
     return NextResponse.json({ ...data, cached, stale, lastUpdated });
