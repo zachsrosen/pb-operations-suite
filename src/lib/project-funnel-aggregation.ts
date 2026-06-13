@@ -438,7 +438,7 @@ function emptyActivity(label: string): ProjectMonthlyActivity {
  *   Close Out (≥9)     → + PTO granted
  *   Project Complete   → all milestones
  */
-function resolveMilestones(p: Project) {
+export function resolveMilestones(p: Project) {
   const rawSp = STAGE_PRIORITY_MAP[p.stageId ?? ""] ?? 0;
   // Cancelled and On Hold sit at the TOP of the priority map, but that does NOT
   // mean the deal progressed through every milestone — it was cancelled/held
