@@ -13,6 +13,7 @@ import {
   computeMilestoneTiming,
   median,
   percentile,
+  buildUploaderStats,
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
   type PeAnalyticsPayload,
@@ -474,7 +475,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .map(([month, vals]) => ({ month, medianSubmitToApprove: median(vals), approvals: vals.length }));
 
   // --- Report 4: rejections (DB) ------------------------------------------------
-  const [docRows, changeLog] = await Promise.all([
+  const [docRows, changeLog, versionRows] = await Promise.all([
     prisma
       ? prisma.peDocumentReview.findMany({ select: { dealId: true, docName: true, status: true, notes: true } })
       : Promise.resolve([]),
@@ -483,6 +484,16 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
           orderBy: { createdAt: "desc" },
           select: { dealId: true, docName: true, dealName: true, newNotes: true, newStatus: true, oldStatus: true, createdAt: true },
         })
+      : Promise.resolve([]),
+    prisma
+      ? prisma.peDocVersion
+          .findMany({
+            where: { dealId: { not: null } },
+            select: { dealId: true, docName: true, version: true, uploadedAt: true, uploadedBy: true },
+          })
+          // Table ships with this feature — don't 500 the dashboard if the
+          // migration hasn't been applied yet.
+          .catch(() => [])
       : Promise.resolve([]),
   ]);
 
@@ -624,17 +635,49 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const docSubmissionEvents: DocRejectionEvent[] = [];
   const currentDocStatus = new Map<string, string>();
   for (const r of docRows) currentDocStatus.set(`${r.dealId}|${r.docName}`, r.status);
+  // PE version history (exact upload timestamps + uploader attribution),
+  // keyed per deal+doc and sorted by upload time.
+  const versionsByKey = new Map<string, { date: string; uploadedBy: string | null }[]>();
+  for (const v of versionRows) {
+    const key = `${v.dealId}|${v.docName}`;
+    (versionsByKey.get(key) ?? versionsByKey.set(key, []).get(key)!).push({
+      date: v.uploadedAt.toISOString().slice(0, 10),
+      uploadedBy: v.uploadedBy,
+    });
+  }
+  for (const list of versionsByKey.values()) list.sort((a, b) => a.date.localeCompare(b.date));
+  const dayDiff = (a: string, b: string) =>
+    Math.abs(new Date(a + "T00:00:00Z").getTime() - new Date(b + "T00:00:00Z").getTime()) / 86400000;
+  // Uploader for a note/changelog-sourced event: nearest version within 3 days.
+  const uploaderNear = (dealId: string, docName: string, date: string): string | null => {
+    const list = versionsByKey.get(`${dealId}|${docName}`);
+    if (!list) return null;
+    let best: { d: number; by: string | null } | null = null;
+    for (const v of list) {
+      const d = dayDiff(v.date, date);
+      if (d <= 3 && (!best || d < best.d)) best = { d, by: v.uploadedBy };
+    }
+    return best?.by ?? null;
+  };
   const outcomeOf = (dealId: string, docName: string): "approved" | "inReview" | "rejected" => {
     const st = currentDocStatus.get(`${dealId}|${docName}`) ?? "";
     if (st === "APPROVED") return "approved";
     if (st === "ACTION_REQUIRED" || st === "REJECTED") return "rejected";
     return "inReview";
   };
-  const pushSub = (dealId: string, docName: string, date: string, note: string | null) => {
+  const pushSub = (dealId: string, docName: string, date: string, note: string | null, uploadedBy?: string | null) => {
     const key = `${dealId}|${docName}|${date}`;
     if (subSeen.has(key)) return;
     subSeen.add(key);
-    docSubmissionEvents.push({ date, dealId, dealName: dealNameById.get(dealId) ?? dealId, docName, note, outcome: outcomeOf(dealId, docName) });
+    docSubmissionEvents.push({
+      date,
+      dealId,
+      dealName: dealNameById.get(dealId) ?? dealId,
+      docName,
+      note,
+      outcome: outcomeOf(dealId, docName),
+      uploadedBy: uploadedBy !== undefined ? uploadedBy : uploaderNear(dealId, docName, date),
+    });
   };
   for (const r of docRows) {
     for (const m of (r.notes ?? "").matchAll(/Submitted:\s*(\d{4}-\d{2}-\d{2})/g)) pushSub(r.dealId, r.docName, m[1], null);
@@ -643,6 +686,25 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     for (const m of (ev.newNotes ?? "").matchAll(/Submitted:\s*(\d{4}-\d{2}-\d{2})/g)) pushSub(ev.dealId, ev.docName, m[1], null);
     if (SUBMITTED_DOC_STATES.has(ev.newStatus) && !SUBMITTED_DOC_STATES.has(ev.oldStatus)) {
       pushSub(ev.dealId, ev.docName, ev.createdAt.toISOString().slice(0, 10), null);
+    }
+  }
+  // Version uploads are submissions too — they extend history before scrape
+  // coverage and capture resubmits. Only add when no note/changelog event
+  // already exists within a day (timezone skew otherwise double-counts).
+  const eventDatesByKey = new Map<string, string[]>();
+  for (const e of docSubmissionEvents) {
+    const key = `${e.dealId}|${e.docName}`;
+    (eventDatesByKey.get(key) ?? eventDatesByKey.set(key, []).get(key)!).push(e.date);
+  }
+  for (const [key, list] of versionsByKey) {
+    const [dealId, docName] = key.split("|");
+    const existingDates = eventDatesByKey.get(key) ?? [];
+    for (const v of list) {
+      if (!existingDates.some((d) => dayDiff(d, v.date) <= 1)) {
+        pushSub(dealId, docName, v.date, null, v.uploadedBy);
+        existingDates.push(v.date);
+        eventDatesByKey.set(key, existingDates);
+      }
     }
   }
   docSubmissionEvents.sort((a, b) => a.date.localeCompare(b.date));
@@ -714,6 +776,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     docRejectionEvents,
     docSubmissionEvents,
     docApprovalEvents,
+    // Scope uploader stats to docs on deals in this payload's PE deal set —
+    // versionRows already excludes unmatched portal projects (dealId null).
+    uploaderStats: buildUploaderStats(
+      versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
+    ),
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },

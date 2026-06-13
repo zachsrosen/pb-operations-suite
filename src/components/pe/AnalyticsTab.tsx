@@ -14,6 +14,8 @@ import {
   type WeeklySplitCohort,
   type MilestoneDrillRow,
   type DocRejectionEvent,
+  type UploaderStat,
+  UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
 // ---------------------------------------------------------------------------
@@ -693,6 +695,11 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-medium text-foreground truncate">{DOC_SHORT[e.docName] ?? e.docName}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
+                    {stackOutcomes && (
+                      <span className="text-[10px] text-cyan-400/90" title={e.uploadedBy ?? "Uploader unknown — version predates PE attribution tracking"}>
+                        {e.uploadedBy ? prettyUploader(e.uploadedBy) : "Unknown"}
+                      </span>
+                    )}
                     {stackOutcomes && e.outcome && (
                       <span className={`text-[10px] ${e.outcome === "approved" ? "text-emerald-400" : e.outcome === "rejected" ? "text-orange-400" : "text-muted"}`}>
                         {e.outcome === "approved" ? "approved" : e.outcome === "rejected" ? "rejected" : "in review"}
@@ -708,6 +715,73 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Uploads-by-person leaderboard (PE portal version history)
+// ---------------------------------------------------------------------------
+
+/** "lauren.soderholm@photonbrothers.com" → "Lauren Soderholm" */
+function prettyUploader(email: string): string {
+  if (email === UNKNOWN_UPLOADER) return email;
+  const local = email.split("@")[0];
+  return local
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map((p) => p[0].toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
+function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
+  if (stats.length === 0) {
+    return (
+      <div className="text-sm text-muted py-8 text-center">
+        No upload attribution yet — version history syncs from the PE API hourly.
+      </div>
+    );
+  }
+  const attributed = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER);
+  const unknown = stats.find((s) => s.uploader === UNKNOWN_UPLOADER);
+  const attributedTotal = attributed.reduce((s, r) => s + r.total, 0);
+  const grandTotal = attributedTotal + (unknown?.total ?? 0);
+  const maxTotal = Math.max(...attributed.map((s) => s.total), 1);
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-2xl mb-4">
+        <MiniStat label="Attributed Uploads" value={attributedTotal.toLocaleString("en-US")}
+          subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
+        <MiniStat label="People Uploading" value={String(attributed.length)} subtitle="all time" />
+        <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
+      </div>
+      <div className="space-y-1.5">
+        {attributed.map((s) => (
+          <div key={s.uploader} className="flex items-center gap-2">
+            <span className="text-[11px] text-foreground w-40 truncate" title={s.uploader}>{prettyUploader(s.uploader)}</span>
+            <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden">
+              <div className="h-full rounded bg-cyan-500/70" style={{ width: `${(s.total / maxTotal) * 100}%` }} />
+            </div>
+            <span className="text-xs text-foreground w-12 text-right">{s.total.toLocaleString("en-US")}</span>
+            <span className="text-[10px] text-muted w-20 text-right" title="Uploads in the last 8 weeks">{s.last8w} last 8w</span>
+            <span className="text-[10px] text-muted w-16 text-right" title="Distinct deals touched">{s.deals} deals</span>
+          </div>
+        ))}
+        {unknown && (
+          <div className="flex items-center gap-2 opacity-60 pt-1 border-t border-t-border mt-2">
+            <span className="text-[11px] text-muted w-40 truncate" title="Versions uploaded before PE began recording the uploader — attribution honestly unavailable">
+              Unknown (pre-tracking)
+            </span>
+            <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden">
+              <div className="h-full rounded bg-zinc-500/50" style={{ width: `${Math.min(100, (unknown.total / maxTotal) * 100)}%` }} />
+            </div>
+            <span className="text-xs text-muted w-12 text-right">{unknown.total.toLocaleString("en-US")}</span>
+            <span className="text-[10px] text-muted w-20 text-right">{unknown.last8w} last 8w</span>
+            <span className="text-[10px] text-muted w-16 text-right">{unknown.deals} deals</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -975,7 +1049,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
-  const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected">("submitted");
+  const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected" | "uploaders">("submitted");
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
   const openAggregate = (key: string) => setDrill({ week: null, segment: key });
@@ -1380,18 +1454,21 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             title={
               docMode === "submitted" ? "Doc Submissions per Week"
                 : docMode === "approved" ? "Doc Approvals per Week"
-                  : "Doc Rejections per Week"
+                  : docMode === "rejected" ? "Doc Rejections per Week"
+                    : "Doc Uploads by Person"
             }
             subtitle={
               docMode === "submitted"
                 ? "Document-level uploads dated by the portal's Submitted stamp, colored by each doc's CURRENT outcome. Click a week for the docs and deals."
                 : docMode === "approved"
                   ? "Document-level approvals, dated by PE's reviewer response. Click a week for the docs and deals."
-                  : "Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
+                  : docMode === "rejected"
+                    ? "Document-level rejections dated by PE's reviewer response. Click a week for the docs, deals, and notes."
+                    : "Who uploaded each doc to the PE portal, from PE's version history. PE only started attributing uploads partway through — earlier uploads land in Unknown."
             }
             actions={
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {([["submitted", "Submitted"], ["approved", "Approved"], ["rejected", "Rejected"]] as const).map(([mode, label]) => (
+                {([["submitted", "Submitted"], ["approved", "Approved"], ["rejected", "Rejected"], ["uploaders", "Uploaders"]] as const).map(([mode, label]) => (
                   <button
                     key={mode}
                     onClick={() => setDocMode(mode)}
@@ -1409,9 +1486,11 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             ) : docMode === "approved" ? (
               <DocActivityChart key="app" events={data.docApprovalEvents ?? []} noun="doc approval" statLabel="Docs Approved"
                 barClass="fill-emerald-500" pillClass="bg-emerald-500/20 text-emerald-400 border-emerald-500/40" swatchText="text-emerald-400" />
-            ) : (
+            ) : docMode === "rejected" ? (
               <DocActivityChart key="rej" events={data.docRejectionEvents ?? []} noun="doc rejection" statLabel="Doc Rejections"
                 barClass="fill-orange-500" pillClass="bg-orange-500/20 text-orange-400 border-orange-500/40" swatchText="text-orange-400" />
+            ) : (
+              <UploaderPanel stats={data.uploaderStats ?? []} />
             )}
           </Section>
 
