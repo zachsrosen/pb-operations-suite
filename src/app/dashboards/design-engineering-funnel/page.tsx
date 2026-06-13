@@ -18,11 +18,9 @@ import {
 
 // Tonal accent per bucket — progression in cool→warm, revisions in red family.
 const BUCKET_TONE: Record<string, string> = {
-  withoutDrafted: "bg-slate-500",
-  withoutReviewed: "bg-sky-500",
-  withoutDaSent: "bg-blue-500",
-  withoutDaApproved: "bg-indigo-500",
-  withoutDesignComplete: "bg-violet-500",
+  awaitingDaSend: "bg-blue-500",
+  awaitingDaApproval: "bg-indigo-500",
+  awaitingDesignComplete: "bg-violet-500",
   designComplete: "bg-emerald-500",
   utilityRevision: "bg-amber-500",
   permitRevision: "bg-orange-500",

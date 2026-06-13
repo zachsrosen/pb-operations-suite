@@ -2,6 +2,7 @@ import type { Project } from "@/lib/hubspot";
 import { DEAL_STAGE_MAP } from "@/lib/hubspot";
 import { normalizeLocation } from "@/lib/locations";
 import { statusLabel } from "@/lib/deal-status-labels";
+import { resolveMilestones } from "@/lib/project-funnel-aggregation";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design & Engineering funnel
@@ -11,25 +12,20 @@ import { statusLabel } from "@/lib/deal-status-labels";
 //   A. Deal-stage breakdown — each HubSpot pipeline stage, with its projects
 //      broken down by design_status. "All design statuses, organized by stage."
 //
-//   B. Design-status funnel — every active project lands in exactly ONE bucket
-//      based on how far its design has progressed, plus the post-completion
-//      revision states:
-//
-//        Without Design Drafted → Without Design Reviewed (IDR) → Without DA Sent
-//        → Without DA Approved → Without Design Complete → Design Complete
-//        → Utility Revision → Permit Revision → As-Built Revision
-//
-//      IDR revisions and DA revisions are *prior* to design completion, so they
-//      live inside the "Without …" buckets — only utility/permit/as-built
-//      revisions (which reopen a completed design) get their own buckets.
+//   B. Design-status funnel — every active project lands in exactly ONE bucket.
+//      The DA-send / DA-approval / design-complete buckets reuse the SAME
+//      milestone resolution as the Project Pipeline Funnel (resolveMilestones),
+//      so "Awaiting DA Send / DA Approval / Design Complete" mean exactly what
+//      they mean there. On top of that we split out the three post-completion
+//      revision loops (utility / permit / as-built) that reopen a finished
+//      design. IDR and DA revisions are *prior* to completion, so they stay
+//      inside the awaiting buckets (visible as their design_status).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DESIGN_BUCKETS = [
-  "withoutDrafted",
-  "withoutReviewed",
-  "withoutDaSent",
-  "withoutDaApproved",
-  "withoutDesignComplete",
+  "awaitingDaSend",
+  "awaitingDaApproval",
+  "awaitingDesignComplete",
   "designComplete",
   "utilityRevision",
   "permitRevision",
@@ -39,11 +35,9 @@ export const DESIGN_BUCKETS = [
 export type DesignBucketKey = (typeof DESIGN_BUCKETS)[number];
 
 export const DESIGN_BUCKET_LABELS: Record<DesignBucketKey, string> = {
-  withoutDrafted: "Without Design Drafted",
-  withoutReviewed: "Without Design Reviewed",
-  withoutDaSent: "Without DA Sent",
-  withoutDaApproved: "Without DA Approved",
-  withoutDesignComplete: "Without Design Complete",
+  awaitingDaSend: "Awaiting DA Send",
+  awaitingDaApproval: "Awaiting DA Approval",
+  awaitingDesignComplete: "Awaiting Design Complete",
   designComplete: "Design Complete",
   utilityRevision: "Utility Revision In Progress",
   permitRevision: "Permit Revision In Progress",
@@ -138,60 +132,28 @@ const AS_BUILT_REVISION_STATES = new Set<string>([
   "Revision Needed - Rejected",
 ]);
 
-// design_status raw values that mean the design has NOT yet cleared Initial
-// Design Review (IDR). Anything drafted but not in this set is treated as
-// "reviewed". DA-sent always implies reviewed regardless of status.
-const PRE_REVIEW_STATES = new Set<string>([
-  "Ready for Design",
-  "In Progress",
-  "Draft Complete",
-  "Initial Review",
-  "IDR Revision Needed",
-  "IDR Revision in Progress",
-  "Needs Clarification",
-  "Needs Clarification from Customer",
-  "Needs Clarification from Sales",
-  "Needs Clarification from Operations",
-  "Pending Resurvey",
-  "On Hold",
-  "No Design Needed",
-  "New Construction - Design Needed",
-  "New Construction - In Progress",
-  "Xcel - Design Needed",
-  "Xcel - In Progress",
-]);
-
 /** Active = still in flight: not cancelled and not project-complete. */
 function isActiveDeal(p: Project): boolean {
   return p.stageId !== CANCELLED_STAGE_ID && p.stageId !== PROJECT_COMPLETE_STAGE_ID;
 }
 
-/** Resolve which mutually-exclusive design bucket a project belongs to. */
+/**
+ * Which mutually-exclusive design bucket a project belongs to. The awaiting /
+ * complete buckets are driven by the Project Pipeline Funnel's milestone
+ * resolution so they reconcile with that funnel exactly; the three
+ * post-completion revision loops are layered on top via design_status.
+ */
 function resolveBucket(p: Project): DesignBucketKey {
   const ds = p.designStatus;
-
-  // Post-completion revision loops take priority — a completed design reopened.
   if (ds && AS_BUILT_REVISION_STATES.has(ds)) return "asBuiltRevision";
   if (ds && PERMIT_REVISION_STATES.has(ds)) return "permitRevision";
   if (ds && UTILITY_REVISION_STATES.has(ds)) return "utilityRevision";
 
-  const hasComplete = !!p.designCompletionDate || ds === "Complete";
-  if (hasComplete) return "designComplete";
-
-  const hasDaApproved = !!p.designApprovalDate;
-  if (hasDaApproved) return "withoutDesignComplete";
-
-  const hasDaSent = !!p.designApprovalSentDate;
-  if (hasDaSent) return "withoutDaApproved";
-
-  // Reviewed = IDR done: DA-sent (already returned above) or a status past IDR.
-  const hasReviewed = !!p.designDraftDate && !!ds && !PRE_REVIEW_STATES.has(ds);
-  if (hasReviewed) return "withoutDaSent";
-
-  const hasDrafted = !!p.designDraftDate || ds === "Draft Complete";
-  if (hasDrafted) return "withoutReviewed";
-
-  return "withoutDrafted";
+  const m = resolveMilestones(p);
+  if (m.hasDesignComplete) return "designComplete";
+  if (m.hasDaApproved) return "awaitingDesignComplete";
+  if (m.hasDaSent) return "awaitingDaApproval";
+  return "awaitingDaSend";
 }
 
 /** Flag a parked / blocked / sales-change project. */
