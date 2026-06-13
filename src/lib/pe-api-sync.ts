@@ -36,6 +36,45 @@ import {
 } from "@/lib/pe-api";
 import { buildPeDealMap, matchProjectToDeal } from "@/lib/pe-scraper-sync";
 import { syncPeDocStatusesToHubSpot } from "@/lib/pe-hubspot-sync";
+import { hubspotClient } from "@/lib/hubspot";
+
+/**
+ * Stamp pe_portal_url + pe_project_id on matched deals that don't have them
+ * yet. Only fills BLANK fields — never overwrites an existing value — so
+ * email-verified links and any manual corrections are preserved even if the
+ * name matcher would resolve a project to a different deal. Best-effort.
+ */
+async function stampPortalLinks(
+  linkOps: { dealId: string; portalUrl: string; projectId: string }[],
+): Promise<number> {
+  const byDeal = new Map<string, { portalUrl: string; projectId: string }>();
+  for (const op of linkOps) if (!byDeal.has(op.dealId)) byDeal.set(op.dealId, { portalUrl: op.portalUrl, projectId: op.projectId });
+  const dealIds = [...byDeal.keys()];
+  if (dealIds.length === 0) return 0;
+
+  const current = new Map<string, { url?: string; pid?: string }>();
+  for (let i = 0; i < dealIds.length; i += 100) {
+    const res = (await hubspotClient.apiRequest({
+      method: "POST",
+      path: "/crm/v3/objects/deals/batch/read",
+      body: { inputs: dealIds.slice(i, i + 100).map((id) => ({ id })), properties: ["pe_portal_url", "pe_project_id"] },
+    })) as unknown as { json(): Promise<{ results?: { id: string; properties?: Record<string, string> }[] }> };
+    for (const d of (await res.json()).results ?? []) current.set(d.id, { url: d.properties?.pe_portal_url, pid: d.properties?.pe_project_id });
+  }
+
+  const inputs: { id: string; properties: Record<string, string> }[] = [];
+  for (const [dealId, want] of byDeal) {
+    const cur = current.get(dealId) ?? {};
+    const props: Record<string, string> = {};
+    if (!cur.url) props.pe_portal_url = want.portalUrl;
+    if (!cur.pid) props.pe_project_id = want.projectId;
+    if (Object.keys(props).length) inputs.push({ id: dealId, properties: props });
+  }
+  for (let i = 0; i < inputs.length; i += 100) {
+    await hubspotClient.apiRequest({ method: "POST", path: "/crm/v3/objects/deals/batch/update", body: { inputs: inputs.slice(i, i + 100) } });
+  }
+  return inputs.length;
+}
 import type { ParsedProject } from "@/lib/pe-scraper-sync";
 
 // ---------------------------------------------------------------------------
@@ -213,6 +252,8 @@ function apiProjectToParsed(project: PeProjectListItem): ParsedProject {
     m2Status: null,
     epcCost: null,
     documents: [], // not needed for matching
+    street: project.project.street, // for address matching
+    zip: project.project.zipCode != null ? String(project.project.zipCode) : undefined,
   };
 }
 
@@ -392,6 +433,7 @@ export async function syncFromPeApi(options?: {
 
     const docOps: DocUpsertOp[] = [];
     const versionOps: VersionUpsertOp[] = [];
+    const linkOps: { dealId: string; portalUrl: string; projectId: string }[] = [];
     let skippedProtected = 0;
 
     for (const project of projects) {
@@ -404,6 +446,13 @@ export async function syncFromPeApi(options?: {
         );
       } else {
         result.projectsMatched++;
+        // Record the canonical portal link so we can stamp pe_portal_url +
+        // pe_project_id on the deal (built from the project's own id).
+        linkOps.push({
+          dealId,
+          portalUrl: `https://raceway.participate.energy/projects/${project.id}`,
+          projectId: project.projectId,
+        });
       }
 
       const detail = detailMap.get(project.id);
@@ -622,6 +671,22 @@ export async function syncFromPeApi(options?: {
             `HubSpot doc-status push failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
           );
         }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4c: Stamp pe_portal_url + pe_project_id on newly-matched deals
+    // (fills blanks only — keeps the link fields current automatically).
+    // Set PE_LINK_STAMP_ENABLED=false to disable.
+    // -----------------------------------------------------------------------
+    if (process.env.PE_LINK_STAMP_ENABLED !== "false" && linkOps.length > 0) {
+      try {
+        const stamped = await stampPortalLinks(linkOps);
+        if (stamped > 0) console.warn(`[pe-api-sync] Stamped portal links on ${stamped} deals`);
+      } catch (err) {
+        result.errors.push(
+          `Portal-link stamp failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 

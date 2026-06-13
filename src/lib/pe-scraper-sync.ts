@@ -46,6 +46,21 @@ export interface ParsedProject {
   m2Status: string | null;
   epcCost: string | null;
   documents: ParsedDocument[];
+  street?: string; // site street, for address matching
+  zip?: string; // site zip, for address matching
+}
+
+/**
+ * Normalize a street + zip into a stable match key — lowercased, punctuation
+ * stripped, whitespace collapsed, zip truncated to 5 digits. Returns null when
+ * there isn't enough to key on (no street number or no zip). Used to match PE
+ * projects to HubSpot deals by site address (far more reliable than name).
+ */
+export function addrKey(street?: string | null, zip?: string | null): string | null {
+  const s = (street || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const z = String(zip || "").replace(/[^0-9]/g, "").slice(0, 5);
+  if (!s || z.length !== 5 || !/^\d/.test(s)) return null; // need a numbered street + 5-digit zip
+  return `addr:${s}|${z}`;
 }
 
 export interface DocChange {
@@ -707,6 +722,15 @@ export async function buildPeDealMap(): Promise<Map<string, string>> {
       if (id && peId && typeof peId === "string" && peId.trim()) {
         map.set(`pe:${peId.trim().toLowerCase()}`, id);
       }
+      // Index by site address — reliable when the name differs (co-owners,
+      // formatting). The address/zip deal properties are empty; the street +
+      // zip live in the dealname's 3rd segment ("Street, City, ST ZIP").
+      const addrSeg = name.split("|")[2]?.trim();
+      const m = addrSeg?.match(/^(.+?),\s*[^,]+,\s*[A-Za-z]{2}\s*(\d{5})/);
+      const aKey = m ? addrKey(m[1], m[2]) : null;
+      if (id && aKey && !map.has(aKey)) {
+        map.set(aKey, id);
+      }
     }
 
     after = response.paging?.next?.after;
@@ -742,11 +766,19 @@ export function matchProjectToDeal(
     if (peMatch) return peMatch;
   }
 
+  // 0.5. Address match — site street + zip. Survives name mismatches
+  //      (co-owners, "Fritch" vs "Lyons", spelling) that fool name matching.
+  const aKey = addrKey(project.street, project.zip);
+  if (aKey) {
+    const addrMatch = dealMap.get(aKey);
+    if (addrMatch) return addrMatch;
+  }
+
   // 1. PROJ number match — HubSpot deal names contain "PROJ-XXXX"
   if (project.projNumber) {
     const projLower = project.projNumber.toLowerCase();
     for (const [dealName, dealId] of dealMap) {
-      if (!dealName.startsWith("pe:") && dealName.includes(projLower)) return dealId;
+      if (!dealName.startsWith("pe:") && !dealName.startsWith("addr:") && dealName.includes(projLower)) return dealId;
     }
   }
 
@@ -755,7 +787,7 @@ export function matchProjectToDeal(
 
   // 2. Exact match: customer name appears in a deal name
   for (const [dealName, dealId] of dealMap) {
-    if (!dealName.startsWith("pe:") && dealName.includes(custLower)) return dealId;
+    if (!dealName.startsWith("pe:") && !dealName.startsWith("addr:") && dealName.includes(custLower)) return dealId;
   }
 
   // 3. Last name match (skip suffixes like "jr", "sr", "ii", "iii")
@@ -765,7 +797,7 @@ export function matchProjectToDeal(
   const lastName = meaningfulParts[meaningfulParts.length - 1];
   if (lastName && lastName.length >= 3) {
     for (const [dealName, dealId] of dealMap) {
-      if (!dealName.startsWith("pe:") && dealName.includes(lastName)) return dealId;
+      if (!dealName.startsWith("pe:") && !dealName.startsWith("addr:") && dealName.includes(lastName)) return dealId;
     }
   }
 
@@ -773,7 +805,7 @@ export function matchProjectToDeal(
   if (meaningfulParts.length >= 2) {
     const firstName = meaningfulParts[0];
     for (const [dealName, dealId] of dealMap) {
-      if (!dealName.startsWith("pe:") && dealName.includes(firstName) && dealName.includes(lastName)) {
+      if (!dealName.startsWith("pe:") && !dealName.startsWith("addr:") && dealName.includes(firstName) && dealName.includes(lastName)) {
         return dealId;
       }
     }
