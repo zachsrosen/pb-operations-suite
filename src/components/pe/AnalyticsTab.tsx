@@ -798,25 +798,6 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
     );
   };
 
-  // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-3 grid-cols-[8.5rem_1fr_3.5rem_3.5rem_3.5rem_3rem]";
-  const renderRow = (s: UploaderStat, muted: boolean) => {
-    const rate = rateOf(s);
-    return (
-      <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
-        <span className="text-xs text-foreground truncate" title={`${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>
-          {muted ? "Unknown" : prettyUploader(s.uploader)}
-          {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
-        </span>
-        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} />
-        <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
-        <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
-        <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
-        <span className="text-sm font-semibold text-foreground text-right tabular-nums">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
-      </div>
-    );
-  };
-
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
