@@ -23,6 +23,8 @@ import { resolveMilestones } from "@/lib/project-funnel-aggregation";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DESIGN_BUCKETS = [
+  "awaitingDesignUpload",
+  "awaitingDesignReview",
   "awaitingDaSend",
   "awaitingDaApproval",
   "awaitingDesignComplete",
@@ -35,6 +37,8 @@ export const DESIGN_BUCKETS = [
 export type DesignBucketKey = (typeof DESIGN_BUCKETS)[number];
 
 export const DESIGN_BUCKET_LABELS: Record<DesignBucketKey, string> = {
+  awaitingDesignUpload: "Awaiting Design Upload",
+  awaitingDesignReview: "Awaiting Design Review",
   awaitingDaSend: "Awaiting DA Send",
   awaitingDaApproval: "Awaiting DA Approval",
   awaitingDesignComplete: "Awaiting Design Complete",
@@ -132,6 +136,29 @@ const AS_BUILT_REVISION_STATES = new Set<string>([
   "Revision Needed - Rejected",
 ]);
 
+// design_status raw values that mean the design has NOT yet cleared Initial
+// Design Review (IDR). An uploaded design not in this set is "reviewed". Used
+// only to split the pre-DA-send region into upload vs review vs ready-to-send.
+const PRE_REVIEW_STATES = new Set<string>([
+  "Ready for Design",
+  "In Progress",
+  "Draft Complete",
+  "Initial Review",
+  "IDR Revision Needed",
+  "IDR Revision in Progress",
+  "Needs Clarification",
+  "Needs Clarification from Customer",
+  "Needs Clarification from Sales",
+  "Needs Clarification from Operations",
+  "Pending Resurvey",
+  "On Hold",
+  "No Design Needed",
+  "New Construction - Design Needed",
+  "New Construction - In Progress",
+  "Xcel - Design Needed",
+  "Xcel - In Progress",
+]);
+
 /** Active = still in flight: not cancelled and not project-complete. */
 function isActiveDeal(p: Project): boolean {
   return p.stageId !== CANCELLED_STAGE_ID && p.stageId !== PROJECT_COMPLETE_STAGE_ID;
@@ -153,7 +180,14 @@ function resolveBucket(p: Project): DesignBucketKey {
   if (m.hasDesignComplete) return "designComplete";
   if (m.hasDaApproved) return "awaitingDesignComplete";
   if (m.hasDaSent) return "awaitingDaApproval";
-  return "awaitingDaSend";
+
+  // Pre-DA-send: subdivide by where the design is in upload → review → ready.
+  // "Upload" = planset uploaded (design_draft_completion_date); "reviewed" =
+  // past IDR (design_status no longer a pre-review state).
+  const uploaded = !!p.designDraftDate || ds === "Draft Complete";
+  if (!uploaded) return "awaitingDesignUpload";
+  const reviewed = !!ds && !PRE_REVIEW_STATES.has(ds);
+  return reviewed ? "awaitingDaSend" : "awaitingDesignReview";
 }
 
 /** Flag a parked / blocked / sales-change project. */
