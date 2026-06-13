@@ -858,10 +858,13 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
   const colors = buildColorMap(order);
   const present = stack.filter((p) => daily.some((d) => (d.byUploader[p] ?? 0) > 0));
   const maxTotal = Math.max(...daily.map((d) => d.total), 1);
-  // Wider bars for the coarser, fewer-bar grains.
-  const barW = granularity === "month" ? 44 : granularity === "week" ? 26 : 20;
   const padL = 30, padT = 12, padB = 44, gap = 6, chartH = 320;
-  const chartW = padL + daily.length * (barW + gap) + 4;
+  // Bars grow to fill ~960px when there are few of them (week/month) and shrink
+  // (with horizontal scroll) when there are many (day), within sensible bounds.
+  const minBar = granularity === "day" ? 16 : 34;
+  const maxBar = granularity === "month" ? 150 : granularity === "week" ? 64 : 24;
+  const barW = Math.max(minBar, Math.min(maxBar, Math.floor((960 - padL) / Math.max(daily.length, 1)) - gap));
+  const chartW = Math.max(padL + daily.length * (barW + gap) + 4, padL + 60);
   const yTicks = 5;
   const labelEvery = Math.max(1, Math.ceil(daily.length / 24));
   const fmtLabel = (key: string) =>
@@ -914,7 +917,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
                   <title>{periodTitle(d)}</title>
                 </rect>
                 <text x={x + barW / 2} y={yCursor - 4} textAnchor="middle" className="fill-foreground text-[10px] tabular-nums">{d.total}</text>
-                {i % labelEvery === 0 && (
+                {(i % labelEvery === 0 || i === daily.length - 1) && (
                   <text x={x + barW / 2} y={padT + chartH + 16} textAnchor="middle" className="fill-muted text-[10px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 16})`}>
                     {fmtLabel(d.day)}
                   </text>
