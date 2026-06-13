@@ -779,13 +779,13 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   // Bar length encodes volume: scale every bar to the busiest attributed
   // uploader's doc count so the Unknown bucket doesn't flatten everyone else.
   const barScale = Math.max(...attributed.map((s) => s.approved + s.inReview + s.rejected), 1);
-  const teamPayments = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
-  const fmtK = (n: number) => (n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${Math.round(n)}`);
+  const attributedDocs = attributed.reduce((sum, s) => sum + s.approved + s.inReview + s.rejected, 0);
 
   // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_2.75rem_2.75rem_2.75rem_2.5rem_4rem]";
+  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
   const renderRow = (s: UploaderStat, muted: boolean) => {
     const rate = rateOf(s);
+    const total = s.approved + s.inReview + s.rejected;
     return (
       <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
         <span className="text-xs text-foreground truncate" title={`${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>
@@ -793,13 +793,11 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
           {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
         </span>
         <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} />
+        <span className="text-sm font-semibold text-foreground text-right tabular-nums">{total.toLocaleString("en-US")}</span>
         <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
         <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
-        <span className="text-sm font-semibold text-foreground text-right tabular-nums">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
-        <span className="text-xs text-cyan-400 text-right tabular-nums" title={`Owns ${s.milestonesOwned} approved milestone payment(s)`}>
-          {s.paymentsOwned > 0 ? fmtK(s.paymentsOwned) : "—"}
-        </span>
+        <span className="text-xs text-foreground text-right tabular-nums" title="Approved ÷ (approved + rejected)">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
       </div>
     );
   };
@@ -809,10 +807,9 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
         <MiniStat label="Attributed Uploads" value={attributedTotal.toLocaleString("en-US")}
           subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
+        <MiniStat label="Documents Owned" value={attributedDocs.toLocaleString("en-US")} subtitle="latest-version owner, attributed" />
         <MiniStat label="Team Approval Rate" value={teamApprovalRate === null ? "—" : `${teamApprovalRate}%`}
           subtitle={`${agg.approved.toLocaleString("en-US")} approved · ${agg.rejected.toLocaleString("en-US")} rejected`} />
-        <MiniStat label="Approved $ Owned" value={fmtK(teamPayments)}
-          subtitle={`of ${fmtK(teamPayments + (unknown?.paymentsOwned ?? 0))} total approved · ${fmtK(unknown?.paymentsOwned ?? 0)} unknown`} />
         <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
       </div>
 
@@ -820,11 +817,11 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
         <span>Docs by outcome — bar length = volume</span>
+        <span className="text-right">Total</span>
         <span className="text-right text-emerald-400/80">Appr.</span>
         <span className="text-right">In rev.</span>
         <span className="text-right text-orange-400/80">Rej.</span>
-        <span className="text-right" title="Approved ÷ (approved + rejected)">Rate</span>
-        <span className="text-right text-cyan-400/80" title="Approved milestone payments this person drove the most docs on">$ Owned</span>
+        <span className="text-right">Rate</span>
       </div>
 
       <div className="space-y-2">
@@ -914,19 +911,75 @@ function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: Uplo
   );
 }
 
+/** Compact dollar formatter shared by the payment views. */
+function fmtMoney(n: number): string {
+  return n >= 1000 ? `$${Math.round(n / 1000)}k` : `$${Math.round(n)}`;
+}
+
+/** Approved-payment ownership leaderboard — bar length = $ owned. */
+function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
+  const attributed = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER && s.paymentsOwned > 0);
+  const unknown = stats.find((s) => s.uploader === UNKNOWN_UPLOADER);
+  if (attributed.length === 0 && !(unknown && unknown.paymentsOwned > 0)) {
+    return <div className="text-sm text-muted py-8 text-center">No approved milestone payments attributed yet.</div>;
+  }
+  const teamPayments = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
+  const unknownPay = unknown?.paymentsOwned ?? 0;
+  const grand = teamPayments + unknownPay;
+  const maxPay = Math.max(...attributed.map((s) => s.paymentsOwned), 1);
+  const COLS = "grid items-center gap-x-3 grid-cols-[8rem_1fr_4.5rem_6rem]";
+  const row = (s: UploaderStat, muted: boolean) => (
+    <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
+      <span className="text-xs text-foreground truncate" title={s.uploader}>
+        {muted ? "Unknown" : prettyUploader(s.uploader)}
+        {muted && <span className="text-[10px] text-muted block leading-tight">no known uploader</span>}
+      </span>
+      <div className="h-4 rounded bg-surface-2 overflow-hidden w-full">
+        <div className="h-full bg-cyan-500/80 rounded" style={{ width: `${Math.min(100, (s.paymentsOwned / maxPay) * 100)}%`, minWidth: s.paymentsOwned > 0 ? 2 : 0 }} />
+      </div>
+      <span className="text-[11px] text-muted text-right tabular-nums" title="Approved milestones owned">{s.milestonesOwned} ms</span>
+      <span className="text-sm font-semibold text-cyan-400 text-right tabular-nums">{fmtMoney(s.paymentsOwned)}</span>
+    </div>
+  );
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+        <MiniStat label="Attributed $ Owned" value={fmtMoney(teamPayments)} subtitle={`of ${fmtMoney(grand)} total approved`} />
+        <MiniStat label="Approval Rate of Total" value={grand ? `${Math.round((teamPayments / grand) * 100)}%` : "—"} subtitle="credited to a known person" />
+        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader on milestone" />
+      </div>
+      <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
+        <span>Person</span>
+        <span>Approved payments owned — bar = $</span>
+        <span className="text-right">Milepts</span>
+        <span className="text-right text-cyan-400/80">$ Owned</span>
+      </div>
+      <div className="space-y-2">
+        {attributed.map((s) => <div key={s.uploader}>{row(s, false)}</div>)}
+      </div>
+      {unknown && unknownPay > 0 && (
+        <div className="mt-2 pt-2 border-t border-t-border">{row(unknown, true)}</div>
+      )}
+      <p className="mt-3 text-[11px] text-muted">Each approved/paid milestone&apos;s payment is credited to whoever uploaded the most of its approved docs (top known uploader wins; Unknown only when no approved doc has a known uploader).</p>
+    </div>
+  );
+}
+
 function UploadersSection({ stats, daily }: { stats: UploaderStat[]; daily: DailyUpload[] }) {
-  const [tab, setTab] = useState<"person" | "day">("person");
+  const [tab, setTab] = useState<"submissions" | "day" | "payments">("submissions");
   return (
     <Section
       title="Doc Uploaders"
       subtitle={
-        tab === "person"
-          ? "Who uploaded each doc, their approval rate, and the approved milestone payments they drove. PE began attributing uploads partway through — earlier uploads land in Unknown."
-          : "Documents uploaded per day, segmented by who uploaded them (last 90 days)."
+        tab === "submissions"
+          ? "Who uploaded each doc and their approval rate. PE began attributing uploads partway through — earlier uploads land in Unknown."
+          : tab === "day"
+            ? "Documents uploaded per day, segmented by who uploaded them (last 90 days)."
+            : "Approved milestone payments each person drove, by their share of the approved docs."
       }
       actions={
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {([["person", "By Person"], ["day", "By Day"]] as const).map(([t, label]) => (
+          {([["submissions", "Submissions"], ["day", "By Day"], ["payments", "Approved $"]] as const).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${tab === t ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}>
               {label}
@@ -935,7 +988,9 @@ function UploadersSection({ stats, daily }: { stats: UploaderStat[]; daily: Dail
         </div>
       }
     >
-      {tab === "person" ? <UploaderPanel stats={stats} /> : <DailyUploadsChart daily={daily} stats={stats} />}
+      {tab === "submissions" ? <UploaderPanel stats={stats} />
+        : tab === "day" ? <DailyUploadsChart daily={daily} stats={stats} />
+          : <PaymentPanel stats={stats} />}
     </Section>
   );
 }
