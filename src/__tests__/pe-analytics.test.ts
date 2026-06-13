@@ -6,7 +6,8 @@ import {
   percentile,
   buildUploaderStats,
   buildPaymentOwnership,
-  buildDailyUploads,
+  buildPeriodUploads,
+  buildDocTypeByUploader,
   UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
@@ -230,20 +231,54 @@ describe("buildPaymentOwnership", () => {
   });
 });
 
-describe("buildDailyUploads", () => {
+describe("buildPeriodUploads", () => {
   const now = new Date("2026-06-13T12:00:00Z");
-  it("buckets uploads per day, segmented by uploader, Unknown for null, within window", () => {
-    const rows = [
-      { uploadedAt: "2026-06-12T03:00:00Z", uploadedBy: "a@pb.com" },
-      { uploadedAt: "2026-06-12T20:00:00Z", uploadedBy: "a@pb.com" },
-      { uploadedAt: "2026-06-12T21:00:00Z", uploadedBy: null },
-      { uploadedAt: "2026-06-10T10:00:00Z", uploadedBy: "b@pb.com" },
-      { uploadedAt: "2026-01-01T00:00:00Z", uploadedBy: "a@pb.com" }, // outside 30d window
-    ];
-    const out = buildDailyUploads(rows, 30, now);
-    expect(out.map((d) => d.day)).toEqual(["2026-06-10", "2026-06-12"]); // sorted, old window dropped
+  const rows = [
+    { uploadedAt: "2026-06-12T03:00:00Z", uploadedBy: "a@pb.com" },
+    { uploadedAt: "2026-06-12T20:00:00Z", uploadedBy: "a@pb.com" },
+    { uploadedAt: "2026-06-12T21:00:00Z", uploadedBy: null },
+    { uploadedAt: "2026-06-08T10:00:00Z", uploadedBy: "b@pb.com" }, // same week as 6/12, earlier month-day
+    { uploadedAt: "2026-01-05T00:00:00Z", uploadedBy: "a@pb.com" }, // outside 90d day window, but counts for week/month
+  ];
+
+  it("day grain keeps the 90-day window, segmented by uploader (Unknown for null)", () => {
+    const out = buildPeriodUploads(rows, "day", now);
+    expect(out.map((d) => d.day)).toEqual(["2026-06-08", "2026-06-12"]); // Jan dropped (outside 90d)
     const d12 = out.find((d) => d.day === "2026-06-12")!;
     expect(d12.total).toBe(3);
     expect(d12.byUploader).toEqual({ "a@pb.com": 2, [UNKNOWN_UPLOADER]: 1 });
+  });
+
+  it("week grain buckets by Monday and spans all time", () => {
+    const out = buildPeriodUploads(rows, "week", now);
+    // 6/8 (Mon) and 6/12 (Fri) share the week of 2026-06-08; Jan 5 is its own week
+    const wk = out.find((d) => d.day === "2026-06-08")!;
+    expect(wk.total).toBe(4);
+    expect(out.some((d) => d.day === "2026-01-05")).toBe(true); // all-time, not windowed
+  });
+
+  it("month grain buckets by YYYY-MM across all time", () => {
+    const out = buildPeriodUploads(rows, "month", now);
+    expect(out.map((d) => d.day)).toEqual(["2026-01", "2026-06"]);
+    expect(out.find((d) => d.day === "2026-06")!.total).toBe(4);
+  });
+});
+
+describe("buildDocTypeByUploader", () => {
+  it("counts distinct docs owned per person by type, latest version wins", () => {
+    const rows = [
+      { uploadedBy: "a@pb.com", dealId: "d1", docName: "Design Plan", version: 1 },
+      { uploadedBy: "b@pb.com", dealId: "d1", docName: "Design Plan", version: 2 }, // supersedes a
+      { uploadedBy: "a@pb.com", dealId: "d1", docName: "Photos per Policy", version: 1 },
+      { uploadedBy: null, dealId: "d2", docName: "Design Plan", version: 1 },
+    ];
+    const out = buildDocTypeByUploader(rows);
+    const a = out.find((r) => r.uploader === "a@pb.com")!;
+    const b = out.find((r) => r.uploader === "b@pb.com")!;
+    const u = out.find((r) => r.uploader === UNKNOWN_UPLOADER)!;
+    expect(b.byDoc).toEqual({ "Design Plan": 1 }); // owns d1 design (v2)
+    expect(a.byDoc).toEqual({ "Photos per Policy": 1 }); // a's design was superseded
+    expect(u.byDoc).toEqual({ "Design Plan": 1 });
+    expect(out[out.length - 1].uploader).toBe(UNKNOWN_UPLOADER); // Unknown sorted last
   });
 });

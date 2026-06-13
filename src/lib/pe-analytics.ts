@@ -367,35 +367,53 @@ export function buildPaymentOwnership(
   return owned;
 }
 
-/** Per-day upload counts segmented by uploader, for the "By Day" stacked bars. */
+/** Per-period upload counts segmented by uploader, for the stacked bars. */
 export interface DailyUpload {
-  day: string; // YYYY-MM-DD (UTC)
+  day: string; // period key: YYYY-MM-DD (day/week-start) or YYYY-MM (month)
   total: number;
-  byUploader: Record<string, number>; // uploader → submissions that day
+  byUploader: Record<string, number>; // uploader → uploads that period
+}
+
+export type UploadGranularity = "day" | "week" | "month";
+
+/** All three period series, so the chart can toggle without a refetch. */
+export interface UploadsByPeriod {
+  day: DailyUpload[]; // trailing 90 days
+  week: DailyUpload[]; // all time, ISO week
+  month: DailyUpload[]; // all time, calendar month
+}
+
+/** Monday-start ISO week key (YYYY-MM-DD of the week's Monday, UTC). */
+function weekKey(at: Date): string {
+  const x = new Date(at);
+  const dow = (x.getUTCDay() + 6) % 7; // 0 = Monday
+  x.setUTCDate(x.getUTCDate() - dow);
+  return x.toISOString().slice(0, 10);
 }
 
 /**
- * Bucket version uploads into per-day counts segmented by uploader, over the
- * trailing `days` window. Days with no uploads are omitted. Null uploaders
- * group under UNKNOWN_UPLOADER. Sorted oldest → newest.
+ * Bucket version uploads into per-period counts segmented by uploader. Day
+ * granularity keeps the trailing 90 days; week/month cover all time. Empty
+ * periods are omitted. Null uploaders group under UNKNOWN_UPLOADER. Sorted
+ * oldest → newest.
  */
-export function buildDailyUploads(
+export function buildPeriodUploads(
   rows: { uploadedAt: Date | string; uploadedBy: string | null }[],
-  days = 30,
+  granularity: UploadGranularity = "day",
   now: Date = new Date(),
 ): DailyUpload[] {
-  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  const byDay = new Map<string, Map<string, number>>();
+  const cutoff = granularity === "day" ? new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000) : null;
+  const buckets = new Map<string, Map<string, number>>();
   for (const r of rows) {
     const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
-    if (isNaN(at.getTime()) || at < cutoff) continue;
-    const day = at.toISOString().slice(0, 10);
+    if (isNaN(at.getTime()) || (cutoff && at < cutoff)) continue;
+    const key = granularity === "month" ? at.toISOString().slice(0, 7) : granularity === "week" ? weekKey(at) : at.toISOString().slice(0, 10);
     const who = r.uploadedBy?.trim() || UNKNOWN_UPLOADER;
-    const m = byDay.get(day) ?? new Map<string, number>();
+    const m = buckets.get(key) ?? new Map<string, number>();
     m.set(who, (m.get(who) ?? 0) + 1);
-    byDay.set(day, m);
+    buckets.set(key, m);
   }
-  return [...byDay.entries()]
+  return [...buckets.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([day, m]) => {
       const byUploader: Record<string, number> = {};
@@ -405,6 +423,64 @@ export function buildDailyUploads(
         total += n;
       }
       return { day, total, byUploader };
+    });
+}
+
+/** Build all three period series in one pass. */
+export function buildUploadsByPeriod(
+  rows: { uploadedAt: Date | string; uploadedBy: string | null }[],
+  now: Date = new Date(),
+): UploadsByPeriod {
+  return {
+    day: buildPeriodUploads(rows, "day", now),
+    week: buildPeriodUploads(rows, "week", now),
+    month: buildPeriodUploads(rows, "month", now),
+  };
+}
+
+/** Per-person breakdown of which document types they uploaded. */
+export interface UploaderDocTypes {
+  uploader: string;
+  total: number; // distinct docs owned
+  byDoc: Record<string, number>; // canonical doc name → count
+}
+
+/**
+ * For each uploader, count the distinct docs they own (latest version) by
+ * document type. Null uploaders group under UNKNOWN_UPLOADER. Sorted by total
+ * descending, Unknown last.
+ */
+export function buildDocTypeByUploader(
+  rows: { uploadedBy: string | null; dealId: string | null; docName: string; version: number }[],
+): UploaderDocTypes[] {
+  const latest = new Map<string, { version: number; by: string | null; doc: string }>();
+  for (const r of rows) {
+    if (!r.dealId) continue;
+    const k = `${r.dealId}|${r.docName}`;
+    const cur = latest.get(k);
+    if (!cur || r.version > cur.version) latest.set(k, { version: r.version, by: r.uploadedBy, doc: r.docName });
+  }
+  const byUploader = new Map<string, Map<string, number>>();
+  for (const [, o] of latest) {
+    const who = o.by?.trim() || UNKNOWN_UPLOADER;
+    const m = byUploader.get(who) ?? new Map<string, number>();
+    m.set(o.doc, (m.get(o.doc) ?? 0) + 1);
+    byUploader.set(who, m);
+  }
+  return [...byUploader.entries()]
+    .map(([uploader, m]) => {
+      const byDoc: Record<string, number> = {};
+      let total = 0;
+      for (const [doc, n] of m) {
+        byDoc[doc] = n;
+        total += n;
+      }
+      return { uploader, total, byDoc };
+    })
+    .sort((a, b) => {
+      if (a.uploader === UNKNOWN_UPLOADER) return 1;
+      if (b.uploader === UNKNOWN_UPLOADER) return -1;
+      return b.total - a.total || a.uploader.localeCompare(b.uploader);
     });
 }
 
@@ -537,7 +613,8 @@ export interface PeAnalyticsPayload {
   docApprovalEvents: DocRejectionEvent[];
   /** Doc uploads per person (PE version history); Unknown bucket = pre-tracking uploads. */
   uploaderStats: UploaderStat[];
-  dailyUploads: DailyUpload[];
+  uploadsByPeriod: UploadsByPeriod;
+  docTypeByUploader: UploaderDocTypes[];
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
