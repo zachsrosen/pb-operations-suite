@@ -107,16 +107,18 @@ describe("median / percentile", () => {
 
 describe("buildUploaderStats", () => {
   const now = new Date("2026-06-12T00:00:00Z");
+  const v = (uploadedBy: string | null, uploadedAt: string, dealId: string | null, docName = "Design Plan", version = 1) => ({ uploadedBy, uploadedAt, dealId, docName, version });
 
   it("groups by uploader with null/empty grouped as Unknown, Unknown sorted last", () => {
     const stats = buildUploaderStats(
       [
-        { uploadedBy: "lauren@pb.com", uploadedAt: "2026-06-01T00:00:00Z", dealId: "d1" },
-        { uploadedBy: "lauren@pb.com", uploadedAt: "2026-06-02T00:00:00Z", dealId: "d2" },
-        { uploadedBy: "layla@pb.com", uploadedAt: "2026-06-03T00:00:00Z", dealId: "d1" },
-        { uploadedBy: null, uploadedAt: "2026-01-01T00:00:00Z", dealId: "d3" },
-        { uploadedBy: "", uploadedAt: "2026-01-02T00:00:00Z", dealId: null },
+        v("lauren@pb.com", "2026-06-01T00:00:00Z", "d1", "Design Plan"),
+        v("lauren@pb.com", "2026-06-02T00:00:00Z", "d2", "Photos per Policy"),
+        v("layla@pb.com", "2026-06-03T00:00:00Z", "d1", "Utility Bill"),
+        v(null, "2026-01-01T00:00:00Z", "d3", "Utility Bill"),
+        v("", "2026-01-02T00:00:00Z", null, "Utility Bill"),
       ],
+      new Map(),
       now,
     );
     expect(stats.map((s) => s.uploader)).toEqual(["lauren@pb.com", "layla@pb.com", UNKNOWN_UPLOADER]);
@@ -127,9 +129,10 @@ describe("buildUploaderStats", () => {
   it("counts trailing-8-week uploads separately from all time", () => {
     const stats = buildUploaderStats(
       [
-        { uploadedBy: "a@pb.com", uploadedAt: "2026-06-10T00:00:00Z", dealId: "d1" }, // recent
-        { uploadedBy: "a@pb.com", uploadedAt: "2026-01-10T00:00:00Z", dealId: "d1" }, // old
+        v("a@pb.com", "2026-06-10T00:00:00Z", "d1", "Design Plan"),
+        v("a@pb.com", "2026-01-10T00:00:00Z", "d2", "Photos per Policy"),
       ],
+      new Map(),
       now,
     );
     expect(stats[0].total).toBe(2);
@@ -137,14 +140,53 @@ describe("buildUploaderStats", () => {
   });
 
   it("ties broken alphabetically, empty input yields empty output", () => {
-    expect(buildUploaderStats([], now)).toEqual([]);
+    expect(buildUploaderStats([], new Map(), now)).toEqual([]);
     const stats = buildUploaderStats(
       [
-        { uploadedBy: "b@pb.com", uploadedAt: "2026-06-01T00:00:00Z", dealId: "d1" },
-        { uploadedBy: "a@pb.com", uploadedAt: "2026-06-01T00:00:00Z", dealId: "d1" },
+        v("b@pb.com", "2026-06-01T00:00:00Z", "d1"),
+        v("a@pb.com", "2026-06-01T00:00:00Z", "d2"),
       ],
+      new Map(),
       now,
     );
     expect(stats.map((s) => s.uploader)).toEqual(["a@pb.com", "b@pb.com"]);
+  });
+
+  it("attributes a doc's outcome to whoever uploaded its latest version", () => {
+    const status = new Map([
+      ["d1|Design Plan", "APPROVED"],
+      ["d2|Photos per Policy", "ACTION_REQUIRED"],
+      ["d3|Utility Bill", "UNDER_REVIEW"],
+    ]);
+    const stats = buildUploaderStats(
+      [
+        // d1 Design Plan: a uploaded v1 (rejected then), b uploaded v2 (now APPROVED) -> b owns it
+        v("a@pb.com", "2026-05-01T00:00:00Z", "d1", "Design Plan", 1),
+        v("b@pb.com", "2026-06-01T00:00:00Z", "d1", "Design Plan", 2),
+        v("a@pb.com", "2026-06-02T00:00:00Z", "d2", "Photos per Policy", 1), // rejected
+        v("a@pb.com", "2026-06-03T00:00:00Z", "d3", "Utility Bill", 1), // in review
+      ],
+      status,
+      now,
+    );
+    const a = stats.find((s) => s.uploader === "a@pb.com");
+    const b = stats.find((s) => s.uploader === "b@pb.com");
+    // b owns the approved d1; a owns the rejected d2 and in-review d3
+    expect(b).toMatchObject({ docsOwned: 1, approved: 1, rejected: 0, inReview: 0 });
+    expect(a).toMatchObject({ docsOwned: 2, approved: 0, rejected: 1, inReview: 1 });
+  });
+
+  it("docs with no status or NOT_UPLOADED count toward docsOwned but no outcome bucket", () => {
+    const stats = buildUploaderStats(
+      [
+        v("a@pb.com", "2026-06-01T00:00:00Z", "d1", "Design Plan", 1),
+        v("a@pb.com", "2026-06-01T00:00:00Z", "d2", "Utility Bill", 1),
+      ],
+      new Map([["d1|Design Plan", "NOT_UPLOADED"]]),
+      now,
+    );
+    const a = stats[0];
+    expect(a.docsOwned).toBe(2);
+    expect(a.approved + a.rejected + a.inReview).toBe(0);
   });
 });

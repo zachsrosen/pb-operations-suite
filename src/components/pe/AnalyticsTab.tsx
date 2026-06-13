@@ -734,6 +734,20 @@ function prettyUploader(email: string): string {
     .join(" ");
 }
 
+/** Horizontal approved/in-review/rejected outcome bar for one uploader. */
+function OutcomeBar({ approved, inReview, rejected }: { approved: number; inReview: number; rejected: number }) {
+  const total = approved + inReview + rejected;
+  if (total === 0) return <div className="flex-1 h-4 rounded bg-surface-2" />;
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  return (
+    <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex" title={`${approved} approved · ${inReview} in review · ${rejected} rejected`}>
+      {approved > 0 && <div className="h-full bg-emerald-500/80" style={{ width: pct(approved) }} />}
+      {inReview > 0 && <div className="h-full bg-zinc-400/60" style={{ width: pct(inReview) }} />}
+      {rejected > 0 && <div className="h-full bg-orange-500/80" style={{ width: pct(rejected) }} />}
+    </div>
+  );
+}
+
 function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   if (stats.length === 0) {
     return (
@@ -746,39 +760,60 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   const unknown = stats.find((s) => s.uploader === UNKNOWN_UPLOADER);
   const attributedTotal = attributed.reduce((s, r) => s + r.total, 0);
   const grandTotal = attributedTotal + (unknown?.total ?? 0);
-  const maxTotal = Math.max(...attributed.map((s) => s.total), 1);
+  // Roll up outcomes across attributed uploaders for the header stats.
+  const agg = attributed.reduce(
+    (a, s) => ({ approved: a.approved + s.approved, rejected: a.rejected + s.rejected, inReview: a.inReview + s.inReview }),
+    { approved: 0, rejected: 0, inReview: 0 },
+  );
+  const reviewed = agg.approved + agg.rejected; // docs PE has ruled on
+  const teamApprovalRate = reviewed ? Math.round((agg.approved / reviewed) * 100) : null;
+  const rateOf = (s: UploaderStat) => {
+    const ruled = s.approved + s.rejected;
+    return ruled ? s.approved / ruled : null;
+  };
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-w-2xl mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
         <MiniStat label="Attributed Uploads" value={attributedTotal.toLocaleString("en-US")}
           subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
         <MiniStat label="People Uploading" value={String(attributed.length)} subtitle="all time" />
+        <MiniStat label="Team Approval Rate" value={teamApprovalRate === null ? "—" : `${teamApprovalRate}%`}
+          subtitle={`${agg.approved.toLocaleString("en-US")} approved / ${agg.rejected.toLocaleString("en-US")} rejected`} />
         <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
       </div>
+      <div className="flex flex-wrap items-center gap-4 mb-2 text-[11px] text-muted">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" /> Approved</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/60" /> In review</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/80" /> Rejected / action required</span>
+        <span className="ml-auto">Outcome of each person&apos;s latest upload per doc</span>
+      </div>
       <div className="space-y-1.5">
-        {attributed.map((s) => (
-          <div key={s.uploader} className="flex items-center gap-2">
-            <span className="text-[11px] text-foreground w-40 truncate" title={s.uploader}>{prettyUploader(s.uploader)}</span>
-            <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden">
-              <div className="h-full rounded bg-cyan-500/70" style={{ width: `${(s.total / maxTotal) * 100}%` }} />
+        {attributed.map((s) => {
+          const rate = rateOf(s);
+          return (
+            <div key={s.uploader} className="flex items-center gap-2">
+              <span className="text-[11px] text-foreground w-40 truncate" title={`${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>{prettyUploader(s.uploader)}</span>
+              <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} />
+              <span className="text-[10px] text-emerald-400 w-12 text-right" title="Docs approved">{s.approved} ok</span>
+              <span className="text-[10px] text-orange-400 w-14 text-right" title="Docs rejected / action required">{s.rejected} rej</span>
+              <span className="text-[10px] text-muted w-12 text-right" title="Docs still in review">{s.inReview} rev</span>
+              <span className="text-xs text-foreground w-11 text-right" title="Approval rate = approved / (approved + rejected)">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
             </div>
-            <span className="text-xs text-foreground w-12 text-right">{s.total.toLocaleString("en-US")}</span>
-            <span className="text-[10px] text-muted w-20 text-right" title="Uploads in the last 8 weeks">{s.last8w} last 8w</span>
-            <span className="text-[10px] text-muted w-16 text-right" title="Distinct deals touched">{s.deals} deals</span>
-          </div>
-        ))}
-        {unknown && (
+          );
+        })}
+        {unknown && unknown.approved + unknown.rejected + unknown.inReview > 0 && (
           <div className="flex items-center gap-2 opacity-60 pt-1 border-t border-t-border mt-2">
-            <span className="text-[11px] text-muted w-40 truncate" title="Versions uploaded before PE began recording the uploader — attribution honestly unavailable">
+            <span className="text-[11px] text-muted w-40 truncate" title="Docs whose latest version was uploaded before PE recorded the uploader">
               Unknown (pre-tracking)
             </span>
-            <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden">
-              <div className="h-full rounded bg-zinc-500/50" style={{ width: `${Math.min(100, (unknown.total / maxTotal) * 100)}%` }} />
-            </div>
-            <span className="text-xs text-muted w-12 text-right">{unknown.total.toLocaleString("en-US")}</span>
-            <span className="text-[10px] text-muted w-20 text-right">{unknown.last8w} last 8w</span>
-            <span className="text-[10px] text-muted w-16 text-right">{unknown.deals} deals</span>
+            <OutcomeBar approved={unknown.approved} inReview={unknown.inReview} rejected={unknown.rejected} />
+            <span className="text-[10px] text-emerald-400/70 w-12 text-right">{unknown.approved} ok</span>
+            <span className="text-[10px] text-orange-400/70 w-14 text-right">{unknown.rejected} rej</span>
+            <span className="text-[10px] text-muted w-12 text-right">{unknown.inReview} rev</span>
+            <span className="text-xs text-muted w-11 text-right">
+              {unknown.approved + unknown.rejected ? `${Math.round((unknown.approved / (unknown.approved + unknown.rejected)) * 100)}%` : "—"}
+            </span>
           </div>
         )}
       </div>
