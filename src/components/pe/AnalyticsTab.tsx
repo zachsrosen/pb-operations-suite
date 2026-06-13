@@ -927,7 +927,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
   const unknownPay = unknown?.paymentsOwned ?? 0;
   const grand = teamPayments + unknownPay;
   const maxPay = Math.max(...attributed.map((s) => s.paymentsOwned), 1);
-  const COLS = "grid items-center gap-x-3 grid-cols-[8rem_1fr_4.5rem_6rem]";
+  const COLS = "grid items-center gap-x-3 grid-cols-[8rem_1fr_5.5rem_6rem]";
   const row = (s: UploaderStat, muted: boolean) => (
     <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
       <span className="text-xs text-foreground truncate" title={s.uploader}>
@@ -937,7 +937,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
       <div className="h-4 rounded bg-surface-2 overflow-hidden w-full">
         <div className="h-full bg-cyan-500/80 rounded" style={{ width: `${Math.min(100, (s.paymentsOwned / maxPay) * 100)}%`, minWidth: s.paymentsOwned > 0 ? 2 : 0 }} />
       </div>
-      <span className="text-[11px] text-muted text-right tabular-nums" title="Approved milestones owned">{s.milestonesOwned} ms</span>
+      <span className="text-[11px] text-muted text-right tabular-nums" title="Approved milestone payments owned">{s.milestonesOwned}</span>
       <span className="text-sm font-semibold text-cyan-400 text-right tabular-nums">{fmtMoney(s.paymentsOwned)}</span>
     </div>
   );
@@ -951,7 +951,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
         <span>Approved payments owned — bar = $</span>
-        <span className="text-right">Milepts</span>
+        <span className="text-right" title="Approved milestone payments owned">Milestones</span>
         <span className="text-right text-cyan-400/80">$ Owned</span>
       </div>
       <div className="space-y-2">
