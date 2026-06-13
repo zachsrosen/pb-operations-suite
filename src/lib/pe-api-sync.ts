@@ -35,6 +35,7 @@ import {
   type PeProjectDetail,
 } from "@/lib/pe-api";
 import { buildPeDealMap, matchProjectToDeal } from "@/lib/pe-scraper-sync";
+import { syncPeDocStatusesToHubSpot } from "@/lib/pe-hubspot-sync";
 import type { ParsedProject } from "@/lib/pe-scraper-sync";
 
 // ---------------------------------------------------------------------------
@@ -589,6 +590,27 @@ export async function syncFromPeApi(options?: {
               `Version upsert failed: ${op.docName} v${op.version} (${op.peProjectId}): ${err instanceof Error ? err.message : String(err)}`,
             );
           }
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4b: Push doc statuses to HubSpot deal properties (best-effort)
+    //
+    // This was previously the retired scraper's job. The API sync now owns the
+    // DB→HubSpot mirror so the per-doc HubSpot status properties stay current.
+    // Set PE_HUBSPOT_DOC_SYNC_ENABLED=false to disable.
+    // -----------------------------------------------------------------------
+    if (process.env.PE_HUBSPOT_DOC_SYNC_ENABLED !== "false") {
+      const pushDealIds = [...new Set(docOps.map((op) => op.dealId))];
+      if (pushDealIds.length > 0) {
+        try {
+          await syncPeDocStatusesToHubSpot(pushDealIds);
+          console.warn(`[pe-api-sync] Pushed doc statuses to HubSpot for ${pushDealIds.length} deals`);
+        } catch (err) {
+          result.errors.push(
+            `HubSpot doc-status push failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
     }
