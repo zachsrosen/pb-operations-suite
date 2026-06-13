@@ -811,7 +811,8 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
           subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
         <MiniStat label="Team Approval Rate" value={teamApprovalRate === null ? "—" : `${teamApprovalRate}%`}
           subtitle={`${agg.approved.toLocaleString("en-US")} approved · ${agg.rejected.toLocaleString("en-US")} rejected`} />
-        <MiniStat label="Approved $ Owned" value={fmtK(teamPayments)} subtitle="attributed approved payments" />
+        <MiniStat label="Approved $ Owned" value={fmtK(teamPayments)}
+          subtitle={`of ${fmtK(teamPayments + (unknown?.paymentsOwned ?? 0))} total approved · ${fmtK(unknown?.paymentsOwned ?? 0)} unknown`} />
         <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
       </div>
 
@@ -847,20 +848,20 @@ function buildColorMap(orderedPeople: string[]): Map<string, string> {
   return m;
 }
 
-/** Per-day uploads as stacked bars segmented by who uploaded (last 30 days). */
+/** Per-day uploads as stacked bars segmented by who uploaded (last 90 days). */
 function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: UploaderStat[] }) {
   if (daily.length === 0) {
-    return <div className="text-sm text-muted py-8 text-center">No uploads in the last 30 days.</div>;
+    return <div className="text-sm text-muted py-8 text-center">No uploads in the last 90 days.</div>;
   }
   const order = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER).map((s) => s.uploader);
   const stack = [...order, UNKNOWN_UPLOADER]; // Unknown stacks on top
   const colors = buildColorMap(order);
   const present = stack.filter((p) => daily.some((d) => (d.byUploader[p] ?? 0) > 0));
   const maxTotal = Math.max(...daily.map((d) => d.total), 1);
-  const padL = 26, padT = 10, padB = 34, barW = 16, gap = 7, chartH = 190;
+  const padL = 30, padT = 12, padB = 44, barW = 20, gap = 6, chartH = 320;
   const chartW = padL + daily.length * (barW + gap) + 4;
-  const yTicks = 4;
-  const labelEvery = Math.ceil(daily.length / 10);
+  const yTicks = 5;
+  const labelEvery = Math.max(1, Math.ceil(daily.length / 20));
 
   return (
     <div>
@@ -898,9 +899,9 @@ function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: Uplo
                     <title>{`${d.day} · ${person === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(person)}: ${n}`}</title>
                   </rect>;
                 })}
-                <text x={x + barW / 2} y={yCursor - 3} textAnchor="middle" className="fill-foreground text-[9px] tabular-nums">{d.total}</text>
+                <text x={x + barW / 2} y={yCursor - 4} textAnchor="middle" className="fill-foreground text-[10px] tabular-nums">{d.total}</text>
                 {i % labelEvery === 0 && (
-                  <text x={x + barW / 2} y={padT + chartH + 14} textAnchor="middle" className="fill-muted text-[9px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 14})`}>
+                  <text x={x + barW / 2} y={padT + chartH + 16} textAnchor="middle" className="fill-muted text-[10px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 16})`}>
                     {d.day.slice(5)}
                   </text>
                 )}
@@ -921,7 +922,7 @@ function UploadersSection({ stats, daily }: { stats: UploaderStat[]; daily: Dail
       subtitle={
         tab === "person"
           ? "Who uploaded each doc, their approval rate, and the approved milestone payments they drove. PE began attributing uploads partway through — earlier uploads land in Unknown."
-          : "Documents uploaded per day, segmented by who uploaded them (last 30 days)."
+          : "Documents uploaded per day, segmented by who uploaded them (last 90 days)."
       }
       actions={
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1539,6 +1540,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             )}
           </Section>
 
+          {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
+          <UploadersSection stats={data.uploaderStats ?? []} daily={data.dailyUploads ?? []} />
+
           {/* 2. Expected revenue pipeline */}
           <Section
             title="Expected Revenue Pipeline"
@@ -1641,9 +1645,6 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 barClass="fill-orange-500" pillClass="bg-orange-500/20 text-orange-400 border-orange-500/40" swatchText="text-orange-400" />
             )}
           </Section>
-
-          {/* 3.6 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} daily={data.dailyUploads ?? []} />
 
           {/* 4. Rejection analysis */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
