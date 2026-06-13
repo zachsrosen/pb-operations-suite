@@ -4,6 +4,89 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-27
+
+### Enphase Enlighten Integration (Major)
+- Full PowerHub-parity monitoring integration: API client, crosslink, three cron jobs, HubSpot UI card
+- OAuth2 with DB-persisted refresh token rotation (token bucket rate limiter at 8 req/sec)
+- Prisma models: `EnphaseSite`, `EnphaseTelemetrySnapshot`, `EnphaseTelemetryHistory` + 8 `enphase_*` columns on `HubSpotPropertyCache`
+- Cron jobs: asset discovery (daily 9am) with address-hash auto-linking, telemetry snapshots (every 15 min), micro health monitoring (every 30 min)
+- HubSpot UI Extension card backend with HMAC signing — production, battery SoC, micro health, portal link
+- Partner OAuth setup route (`grant_type=password` for installers with 10+ systems) in addition to per-homeowner authorization-code flow
+- Feature flags: `ENPHASE_ENABLED`, `ENPHASE_CROSSLINK_ENABLED`, `NEXT_PUBLIC_UI_ENPHASE_VIEWS_ENABLED`
+- CLAUDE.md Section 12 documents the integration
+
+### Project Pipeline Funnel (Major)
+- New full-lifecycle Executive dashboard extending the design funnel through PTO Granted
+- 11 stages: Sales Closed → Survey Scheduled → Survey Done → DA Sent → DA Approved → Design Complete → Permits Submitted → Permits Issued → Construction Scheduled → Construction Complete → Inspection Passed → PTO Granted
+- Hero stat cards, pipeline backlog with drill-down tables, throughput bars with conversion % and median days
+- Monthly cohort trend chart, cohort detail table, current pipeline position view
+- Named timeframe presets (Last 30 / 90 days, This Quarter, YTD, etc.)
+- Monthly Activity table tracking stage transitions over time
+- Drill-down columns include staff assignment (designer, permit owner, project manager)
+- Drill-downs show correct HubSpot status per stage (DA, design, permitting, construction, inspection, PTO)
+- On Hold deals (stage 20440344) excluded from counts/cohorts/medians; Project Complete deals satisfy all milestone flags
+- Executive suite home card links to the funnel
+
+### EagleView Orders Dashboard
+- New `/dashboards/eagleview-orders` page with unified search across HubSpot deals and tickets
+- Order placement, retry, and status UI hydrated with existing `EagleViewOrder` rows
+- `POST /api/eagleview/order` now accepts `ticketId` in addition to `dealId`; resolves the associated deal via HubSpot ticket associations
+- `EagleViewOrder.ticketId` column (nullable) links Service-triggered orders to their tickets
+- Suite cards added on Operations, Design & Engineering, and Service suites
+- Route allowlisted for OPS_MGR, PM, OPS, SERVICE, TECH_OPS, DESIGN
+- Production PlaceOrder request format adopted; live credentials enabled
+
+### Shop Health Dashboard
+- Drill-down tables added to all count-based Customer Success metrics (sentiment, 5-star reviews, response time, etc.)
+- Switched response-time metric to deal-level rollups (fixes review drill-down accuracy)
+- New Service and D&R/Roofing sections expand the dashboard beyond Sales
+
+### PE Deals Dashboard
+- Card split into Pre-Construction vs Construction+ for clearer funnel state
+- Pipeline bar split into per-stage buckets; report link removed
+- Awaiting PTO segment added; previous hero card split reverted
+- Cancelled deals excluded; "Other" auto-renames to "On Hold"
+- New "Customer Paid?" column with smarter sort logic
+- Multi-column sort; default sort changed to PE Total
+- x/y count switched to submitted total; under-review badge added
+
+### Customer Survey Portal
+- Full redesign aligned to photonbrothers.com brand palette
+- Subdomain isolation prevents auth cookie leakage between portal and main app
+- Inline cancel + reschedule flow; scroll bug fixed
+- ChatWidget hidden on portal routes; stale URL newline bug fixed
+- Unrecognized phone number removed from footer
+- New service-to-service survey invite endpoint for Olivia (internal automation)
+
+### Zuper API Call Reduction (Major)
+- ~97% reduction in Zuper API calls via job-list caching in lookup endpoint
+- Skip API sweep when DB-cache hits succeed; cache `/jobs/by-category` responses
+- Per-endpoint API call counter with admin read endpoint for visibility
+- Every outbound call now logs with source file attribution (`[zuper-call]`)
+- `useCalendarData` polling cadence slashed
+- Cron throttling: `zuper-property-sync` 15min → 30min → cut further to 6h; `zuper-job-backfill` hourly → 6h; `zuper-sync-cache` 30m → 4h
+- Roofing-scheduler: inlined JOB_CATEGORY UIDs to drop a client→server import chain
+- Zuper call counter lazy-imports prisma to keep it out of client bundles
+
+### PowerHub Tesla Integration
+- Push all Tesla device serials + models to Zuper Property and Job records
+- Prisma migration adds `tesla_device_model` columns
+- Fixed primary site selection: now prefers sites with equipment over empty sites
+
+### Daily Focus / EOD Summary
+- Morning snapshot now saved before emails are sent (prevents data loss on send failure)
+- EOD summary tracks actual action items resolved (was previously over-counting)
+
+### PE Scraper
+- Removed broken GCS cron; webhook is the sole sync path
+- Override `NOT_UPLOADED → UPLOADED` for unknown statuses with a submitted date present
+
+### Backfill & Infrastructure
+- `scripts/backfill-properties.ts` gains `--skip-zuper` flag to avoid Zuper API bursts during backfill runs
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
