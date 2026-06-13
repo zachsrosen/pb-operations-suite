@@ -772,6 +772,25 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
     return ruled ? s.approved / ruled : null;
   };
 
+  // Shared column template so the header labels line up with every row.
+  const COLS = "grid items-center gap-x-3 grid-cols-[8.5rem_1fr_3.5rem_3.5rem_3.5rem_3rem]";
+  const renderRow = (s: UploaderStat, muted: boolean) => {
+    const rate = rateOf(s);
+    return (
+      <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
+        <span className="text-xs text-foreground truncate" title={`${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>
+          {muted ? "Unknown" : prettyUploader(s.uploader)}
+          {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
+        </span>
+        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} />
+        <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
+        <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
+        <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
+        <span className="text-sm font-semibold text-foreground text-right tabular-nums">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
+      </div>
+    );
+  };
+
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
@@ -779,44 +798,28 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
           subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
         <MiniStat label="People Uploading" value={String(attributed.length)} subtitle="all time" />
         <MiniStat label="Team Approval Rate" value={teamApprovalRate === null ? "—" : `${teamApprovalRate}%`}
-          subtitle={`${agg.approved.toLocaleString("en-US")} approved / ${agg.rejected.toLocaleString("en-US")} rejected`} />
+          subtitle={`${agg.approved.toLocaleString("en-US")} approved · ${agg.rejected.toLocaleString("en-US")} rejected`} />
         <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
       </div>
-      <div className="flex flex-wrap items-center gap-4 mb-2 text-[11px] text-muted">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" /> Approved</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/60" /> In review</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/80" /> Rejected / action required</span>
-        <span className="ml-auto">Outcome of each person&apos;s latest upload per doc</span>
+
+      {/* Column headers — align with each row via the shared COLS grid */}
+      <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
+        <span>Person</span>
+        <span>Outcome of latest upload per doc</span>
+        <span className="text-right text-emerald-400/80">Appr.</span>
+        <span className="text-right">In rev.</span>
+        <span className="text-right text-orange-400/80">Rej.</span>
+        <span className="text-right" title="Approved ÷ (approved + rejected)">Rate</span>
       </div>
-      <div className="space-y-1.5">
-        {attributed.map((s) => {
-          const rate = rateOf(s);
-          return (
-            <div key={s.uploader} className="flex items-center gap-2">
-              <span className="text-[11px] text-foreground w-40 truncate" title={`${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>{prettyUploader(s.uploader)}</span>
-              <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} />
-              <span className="text-[10px] text-emerald-400 w-12 text-right" title="Docs approved">{s.approved} ok</span>
-              <span className="text-[10px] text-orange-400 w-14 text-right" title="Docs rejected / action required">{s.rejected} rej</span>
-              <span className="text-[10px] text-muted w-12 text-right" title="Docs still in review">{s.inReview} rev</span>
-              <span className="text-xs text-foreground w-11 text-right" title="Approval rate = approved / (approved + rejected)">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
-            </div>
-          );
-        })}
-        {unknown && unknown.approved + unknown.rejected + unknown.inReview > 0 && (
-          <div className="flex items-center gap-2 opacity-60 pt-1 border-t border-t-border mt-2">
-            <span className="text-[11px] text-muted w-40 truncate" title="Docs whose latest version was uploaded before PE recorded the uploader">
-              Unknown (pre-tracking)
-            </span>
-            <OutcomeBar approved={unknown.approved} inReview={unknown.inReview} rejected={unknown.rejected} />
-            <span className="text-[10px] text-emerald-400/70 w-12 text-right">{unknown.approved} ok</span>
-            <span className="text-[10px] text-orange-400/70 w-14 text-right">{unknown.rejected} rej</span>
-            <span className="text-[10px] text-muted w-12 text-right">{unknown.inReview} rev</span>
-            <span className="text-xs text-muted w-11 text-right">
-              {unknown.approved + unknown.rejected ? `${Math.round((unknown.approved / (unknown.approved + unknown.rejected)) * 100)}%` : "—"}
-            </span>
-          </div>
-        )}
+
+      <div className="space-y-2">
+        {attributed.map((s) => <div key={s.uploader}>{renderRow(s, false)}</div>)}
       </div>
+      {unknown && unknown.approved + unknown.rejected + unknown.inReview > 0 && (
+        <div className="mt-2 pt-2 border-t border-t-border">
+          {renderRow(unknown, true)}
+        </div>
+      )}
     </div>
   );
 }
