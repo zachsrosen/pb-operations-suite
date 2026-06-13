@@ -305,34 +305,94 @@ export const UNKNOWN_UPLOADER = "Unknown";
 /** Doc-upload counts per person, from PE portal version history. */
 export interface UploaderStat {
   uploader: string; // email, or UNKNOWN_UPLOADER for null-attribution uploads
-  total: number; // all-time uploads
+  total: number; // all-time uploads (every version action)
   last8w: number; // uploads in the trailing 56 days
   deals: number; // distinct deals touched (all time)
+  // Outcome of the docs this person most-recently uploaded (per distinct
+  // deal+doc, attributed to whoever uploaded the latest version). Denominator
+  // for the approval rate is approved + rejected + inReview.
+  docsOwned: number; // distinct docs where this person uploaded the latest version
+  approved: number;
+  rejected: number; // ACTION_REQUIRED or REJECTED
+  inReview: number; // UNDER_REVIEW or UPLOADED
 }
+
+type VersionRow = {
+  uploadedBy: string | null;
+  uploadedAt: Date | string;
+  dealId: string | null;
+  docName: string;
+  version: number;
+};
 
 /**
  * Roll PE doc version rows up into per-uploader stats. Null/empty uploadedBy
  * groups under UNKNOWN_UPLOADER (PE only started attributing uploads partway
  * through — we admit the gap rather than guess). Sorted by total descending,
  * with the Unknown bucket always last.
+ *
+ * Outcome attribution: each distinct (dealId, docName) is credited to whoever
+ * uploaded its LATEST version — that's the upload currently under PE review —
+ * and its current status (from statusByDoc, keyed `${dealId}|${docName}`)
+ * lands in approved / rejected / inReview. Docs with no status, or a
+ * NOT_UPLOADED status, count toward docsOwned but no outcome bucket.
  */
 export function buildUploaderStats(
-  rows: { uploadedBy: string | null; uploadedAt: Date | string; dealId: string | null }[],
+  rows: VersionRow[],
+  statusByDoc: Map<string, string> = new Map(),
   now: Date = new Date(),
 ): UploaderStat[] {
   const cutoff = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000);
-  const byUploader = new Map<string, { total: number; last8w: number; deals: Set<string> }>();
+  const byUploader = new Map<
+    string,
+    { total: number; last8w: number; deals: Set<string>; docsOwned: number; approved: number; rejected: number; inReview: number }
+  >();
+  const ensure = (key: string) => {
+    let e = byUploader.get(key);
+    if (!e) {
+      e = { total: 0, last8w: 0, deals: new Set<string>(), docsOwned: 0, approved: 0, rejected: 0, inReview: 0 };
+      byUploader.set(key, e);
+    }
+    return e;
+  };
+
+  // Volume metrics: every version action.
   for (const r of rows) {
-    const key = r.uploadedBy?.trim() || UNKNOWN_UPLOADER;
-    const entry = byUploader.get(key) ?? { total: 0, last8w: 0, deals: new Set<string>() };
-    entry.total++;
+    const e = ensure(r.uploadedBy?.trim() || UNKNOWN_UPLOADER);
+    e.total++;
     const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
-    if (at >= cutoff) entry.last8w++;
-    if (r.dealId) entry.deals.add(r.dealId);
-    byUploader.set(key, entry);
+    if (at >= cutoff) e.last8w++;
+    if (r.dealId) e.deals.add(r.dealId);
   }
+
+  // Outcome metrics: latest version per (deal, doc) owns the current status.
+  const latest = new Map<string, VersionRow>();
+  for (const r of rows) {
+    if (!r.dealId) continue;
+    const k = `${r.dealId}|${r.docName}`;
+    const cur = latest.get(k);
+    if (!cur || r.version > cur.version) latest.set(k, r);
+  }
+  for (const [k, r] of latest) {
+    const e = ensure(r.uploadedBy?.trim() || UNKNOWN_UPLOADER);
+    e.docsOwned++;
+    const status = statusByDoc.get(k);
+    if (status === "APPROVED") e.approved++;
+    else if (status === "ACTION_REQUIRED" || status === "REJECTED") e.rejected++;
+    else if (status === "UNDER_REVIEW" || status === "UPLOADED") e.inReview++;
+  }
+
   return [...byUploader.entries()]
-    .map(([uploader, e]) => ({ uploader, total: e.total, last8w: e.last8w, deals: e.deals.size }))
+    .map(([uploader, e]) => ({
+      uploader,
+      total: e.total,
+      last8w: e.last8w,
+      deals: e.deals.size,
+      docsOwned: e.docsOwned,
+      approved: e.approved,
+      rejected: e.rejected,
+      inReview: e.inReview,
+    }))
     .sort((a, b) => {
       if (a.uploader === UNKNOWN_UPLOADER) return 1;
       if (b.uploader === UNKNOWN_UPLOADER) return -1;

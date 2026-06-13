@@ -778,8 +778,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     docApprovalEvents,
     // Scope uploader stats to docs on deals in this payload's PE deal set —
     // versionRows already excludes unmatched portal projects (dealId null).
+    // currentDocStatus (keyed `${dealId}|${docName}`) drives the per-person
+    // approved / rejected / in-review outcome split.
     uploaderStats: buildUploaderStats(
       versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
+      currentDocStatus,
     ),
     pipeline,
     timing: { overall, monthly },
