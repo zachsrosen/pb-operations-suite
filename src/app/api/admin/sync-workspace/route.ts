@@ -3,6 +3,26 @@ import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getOrCreateUser, getUserByEmail } from "@/lib/db";
 import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
+import { fetchAllOwnersMinimal } from "@/lib/hubspot";
+import { zuper, type ZuperUser } from "@/lib/zuper";
+import {
+  planLinkFills,
+  nameMatchCandidates,
+  type CrewCandidate,
+} from "@/lib/directory-links";
+
+interface LinkPhaseResult {
+  linked: number;
+  alreadyLinked: number;
+  unmatched: number;
+  skipped?: string;
+}
+
+interface SyncLinksResult {
+  hubspot: LinkPhaseResult;
+  zuper: LinkPhaseResult;
+  crew: LinkPhaseResult & { candidates: CrewCandidate[] };
+}
 
 /**
  * POST /api/admin/sync-workspace
@@ -143,6 +163,176 @@ export async function POST() {
       }
     }
 
+    // ----------------------------------------------------------------------
+    // Link phases (2–4): fill null identity links, never overwrite existing.
+    // Each phase is independently try/caught — a failure reports the phase
+    // as skipped (with reason) and the rest continue.
+    // ----------------------------------------------------------------------
+    const links: SyncLinksResult = {
+      hubspot: { linked: 0, alreadyLinked: 0, unmatched: 0 },
+      zuper: { linked: 0, alreadyLinked: 0, unmatched: 0 },
+      crew: { linked: 0, alreadyLinked: 0, unmatched: 0, candidates: [] },
+    };
+
+    // Shared app-user list — fetched once after phase 1 so phases 2–4 see
+    // the freshly synced directory.
+    const appUsers = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        hubspotOwnerId: true,
+        zuperUserUid: true,
+      },
+    });
+
+    // Phase 2: HubSpot owners → User.hubspotOwnerId
+    try {
+      const owners = await fetchAllOwnersMinimal();
+      if (owners.length === 0) {
+        links.hubspot.skipped =
+          "No HubSpot owners returned (owners API may be in 403 backoff window)";
+      } else {
+        const hsPlan = planLinkFills(
+          appUsers.map((u) => ({
+            id: u.id,
+            email: u.email,
+            existingLink: u.hubspotOwnerId,
+            name: u.name,
+          })),
+          owners.map((o) => ({
+            id: o.id,
+            email: o.email,
+            label: `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim(),
+          })),
+        );
+        for (const fill of hsPlan.fills) {
+          await prisma.user.update({
+            where: { id: fill.userId },
+            data: { hubspotOwnerId: fill.externalId },
+          });
+        }
+        links.hubspot = {
+          linked: hsPlan.fills.length,
+          alreadyLinked: hsPlan.alreadyLinked,
+          unmatched: hsPlan.unmatched.length,
+        };
+      }
+    } catch (err) {
+      links.hubspot.skipped = err instanceof Error ? err.message : String(err);
+    }
+
+    // Phase 3: Zuper users → User.zuperUserUid
+    try {
+      const zuperRes = await zuper.getUsers("sync-workspace:links");
+      if (zuperRes.type !== "success" || !zuperRes.data) {
+        links.zuper.skipped =
+          zuperRes.error || zuperRes.message || "Zuper users fetch failed";
+      } else {
+        // is_active exists on the wire even though the minimal ZuperUser
+        // interface omits it (see sync-zuper/route.ts precedent).
+        const activeZuperUsers = zuperRes.data.filter(
+          (u) => (u as ZuperUser & { is_active?: boolean }).is_active !== false,
+        );
+        const zpPlan = planLinkFills(
+          appUsers.map((u) => ({
+            id: u.id,
+            email: u.email,
+            existingLink: u.zuperUserUid,
+            name: u.name,
+          })),
+          activeZuperUsers.map((u) => ({
+            id: u.user_uid,
+            email: u.email ?? null,
+            label: `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
+          })),
+        );
+        for (const fill of zpPlan.fills) {
+          await prisma.user.update({
+            where: { id: fill.userId },
+            data: { zuperUserUid: fill.externalId },
+          });
+        }
+        links.zuper = {
+          linked: zpPlan.fills.length,
+          alreadyLinked: zpPlan.alreadyLinked,
+          unmatched: zpPlan.unmatched.length,
+        };
+      }
+    } catch (err) {
+      links.zuper.skipped = err instanceof Error ? err.message : String(err);
+    }
+
+    // Phase 4: active CrewMembers → CrewMember.userId (email match);
+    // crew without email get name-match candidates, returned but NEVER written.
+    try {
+      const crew = await prisma.crewMember.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, email: true, userId: true },
+      });
+
+      // CrewMember.userId is @unique across ALL crew (incl. inactive), so the
+      // claim guard must look at every existing link, not just active crew.
+      const claimedRows = await prisma.crewMember.findMany({
+        where: { userId: { not: null } },
+        select: { userId: true },
+      });
+      const claimedUserIds = new Set(
+        claimedRows.map((c) => c.userId).filter((id): id is string => id != null),
+      );
+
+      // Inverted planLinkFills: each unlinked crew-with-email is the link
+      // target ("user" side); app users are the externals matched by email.
+      const crewWithEmail = crew.filter(
+        (c) => c.email != null && c.email.trim() !== "",
+      );
+      const crewPlan = planLinkFills(
+        crewWithEmail.map((c) => ({
+          id: c.id,
+          email: c.email as string,
+          existingLink: c.userId,
+          name: c.name,
+        })),
+        appUsers.map((u) => ({
+          id: u.id,
+          email: u.email,
+          label: u.name ?? u.email,
+        })),
+      );
+
+      let crewLinked = 0;
+      let crewUnmatched = crewPlan.unmatched.length;
+      for (const fill of crewPlan.fills) {
+        // Guard the @unique constraint: skip if this User is already claimed
+        // by another CrewMember (report as unmatched instead of violating).
+        if (claimedUserIds.has(fill.externalId)) {
+          crewUnmatched++;
+          continue;
+        }
+        await prisma.crewMember.update({
+          where: { id: fill.userId },
+          data: { userId: fill.externalId },
+        });
+        claimedUserIds.add(fill.externalId);
+        crewLinked++;
+      }
+
+      // Crew without email → name-match candidates for manual review only.
+      const candidates = nameMatchCandidates(
+        crew,
+        appUsers.map((u) => ({ id: u.id, name: u.name, email: u.email })),
+      );
+
+      links.crew = {
+        linked: crewLinked,
+        alreadyLinked: crewPlan.alreadyLinked,
+        unmatched: crewUnmatched,
+        candidates,
+      };
+    } catch (err) {
+      links.crew.skipped = err instanceof Error ? err.message : String(err);
+    }
+
     // Log the sync activity through audit pipeline
     const headersList = await headers();
     const reqCtx = extractRequestContext(headersList);
@@ -160,6 +350,27 @@ export async function POST() {
         updated: results.updated,
         skipped: results.skipped,
         errors: results.errors.length,
+        links: {
+          hubspot: {
+            linked: links.hubspot.linked,
+            alreadyLinked: links.hubspot.alreadyLinked,
+            unmatched: links.hubspot.unmatched,
+            ...(links.hubspot.skipped ? { skipped: links.hubspot.skipped } : {}),
+          },
+          zuper: {
+            linked: links.zuper.linked,
+            alreadyLinked: links.zuper.alreadyLinked,
+            unmatched: links.zuper.unmatched,
+            ...(links.zuper.skipped ? { skipped: links.zuper.skipped } : {}),
+          },
+          crew: {
+            linked: links.crew.linked,
+            alreadyLinked: links.crew.alreadyLinked,
+            unmatched: links.crew.unmatched,
+            candidates: links.crew.candidates.length,
+            ...(links.crew.skipped ? { skipped: links.crew.skipped } : {}),
+          },
+        },
       },
       requestPath: "/api/admin/sync-workspace",
       requestMethod: "POST",
@@ -169,6 +380,7 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       results,
+      links,
       message: `Synced ${results.created} new users, updated ${results.updated}, skipped ${results.skipped}`,
     });
   } catch (error) {

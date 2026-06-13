@@ -76,6 +76,12 @@ model User {
   // When null, the app falls back to heuristic matching on login email.
   hubspotOwnerId String?
 
+  // Zuper user link — mirrors hubspotOwnerId. Filled by directory sync
+  // (email match) or set manually in /admin/users. Never auto-overwritten.
+  zuperUserUid String?
+
+  crewMember CrewMember? @relation("CrewMemberUser")
+
   // Timestamps
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -1080,6 +1086,10 @@ model CrewMember {
   // Display info
   name  String  @unique // "Drew Perry", "Joe Lynch", etc.
   email String? // Optional email for notifications
+
+  // App user link — connects field-crew records to app Users.
+  userId String? @unique
+  user   User?   @relation("CrewMemberUser", fields: [userId], references: [id])
 
   // Zuper identifiers (encrypted at rest by Neon)
   zuperUserUid String // Zuper user UID

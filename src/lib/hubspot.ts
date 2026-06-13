@@ -76,6 +76,54 @@ function markOwnersApiForbidden(error: unknown): void {
   );
 }
 
+export interface MinimalHubSpotOwner {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+/**
+ * Fetch all active HubSpot owners (minimal fields), paginated.
+ *
+ * Capped at 10 pages (5,000 owners). Respects the owners-API 403 backoff
+ * window: returns [] without calling HubSpot when inside the window, and
+ * marks the window (returning []) when a 403 is encountered. Other errors
+ * propagate to the caller.
+ */
+export async function fetchAllOwnersMinimal(): Promise<MinimalHubSpotOwner[]> {
+  if (!ownersApiAllowed()) return [];
+
+  const owners: MinimalHubSpotOwner[] = [];
+  let after: string | undefined = undefined;
+  try {
+    for (let i = 0; i < 10; i++) {
+      const page: {
+        results?: Array<{ id?: string; email?: string; firstName?: string; lastName?: string }>;
+        paging?: { next?: { after?: string } };
+      } = await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false);
+      for (const o of page.results ?? []) {
+        if (!o.id) continue;
+        owners.push({
+          id: o.id,
+          email: o.email ?? null,
+          firstName: o.firstName ?? null,
+          lastName: o.lastName ?? null,
+        });
+      }
+      after = page.paging?.next?.after;
+      if (!after) break;
+    }
+  } catch (err) {
+    if (getHubSpotErrorStatus(err) === 403) {
+      markOwnersApiForbidden(err);
+      return [];
+    }
+    throw err;
+  }
+  return owners;
+}
+
 export async function getDealPropertyDefinition(
   propertyName: string,
   archived = false

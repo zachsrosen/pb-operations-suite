@@ -29,6 +29,8 @@ export interface AdminUser {
   extraAllowedRoutes?: string[];
   extraDeniedRoutes?: string[];
   hubspotOwnerId?: string | null;
+  zuperUserUid?: string | null;
+  crewMember?: { id: string; name: string } | null;
 }
 
 export interface HubspotOwnerOption {
@@ -36,6 +38,19 @@ export interface HubspotOwnerOption {
   email: string | null;
   firstName: string | null;
   lastName: string | null;
+}
+
+export interface ZuperUserOption {
+  uid: string;
+  email: string | null;
+  name: string;
+}
+
+export interface CrewOption {
+  id: string;
+  name: string;
+  email: string | null;
+  linkedUserId: string | null;
 }
 
 interface ActivityLog {
@@ -144,6 +159,10 @@ export interface UserDetailDrawerProps {
     extraDeniedRoutes: string[],
   ) => Promise<void>;
   onSaveHubspotOwner: (hubspotOwnerId: string | null) => Promise<void>;
+  /** Throws on failure — the drawer surfaces the message inline. */
+  onSaveZuperUser: (zuperUserUid: string | null) => Promise<void>;
+  /** Throws on failure (409 names the conflicting user) — surfaced inline. */
+  onSaveCrewLink: (crewMemberId: string | null, crewName: string | null) => Promise<void>;
   onImpersonate: () => Promise<void>;
 }
 
@@ -156,6 +175,8 @@ export default function UserDetailDrawer({
   onSavePermissions,
   onSaveRoutes,
   onSaveHubspotOwner,
+  onSaveZuperUser,
+  onSaveCrewLink,
   onImpersonate,
 }: UserDetailDrawerProps) {
   const [tab, setTab] = useState<TabKey>("overview");
@@ -176,6 +197,14 @@ export default function UserDetailDrawer({
   const [hubspotOwnerDraft, setHubspotOwnerDraft] = useState<string>("");
   const [hubspotOwners, setHubspotOwners] = useState<HubspotOwnerOption[] | null>(null);
   const [hubspotOwnersError, setHubspotOwnersError] = useState<string | null>(null);
+  const [zuperDraft, setZuperDraft] = useState<string>("");
+  const [zuperUsers, setZuperUsers] = useState<ZuperUserOption[] | null>(null);
+  const [zuperUsersError, setZuperUsersError] = useState<string | null>(null);
+  const [zuperSaveError, setZuperSaveError] = useState<string | null>(null);
+  const [crewDraft, setCrewDraft] = useState<string>("");
+  const [crewOptions, setCrewOptions] = useState<CrewOption[] | null>(null);
+  const [crewOptionsError, setCrewOptionsError] = useState<string | null>(null);
+  const [crewSaveError, setCrewSaveError] = useState<string | null>(null);
   const [allowInput, setAllowInput] = useState("");
   const [denyInput, setDenyInput] = useState("");
   const [activity, setActivity] = useState<ActivityLog[] | null>(null);
@@ -196,6 +225,10 @@ export default function UserDetailDrawer({
     setExtraAllowed(user.extraAllowedRoutes ?? []);
     setExtraDenied(user.extraDeniedRoutes ?? []);
     setHubspotOwnerDraft(user.hubspotOwnerId ?? "");
+    setZuperDraft(user.zuperUserUid ?? "");
+    setCrewDraft(user.crewMember?.id ?? "");
+    setZuperSaveError(null);
+    setCrewSaveError(null);
     setAllowInput("");
     setDenyInput("");
     setActivity(null);
@@ -213,6 +246,41 @@ export default function UserDetailDrawer({
       setHubspotOwnersError(err instanceof Error ? err.message : "Failed to load owners");
     }
   }, [hubspotOwners]);
+
+  const loadZuperUsers = useCallback(async () => {
+    if (zuperUsers !== null) return;
+    try {
+      const res = await fetch("/api/admin/zuper-users");
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { users: ZuperUserOption[] };
+      setZuperUsers(data.users);
+      setZuperUsersError(null);
+    } catch (err) {
+      setZuperUsersError(err instanceof Error ? err.message : "Failed to load Zuper users");
+    }
+  }, [zuperUsers]);
+
+  const loadCrewOptions = useCallback(async () => {
+    if (crewOptions !== null) return;
+    try {
+      const res = await fetch("/api/admin/crew-options");
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { crew: CrewOption[] };
+      setCrewOptions(data.crew);
+      setCrewOptionsError(null);
+    } catch (err) {
+      setCrewOptionsError(err instanceof Error ? err.message : "Failed to load crew members");
+    }
+  }, [crewOptions]);
+
+  // Lazy-load all three pickers' options the first time Integrations opens.
+  useEffect(() => {
+    if (!user) return;
+    if (tab !== "integrations") return;
+    loadHubspotOwners();
+    loadZuperUsers();
+    loadCrewOptions();
+  }, [tab, user, loadHubspotOwners, loadZuperUsers, loadCrewOptions]);
 
   const loadActivity = useCallback(async (userId: string) => {
     try {
@@ -531,24 +599,121 @@ export default function UserDetailDrawer({
 
       {/* Integrations */}
       {tab === "integrations" && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
-            <h3 className="text-sm font-semibold text-foreground">HubSpot owner link</h3>
+            <h3 className="text-sm font-semibold text-foreground">Linked accounts</h3>
             <p className="mt-1 text-xs text-muted">
-              Explicitly link this PB user to their HubSpot owner record. Used by &quot;My Tasks&quot; to pull the right person&apos;s tasks when a Google Workspace alias doesn&apos;t match the HubSpot email.
+              Explicit links between this PB user and their identities in
+              connected systems. Directory sync fills these automatically when
+              emails match; set them here when they don&apos;t. Manual links
+              are never overwritten by sync.
             </p>
           </div>
 
-          <IntegrationsOwnerPicker
-            userId={user.id}
-            currentId={user.hubspotOwnerId ?? null}
-            draftId={hubspotOwnerDraft}
-            setDraftId={setHubspotOwnerDraft}
-            owners={hubspotOwners}
-            ownersError={hubspotOwnersError}
-            onLoadOwners={loadHubspotOwners}
+          <LinkPicker
+            title="HubSpot owner"
+            help={`Used by "My Tasks" to pull the right person's tasks when a Google Workspace alias does not match the HubSpot email.`}
+            currentSummary={hubspotCurrentSummary(
+              user.hubspotOwnerId ?? null,
+              hubspotOwners,
+            )}
+            notLinkedLabel="— Not linked (use email heuristic) —"
+            loadingLabel="Loading HubSpot owners…"
+            options={
+              hubspotOwners?.map((o) => {
+                const name = `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim();
+                return {
+                  value: o.id,
+                  label: [name, o.email, `#${o.id}`].filter(Boolean).join(" · "),
+                };
+              }) ?? null
+            }
+            optionsError={hubspotOwnersError}
+            draft={hubspotOwnerDraft}
+            setDraft={setHubspotOwnerDraft}
+            currentValue={user.hubspotOwnerId ?? null}
             onSave={onSaveHubspotOwner}
             saving={saving}
+            saveError={null}
+          />
+
+          <LinkPicker
+            title="Zuper user"
+            help="Links this PB user to their Zuper field-service account."
+            currentSummary={
+              user.zuperUserUid
+                ? (() => {
+                    const zu = zuperUsers?.find((z) => z.uid === user.zuperUserUid);
+                    return zu
+                      ? [zu.name, zu.email, `#${zu.uid}`].filter(Boolean).join(" · ")
+                      : `#${user.zuperUserUid}` +
+                          (zuperUsers ? " (user not in Zuper list)" : "");
+                  })()
+                : "Not linked"
+            }
+            notLinkedLabel="— Not linked —"
+            loadingLabel="Loading Zuper users…"
+            options={
+              zuperUsers?.map((z) => ({
+                value: z.uid,
+                label: [z.name, z.email].filter(Boolean).join(" · "),
+              })) ?? null
+            }
+            optionsError={zuperUsersError}
+            draft={zuperDraft}
+            setDraft={setZuperDraft}
+            currentValue={user.zuperUserUid ?? null}
+            onSave={async (uid) => {
+              setZuperSaveError(null);
+              try {
+                await onSaveZuperUser(uid);
+              } catch (err) {
+                setZuperSaveError(
+                  err instanceof Error ? err.message : "Failed to save Zuper link",
+                );
+              }
+            }}
+            saving={saving}
+            saveError={zuperSaveError}
+          />
+
+          <LinkPicker
+            title="Crew member"
+            help="Links this PB user to their field-crew record for scheduling and availability."
+            currentSummary={
+              user.crewMember ? user.crewMember.name : "Not linked"
+            }
+            notLinkedLabel="— Not linked —"
+            loadingLabel="Loading crew members…"
+            options={
+              crewOptions?.map((c) => ({
+                value: c.id,
+                label:
+                  [c.name, c.email].filter(Boolean).join(" · ") +
+                  (c.linkedUserId && c.linkedUserId !== user.id
+                    ? " — linked to another user"
+                    : ""),
+              })) ?? null
+            }
+            optionsError={crewOptionsError}
+            draft={crewDraft}
+            setDraft={setCrewDraft}
+            currentValue={user.crewMember?.id ?? null}
+            onSave={async (crewMemberId) => {
+              setCrewSaveError(null);
+              const crewName = crewMemberId
+                ? (crewOptions?.find((c) => c.id === crewMemberId)?.name ?? null)
+                : null;
+              try {
+                await onSaveCrewLink(crewMemberId, crewName);
+              } catch (err) {
+                setCrewSaveError(
+                  err instanceof Error ? err.message : "Failed to save crew link",
+                );
+              }
+            }}
+            saving={saving}
+            saveError={crewSaveError}
           />
         </div>
       )}
@@ -666,84 +831,103 @@ function RoutesList({
   );
 }
 
-// ── Integrations: HubSpot owner picker ───────────────────────────────────
+// ── Integrations: linked-account picker ──────────────────────────────────
 
-interface IntegrationsOwnerPickerProps {
-  userId: string;
-  currentId: string | null;
-  draftId: string;
-  setDraftId: (v: string) => void;
-  owners: HubspotOwnerOption[] | null;
-  ownersError: string | null;
-  onLoadOwners: () => void;
-  onSave: (hubspotOwnerId: string | null) => Promise<void>;
-  saving: boolean;
+function hubspotCurrentSummary(
+  currentId: string | null,
+  owners: HubspotOwnerOption[] | null,
+): string {
+  const currentOwner = owners?.find((o) => o.id === currentId) ?? null;
+  return currentOwner
+    ? `${currentOwner.firstName ?? ""} ${currentOwner.lastName ?? ""}`.trim() +
+        (currentOwner.email ? ` · ${currentOwner.email}` : "") +
+        ` · #${currentOwner.id}`
+    : currentId
+      ? `#${currentId} (owner not in HubSpot list)`
+      : "Not linked — using email heuristic";
 }
 
-function IntegrationsOwnerPicker({
-  userId: _userId,
-  currentId,
-  draftId,
-  setDraftId,
-  owners,
-  ownersError,
-  onLoadOwners,
+interface LinkPickerProps {
+  title: string;
+  help: string;
+  currentSummary: string;
+  notLinkedLabel: string;
+  loadingLabel: string;
+  options: Array<{ value: string; label: string }> | null;
+  optionsError: string | null;
+  draft: string;
+  setDraft: (v: string) => void;
+  currentValue: string | null;
+  onSave: (value: string | null) => Promise<void>;
+  saving: boolean;
+  saveError: string | null;
+}
+
+/**
+ * One linked-account row: current-link summary box + searchable select +
+ * Reset / Save link. Clones the original HubSpot owner picker UX; saving
+ * with the "Not linked" option selected unlinks.
+ */
+function LinkPicker({
+  title,
+  help,
+  currentSummary,
+  notLinkedLabel,
+  loadingLabel,
+  options,
+  optionsError,
+  draft,
+  setDraft,
+  currentValue,
   onSave,
   saving,
-}: IntegrationsOwnerPickerProps) {
-  useEffect(() => {
-    onLoadOwners();
-  }, [onLoadOwners]);
-
-  const currentOwner = owners?.find((o) => o.id === currentId) ?? null;
-  const dirty = (draftId || null) !== (currentId || null);
+  saveError,
+}: LinkPickerProps) {
+  const dirty = (draft || null) !== (currentValue || null);
 
   return (
     <div className="space-y-3">
-      <div className="rounded-md border border-t-border/60 bg-surface-2 p-3 text-xs">
-        <p className="text-muted">Currently linked</p>
-        <p className="mt-1 font-mono text-foreground">
-          {currentOwner
-            ? `${currentOwner.firstName ?? ""} ${currentOwner.lastName ?? ""}`.trim() +
-              (currentOwner.email ? ` · ${currentOwner.email}` : "") +
-              ` · #${currentOwner.id}`
-            : currentId
-              ? `#${currentId} (owner not in HubSpot list)`
-              : "Not linked — using email heuristic"}
-        </p>
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-foreground">
+          {title}
+        </h4>
+        <p className="mt-1 text-xs text-muted">{help}</p>
       </div>
 
-      {ownersError ? (
-        <p className="text-xs text-red-400">Error loading owners: {ownersError}</p>
-      ) : owners === null ? (
-        <p className="text-xs text-muted">Loading HubSpot owners…</p>
+      <div className="rounded-md border border-t-border/60 bg-surface-2 p-3 text-xs">
+        <p className="text-muted">Currently linked</p>
+        <p className="mt-1 font-mono text-foreground">{currentSummary}</p>
+      </div>
+
+      {optionsError ? (
+        <p className="text-xs text-red-400">Error loading options: {optionsError}</p>
+      ) : options === null ? (
+        <p className="text-xs text-muted">{loadingLabel}</p>
       ) : (
         <div className="space-y-2">
           <label className="text-xs font-semibold uppercase tracking-wide text-muted">
             Change to
           </label>
           <select
-            value={draftId}
-            onChange={(e) => setDraftId(e.target.value)}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
             className="w-full rounded-md border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground focus:border-cyan-500 focus:outline-none"
           >
-            <option value="">— Not linked (use email heuristic) —</option>
-            {owners.map((o) => {
-              const name = `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim();
-              const label = [name, o.email, `#${o.id}`].filter(Boolean).join(" · ");
-              return (
-                <option key={o.id} value={o.id}>
-                  {label}
-                </option>
-              );
-            })}
+            <option value="">{notLinkedLabel}</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
+
+          {saveError && <p className="text-xs text-red-400">{saveError}</p>}
 
           <div className="flex justify-end gap-2">
             <button
               type="button"
               disabled={!dirty || saving}
-              onClick={() => setDraftId(currentId ?? "")}
+              onClick={() => setDraft(currentValue ?? "")}
               className="rounded-md border border-t-border bg-surface px-3 py-1.5 text-xs text-foreground hover:bg-surface-elevated disabled:opacity-40"
             >
               Reset
@@ -751,7 +935,7 @@ function IntegrationsOwnerPicker({
             <button
               type="button"
               disabled={!dirty || saving}
-              onClick={() => onSave(draftId || null)}
+              onClick={() => onSave(draft || null)}
               className="rounded-md bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 disabled:opacity-40"
             >
               {saving ? "Saving…" : "Save link"}

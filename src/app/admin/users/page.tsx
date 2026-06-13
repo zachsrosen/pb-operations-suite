@@ -95,6 +95,32 @@ interface WorkspaceState {
   domain: string;
 }
 
+// Shape of the `links` block returned by POST /api/admin/sync-workspace.
+interface LinkPhaseResult {
+  linked: number;
+  alreadyLinked: number;
+  unmatched: number;
+  skipped?: string;
+}
+
+interface CrewCandidate {
+  crewMemberId: string;
+  crewName: string;
+  userId: string;
+  userName: string;
+}
+
+interface SyncLinksResult {
+  hubspot: LinkPhaseResult;
+  zuper: LinkPhaseResult;
+  crew: LinkPhaseResult & { candidates: CrewCandidate[] };
+}
+
+function linkPhaseSummary(phase: LinkPhaseResult): string {
+  if (phase.skipped) return `skipped (${phase.skipped})`;
+  return `${phase.linked} linked, ${phase.alreadyLinked} already linked, ${phase.unmatched} unmatched`;
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -113,6 +139,7 @@ export default function AdminUsersPage() {
   });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkRole, setBulkRole] = useState<string>("");
+  const [syncLinks, setSyncLinks] = useState<SyncLinksResult | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   // Filters
@@ -249,8 +276,13 @@ export default function AdminUsersPage() {
       const res = await fetch("/api/admin/sync-workspace", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to sync");
+      const links = (data.links ?? null) as SyncLinksResult | null;
+      setSyncLinks(links);
+      const linkSummary = links
+        ? ` · Links: HS +${links.hubspot.linked}, ZP +${links.zuper.linked}, Crew +${links.crew.linked}`
+        : "";
       showToast(
-        `Synced: ${data.results?.created ?? 0} new, ${data.results?.updated ?? 0} updated`,
+        `Synced: ${data.results?.created ?? 0} new, ${data.results?.updated ?? 0} updated${linkSummary}`,
       );
       await fetchUsers();
     } catch (err) {
@@ -428,6 +460,67 @@ export default function AdminUsersPage() {
     }
   };
 
+  // Throws on failure — the drawer catches and renders the message inline
+  // (unlike the toast-based handlers above).
+  const saveZuperUser = async (zuperUserUid: string | null) => {
+    if (!drawerUser) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${drawerUser.id}/zuper-user`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zuperUserUid }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to update Zuper link");
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === drawerUser.id ? { ...u, zuperUserUid } : u)),
+      );
+      showToast("Zuper link updated");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Throws on failure so the drawer can surface the 409 conflict message
+  // (which names the user already holding the crew link) inline.
+  const saveCrewLink = async (
+    crewMemberId: string | null,
+    crewName: string | null,
+  ) => {
+    if (!drawerUser) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${drawerUser.id}/crew-link`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crewMemberId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to update crew link");
+      }
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === drawerUser.id
+            ? {
+                ...u,
+                crewMember:
+                  crewMemberId && crewName
+                    ? { id: crewMemberId, name: crewName }
+                    : null,
+              }
+            : u,
+        ),
+      );
+      showToast("Crew link updated");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const startImpersonation = async () => {
     if (!drawerUser) return;
     if (drawerUser.email === currentUserEmail) {
@@ -520,6 +613,33 @@ export default function AdminUsersPage() {
         },
       },
       {
+        key: "links",
+        label: "Links",
+        width: "w-28",
+        render: (u) => {
+          const chips: Array<{ key: string; title: string }> = [];
+          if (u.hubspotOwnerId) chips.push({ key: "HS", title: "Linked to HubSpot owner" });
+          if (u.zuperUserUid) chips.push({ key: "ZP", title: "Linked to Zuper user" });
+          if (u.crewMember) chips.push({ key: "Crew", title: `Linked to crew member ${u.crewMember.name}` });
+          if (chips.length === 0) {
+            return <span className="text-xs text-muted">—</span>;
+          }
+          return (
+            <div className="flex flex-wrap items-center gap-1">
+              {chips.map((c) => (
+                <span
+                  key={c.key}
+                  title={c.title}
+                  className="inline-flex rounded border border-t-border/60 bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted"
+                >
+                  {c.key}
+                </span>
+              ))}
+            </div>
+          );
+        },
+      },
+      {
         key: "lastLogin",
         label: "Last login",
         width: "w-32",
@@ -585,7 +705,7 @@ export default function AdminUsersPage() {
               disabled={syncing}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
             >
-              {syncing ? "Syncing…" : "Sync Google Workspace"}
+              {syncing ? "Syncing…" : "Sync Directory"}
             </button>
           ) : undefined
         }
@@ -603,7 +723,58 @@ export default function AdminUsersPage() {
       {workspace.configured && workspace.domain && (
         <div className="mb-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs text-blue-300">
           Connected to <strong>{workspace.domain}</strong>. Click &quot;Sync
-          Google Workspace&quot; above to import users.
+          Directory&quot; above to import users and fill identity links.
+        </div>
+      )}
+
+      {syncLinks && (
+        <div className="mb-4 rounded-lg border border-t-border/60 bg-surface px-4 py-3 text-xs">
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-semibold text-foreground">Identity links</p>
+            <button
+              type="button"
+              onClick={() => setSyncLinks(null)}
+              aria-label="Dismiss sync link results"
+              className="text-muted hover:text-foreground"
+            >
+              ×
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-muted">
+            <span>
+              <span className="font-semibold text-foreground">HubSpot:</span>{" "}
+              {linkPhaseSummary(syncLinks.hubspot)}
+            </span>
+            <span>
+              <span className="font-semibold text-foreground">Zuper:</span>{" "}
+              {linkPhaseSummary(syncLinks.zuper)}
+            </span>
+            <span>
+              <span className="font-semibold text-foreground">Crew:</span>{" "}
+              {linkPhaseSummary(syncLinks.crew)}
+            </span>
+          </div>
+          {syncLinks.crew.candidates.length > 0 && (
+            <div className="mt-3 border-t border-t-border/60 pt-2">
+              <p className="text-muted">
+                Possible crew matches by name (not auto-linked — click to
+                review and link manually):
+              </p>
+              <ul className="mt-1 space-y-1">
+                {syncLinks.crew.candidates.map((c) => (
+                  <li key={c.crewMemberId}>
+                    <button
+                      type="button"
+                      onClick={() => openDrawer(c.userId)}
+                      className="text-cyan-400 hover:underline"
+                    >
+                      {c.crewName} → {c.userName}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -652,7 +823,7 @@ export default function AdminUsersPage() {
               description={
                 users.length === 0
                   ? workspace.configured
-                    ? 'Click "Sync Google Workspace" to import users.'
+                    ? 'Click "Sync Directory" to import users.'
                     : "Users will appear here after they log in."
                   : "Try clearing a filter."
               }
@@ -705,6 +876,8 @@ export default function AdminUsersPage() {
         onSavePermissions={savePermissions}
         onSaveRoutes={saveRoutes}
         onSaveHubspotOwner={saveHubspotOwner}
+        onSaveZuperUser={saveZuperUser}
+        onSaveCrewLink={saveCrewLink}
         onImpersonate={startImpersonation}
       />
     </>
