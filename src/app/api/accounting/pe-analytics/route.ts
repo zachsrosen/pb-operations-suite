@@ -816,7 +816,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // Per-day uploads segmented by person — powers the "By Day" stacked bars.
     dailyUploads: buildDailyUploads(
       versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
-      30,
+      90,
     ),
     pipeline,
     timing: { overall, monthly },
