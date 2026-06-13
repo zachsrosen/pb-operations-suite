@@ -408,27 +408,32 @@ export async function syncFromPeApi(options?: {
 
       const detail = detailMap.get(project.id);
 
-      // Iterate over the 15 canonical documents
+      // Iterate over the 15 canonical documents. The API only returns a doc
+      // when it's been uploaded — an absent key means NOT_UPLOADED. We must
+      // still write that row so missing-doc tracking (the analytics
+      // "Missing Docs" stat + owed-doc lists) keeps working; the retired
+      // scraper used to provide these rows.
       for (const [docKey, canonicalName] of Object.entries(PE_API_DOC_MAP)) {
         const docInfo = project.documents[docKey];
-        if (!docInfo) continue;
 
-        // Collect version history regardless of deal match — PeDocVersion
-        // is keyed by PE project ID, and dealId backfills once matched.
-        for (const v of docInfo.versions ?? []) {
-          const uploadedAt = new Date(v.uploadedAt);
-          if (isNaN(uploadedAt.getTime())) continue;
-          versionOps.push({
-            peProjectId: project.projectId,
-            peInternalId: project.id,
-            dealId: dealId ?? null,
-            docName: canonicalName,
-            version: v.version,
-            uploadedAt,
-            uploadedBy: v.uploadedBy ?? null,
-            fileName: v.fileName ?? null,
-            source: v.source ?? null,
-          });
+        // Collect version history when present — PeDocVersion is keyed by PE
+        // project ID, and dealId backfills once matched.
+        if (docInfo) {
+          for (const v of docInfo.versions ?? []) {
+            const uploadedAt = new Date(v.uploadedAt);
+            if (isNaN(uploadedAt.getTime())) continue;
+            versionOps.push({
+              peProjectId: project.projectId,
+              peInternalId: project.id,
+              dealId: dealId ?? null,
+              docName: canonicalName,
+              version: v.version,
+              uploadedAt,
+              uploadedBy: v.uploadedBy ?? null,
+              fileName: v.fileName ?? null,
+              source: v.source ?? null,
+            });
+          }
         }
 
         if (!dealId) continue;
@@ -439,18 +444,23 @@ export async function syncFromPeApi(options?: {
           continue;
         }
 
-        // Prefer the API's native status (added 2026-06-12); fall back to
-        // action-item inference when it's absent.
-        let status = mapApiDocStatus(docInfo.status, docInfo.present);
-        if (status === null) {
-          const hasActiveAction = hasActiveActionForDoc(canonicalName, detail);
-          const hasPass = hasReviewPassForDoc(canonicalName, detail);
-          status = deriveDocStatus(docInfo.present, hasActiveAction, hasPass);
+        let status: PeDocStatus;
+        if (!docInfo) {
+          // Absent from the API response ⇒ not uploaded.
+          status = PeDocStatus.NOT_UPLOADED;
+        } else {
+          // Prefer the API's native status (added 2026-06-12); fall back to
+          // action-item inference when it's absent.
+          status = mapApiDocStatus(docInfo.status, docInfo.present) ?? deriveDocStatus(
+            docInfo.present,
+            hasActiveActionForDoc(canonicalName, detail),
+            hasReviewPassForDoc(canonicalName, detail),
+          );
         }
 
         const noteParts: string[] = [
           `Synced from PE API (${project.projectId})`,
-          `v${docInfo.version}`,
+          docInfo ? `v${docInfo.version}` : "not uploaded",
           `milestone: ${project.project.currentMilestone}`,
         ];
 
