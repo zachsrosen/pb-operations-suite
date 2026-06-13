@@ -15,7 +15,8 @@ import {
   percentile,
   buildUploaderStats,
   buildPaymentOwnership,
-  buildDailyUploads,
+  buildUploadsByPeriod,
+  buildDocTypeByUploader,
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
   type PeAnalyticsPayload,
@@ -813,10 +814,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // approved / rejected / in-review outcome split, and the merged-in payment
     // ownership ($ of approved milestone payments each person drove).
     uploaderStats: withPaymentOwnership,
-    // Per-day uploads segmented by person — powers the "By Day" stacked bars.
-    dailyUploads: buildDailyUploads(
+    // Per-period uploads segmented by person — powers the By Day/Week/Month
+    // stacked bars; doc-type breakdown powers the "By Doc Type" view.
+    uploadsByPeriod: buildUploadsByPeriod(
       versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
-      90,
+    ),
+    docTypeByUploader: buildDocTypeByUploader(
+      versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
     ),
     pipeline,
     timing: { overall, monthly },

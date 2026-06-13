@@ -16,6 +16,9 @@ import {
   type DocRejectionEvent,
   type UploaderStat,
   type DailyUpload,
+  type UploadsByPeriod,
+  type UploadGranularity,
+  type UploaderDocTypes,
   UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
@@ -845,20 +848,32 @@ function buildColorMap(orderedPeople: string[]): Map<string, string> {
   return m;
 }
 
-/** Per-day uploads as stacked bars segmented by who uploaded (last 90 days). */
-function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: UploaderStat[] }) {
+/** Uploads as stacked bars segmented by who uploaded, at day/week/month grain. */
+function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]; stats: UploaderStat[]; granularity: UploadGranularity }) {
   if (daily.length === 0) {
-    return <div className="text-sm text-muted py-8 text-center">No uploads in the last 90 days.</div>;
+    return <div className="text-sm text-muted py-8 text-center">No uploads in this range.</div>;
   }
   const order = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER).map((s) => s.uploader);
   const stack = [...order, UNKNOWN_UPLOADER]; // Unknown stacks on top
   const colors = buildColorMap(order);
   const present = stack.filter((p) => daily.some((d) => (d.byUploader[p] ?? 0) > 0));
   const maxTotal = Math.max(...daily.map((d) => d.total), 1);
-  const padL = 30, padT = 12, padB = 44, barW = 20, gap = 6, chartH = 320;
+  // Wider bars for the coarser, fewer-bar grains.
+  const barW = granularity === "month" ? 44 : granularity === "week" ? 26 : 20;
+  const padL = 30, padT = 12, padB = 44, gap = 6, chartH = 320;
   const chartW = padL + daily.length * (barW + gap) + 4;
   const yTicks = 5;
-  const labelEvery = Math.max(1, Math.ceil(daily.length / 20));
+  const labelEvery = Math.max(1, Math.ceil(daily.length / 24));
+  const fmtLabel = (key: string) =>
+    granularity === "month" ? key : granularity === "week" ? `wk ${key.slice(5)}` : key.slice(5);
+  // Combined whole-period tooltip: total + every person's count, biggest first.
+  const periodTitle = (d: DailyUpload) => {
+    const lines = Object.entries(d.byUploader)
+      .sort((a, b) => b[1] - a[1])
+      .map(([who, n]) => `  ${who === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(who)}: ${n}`);
+    const label = granularity === "month" ? d.day : granularity === "week" ? `week of ${d.day}` : d.day;
+    return `${label} — ${d.total} uploads\n${lines.join("\n")}`;
+  };
 
   return (
     <div>
@@ -892,14 +907,16 @@ function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: Uplo
                   if (!n) return null;
                   const h = (n / maxTotal) * chartH;
                   yCursor -= h;
-                  return <rect key={person} x={x} y={yCursor} width={barW} height={h} fill={colors.get(person)} rx={1}>
-                    <title>{`${d.day} · ${person === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(person)}: ${n}`}</title>
-                  </rect>;
+                  return <rect key={person} x={x} y={yCursor} width={barW} height={h} fill={colors.get(person)} rx={1} />;
                 })}
+                {/* invisible overlay carries the combined whole-period tooltip */}
+                <rect x={x} y={padT} width={barW} height={chartH} fill="transparent">
+                  <title>{periodTitle(d)}</title>
+                </rect>
                 <text x={x + barW / 2} y={yCursor - 4} textAnchor="middle" className="fill-foreground text-[10px] tabular-nums">{d.total}</text>
                 {i % labelEvery === 0 && (
                   <text x={x + barW / 2} y={padT + chartH + 16} textAnchor="middle" className="fill-muted text-[10px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 16})`}>
-                    {d.day.slice(5)}
+                    {fmtLabel(d.day)}
                   </text>
                 )}
               </g>
@@ -907,6 +924,52 @@ function DailyUploadsChart({ daily, stats }: { daily: DailyUpload[]; stats: Uplo
           })}
         </svg>
       </div>
+    </div>
+  );
+}
+
+/** Per-person × document-type matrix — who uploads which doc types. */
+function DocTypeByUploaderPanel({ rows }: { rows: UploaderDocTypes[] }) {
+  if (rows.length === 0) {
+    return <div className="text-sm text-muted py-8 text-center">No attributed uploads yet.</div>;
+  }
+  // Doc-type columns ordered by overall volume; short labels for the header.
+  const SHORT: Record<string, string> = {
+    "Customer Agreement (PPA/ESA)": "CustAgmt", "Installation Order": "InstOrder", "State Disclosures": "Disclos",
+    "Utility Bill": "UtilBill", "Signed Proposal": "Proposal", "Design Plan": "Design", "Photos per Policy": "Photos",
+    "Signed Final Permit": "Permit", "Access to Monitoring": "Monitor", "Certificate of Acceptance": "CoA",
+    "Attestation of Customer Payment": "Attest", "Conditional Progress Lien Waiver": "ProgLien",
+    "Signed Interconnection Agreement": "IC Agmt", "Conditional Waiver — Final Payment": "FinalLien", "Permission to Operate (PTO)": "PTO",
+  };
+  const totals = new Map<string, number>();
+  for (const r of rows) for (const [doc, n] of Object.entries(r.byDoc)) totals.set(doc, (totals.get(doc) ?? 0) + n);
+  const docs = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
+  const max = Math.max(...rows.flatMap((r) => Object.values(r.byDoc)), 1);
+  const cell = (n: number) => {
+    if (!n) return <span className="text-t-border">·</span>;
+    const a = 0.15 + 0.85 * (n / max); // heat
+    return <span className="px-1 rounded tabular-nums" style={{ background: `rgba(34,211,238,${a * 0.35})`, color: a > 0.6 ? "#e0f2fe" : undefined }}>{n}</span>;
+  };
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-[11px] border-separate" style={{ borderSpacing: "3px 2px" }}>
+        <thead>
+          <tr className="text-muted">
+            <th className="text-left font-medium pr-3 sticky left-0 bg-surface">Person</th>
+            {docs.map((d) => <th key={d} className="font-medium px-1 text-center whitespace-nowrap" title={d}>{SHORT[d] ?? d.slice(0, 8)}</th>)}
+            <th className="font-semibold px-1 text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.uploader} className={r.uploader === UNKNOWN_UPLOADER ? "opacity-70" : ""}>
+              <td className="text-foreground pr-3 whitespace-nowrap sticky left-0 bg-surface">{r.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(r.uploader)}</td>
+              {docs.map((d) => <td key={d} className="text-center text-foreground">{cell(r.byDoc[d] ?? 0)}</td>)}
+              <td className="text-right font-semibold text-foreground tabular-nums">{r.total.toLocaleString("en-US")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -965,32 +1028,48 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
   );
 }
 
-function UploadersSection({ stats, daily }: { stats: UploaderStat[]; daily: DailyUpload[] }) {
-  const [tab, setTab] = useState<"submissions" | "day" | "payments">("submissions");
+function UploadersSection({ stats, periods, docTypes }: { stats: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[] }) {
+  const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
+  const [grain, setGrain] = useState<UploadGranularity>("day");
   return (
     <Section
       title="Doc Uploaders"
       subtitle={
         tab === "submissions"
           ? "Who uploaded each doc and their approval rate. PE began attributing uploads partway through — earlier uploads land in Unknown."
-          : tab === "day"
-            ? "Documents uploaded per day, segmented by who uploaded them (last 90 days)."
-            : "Approved milestone payments each person drove, by their share of the approved docs."
+          : tab === "timeline"
+            ? `Documents uploaded per ${grain}, segmented by who uploaded them.${grain === "day" ? " Last 90 days." : " All time."}`
+            : tab === "doctype"
+              ? "Which document types each person uploads — count of docs they're the latest uploader on, by type."
+              : "Approved milestone payments each person drove, by their share of the approved docs."
       }
       actions={
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {([["submissions", "Submissions"], ["day", "By Day"], ["payments", "Approved $"]] as const).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${tab === t ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}>
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {tab === "timeline" && (
+            <div className="flex items-center gap-1">
+              {(["day", "week", "month"] as const).map((g) => (
+                <button key={g} onClick={() => setGrain(g)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors capitalize ${grain === g ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "border-t-border text-muted hover:text-foreground"}`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            {([["submissions", "Submissions"], ["timeline", "By Time"], ["doctype", "By Doc Type"], ["payments", "Approved $"]] as const).map(([t, label]) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${tab === t ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       }
     >
       {tab === "submissions" ? <UploaderPanel stats={stats} />
-        : tab === "day" ? <DailyUploadsChart daily={daily} stats={stats} />
-          : <PaymentPanel stats={stats} />}
+        : tab === "timeline" ? <DailyUploadsChart daily={periods[grain]} stats={stats} granularity={grain} />
+          : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
+            : <PaymentPanel stats={stats} />}
     </Section>
   );
 }
@@ -1596,7 +1675,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} daily={data.dailyUploads ?? []} />
+          <UploadersSection stats={data.uploaderStats ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} />
 
           {/* 2. Expected revenue pipeline */}
           <Section
