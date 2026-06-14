@@ -785,7 +785,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   const attributedDocs = attributed.reduce((sum, s) => sum + s.approved + s.inReview + s.rejected, 0);
 
   // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
+  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
   const renderRow = (s: UploaderStat, muted: boolean) => {
     const rate = rateOf(s);
     const total = s.approved + s.inReview + s.rejected;
@@ -797,6 +797,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         </span>
         <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} />
         <span className="text-sm font-semibold text-foreground text-right tabular-nums">{total.toLocaleString("en-US")}</span>
+        <span className="text-xs text-cyan-400 text-right tabular-nums" title={`across ${s.deals} distinct deals`}>{s.deals.toLocaleString("en-US")}</span>
         <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
         <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
@@ -821,6 +822,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         <span>Person</span>
         <span>Docs by outcome — bar length = volume</span>
         <span className="text-right">Total</span>
+        <span className="text-right text-cyan-400/80">Deals</span>
         <span className="text-right text-emerald-400/80">Appr.</span>
         <span className="text-right">In rev.</span>
         <span className="text-right text-orange-400/80">Rej.</span>
@@ -875,7 +877,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
       .sort((a, b) => b[1] - a[1])
       .map(([who, n]) => `  ${who === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(who)}: ${n}`);
     const label = granularity === "month" ? d.day : granularity === "week" ? `week of ${d.day}` : d.day;
-    return `${label} — ${d.total} uploads\n${lines.join("\n")}`;
+    return `${label} — ${d.total} uploads across ${d.deals} deal${d.deals === 1 ? "" : "s"}\n${lines.join("\n")}`;
   };
 
   return (
@@ -925,6 +927,10 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
                 <rect x={x} y={padT} width={barW} height={chartH} fill="transparent">
                   <title>{periodTitle(d)}</title>
                 </rect>
+                {/* deal count above the doc total (skipped on the tallest bars to avoid clipping — tooltip still shows it) */}
+                {yCursor - 13 >= padT && (
+                  <text x={x + barW / 2} y={yCursor - 13} textAnchor="middle" className="fill-cyan-400 text-[8px] tabular-nums">{d.deals}d</text>
+                )}
                 <text x={x + barW / 2} y={yCursor - 4} textAnchor="middle" className="fill-foreground text-[10px] tabular-nums">{d.total}</text>
                 {(i % labelEvery === 0 || i === daily.length - 1) && (
                   <text x={x + barW / 2} y={padT + chartH + 16} textAnchor="middle" className="fill-muted text-[10px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 16})`}>
