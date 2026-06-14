@@ -21,7 +21,8 @@ import {
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
   UNKNOWN_UPLOADER,
-  type RejectedDoc,
+  type UploaderDoc,
+  type UploaderOutcomeDocs,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
@@ -816,27 +817,38 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
   });
 
-  // Per-uploader list of currently-rejected docs (latest version owns the status) — drill-down.
+  // Per-uploader owned docs split by current outcome (latest version owns the
+  // status) — powers the approved / in-review / rejected drill-downs.
   const dealPortalUrl = new Map(deals.map((d) => [d.dealId, d.pePortalUrl]));
-  const uploaderRejections: Record<string, RejectedDoc[]> = {};
+  const uploaderDocs: Record<string, UploaderOutcomeDocs> = {};
   for (const [k, who] of latestUploaderByDoc) {
     const status = currentDocStatus.get(k);
-    if (status !== "ACTION_REQUIRED" && status !== "REJECTED") continue;
+    const bucket: keyof UploaderOutcomeDocs | null =
+      status === "APPROVED" ? "approved"
+        : status === "ACTION_REQUIRED" || status === "REJECTED" ? "rejected"
+          : status === "UNDER_REVIEW" || status === "UPLOADED" ? "inReview"
+            : null;
+    if (!bucket) continue;
     const sep = k.indexOf("|");
     const dealId = k.slice(0, sep);
     const docName = k.slice(sep + 1);
     if (!dealNameById.has(dealId)) continue;
-    const note = rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null;
+    const note = bucket === "rejected"
+      ? (rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null)
+      : null;
     const clean = note
       ? note.replace(/^Synced from PE[^|]*\|\s*/, "").replace(/^Synced from PE portal scraper \([^)]*\)\s*\|\s*/, "").slice(0, 180)
       : null;
-    (uploaderRejections[who?.trim() || UNKNOWN_UPLOADER] ??= []).push({
+    const key = who?.trim() || UNKNOWN_UPLOADER;
+    const entry = (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [] });
+    const doc: UploaderDoc = {
       dealName: dealNameById.get(dealId) ?? dealId,
       docName,
       hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
       pePortalUrl: dealPortalUrl.get(dealId) ?? null,
       note: clean,
-    });
+    };
+    entry[bucket].push(doc);
   }
 
   return {
@@ -868,7 +880,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // approved / rejected / in-review outcome split, and the merged-in payment
     // ownership ($ of approved milestone payments each person drove).
     uploaderStats: withPaymentOwnership,
-    uploaderRejections,
+    uploaderDocs,
     // Per-period uploads segmented by person — powers the By Day/Week/Month
     // stacked bars; doc-type breakdown powers the "By Doc Type" view.
     uploadsByPeriod: buildUploadsByPeriod(
