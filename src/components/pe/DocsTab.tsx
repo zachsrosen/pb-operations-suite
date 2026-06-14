@@ -165,9 +165,13 @@ function milestoneDocSections(m: PeMilestone): ("onboarding" | "ic" | "pc")[] {
     case "pre-construction":
     case "construction":
       return ["onboarding"];
+    // PTO (HubSpot) = PE "Inspection Complete" (M1): owes onboarding + IC docs
+    // only. The M2 / Project-Complete docs (Interconnection Agreement, PTO,
+    // Final-Payment Waiver) aren't due until the deal reaches Close Out, so they
+    // must not count or render as outstanding while the deal is still at PTO.
     case "inspection":
-      return ["onboarding", "ic"];
     case "pto":
+      return ["onboarding", "ic"];
     case "close-out":
     case "complete":
       return ["onboarding", "ic", "pc"];
