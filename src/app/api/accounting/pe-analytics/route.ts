@@ -6,6 +6,7 @@ import { PIPELINE_IDS } from "@/lib/deals-pipeline";
 import { PE_LEASE, calcLeaseFactorAdjustment, DC_QUALIFYING_MODULE_BRANDS, DC_QUALIFYING_BATTERY_BRANDS, type PeSystemType } from "@/lib/pricing-calculator";
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { listAllProjects } from "@/lib/pe-api";
 import { prisma } from "@/lib/db";
 import {
   weekStartUTC,
@@ -500,7 +501,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       ? prisma.peDocVersion
           .findMany({
             where: { dealId: { not: null } },
-            select: { dealId: true, docName: true, version: true, uploadedAt: true, uploadedBy: true },
+            select: { dealId: true, peProjectId: true, docName: true, version: true, uploadedAt: true, uploadedBy: true },
           })
           // Table ships with this feature — don't 500 the dashboard if the
           // migration hasn't been applied yet.
@@ -769,12 +770,29 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const rejectedAtLeastOnce = submittedAll.filter((r) => r.timing.rejectionCount > 0);
 
   // --- Uploader payment ownership ---------------------------------------------
+  // Cancelled/removed PE projects disappear from the live feed (Closed/Paid stay
+  // in it), so their docs would otherwise keep dragging down approval rates with
+  // no way to act on them. Exclude feed-absent projects from all uploader views.
+  // Fail open: if the feed can't be fetched, include everything (no worse than before).
+  let activeProjectIds: Set<string> | null = null;
+  try {
+    activeProjectIds = new Set((await listAllProjects()).map((p) => (p.projectId || "").trim().toUpperCase()));
+  } catch (err) {
+    console.warn("[pe-analytics] PE feed fetch failed; not filtering cancelled projects:", err);
+  }
+  const uploaderVersionRows = versionRows.filter(
+    (v) =>
+      v.dealId &&
+      dealNameById.has(v.dealId) &&
+      (!activeProjectIds || !v.peProjectId || activeProjectIds.has(v.peProjectId.trim().toUpperCase())),
+  );
+
   // Latest-version uploader per (deal, doc), then credit each approved/paid
   // milestone's payment to whoever owns the most of its approved docs.
   const latestUploaderByDoc = new Map<string, string | null>();
   {
     const maxVer = new Map<string, number>();
-    for (const v of versionRows) {
+    for (const v of uploaderVersionRows) {
       if (!v.dealId) continue;
       const k = `${v.dealId}|${v.docName}`;
       if (!maxVer.has(k) || v.version > maxVer.get(k)!) {
@@ -791,7 +809,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   ]);
   const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDoc);
   const withPaymentOwnership = buildUploaderStats(
-    versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
+    uploaderVersionRows,
     currentDocStatus,
   ).map((s) => {
     const pay = paymentOwnership.get(s.uploader);
@@ -854,10 +872,10 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // Per-period uploads segmented by person — powers the By Day/Week/Month
     // stacked bars; doc-type breakdown powers the "By Doc Type" view.
     uploadsByPeriod: buildUploadsByPeriod(
-      versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
+      uploaderVersionRows,
     ),
     docTypeByUploader: buildDocTypeByUploader(
-      versionRows.filter((v) => v.dealId && dealNameById.has(v.dealId)),
+      uploaderVersionRows,
     ),
     pipeline,
     timing: { overall, monthly },
