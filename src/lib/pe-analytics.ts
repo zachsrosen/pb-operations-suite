@@ -320,6 +320,10 @@ export interface UploaderStat {
   // no approved doc has a known uploader). Populated by buildPaymentOwnership.
   paymentsOwned: number; // $ of approved/paid milestone payments owned
   milestonesOwned: number; // count of those milestones
+  // Same ownership, but for milestones submitted to PE and still awaiting
+  // approval (not yet approved/paid) — the "in review" payment pipeline.
+  pendingPaymentsOwned: number; // $ of submitted-but-unapproved milestone payments owned
+  pendingMilestonesOwned: number; // count of those milestones
 }
 
 /** One approved/paid milestone with its payment amount and doc set. */
@@ -328,6 +332,7 @@ export interface MilestonePayment {
   docNames: string[]; // the milestone's canonical doc set (M1 = 12, M2 = 3)
   amount: number;
   isApprovedPayment: boolean; // milestone status is Approved or Paid
+  isPendingPayment: boolean; // milestone submitted to PE, awaiting approval (not yet approved/paid)
 }
 
 /**
@@ -342,27 +347,36 @@ export function buildPaymentOwnership(
   milestones: MilestonePayment[],
   statusByDoc: Map<string, string>, // `${dealId}|${docName}` → status
   latestUploaderByDoc: Map<string, string | null>, // `${dealId}|${docName}` → uploader
-): Map<string, { amount: number; count: number }> {
-  const owned = new Map<string, { amount: number; count: number }>();
-  const add = (who: string, amt: number) => {
-    const e = owned.get(who) ?? { amount: 0, count: 0 };
-    e.amount += amt;
-    e.count += 1;
-    owned.set(who, e);
+): Map<string, { amount: number; count: number; pendingAmount: number; pendingCount: number }> {
+  const owned = new Map<string, { amount: number; count: number; pendingAmount: number; pendingCount: number }>();
+  const ensure = (who: string) => {
+    let e = owned.get(who);
+    if (!e) { e = { amount: 0, count: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
+    return e;
   };
-  for (const m of milestones) {
-    if (!m.isApprovedPayment || m.amount <= 0) continue;
-    const approvedDocs = m.docNames.filter((n) => statusByDoc.get(`${m.dealId}|${n}`) === "APPROVED");
-    if (approvedDocs.length === 0) continue;
+  // Credit a milestone's $ to the top KNOWN uploader of its `qualifying` docs
+  // (approved docs for approved milestones; in-review docs for pending ones).
+  const credit = (m: MilestonePayment, qualifyingStatuses: Set<string>, pending: boolean) => {
+    const docs = m.docNames.filter((n) => qualifyingStatuses.has(statusByDoc.get(`${m.dealId}|${n}`) ?? ""));
+    if (docs.length === 0) return;
     const tally = new Map<string, number>();
-    for (const n of approvedDocs) {
+    for (const n of docs) {
       const by = latestUploaderByDoc.get(`${m.dealId}|${n}`)?.trim() || UNKNOWN_UPLOADER;
       tally.set(by, (tally.get(by) ?? 0) + 1);
     }
     const knownTop = [...tally.entries()]
       .filter(([w]) => w !== UNKNOWN_UPLOADER)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-    add(knownTop ? knownTop[0] : UNKNOWN_UPLOADER, m.amount);
+    const e = ensure(knownTop ? knownTop[0] : UNKNOWN_UPLOADER);
+    if (pending) { e.pendingAmount += m.amount; e.pendingCount += 1; }
+    else { e.amount += m.amount; e.count += 1; }
+  };
+  const APPROVED = new Set(["APPROVED"]);
+  const IN_REVIEW = new Set(["UNDER_REVIEW", "UPLOADED"]);
+  for (const m of milestones) {
+    if (m.amount <= 0) continue;
+    if (m.isApprovedPayment) credit(m, APPROVED, false);
+    else if (m.isPendingPayment) credit(m, IN_REVIEW, true);
   }
   return owned;
 }
@@ -568,6 +582,8 @@ export function buildUploaderStats(
       inReview: e.inReview,
       paymentsOwned: 0, // merged in by the route via buildPaymentOwnership
       milestonesOwned: 0,
+      pendingPaymentsOwned: 0,
+      pendingMilestonesOwned: 0,
     }))
     .sort((a, b) => {
       if (a.uploader === UNKNOWN_UPLOADER) return 1;
@@ -601,6 +617,15 @@ export interface MilestoneDrillRow {
   latestRejectionNote: string | null;
 }
 
+/** One currently-rejected doc, for the per-uploader rejected-docs drill-down. */
+export interface RejectedDoc {
+  dealName: string;
+  docName: string;
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+  note: string | null; // latest PE reviewer note, cleaned
+}
+
 export interface PeAnalyticsPayload {
   lastUpdated: string;
   totals: {
@@ -624,6 +649,8 @@ export interface PeAnalyticsPayload {
   docApprovalEvents: DocRejectionEvent[];
   /** Doc uploads per person (PE version history); Unknown bucket = pre-tracking uploads. */
   uploaderStats: UploaderStat[];
+  /** Per-uploader list of docs currently ACTION_REQUIRED/REJECTED (latest version owner) — powers the rejected-docs drill-down. Keyed by uploader (UNKNOWN_UPLOADER for null). */
+  uploaderRejections: Record<string, RejectedDoc[]>;
   uploadsByPeriod: UploadsByPeriod;
   docTypeByUploader: UploaderDocTypes[];
   pipeline: PipelineGroupRow[];
