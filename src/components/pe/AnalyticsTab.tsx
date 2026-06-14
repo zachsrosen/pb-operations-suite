@@ -792,7 +792,7 @@ function UploaderPanel({ stats, rejections }: { stats: UploaderStat[]; rejection
   );
 
   // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
+  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
   const renderRow = (s: UploaderStat, muted: boolean) => {
     const rate = rateOf(s);
     const total = s.approved + s.inReview + s.rejected;
@@ -803,8 +803,9 @@ function UploaderPanel({ stats, rejections }: { stats: UploaderStat[]; rejection
           {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
         </span>
         <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} />
-        <span className="text-sm font-semibold text-foreground text-right tabular-nums">{total.toLocaleString("en-US")}</span>
-        <span className="text-xs text-cyan-400 text-right tabular-nums" title={`across ${s.deals} distinct deals`}>{s.deals.toLocaleString("en-US")}</span>
+        <span className="text-xs text-muted text-right tabular-nums" title="Every upload action, including resubmissions of the same doc">{s.total.toLocaleString("en-US")}</span>
+        <span className="text-sm font-semibold text-foreground text-right tabular-nums" title="Distinct docs you're the latest uploader on">{total.toLocaleString("en-US")}</span>
+        <span className="text-xs text-cyan-400 text-right tabular-nums" title={`distinct deals — ${s.deals}`}>{s.deals.toLocaleString("en-US")}</span>
         <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
         <span className="text-xs text-orange-400 text-right tabular-nums">
@@ -832,8 +833,9 @@ function UploaderPanel({ stats, rejections }: { stats: UploaderStat[]; rejection
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
         <span>Docs by outcome — bar length = volume</span>
-        <span className="text-right">Total</span>
-        <span className="text-right text-cyan-400/80">Deals</span>
+        <span className="text-right" title="Every upload action incl. resubmissions">Uploads</span>
+        <span className="text-right" title="Distinct docs you're the latest uploader on">Docs</span>
+        <span className="text-right text-cyan-400/80" title="Distinct deals">Deals</span>
         <span className="text-right text-emerald-400/80">Appr.</span>
         <span className="text-right">In rev.</span>
         <span className="text-right text-orange-400/80" title="Click a person's rejected count to see which docs to fix">Rej. ⌕</span>
@@ -1035,49 +1037,53 @@ function fmtMoney(n: number): string {
 
 /** Approved-payment ownership leaderboard — bar length = $ owned. */
 function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
-  const attributed = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER && s.paymentsOwned > 0);
+  const attributed = stats
+    .filter((s) => s.uploader !== UNKNOWN_UPLOADER && (s.paymentsOwned > 0 || s.pendingPaymentsOwned > 0))
+    .sort((a, b) => (b.paymentsOwned + b.pendingPaymentsOwned) - (a.paymentsOwned + a.pendingPaymentsOwned));
   const unknown = stats.find((s) => s.uploader === UNKNOWN_UPLOADER);
-  if (attributed.length === 0 && !(unknown && unknown.paymentsOwned > 0)) {
-    return <div className="text-sm text-muted py-8 text-center">No approved milestone payments attributed yet.</div>;
+  const hasUnknown = !!unknown && (unknown.paymentsOwned > 0 || unknown.pendingPaymentsOwned > 0);
+  if (attributed.length === 0 && !hasUnknown) {
+    return <div className="text-sm text-muted py-8 text-center">No milestone payments attributed yet.</div>;
   }
-  const teamPayments = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
+  const teamApproved = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
+  const teamPending = attributed.reduce((sum, s) => sum + s.pendingPaymentsOwned, 0);
   const unknownPay = unknown?.paymentsOwned ?? 0;
-  const grand = teamPayments + unknownPay;
-  const maxPay = Math.max(...attributed.map((s) => s.paymentsOwned), 1);
-  const COLS = "grid items-center gap-x-3 grid-cols-[8rem_1fr_5.5rem_6rem]";
+  const maxPay = Math.max(...attributed.map((s) => s.paymentsOwned + s.pendingPaymentsOwned), 1);
+  const COLS = "grid items-center gap-x-3 grid-cols-[7.5rem_1fr_5.5rem_5.5rem]";
   const row = (s: UploaderStat, muted: boolean) => (
     <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
       <span className="text-xs text-foreground truncate" title={s.uploader}>
         {muted ? "Unknown" : prettyUploader(s.uploader)}
         {muted && <span className="text-[10px] text-muted block leading-tight">no known uploader</span>}
       </span>
-      <div className="h-4 rounded bg-surface-2 overflow-hidden w-full">
-        <div className="h-full bg-cyan-500/80 rounded" style={{ width: `${Math.min(100, (s.paymentsOwned / maxPay) * 100)}%`, minWidth: s.paymentsOwned > 0 ? 2 : 0 }} />
+      <div className="h-4 rounded bg-surface-2 overflow-hidden w-full flex">
+        <div className="h-full bg-cyan-500/80" style={{ width: `${Math.min(100, (s.paymentsOwned / maxPay) * 100)}%` }} title={`Approved: ${fmtMoney(s.paymentsOwned)}`} />
+        <div className="h-full bg-amber-500/50" style={{ width: `${Math.min(100, (s.pendingPaymentsOwned / maxPay) * 100)}%` }} title={`In review: ${fmtMoney(s.pendingPaymentsOwned)}`} />
       </div>
-      <span className="text-[11px] text-muted text-right tabular-nums" title="Approved milestone payments owned">{s.milestonesOwned}</span>
-      <span className="text-sm font-semibold text-cyan-400 text-right tabular-nums">{fmtMoney(s.paymentsOwned)}</span>
+      <span className="text-sm font-semibold text-cyan-400 text-right tabular-nums" title={`${s.milestonesOwned} approved milestone${s.milestonesOwned === 1 ? "" : "s"}`}>{fmtMoney(s.paymentsOwned)}</span>
+      <span className="text-xs text-amber-400 text-right tabular-nums" title={`${s.pendingMilestonesOwned} milestone${s.pendingMilestonesOwned === 1 ? "" : "s"} submitted, awaiting approval`}>{s.pendingPaymentsOwned > 0 ? fmtMoney(s.pendingPaymentsOwned) : "—"}</span>
     </div>
   );
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-        <MiniStat label="Attributed $ Owned" value={fmtMoney(teamPayments)} subtitle={`of ${fmtMoney(grand)} total approved`} />
-        <MiniStat label="Approval Rate of Total" value={grand ? `${Math.round((teamPayments / grand) * 100)}%` : "—"} subtitle="credited to a known person" />
+        <MiniStat label="Approved $ Owned" value={fmtMoney(teamApproved)} subtitle="credited to a known person" />
+        <MiniStat label="In Review $" value={fmtMoney(teamPending)} subtitle="submitted, awaiting PE approval" />
         <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader on milestone" />
       </div>
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
-        <span>Approved payments owned — bar = $</span>
-        <span className="text-right" title="Approved milestone payments owned">Milestones</span>
-        <span className="text-right text-cyan-400/80">$ Owned</span>
+        <span>Payments owned — bar = $ (<span className="text-cyan-400/80">approved</span> + <span className="text-amber-400/80">in review</span>)</span>
+        <span className="text-right text-cyan-400/80">$ Appr.</span>
+        <span className="text-right text-amber-400/80">$ In Rev.</span>
       </div>
       <div className="space-y-2">
         {attributed.map((s) => <div key={s.uploader}>{row(s, false)}</div>)}
       </div>
-      {unknown && unknownPay > 0 && (
-        <div className="mt-2 pt-2 border-t border-t-border">{row(unknown, true)}</div>
+      {hasUnknown && (
+        <div className="mt-2 pt-2 border-t border-t-border">{row(unknown!, true)}</div>
       )}
-      <p className="mt-3 text-[11px] text-muted">Each approved/paid milestone&apos;s payment is credited to whoever uploaded the most of its approved docs (top known uploader wins; Unknown only when no approved doc has a known uploader).</p>
+      <p className="mt-3 text-[11px] text-muted">Each milestone&apos;s payment is credited to whoever uploaded the most of its docs — approved docs for approved milestones, in-review docs for ones still awaiting PE approval. Top known uploader wins.</p>
     </div>
   );
 }

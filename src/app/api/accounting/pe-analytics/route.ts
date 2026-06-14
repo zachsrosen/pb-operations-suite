@@ -784,9 +784,10 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
   }
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
+  const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
   const milestonePayments = deals.flatMap((d) => [
-    { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status) },
-    { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status) },
+    { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
+    { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
   ]);
   const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDoc);
   const withPaymentOwnership = buildUploaderStats(
@@ -794,7 +795,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     currentDocStatus,
   ).map((s) => {
     const pay = paymentOwnership.get(s.uploader);
-    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count } : s;
+    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
   });
 
   // Per-uploader list of currently-rejected docs (latest version owns the status) — drill-down.
