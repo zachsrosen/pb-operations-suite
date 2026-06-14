@@ -927,6 +927,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
                     <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
                     {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
                     {r.overridden && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Credited uploader was set by a super-admin override">override</span>}
+                    {r.resubmitted && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30" title="A newer version was uploaded after this override was set — re-check whether the credit is still correct">resubmitted ⚠</span>}
                     {canOverride && (
                       savingKey === `${r.dealId}|${r.docName}` ? (
                         <span className="text-[10px] text-muted">saving…</span>

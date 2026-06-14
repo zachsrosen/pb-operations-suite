@@ -36,6 +36,8 @@ import {
 } from "@/lib/pe-api";
 import { buildPeDealMap, matchProjectToDeal } from "@/lib/pe-scraper-sync";
 import { syncPeDocStatusesToHubSpot } from "@/lib/pe-hubspot-sync";
+import { detectAndConsumeResubmissions } from "@/lib/pe-uploader-overrides";
+import { notifyOverrideResubmissions } from "@/lib/pe-doc-notify";
 import { hubspotClient } from "@/lib/hubspot";
 
 /**
@@ -879,6 +881,18 @@ export async function syncFromPeApi(options?: {
         `${result.actionItemsUpserted} action items, ${result.errors.length} errors ` +
         `(${result.durationMs}ms)`,
     );
+
+    // Alert if any admin-overridden doc was resubmitted (new version) so the
+    // pinned credit can be re-checked. Best-effort — never fail the sync.
+    try {
+      const resubmitted = await detectAndConsumeResubmissions();
+      if (resubmitted.length > 0) {
+        console.warn(`[pe-api-sync] ${resubmitted.length} overridden doc(s) resubmitted — notifying`);
+        await notifyOverrideResubmissions(resubmitted);
+      }
+    } catch (e) {
+      console.error("[pe-api-sync] override resubmission check failed:", e);
+    }
 
     return result;
   } catch (error) {

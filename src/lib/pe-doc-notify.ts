@@ -230,3 +230,47 @@ export async function sendPeDocChangeNotification(
     return { sent: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/**
+ * Alert when a doc that has an admin uploader-override gets a NEW version
+ * (resubmitted) — the override may now be crediting the wrong person, so it
+ * should be re-checked. Sent to the PE recipient; one email per sync batch.
+ */
+export async function notifyOverrideResubmissions(
+  items: { dealId: string; docName: string; uploader: string; setBy: string; fromVersion: number; toVersion: number }[],
+): Promise<void> {
+  if (items.length === 0) return;
+  const portalId = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
+  // Resolve friendly deal names where we have them.
+  const names = new Map<string, string>();
+  try {
+    const rows = await prisma.peDocChangeLog.findMany({
+      where: { dealId: { in: items.map((i) => i.dealId) } },
+      select: { dealId: true, dealName: true },
+      distinct: ["dealId"],
+    });
+    for (const r of rows) if (r.dealName) names.set(r.dealId, r.dealName);
+  } catch { /* names are best-effort */ }
+
+  const line = (i: (typeof items)[number]) => {
+    const name = names.get(i.dealId) ?? i.dealId;
+    const who = i.uploader || "Unknown";
+    return { name, who, link: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${i.dealId}` : "", text: `${i.docName} — ${name}: new v${i.toVersion} (was v${i.fromVersion}); currently credited to ${who} — re-check override` };
+  };
+  const rows = items.map(line);
+  const html =
+    `<div style="font-family:system-ui,sans-serif;font-size:14px;color:#111">` +
+    `<p><b>${items.length} overridden doc${items.length === 1 ? "" : "s"} ${items.length === 1 ? "was" : "were"} resubmitted</b> — a newer version landed after you pinned the credited uploader. Re-check whether the override is still correct.</p><ul>` +
+    rows.map((r) => `<li>${r.link ? `<a href="${r.link}">${r.name}</a>` : r.name}: <b>${r.text.split("—").slice(1).join("—").trim()}</b></li>`).join("") +
+    `</ul></div>`;
+  const text = [`${items.length} overridden doc(s) resubmitted — re-check the override:`, ...rows.map((r) => `• ${r.text}`)].join("\n");
+
+  await sendEmailMessage({
+    to: RECIPIENT,
+    subject: `PE override re-check — ${items.length} resubmitted doc${items.length === 1 ? "" : "s"}`,
+    html,
+    text,
+    debugFallbackTitle: "PE Override Resubmission",
+    debugFallbackBody: text,
+  }).catch((e) => console.error("[pe-doc-notify] override resubmit email failed:", e));
+}

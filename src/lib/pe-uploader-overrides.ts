@@ -19,6 +19,8 @@ export interface UploaderOverride {
   setBy: string;
   reason: string;
   at: string; // ISO
+  versionAtOverride?: number; // doc's latest version number when the override was set
+  notifiedVersion?: number; // highest version we've already alerted on (re-check guard)
 }
 
 export type UploaderOverrideMap = Record<string, UploaderOverride>; // key: `${dealId}|${docName}`
@@ -64,11 +66,16 @@ export async function setUploaderOverride(args: {
   if (clear) {
     delete raw[key];
   } else {
+    // Capture the doc's current latest version so a later resubmission (a
+    // higher version) can be detected and flagged for re-check.
+    const v = await currentMaxVersion(args.dealId, args.docName);
     raw[key] = {
       uploader: args.uploader ?? "",
       setBy: args.setBy,
       reason: args.reason ?? "",
       at: new Date().toISOString(),
+      versionAtOverride: v,
+      notifiedVersion: v,
     };
   }
   await prisma.systemConfig.upsert({
@@ -76,4 +83,66 @@ export async function setUploaderOverride(args: {
     create: { key: CONFIG_KEY, value: JSON.stringify(raw) },
     update: { value: JSON.stringify(raw) },
   });
+}
+
+async function currentMaxVersion(dealId: string, docName: string): Promise<number> {
+  if (!prisma) return 0;
+  const agg = await prisma.peDocVersion.aggregate({
+    where: { dealId, docName },
+    _max: { version: true },
+  });
+  return agg._max.version ?? 0;
+}
+
+export interface ResubmittedOverride {
+  dealId: string;
+  docName: string;
+  uploader: string; // currently-credited (overridden) email
+  setBy: string;
+  fromVersion: number; // version when the override was set
+  toVersion: number; // new latest version
+}
+
+/**
+ * Find overrides whose doc has a NEW version above the one we last alerted on,
+ * and bump their `notifiedVersion` so each resubmission only alerts once.
+ * Returns the freshly-resubmitted overrides for notification.
+ */
+export async function detectAndConsumeResubmissions(): Promise<ResubmittedOverride[]> {
+  if (!prisma) return [];
+  const raw = await getUploaderOverridesRaw();
+  const keys = Object.keys(raw);
+  if (keys.length === 0) return [];
+
+  const found: ResubmittedOverride[] = [];
+  let changed = false;
+  for (const key of keys) {
+    const ov = raw[key];
+    const sep = key.indexOf("|");
+    const dealId = key.slice(0, sep);
+    const docName = key.slice(sep + 1);
+    const current = await currentMaxVersion(dealId, docName);
+    // Legacy overrides (set before version tracking) have no baseline. Establish
+    // one at the current version without alarming — only genuine FUTURE
+    // resubmissions (a version above this baseline) should notify.
+    if (ov.versionAtOverride == null) {
+      raw[key] = { ...ov, versionAtOverride: current, notifiedVersion: current };
+      changed = true;
+      continue;
+    }
+    const baseline = ov.notifiedVersion ?? ov.versionAtOverride;
+    if (current > baseline) {
+      found.push({ dealId, docName, uploader: ov.uploader, setBy: ov.setBy, fromVersion: ov.versionAtOverride, toVersion: current });
+      raw[key] = { ...ov, notifiedVersion: current };
+      changed = true;
+    }
+  }
+  if (changed) {
+    await prisma.systemConfig.upsert({
+      where: { key: CONFIG_KEY },
+      create: { key: CONFIG_KEY, value: JSON.stringify(raw) },
+      update: { value: JSON.stringify(raw) },
+    });
+  }
+  return found;
 }

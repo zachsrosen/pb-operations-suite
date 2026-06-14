@@ -7,7 +7,7 @@ import { PE_LEASE, calcLeaseFactorAdjustment, DC_QUALIFYING_MODULE_BRANDS, DC_QU
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { listAllProjects } from "@/lib/pe-api";
-import { getUploaderOverrideMap } from "@/lib/pe-uploader-overrides";
+import { getUploaderOverridesRaw } from "@/lib/pe-uploader-overrides";
 import { prisma } from "@/lib/db";
 import {
   weekStartUTC,
@@ -863,23 +863,27 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // Latest-version uploader per (deal, doc), then credit each approved/paid
   // milestone's payment to whoever owns the most of its approved docs.
   const latestUploaderByDoc = new Map<string, string | null>();
-  {
-    const maxVer = new Map<string, number>();
-    for (const v of uploaderVersionRows) {
-      if (!v.dealId) continue;
-      const k = `${v.dealId}|${v.docName}`;
-      if (!maxVer.has(k) || v.version > maxVer.get(k)!) {
-        maxVer.set(k, v.version);
-        latestUploaderByDoc.set(k, v.uploadedBy);
-      }
+  const maxVerByKey = new Map<string, number>();
+  for (const v of uploaderVersionRows) {
+    if (!v.dealId) continue;
+    const k = `${v.dealId}|${v.docName}`;
+    if (!maxVerByKey.has(k) || v.version > maxVerByKey.get(k)!) {
+      maxVerByKey.set(k, v.version);
+      latestUploaderByDoc.set(k, v.uploadedBy);
     }
   }
   // Admin owner-overrides: pin the credited uploader for a (deal, doc), winning
   // over the latest-version rule (e.g. a later wrong version superseded the
   // correct one). Flows through to docsOwned, approval rate, and payment $.
-  const uploaderOverrideMap = await getUploaderOverrideMap();
-  for (const [k, who] of uploaderOverrideMap) {
-    latestUploaderByDoc.set(k, who);
+  // A doc that gained a newer version since its override is flagged for re-check.
+  const uploaderOverridesRaw = await getUploaderOverridesRaw();
+  const overrideKeys = new Set(Object.keys(uploaderOverridesRaw));
+  const resubmittedOverrideKeys = new Set<string>();
+  for (const [k, ov] of Object.entries(uploaderOverridesRaw)) {
+    latestUploaderByDoc.set(k, ov.uploader ? ov.uploader : null);
+    if (ov.versionAtOverride != null && (maxVerByKey.get(k) ?? 0) > ov.versionAtOverride) {
+      resubmittedOverrideKeys.add(k);
+    }
   }
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
   const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
@@ -925,7 +929,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
       pePortalUrl: dealPortalUrl.get(dealId) ?? null,
       note: clean,
-      overridden: uploaderOverrideMap.has(k),
+      overridden: overrideKeys.has(k),
+      resubmitted: resubmittedOverrideKeys.has(k),
     };
     entry[bucket].push(doc);
   }

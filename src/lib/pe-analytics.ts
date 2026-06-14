@@ -638,6 +638,7 @@ export interface UploaderDoc {
   pePortalUrl: string | null;
   note: string | null; // latest PE reviewer note (rejections only); null otherwise
   overridden?: boolean; // credited uploader pinned by an admin override
+  resubmitted?: boolean; // a newer version landed after the override — re-check
 }
 /** An uploader's owned docs split by current outcome. */
 export interface UploaderOutcomeDocs {
