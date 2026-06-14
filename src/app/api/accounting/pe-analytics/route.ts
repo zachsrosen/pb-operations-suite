@@ -7,7 +7,7 @@ import { PE_LEASE, calcLeaseFactorAdjustment, DC_QUALIFYING_MODULE_BRANDS, DC_QU
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { listAllProjects } from "@/lib/pe-api";
-import { getUploaderOverrideMap } from "@/lib/pe-uploader-overrides";
+import { getUploaderOverridesRaw } from "@/lib/pe-uploader-overrides";
 import { prisma } from "@/lib/db";
 import {
   weekStartUTC,
@@ -567,10 +567,39 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     d.totalEvents++;
     byDocMap.set(ev.docName, d);
   }
+  // Per-doc open (currently rejected) vs resolved (was rejected, now cleared),
+  // plus the list of open deals for the drill-down → PE portal.
+  const PORTAL_ID = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
+  const dealMetaById = new Map(deals.map((d) => [d.dealId, { name: d.dealName, portal: d.pePortalUrl }]));
+  const rejectionHsUrl = (id: string) => (PORTAL_ID ? `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${id}` : "");
+  const everRejectedByDoc = new Map<string, number>();
+  for (const k of realRejectionHistory) {
+    const doc = k.slice(k.indexOf("::") + 2);
+    everRejectedByDoc.set(doc, (everRejectedByDoc.get(doc) ?? 0) + 1);
+  }
+  const openDealsByDoc = new Map<string, { dealName: string; pePortalUrl: string | null; hubspotUrl: string }[]>();
+  for (const row of docRows) {
+    if (row.status !== "REJECTED" && row.status !== "ACTION_REQUIRED") continue;
+    if (!realRejectionHistory.has(`${row.dealId}::${row.docName}`)) continue;
+    const meta = dealMetaById.get(row.dealId);
+    const list = openDealsByDoc.get(row.docName) ?? [];
+    list.push({ dealName: meta?.name ?? row.dealId, pePortalUrl: meta?.portal ?? null, hubspotUrl: rejectionHsUrl(row.dealId) });
+    openDealsByDoc.set(row.docName, list);
+  }
   const byDoc = [...byDocMap.entries()]
-    .map(([docName, d]) => ({ docName, ...d }))
-    .filter((d) => d.totalEvents > 0 || d.currentlyRejected > 0 || d.currentActionRequired > 0)
-    .sort((a, b) => b.totalEvents + b.currentlyRejected + b.currentActionRequired - (a.totalEvents + a.currentlyRejected + a.currentActionRequired));
+    .map(([docName, d]) => {
+      const open = d.currentlyRejected + d.currentActionRequired;
+      const ever = everRejectedByDoc.get(docName) ?? open;
+      return {
+        docName,
+        ...d,
+        open,
+        resolved: Math.max(0, ever - open),
+        openDeals: (openDealsByDoc.get(docName) ?? []).sort((a, b) => a.dealName.localeCompare(b.dealName)),
+      };
+    })
+    .filter((d) => d.totalEvents > 0 || d.open > 0)
+    .sort((a, b) => b.totalEvents + b.open - (a.totalEvents + a.open));
 
   // --- Doc-status header stats -----------------------------------------------
   // All four cards are scoped to deals actively in a milestone (PTO stage owes
@@ -603,9 +632,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .slice(0, 20)
     .map((ev) => ({
       docName: ev.docName,
-      dealName: ev.dealName || "",
+      dealName: dealMetaById.get(ev.dealId)?.name ?? ev.dealName ?? "",
       note: cleanRejectionNote(ev.newNotes!),
       date: ev.createdAt.toISOString().split("T")[0],
+      pePortalUrl: dealMetaById.get(ev.dealId)?.portal ?? null,
+      hubspotUrl: rejectionHsUrl(ev.dealId),
     }));
 
   // --- Drill-down rows ---------------------------------------------------------
@@ -832,23 +863,27 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // Latest-version uploader per (deal, doc), then credit each approved/paid
   // milestone's payment to whoever owns the most of its approved docs.
   const latestUploaderByDoc = new Map<string, string | null>();
-  {
-    const maxVer = new Map<string, number>();
-    for (const v of uploaderVersionRows) {
-      if (!v.dealId) continue;
-      const k = `${v.dealId}|${v.docName}`;
-      if (!maxVer.has(k) || v.version > maxVer.get(k)!) {
-        maxVer.set(k, v.version);
-        latestUploaderByDoc.set(k, v.uploadedBy);
-      }
+  const maxVerByKey = new Map<string, number>();
+  for (const v of uploaderVersionRows) {
+    if (!v.dealId) continue;
+    const k = `${v.dealId}|${v.docName}`;
+    if (!maxVerByKey.has(k) || v.version > maxVerByKey.get(k)!) {
+      maxVerByKey.set(k, v.version);
+      latestUploaderByDoc.set(k, v.uploadedBy);
     }
   }
   // Admin owner-overrides: pin the credited uploader for a (deal, doc), winning
   // over the latest-version rule (e.g. a later wrong version superseded the
   // correct one). Flows through to docsOwned, approval rate, and payment $.
-  const uploaderOverrideMap = await getUploaderOverrideMap();
-  for (const [k, who] of uploaderOverrideMap) {
-    latestUploaderByDoc.set(k, who);
+  // A doc that gained a newer version since its override is flagged for re-check.
+  const uploaderOverridesRaw = await getUploaderOverridesRaw();
+  const overrideKeys = new Set(Object.keys(uploaderOverridesRaw));
+  const resubmittedOverrideKeys = new Set<string>();
+  for (const [k, ov] of Object.entries(uploaderOverridesRaw)) {
+    latestUploaderByDoc.set(k, ov.uploader ? ov.uploader : null);
+    if (ov.versionAtOverride != null && (maxVerByKey.get(k) ?? 0) > ov.versionAtOverride) {
+      resubmittedOverrideKeys.add(k);
+    }
   }
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
   const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
@@ -860,6 +895,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const withPaymentOwnership = buildUploaderStats(
     uploaderVersionRows,
     currentDocStatus,
+    new Date(),
+    latestUploaderByDoc, // override-adjusted owner per doc → moves docsOwned/outcomes
   ).map((s) => {
     const pay = paymentOwnership.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
@@ -894,7 +931,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
       pePortalUrl: dealPortalUrl.get(dealId) ?? null,
       note: clean,
-      overridden: uploaderOverrideMap.has(k),
+      overridden: overrideKeys.has(k),
+      resubmitted: resubmittedOverrideKeys.has(k),
     };
     entry[bucket].push(doc);
   }

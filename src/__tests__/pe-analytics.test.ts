@@ -129,6 +129,31 @@ describe("buildUploaderStats", () => {
     expect(stats[2]).toMatchObject({ uploader: UNKNOWN_UPLOADER, total: 2, deals: 1 });
   });
 
+  it("owner override moves docsOwned/outcome but keeps upload volume (→ superseded for prev owner)", () => {
+    const rows = [
+      v("layla@pb.com", "2026-06-01T00:00:00Z", "d1", "Design Plan", 1), // earlier version
+      v("wes@pb.com", "2026-06-03T00:00:00Z", "d1", "Design Plan", 2), // latest version (default owner)
+    ];
+    const status = new Map([["d1|Design Plan", "APPROVED"]]);
+
+    // No override: Wes owns it (latest version), Layla just has an upload.
+    const base = buildUploaderStats(rows, status, now);
+    const wesBase = base.find((s) => s.uploader === "wes@pb.com")!;
+    const laylaBase = base.find((s) => s.uploader === "layla@pb.com")!;
+    expect(wesBase).toMatchObject({ total: 1, docsOwned: 1, approved: 1 });
+    expect(laylaBase).toMatchObject({ total: 1, docsOwned: 0, approved: 0 });
+
+    // Override credits Layla: ownership moves; Wes keeps his upload → superseded.
+    const owner = new Map<string, string | null>([["d1|Design Plan", "layla@pb.com"]]);
+    const over = buildUploaderStats(rows, status, now, owner);
+    const wes = over.find((s) => s.uploader === "wes@pb.com")!;
+    const layla = over.find((s) => s.uploader === "layla@pb.com")!;
+    expect(wes).toMatchObject({ total: 1, docsOwned: 0, approved: 0 }); // upload stays, ownership gone
+    expect(layla).toMatchObject({ docsOwned: 1, approved: 1 }); // now owns + credited the outcome
+    // Wes's superseded = total - (approved+inReview+rejected) = 1 - 0 = 1 (not vanished).
+    expect(wes.total - (wes.approved + wes.inReview + wes.rejected)).toBe(1);
+  });
+
   it("counts trailing-8-week uploads separately from all time", () => {
     const stats = buildUploaderStats(
       [

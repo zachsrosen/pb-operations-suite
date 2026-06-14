@@ -227,12 +227,22 @@ export interface MonthlyTiming {
   approvals: number;
 }
 
+export interface RejectionOpenDeal {
+  dealName: string;
+  pePortalUrl: string | null;
+  hubspotUrl: string;
+}
+
 export interface RejectionByDoc {
   docName: string;
   totalEvents: number;
   currentlyRejected: number;
   currentActionRequired: number;
   trackedDeals: number;
+  // Open vs resolved, scoped to docs that were ever genuinely rejected.
+  open: number; // currently rejected/action-required (with real reviewer history)
+  resolved: number; // were rejected, now approved/in-review
+  openDeals: RejectionOpenDeal[]; // the open ones, for the drill-down
 }
 
 export interface RejectionNote {
@@ -240,6 +250,8 @@ export interface RejectionNote {
   dealName: string;
   note: string;
   date: string;
+  pePortalUrl: string | null;
+  hubspotUrl: string;
 }
 
 export interface FunnelDeal {
@@ -529,6 +541,11 @@ export function buildUploaderStats(
   rows: VersionRow[],
   statusByDoc: Map<string, string> = new Map(),
   now: Date = new Date(),
+  // Owner per `${dealId}|${docName}` — overrides the latest-version uploader for
+  // docsOwned/outcome crediting (admin reassignment). Upload *volume* (`total`)
+  // always stays with whoever actually uploaded, so a reassigned doc moves into
+  // the previous owner's "superseded" segment rather than vanishing.
+  ownerByDoc?: Map<string, string | null>,
 ): UploaderStat[] {
   const cutoff = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000);
   const byUploader = new Map<
@@ -562,7 +579,9 @@ export function buildUploaderStats(
     if (!cur || r.version > cur.version) latest.set(k, r);
   }
   for (const [k, r] of latest) {
-    const e = ensure(r.uploadedBy?.trim() || UNKNOWN_UPLOADER);
+    const ov = ownerByDoc?.get(k);
+    const owner = (ov !== undefined ? ov : r.uploadedBy)?.trim() || UNKNOWN_UPLOADER;
+    const e = ensure(owner);
     e.docsOwned++;
     const status = statusByDoc.get(k);
     if (status === "APPROVED") e.approved++;
@@ -626,6 +645,7 @@ export interface UploaderDoc {
   pePortalUrl: string | null;
   note: string | null; // latest PE reviewer note (rejections only); null otherwise
   overridden?: boolean; // credited uploader pinned by an admin override
+  resubmitted?: boolean; // a newer version landed after the override — re-check
 }
 /** An uploader's owned docs split by current outcome. */
 export interface UploaderOutcomeDocs {

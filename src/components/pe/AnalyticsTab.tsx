@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { isSuperAdmin } from "@/lib/super-admin";
+import { usePeAutoSync } from "@/hooks/usePeAutoSync";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
@@ -19,6 +20,7 @@ import {
   type UploaderStat,
   type UploaderOutcomeDocs,
   type UploaderDoc,
+  type RejectionByDoc,
   type DailyUpload,
   type UploadsByPeriod,
   type UploadGranularity,
@@ -925,6 +927,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
                     <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
                     {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
                     {r.overridden && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Credited uploader was set by a super-admin override">override</span>}
+                    {r.resubmitted && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30" title="A newer version was uploaded after this override was set — re-check whether the credit is still correct">resubmitted ⚠</span>}
                     {canOverride && (
                       savingKey === `${r.dealId}|${r.docName}` ? (
                         <span className="text-[10px] text-muted">saving…</span>
@@ -1068,6 +1071,65 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
           })}
         </svg>
       </div>
+    </div>
+  );
+}
+
+/** Rejections by document type — open (orange) vs resolved (green); click the
+ *  open portion to drill into those deals and jump to the PE portal. */
+function RejectionsByDocPanel({ byDoc }: { byDoc: RejectionByDoc[] }) {
+  const [drill, setDrill] = useState<string | null>(null);
+  if (byDoc.length === 0) return <div className="text-xs text-muted py-4">No rejection data yet.</div>;
+  const max = Math.max(...byDoc.map((x) => x.open + x.resolved), 1);
+  return (
+    <div className="space-y-1.5">
+      {byDoc.map((d) => {
+        const isOpen = drill === d.docName;
+        const canDrill = d.openDeals.length > 0;
+        const toggle = () => canDrill && setDrill(isOpen ? null : d.docName);
+        return (
+          <div key={d.docName}>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted w-52 truncate" title={d.docName}>{d.docName}</span>
+              <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex" title={`${d.open} open · ${d.resolved} resolved`}>
+                {d.open > 0 && (
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    className={`h-full bg-orange-500/80 ${canDrill ? "hover:bg-orange-500 cursor-pointer" : ""} ${isOpen ? "ring-1 ring-orange-300" : ""}`}
+                    style={{ width: `${(d.open / max) * 100}%` }}
+                    title={canDrill ? `${d.open} open — click to list` : `${d.open} open`}
+                  />
+                )}
+                {d.resolved > 0 && (
+                  <div className="h-full bg-emerald-500/60" style={{ width: `${(d.resolved / max) * 100}%` }} title={`${d.resolved} resolved`} />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={toggle}
+                className={`text-[10px] w-24 text-right tabular-nums ${d.open > 0 && canDrill ? "hover:underline cursor-pointer" : "cursor-default"}`}
+                title={canDrill ? "Click to list the open ones" : undefined}
+              >
+                <span className={d.open > 0 ? "text-orange-400" : "text-muted"}>{d.open} open</span>
+                <span className="text-emerald-400/70"> · {d.resolved} ok</span>
+              </button>
+            </div>
+            {isOpen && (
+              <div className="mt-1 ml-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-2 space-y-1 max-h-56 overflow-y-auto">
+                {d.openDeals.map((od, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px]">
+                    <a href={od.pePortalUrl ?? od.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate flex-1">
+                      {od.dealName.split("|").slice(0, 2).join("|").trim()}
+                    </a>
+                    {od.pePortalUrl && <a href={od.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline flex-shrink-0">PE ↗</a>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1494,6 +1556,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // On visit, kick a throttled incremental PE sync and refresh if it pulled changes.
+  usePeAutoSync([queryKeys.peAnalytics.list()]);
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
@@ -1946,27 +2011,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               title="Rejections by Document"
               subtitle="Historical rejection/action-required events plus current state, per doc type."
             >
-              {data.rejections.byDoc.length === 0 ? (
-                <div className="text-xs text-muted py-4">No rejection data yet.</div>
-              ) : (
-                <div className="space-y-1.5">
-                  {data.rejections.byDoc.map((d) => {
-                    const max = Math.max(...data.rejections.byDoc.map((x) => x.totalEvents), 1);
-                    return (
-                      <div key={d.docName} className="flex items-center gap-2">
-                        <span className="text-[11px] text-muted w-52 truncate" title={d.docName}>{d.docName}</span>
-                        <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden">
-                          <div className="h-full rounded bg-orange-500/70" style={{ width: `${(d.totalEvents / max) * 100}%` }} />
-                        </div>
-                        <span className="text-xs text-foreground w-10 text-right">{d.totalEvents}</span>
-                        <span className="text-[10px] text-orange-400 w-16 text-right" title="Currently rejected or action required">
-                          {d.currentlyRejected + d.currentActionRequired} open
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <RejectionsByDocPanel byDoc={data.rejections.byDoc} />
             </Section>
 
             <Section title="Recent Rejection Notes" subtitle="Latest PE reviewer comments on rejected docs.">
@@ -1974,16 +2019,26 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 <div className="text-xs text-muted py-4">No notes recorded.</div>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                  {data.rejections.recentNotes.map((n, i) => (
-                    <div key={i} className="rounded-lg bg-surface-2 p-2.5">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[11px] font-medium text-foreground truncate">{n.docName}</span>
-                        <span className="text-[10px] text-muted flex-shrink-0">{n.date}</span>
-                      </div>
-                      {n.dealName && <div className="text-[10px] text-muted mb-1 truncate">{n.dealName}</div>}
-                      <div className="text-[11px] text-orange-400/90 line-clamp-3">{n.note}</div>
-                    </div>
-                  ))}
+                  {data.rejections.recentNotes.map((n, i) => {
+                    const href = n.pePortalUrl ?? n.hubspotUrl ?? "";
+                    const inner = (
+                      <>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[11px] font-medium text-foreground truncate">{n.docName}</span>
+                          <span className="text-[10px] text-muted flex-shrink-0">{n.pePortalUrl ? "PE ↗ " : ""}{n.date}</span>
+                        </div>
+                        {n.dealName && <div className="text-[10px] text-muted mb-1 truncate">{n.dealName.split("|").slice(0, 2).join("|").trim()}</div>}
+                        <div className="text-[11px] text-orange-400/90 line-clamp-3">{n.note}</div>
+                      </>
+                    );
+                    return href ? (
+                      <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="block rounded-lg bg-surface-2 p-2.5 hover:bg-surface-elevated transition-colors" title="Open in PE portal">
+                        {inner}
+                      </a>
+                    ) : (
+                      <div key={i} className="rounded-lg bg-surface-2 p-2.5">{inner}</div>
+                    );
+                  })}
                 </div>
               )}
             </Section>
