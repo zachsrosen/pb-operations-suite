@@ -574,6 +574,10 @@ export interface MilestoneDrillRow {
   dealId: string;
   dealName: string;
   hubspotUrl: string;
+  /** Direct link to the PE (Participate Energy) portal project, if known. */
+  pePortalUrl: string | null;
+  /** Link to the deal's Google Drive document folder, if known. */
+  driveUrl: string | null;
   milestone: "M1" | "M2";
   amount: number;
   status: string | null;
