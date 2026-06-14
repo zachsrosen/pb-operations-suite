@@ -647,33 +647,71 @@ export async function PUT(request: NextRequest) {
       console.log(`  - PROJ Number: ${projNumber || "none"}`);
       console.log(`  - HubSpot Tag: ${hubspotTag}`);
 
-      // Do TWO searches in parallel for maximum coverage:
-      // 1. Name-based search (fuzzy, finds by customer name in title)
-      // 2. Broad date-range search (finds by deal ID custom field, tags, PROJ number)
-      const [nameSearch, broadSearch] = await Promise.all([
-        customerLastName
-          ? zuper.searchJobs({ limit: 100, search: customerLastName })
-          : Promise.resolve({ type: "success" as const, data: { jobs: [] as ZuperJob[], total: 0 } }),
-        zuper.searchJobs({
-          limit: 500,
-          from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-          to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        }),
+      // Reliable per-project predicate (deal-id custom field / hubspot tag /
+      // PROJ# tag / PROJ# in title / customer last name in title). Used to
+      // early-exit window pagination as soon as this project's job is in the
+      // pool — mirrors the ordered 3a–3e matching below.
+      const looksLikeThisProject = (job: ZuperJob): boolean => {
+        if (!categoryMatches(job)) return false;
+        if (getHubSpotDealId(job) === project.id) return true;
+        if (job.job_tags?.includes(hubspotTag)) return true;
+        const title = job.job_title?.toLowerCase() || "";
+        if (projNumber) {
+          const p = projNumber.toLowerCase();
+          if (job.job_tags?.some((t) => t.toLowerCase() === p)) return true;
+          if (title.includes(p)) return true;
+        }
+        if (customerLastName.length > 2) {
+          const ln = customerLastName.toLowerCase().trim();
+          if (title.includes(ln + ",") || title.startsWith(ln + " ")) return true;
+        }
+        return false;
+      };
+
+      // Build the candidate pool. Zuper's GET /jobs has NO working server-side
+      // text or category filter — the `search` param and `filter.category_uid`
+      // are silently ignored, and the bare `from_date`/`to_date` params don't
+      // filter either (they returned the default first 500 of ALL ~5.4k jobs,
+      // which is how genuine jobs were missed and false "no job found" bug
+      // reports were filed). Only `filter.from_date`/`filter.to_date` work, and
+      // they exclude unscheduled jobs — so we gather from two sources:
+      //   1. Scheduled jobs in a window around the requested date.
+      //   2. Unscheduled jobs (separate endpoint) for jobs awaiting a first date.
+      const requestedMs = Date.parse(schedule.date);
+      const baseMs = Number.isFinite(requestedMs) ? requestedMs : Date.now();
+      const fmtDate = (ms: number) => new Date(ms).toISOString().split("T")[0];
+      const windowFrom = fmtDate(baseMs - 180 * 24 * 60 * 60 * 1000);
+      const windowTo = fmtDate(baseMs + 90 * 24 * 60 * 60 * 1000);
+
+      const [windowResult, unscheduledResult] = await Promise.all([
+        zuper.getScheduledJobsInWindow(
+          windowFrom,
+          windowTo,
+          { maxPages: 35, match: looksLikeThisProject },
+          "schedule-lookup",
+        ),
+        zuper.getUnscheduledJobs(),
       ]);
 
       // Merge results, deduplicating by job_uid
       const allJobs = new Map<string, ZuperJob>();
-      for (const result of [nameSearch, broadSearch]) {
-        if (result.type === "success" && result.data?.jobs) {
-          for (const job of result.data.jobs) {
-            if (job.job_uid && !allJobs.has(job.job_uid)) {
-              allJobs.set(job.job_uid, job);
-            }
-          }
+      const windowJobs =
+        windowResult.type === "success" && Array.isArray(windowResult.data) ? windowResult.data : [];
+      const rawUnscheduled: unknown =
+        unscheduledResult.type === "success" ? unscheduledResult.data : null;
+      // /jobs/unscheduled may return a bare array or a { data: [...] } envelope.
+      const unscheduledJobs: ZuperJob[] = Array.isArray(rawUnscheduled)
+        ? (rawUnscheduled as ZuperJob[])
+        : Array.isArray((rawUnscheduled as { data?: ZuperJob[] })?.data)
+          ? (rawUnscheduled as { data: ZuperJob[] }).data
+          : [];
+      for (const job of [...windowJobs, ...unscheduledJobs]) {
+        if (job.job_uid && !allJobs.has(job.job_uid)) {
+          allJobs.set(job.job_uid, job);
         }
       }
 
-      console.log(`[Zuper Schedule] Combined search: ${allJobs.size} unique jobs (name: ${nameSearch.data?.jobs?.length || 0}, broad: ${broadSearch.data?.jobs?.length || 0})`);
+      console.log(`[Zuper Schedule] Candidate pool: ${allJobs.size} unique jobs (window ${windowFrom}..${windowTo}: ${windowJobs.length}, unscheduled: ${unscheduledJobs.length})`);
 
       // Filter to target category
       const categoryJobs = [...allJobs.values()].filter(categoryMatches);
