@@ -69,6 +69,8 @@ const DEAL_PROPERTIES = [
   "pe_m2_rejection_date",
   "inspections_completion_date",
   "pto_completion_date",
+  "pe_portal_url",
+  "all_document_parent_folder_id",
 ];
 
 interface PeDealRow {
@@ -92,6 +94,8 @@ interface PeDealRow {
   m2RejectionDate: string | null;
   inspectionPassDate: string | null; // M1 operational ready
   ptoGrantedDate: string | null; // M2 operational ready
+  pePortalUrl: string | null; // direct PE portal project link
+  driveFolderId: string | null; // GDrive document parent folder id
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +179,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2RejectionDate: p.pe_m2_rejection_date ? String(p.pe_m2_rejection_date) : null,
         inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
         ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
+        pePortalUrl: p.pe_portal_url ? String(p.pe_portal_url) : null,
+        driveFolderId: p.all_document_parent_folder_id ? String(p.all_document_parent_folder_id) : null,
       });
     }
     after = response.paging?.next?.after;
@@ -586,6 +592,10 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         hubspotUrl: portalId
           ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${r.deal.dealId}`
           : "",
+        pePortalUrl: r.deal.pePortalUrl,
+        driveUrl: r.deal.driveFolderId
+          ? `https://drive.google.com/drive/folders/${r.deal.driveFolderId}`
+          : null,
         milestone: r.milestone,
         amount: r.amount || 0,
         status: r.status,

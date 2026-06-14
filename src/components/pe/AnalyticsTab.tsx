@@ -1229,14 +1229,26 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, onClose }: {
             <tbody className="divide-y divide-border/20">
               {[...rows].sort((a, b) => b.amount - a.amount).map((r) => (
                 <tr key={`${r.dealId}-${r.milestone}`}>
-                  <td className="py-1.5 pr-3 max-w-64 truncate">
-                    {r.hubspotUrl ? (
-                      <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline" title={r.dealName}>
-                        {r.dealName.split("|").slice(0, 2).join("|").trim()}
-                      </a>
-                    ) : (
-                      <span title={r.dealName}>{r.dealName.split("|").slice(0, 2).join("|").trim()}</span>
-                    )}
+                  <td className="py-1.5 pr-3 max-w-72">
+                    <div className="flex flex-col gap-0.5">
+                      {r.hubspotUrl ? (
+                        <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate" title={r.dealName}>
+                          {r.dealName.split("|").slice(0, 2).join("|").trim()}
+                        </a>
+                      ) : (
+                        <span className="truncate" title={r.dealName}>{r.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                      )}
+                      {(r.pePortalUrl || r.driveUrl) && (
+                        <div className="flex items-center gap-2 text-[10px] leading-none">
+                          {r.pePortalUrl && (
+                            <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline" title="Open PE portal project">PE portal ↗</a>
+                          )}
+                          {r.driveUrl && (
+                            <a href={r.driveUrl} target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline" title="Open Google Drive folder">Drive ↗</a>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="py-1.5 pr-3 text-muted">{r.milestone}</td>
                   <td className="py-1.5 pr-3 text-right text-foreground">{fmtUsd(r.amount)}</td>
