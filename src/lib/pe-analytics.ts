@@ -541,6 +541,11 @@ export function buildUploaderStats(
   rows: VersionRow[],
   statusByDoc: Map<string, string> = new Map(),
   now: Date = new Date(),
+  // Owner per `${dealId}|${docName}` — overrides the latest-version uploader for
+  // docsOwned/outcome crediting (admin reassignment). Upload *volume* (`total`)
+  // always stays with whoever actually uploaded, so a reassigned doc moves into
+  // the previous owner's "superseded" segment rather than vanishing.
+  ownerByDoc?: Map<string, string | null>,
 ): UploaderStat[] {
   const cutoff = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000);
   const byUploader = new Map<
@@ -574,7 +579,9 @@ export function buildUploaderStats(
     if (!cur || r.version > cur.version) latest.set(k, r);
   }
   for (const [k, r] of latest) {
-    const e = ensure(r.uploadedBy?.trim() || UNKNOWN_UPLOADER);
+    const ov = ownerByDoc?.get(k);
+    const owner = (ov !== undefined ? ov : r.uploadedBy)?.trim() || UNKNOWN_UPLOADER;
+    const e = ensure(owner);
     e.docsOwned++;
     const status = statusByDoc.get(k);
     if (status === "APPROVED") e.approved++;

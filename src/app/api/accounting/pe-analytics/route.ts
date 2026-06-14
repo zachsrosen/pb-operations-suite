@@ -895,6 +895,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const withPaymentOwnership = buildUploaderStats(
     uploaderVersionRows,
     currentDocStatus,
+    new Date(),
+    latestUploaderByDoc, // override-adjusted owner per doc → moves docsOwned/outcomes
   ).map((s) => {
     const pay = paymentOwnership.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
