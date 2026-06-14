@@ -107,6 +107,34 @@ interface PeDealRow {
 // deals whose pe_payment_ic/pc were never opportunistically synced.
 // ---------------------------------------------------------------------------
 
+// A real PE reviewer comment vs a bare status-sync log line. Sync lines look
+// like "Synced from PE API (X) | v2 | milestone: Inspection Complete" — no
+// reason. Real rejections carry an [H###] code and/or actual reviewer text.
+function hasReviewerComment(note: string | null | undefined): boolean {
+  if (!note) return false;
+  if (/\[H\d/i.test(note)) return true; // PE rejection code
+  const stripped = note
+    .replace(/Synced from PE (?:API|portal scraper) \([^)]*\)/gi, "")
+    .replace(/\bv\d+\b/gi, "")
+    .replace(/milestone:[^|]*/gi, "")
+    .replace(/submitted:\s*\S+/gi, "")
+    .replace(/responded:\s*\S+/gi, "")
+    .replace(/approver:\s*(?:page\s*\d+|[\d/]+)/gi, "")
+    .replace(/[\s|—-]+/g, " ")
+    .trim();
+  return stripped.length > 3;
+}
+
+/** Strip the sync prefix/metadata so a real rejection note shows just the reason. */
+function cleanRejectionNote(note: string): string {
+  return note
+    .replace(/^Synced from PE (?:API|portal scraper) \([^)]*\)\s*\|?\s*/i, "")
+    .replace(/^submitted:[^|]*\|\s*/i, "")
+    .replace(/\s+\|\s+/g, " · ")
+    .trim()
+    .slice(0, 240);
+}
+
 function computePaymentsFromAmount(p: Record<string, unknown>): { ic: number | null; pc: number | null } {
   const amount = p.amount ? parseFloat(String(p.amount)) : null;
   if (!amount || amount <= 0) return { ic: null, pc: null };
@@ -514,14 +542,25 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     string,
     { totalEvents: number; currentlyRejected: number; currentActionRequired: number; trackedDeals: number }
   >();
+  // Status-change events that are genuine rejections (carry a reviewer comment),
+  // not bare sync log lines — these drive the rejection counts and notes.
+  const rejectionLog = changeLog
+    .filter((ev) => ev.newStatus === "REJECTED" || ev.newStatus === "ACTION_REQUIRED")
+    .filter((ev) => hasReviewerComment(ev.newNotes));
+  // deal+doc pairs that ever had a genuine (commented) rejection. The PE-API
+  // sync overwrites each doc's current `notes` with a generic "Synced from PE
+  // API | vN | milestone" line, so a currently-open doc's note no longer holds
+  // the reason — we cross-reference history to tell real open rejections from
+  // bare onboarding-intake action-required states.
+  const realRejectionHistory = new Set<string>(rejectionLog.map((ev) => `${ev.dealId}::${ev.docName}`));
   for (const row of docRows) {
     const d = byDocMap.get(row.docName) || { totalEvents: 0, currentlyRejected: 0, currentActionRequired: 0, trackedDeals: 0 };
     d.trackedDeals++;
-    if (row.status === "REJECTED") d.currentlyRejected++;
-    if (row.status === "ACTION_REQUIRED") d.currentActionRequired++;
+    const reallyRejected = realRejectionHistory.has(`${row.dealId}::${row.docName}`);
+    if (row.status === "REJECTED" && reallyRejected) d.currentlyRejected++;
+    if (row.status === "ACTION_REQUIRED" && reallyRejected) d.currentActionRequired++;
     byDocMap.set(row.docName, d);
   }
-  const rejectionLog = changeLog.filter((ev) => ev.newStatus === "REJECTED" || ev.newStatus === "ACTION_REQUIRED");
   for (const ev of rejectionLog) {
     const d = byDocMap.get(ev.docName) || { totalEvents: 0, currentlyRejected: 0, currentActionRequired: 0, trackedDeals: 0 };
     d.totalEvents++;
@@ -564,7 +603,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .map((ev) => ({
       docName: ev.docName,
       dealName: ev.dealName || "",
-      note: ev.newNotes!,
+      note: cleanRejectionNote(ev.newNotes!),
       date: ev.createdAt.toISOString().split("T")[0],
     }));
 
@@ -586,10 +625,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       const actionRequiredDocs = docMap
         ? names.filter((n) => ["ACTION_REQUIRED", "REJECTED"].includes(docMap.get(n) ?? ""))
         : [];
-      const latestRejectionNote =
+      const latestRejectionRaw =
         rejectionLog.find(
           (ev) => ev.dealId === r.deal.dealId && ev.newNotes && names.includes(ev.docName),
         )?.newNotes ?? null;
+      const latestRejectionNote = latestRejectionRaw ? cleanRejectionNote(latestRejectionRaw) : null;
       return {
         dealId: r.deal.dealId,
         dealName: r.deal.dealName,
@@ -836,9 +876,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const note = bucket === "rejected"
       ? (rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null)
       : null;
-    const clean = note
-      ? note.replace(/^Synced from PE[^|]*\|\s*/, "").replace(/^Synced from PE portal scraper \([^)]*\)\s*\|\s*/, "").slice(0, 180)
-      : null;
+    const clean = note ? cleanRejectionNote(note) : null;
     const key = who?.trim() || UNKNOWN_UPLOADER;
     const entry = (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [] });
     const doc: UploaderDoc = {
