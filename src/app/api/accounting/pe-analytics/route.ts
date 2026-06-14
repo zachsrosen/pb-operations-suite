@@ -19,6 +19,8 @@ import {
   buildDocTypeByUploader,
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
+  UNKNOWN_UPLOADER,
+  type RejectedDoc,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
@@ -795,6 +797,29 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count } : s;
   });
 
+  // Per-uploader list of currently-rejected docs (latest version owns the status) — drill-down.
+  const dealPortalUrl = new Map(deals.map((d) => [d.dealId, d.pePortalUrl]));
+  const uploaderRejections: Record<string, RejectedDoc[]> = {};
+  for (const [k, who] of latestUploaderByDoc) {
+    const status = currentDocStatus.get(k);
+    if (status !== "ACTION_REQUIRED" && status !== "REJECTED") continue;
+    const sep = k.indexOf("|");
+    const dealId = k.slice(0, sep);
+    const docName = k.slice(sep + 1);
+    if (!dealNameById.has(dealId)) continue;
+    const note = rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null;
+    const clean = note
+      ? note.replace(/^Synced from PE[^|]*\|\s*/, "").replace(/^Synced from PE portal scraper \([^)]*\)\s*\|\s*/, "").slice(0, 180)
+      : null;
+    (uploaderRejections[who?.trim() || UNKNOWN_UPLOADER] ??= []).push({
+      dealName: dealNameById.get(dealId) ?? dealId,
+      docName,
+      hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
+      pePortalUrl: dealPortalUrl.get(dealId) ?? null,
+      note: clean,
+    });
+  }
+
   return {
     lastUpdated: new Date().toISOString(),
     totals: {
@@ -824,6 +849,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // approved / rejected / in-review outcome split, and the merged-in payment
     // ownership ($ of approved milestone payments each person drove).
     uploaderStats: withPaymentOwnership,
+    uploaderRejections,
     // Per-period uploads segmented by person — powers the By Day/Week/Month
     // stacked bars; doc-type breakdown powers the "By Doc Type" view.
     uploadsByPeriod: buildUploadsByPeriod(

@@ -15,6 +15,7 @@ import {
   type MilestoneDrillRow,
   type DocRejectionEvent,
   type UploaderStat,
+  type RejectedDoc,
   type DailyUpload,
   type UploadsByPeriod,
   type UploadGranularity,
@@ -756,7 +757,8 @@ function OutcomeBar({ approved, inReview, rejected, scale }: { approved: number;
   );
 }
 
-function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
+function UploaderPanel({ stats, rejections }: { stats: UploaderStat[]; rejections: Record<string, RejectedDoc[]> }) {
+  const [drill, setDrill] = useState<string | null>(null);
   if (stats.length === 0) {
     return (
       <div className="text-sm text-muted py-8 text-center">
@@ -783,6 +785,11 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   // uploader's doc count so the Unknown bucket doesn't flatten everyone else.
   const barScale = Math.max(...attributed.map((s) => s.approved + s.inReview + s.rejected), 1);
   const attributedDocs = attributed.reduce((sum, s) => sum + s.approved + s.inReview + s.rejected, 0);
+  // Rank by docs currently owned (the "Total" column) so the order matches the
+  // number shown — not by raw upload actions, which double-counts resubmissions.
+  const ordered = [...attributed].sort(
+    (a, b) => (b.approved + b.inReview + b.rejected) - (a.approved + a.inReview + a.rejected) || b.total - a.total,
+  );
 
   // Shared column template so the header labels line up with every row.
   const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
@@ -800,7 +807,11 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         <span className="text-xs text-cyan-400 text-right tabular-nums" title={`across ${s.deals} distinct deals`}>{s.deals.toLocaleString("en-US")}</span>
         <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
-        <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
+        <span className="text-xs text-orange-400 text-right tabular-nums">
+          {s.rejected > 0 ? (
+            <button onClick={() => setDrill(drill === s.uploader ? null : s.uploader)} className={`hover:underline cursor-pointer ${drill === s.uploader ? "font-semibold underline" : ""}`} title="Click to see which docs to fix">{s.rejected.toLocaleString("en-US")}</button>
+          ) : "0"}
+        </span>
         <span className="text-xs text-foreground text-right tabular-nums" title="Approved ÷ (approved + rejected)">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
       </div>
     );
@@ -825,16 +836,41 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         <span className="text-right text-cyan-400/80">Deals</span>
         <span className="text-right text-emerald-400/80">Appr.</span>
         <span className="text-right">In rev.</span>
-        <span className="text-right text-orange-400/80">Rej.</span>
+        <span className="text-right text-orange-400/80" title="Click a person's rejected count to see which docs to fix">Rej. ⌕</span>
         <span className="text-right">Rate</span>
       </div>
 
       <div className="space-y-2">
-        {attributed.map((s) => <div key={s.uploader}>{renderRow(s, false)}</div>)}
+        {ordered.map((s) => <div key={s.uploader}>{renderRow(s, false)}</div>)}
       </div>
       {unknown && unknown.approved + unknown.rejected + unknown.inReview > 0 && (
         <div className="mt-2 pt-2 border-t border-t-border">
           {renderRow(unknown, true)}
+        </div>
+      )}
+
+      {/* Rejected-docs drill-down: click a person's Rej. count to list exactly what to fix. */}
+      {drill && (rejections[drill]?.length ?? 0) > 0 && (
+        <div className="mt-3 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-medium text-foreground">
+              {drill === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(drill)} — {rejections[drill].length} doc{rejections[drill].length === 1 ? "" : "s"} to fix
+            </div>
+            <button onClick={() => setDrill(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
+          </div>
+          <div className="space-y-1.5 max-h-72 overflow-y-auto">
+            {rejections[drill].map((r, i) => (
+              <div key={`${r.dealName}-${r.docName}-${i}`} className="text-xs border-b border-t-border/40 pb-1.5 last:border-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-orange-400 font-medium">{r.docName}</span>
+                  <span className="text-muted">·</span>
+                  <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
+                  {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
+                </div>
+                {r.note && <div className="text-muted mt-0.5 leading-snug">{r.note}</div>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1046,7 +1082,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
   );
 }
 
-function UploadersSection({ stats, periods, docTypes }: { stats: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[] }) {
+function UploadersSection({ stats, periods, docTypes, rejections }: { stats: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; rejections: Record<string, RejectedDoc[]> }) {
   const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
   const [grain, setGrain] = useState<UploadGranularity>("day");
   return (
@@ -1084,7 +1120,7 @@ function UploadersSection({ stats, periods, docTypes }: { stats: UploaderStat[];
         </div>
       }
     >
-      {tab === "submissions" ? <UploaderPanel stats={stats} />
+      {tab === "submissions" ? <UploaderPanel stats={stats} rejections={rejections} />
         : tab === "timeline" ? <DailyUploadsChart daily={periods[grain]} stats={stats} granularity={grain} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
             : <PaymentPanel stats={stats} />}
@@ -1705,7 +1741,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} />
+          <UploadersSection stats={data.uploaderStats ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} rejections={data.uploaderRejections ?? {}} />
 
           {/* 2. Expected revenue pipeline */}
           <Section

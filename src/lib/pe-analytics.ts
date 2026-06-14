@@ -601,6 +601,15 @@ export interface MilestoneDrillRow {
   latestRejectionNote: string | null;
 }
 
+/** One currently-rejected doc, for the per-uploader rejected-docs drill-down. */
+export interface RejectedDoc {
+  dealName: string;
+  docName: string;
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+  note: string | null; // latest PE reviewer note, cleaned
+}
+
 export interface PeAnalyticsPayload {
   lastUpdated: string;
   totals: {
@@ -624,6 +633,8 @@ export interface PeAnalyticsPayload {
   docApprovalEvents: DocRejectionEvent[];
   /** Doc uploads per person (PE version history); Unknown bucket = pre-tracking uploads. */
   uploaderStats: UploaderStat[];
+  /** Per-uploader list of docs currently ACTION_REQUIRED/REJECTED (latest version owner) — powers the rejected-docs drill-down. Keyed by uploader (UNKNOWN_UPLOADER for null). */
+  uploaderRejections: Record<string, RejectedDoc[]>;
   uploadsByPeriod: UploadsByPeriod;
   docTypeByUploader: UploaderDocTypes[];
   pipeline: PipelineGroupRow[];
