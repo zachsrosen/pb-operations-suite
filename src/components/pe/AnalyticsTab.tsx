@@ -746,8 +746,11 @@ export function prettyUploader(email: string): string {
  * approved / in-review / rejected split. Overflows clip (e.g. the Unknown row).
  */
 type Outcome = "approved" | "inReview" | "rejected";
-function OutcomeBar({ approved, inReview, rejected, scale, onSeg }: { approved: number; inReview: number; rejected: number; scale: number; onSeg?: (o: Outcome) => void }) {
-  const total = approved + inReview + rejected;
+function OutcomeBar({ approved, inReview, rejected, scale, uploads, onSeg }: { approved: number; inReview: number; rejected: number; scale: number; uploads?: number; onSeg?: (o: Outcome) => void }) {
+  const owned = approved + inReview + rejected;
+  // When `uploads` is given the bar is scaled to total uploads (matching the
+  // table sort); the extra width past owned docs = superseded/resubmitted uploads.
+  const superseded = uploads != null ? Math.max(0, uploads - owned) : 0;
   const w = (n: number) => `${Math.min(100, (n / scale) * 100)}%`;
   const seg = (n: number, o: Outcome, cls: string, label: string) =>
     n > 0 ? (
@@ -759,10 +762,11 @@ function OutcomeBar({ approved, inReview, rejected, scale, onSeg }: { approved: 
       />
     ) : null;
   return (
-    <div className="h-4 rounded bg-surface-2 overflow-hidden flex w-full" title={`${total} docs · ${approved} approved · ${inReview} in review · ${rejected} rejected`}>
+    <div className="h-4 rounded bg-surface-2 overflow-hidden flex w-full" title={`${uploads ?? owned} ${uploads != null ? "uploads" : "docs"} · ${approved} approved · ${inReview} in review · ${rejected} rejected${superseded ? ` · ${superseded} superseded` : ""}`}>
       {seg(approved, "approved", "bg-emerald-500/80", "approved")}
       {seg(inReview, "inReview", "bg-zinc-400/60", "in review")}
       {seg(rejected, "rejected", "bg-orange-500/80", "rejected")}
+      {superseded > 0 && <div className="h-full bg-zinc-700/50" style={{ width: w(superseded), minWidth: 2 }} title={`${superseded} superseded / resubmitted uploads`} />}
     </div>
   );
 }
@@ -791,9 +795,9 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
     const ruled = s.approved + s.rejected;
     return ruled ? s.approved / ruled : null;
   };
-  // Bar length encodes volume: scale every bar to the busiest attributed
-  // uploader's doc count so the Unknown bucket doesn't flatten everyone else.
-  const barScale = Math.max(...attributed.map((s) => s.approved + s.inReview + s.rejected), 1);
+  // Bar length encodes total uploads (matching the sort): scale to the busiest
+  // attributed uploader so the Unknown bucket doesn't flatten everyone else.
+  const barScale = Math.max(...attributed.map((s) => s.total), 1);
   const attributedDocs = attributed.reduce((sum, s) => sum + s.approved + s.inReview + s.rejected, 0);
   // Rank by total uploads (activity); the Uploads column makes the metric explicit.
   const ordered = [...attributed].sort(
@@ -826,7 +830,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
           {muted ? "Unknown" : prettyUploader(s.uploader)}
           {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
         </span>
-        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} onSeg={(o) => toggle(s.uploader, o)} />
+        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} uploads={s.total} onSeg={(o) => toggle(s.uploader, o)} />
         <span className="text-xs text-muted text-right tabular-nums" title="Every upload action, including resubmissions of the same doc">{s.total.toLocaleString("en-US")}</span>
         <span className="text-sm font-semibold text-foreground text-right tabular-nums" title="Distinct docs you're the latest uploader on">{total.toLocaleString("en-US")}</span>
         <span className="text-xs text-cyan-400 text-right tabular-nums" title={`distinct deals — ${s.deals}`}>{s.deals.toLocaleString("en-US")}</span>
@@ -852,7 +856,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
       {/* Column headers — align with each row via the shared COLS grid */}
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
-        <span>Docs by outcome — bar length = volume</span>
+        <span>Uploads by outcome — bar length = uploads (approved/in&nbsp;review/rejected/superseded)</span>
         <span className="text-right" title="Every upload action incl. resubmissions">Uploads</span>
         <span className="text-right" title="Distinct docs you're the latest uploader on">Docs</span>
         <span className="text-right text-cyan-400/80" title="Distinct deals">Deals</span>
