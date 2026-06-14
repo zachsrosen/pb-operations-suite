@@ -227,12 +227,22 @@ export interface MonthlyTiming {
   approvals: number;
 }
 
+export interface RejectionOpenDeal {
+  dealName: string;
+  pePortalUrl: string | null;
+  hubspotUrl: string;
+}
+
 export interface RejectionByDoc {
   docName: string;
   totalEvents: number;
   currentlyRejected: number;
   currentActionRequired: number;
   trackedDeals: number;
+  // Open vs resolved, scoped to docs that were ever genuinely rejected.
+  open: number; // currently rejected/action-required (with real reviewer history)
+  resolved: number; // were rejected, now approved/in-review
+  openDeals: RejectionOpenDeal[]; // the open ones, for the drill-down
 }
 
 export interface RejectionNote {
@@ -240,6 +250,8 @@ export interface RejectionNote {
   dealName: string;
   note: string;
   date: string;
+  pePortalUrl: string | null;
+  hubspotUrl: string;
 }
 
 export interface FunnelDeal {

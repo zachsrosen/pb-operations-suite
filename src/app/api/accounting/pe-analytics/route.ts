@@ -567,10 +567,39 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     d.totalEvents++;
     byDocMap.set(ev.docName, d);
   }
+  // Per-doc open (currently rejected) vs resolved (was rejected, now cleared),
+  // plus the list of open deals for the drill-down → PE portal.
+  const PORTAL_ID = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
+  const dealMetaById = new Map(deals.map((d) => [d.dealId, { name: d.dealName, portal: d.pePortalUrl }]));
+  const rejectionHsUrl = (id: string) => (PORTAL_ID ? `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${id}` : "");
+  const everRejectedByDoc = new Map<string, number>();
+  for (const k of realRejectionHistory) {
+    const doc = k.slice(k.indexOf("::") + 2);
+    everRejectedByDoc.set(doc, (everRejectedByDoc.get(doc) ?? 0) + 1);
+  }
+  const openDealsByDoc = new Map<string, { dealName: string; pePortalUrl: string | null; hubspotUrl: string }[]>();
+  for (const row of docRows) {
+    if (row.status !== "REJECTED" && row.status !== "ACTION_REQUIRED") continue;
+    if (!realRejectionHistory.has(`${row.dealId}::${row.docName}`)) continue;
+    const meta = dealMetaById.get(row.dealId);
+    const list = openDealsByDoc.get(row.docName) ?? [];
+    list.push({ dealName: meta?.name ?? row.dealId, pePortalUrl: meta?.portal ?? null, hubspotUrl: rejectionHsUrl(row.dealId) });
+    openDealsByDoc.set(row.docName, list);
+  }
   const byDoc = [...byDocMap.entries()]
-    .map(([docName, d]) => ({ docName, ...d }))
-    .filter((d) => d.totalEvents > 0 || d.currentlyRejected > 0 || d.currentActionRequired > 0)
-    .sort((a, b) => b.totalEvents + b.currentlyRejected + b.currentActionRequired - (a.totalEvents + a.currentlyRejected + a.currentActionRequired));
+    .map(([docName, d]) => {
+      const open = d.currentlyRejected + d.currentActionRequired;
+      const ever = everRejectedByDoc.get(docName) ?? open;
+      return {
+        docName,
+        ...d,
+        open,
+        resolved: Math.max(0, ever - open),
+        openDeals: (openDealsByDoc.get(docName) ?? []).sort((a, b) => a.dealName.localeCompare(b.dealName)),
+      };
+    })
+    .filter((d) => d.totalEvents > 0 || d.open > 0)
+    .sort((a, b) => b.totalEvents + b.open - (a.totalEvents + a.open));
 
   // --- Doc-status header stats -----------------------------------------------
   // All four cards are scoped to deals actively in a milestone (PTO stage owes
@@ -603,9 +632,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .slice(0, 20)
     .map((ev) => ({
       docName: ev.docName,
-      dealName: ev.dealName || "",
+      dealName: dealMetaById.get(ev.dealId)?.name ?? ev.dealName ?? "",
       note: cleanRejectionNote(ev.newNotes!),
       date: ev.createdAt.toISOString().split("T")[0],
+      pePortalUrl: dealMetaById.get(ev.dealId)?.portal ?? null,
+      hubspotUrl: rejectionHsUrl(ev.dealId),
     }));
 
   // --- Drill-down rows ---------------------------------------------------------
