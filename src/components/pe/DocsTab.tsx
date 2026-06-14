@@ -6,6 +6,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
+import { usePeAutoSync } from "@/hooks/usePeAutoSync";
 import { rowsToCsv, rowsToText, cleanPeNote, parseDealName, type PeExportRow } from "@/lib/pe-doc-export";
 
 // ---------------------------------------------------------------------------
@@ -810,6 +811,9 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     queryFn: () => fetch("/api/accounting/pe-deals").then((r) => r.json()),
     staleTime: 5 * 60 * 1000,
   });
+
+  // On visit, kick a throttled incremental PE sync and refresh if it pulled changes.
+  usePeAutoSync([queryKeys.peDeals.list()]);
 
   // Build docMap from the API's docReviews (sourced from peDocumentReview DB)
   const docMap = useMemo(() => {

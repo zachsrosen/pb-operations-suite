@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { isSuperAdmin } from "@/lib/super-admin";
+import { usePeAutoSync } from "@/hooks/usePeAutoSync";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
@@ -1554,6 +1555,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // On visit, kick a throttled incremental PE sync and refresh if it pulled changes.
+  usePeAutoSync([queryKeys.peAnalytics.list()]);
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
