@@ -7,6 +7,7 @@ import { PE_LEASE, calcLeaseFactorAdjustment, DC_QUALIFYING_MODULE_BRANDS, DC_QU
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { listAllProjects } from "@/lib/pe-api";
+import { getUploaderOverrideMap } from "@/lib/pe-uploader-overrides";
 import { prisma } from "@/lib/db";
 import {
   weekStartUTC,
@@ -842,6 +843,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       }
     }
   }
+  // Admin owner-overrides: pin the credited uploader for a (deal, doc), winning
+  // over the latest-version rule (e.g. a later wrong version superseded the
+  // correct one). Flows through to docsOwned, approval rate, and payment $.
+  const uploaderOverrideMap = await getUploaderOverrideMap();
+  for (const [k, who] of uploaderOverrideMap) {
+    latestUploaderByDoc.set(k, who);
+  }
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
   const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
   const milestonePayments = deals.flatMap((d) => [
@@ -880,11 +888,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const key = who?.trim() || UNKNOWN_UPLOADER;
     const entry = (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [] });
     const doc: UploaderDoc = {
+      dealId,
       dealName: dealNameById.get(dealId) ?? dealId,
       docName,
       hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
       pePortalUrl: dealPortalUrl.get(dealId) ?? null,
       note: clean,
+      overridden: uploaderOverrideMap.has(k),
     };
     entry[bucket].push(doc);
   }

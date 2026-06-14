@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
+import { isSuperAdmin } from "@/lib/super-admin";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
@@ -16,6 +18,7 @@ import {
   type DocRejectionEvent,
   type UploaderStat,
   type UploaderOutcomeDocs,
+  type UploaderDoc,
   type DailyUpload,
   type UploadsByPeriod,
   type UploadGranularity,
@@ -773,6 +776,30 @@ function OutcomeBar({ approved, inReview, rejected, scale, uploads, onSeg }: { a
 
 function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<string, UploaderOutcomeDocs> }) {
   const [drill, setDrill] = useState<{ uploader: string; outcome: Outcome } | null>(null);
+  // Owner-override: admins can re-credit a doc to the correct uploader when a
+  // later (wrong) version superseded the right one.
+  const { data: session } = useSession();
+  // Reassigning credit is a sensitive correction — restrict to super admins.
+  const canOverride = isSuperAdmin(session?.user?.email);
+  const qc = useQueryClient();
+  const [reassignKey, setReassignKey] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const candidates = stats.filter((s) => s.uploader !== UNKNOWN_UPLOADER).map((s) => s.uploader);
+  const reassign = async (r: UploaderDoc, uploader: string | null) => {
+    const key = `${r.dealId}|${r.docName}`;
+    setSavingKey(key);
+    try {
+      await fetch("/api/admin/pe/uploader-override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId: r.dealId, docName: r.docName, uploader, reason: "reassigned from Doc Uploaders panel" }),
+      });
+      await qc.invalidateQueries({ queryKey: queryKeys.peAnalytics.list() });
+    } finally {
+      setSavingKey(null);
+      setReassignKey(null);
+    }
+  };
   if (stats.length === 0) {
     return (
       <div className="text-sm text-muted py-8 text-center">
@@ -897,6 +924,37 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
                     <span className="text-muted">·</span>
                     <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
                     {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
+                    {r.overridden && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Credited uploader was set by a super-admin override">override</span>}
+                    {canOverride && (
+                      savingKey === `${r.dealId}|${r.docName}` ? (
+                        <span className="text-[10px] text-muted">saving…</span>
+                      ) : reassignKey === `${r.dealId}|${r.docName}` ? (
+                        <select
+                          autoFocus
+                          defaultValue=""
+                          onBlur={() => setReassignKey(null)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!v) return;
+                            reassign(r, v === "__clear__" ? null : v === "__unknown__" ? "" : v);
+                          }}
+                          className="text-[10px] bg-surface-2 border border-t-border rounded px-1 py-0.5 text-foreground"
+                        >
+                          <option value="" disabled>credit to…</option>
+                          {candidates.map((u) => <option key={u} value={u}>{prettyUploader(u)}</option>)}
+                          <option value="__unknown__">Unknown</option>
+                          {r.overridden && <option value="__clear__">↺ Clear override</option>}
+                        </select>
+                      ) : (
+                        <button
+                          onClick={() => setReassignKey(`${r.dealId}|${r.docName}`)}
+                          className="text-[10px] px-1 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors"
+                          title="Re-credit this doc to the correct uploader"
+                        >
+                          {r.overridden ? "re-credit ✎" : "reassign"}
+                        </button>
+                      )
+                    )}
                   </div>
                   {r.note && <div className="text-muted mt-0.5 leading-snug">{r.note}</div>}
                 </div>

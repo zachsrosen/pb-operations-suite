@@ -619,11 +619,13 @@ export interface MilestoneDrillRow {
 
 /** One doc an uploader owns (latest version), for the per-outcome drill-downs. */
 export interface UploaderDoc {
+  dealId: string;
   dealName: string;
   docName: string;
   hubspotUrl: string;
   pePortalUrl: string | null;
   note: string | null; // latest PE reviewer note (rejections only); null otherwise
+  overridden?: boolean; // credited uploader pinned by an admin override
 }
 /** An uploader's owned docs split by current outcome. */
 export interface UploaderOutcomeDocs {
