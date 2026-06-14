@@ -6,6 +6,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
+import { rowsToCsv, rowsToText, cleanPeNote, parseDealName, type PeExportRow } from "@/lib/pe-doc-export";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors pe-report API shape)
@@ -334,6 +335,88 @@ const CATEGORY_PRIORITY: Record<ActionCategory, number> = {
   "no-data": 4,
   "approved": 5,
 };
+
+// ---------------------------------------------------------------------------
+// Export — turn outstanding docs into shareable CSV / text
+// ---------------------------------------------------------------------------
+
+function docsToExportRows(s: DealDocSummary, docs: DocWithReview[]): PeExportRow[] {
+  return docs.map(({ doc, review }) => ({
+    proj: parseDealName(s.deal.dealName).proj,
+    deal: s.deal.dealName,
+    location: s.deal.pbLocation,
+    stage: s.deal.dealStageLabel,
+    team: TEAM_LABELS[doc.team],
+    doc: doc.name,
+    status: review ? DOC_STATUS_LABELS[review.status] : "Not Uploaded",
+    reason: review ? cleanPeNote(review.notes) : "",
+    hubspotUrl: s.deal.hubspotUrl,
+    portalUrl: s.deal.pePortalUrl ?? "",
+    driveUrl: s.deal.driveUrl ?? "",
+  }));
+}
+
+// All still-outstanding docs for a deal (used by the List view export).
+function dealOutstandingRows(s: DealDocSummary, docMap: Map<string, DocReview>): PeExportRow[] {
+  const { blocking, issues } = getDealActionLists(s, docMap);
+  const seen = new Set<string>();
+  const merged: DocWithReview[] = [];
+  for (const d of [...issues, ...blocking]) {
+    if (seen.has(d.doc.name)) continue;
+    seen.add(d.doc.name);
+    merged.push(d);
+  }
+  return docsToExportRows(s, merged);
+}
+
+function ExportButtons({ rows, title, filename }: { rows: PeExportRow[]; title: string; filename: string }) {
+  const [done, setDone] = useState<null | "copy" | "csv">(null);
+  if (rows.length === 0) return null;
+
+  const flash = (which: "copy" | "csv") => {
+    setDone(which);
+    setTimeout(() => setDone(null), 1500);
+  };
+  const copy = async () => {
+    const text = rowsToText(rows, title);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* no-op */ }
+      document.body.removeChild(ta);
+    }
+    flash("copy");
+  };
+  const csv = () => {
+    const blob = new Blob([rowsToCsv(rows)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash("csv");
+  };
+
+  const cls =
+    "text-[10px] px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground hover:bg-surface-2 transition-colors";
+  return (
+    <div className="flex items-center gap-1 ml-auto" onClick={(e) => e.stopPropagation()}>
+      <button type="button" onClick={copy} className={cls} title="Copy as text — paste into email / chat / a task">
+        {done === "copy" ? "Copied ✓" : "Copy"}
+      </button>
+      <button type="button" onClick={csv} className={cls} title="Download CSV">
+        {done === "csv" ? "Saved ✓" : "CSV"}
+      </button>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // M1/M2 status badge helpers
@@ -1047,6 +1130,11 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               <h3 className="text-sm font-semibold text-foreground">Nearly Complete</h3>
               <span className="text-xs text-muted">({emailSections.nearlyComplete.length})</span>
               <span className="text-[10px] text-muted/60">1–3 docs from done</span>
+              <ExportButtons
+                rows={emailSections.nearlyComplete.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
+                title="PE — Nearly Complete"
+                filename="pe-nearly-complete.csv"
+              />
             </div>
             {emailSections.nearlyComplete.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">No deals nearly complete.</div>
@@ -1073,6 +1161,11 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               <h3 className="text-sm font-semibold text-foreground">Not Uploaded</h3>
               <span className="text-xs text-muted">({emailSections.notUploaded.length})</span>
               <span className="text-[10px] text-muted/60">PB needs to upload</span>
+              <ExportButtons
+                rows={emailSections.notUploaded.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
+                title="PE — Not Uploaded"
+                filename="pe-not-uploaded.csv"
+              />
             </div>
             {emailSections.notUploaded.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">Nothing missing uploads.</div>
@@ -1099,6 +1192,11 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               <h3 className="text-sm font-semibold text-foreground">Action Required</h3>
               <span className="text-xs text-muted">({emailSections.actionRequired.length})</span>
               <span className="text-[10px] text-muted/60">Rejections &amp; fixes</span>
+              <ExportButtons
+                rows={emailSections.actionRequired.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
+                title="PE — Action Required"
+                filename="pe-action-required.csv"
+              />
             </div>
             {emailSections.actionRequired.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">No rejections or action items.</div>
@@ -1122,6 +1220,14 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
 
       {!isLoading && viewMode === "list" && (
         <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-muted">{sorted.length} deal{sorted.length === 1 ? "" : "s"}</span>
+            <ExportButtons
+              rows={sorted.flatMap((s) => dealOutstandingRows(s, docMap))}
+              title="PE — Document Worklist"
+              filename="pe-worklist.csv"
+            />
+          </div>
           {sorted.map((s) => (
             <DealCard key={s.deal.dealId} summary={s} docMap={docMap} defaultExpanded={false} />
           ))}
@@ -1134,8 +1240,9 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             const collapsed = collapsedTeams.has(team);
             return (
               <div key={team}>
+                <div className="flex items-center gap-2 mb-3">
                 <button
-                  className="flex items-center gap-2 mb-3 w-full text-left hover:opacity-80 transition-opacity"
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
                   onClick={() => toggleTeam(team)}
                 >
                   <span className={`w-2.5 h-2.5 rounded-full ${TEAM_DOT[team]}`} />
@@ -1156,6 +1263,19 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                   </svg>
                 </button>
+                <ExportButtons
+                  rows={dealsWithIssues.flatMap(({ summary, teamDocs }) =>
+                    docsToExportRows(
+                      summary,
+                      teamDocs.filter(({ review }) =>
+                        !!review && review.status !== "APPROVED" && review.status !== "UNDER_REVIEW" && review.status !== "UPLOADED",
+                      ),
+                    ),
+                  )}
+                  title={`PE — ${TEAM_LABELS[team]}`}
+                  filename={`pe-${team}.csv`}
+                />
+                </div>
                 {!collapsed && (
                   <div className="space-y-1.5">
                     {dealsWithIssues.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
