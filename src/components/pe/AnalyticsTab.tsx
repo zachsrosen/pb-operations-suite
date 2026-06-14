@@ -785,7 +785,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
   const attributedDocs = attributed.reduce((sum, s) => sum + s.approved + s.inReview + s.rejected, 0);
 
   // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
+  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
   const renderRow = (s: UploaderStat, muted: boolean) => {
     const rate = rateOf(s);
     const total = s.approved + s.inReview + s.rejected;
@@ -797,6 +797,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         </span>
         <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} />
         <span className="text-sm font-semibold text-foreground text-right tabular-nums">{total.toLocaleString("en-US")}</span>
+        <span className="text-xs text-cyan-400 text-right tabular-nums" title={`across ${s.deals} distinct deals`}>{s.deals.toLocaleString("en-US")}</span>
         <span className="text-xs text-emerald-400 text-right tabular-nums">{s.approved.toLocaleString("en-US")}</span>
         <span className="text-xs text-muted text-right tabular-nums">{s.inReview.toLocaleString("en-US")}</span>
         <span className="text-xs text-orange-400 text-right tabular-nums">{s.rejected.toLocaleString("en-US")}</span>
@@ -821,6 +822,7 @@ function UploaderPanel({ stats }: { stats: UploaderStat[] }) {
         <span>Person</span>
         <span>Docs by outcome — bar length = volume</span>
         <span className="text-right">Total</span>
+        <span className="text-right text-cyan-400/80">Deals</span>
         <span className="text-right text-emerald-400/80">Appr.</span>
         <span className="text-right">In rev.</span>
         <span className="text-right text-orange-400/80">Rej.</span>
