@@ -371,6 +371,7 @@ export function buildPaymentOwnership(
 export interface DailyUpload {
   day: string; // period key: YYYY-MM-DD (day/week-start) or YYYY-MM (month)
   total: number;
+  deals: number; // distinct deals touched that period
   byUploader: Record<string, number>; // uploader → uploads that period
 }
 
@@ -398,12 +399,13 @@ function weekKey(at: Date): string {
  * oldest → newest.
  */
 export function buildPeriodUploads(
-  rows: { uploadedAt: Date | string; uploadedBy: string | null }[],
+  rows: { uploadedAt: Date | string; uploadedBy: string | null; dealId?: string | null }[],
   granularity: UploadGranularity = "day",
   now: Date = new Date(),
 ): DailyUpload[] {
   const cutoff = granularity === "day" ? new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000) : null;
   const buckets = new Map<string, Map<string, number>>();
+  const dealsByKey = new Map<string, Set<string>>();
   for (const r of rows) {
     const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
     if (isNaN(at.getTime()) || (cutoff && at < cutoff)) continue;
@@ -412,6 +414,11 @@ export function buildPeriodUploads(
     const m = buckets.get(key) ?? new Map<string, number>();
     m.set(who, (m.get(who) ?? 0) + 1);
     buckets.set(key, m);
+    if (r.dealId) {
+      const s = dealsByKey.get(key) ?? new Set<string>();
+      s.add(r.dealId);
+      dealsByKey.set(key, s);
+    }
   }
   return [...buckets.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
@@ -422,13 +429,13 @@ export function buildPeriodUploads(
         byUploader[who] = n;
         total += n;
       }
-      return { day, total, byUploader };
+      return { day, total, deals: dealsByKey.get(day)?.size ?? 0, byUploader };
     });
 }
 
 /** Build all three period series in one pass. */
 export function buildUploadsByPeriod(
-  rows: { uploadedAt: Date | string; uploadedBy: string | null }[],
+  rows: { uploadedAt: Date | string; uploadedBy: string | null; dealId?: string | null }[],
   now: Date = new Date(),
 ): UploadsByPeriod {
   return {

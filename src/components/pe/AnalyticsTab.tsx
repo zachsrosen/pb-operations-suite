@@ -877,7 +877,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
       .sort((a, b) => b[1] - a[1])
       .map(([who, n]) => `  ${who === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(who)}: ${n}`);
     const label = granularity === "month" ? d.day : granularity === "week" ? `week of ${d.day}` : d.day;
-    return `${label} — ${d.total} uploads\n${lines.join("\n")}`;
+    return `${label} — ${d.total} uploads across ${d.deals} deal${d.deals === 1 ? "" : "s"}\n${lines.join("\n")}`;
   };
 
   return (
@@ -927,6 +927,10 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
                 <rect x={x} y={padT} width={barW} height={chartH} fill="transparent">
                   <title>{periodTitle(d)}</title>
                 </rect>
+                {/* deal count above the doc total (skipped on the tallest bars to avoid clipping — tooltip still shows it) */}
+                {yCursor - 13 >= padT && (
+                  <text x={x + barW / 2} y={yCursor - 13} textAnchor="middle" className="fill-cyan-400 text-[8px] tabular-nums">{d.deals}d</text>
+                )}
                 <text x={x + barW / 2} y={yCursor - 4} textAnchor="middle" className="fill-foreground text-[10px] tabular-nums">{d.total}</text>
                 {(i % labelEvery === 0 || i === daily.length - 1) && (
                   <text x={x + barW / 2} y={padT + chartH + 16} textAnchor="middle" className="fill-muted text-[10px]" transform={`rotate(35 ${x + barW / 2} ${padT + chartH + 16})`}>
