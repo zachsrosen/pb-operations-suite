@@ -776,7 +776,12 @@ function OutcomeBar({ approved, inReview, rejected, scale, uploads, onSeg }: { a
   );
 }
 
-function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<string, UploaderOutcomeDocs> }) {
+function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsShared }: { stats: UploaderStat[]; docs: Record<string, UploaderOutcomeDocs>; statsShared: UploaderStat[]; docsShared: Record<string, UploaderOutcomeDocs> }) {
+  // Owner (latest-version wins) vs Shared (fractional, split by version count).
+  const [mode, setMode] = useState<"owner" | "shared">("owner");
+  const stats = mode === "shared" ? statsShared : statsOwner;
+  const docs = mode === "shared" ? docsShared : docsOwner;
+  const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
   const [drill, setDrill] = useState<{ uploader: string; outcome: Outcome } | null>(null);
   // Owner-override: admins can re-credit a doc to the correct uploader when a
   // later (wrong) version superseded the right one.
@@ -838,7 +843,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
   const oc = (s: UploaderStat, o: Outcome, n: number, cls: string) => (
     <span className={`text-xs text-right tabular-nums ${cls}`}>
       {n > 0 ? (
-        <button onClick={() => toggle(s.uploader, o)} className={`hover:underline cursor-pointer ${isOn(s.uploader, o) ? "font-semibold underline" : ""}`} title="Click to view these docs">{n.toLocaleString("en-US")}</button>
+        <button onClick={() => toggle(s.uploader, o)} className={`hover:underline cursor-pointer ${isOn(s.uploader, o) ? "font-semibold underline" : ""}`} title="Click to view these docs">{fmt(n)}</button>
       ) : "0"}
     </span>
   );
@@ -861,7 +866,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
         </span>
         <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} uploads={s.total} onSeg={(o) => toggle(s.uploader, o)} />
         <span className="text-xs text-muted text-right tabular-nums" title="Every upload action, including resubmissions of the same doc">{s.total.toLocaleString("en-US")}</span>
-        <span className="text-sm font-semibold text-foreground text-right tabular-nums" title="Distinct docs you're the latest uploader on">{total.toLocaleString("en-US")}</span>
+        <span className="text-sm font-semibold text-foreground text-right tabular-nums" title={mode === "shared" ? "Fractional docs owned (split by version count)" : "Distinct docs you're the latest uploader on"}>{fmt(total)}</span>
         <span className="text-xs text-cyan-400 text-right tabular-nums" title={`distinct deals — ${s.deals}`}>{s.deals.toLocaleString("en-US")}</span>
         {oc(s, "approved", s.approved, "text-emerald-400")}
         {oc(s, "inReview", s.inReview, "text-muted")}
@@ -873,12 +878,28 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
 
   return (
     <div>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <div className="text-[11px] text-muted">
+          {mode === "shared"
+            ? "Shared: each doc's credit split across its tracked uploaders by version count (overrides pin the whole doc)."
+            : "Owner: the latest-version uploader gets full credit for each doc."}
+        </div>
+        <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-xs shrink-0">
+          {([["owner", "Owner"], ["shared", "Shared"]] as const).map(([m, label]) => (
+            <button key={m} onClick={() => { setMode(m); setDrill(null); }}
+              className={`px-2.5 py-1 transition-colors ${mode === m ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"}`}
+              title={m === "shared" ? "Split credit fractionally by version contribution" : "Latest-version uploader owns the whole doc"}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
         <MiniStat label="Attributed Uploads" value={attributedTotal.toLocaleString("en-US")}
           subtitle={grandTotal ? `${Math.round((attributedTotal / grandTotal) * 100)}% of ${grandTotal.toLocaleString("en-US")} total` : "all time"} />
-        <MiniStat label="Documents Owned" value={attributedDocs.toLocaleString("en-US")} subtitle="latest-version owner, attributed" />
+        <MiniStat label="Documents Owned" value={fmt(attributedDocs)} subtitle={mode === "shared" ? "fractional (split by version count)" : "latest-version owner, attributed"} />
         <MiniStat label="Team Approval Rate" value={teamApprovalRate === null ? "—" : `${teamApprovalRate}%`}
-          subtitle={`${agg.approved.toLocaleString("en-US")} approved · ${agg.rejected.toLocaleString("en-US")} rejected`} />
+          subtitle={`${fmt(agg.approved)} approved · ${fmt(agg.rejected)} rejected`} />
         <MiniStat label="Unknown Uploads" value={(unknown?.total ?? 0).toLocaleString("en-US")} subtitle="before PE tracked uploaders" />
       </div>
 
@@ -923,6 +944,9 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
                 <div key={`${r.dealName}-${r.docName}-${i}`} className="text-xs border-b border-t-border/40 pb-1.5 last:border-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`${st.doc} font-medium`}>{r.docName}</span>
+                    {mode === "shared" && r.weight != null && r.weight < 0.999 && (
+                      <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/25" title="This person's fractional share of this shared doc">{fmt(r.weight)}</span>
+                    )}
                     <span className="text-muted">·</span>
                     <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
                     {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
@@ -1238,7 +1262,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
   );
 }
 
-function UploadersSection({ stats, periods, docTypes, docs }: { stats: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs> }) {
+function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsShared }: { stats: UploaderStat[]; statsShared: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs> }) {
   const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
   const [grain, setGrain] = useState<UploadGranularity>("day");
   return (
@@ -1276,7 +1300,7 @@ function UploadersSection({ stats, periods, docTypes, docs }: { stats: UploaderS
         </div>
       }
     >
-      {tab === "submissions" ? <UploaderPanel stats={stats} docs={docs} />
+      {tab === "submissions" ? <UploaderPanel stats={stats} docs={docs} statsShared={statsShared} docsShared={docsShared} />
         : tab === "timeline" ? <DailyUploadsChart daily={periods[grain]} stats={stats} granularity={grain} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
             : <PaymentPanel stats={stats} />}
@@ -1900,7 +1924,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} />
+          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} />
 
           {/* 2. Expected revenue pipeline */}
           <Section

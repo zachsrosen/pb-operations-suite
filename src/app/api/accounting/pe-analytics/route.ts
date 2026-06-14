@@ -16,6 +16,8 @@ import {
   median,
   percentile,
   buildUploaderStats,
+  buildSharedUploaderStats,
+  computeSharedOwners,
   buildPaymentOwnership,
   buildUploadsByPeriod,
   buildDocTypeByUploader,
@@ -902,6 +904,18 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
   });
 
+  // Shared (fractional) ownership: split each doc among its tracked uploaders by
+  // version count; an override pins the whole doc (weight 1) to its target.
+  // Payment $ stays owner-based in both modes (it tracks who drove the payment).
+  const overrideByDoc = new Map<string, string | null>(
+    Object.entries(uploaderOverridesRaw).map(([k, ov]) => [k, ov.uploader ? ov.uploader : null]),
+  );
+  const sharedOwners = computeSharedOwners(uploaderVersionRows, overrideByDoc);
+  const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
+    const pay = paymentOwnership.get(s.uploader);
+    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
+  });
+
   // Per-uploader owned docs split by current outcome (latest version owns the
   // status) — powers the approved / in-review / rejected drill-downs.
   const dealPortalUrl = new Map(deals.map((d) => [d.dealId, d.pePortalUrl]));
@@ -937,6 +951,41 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     entry[bucket].push(doc);
   }
 
+  // Shared-mode drills: a multi-contributor doc appears under each person with weight.
+  const uploaderDocsShared: Record<string, UploaderOutcomeDocs> = {};
+  for (const [k, owners] of sharedOwners) {
+    const status = currentDocStatus.get(k);
+    const bucket: keyof UploaderOutcomeDocs | null =
+      status === "APPROVED" ? "approved"
+        : status === "ACTION_REQUIRED" || status === "REJECTED" ? "rejected"
+          : status === "UNDER_REVIEW" || status === "UPLOADED" ? "inReview"
+            : null;
+    if (!bucket) continue;
+    const sep = k.indexOf("|");
+    const dealId = k.slice(0, sep);
+    const docName = k.slice(sep + 1);
+    if (!dealNameById.has(dealId)) continue;
+    const note = bucket === "rejected"
+      ? (rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null)
+      : null;
+    const clean = note ? cleanRejectionNote(note) : null;
+    for (const { who, weight } of owners) {
+      const key = who?.trim() || UNKNOWN_UPLOADER;
+      const entry = (uploaderDocsShared[key] ??= { approved: [], inReview: [], rejected: [] });
+      entry[bucket].push({
+        dealId,
+        dealName: dealNameById.get(dealId) ?? dealId,
+        docName,
+        hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
+        pePortalUrl: dealPortalUrl.get(dealId) ?? null,
+        note: clean,
+        overridden: overrideKeys.has(k),
+        resubmitted: resubmittedOverrideKeys.has(k),
+        weight,
+      });
+    }
+  }
+
   return {
     lastUpdated: new Date().toISOString(),
     totals: {
@@ -966,7 +1015,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // approved / rejected / in-review outcome split, and the merged-in payment
     // ownership ($ of approved milestone payments each person drove).
     uploaderStats: withPaymentOwnership,
+    uploaderStatsShared,
     uploaderDocs,
+    uploaderDocsShared,
     // Per-period uploads segmented by person — powers the By Day/Week/Month
     // stacked bars; doc-type breakdown powers the "By Doc Type" view.
     uploadsByPeriod: buildUploadsByPeriod(

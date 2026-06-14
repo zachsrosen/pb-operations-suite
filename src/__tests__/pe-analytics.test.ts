@@ -5,6 +5,8 @@ import {
   median,
   percentile,
   buildUploaderStats,
+  buildSharedUploaderStats,
+  computeSharedOwners,
   buildPaymentOwnership,
   buildPeriodUploads,
   buildDocTypeByUploader,
@@ -152,6 +154,38 @@ describe("buildUploaderStats", () => {
     expect(layla).toMatchObject({ docsOwned: 1, approved: 1 }); // now owns + credited the outcome
     // Wes's superseded = total - (approved+inReview+rejected) = 1 - 0 = 1 (not vanished).
     expect(wes.total - (wes.approved + wes.inReview + wes.rejected)).toBe(1);
+  });
+
+  it("shared ownership splits by version count; override pins the whole doc", () => {
+    const sv = (uploadedBy: string | null, dealId: string, docName: string, version: number) =>
+      ({ uploadedBy, uploadedAt: "2026-06-01T00:00:00Z", dealId, docName, version });
+    const rows = [
+      sv("a@pb.com", "d1", "Design Plan", 1),
+      sv("a@pb.com", "d1", "Design Plan", 2), // a: 2 of 3 tracked versions
+      sv("b@pb.com", "d1", "Design Plan", 3), // b: 1 of 3 → a 2/3, b 1/3
+      sv("c@pb.com", "d2", "Photos per Policy", 1), // sole → 1.0
+    ];
+    const status = new Map([["d1|Design Plan", "APPROVED"], ["d2|Photos per Policy", "APPROVED"]]);
+
+    const owners = computeSharedOwners(rows);
+    expect(owners.get("d1|Design Plan")).toEqual(expect.arrayContaining([
+      { who: "a@pb.com", weight: 2 / 3 }, { who: "b@pb.com", weight: 1 / 3 },
+    ]));
+    expect(owners.get("d2|Photos per Policy")).toEqual([{ who: "c@pb.com", weight: 1 }]);
+
+    const stats = buildSharedUploaderStats(rows, status, owners, now);
+    const a = stats.find((s) => s.uploader === "a@pb.com")!;
+    expect(a.docsOwned).toBeCloseTo(2 / 3);
+    expect(a.approved).toBeCloseTo(2 / 3);
+    expect(a.total).toBe(2); // upload volume unchanged
+
+    // Override pins the whole d1 doc to b — a keeps its uploads but owns 0 of it.
+    const pinned = computeSharedOwners(rows, new Map([["d1|Design Plan", "b@pb.com"]]));
+    expect(pinned.get("d1|Design Plan")).toEqual([{ who: "b@pb.com", weight: 1 }]);
+    const stats2 = buildSharedUploaderStats(rows, status, pinned, now);
+    expect(stats2.find((s) => s.uploader === "b@pb.com")!.docsOwned).toBeCloseTo(1);
+    expect(stats2.find((s) => s.uploader === "a@pb.com")!.docsOwned).toBe(0);
+    expect(stats2.find((s) => s.uploader === "a@pb.com")!.total).toBe(2); // still uploaded
   });
 
   it("counts trailing-8-week uploads separately from all time", () => {
