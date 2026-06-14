@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { isSuperAdmin } from "@/lib/super-admin";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
@@ -778,7 +779,8 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
   // Owner-override: admins can re-credit a doc to the correct uploader when a
   // later (wrong) version superseded the right one.
   const { data: session } = useSession();
-  const canOverride = !!session?.user?.roles?.some((r) => r === "ADMIN" || r === "OWNER");
+  // Reassigning credit is a sensitive correction — restrict to super admins.
+  const canOverride = isSuperAdmin(session?.user?.email);
   const qc = useQueryClient();
   const [reassignKey, setReassignKey] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -922,7 +924,7 @@ function UploaderPanel({ stats, docs }: { stats: UploaderStat[]; docs: Record<st
                     <span className="text-muted">·</span>
                     <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
                     {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
-                    {r.overridden && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Credited uploader was set by an admin override">override</span>}
+                    {r.overridden && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Credited uploader was set by a super-admin override">override</span>}
                     {canOverride && (
                       savingKey === `${r.dealId}|${r.docName}` ? (
                         <span className="text-[10px] text-muted">saving…</span>

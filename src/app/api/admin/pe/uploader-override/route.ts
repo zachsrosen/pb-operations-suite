@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getUserByEmail } from "@/lib/db";
+import { isSuperAdmin } from "@/lib/super-admin";
 import { getUploaderOverridesRaw, setUploaderOverride } from "@/lib/pe-uploader-overrides";
 
 async function requireAdmin() {
   const session = await auth();
   if (!session?.user?.email) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  const user = await getUserByEmail(session.user.email);
-  const ok = !!user?.roles?.some((r) => r === "ADMIN" || r === "OWNER");
-  if (!ok) return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  // Reassigning credit alters approval rates + payment ownership — super admins only.
+  if (!isSuperAdmin(session.user.email)) return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   return { email: session.user.email };
 }
 
