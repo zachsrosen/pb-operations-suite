@@ -96,67 +96,117 @@ export function createTechOpsBotTools() {
   const getScheduleOverview = betaZodTool({
     name: "get_schedule_overview",
     description:
-      "Get upcoming installs and surveys for the next N days, optionally filtered by location. " +
-      "Reads from all location-specific Google Calendars.",
+      "Get the team's upcoming scheduled work (site surveys, construction/installs, " +
+      "and inspections) for the next N days, grouped by date with the project and " +
+      "assigned crew. Optionally filter to one PB location. Use for 'what's scheduled " +
+      "this week', 'what installs are coming up', 'what's on the calendar Tuesday'.",
     inputSchema: z.object({
       location: z
         .string()
         .optional()
         .describe(
-          "Filter by location: westminster, centennial, cosp, california, camarillo. Omit for all."
+          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
+            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
       days: z
         .number()
         .optional()
         .default(7)
-        .describe("How many days ahead to look (default 7)"),
+        .describe("How many days ahead to look (default 7, max 30)"),
     }),
     run: async (input) => {
-      // Calendar IDs by location bucket
-      const calendarMap: Record<string, string | undefined> = {
-        westminster: process.env.GOOGLE_INSTALL_CALENDAR_WESTY_ID,
-        westy: process.env.GOOGLE_INSTALL_CALENDAR_WESTY_ID,
-        centennial: process.env.GOOGLE_INSTALL_CALENDAR_DTC_ID,
-        dtc: process.env.GOOGLE_INSTALL_CALENDAR_DTC_ID,
-        cosp: process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID,
-        colorado_springs: process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID,
-        california: process.env.GOOGLE_INSTALL_CALENDAR_CA_ID,
-        slo: process.env.GOOGLE_INSTALL_CALENDAR_CA_ID,
-        camarillo: process.env.GOOGLE_INSTALL_CALENDAR_CAMARILLO_ID,
-      };
+      const { prisma } = await import("@/lib/db");
+      if (!prisma) {
+        return JSON.stringify({ error: "Schedule data is unavailable right now." });
+      }
 
-      // Determine which calendars to query
-      let calendarIds: string[];
+      // Resolve the optional location through the canonical normalizer so we
+      // can match it against whatever form is stored on each booking.
+      let canonicalLocation: string | null = null;
       if (input.location) {
-        const normalized = input.location.toLowerCase().replace(/\s+/g, "_");
-        const id = calendarMap[normalized];
-        if (!id) {
+        const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
           return JSON.stringify({
             error: `Unknown location: ${input.location}`,
-            knownLocations: ["westminster", "centennial", "cosp", "california", "camarillo"],
+            knownLocations: CANONICAL_LOCATIONS,
           });
         }
-        calendarIds = [id];
-      } else {
-        calendarIds = [...new Set(Object.values(calendarMap).filter(Boolean))] as string[];
       }
 
-      if (!calendarIds.length) {
-        return JSON.stringify({ error: "No calendars configured" });
+      const days = Math.min(Math.max(input.days ?? 7, 1), 30);
+      const today = new Date();
+      const fromStr = today.toISOString().slice(0, 10);
+      const end = new Date(today);
+      end.setDate(end.getDate() + days);
+      const toStr = end.toISOString().slice(0, 10);
+
+      // ScheduleRecord is the canonical "what was scheduled" table (survey /
+      // construction / inspection, with crew + status). It carries no location
+      // column, so when a location filter is requested we build a
+      // projectId → location map from BookedSlot (which does) for the same
+      // window and filter against it.
+      const [records, slots] = await Promise.all([
+        prisma.scheduleRecord.findMany({
+          where: {
+            scheduledDate: { gte: fromStr, lte: toStr },
+            status: { in: ["scheduled", "rescheduled"] },
+          },
+          orderBy: [{ scheduledDate: "asc" }],
+          take: 300,
+          select: {
+            scheduledDate: true,
+            scheduleType: true,
+            projectId: true,
+            projectName: true,
+            assignedUser: true,
+            status: true,
+          },
+        }),
+        canonicalLocation
+          ? prisma.bookedSlot.findMany({
+              where: { date: { gte: fromStr, lte: toStr } },
+              select: { projectId: true, location: true },
+            })
+          : Promise.resolve([] as Array<{ projectId: string; location: string }>),
+      ]);
+
+      let scoped = records;
+      if (canonicalLocation) {
+        const { normalizeLocation } = await import("@/lib/locations");
+        const allowed = new Set(
+          slots
+            .filter((s) => normalizeLocation(s.location) === canonicalLocation)
+            .map((s) => s.projectId)
+        );
+        scoped = records.filter((r) => allowed.has(r.projectId));
       }
 
-      // v1: Direct calendar reads require the calendar.events scope, which
-      // the Chat API service account token doesn't have. Rather than adding
-      // a second token flow, point users to the scheduler dashboard.
-      const now = new Date();
-      const endDate = new Date(now);
-      endDate.setDate(endDate.getDate() + (input.days ?? 7));
+      const byDate: Record<
+        string,
+        Array<{ type: string; project: string; crew: string | null; status: string }>
+      > = {};
+      for (const r of scoped) {
+        (byDate[r.scheduledDate] ??= []).push({
+          type: r.scheduleType,
+          project: r.projectName,
+          crew: r.assignedUser ?? null,
+          status: r.status,
+        });
+      }
 
       return JSON.stringify({
-        range: { from: now.toISOString(), to: endDate.toISOString() },
-        locations: input.location ? [input.location] : ["all"],
-        note: "For detailed schedule, check pbtechops.com/dashboards/scheduler. " +
-              "Calendar read integration is a future enhancement.",
+        range: { from: fromStr, to: toStr, days },
+        location: canonicalLocation ?? "all locations",
+        total: scoped.length,
+        schedule: byDate,
+        ...(scoped.length === 0
+          ? {
+              note: canonicalLocation
+                ? `Nothing scheduled for ${canonicalLocation} in this window.`
+                : "Nothing scheduled in this window.",
+            }
+          : {}),
       });
     },
   });
