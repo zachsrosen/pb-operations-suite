@@ -34,7 +34,8 @@ RULES:
 - You CANNOT: approve things, make commitments, change data, reassign crews, move deals, send emails, or override anyone's decisions
 - Two exceptions, both ONLY when someone EXPLICITLY asks:
   - File a "process request" with submit_process_request — a request to add, change, or fix a process, workflow, or tool. Never file one on your own initiative; read the title back so they know what was logged.
-  - Create a HubSpot task — when someone explicitly asks you to make/create a task, you MUST actually call the create_hubspot_task tool. This is critical: NEVER say "done" or claim a task was created unless that tool ran and returned a taskId. If you didn't call the tool, no task exists — do not fabricate it. When they reference a project by PROJ number, customer name, OR address, pass that string as projectId so the tool can find and attach the right deal — do NOT skip attachment by claiming you lack info; let the tool do the search (it will ask you to pick if there are several). You can CREATE tasks only (never edit, complete, or delete). After the tool returns, read back exactly what it reported — subject, due date, and the deal NAME it attached to — so they can confirm it landed on the right record.
+  - Create a HubSpot task — when someone explicitly asks you to make/create a task, you MUST actually call the create_hubspot_task tool. This is critical: NEVER say "done" or claim a task was created unless that tool ran and returned a taskId. If you didn't call the tool, no task exists — do not fabricate it. When they reference a project by PROJ number, customer name, OR address, pass that string as projectId so the tool can find and attach the right deal — do NOT skip attachment by claiming you lack info; let the tool do the search (it will ask you to pick if there are several). To assign the task to someone other than the requester, pass their name as the assignee parameter (e.g. "create a task for Zach to…" → assignee = "Zach"). You can CREATE tasks only (never edit, complete, or delete). After the tool returns, read back exactly what it reported — subject, due date, the deal it attached to, and who it's assigned to — so they can confirm.
+  - JUDGMENT — task vs. process request: People often say "task" loosely. If someone asks for a "task" but (a) they did NOT tie it to a specific project/deal AND (b) it's really about a process, workflow, automation, system behavior, or tool (e.g. "look into why EV ESA bundled deals aren't progressing stages automatically"), do NOT silently create a project-less task. Ask one quick question first: is this for a specific project (→ I'll make a task), or is it more of a process/workflow request (→ I'll log it as a process request for the team)? Then route to the right tool based on their answer. When it clearly IS tied to a specific deal/project, just make the task — don't over-ask.
 - If someone tells you a factual or process answer you gave was WRONG and gives the right info, call log_correction (topic, whatIGotWrong, correctInfo). This captures it for the team to make permanent. Be gracious — thank them. You can't rewrite your own knowledge instantly, but say it's logged and you'll go with their correction for the rest of this conversation. Don't log opinions or one-off preferences — only genuine factual/process corrections.
 - If you're not confident in an answer, use the escalate tool to flag it for Zach to follow up on
 - When you escalate, tell the person it's been flagged for Zach
@@ -363,15 +364,43 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               }
             }
 
-            // Resolve the requester's HubSpot owner id. Uses the shared
-            // resolver, which lists all owners (the ?email= filter returns
-            // nothing in our tenant) and falls back to a first.last@domain
-            // heuristic from the display name — handling Google Workspace
-            // aliases like zach@ → zach.rosen@.
+            // Resolve the task owner.
+            //   • assignee given → resolve by NAME (ask if ambiguous, fail if
+            //     not found so we never silently assign to the wrong person).
+            //   • otherwise → assign to the requester (email/display-name
+            //     heuristic; handles aliases like zach@ → zach.rosen@).
             let ownerId: string | undefined;
+            let assignedToLabel = "unassigned";
+            const taskInput = input as typeof input & { assignee?: string };
             try {
-              const { resolveOwnerIdByEmail } = await import("@/lib/hubspot-tasks");
-              ownerId = (await resolveOwnerIdByEmail(senderEmail, senderName)) ?? undefined;
+              const {
+                resolveOwnerIdByEmail,
+                resolveOwnerIdByName,
+              } = await import("@/lib/hubspot-tasks");
+
+              if (taskInput.assignee && taskInput.assignee.trim()) {
+                const res = await resolveOwnerIdByName(taskInput.assignee);
+                if (res && "ambiguous" in res) {
+                  return JSON.stringify({
+                    created: false,
+                    needsClarification: true,
+                    message: `"${taskInput.assignee}" matches ${res.ambiguous.length} people — who should I assign it to?`,
+                    candidates: res.ambiguous,
+                  });
+                }
+                if (!res) {
+                  return JSON.stringify({
+                    created: false,
+                    message: `I couldn't find anyone named "${taskInput.assignee}" in HubSpot. Double-check the name, or I can assign it to you instead.`,
+                  });
+                }
+                ownerId = res.ownerId;
+                assignedToLabel = res.matchedName;
+              } else {
+                ownerId =
+                  (await resolveOwnerIdByEmail(senderEmail, senderName)) ?? undefined;
+                if (ownerId) assignedToLabel = senderName || senderEmail;
+              }
             } catch {
               // non-fatal — create unassigned
             }
@@ -436,10 +465,10 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               taskId: data.id,
               subject: input.subject,
               dueInDays: input.dueInDays ?? 1,
-              assignedTo: ownerId ? senderEmail : "unassigned",
+              assignedTo: assignedToLabel,
               attachedTo: dealName ?? (dealId ? `deal ${dealId}` : "no project (standalone task)"),
               message:
-                "Task created in HubSpot. Read back the subject and the project/deal name so they can confirm it's on the right record.",
+                "Task created in HubSpot. Read back the subject, the project/deal, and who it's assigned to so they can confirm.",
             });
           } catch (err) {
             console.error("[tech-ops-bot] create_hubspot_task error:", err);

@@ -124,6 +124,94 @@ async function getOwnerEmailMap(): Promise<Map<string, string>> {
   return map;
 }
 
+// ---------------------------------------------------------------------------
+// Owner resolution by name
+// ---------------------------------------------------------------------------
+
+interface OwnerRecord {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
+const OWNER_LIST_CACHE_KEY = "hubspot:owner-list";
+
+/** Fetch ALL HubSpot owners with their names (cached). */
+async function getOwnerList(): Promise<OwnerRecord[]> {
+  const cached = appCache.get<OwnerRecord[]>(OWNER_LIST_CACHE_KEY);
+  if (cached.hit && cached.data) return cached.data;
+
+  const owners: OwnerRecord[] = [];
+  let after: string | undefined = undefined;
+  const MAX_PAGES = 10;
+  try {
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const page: {
+        results?: Array<{ id?: string; email?: string; firstName?: string; lastName?: string }>;
+        paging?: { next?: { after?: string } };
+      } = await withHubSpotRetry("owners.list", () =>
+        hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false)
+      );
+      for (const o of page.results ?? []) {
+        if (!o.id) continue;
+        owners.push({
+          id: o.id,
+          email: (o.email ?? "").toLowerCase(),
+          firstName: o.firstName ?? "",
+          lastName: o.lastName ?? "",
+        });
+      }
+      after = page.paging?.next?.after;
+      if (!after) break;
+    }
+    appCache.set(OWNER_LIST_CACHE_KEY, owners);
+  } catch (err) {
+    Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "getOwnerList" } });
+  }
+  return owners;
+}
+
+export type NameResolution =
+  | { ownerId: string; matchedName: string }
+  | { ambiguous: string[] }
+  | null;
+
+/**
+ * Resolve a HubSpot owner id from a person's NAME (e.g. "Zach", "Zach Rosen").
+ * Tiered match: exact full name → email local-part → exact first/last → loose
+ * contains. Returns a single match, an ambiguity list, or null (no match).
+ */
+export async function resolveOwnerIdByName(name: string): Promise<NameResolution> {
+  const q = name.trim().toLowerCase();
+  if (!q) return null;
+  const owners = await getOwnerList();
+  const full = (o: OwnerRecord) => `${o.firstName} ${o.lastName}`.trim().toLowerCase();
+
+  const tiers: Array<(o: OwnerRecord) => boolean> = [
+    (o) => full(o) === q,
+    (o) => o.email.split("@")[0] === q,
+    (o) => o.firstName.toLowerCase() === q || o.lastName.toLowerCase() === q,
+    (o) => full(o).includes(q),
+  ];
+
+  for (const match of tiers) {
+    const hits = Array.from(
+      new Map(owners.filter(match).map((o) => [o.id, o])).values()
+    );
+    if (hits.length === 1) {
+      return {
+        ownerId: hits[0].id,
+        matchedName: `${hits[0].firstName} ${hits[0].lastName}`.trim(),
+      };
+    }
+    if (hits.length > 1) {
+      return { ambiguous: hits.map((o) => `${o.firstName} ${o.lastName}`.trim()) };
+    }
+  }
+  return null;
+}
+
 /**
  * Resolve a user's HubSpot owner id. Resolution order:
  *   1. Explicit link — if the caller passes a non-empty `linkedOwnerId`
