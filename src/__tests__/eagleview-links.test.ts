@@ -8,8 +8,9 @@ describe("eagleViewLinks", () => {
     });
   });
 
-  it("returns null for empty or pending reportIds", () => {
+  it("returns null for null, undefined, empty, or pending reportIds", () => {
     expect(eagleViewLinks(null)).toBeNull();
+    expect(eagleViewLinks(undefined)).toBeNull();
     expect(eagleViewLinks("")).toBeNull();
     expect(eagleViewLinks("pending:abc")).toBeNull();
   });

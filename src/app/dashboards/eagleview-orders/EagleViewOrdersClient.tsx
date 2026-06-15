@@ -152,6 +152,7 @@ export default function EagleViewOrdersClient({ userEmail }: { userEmail: string
           const isOrdering = ordering[key];
           const orderResult = orderResults[key];
           const order = r.eagleviewOrder;
+          const eagleLinks = order ? eagleViewLinks(order.reportId) : null;
           const addr = formatAddress(r);
           const canOrder = hasAddress(r) && (!order || order.status === "FAILED");
 
@@ -198,31 +199,27 @@ export default function EagleViewOrdersClient({ userEmail }: { userEmail: string
                         : "bg-zinc-500/10 text-muted"
                 }`}>
                   <span className="font-medium">{order.status}</span>
-                  {(() => {
-                    const links = eagleViewLinks(order.reportId);
-                    if (!links) return null;
-                    return (
-                      <>
-                        <span>— Report #{order.reportId}</span>
-                        <a
-                          href={links.trueDesign}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline hover:no-underline"
-                        >
-                          Open in TrueDesign
-                        </a>
-                        <a
-                          href={links.orderPage}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline hover:no-underline"
-                        >
-                          View EagleView Order
-                        </a>
-                      </>
-                    );
-                  })()}
+                  {eagleLinks && (
+                    <>
+                      <span>— Report #{order.reportId}</span>
+                      <a
+                        href={eagleLinks.trueDesign}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:no-underline"
+                      >
+                        Open in TrueDesign
+                      </a>
+                      <a
+                        href={eagleLinks.orderPage}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:no-underline"
+                      >
+                        View EagleView Order
+                      </a>
+                    </>
+                  )}
                   {order.errorMessage && <span>— {order.errorMessage}</span>}
                   {order.triggeredBy && (
                     <span className="ml-auto text-muted">by {order.triggeredBy}</span>
