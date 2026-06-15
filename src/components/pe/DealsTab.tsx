@@ -6,6 +6,8 @@ import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
+import { useSession } from "next-auth/react";
+import ShortPayModal from "@/components/pe/ShortPayModal";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors API response)
@@ -71,6 +73,8 @@ interface PeDeal {
   leaseFactor: number;
   peM1Status: string | null;
   peM2Status: string | null;
+  m1PaymentShort: number; // admin-recorded short-pay on M1 (IC)
+  m2PaymentShort: number; // admin-recorded short-pay on M2 (PC)
   milestoneHighlight: "m1" | "m2" | "complete" | null;
   hubspotUrl: string;
   pePortalUrl: string | null;
@@ -629,6 +633,9 @@ function DealSection({
 
 export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  const canManageShortPay = (session?.user?.roles ?? []).some((r) => r === "ADMIN" || r === "OWNER");
+  const [shortPayOpen, setShortPayOpen] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.peDeals.list(),
     queryFn: async () => {
@@ -874,9 +881,13 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   // Already-paid PE totals across the full filtered set.
   const m1PaidDeals = filtered.filter((d) => d.peM1Status === "Paid");
   const m2PaidDeals = filtered.filter((d) => d.peM2Status === "Paid");
-  const m1PaidValue = m1PaidDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
-  const m2PaidValue = m2PaidDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-  const totalPECollected = m1PaidValue + m2PaidValue;
+  // Admin-recorded short-pays: PE paid less than the expected milestone amount.
+  const m1ShortValue = m1PaidDeals.reduce((s, d) => s + (d.m1PaymentShort ?? 0), 0);
+  const m2ShortValue = m2PaidDeals.reduce((s, d) => s + (d.m2PaymentShort ?? 0), 0);
+  const totalPEShort = m1ShortValue + m2ShortValue;
+  const m1PaidValue = m1PaidDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0) - m1ShortValue;
+  const m2PaidValue = m2PaidDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0) - m2ShortValue;
+  const totalPECollected = Math.max(0, m1PaidValue + m2PaidValue);
 
   // PE Receivable = milestones PE has committed to (Approved or Paid only).
   // Excludes deals where PE hasn't yet approved either milestone.
@@ -1011,7 +1022,9 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           key={`paid-${totalPECollected}`}
           label="PE Collected"
           value={fmt(totalPECollected)}
-          subtitle={`${m1PaidDeals.length + m2PaidDeals.length} milestones · ${m1PaidDeals.length} M1 + ${m2PaidDeals.length} M2`}
+          subtitle={totalPEShort > 0
+            ? `${m1PaidDeals.length + m2PaidDeals.length} milestones · ${fmt(totalPEShort)} short`
+            : `${m1PaidDeals.length + m2PaidDeals.length} milestones · ${m1PaidDeals.length} M1 + ${m2PaidDeals.length} M2`}
           color="emerald"
         />
         <StatCard
@@ -1022,6 +1035,24 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           color="green"
         />
       </div>
+
+      {canManageShortPay && !isLoading && (
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={() => setShortPayOpen(true)}
+            className="text-xs px-2.5 py-1 rounded-full border border-t-border text-muted hover:text-foreground hover:border-foreground/30 transition-colors"
+          >
+            Record short-pay{totalPEShort > 0 ? ` (${fmt(totalPEShort)})` : ""}
+          </button>
+        </div>
+      )}
+      {shortPayOpen && (
+        <ShortPayModal
+          deals={deals}
+          onClose={() => setShortPayOpen(false)}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: queryKeys.peDeals.list() })}
+        />
+      )}
 
       {/* Reconciliation bar — shows how Total PE Expected breaks down */}
       {!isLoading && totalPeExpected > 0 && (() => {
