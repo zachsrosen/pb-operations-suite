@@ -315,12 +315,13 @@ export function createTechOpsBotTools() {
   const createHubspotTask = betaZodTool({
     name: "create_hubspot_task",
     description:
-      "Create a HubSpot task on behalf of the person you're chatting with — e.g. " +
-      "\"make me a task to follow up on PROJ-1234 next week.\" The task is assigned to " +
-      "the requester (resolved from their email) and, if a project is given, attached to " +
-      "that deal. You can CREATE tasks only — you cannot edit, complete, or delete them. " +
-      "Only use this when the person explicitly asks for a task to be created. Always read " +
-      "back exactly what you created (subject, due date, project) so they can confirm.",
+      "Create a HubSpot task — e.g. \"make me a task to follow up on PROJ-1234\" or " +
+      "\"create a task for Zach to check the permit status.\" By default the task is " +
+      "assigned to the requester, but pass `assignee` to assign it to a named person " +
+      "instead. If a project is given it's attached to that deal. You can CREATE tasks " +
+      "only — you cannot edit, complete, or delete them. Only use this when the person " +
+      "explicitly asks for a task. Always read back exactly what you created (subject, " +
+      "due date, project, and who it's assigned to) so they can confirm.",
     inputSchema: z.object({
       subject: z
         .string()
@@ -337,6 +338,14 @@ export function createTechOpsBotTools() {
             "a HubSpot deal ID, a customer name, or a property address. If it " +
             "matches more than one deal the bot will ask which one — so pass " +
             "whatever the user gave you."
+        ),
+      assignee: z
+        .string()
+        .optional()
+        .describe(
+          "Optional name of the person to assign the task to (e.g. 'Zach' or " +
+            "'Zach Rosen'). Omit to assign to the requester. If the name matches " +
+            "more than one person the bot will ask which one."
         ),
       dueInDays: z
         .number()
