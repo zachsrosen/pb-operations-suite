@@ -106,7 +106,25 @@ const DM_WELCOME = `Hey — I'm Zach's AI assistant. I've got his playbook, acce
 
 const SPACE_WELCOME = `👋 Zach's assistant bot, reporting for duty. I've got his playbook loaded and can look up projects, schedules, and pipeline status. I can't approve anything or make promises, but I can usually point you in the right direction — and if I'm stumped, I'll flag it for Zach.`;
 
-const THINKING_MESSAGE = `🤔 Let me check on that...`;
+// The immediate ack shown while the bot processes. Rotated so it doesn't feel
+// robotic — one is picked at random per message.
+const THINKING_MESSAGES = [
+  "🤔 Let me check on that...",
+  "🔍 Digging into it...",
+  "👀 One sec, pulling that up...",
+  "📊 Checking the numbers...",
+  "⚡ On it...",
+  "🧠 Crunching that for you...",
+  "🔦 Hunting that down...",
+  "📂 Looking through the data...",
+  "🤖 Beep boop — working on it...",
+  "Hang tight, checking...",
+  "Give me a sec...",
+];
+
+function thinkingMessage(): string {
+  return THINKING_MESSAGES[Math.floor(Math.random() * THINKING_MESSAGES.length)];
+}
 
 // ── Envelope helpers ──
 
@@ -346,7 +364,7 @@ export async function POST(request: NextRequest) {
     );
 
     // ── Return immediate ack ──
-    return chatTextResponse(THINKING_MESSAGE, isAddOn);
+    return chatTextResponse(thinkingMessage(), isAddOn);
   }
 
   // ── Unknown event type: no-op ──
