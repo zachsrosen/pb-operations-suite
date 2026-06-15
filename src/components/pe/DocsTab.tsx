@@ -134,6 +134,9 @@ const SECTION_LABELS: Record<string, string> = {
   pc: "Project Complete (M2)",
 };
 
+// Section-group keys for the Sections view (Nearly Complete / Not Uploaded / Action Required).
+const SECTION_KEYS = ["nearlyComplete", "notUploaded", "actionRequired"] as const;
+
 // ---------------------------------------------------------------------------
 // Deal stage → PE milestone
 // ---------------------------------------------------------------------------
@@ -865,6 +868,43 @@ function SyncNowButton() {
   );
 }
 
+/** A collapsible section group (Nearly Complete / Not Uploaded / Action Required).
+ *  Header is the click target; the export buttons sit outside it. */
+function CollapsibleSection({ dotClass, title, sub, count, exportRows, exportTitle, exportFilename, collapsed, onToggle, children }: {
+  dotClass: string;
+  title: string;
+  sub: string;
+  count: number;
+  exportRows: PeExportRow[];
+  exportTitle: string;
+  exportFilename: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+          onClick={onToggle}
+        >
+          <span className={`w-2.5 h-2.5 rounded-full ${dotClass}`} />
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <span className="text-xs text-muted">({count})</span>
+          <span className="text-[10px] text-muted/60">{sub}</span>
+          <svg className={`w-3.5 h-3.5 text-muted transition-transform ${collapsed ? "" : "rotate-180"}`}
+            fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+        <ExportButtons rows={exportRows} title={exportTitle} filename={exportFilename} />
+      </div>
+      {!collapsed && children}
+    </div>
+  );
+}
+
 export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const { data, isLoading } = useQuery<{ deals: PeDeal[]; lastUpdated: string }>({
     queryKey: queryKeys.peDeals.list(),
@@ -907,15 +947,29 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team">("sections");
-  const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set());
+  // Team groups (By-Team view) start collapsed too.
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set(TEAM_ORDER));
   // Deal rows are collapsed by default; this Set holds the ones the user opened.
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
+  // Section groups (Nearly Complete / Not Uploaded / Action Required) start collapsed.
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    new Set(["nearlyComplete", "notUploaded", "actionRequired"]),
+  );
 
   const toggleTeam = useCallback((team: DocTeam) => {
     setCollapsedTeams((prev) => {
       const next = new Set(prev);
       if (next.has(team)) next.delete(team);
       else next.add(team);
+      return next;
+    });
+  }, []);
+
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, []);
@@ -1090,10 +1144,23 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     return [];
   }, [viewMode, emailSections, sorted]);
 
-  const allExpanded = visibleDealIds.length > 0 && visibleDealIds.every((id) => expandedDeals.has(id));
+  // The toggle opens/closes whatever the active view groups by: sections view →
+  // the three groups; by-team view → the team groups; list view → the deal rows.
+  const teamKeys = useMemo(() => teamGrouped.map((g) => g.team), [teamGrouped]);
+  const allExpanded = viewMode === "sections"
+    ? SECTION_KEYS.every((k) => !collapsedSections.has(k))
+    : viewMode === "by-team"
+      ? teamKeys.length > 0 && teamKeys.every((t) => !collapsedTeams.has(t))
+      : visibleDealIds.length > 0 && visibleDealIds.every((id) => expandedDeals.has(id));
   const toggleAll = useCallback(() => {
-    setExpandedDeals(allExpanded ? new Set() : new Set(visibleDealIds));
-  }, [allExpanded, visibleDealIds]);
+    if (viewMode === "sections") {
+      setCollapsedSections(allExpanded ? new Set(SECTION_KEYS) : new Set());
+    } else if (viewMode === "by-team") {
+      setCollapsedTeams(allExpanded ? new Set(teamKeys) : new Set());
+    } else {
+      setExpandedDeals(allExpanded ? new Set() : new Set(visibleDealIds));
+    }
+  }, [viewMode, allExpanded, visibleDealIds, teamKeys]);
 
   return (
     <DashboardShell title="PE Document Tracker" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
@@ -1209,7 +1276,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             `${filtered.length} of ${summaries.length} deals`
           )}
         </div>
-        {viewMode !== "by-team" && visibleDealIds.length > 0 && (
+        {(viewMode === "by-team" ? teamKeys.length > 0 : visibleDealIds.length > 0) && (
           <button
             onClick={toggleAll}
             className="text-xs text-muted hover:text-foreground transition-colors whitespace-nowrap"
@@ -1231,18 +1298,17 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       {!isLoading && viewMode === "sections" && (
         <div className="space-y-5">
           {/* Nearly Complete */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-              <h3 className="text-sm font-semibold text-foreground">Nearly Complete</h3>
-              <span className="text-xs text-muted">({emailSections.nearlyComplete.length})</span>
-              <span className="text-[10px] text-muted/60">1–3 docs from done</span>
-              <ExportButtons
-                rows={emailSections.nearlyComplete.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
-                title="PE — Nearly Complete"
-                filename="pe-nearly-complete.csv"
-              />
-            </div>
+          <CollapsibleSection
+            dotClass="bg-emerald-400"
+            title="Nearly Complete"
+            sub="1–3 docs from done"
+            count={emailSections.nearlyComplete.length}
+            exportRows={emailSections.nearlyComplete.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
+            exportTitle="PE — Nearly Complete"
+            exportFilename="pe-nearly-complete.csv"
+            collapsed={collapsedSections.has("nearlyComplete")}
+            onToggle={() => toggleSection("nearlyComplete")}
+          >
             {emailSections.nearlyComplete.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">No deals nearly complete.</div>
             ) : (
@@ -1260,21 +1326,20 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
 
           {/* Not Uploaded */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
-              <h3 className="text-sm font-semibold text-foreground">Not Uploaded</h3>
-              <span className="text-xs text-muted">({emailSections.notUploaded.length})</span>
-              <span className="text-[10px] text-muted/60">PB needs to upload</span>
-              <ExportButtons
-                rows={emailSections.notUploaded.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
-                title="PE — Not Uploaded"
-                filename="pe-not-uploaded.csv"
-              />
-            </div>
+          <CollapsibleSection
+            dotClass="bg-yellow-400"
+            title="Not Uploaded"
+            sub="PB needs to upload"
+            count={emailSections.notUploaded.length}
+            exportRows={emailSections.notUploaded.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
+            exportTitle="PE — Not Uploaded"
+            exportFilename="pe-not-uploaded.csv"
+            collapsed={collapsedSections.has("notUploaded")}
+            onToggle={() => toggleSection("notUploaded")}
+          >
             {emailSections.notUploaded.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">Nothing missing uploads.</div>
             ) : (
@@ -1292,21 +1357,20 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
 
           {/* Action Required */}
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-orange-400" />
-              <h3 className="text-sm font-semibold text-foreground">Action Required</h3>
-              <span className="text-xs text-muted">({emailSections.actionRequired.length})</span>
-              <span className="text-[10px] text-muted/60">Rejections &amp; fixes</span>
-              <ExportButtons
-                rows={emailSections.actionRequired.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
-                title="PE — Action Required"
-                filename="pe-action-required.csv"
-              />
-            </div>
+          <CollapsibleSection
+            dotClass="bg-orange-400"
+            title="Action Required"
+            sub="Rejections & fixes"
+            count={emailSections.actionRequired.length}
+            exportRows={emailSections.actionRequired.flatMap(({ summary, docs }) => docsToExportRows(summary, docs))}
+            exportTitle="PE — Action Required"
+            exportFilename="pe-action-required.csv"
+            collapsed={collapsedSections.has("actionRequired")}
+            onToggle={() => toggleSection("actionRequired")}
+          >
             {emailSections.actionRequired.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">No rejections or action items.</div>
             ) : (
@@ -1324,7 +1388,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
         </div>
       )}
 

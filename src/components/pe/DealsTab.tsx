@@ -307,7 +307,8 @@ function DealSection({
   onStatusChange,
   savingDeals,
   docMap,
-  defaultCollapsed = false,
+  collapsed,
+  onToggle,
 }: {
   title: string;
   subtitle: string;
@@ -318,10 +319,10 @@ function DealSection({
   onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
   savingDeals: Set<string>;
   docMap: Map<string, DocReview>;
-  defaultCollapsed?: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
   const [expandedDeal, setExpandedDeal] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   const accentBorder = accent === "orange"
     ? "border-l-orange-400"
@@ -339,7 +340,7 @@ function DealSection({
     <div>
       <div
         className={`flex items-baseline gap-3 mb-2 cursor-pointer select-none ${accent ? `border-l-2 ${accentBorder} pl-3` : ""}`}
-        onClick={() => setCollapsed((c) => !c)}
+        onClick={onToggle}
       >
         <span className="text-xs text-muted/60 w-4">{collapsed ? "▸" : "▾"}</span>
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
@@ -660,6 +661,16 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const [m1Filter, setM1Filter] = useState<string[]>([]);
   const [m2Filter, setM2Filter] = useState<string[]>([]);
   const [savingDeals, setSavingDeals] = useState<Set<string>>(new Set());
+  // Deal sections are collapsed by default; this Set holds the ones the user opened.
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const toggleSection = useCallback((key: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const handleStatusChange = useCallback(
     async (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => {
@@ -828,6 +839,24 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   // the generic "Other". Falls back to "Other" if any non-On-Hold deal sneaks in.
   const otherIsAllOnHold = otherDeals.length > 0 && otherDeals.every((d) => isOnHold(d.dealStageLabel));
   const otherLabel = otherIsAllOnHold ? "On Hold" : "Other";
+
+  // Section keys (must match each DealSection's title) for Expand/Collapse all.
+  const dealSectionKeys = useMemo(() => [
+    "Paid",
+    ...(partiallyPaidDeals.length ? ["Partially Paid"] : []),
+    ...(fullyApprovedDeals.length ? ["Fully Approved — Waiting on Payment"] : []),
+    ...(partiallyApprovedDeals.length ? ["Partially Approved — In Progress"] : []),
+    ...(m2Deals.length ? ["M2 — Close Out"] : []),
+    ...(m1Deals.length ? ["M1 — Permission To Operate"] : []),
+    ...(inspectionDeals.length ? ["Pending Inspection"] : []),
+    ...(constructionDeals.length ? ["In Construction"] : []),
+    ...(preconDeals.length ? ["Preconstruction"] : []),
+    ...(otherDeals.length ? [otherLabel] : []),
+  ], [partiallyPaidDeals, fullyApprovedDeals, partiallyApprovedDeals, m2Deals, m1Deals, inspectionDeals, constructionDeals, preconDeals, otherDeals, otherLabel]);
+  const allSectionsExpanded = dealSectionKeys.length > 0 && dealSectionKeys.every((k) => expandedSections.has(k));
+  const toggleAllSections = useCallback(() => {
+    setExpandedSections(allSectionsExpanded ? new Set() : new Set(dealSectionKeys));
+  }, [allSectionsExpanded, dealSectionKeys]);
 
   // Hero-card stats use the FULL filtered PE deal set (paid + approved +
   // unpaid). NOT `allDeals` — that's the leftover bucket after subtracting
@@ -1159,7 +1188,18 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       {isLoading ? (
         <div className="text-center py-12 text-muted">Loading PE deals...</div>
       ) : (
-        <div className="space-y-8">
+        <>
+          {dealSectionKeys.length > 0 && (
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={toggleAllSections}
+                className="text-xs text-muted hover:text-foreground transition-colors whitespace-nowrap"
+              >
+                {allSectionsExpanded ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          )}
+          <div className="space-y-8">
           <DealSection
             title="Paid"
             subtitle={`${paidDeals.length} deal${paidDeals.length !== 1 ? "s" : ""} — M1 & M2 paid`}
@@ -1170,6 +1210,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
             docMap={docMap}
+            collapsed={!expandedSections.has("Paid")}
+            onToggle={() => toggleSection("Paid")}
           />
           {partiallyPaidDeals.length > 0 && (
             <DealSection
@@ -1182,6 +1224,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("Partially Paid")}
+              onToggle={() => toggleSection("Partially Paid")}
             />
           )}
           {fullyApprovedDeals.length > 0 && (
@@ -1195,6 +1239,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("Fully Approved — Waiting on Payment")}
+              onToggle={() => toggleSection("Fully Approved — Waiting on Payment")}
             />
           )}
           {partiallyApprovedDeals.length > 0 && (
@@ -1208,6 +1254,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("Partially Approved — In Progress")}
+              onToggle={() => toggleSection("Partially Approved — In Progress")}
             />
           )}
           {m2Deals.length > 0 && (
@@ -1221,6 +1269,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("M2 — Close Out")}
+              onToggle={() => toggleSection("M2 — Close Out")}
             />
           )}
           {m1Deals.length > 0 && (
@@ -1234,6 +1284,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("M1 — Permission To Operate")}
+              onToggle={() => toggleSection("M1 — Permission To Operate")}
             />
           )}
           {inspectionDeals.length > 0 && (
@@ -1247,6 +1299,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("Pending Inspection")}
+              onToggle={() => toggleSection("Pending Inspection")}
             />
           )}
           {constructionDeals.length > 0 && (
@@ -1260,6 +1314,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
+              collapsed={!expandedSections.has("In Construction")}
+              onToggle={() => toggleSection("In Construction")}
             />
           )}
           {preconDeals.length > 0 && (
@@ -1272,7 +1328,8 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              defaultCollapsed
+              collapsed={!expandedSections.has("Preconstruction")}
+              onToggle={() => toggleSection("Preconstruction")}
             />
           )}
           {otherDeals.length > 0 && (
@@ -1285,10 +1342,12 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
               onStatusChange={handleStatusChange}
               savingDeals={savingDeals}
               docMap={docMap}
-              defaultCollapsed
+              collapsed={!expandedSections.has(otherLabel)}
+              onToggle={() => toggleSection(otherLabel)}
             />
           )}
-        </div>
+          </div>
+        </>
       )}
     </DashboardShell>
   );
