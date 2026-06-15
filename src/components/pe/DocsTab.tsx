@@ -584,6 +584,67 @@ function DealLinks({ deal, iconClass }: { deal: PeDeal; iconClass: string }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// By-Document view: per doc type, how many deals are Missing it vs have an
+// Open Rejection on it. Missing excludes moot/waived docs. Each count drills
+// into the deals. Built from the milestone-scoped (and filtered) summaries.
+// ---------------------------------------------------------------------------
+interface DocBreakdownRow { doc: DocRequirement; missing: PeDeal[]; openRej: PeDeal[]; }
+
+function ByDocumentView({ rows }: { rows: DocBreakdownRow[] }) {
+  const [drill, setDrill] = useState<{ doc: string; kind: "missing" | "rej" } | null>(null);
+  if (rows.length === 0) {
+    return <div className="text-center py-12 text-muted">Every owed document is uploaded — nothing missing or rejected.</div>;
+  }
+  const max = Math.max(...rows.map((r) => Math.max(r.missing.length, r.openRej.length)), 1);
+  return (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-[14rem_1fr_1fr] gap-3 px-4 pb-1 text-[10px] uppercase tracking-wide text-muted">
+        <span>Document</span>
+        <span className="text-yellow-400/80">Missing</span>
+        <span className="text-orange-400/80">Open rejections</span>
+      </div>
+      {rows.map((r) => {
+        const open = drill?.doc === r.doc.name ? drill : null;
+        const list = open ? (open.kind === "missing" ? r.missing : r.openRej) : [];
+        const toggle = (kind: "missing" | "rej", n: number) => {
+          if (n === 0) return;
+          setDrill((c) => (c && c.doc === r.doc.name && c.kind === kind ? null : { doc: r.doc.name, kind }));
+        };
+        const seg = (n: number, kind: "missing" | "rej", barCls: string, textCls: string, label: string) => (
+          <button type="button" onClick={() => toggle(kind, n)} disabled={n === 0}
+            className={`flex items-center gap-2 ${n > 0 ? "cursor-pointer" : "cursor-default opacity-50"}`}>
+            <div className="flex-1 h-3.5 rounded bg-surface-2 overflow-hidden min-w-[3rem]">
+              <div className={`h-full ${barCls} ${open?.kind === kind ? "ring-1 ring-inset ring-white/30" : ""}`} style={{ width: `${(n / max) * 100}%` }} />
+            </div>
+            <span className={`text-xs tabular-nums w-16 text-right ${n > 0 ? `${textCls} hover:underline` : "text-muted/50"}`}>{n} {label}</span>
+          </button>
+        );
+        return (
+          <div key={r.doc.name} className="rounded-lg border border-border/40 bg-surface/30 px-4 py-2.5">
+            <div className="grid grid-cols-[14rem_1fr_1fr] gap-3 items-center">
+              <span className="text-sm text-foreground truncate" title={r.doc.name}>{r.doc.name}</span>
+              {seg(r.missing.length, "missing", "bg-yellow-500/60", "text-yellow-400", "missing")}
+              {seg(r.openRej.length, "rej", "bg-orange-500/70", "text-orange-400", "open")}
+            </div>
+            {open && (
+              <div className={`mt-2 ml-1 rounded-lg border p-2 space-y-1.5 max-h-64 overflow-y-auto ${open.kind === "missing" ? "border-yellow-500/30 bg-yellow-500/5" : "border-orange-500/30 bg-orange-500/5"}`}>
+                {list.map((deal) => (
+                  <div key={deal.dealId} className="flex items-center gap-2 flex-wrap text-[11px] border-b border-t-border/30 pb-1 last:border-0 last:pb-0">
+                    <span className="text-foreground font-medium truncate max-w-[18rem]" title={deal.dealName}>{deal.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                    <span className="text-[10px] text-muted">{deal.pbLocation}</span>
+                    <DealLinks deal={deal} iconClass="w-3.5 h-3.5" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DealCard({ summary, docMap, expanded, onToggle }: {
   summary: DealDocSummary;
   docMap: Map<string, DocReview>;
@@ -946,7 +1007,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const [locFilter, setLocFilter] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team">("sections");
+  const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team" | "by-document">("sections");
   // Team groups (By-Team view) start collapsed too.
   const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set(TEAM_ORDER));
   // Deal rows are collapsed by default; this Set holds the ones the user opened.
@@ -1056,6 +1117,25 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       return a.deal.dealName.localeCompare(b.deal.dealName);
     });
   }, [filtered]);
+
+  // By-document breakdown: per doc type, deals Missing it (excl. moot) vs with
+  // an Open Rejection. Built from the filtered, milestone-scoped summaries.
+  const byDocument = useMemo<DocBreakdownRow[]>(() => {
+    const map = new Map<string, DocBreakdownRow>();
+    for (const d of PE_DOCUMENTS) map.set(d.name, { doc: d, missing: [], openRej: [] });
+    for (const s of filtered) {
+      for (const doc of PE_DOCUMENTS) {
+        if (!s.sections.includes(doc.section)) continue; // deal doesn't owe this doc yet
+        const status = docMap.get(`${s.deal.dealId}:${doc.name}`)?.status ?? "NOT_UPLOADED";
+        const e = map.get(doc.name)!;
+        if (status === "NOT_UPLOADED") { if (!isDocWaived(doc, s.deal)) e.missing.push(s.deal); }
+        else if (status === "ACTION_REQUIRED" || status === "REJECTED") e.openRej.push(s.deal);
+      }
+    }
+    return [...map.values()]
+      .filter((e) => e.missing.length + e.openRej.length > 0)
+      .sort((a, b) => (b.missing.length + b.openRej.length) - (a.missing.length + a.openRej.length));
+  }, [filtered, docMap]);
 
   // Group by team — for each team, find deals with outstanding docs owned by that team
   const teamGrouped = useMemo(() => {
@@ -1250,7 +1330,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
         <div className="ml-auto flex items-center gap-2">
           <SyncNowButton />
           <div className="flex items-center gap-1 bg-surface-2 rounded-lg p-0.5 border border-border">
-            {(["sections", "list", "by-team"] as const).map((mode) => (
+            {(["sections", "list", "by-team", "by-document"] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
@@ -1258,7 +1338,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                   viewMode === mode ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
                 }`}
               >
-                {mode === "sections" ? "Sections" : mode === "list" ? "List" : "By Team"}
+                {mode === "sections" ? "Sections" : mode === "list" ? "List" : mode === "by-team" ? "By Team" : "By Document"}
               </button>
             ))}
           </div>
@@ -1486,6 +1566,10 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             );
           })}
         </div>
+      )}
+
+      {!isLoading && viewMode === "by-document" && filtered.length > 0 && (
+        <ByDocumentView rows={byDocument} />
       )}
 
       {!isLoading && viewMode !== "sections" && filtered.length === 0 && (
