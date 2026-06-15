@@ -1495,7 +1495,8 @@ const ACCOUNTING: RoleDefinition = {
     "/dashboards/accounts-receivable",
     "/dashboards/pe-deals",
     "/dashboards/pe",
-    "/dashboards/pe-report",
+    // pe-report retired — superseded by the /dashboards/pe hub. ADMIN/OWNER
+    // keep access (all-routes) as a fallback; Accounting uses the hub only.
     "/dashboards/pe-docs",
     "/dashboards/pe-analytics",
     "/dashboards/pe-pipeline",
