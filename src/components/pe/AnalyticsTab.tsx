@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { isSuperAdmin } from "@/lib/super-admin";
@@ -990,6 +990,13 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
 
 /** Uploads as stacked bars segmented by who uploaded, at day/week/month grain. */
 function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]; stats: UploaderStat[]; granularity: UploadGranularity }) {
+  // The day view spans ~90 periods and overflows wider than the card, so the
+  // most-recent bars sit off-screen to the right. Scroll to the newest data.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [granularity, daily]);
   if (daily.length === 0) {
     return <div className="text-sm text-muted py-8 text-center">No uploads in this range.</div>;
   }
@@ -1028,7 +1035,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
           </span>
         ))}
       </div>
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} className="overflow-x-auto">
         {/* When the natural width fits, stretch to fill the full page via the
             viewBox (bars spread out, centered); when crowded, fixed width +
             horizontal scroll. Fixes the left-weighted look on week/month. */}
