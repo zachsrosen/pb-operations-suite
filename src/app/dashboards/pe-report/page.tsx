@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -34,6 +35,8 @@ interface PeDeal {
   totalPBRevenue: number | null;
   peM1Status: string | null;
   peM2Status: string | null;
+  m1PaymentShort: number;
+  m2PaymentShort: number;
   milestoneHighlight: "m1" | "m2" | "complete" | null;
   daInvoiceStatus: string | null;
   ccInvoiceStatus: string | null;
@@ -592,8 +595,151 @@ function ProjectDocChecklist({ dealId, milestone, docMap }: {
 // Main page
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Short-pay entry modal (admin/owner): record per-milestone shortfalls so
+// "PE Revenue Collected" reflects dollars actually received, not the expected
+// milestone amount. Stored server-side via /api/admin/pe/payment-adjustment.
+// ---------------------------------------------------------------------------
+function ShortPayModal({ deals, onClose, onSaved }: { deals: PeDeal[]; onClose: () => void; onSaved: () => void }) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [m1Short, setM1Short] = useState("");
+  const [m2Short, setM2Short] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const existing = useMemo(
+    () => deals.filter((d) => (d.m1PaymentShort ?? 0) > 0 || (d.m2PaymentShort ?? 0) > 0),
+    [deals],
+  );
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return deals.filter((d) => d.dealName.toLowerCase().includes(q)).slice(0, 8);
+  }, [deals, search]);
+  const selected = selectedId ? deals.find((d) => d.dealId === selectedId) ?? null : null;
+
+  const pick = (d: PeDeal) => {
+    setSelectedId(d.dealId);
+    setSearch(d.dealName);
+    setM1Short((d.m1PaymentShort ?? 0) > 0 ? String(d.m1PaymentShort) : "");
+    setM2Short((d.m2PaymentShort ?? 0) > 0 ? String(d.m2PaymentShort) : "");
+  };
+
+  const save = async () => {
+    if (!selectedId) { setError("Pick a deal first."); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/pe/payment-adjustment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: selectedId,
+          m1Short: Number(m1Short) || 0,
+          m2Short: Number(m2Short) || 0,
+          note,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Save failed" }));
+        throw new Error(err.error || "Save failed");
+      }
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-surface-elevated rounded-xl border border-border shadow-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-semibold text-foreground">Record short-pay</h3>
+          <button onClick={onClose} className="text-muted hover:text-foreground text-lg leading-none">×</button>
+        </div>
+        <p className="text-xs text-muted mb-4">
+          Enter how much <em>less</em> than the milestone amount PE actually paid. Set both to 0 to clear a deal.
+        </p>
+
+        <label className="block text-xs font-medium text-muted mb-1">Deal</label>
+        <input
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setSelectedId(null); }}
+          placeholder="Search by deal name…"
+          className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-foreground mb-1 focus:outline-none focus:border-foreground/30"
+        />
+        {!selected && matches.length > 0 && (
+          <div className="border border-border rounded-lg overflow-hidden mb-3 divide-y divide-border">
+            {matches.map((d) => (
+              <button key={d.dealId} onClick={() => pick(d)} className="block w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-surface-2">
+                {d.dealName}
+                <span className="text-xs text-muted ml-2">{d.pbLocation}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selected && (
+          <div className="text-xs text-muted mb-3">
+            M1: {selected.peM1Status ?? "—"} ({fmt(selected.pePaymentIC)}) · M2: {selected.peM2Status ?? "—"} ({fmt(selected.pePaymentPC)})
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">M1 (IC) short $</label>
+            <input type="number" min="0" step="0.01" value={m1Short} onChange={(e) => setM1Short(e.target.value)} placeholder="0"
+              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-foreground focus:outline-none focus:border-foreground/30" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">M2 (PC) short $</label>
+            <input type="number" min="0" step="0.01" value={m2Short} onChange={(e) => setM2Short(e.target.value)} placeholder="0"
+              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-foreground focus:outline-none focus:border-foreground/30" />
+          </div>
+        </div>
+
+        <label className="block text-xs font-medium text-muted mb-1">Note (optional)</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. PE underpaid clawback on inspection adder"
+          className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-sm text-foreground mb-4 focus:outline-none focus:border-foreground/30" />
+
+        {error && <div className="text-xs text-red-400 mb-3">{error}</div>}
+
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={onClose} className="text-sm px-3 py-1.5 rounded-lg border border-border text-muted hover:text-foreground">Cancel</button>
+          <button onClick={save} disabled={saving || !selectedId}
+            className="text-sm px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 disabled:opacity-50">
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+
+        {existing.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-border">
+            <div className="text-xs font-medium text-muted mb-1.5">Current short-pays</div>
+            <div className="space-y-1">
+              {existing.map((d) => (
+                <button key={d.dealId} onClick={() => pick(d)} className="flex w-full items-center justify-between text-xs text-foreground hover:text-emerald-400">
+                  <span className="truncate">{d.dealName}</span>
+                  <span className="text-red-400 tabular-nums ml-2 shrink-0">{fmt((d.m1PaymentShort ?? 0) + (d.m2PaymentShort ?? 0))}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PeReportPage() {
   const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  const canManageShortPay = (session?.user?.roles ?? []).some((r) => r === "ADMIN" || r === "OWNER");
+  const [shortPayOpen, setShortPayOpen] = useState(false);
 
   const { data, isLoading } = useQuery<{ deals: PeDeal[]; lastUpdated: string }>({
     queryKey: queryKeys.peDeals.list(),
@@ -795,8 +941,14 @@ export default function PeReportPage() {
 
     const m1PaidValue = deals.filter((d) => d.peM1Status === "Paid").reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2PaidValue = deals.filter((d) => d.peM2Status === "Paid").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-    const collected = m1PaidValue + m2PaidValue;
+    const expectedCollected = m1PaidValue + m2PaidValue;
+    // Admin-recorded short-pays only count against milestones actually marked Paid.
+    const m1ShortValue = deals.filter((d) => d.peM1Status === "Paid").reduce((s, d) => s + (d.m1PaymentShort ?? 0), 0);
+    const m2ShortValue = deals.filter((d) => d.peM2Status === "Paid").reduce((s, d) => s + (d.m2PaymentShort ?? 0), 0);
+    const totalShort = m1ShortValue + m2ShortValue;
+    const collected = Math.max(0, expectedCollected - totalShort);
     const collectPct = totalPePayment > 0 ? (collected / totalPePayment) * 100 : 0;
+    const shortPct = totalPePayment > 0 ? (totalShort / totalPePayment) * 100 : 0;
 
     const m1ApprovedValue = deals.filter((d) => d.peM1Status === "Approved").reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
     const m2ApprovedValue = deals.filter((d) => d.peM2Status === "Approved").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
@@ -886,6 +1038,7 @@ export default function PeReportPage() {
       m1: { paid: m1Paid, approved: m1Approved, submitted: m1Submitted, ready: m1Ready, onboarding: m1Onboarding, other: m1Other, notStarted: m1NotStarted },
       m2: { paid: m2Paid, approved: m2Approved, submitted: m2Submitted, ready: m2Ready, notStarted: m2NotStarted },
       collected, collectPct, readyToInvoice,
+      expectedCollected, totalShort, shortPct,
       m1PaidValue, m2PaidValue, m1ApprovedValue, m2ApprovedValue,
       byLocation: [...byLocation.entries()].sort((a, b) => b[1] - a[1]),
       byStage: [...byStage.entries()].sort((a, b) => b[1] - a[1]),
@@ -907,13 +1060,15 @@ export default function PeReportPage() {
     const m2Approved = filtered.filter((d) => d.peM2Status === "Approved").length;
     const m2PaidVal = filtered.filter((d) => d.peM2Status === "Paid").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
     const m2ApprovedVal = filtered.filter((d) => d.peM2Status === "Approved").reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
-    const collected = m1PaidVal + m2PaidVal;
+    const totalShort = filtered.filter((d) => d.peM1Status === "Paid").reduce((s, d) => s + (d.m1PaymentShort ?? 0), 0)
+      + filtered.filter((d) => d.peM2Status === "Paid").reduce((s, d) => s + (d.m2PaymentShort ?? 0), 0);
+    const collected = Math.max(0, m1PaidVal + m2PaidVal - totalShort);
     const custFullyPaid = filtered.filter((d) => d.paidInFull).length;
     return {
       count: filtered.length, peTotal,
       m1Paid, m1Approved, m1PaidVal, m1ApprovedVal,
       m2Paid, m2Approved, m2PaidVal, m2ApprovedVal,
-      collected, custFullyPaid,
+      collected, totalShort, custFullyPaid,
     };
   }, [filtered]);
 
@@ -987,6 +1142,50 @@ export default function PeReportPage() {
         <StatCard label="PE Revenue Collected" value={metrics ? fmt(metrics.collected) : null} subtitle={metrics ? `${fmtPct(metrics.collectPct)} of ${fmt(metrics.totalPePayment)}` : undefined} color="green" />
         <StatCard label="Awaiting Payment" value={metrics ? fmt(metrics.readyToInvoice) : null} subtitle="Approved, awaiting payment" color={metrics && metrics.readyToInvoice > 0 ? "orange" : "green"} />
       </div>
+
+      {/* Collected progress bar — green to actual collected, red marks recorded short-pays */}
+      {metrics && (
+        <div className="bg-surface rounded-xl border border-border p-4 shadow-card mb-8">
+          <div className="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+            <div className="flex items-baseline gap-2">
+              <h4 className="text-sm font-semibold text-foreground">PE Revenue Collected</h4>
+              <span className="text-xs text-muted">
+                {fmt(metrics.collected)} of {fmt(metrics.totalPePayment)}
+                {metrics.totalShort > 0 && (
+                  <> · <span className="text-red-400">{fmt(metrics.totalShort)} short</span></>
+                )}
+              </span>
+            </div>
+            {canManageShortPay && (
+              <button
+                onClick={() => setShortPayOpen(true)}
+                className="text-xs px-2.5 py-1 rounded-full border border-t-border text-muted hover:text-foreground hover:border-foreground/30 transition-colors"
+              >
+                Record short-pay
+              </button>
+            )}
+          </div>
+          <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2" title={`Collected ${fmt(metrics.collected)} · Short ${fmt(metrics.totalShort)} · Remaining ${fmt(Math.max(0, metrics.totalPePayment - metrics.expectedCollected))}`}>
+            <div className="h-full bg-green-500" style={{ width: `${Math.min(100, metrics.collectPct)}%` }} />
+            {metrics.totalShort > 0 && (
+              <div className="h-full bg-red-500" style={{ width: `${Math.min(100, metrics.shortPct)}%` }} />
+            )}
+          </div>
+          {metrics.totalShort > 0 && (
+            <p className="text-[11px] text-muted mt-2">
+              Expected on Paid milestones {fmt(metrics.expectedCollected)}; short-paid by {fmt(metrics.totalShort)}, so {fmt(metrics.collected)} actually collected.
+            </p>
+          )}
+        </div>
+      )}
+
+      {shortPayOpen && (
+        <ShortPayModal
+          deals={deals}
+          onClose={() => setShortPayOpen(false)}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: queryKeys.peDeals.list() })}
+        />
+      )}
 
       {/* Document Review Stats — by section, only deals at relevant milestone */}
       {metrics && (
