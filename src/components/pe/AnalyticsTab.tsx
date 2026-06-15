@@ -1009,7 +1009,7 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
 }
 
 /** Uploads as stacked bars segmented by who uploaded, at day/week/month grain. */
-function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]; stats: UploaderStat[]; granularity: UploadGranularity }) {
+function DailyUploadsChart({ daily, stats, granularity, onSegmentClick, selected }: { daily: DailyUpload[]; stats: UploaderStat[]; granularity: UploadGranularity; onSegmentClick?: (uploader: string, periodKey: string) => void; selected?: { uploader: string; key: string } | null }) {
   // The day view spans ~90 periods and overflows wider than the card, so the
   // most-recent bars sit off-screen to the right. Scroll to the newest data.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1082,17 +1082,28 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
             let yCursor = padT + chartH;
             return (
               <g key={d.day}>
+                {/* whole-period tooltip overlay sits BEHIND the segments so clicks land on them */}
+                <rect x={x} y={padT} width={barW} height={chartH} fill="transparent">
+                  <title>{periodTitle(d)}</title>
+                </rect>
                 {stack.map((person) => {
                   const n = d.byUploader[person] ?? 0;
                   if (!n) return null;
                   const h = (n / maxTotal) * chartH;
                   yCursor -= h;
-                  return <rect key={person} x={x} y={yCursor} width={barW} height={h} fill={colors.get(person)} rx={1} />;
+                  const y = yCursor;
+                  const isSel = selected?.uploader === person && selected?.key === d.day;
+                  const who = person === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(person);
+                  return (
+                    <rect key={person} x={x} y={y} width={barW} height={h} fill={colors.get(person)} rx={1}
+                      stroke={isSel ? "#fff" : selected ? "none" : undefined} strokeWidth={isSel ? 1.5 : undefined}
+                      opacity={selected && !isSel ? 0.45 : 1}
+                      className={onSegmentClick ? "cursor-pointer hover:brightness-125" : undefined}
+                      onClick={onSegmentClick ? (e) => { e.stopPropagation(); onSegmentClick(person, d.day); } : undefined}>
+                      <title>{`${who}: ${n} on ${d.day} — click to list`}</title>
+                    </rect>
+                  );
                 })}
-                {/* invisible overlay carries the combined whole-period tooltip */}
-                <rect x={x} y={padT} width={barW} height={chartH} fill="transparent">
-                  <title>{periodTitle(d)}</title>
-                </rect>
                 {/* deal count above the doc total (skipped on the tallest bars to avoid clipping — tooltip still shows it) */}
                 {yCursor - 13 >= padT && (
                   <text x={x + barW / 2} y={yCursor - 13} textAnchor="middle" className="fill-cyan-400 text-[8px] tabular-nums">{d.deals}d</text>
@@ -1369,7 +1380,7 @@ function PaymentPanel({ stats, statsShared }: { stats: UploaderStat[]; statsShar
 }
 
 /** Drill list of the matching uploads when an Uploads-Explorer filter is active. */
-function ExplorerDrill({ rows, dealLinks, onClear }: { rows: UploaderRow[]; dealLinks: Record<string, DealLink>; onClear: () => void }) {
+function ExplorerDrill({ rows, dealLinks, onClear, scopeLabel, onClearScope }: { rows: UploaderRow[]; dealLinks: Record<string, DealLink>; onClear: () => void; scopeLabel?: string; onClearScope?: () => void }) {
   const sorted = useMemo(() => [...rows].sort((a, b) => b.at.localeCompare(a.at) || a.doc.localeCompare(b.doc)), [rows]);
   const STATUS_CLS: Record<string, string> = {
     APPROVED: "text-green-400", UNDER_REVIEW: "text-blue-400", UPLOADED: "text-blue-400",
@@ -1382,8 +1393,16 @@ function ExplorerDrill({ rows, dealLinks, onClear }: { rows: UploaderRow[]; deal
   return (
     <div className="mt-4 pt-3 border-t border-t-border">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-foreground">Matching uploads <span className="text-muted font-normal">({sorted.length})</span></span>
-        <button onClick={onClear} className="text-[11px] text-muted hover:text-foreground">Clear filters</button>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-semibold text-foreground flex-shrink-0">Matching uploads <span className="text-muted font-normal">({sorted.length})</span></span>
+          {scopeLabel && (
+            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 truncate">
+              {scopeLabel}
+              {onClearScope && <button onClick={onClearScope} className="hover:text-white flex-shrink-0" title="Clear day">✕</button>}
+            </span>
+          )}
+        </div>
+        <button onClick={onClear} className="text-[11px] text-muted hover:text-foreground flex-shrink-0">Clear filters</button>
       </div>
       {sorted.length === 0 ? (
         <div className="text-xs text-muted py-3">No uploads match these filters.</div>
@@ -1419,6 +1438,8 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
   const [grain, setGrain] = useState<UploadGranularity>("day");
   const [docFilter, setDocFilter] = useState<string>("all");
   const [uploaderFilter, setUploaderFilter] = useState<string>("all");
+  // A clicked chart segment scopes the drill list to one uploader + one period.
+  const [segSel, setSegSel] = useState<{ uploader: string; key: string; grain: UploadGranularity } | null>(null);
   const unk = useMemo(() => attrLabel(attributionStart), [attributionStart]);
 
   // Filter options from the atomic rows.
@@ -1435,6 +1456,19 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
     (!docFilterActive || r.doc === docFilter) &&
     (uploaderFilter === "all" || (r.by || UNKNOWN_UPLOADER) === uploaderFilter),
   ), [uploaderRows, docFilter, docFilterActive, uploaderFilter]);
+
+  // Bucket an upload timestamp to the same period key the chart uses (mirrors buildPeriodUploads).
+  const periodKeyOf = (at: string, g: UploadGranularity) => {
+    const d = new Date(at);
+    return g === "month" ? d.toISOString().slice(0, 7) : g === "week" ? weekStartUTC(d) : d.toISOString().slice(0, 10);
+  };
+  const periodLabel = (g: UploadGranularity, key: string) => (g === "week" ? `week of ${key}` : key);
+  // Drill list: filtered rows, further narrowed to the clicked segment's uploader + period.
+  const drillRows = useMemo(() => {
+    if (!segSel) return filteredRows;
+    return filteredRows.filter((r) => (r.by || UNKNOWN_UPLOADER) === segSel.uploader && periodKeyOf(r.at, segSel.grain) === segSel.key);
+  }, [filteredRows, segSel]);
+  const showDrill = (isFiltered || !!segSel) && tab !== "doctype";
 
   const statusByDoc = useMemo(() => {
     const m = new Map<string, string>();
@@ -1483,7 +1517,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
           {tab === "timeline" && (
             <div className="flex items-center gap-1">
               {(["day", "week", "month"] as const).map((g) => (
-                <button key={g} onClick={() => setGrain(g)}
+                <button key={g} onClick={() => { setGrain(g); setSegSel(null); }}
                   className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors capitalize ${grain === g ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "border-t-border text-muted hover:text-foreground"}`}>
                   {g}
                 </button>
@@ -1502,10 +1536,15 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
       }
     >
       {tab === "submissions" ? <UploaderPanel stats={effStats} docs={docs} statsShared={isFiltered ? effStats : statsShared} docsShared={docsShared} />
-        : tab === "timeline" ? <DailyUploadsChart daily={effPeriods[grain]} stats={effStats} granularity={grain} />
+        : tab === "timeline" ? <DailyUploadsChart daily={effPeriods[grain]} stats={effStats} granularity={grain}
+            onSegmentClick={(uploader, key) => setSegSel((p) => (p && p.uploader === uploader && p.key === key ? null : { uploader, key, grain }))}
+            selected={segSel && segSel.grain === grain ? { uploader: segSel.uploader, key: segSel.key } : null} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
             : <PaymentPanel stats={payStats} statsShared={payStatsShared} />}
-      {isFiltered && tab !== "doctype" && <ExplorerDrill rows={filteredRows} dealLinks={dealLinks} onClear={() => { setDocFilter("all"); setUploaderFilter("all"); }} />}
+      {showDrill && <ExplorerDrill rows={drillRows} dealLinks={dealLinks}
+        scopeLabel={segSel ? `${segSel.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(segSel.uploader)} · ${periodLabel(segSel.grain, segSel.key)}` : undefined}
+        onClearScope={segSel ? () => setSegSel(null) : undefined}
+        onClear={() => { setDocFilter("all"); setUploaderFilter("all"); setSegSel(null); }} />}
     </Section>
     </UnknownLabelCtx.Provider>
   );
