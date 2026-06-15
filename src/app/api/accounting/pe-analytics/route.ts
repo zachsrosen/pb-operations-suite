@@ -696,6 +696,12 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
 
   const recentNotes = rejectionLog
     .filter((ev) => ev.newNotes)
+    // Only docs still OPEN (rejected / action-required) — drop notes whose doc
+    // has since been resubmitted or approved (the rejection is resolved).
+    .filter((ev) => {
+      const cur = statusByDealDoc.get(`${ev.dealId}::${ev.docName}`);
+      return cur === "REJECTED" || cur === "ACTION_REQUIRED";
+    })
     .slice(0, 20)
     .map((ev) => ({
       docName: ev.docName,
