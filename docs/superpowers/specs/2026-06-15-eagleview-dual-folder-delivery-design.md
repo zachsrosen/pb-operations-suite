@@ -33,23 +33,56 @@ Both reduce to: surface two external EagleView links per order, constructed from
 
 ### Track A: Dual-folder delivery
 
-#### A1. `findSiteSurveyFolder()` — `src/lib/drive-plansets.ts`
+#### A0. Prior art and reuse (read before A1)
 
-New exported helper mirroring the existing `findStampedPlansFolder` / `findDAFolder` / `findPhotosFolder` pattern:
+`src/lib/checks/site-survey-readiness.ts` already solves survey-folder resolution: it defines a 3-pattern set and an async `resolveSurveyFolderId(properties, token)` that does exactly the "direct `site_survey_documents` via `extractFolderId` → else list subfolders of `all_document_parent_folder_id` and pattern-match" logic this spec needs:
 
 ```typescript
-/** Patterns for the site survey subfolder name. */
-const SITE_SURVEY_FOLDER_PATTERNS = [/site\s*survey/i];
+// site-survey-readiness.ts (existing)
+const SITE_SURVEY_FOLDER_PATTERNS = [
+  /site\s*survey/i,
+  /^1\.\s*site\s*survey$/i,
+  /^ss$/i,
+];
+export async function resolveSurveyFolderId(
+  properties: Record<string, string | null>,
+  token: string,
+): Promise<string | null>;
+```
+
+We **reuse the pattern set** (it is more complete than a single `/site\s*survey/i`) but **do not call `resolveSurveyFolderId` directly**, because it takes an explicit Drive `token` and uses that module's local `listSubfolders(rootId, token)`. The EagleView pipeline-deps layer instead uses the self-tokening helpers in `drive-plansets.ts` (`listDriveSubfolders`, `ensureDriveFolder`), which manage the token via `getDriveToken()`. Threading a token through the EagleView path solely to reuse one function would be the more invasive change.
+
+**Plan:** promote `SITE_SURVEY_FOLDER_PATTERNS` to `drive-plansets.ts` as the canonical, exported home, add a self-tokening `findSiteSurveyFolder()` there, and update `site-survey-readiness.ts` to import the shared patterns (removing its local duplicate). The two resolvers stay separate only in their token strategy; the pattern set is shared, not copied.
+
+#### A1. `findSiteSurveyFolder()` — `src/lib/drive-plansets.ts`
+
+New exported helper alongside `findStampedPlansFolder` / `findDAFolder` / `findPhotosFolder`, plus the promoted pattern constant:
+
+```typescript
+/** Site survey subfolder patterns (canonical home; imported by site-survey-readiness.ts). */
+export const SITE_SURVEY_FOLDER_PATTERNS = [
+  /site\s*survey/i,
+  /^1\.\s*site\s*survey$/i,
+  /^ss$/i,
+];
 
 /**
  * Look for a "Site Survey" subfolder inside the given parent folder.
- * Matches names like "1. Site Survey", "Site Survey - CA", "Site Survey".
+ * Matches names like "1. Site Survey", "Site Survey - CA", "SS".
  * Returns the subfolder ID if found, null otherwise.
  */
-export async function findSiteSurveyFolder(parentFolderId: string): Promise<string | null>;
+export async function findSiteSurveyFolder(parentFolderId: string): Promise<string | null> {
+  const subfolders = await listDriveSubfolders(parentFolderId).catch(() => []);
+  const match = subfolders.find((f) =>
+    SITE_SURVEY_FOLDER_PATTERNS.some((p) => p.test(f.name)),
+  );
+  return match?.id ?? null;
+}
 ```
 
-Implementation: `listDriveSubfolders(parentFolderId)`, return the first subfolder whose name matches a pattern, else `null`. Mirrors `findStampedPlansFolder` exactly (same error handling — swallow list errors and return `null`).
+**Error handling note:** unlike `findStampedPlansFolder` (which uses a raw `fetch` and returns `null` on `!res.ok`), this helper calls `listDriveSubfolders`, which **throws** on a non-OK response. To honor the "swallow list errors → return `null`" contract — and so the A3 graceful-degradation guarantee ("survey unresolvable → deliver to Design only, not a failure") actually holds — the call MUST be wrapped in `.catch(() => [])` (the same pattern already used by `ensureDriveFolder` in `eagleview-pipeline-deps.ts`). This is shown explicitly above.
+
+After promoting the constant, update `src/lib/checks/site-survey-readiness.ts` to import `SITE_SURVEY_FOLDER_PATTERNS` from `@/lib/drive-plansets` and delete its local copy. `resolveSurveyFolderId` is otherwise unchanged.
 
 #### A2. Resolve the survey folder — `src/lib/eagleview-pipeline-deps.ts`
 
@@ -62,6 +95,8 @@ Implementation: `listDriveSubfolders(parentFolderId)`, return the first subfolde
   ```
 
   (`extractFolderId` already exists in `drive-plansets.ts` and handles both raw IDs and Drive URLs.)
+
+  Note (pre-existing asymmetry, not introduced here): the existing `driveDesignDocumentsFolderId` is assigned raw (`props.design_document_folder_id ?? props.design_documents`) without `extractFolderId`. We route the survey field through `extractFolderId` deliberately because `site_survey_documents` is stored as a Drive URL. A reviewer comparing the two fields should not "fix" the survey field to match the design field — the design field is the inconsistent one, and changing it is out of scope.
 
 - The "find the subfolder" fallback is resolved at delivery time, not here, because it requires a Drive API call against `all_document_parent_folder_id` and we only want to make that call when a survey-folder ID was not already supplied. See A3.
 
