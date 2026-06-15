@@ -13,6 +13,7 @@ import {
 import { safeWaitUntil } from "@/lib/safe-wait-until";
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { prisma } from "@/lib/db";
+import { getPaymentAdjustments } from "@/lib/pe-payment-adjustments";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,6 +63,8 @@ interface PeDeal {
   leaseFactor: number;
   peM1Status: string | null;
   peM2Status: string | null;
+  m1PaymentShort: number; // admin-recorded short-pay on M1 (IC), dollars
+  m2PaymentShort: number; // admin-recorded short-pay on M2 (PC), dollars
   milestoneHighlight: "m1" | "m2" | "complete" | null;
   // Customer payment status (DA/CC/PTO invoice milestones)
   daInvoiceStatus: string | null;
@@ -216,6 +219,9 @@ export async function GET() {
       });
     }
 
+    // Admin-recorded short-pays (PE paid less than the milestone amount)
+    const paymentAdjustments = await getPaymentAdjustments();
+
     // Transform deals + build HubSpot sync batch in one pass
     // (raw `deal` properties are only in scope inside this .map())
     const syncBatch: PeSyncEntry[] = [];
@@ -339,6 +345,8 @@ export async function GET() {
         leaseFactor,
         peM1Status: deal.pe_m1_status ? String(deal.pe_m1_status) : null,
         peM2Status: deal.pe_m2_status ? String(deal.pe_m2_status) : null,
+        m1PaymentShort: paymentAdjustments[dealId]?.m1Short ?? 0,
+        m2PaymentShort: paymentAdjustments[dealId]?.m2Short ?? 0,
         milestoneHighlight:
           stageLabel === "Permission To Operate" ? "m1" as const
           : stageLabel === "Close Out" ? "m2" as const
