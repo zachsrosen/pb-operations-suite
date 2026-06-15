@@ -20,6 +20,7 @@ import {
   buildSharedUploaderStats,
   computeSharedOwners,
   buildPaymentOwnership,
+  buildPaymentOwnershipFractional,
   buildUploadsByPeriod,
   buildDocTypeByUploader,
   PIPELINE_GROUP_ORDER,
@@ -1003,13 +1004,15 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
 
   // Shared (fractional) ownership: split each doc among its tracked uploaders by
   // version count; an override pins the whole doc (weight 1) to its target.
-  // Payment $ stays owner-based in both modes (it tracks who drove the payment).
+  // Payment $ is ALSO split fractionally in shared mode (each milestone's $
+  // shared across its approved-doc uploaders) — owner mode stays winner-take-all.
   const overrideByDoc = new Map<string, string | null>(
     Object.entries(uploaderOverridesRaw).map(([k, ov]) => [k, ov.uploader ? ov.uploader : null]),
   );
   const sharedOwners = computeSharedOwners(uploaderVersionRows, overrideByDoc);
+  const paymentOwnershipFractional = buildPaymentOwnershipFractional(milestonePayments, currentDocStatus, latestUploaderByDoc);
   const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
-    const pay = paymentOwnership.get(s.uploader);
+    const pay = paymentOwnershipFractional.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
   });
 
