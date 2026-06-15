@@ -947,7 +947,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team">("sections");
-  const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set());
+  // Team groups (By-Team view) start collapsed too.
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set(TEAM_ORDER));
   // Deal rows are collapsed by default; this Set holds the ones the user opened.
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
   // Section groups (Nearly Complete / Not Uploaded / Action Required) start collapsed.
@@ -1143,17 +1144,23 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     return [];
   }, [viewMode, emailSections, sorted]);
 
-  // Sections view: the toggle opens/closes the three groups. List view: the deals.
+  // The toggle opens/closes whatever the active view groups by: sections view →
+  // the three groups; by-team view → the team groups; list view → the deal rows.
+  const teamKeys = useMemo(() => teamGrouped.map((g) => g.team), [teamGrouped]);
   const allExpanded = viewMode === "sections"
     ? SECTION_KEYS.every((k) => !collapsedSections.has(k))
-    : visibleDealIds.length > 0 && visibleDealIds.every((id) => expandedDeals.has(id));
+    : viewMode === "by-team"
+      ? teamKeys.length > 0 && teamKeys.every((t) => !collapsedTeams.has(t))
+      : visibleDealIds.length > 0 && visibleDealIds.every((id) => expandedDeals.has(id));
   const toggleAll = useCallback(() => {
     if (viewMode === "sections") {
       setCollapsedSections(allExpanded ? new Set(SECTION_KEYS) : new Set());
+    } else if (viewMode === "by-team") {
+      setCollapsedTeams(allExpanded ? new Set(teamKeys) : new Set());
     } else {
       setExpandedDeals(allExpanded ? new Set() : new Set(visibleDealIds));
     }
-  }, [viewMode, allExpanded, visibleDealIds]);
+  }, [viewMode, allExpanded, visibleDealIds, teamKeys]);
 
   return (
     <DashboardShell title="PE Document Tracker" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
@@ -1269,7 +1276,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             `${filtered.length} of ${summaries.length} deals`
           )}
         </div>
-        {viewMode !== "by-team" && visibleDealIds.length > 0 && (
+        {(viewMode === "by-team" ? teamKeys.length > 0 : visibleDealIds.length > 0) && (
           <button
             onClick={toggleAll}
             className="text-xs text-muted hover:text-foreground transition-colors whitespace-nowrap"
