@@ -880,4 +880,25 @@ export interface PeAnalyticsPayload {
   // Date PE first recorded an uploader (YYYY-MM-DD). Uploads before this are the
   // genuine pre-tracking "Unknown" bucket. Null if nothing is attributed yet.
   attributionStart: string | null;
+  // Atomic upload rows for the client-side Uploads Explorer (filter by doc +
+  // uploader, drill anywhere). The client re-runs the pure builders on the
+  // filtered subset. `status` is the doc's current status (same per version).
+  uploaderRows: UploaderRow[];
+  dealLinks: Record<string, DealLink>;
+}
+
+export interface UploaderRow {
+  by: string | null; // uploader email, null = Unknown
+  at: string; // YYYY-MM-DD
+  dealId: string;
+  doc: string; // canonical doc name
+  ver: number;
+  status: string; // current status of (dealId, doc)
+}
+
+export interface DealLink {
+  name: string;
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+  driveUrl: string | null;
 }

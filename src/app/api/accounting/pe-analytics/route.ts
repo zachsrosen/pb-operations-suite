@@ -960,6 +960,21 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const attributionTimes = uploaderVersionRows.filter((v) => v.uploadedBy?.trim()).map((v) => new Date(v.uploadedAt).getTime());
   const attributionStart = attributionTimes.length ? new Date(Math.min(...attributionTimes)).toISOString().slice(0, 10) : null;
 
+  // Atomic rows + deal links for the client-side Uploads Explorer.
+  const uploaderRows = uploaderVersionRows.map((v) => ({
+    by: v.uploadedBy?.trim() || null,
+    at: new Date(v.uploadedAt).toISOString().slice(0, 10),
+    dealId: v.dealId as string,
+    doc: v.docName,
+    ver: v.version,
+    status: currentDocStatus.get(`${v.dealId}|${v.docName}`) ?? "NOT_UPLOADED",
+  }));
+  const dealLinks: Record<string, { name: string; hubspotUrl: string; pePortalUrl: string | null; driveUrl: string | null }> = {};
+  for (const id of new Set(uploaderRows.map((r) => r.dealId))) {
+    const meta = dealMetaById.get(id);
+    dealLinks[id] = { name: meta?.name ?? id, hubspotUrl: rejectionHsUrl(id), pePortalUrl: meta?.portal ?? null, driveUrl: meta?.drive ?? null };
+  }
+
   // Latest-version uploader per (deal, doc), then credit each approved/paid
   // milestone's payment to whoever owns the most of its approved docs.
   const latestUploaderByDoc = new Map<string, string | null>();
@@ -1134,6 +1149,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     missingByDoc,
     funnelDeals,
     attributionStart,
+    uploaderRows,
+    dealLinks,
   };
 }
 

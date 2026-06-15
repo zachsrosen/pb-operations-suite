@@ -29,6 +29,10 @@ import {
   type UploadsByPeriod,
   type UploadGranularity,
   type UploaderDocTypes,
+  type UploaderRow,
+  type DealLink,
+  buildUploaderStats,
+  buildUploadsByPeriod,
   UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
 
@@ -1364,10 +1368,91 @@ function PaymentPanel({ stats, statsShared }: { stats: UploaderStat[]; statsShar
   );
 }
 
-function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsShared, attributionStart }: { stats: UploaderStat[]; statsShared: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null }) {
+/** Drill list of the matching uploads when an Uploads-Explorer filter is active. */
+function ExplorerDrill({ rows, dealLinks, onClear }: { rows: UploaderRow[]; dealLinks: Record<string, DealLink>; onClear: () => void }) {
+  const sorted = useMemo(() => [...rows].sort((a, b) => b.at.localeCompare(a.at) || a.doc.localeCompare(b.doc)), [rows]);
+  const STATUS_CLS: Record<string, string> = {
+    APPROVED: "text-green-400", UNDER_REVIEW: "text-blue-400", UPLOADED: "text-blue-400",
+    ACTION_REQUIRED: "text-orange-400", REJECTED: "text-red-400", NOT_UPLOADED: "text-zinc-400",
+  };
+  const STATUS_LABEL: Record<string, string> = {
+    APPROVED: "Approved", UNDER_REVIEW: "In review", UPLOADED: "In review",
+    ACTION_REQUIRED: "Action req.", REJECTED: "Rejected", NOT_UPLOADED: "Not uploaded",
+  };
+  return (
+    <div className="mt-4 pt-3 border-t border-t-border">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-foreground">Matching uploads <span className="text-muted font-normal">({sorted.length})</span></span>
+        <button onClick={onClear} className="text-[11px] text-muted hover:text-foreground">Clear filters</button>
+      </div>
+      {sorted.length === 0 ? (
+        <div className="text-xs text-muted py-3">No uploads match these filters.</div>
+      ) : (
+        <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+          {sorted.slice(0, 300).map((r, i) => {
+            const dl = dealLinks[r.dealId];
+            return (
+              <div key={i} className="grid grid-cols-[1fr_auto] items-center gap-2 text-[11px] border-b border-t-border/30 pb-1 last:border-0">
+                <div className="min-w-0 truncate">
+                  <span className="text-foreground">{(dl?.name ?? r.dealId).split("|").slice(0, 2).join("|").trim()}</span>
+                  <span className="text-muted"> · {r.doc} <span className="text-muted/60">v{r.ver}</span></span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={STATUS_CLS[r.status] ?? "text-muted"}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                  <span className="text-muted/60 tabular-nums">{r.at}</span>
+                  {dl?.hubspotUrl && <a href={dl.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">HS↗</a>}
+                  {dl?.pePortalUrl && <a href={dl.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE↗</a>}
+                  {dl?.driveUrl && <a href={dl.driveUrl} target="_blank" rel="noopener noreferrer" className="text-yellow-400 hover:underline">Drive↗</a>}
+                </div>
+              </div>
+            );
+          })}
+          {sorted.length > 300 && <div className="text-[10px] text-muted/60 pt-1">Showing first 300 of {sorted.length}.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsShared, attributionStart, uploaderRows, dealLinks }: { stats: UploaderStat[]; statsShared: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null; uploaderRows: UploaderRow[]; dealLinks: Record<string, DealLink> }) {
   const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
   const [grain, setGrain] = useState<UploadGranularity>("day");
+  const [docFilter, setDocFilter] = useState<string>("all");
+  const [uploaderFilter, setUploaderFilter] = useState<string>("all");
   const unk = useMemo(() => attrLabel(attributionStart), [attributionStart]);
+
+  // Filter options from the atomic rows.
+  const docOptions = useMemo(() => [...new Set(uploaderRows.map((r) => r.doc))].sort(), [uploaderRows]);
+  const uploaderOptions = useMemo(() => {
+    const set = new Set(uploaderRows.map((r) => r.by || UNKNOWN_UPLOADER));
+    return [...set].sort((a, b) => (a === UNKNOWN_UPLOADER ? 1 : b === UNKNOWN_UPLOADER ? -1 : a.localeCompare(b)));
+  }, [uploaderRows]);
+
+  // Doc filter doesn't apply to Payments (milestone-based, not per-doc).
+  const docFilterActive = docFilter !== "all" && tab !== "payments";
+  const isFiltered = docFilterActive || uploaderFilter !== "all";
+  const filteredRows = useMemo(() => uploaderRows.filter((r) =>
+    (!docFilterActive || r.doc === docFilter) &&
+    (uploaderFilter === "all" || (r.by || UNKNOWN_UPLOADER) === uploaderFilter),
+  ), [uploaderRows, docFilter, docFilterActive, uploaderFilter]);
+
+  const statusByDoc = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of uploaderRows) m.set(`${r.dealId}|${r.doc}`, r.status);
+    return m;
+  }, [uploaderRows]);
+
+  // Recompute Submissions + Timeline on the filtered subset via the pure builders.
+  const mapped = (rows: UploaderRow[]) => rows.map((r) => ({ uploadedAt: r.at, uploadedBy: r.by, dealId: r.dealId, docName: r.doc, version: r.ver }));
+  const fStats = useMemo(() => (isFiltered ? buildUploaderStats(mapped(filteredRows), statusByDoc, new Date()) : null), [isFiltered, filteredRows, statusByDoc]);
+  const fPeriods = useMemo(() => (isFiltered ? buildUploadsByPeriod(mapped(filteredRows)) : null), [isFiltered, filteredRows]);
+  const effStats = fStats ?? stats;
+  const effPeriods = fPeriods ?? periods;
+  // Payments: uploader filter only (array filter); doc filter never applies.
+  const payStats = uploaderFilter === "all" ? stats : stats.filter((s) => s.uploader === uploaderFilter);
+  const payStatsShared = uploaderFilter === "all" ? statsShared : statsShared.filter((s) => s.uploader === uploaderFilter);
+
+  const sel = "text-[11px] bg-surface-2 border border-t-border rounded-lg px-2 py-1 text-foreground focus:outline-none max-w-[11rem] truncate";
   return (
     <UnknownLabelCtx.Provider value={unk}>
     <Section
@@ -1382,7 +1467,19 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
               : "Milestone payments each person drove, split into paid, approved (awaiting payment), and in review."
       }
       actions={
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+          {tab !== "doctype" && (
+            <select value={uploaderFilter} onChange={(e) => setUploaderFilter(e.target.value)} className={sel} title="Filter by uploader">
+              <option value="all">All uploaders</option>
+              {uploaderOptions.map((u) => <option key={u} value={u}>{u === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(u)}</option>)}
+            </select>
+          )}
+          {(tab === "submissions" || tab === "timeline") && (
+            <select value={docFilter} onChange={(e) => setDocFilter(e.target.value)} className={sel} title="Filter by document">
+              <option value="all">All documents</option>
+              {docOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
           {tab === "timeline" && (
             <div className="flex items-center gap-1">
               {(["day", "week", "month"] as const).map((g) => (
@@ -1404,10 +1501,11 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
         </div>
       }
     >
-      {tab === "submissions" ? <UploaderPanel stats={stats} docs={docs} statsShared={statsShared} docsShared={docsShared} />
-        : tab === "timeline" ? <DailyUploadsChart daily={periods[grain]} stats={stats} granularity={grain} />
+      {tab === "submissions" ? <UploaderPanel stats={effStats} docs={docs} statsShared={isFiltered ? effStats : statsShared} docsShared={docsShared} />
+        : tab === "timeline" ? <DailyUploadsChart daily={effPeriods[grain]} stats={effStats} granularity={grain} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
-            : <PaymentPanel stats={stats} statsShared={statsShared} />}
+            : <PaymentPanel stats={payStats} statsShared={payStatsShared} />}
+      {isFiltered && tab !== "doctype" && <ExplorerDrill rows={filteredRows} dealLinks={dealLinks} onClear={() => { setDocFilter("all"); setUploaderFilter("all"); }} />}
     </Section>
     </UnknownLabelCtx.Provider>
   );
@@ -2029,7 +2127,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} />
+          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} uploaderRows={data.uploaderRows ?? []} dealLinks={data.dealLinks ?? {}} />
 
           {/* 2. Expected revenue pipeline */}
           <Section
