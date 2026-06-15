@@ -502,7 +502,11 @@ function checklistMarkdown(doc: DocType, rows: SummaryRow[]): string {
   lines.push("| ☐ | Project | Customer | PDF | Portal | Note |");
   lines.push("| --- | --- | --- | --- | --- | --- |");
   for (const r of rows) {
-    const note = r.flags.length ? r.flags.join("; ").replace(/\|/g, "\\|") : "";
+    // Escape for a markdown table cell: backslash first, then pipe, then flatten
+    // newlines so a multi-line vision issue can't break the row.
+    const note = r.flags.length
+      ? r.flags.join("; ").replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ")
+      : "";
     const pdf = r.pdfPath ? path.basename(r.pdfPath) : "(none)";
     const portal = r.portalUrl ? `[open](${r.portalUrl})` : "";
     lines.push(`| ☐ | ${r.code} | ${r.customer} | ${pdf} (${r.pages}pp) | ${portal} | ${note} |`);
