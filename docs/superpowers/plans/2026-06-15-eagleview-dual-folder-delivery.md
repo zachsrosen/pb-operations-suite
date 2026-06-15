@@ -269,40 +269,41 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests for dual-folder behavior**
 
-In `src/__tests__/eagleview-pipeline.test.ts`, inside the `describe("fetchAndStoreDeliverables", ...)` block, add. (Assumes the existing test seeds a DELIVERED-able order row with `reportId: "12345"`; reuse the same seeding helper the sibling tests use — match their pattern for creating the order row before calling `fetchAndStoreDeliverables`.)
+In `src/__tests__/eagleview-pipeline.test.ts`, inside the `describe("fetchAndStoreDeliverables", ...)` block, add the four tests below.
+
+**Critical seeding detail:** the existing tests seed the order row by calling `await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" })` first (there is NO `seedDeliverableOrder` helper) — the `placeOrder` mock makes that row's `reportId` `"12345"`. `orderTrueDesign` ALSO calls `fetchDealAddress` once at order time. Therefore any `fetchDealAddress` / `findSiteSurveyFolder` override MUST use the persistent `mockResolvedValue` (NOT `mockResolvedValueOnce`), or the override is consumed by `orderTrueDesign` and the delivery call gets the default. Set overrides BEFORE calling `orderTrueDesign`.
 
 ```typescript
   it("uploads to BOTH design and site survey when both resolve", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);
-    seedDeliverableOrder(p, "12345"); // same seeding the other tests use
-    deps.spies.fetchDealAddress.mockResolvedValueOnce(
+    deps.spies.fetchDealAddress.mockResolvedValue(
       mkDealAddress({ driveSiteSurveyFolderId: "folder_survey_001" }),
     );
-    // ensureDriveFolder returns a distinct subfolder per parent
+    // distinct subfolder per parent so the two targets don't collapse
     deps.spies.ensureDriveFolder.mockImplementation(
       async (_dealId: string, parent: string) => `sub_${parent}`,
     );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
 
     const r = await fetchAndStoreDeliverables(deps, "12345");
 
     expect(r.status).toBe("DELIVERED");
-    // 2 files × 2 targets = 4 uploads
-    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(4);
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(4); // 2 files × 2 targets
     expect(deps.spies.ensureDriveFolder).toHaveBeenCalledTimes(2);
-    // note names both folders
-    const noteBody = deps.spies.postDealNote.mock.calls[0][1] as string;
+    const noteBody = deps.spies.postDealNote.mock.calls.at(-1)?.[1] as string;
     expect(noteBody).toMatch(/Design and Site Survey folders/);
   });
 
   it("resolves the survey folder via findSiteSurveyFolder fallback", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);
-    seedDeliverableOrder(p, "12345");
-    deps.spies.findSiteSurveyFolder.mockResolvedValueOnce("folder_survey_fallback");
+    // survey direct ID stays null (mkDealAddress default) → fallback path
+    deps.spies.findSiteSurveyFolder.mockResolvedValue("folder_survey_fallback");
     deps.spies.ensureDriveFolder.mockImplementation(
       async (_dealId: string, parent: string) => `sub_${parent}`,
     );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
 
     const r = await fetchAndStoreDeliverables(deps, "12345");
 
@@ -314,8 +315,7 @@ In `src/__tests__/eagleview-pipeline.test.ts`, inside the `describe("fetchAndSto
   it("delivers to survey only when design is missing", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);
-    seedDeliverableOrder(p, "12345");
-    deps.spies.fetchDealAddress.mockResolvedValueOnce(
+    deps.spies.fetchDealAddress.mockResolvedValue(
       mkDealAddress({
         driveDesignDocumentsFolderId: null,
         driveAllDocumentsFolderId: null,
@@ -325,30 +325,31 @@ In `src/__tests__/eagleview-pipeline.test.ts`, inside the `describe("fetchAndSto
     deps.spies.ensureDriveFolder.mockImplementation(
       async (_dealId: string, parent: string) => `sub_${parent}`,
     );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
 
     const r = await fetchAndStoreDeliverables(deps, "12345");
 
     expect(r.status).toBe("DELIVERED");
-    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2);
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // one target, 2 files
     expect(r.driveFolderId).toBe("sub_folder_survey_only");
   });
 
   it("does not double-upload when design and survey resolve to the same folder", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);
-    seedDeliverableOrder(p, "12345");
-    deps.spies.fetchDealAddress.mockResolvedValueOnce(
+    deps.spies.fetchDealAddress.mockResolvedValue(
       mkDealAddress({ driveSiteSurveyFolderId: "folder_design_001" }), // == design
     );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
 
     const r = await fetchAndStoreDeliverables(deps, "12345");
 
     expect(r.status).toBe("DELIVERED");
-    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // one target
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // deduped to one target
   });
 ```
 
-If the existing tests do not already have a `seedDeliverableOrder` helper, add one next to the `fetchAndStoreDeliverables` describe block that inserts a row into the fake prisma with `reportId`, `status: "ORDERED"`, and a `dealId` (mirror the field shape the existing passing test relies on). Keep the existing happy-path test (single target → 2 uploads) intact.
+Keep the existing happy-path test (single target → 2 uploads, `driveFolderId === "drive_folder_123"`) intact — with `findSiteSurveyFolder` defaulting to `null` and `driveSiteSurveyFolderId` defaulting to `null`, that test still resolves only the Design target.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
