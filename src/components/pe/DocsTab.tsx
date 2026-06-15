@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -218,11 +218,22 @@ interface DealDocSummary {
   actionRequired: number;
   underReview: number;
   notUploaded: number;
+  waived: number; // not-uploaded but moot — PE already approved/paid that milestone
   noData: number;
   category: ActionCategory;
   csvOnly: boolean;
   csvStatus: PeDocStatusValue | null;
   csvNotes: string | null;
+}
+
+// A not-uploaded doc is "waived" (moot) once PE has already approved or paid the
+// milestone it belongs to — PE didn't need it, so it shouldn't read as actionable.
+// Rejections (ACTION_REQUIRED/REJECTED) are NEVER waived — a late rejection on a
+// closed deal stays live.
+const PE_MILESTONE_DONE = new Set(["approved", "paid"]);
+function isDocWaived(doc: DocRequirement, deal: PeDeal): boolean {
+  const status = (doc.section === "pc" ? deal.peM2Status : deal.peM1Status) ?? "";
+  return PE_MILESTONE_DONE.has(status.toLowerCase());
 }
 
 function computeDealDocSummary(
@@ -233,7 +244,7 @@ function computeDealDocSummary(
   const sections = milestoneDocSections(milestone);
   const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
 
-  let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, noData = 0;
+  let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, waived = 0, noData = 0;
   for (const doc of docs) {
     const review = docMap.get(`${deal.dealId}:${doc.name}`);
     if (!review) { noData++; continue; }
@@ -242,7 +253,7 @@ function computeDealDocSummary(
       case "REJECTED": rejected++; break;
       case "ACTION_REQUIRED": actionRequired++; break;
       case "UNDER_REVIEW": underReview++; break;
-      case "NOT_UPLOADED": notUploaded++; break;
+      case "NOT_UPLOADED": if (isDocWaived(doc, deal)) waived++; else notUploaded++; break;
       case "UPLOADED": underReview++; break;
     }
   }
@@ -263,7 +274,7 @@ function computeDealDocSummary(
     category = "action-required";
   } else if (notUploaded > 0) {
     category = "needs-upload";
-  } else if (approved === docs.length) {
+  } else if (approved + waived === docs.length) {
     category = "approved";
   } else {
     category = "waiting-on-pe";
@@ -272,7 +283,7 @@ function computeDealDocSummary(
   return {
     deal, milestone, sections,
     totalDocs: docs.length,
-    approved, rejected, actionRequired, underReview, notUploaded, noData,
+    approved, rejected, actionRequired, underReview, notUploaded, waived, noData,
     category,
     csvOnly,
     csvStatus: csvRow?.status ?? null,
@@ -307,11 +318,12 @@ function getDealActionLists(
   const isPto = s.milestone === "pto";
   return {
     blocking: withReviews.filter(
-      ({ review }) => review?.status === "NOT_UPLOADED" || review?.status === "ACTION_REQUIRED",
+      ({ doc, review }) =>
+        (review?.status === "NOT_UPLOADED" && !isDocWaived(doc, s.deal)) || review?.status === "ACTION_REQUIRED",
     ),
     missing: withReviews.filter(
       ({ doc, review }) =>
-        review?.status === "NOT_UPLOADED" && !(isPto && PTO_SKIP_DOCS.has(doc.name)),
+        review?.status === "NOT_UPLOADED" && !isDocWaived(doc, s.deal) && !(isPto && PTO_SKIP_DOCS.has(doc.name)),
     ),
     issues: withReviews.filter(
       ({ review }) => review?.status === "ACTION_REQUIRED" || review?.status === "REJECTED",
@@ -805,6 +817,53 @@ function SectionDealRow({ summary, docs, badgeLabel, badgeClass, defaultExpanded
 // Main page
 // ---------------------------------------------------------------------------
 
+/** Manual PE sync. "Sync now" = fast full status refresh (~15-40s, no detail
+ *  sweep); the ▾ "Full sync" pulls action-item details too (~3-4 min). */
+function SyncNowButton() {
+  const qc = useQueryClient();
+  const [state, setState] = useState<"idle" | "fast" | "full" | "done">("idle");
+  const busy = state === "fast" || state === "full";
+  const run = async (scope: "fast" | "full") => {
+    if (busy) return;
+    setState(scope);
+    try {
+      await fetch("/api/accounting/pe-sync-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope }),
+      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.peDeals.list() }),
+        qc.invalidateQueries({ queryKey: queryKeys.peAnalytics.list() }),
+      ]);
+      setState("done");
+      setTimeout(() => setState((s) => (s === "done" ? "idle" : s)), 2500);
+    } catch {
+      setState("idle");
+    }
+  };
+  return (
+    <div className="flex items-center rounded-lg border border-border overflow-hidden text-xs">
+      <button
+        onClick={() => run("fast")}
+        disabled={busy}
+        className={`px-2.5 py-1 transition-colors ${busy ? "text-muted" : "text-emerald-400 hover:bg-emerald-500/10"}`}
+        title="Refresh every doc's current status from PE (~15-40s)"
+      >
+        {state === "fast" ? "Syncing…" : state === "done" ? "Updated ✓" : "↻ Sync now"}
+      </button>
+      <button
+        onClick={() => run("full")}
+        disabled={busy}
+        className={`px-2 py-1 border-l border-border transition-colors ${busy ? "text-muted" : "text-muted hover:text-foreground hover:bg-surface-2"}`}
+        title="Full re-sync incl. action-item details — slower (~3-4 min)"
+      >
+        {state === "full" ? "Full…" : "Full"}
+      </button>
+    </div>
+  );
+}
+
 export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const { data, isLoading } = useQuery<{ deals: PeDeal[]; lastUpdated: string }>({
     queryKey: queryKeys.peDeals.list(),
@@ -948,7 +1007,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
         for (const doc of relevantDocs) {
           const review = docMap.get(`${s.deal.dealId}:${doc.name}`);
           const status = review?.status;
-          if (status && status !== "APPROVED" && status !== "UNDER_REVIEW" && status !== "UPLOADED") {
+          const waived = status === "NOT_UPLOADED" && isDocWaived(doc, s.deal);
+          if (status && status !== "APPROVED" && status !== "UNDER_REVIEW" && status !== "UPLOADED" && !waived) {
             teamActionCount++;
           }
           docsWithReviews.push({ doc, review });
@@ -1090,18 +1150,21 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           </button>
         )}
 
-        <div className="ml-auto flex items-center gap-1 bg-surface-2 rounded-lg p-0.5 border border-border">
-          {(["sections", "list", "by-team"] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              className={`px-2.5 py-1 rounded text-xs transition-colors ${
-                viewMode === mode ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
-              }`}
-            >
-              {mode === "sections" ? "Sections" : mode === "list" ? "List" : "By Team"}
-            </button>
-          ))}
+        <div className="ml-auto flex items-center gap-2">
+          <SyncNowButton />
+          <div className="flex items-center gap-1 bg-surface-2 rounded-lg p-0.5 border border-border">
+            {(["sections", "list", "by-team"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                  viewMode === mode ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"
+                }`}
+              >
+                {mode === "sections" ? "Sections" : mode === "list" ? "List" : "By Team"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
