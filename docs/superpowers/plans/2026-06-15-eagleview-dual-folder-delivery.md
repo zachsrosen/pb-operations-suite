@@ -218,11 +218,12 @@ In `defaultPipelineDeps`, add the injected helper (after `ensureDriveFolder,` li
 
 In `src/__tests__/eagleview-pipeline.test.ts`:
 
-In `mkDealAddress` (after `driveAllDocumentsFolderId`, ~line 125), add:
+In `mkDealAddress`, add the field INSIDE the object literal, before the `...over` spread (after `driveAllDocumentsFolderId`, ~line 125 — must be before the spread on ~line 126 so per-test overrides win):
 
 ```typescript
   driveAllDocumentsFolderId: "folder_all_001",
   driveSiteSurveyFolderId: null,
+  ...over,
 ```
 
 In `mkDeps`, add the mock alongside `ensureDriveFolder` (default returns `null` so existing tests stay Design-only):
@@ -232,12 +233,24 @@ In `mkDeps`, add the mock alongside `ensureDriveFolder` (default returns `null` 
   const findSiteSurveyFolder = jest.fn(async () => null);
 ```
 
-Add `findSiteSurveyFolder` to both the returned deps object and the `spies` object (mirror how `ensureDriveFolder` appears in both, lines ~174 and ~185):
+`mkDeps` has an **explicit inline return-type annotation** that lists every spy as `jest.Mock` (the `spies: { … }` block, ~lines 130-141). Add `findSiteSurveyFolder` in THREE places:
+
+1. The `spies` **type annotation** block — add alongside `ensureDriveFolder: jest.Mock;` (~line 138). Omitting this is a compile error in Task 3's tests:
+
+```typescript
+    ensureDriveFolder: jest.Mock;
+    findSiteSurveyFolder: jest.Mock;
+```
+
+2. The returned **deps object** (~line 174):
 
 ```typescript
     ensureDriveFolder,
     findSiteSurveyFolder,
 ```
+
+3. The returned **`spies` object** (~line 185):
+
 ```typescript
       ensureDriveFolder,
       findSiteSurveyFolder,
@@ -665,7 +678,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: Type-check the whole project**
 
 Run: `npx tsc --noEmit`
-Expected: No errors.
+Expected: No errors. If pre-existing errors appear in files this plan did NOT touch, compare against `git stash`-clean `origin/main` to confirm they are not introduced here; the bar is "no NEW errors in touched files" (`eagleview-pipeline.ts`, `eagleview-pipeline-deps.ts`, `eagleview-links.ts`, `drive-plansets.ts`, `site-survey-readiness.ts`, `EagleViewOrdersClient.tsx`, and the three test files).
 
 - [ ] **Step 2: Run all touched test suites**
 
