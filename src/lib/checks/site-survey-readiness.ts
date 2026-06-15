@@ -165,7 +165,6 @@ export async function walkDriveFolder(
 // Survey folder resolution
 // ---------------------------------------------------------------------------
 
-
 /**
  * Find the site survey folder ID from deal properties.
  * Priority: site_survey_documents > all_document_parent_folder_id (navigate to subfolder).
