@@ -435,6 +435,36 @@ describe("fetchAndStoreDeliverables", () => {
     expect(noteBody).toMatch(/Design and Site Survey folders/);
   });
 
+  it("records the survey folder when design uploads fail but survey succeeds", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({ driveSiteSurveyFolderId: "folder_survey_001" }),
+    );
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    // Design folder uploads always fail; Site Survey uploads succeed.
+    deps.spies.uploadToDrive.mockImplementation(
+      async (folderId: string, name: string) => {
+        if (folderId === "sub_folder_design_001") throw new Error("design upload failed");
+        return { id: `f_${name}`, name };
+      },
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(r.driveFolderId).toBe("sub_folder_survey_001");
+    const row = p.rows[0];
+    expect(row.driveFolderId).toBe("sub_folder_survey_001");
+    expect(row.imageDriveFileId).toContain("image"); // recorded from the survey folder
+    const noteBody = deps.spies.postDealNote.mock.calls.at(-1)?.[1] as string;
+    expect(noteBody).toMatch(/Site Survey folder/);
+    expect(noteBody).not.toMatch(/Design/);
+  });
+
   it("resolves the survey folder via findSiteSurveyFolder fallback", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);

@@ -353,14 +353,15 @@ export async function fetchAndStoreDeliverables(
     return { status: "FAILED", reason: "drive_folder_create_failed" };
   }
 
-  // The "primary" target owns the recorded driveFolderId + per-type file IDs.
-  // Prefer Design; fall back to the first resolved target (e.g. survey-only).
-  const primary = resolved.find((r) => r.label === "Design") ?? resolved[0];
-
   // 3. Download each file ONCE, then upload the bytes to every resolved target.
-  const fileIdByType: Record<string, string> = {};
-  const uploadedNames: string[] = [];
-  const deliveredLabels = new Set<string>();
+  //    Track results per target so the DB row records a folder that actually
+  //    received files (not an empty one if some target's uploads all failed).
+  const perTarget = resolved.map((t) => ({
+    label: t.label,
+    folderId: t.folderId,
+    fileIdByType: {} as Record<string, string>,
+    names: [] as string[],
+  }));
 
   for (const link of links.links) {
     let bytes: ArrayBuffer;
@@ -376,17 +377,14 @@ export async function fetchAndStoreDeliverables(
     const { mimeType, ext } = inferMimeAndExt(link);
     const filename = sanitizeFilename(`${link.fileType}.${ext}`);
 
-    for (const target of resolved) {
+    for (const target of perTarget) {
       try {
         const uploaded = await deps.uploadToDrive(target.folderId, filename, bytes, mimeType);
-        deliveredLabels.add(target.label);
-        if (target.folderId === primary.folderId) {
-          fileIdByType[normalizeFileType(link.fileType)] = uploaded.id;
-          uploadedNames.push(uploaded.name);
-        }
+        target.fileIdByType[normalizeFileType(link.fileType)] = uploaded.id;
+        target.names.push(uploaded.name);
       } catch (err) {
         Sentry.captureException(err, {
-          tags: { feature: "eagleview", phase: "downloadAndUpload" },
+          tags: { feature: "eagleview", phase: "uploadToDrive" },
           extra: { reportId: reportIdStr, fileType: link.fileType, target: target.label },
         });
         // Continue; partial success across files/targets is better than none.
@@ -394,9 +392,15 @@ export async function fetchAndStoreDeliverables(
     }
   }
 
-  if (deliveredLabels.size === 0) {
+  // Targets that actually received at least one file.
+  const delivered = perTarget.filter((t) => t.names.length > 0);
+  if (delivered.length === 0) {
     return { status: "FAILED", reason: "all_uploads_failed" };
   }
+
+  // The recording target owns the DB driveFolderId + per-type file IDs.
+  // Prefer Design (if it received files), else the first delivered target.
+  const primary = delivered.find((t) => t.label === "Design") ?? delivered[0];
 
   // 4. Update order row — driveFolderId + per-type IDs come from the primary folder.
   await deps.prisma.eagleViewOrder.update({
@@ -405,16 +409,16 @@ export async function fetchAndStoreDeliverables(
       status: "DELIVERED",
       deliveredAt: new Date(),
       driveFolderId: primary.folderId,
-      imageDriveFileId: fileIdByType["image"] ?? null,
-      layoutJsonDriveFileId: fileIdByType["layout"] ?? null,
-      shadeJsonDriveFileId: fileIdByType["shade"] ?? null,
-      reportPdfDriveFileId: fileIdByType["report-pdf"] ?? null,
-      reportXmlDriveFileId: fileIdByType["report-xml"] ?? null,
+      imageDriveFileId: primary.fileIdByType["image"] ?? null,
+      layoutJsonDriveFileId: primary.fileIdByType["layout"] ?? null,
+      shadeJsonDriveFileId: primary.fileIdByType["shade"] ?? null,
+      reportPdfDriveFileId: primary.fileIdByType["report-pdf"] ?? null,
+      reportXmlDriveFileId: primary.fileIdByType["report-xml"] ?? null,
     },
   });
 
   // 5. Best-effort HubSpot note naming the folder(s) the files landed in.
-  const labels = [...deliveredLabels];
+  const labels = delivered.map((t) => t.label);
   const folderText =
     labels.length > 1
       ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]} folders`
@@ -422,7 +426,7 @@ export async function fetchAndStoreDeliverables(
   await deps
     .postDealNote(
       order.dealId,
-      `<p>EagleView files delivered to ${folderText} (${uploadedNames.length} files): ${uploadedNames
+      `<p>EagleView files delivered to ${folderText} (${primary.names.length} files): ${primary.names
         .map((n) => `<code>${escapeHtml(n)}</code>`)
         .join(", ")}.</p>`,
     )
