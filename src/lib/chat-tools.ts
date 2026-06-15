@@ -379,6 +379,70 @@ export function createChatTools(context: ChatToolContext) {
  * Read-only subset of chat tools for contexts where write operations
  * (reviews, lock acquisition) are not appropriate — e.g. the Tech Ops bot.
  */
+/**
+ * Resolve a loose project reference (a PROJ number, a customer name/address, or
+ * a raw HubSpot deal ID) to a single deal. Mirrors the matching the bot's task
+ * tool uses: match exactly one or ask — never guess.
+ */
+async function resolveDealRef(
+  raw: string
+): Promise<
+  | { dealId: string; dealName: string }
+  | { candidates: Array<{ dealId: string; name: string }> }
+  | { notFound: true }
+> {
+  const { searchWithRetry, hubspotClient } = await import("@/lib/hubspot");
+  const q = raw.trim();
+
+  // Long numeric → treat as a raw HubSpot deal ID.
+  if (/^\d{8,}$/.test(q)) {
+    try {
+      const d = await hubspotClient.crm.deals.basicApi.getById(q, ["dealname"]);
+      return { dealId: q, dealName: d.properties?.dealname ?? `deal ${q}` };
+    } catch {
+      return { notFound: true };
+    }
+  }
+
+  // PROJ number (explicit "PROJ-1234" or a bare project number). Exact-match the
+  // token on a word boundary so PROJ-123 never matches PROJ-1234.
+  const projMatch = q.match(/PROJ[-\s]?(\d{2,})/i);
+  const bareNum = q.match(/^(\d{3,7})$/);
+  if (projMatch || bareNum) {
+    const digits = (projMatch?.[1] ?? bareNum?.[1])!;
+    const token = `PROJ-${digits}`;
+    const res = await searchWithRetry({ query: token, limit: 20, properties: ["dealname"] });
+    const boundary = new RegExp(`(^|[^0-9])PROJ-${digits}([^0-9]|$)`, "i");
+    const matches = Array.from(
+      new Map(
+        (res.results ?? [])
+          .filter((r) => boundary.test(r.properties?.dealname ?? ""))
+          .map((r) => [r.id, r])
+      ).values()
+    );
+    if (matches.length === 0) return { notFound: true };
+    if (matches.length === 1)
+      return { dealId: matches[0].id, dealName: matches[0].properties?.dealname ?? token };
+    return {
+      candidates: matches
+        .slice(0, 5)
+        .map((m) => ({ dealId: m.id, name: m.properties?.dealname ?? "" })),
+    };
+  }
+
+  // Customer name or address → fuzzier full-text deal search.
+  const res = await searchWithRetry({ query: q, limit: 20, properties: ["dealname"] });
+  const matches = Array.from(new Map((res.results ?? []).map((r) => [r.id, r])).values());
+  if (matches.length === 0) return { notFound: true };
+  if (matches.length === 1)
+    return { dealId: matches[0].id, dealName: matches[0].properties?.dealname ?? q };
+  return {
+    candidates: matches
+      .slice(0, 6)
+      .map((m) => ({ dealId: m.id, name: m.properties?.dealname ?? "" })),
+  };
+}
+
 export function createReadOnlyChatTools() {
   const getDeal = betaZodTool({
     name: "get_deal",
@@ -917,6 +981,137 @@ export function createReadOnlyChatTools() {
     },
   });
 
+  const getProjectTeam = betaZodTool({
+    name: "get_project_team",
+    description:
+      "Look up the PEOPLE on a project: the customer's contact info (name, phone, " +
+      "email, address), the sales owner, and the assigned project manager (PM). " +
+      "Accepts a PROJ number, a customer name/address, or a deal ID. Use this for " +
+      "'who's the PM on PROJ-1234', 'what's the customer's phone number', 'who owns " +
+      "this deal', 'what's the service address'.",
+    inputSchema: z.object({
+      project: z
+        .string()
+        .describe("PROJ number, customer name/address, or HubSpot deal ID"),
+    }),
+    run: async (input) => {
+      const ref = await resolveDealRef(input.project);
+      if ("notFound" in ref)
+        return JSON.stringify({ error: `No deal found for "${input.project}".` });
+      if ("candidates" in ref)
+        return JSON.stringify({
+          needsClarification: true,
+          message: `"${input.project}" matches ${ref.candidates.length} deals — which one?`,
+          candidates: ref.candidates,
+        });
+
+      const {
+        getDealOwnerContact,
+        getDealProjectManagerContact,
+        fetchPrimaryContactId,
+        fetchContactById,
+      } = await import("@/lib/hubspot");
+
+      const [owner, pm, contactId] = await Promise.all([
+        getDealOwnerContact(ref.dealId),
+        getDealProjectManagerContact(ref.dealId),
+        fetchPrimaryContactId(ref.dealId),
+      ]);
+
+      let customer: Record<string, string | null> | string =
+        "No primary contact linked to this deal.";
+      if (contactId) {
+        const c = await fetchContactById(contactId, [
+          "firstname",
+          "lastname",
+          "email",
+          "phone",
+          "address",
+          "city",
+          "state",
+          "zip",
+        ]);
+        if (c) {
+          const p = c.properties;
+          customer = {
+            name: [p.firstname, p.lastname].filter(Boolean).join(" ") || null,
+            email: p.email ?? null,
+            phone: p.phone ?? null,
+            address: [p.address, p.city, p.state, p.zip].filter(Boolean).join(", ") || null,
+          };
+        }
+      }
+
+      return JSON.stringify({
+        project: ref.dealName,
+        dealId: ref.dealId,
+        customer,
+        salesOwner: owner.ownerName
+          ? { name: owner.ownerName, email: owner.ownerEmail }
+          : "No sales owner set.",
+        projectManager: pm.projectManagerName
+          ? { name: pm.projectManagerName, email: pm.projectManagerEmail }
+          : "No PM assigned.",
+      });
+    },
+  });
+
+  const getProjectService = betaZodTool({
+    name: "get_project_service",
+    description:
+      "Look up SERVICE + FIELD activity for a project's customer: their service " +
+      "tickets (subject + status) and Zuper field-service jobs (with scheduled " +
+      "date, status, and assigned crew). Accepts a PROJ number, a customer " +
+      "name/address, or a deal ID. Use this for 'are there open tickets on " +
+      "PROJ-1234', 'is the install scheduled', 'which crew is on this job'.",
+    inputSchema: z.object({
+      project: z
+        .string()
+        .describe("PROJ number, customer name/address, or HubSpot deal ID"),
+    }),
+    run: async (input) => {
+      const ref = await resolveDealRef(input.project);
+      if ("notFound" in ref)
+        return JSON.stringify({ error: `No deal found for "${input.project}".` });
+      if ("candidates" in ref)
+        return JSON.stringify({
+          needsClarification: true,
+          message: `"${input.project}" matches ${ref.candidates.length} deals — which one?`,
+          candidates: ref.candidates,
+        });
+
+      const { fetchPrimaryContactId } = await import("@/lib/hubspot");
+      const contactId = await fetchPrimaryContactId(ref.dealId);
+      if (!contactId)
+        return JSON.stringify({
+          project: ref.dealName,
+          note: "No primary contact linked to this deal, so I can't pull their tickets or jobs.",
+        });
+
+      const { resolveContactDetail } = await import("@/lib/customer-resolver");
+      const detail = await resolveContactDetail(contactId);
+
+      return JSON.stringify({
+        project: ref.dealName,
+        customer: [detail.firstName, detail.lastName].filter(Boolean).join(" ") || null,
+        tickets: detail.tickets.map((t) => ({
+          subject: t.subject,
+          status: t.status,
+          priority: t.priority,
+          daysInStage: t.daysInStage ?? null,
+        })),
+        ticketCount: detail.tickets.length,
+        zuperJobs: detail.jobs.map((j) => ({
+          title: j.title,
+          category: j.category,
+          status: j.status,
+          scheduledDate: j.scheduledDate,
+          crew: j.assignedUsers ?? [],
+        })),
+      });
+    },
+  });
+
   return [
     getDeal,
     searchDeals,
@@ -924,5 +1119,7 @@ export function createReadOnlyChatTools() {
     countDealsByStage,
     countDealsByStatus,
     countMilestoneInDateRange,
+    getProjectTeam,
+    getProjectService,
   ];
 }
