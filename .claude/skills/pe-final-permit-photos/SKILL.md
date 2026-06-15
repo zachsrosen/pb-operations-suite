@@ -42,7 +42,7 @@ PE_FILE_PREP_ENABLED=true node --env-file=.env --import tsx \
 ## What it does
 
 1. **Resolves the project** — finds the HubSpot deal by its `pe_project_id` (never the PE-side record id, which 404s); if a customer name matches two deals, it disambiguates by the PE project's address and flags if still ambiguous.
-2. **Finds the photos** — the project's Drive root → numbered subfolders → **6. Inspections** (falls back to **3. Permitting**, since some AHJs file the combined permit/inspection card there).
+2. **Finds the photos** — from the deal's dedicated **`inspection_documents`** / **`permit_documents`** Drive folders (HubSpot properties), listed recursively. Falls back to the numbered **6. Inspections** / **3. Permitting** subfolders when those properties aren't populated.
 3. **Screens + verifies** — drops low-res/sliver images (the Torpey-style 661×111 strip), then asks Claude vision to confirm each is a permit/inspection document. PE accepts several forms — a signed/finaled permit, a finaled-permit portal screenshot, or a passed final-inspection record — so all of those are kept; clearly-wrong docs are excluded.
 4. **Assembles** the kept images into one PDF, ordered chronologically, named `{PEcode}_{LastName}_Final_Permit.pdf`.
 5. **Delivers** to `~/Downloads/pe-final-permit-pdfs/` plus an `UPLOAD-CHECKLIST.md` (one row per project: checkbox, customer, PDF, portal link, flags). Unless `--no-stage`, also uploads a copy to the project's Drive `Participate Energy` folder.
