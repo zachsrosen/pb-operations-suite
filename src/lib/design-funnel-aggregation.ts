@@ -23,6 +23,7 @@ import { resolveMilestones } from "@/lib/project-funnel-aggregation";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DESIGN_BUCKETS = [
+  "awaitingSiteSurvey",
   "awaitingDesignUpload",
   "awaitingDesignReview",
   "awaitingDaSend",
@@ -37,15 +38,16 @@ export const DESIGN_BUCKETS = [
 export type DesignBucketKey = (typeof DESIGN_BUCKETS)[number];
 
 export const DESIGN_BUCKET_LABELS: Record<DesignBucketKey, string> = {
+  awaitingSiteSurvey: "Awaiting Site Survey",
   awaitingDesignUpload: "Awaiting Design Upload",
   awaitingDesignReview: "Awaiting Design Review",
   awaitingDaSend: "Awaiting DA Send",
   awaitingDaApproval: "Awaiting DA Approval",
   awaitingDesignComplete: "Awaiting Design Complete",
   designComplete: "Design Complete",
-  utilityRevision: "Utility Revision In Progress",
-  permitRevision: "Permit Revision In Progress",
-  asBuiltRevision: "As-Built Revision In Progress",
+  utilityRevision: "Utility Revision",
+  permitRevision: "Permit Revision",
+  asBuiltRevision: "As-Built Revision",
 };
 
 /** One project row for a bucket / stage drill-down. */
@@ -65,6 +67,8 @@ export interface DesignFunnelDeal {
   projectManager: string;
   dealOwner: string;
   flag: DesignFunnelFlag | null;
+  /** A completed revision sitting in a revision bucket — show dulled (done, not priority). */
+  muted: boolean;
 }
 
 export interface DesignFunnelFlag {
@@ -77,6 +81,8 @@ export interface DesignStatusSegment {
   status: string;
   count: number;
   amount: number;
+  /** True for completed-revision statuses — rendered dulled. */
+  muted: boolean;
 }
 
 /** A group (bucket or pipeline stage) with its design-status breakdown + deals. */
@@ -136,6 +142,18 @@ const AS_BUILT_REVISION_STATES = new Set<string>([
   "Revision Needed - Rejected",
 ]);
 
+// "Completed" revision states. These deals are back to design-complete, but we
+// keep them grouped under their revision bucket — dulled — so the in-progress
+// (priority) revisions stand out instead of being mixed into Design Complete.
+const UTILITY_REVISION_DONE = new Set<string>(["Utility Revision Completed"]);
+const PERMIT_REVISION_DONE = new Set<string>(["Permit Revision Completed"]);
+const AS_BUILT_REVISION_DONE = new Set<string>(["As-Built Revision Completed"]);
+
+/** A completed-revision design_status — grouped in its revision bucket, dulled. */
+function isMutedDesignStatus(ds: string | null): boolean {
+  return !!ds && (UTILITY_REVISION_DONE.has(ds) || PERMIT_REVISION_DONE.has(ds) || AS_BUILT_REVISION_DONE.has(ds));
+}
+
 // design_status raw values that mean the design has NOT yet cleared Initial
 // Design Review (IDR). An uploaded design not in this set is "reviewed". Used
 // only to split the pre-DA-send region into upload vs review vs ready-to-send.
@@ -172,16 +190,21 @@ function isActiveDeal(p: Project): boolean {
  */
 function resolveBucket(p: Project): DesignBucketKey {
   const ds = p.designStatus;
-  if (ds && AS_BUILT_REVISION_STATES.has(ds)) return "asBuiltRevision";
-  if (ds && PERMIT_REVISION_STATES.has(ds)) return "permitRevision";
-  if (ds && UTILITY_REVISION_STATES.has(ds)) return "utilityRevision";
+  if (ds && (AS_BUILT_REVISION_STATES.has(ds) || AS_BUILT_REVISION_DONE.has(ds))) return "asBuiltRevision";
+  if (ds && (PERMIT_REVISION_STATES.has(ds) || PERMIT_REVISION_DONE.has(ds))) return "permitRevision";
+  if (ds && (UTILITY_REVISION_STATES.has(ds) || UTILITY_REVISION_DONE.has(ds))) return "utilityRevision";
 
   const m = resolveMilestones(p);
   if (m.hasDesignComplete) return "designComplete";
   if (m.hasDaApproved) return "awaitingDesignComplete";
   if (m.hasDaSent) return "awaitingDaApproval";
 
-  // Pre-DA-send: subdivide by where the design is in upload → review → ready.
+  // Pre-DA-send: design hasn't started yet until the site survey is done, so a
+  // deal with no completed survey is awaiting site survey (it has no design
+  // status because design hasn't begun), not awaiting a design upload.
+  if (!m.hasSurvey) return "awaitingSiteSurvey";
+
+  // Past survey: subdivide by where the design is in upload → review → ready.
   // "Upload" = planset uploaded (design_draft_completion_date); "reviewed" =
   // past IDR (design_status no longer a pre-review state).
   const uploaded = !!p.designDraftDate || ds === "Draft Complete";
@@ -219,6 +242,7 @@ function toDeal(p: Project, designStatus: string): DesignFunnelDeal {
     projectManager: p.projectManager || "",
     dealOwner: p.dealOwner || "",
     flag: designFlag(p),
+    muted: isMutedDesignStatus(p.designStatus),
   };
 }
 
@@ -226,7 +250,7 @@ function toDeal(p: Project, designStatus: string): DesignFunnelDeal {
 class GroupBuilder {
   count = 0;
   amount = 0;
-  private statuses = new Map<string, { count: number; amount: number }>();
+  private statuses = new Map<string, { count: number; amount: number; muted: boolean }>();
   deals: DesignFunnelDeal[] = [];
 
   constructor(public key: string, public label: string) {}
@@ -235,7 +259,8 @@ class GroupBuilder {
     const amt = p.amount || 0;
     this.count += 1;
     this.amount += amt;
-    const s = this.statuses.get(statusLbl) || { count: 0, amount: 0 };
+    const muted = isMutedDesignStatus(p.designStatus);
+    const s = this.statuses.get(statusLbl) || { count: 0, amount: 0, muted };
     s.count += 1;
     s.amount += amt;
     this.statuses.set(statusLbl, s);
@@ -248,10 +273,14 @@ class GroupBuilder {
       label: this.label,
       count: this.count,
       amount: this.amount,
+      // Muted (completed-revision) segments/deals sort after the live ones so the
+      // in-progress work stays first and prominent.
       statusBreakdown: [...this.statuses.entries()]
-        .map(([status, v]) => ({ status, count: v.count, amount: v.amount }))
-        .sort((a, b) => b.count - a.count),
-      deals: this.deals.sort((a, b) => b.daysInStage - a.daysInStage),
+        .map(([status, v]) => ({ status, count: v.count, amount: v.amount, muted: v.muted }))
+        .sort((a, b) => (a.muted === b.muted ? b.count - a.count : a.muted ? 1 : -1)),
+      deals: this.deals.sort((a, b) =>
+        a.muted === b.muted ? b.daysInStage - a.daysInStage : a.muted ? 1 : -1
+      ),
     };
   }
 }
