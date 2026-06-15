@@ -686,6 +686,19 @@ function DealCard({ summary, docMap, defaultExpanded }: {
 // Team view — compact deal row showing only that team's docs
 // ---------------------------------------------------------------------------
 
+// Within a team's list, group deals by their most-severe outstanding status.
+type DealStatusBucket = "rejected" | "action" | "notUploaded";
+const TEAM_STATUS_GROUPS: { key: DealStatusBucket; label: string; dot: string; text: string }[] = [
+  { key: "rejected", label: "Rejected", dot: "bg-red-500", text: "text-red-400" },
+  { key: "action", label: "Action Required", dot: "bg-orange-500", text: "text-orange-400" },
+  { key: "notUploaded", label: "Not Uploaded", dot: "bg-zinc-500", text: "text-zinc-400" },
+];
+function dealStatusBucket(teamDocs: { doc: DocRequirement; review: DocReview | undefined }[]): DealStatusBucket {
+  if (teamDocs.some(({ review }) => review?.status === "REJECTED")) return "rejected";
+  if (teamDocs.some(({ review }) => review?.status === "ACTION_REQUIRED")) return "action";
+  return "notUploaded"; // remaining actionable docs are not-uploaded (waived ones are excluded upstream)
+}
+
 function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
   summary: DealDocSummary;
   team: DocTeam;
@@ -1344,16 +1357,29 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                 />
                 </div>
                 {!collapsed && (
-                  <div className="space-y-1.5">
-                    {dealsWithIssues.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
-                      <TeamDealRow
-                        key={s.deal.dealId}
-                        summary={s}
-                        team={team}
-                        teamActionCount={teamActionCount}
-                        teamDocs={tDocs}
-                      />
-                    ))}
+                  <div className="space-y-3">
+                    {TEAM_STATUS_GROUPS.map((g) => {
+                      const items = dealsWithIssues.filter(({ teamDocs: tDocs }) => dealStatusBucket(tDocs) === g.key);
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={g.key} className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 px-1">
+                            <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
+                            <span className={`text-[10px] uppercase tracking-wide font-medium ${g.text}`}>{g.label}</span>
+                            <span className="text-[10px] text-muted">({items.length})</span>
+                          </div>
+                          {items.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
+                            <TeamDealRow
+                              key={s.deal.dealId}
+                              summary={s}
+                              team={team}
+                              teamActionCount={teamActionCount}
+                              teamDocs={tDocs}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
