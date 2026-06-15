@@ -16,8 +16,8 @@ import {
   type DesignFunnelDeal,
 } from "@/lib/design-funnel-aggregation";
 
-// Tonal accent per bucket — progression in cool→warm, revisions in red family.
-const BUCKET_TONE: Record<string, string> = {
+// Base bar color per status-funnel bucket (cool→warm progression, revisions red).
+const BUCKET_COLOR: Record<string, string> = {
   awaitingDesignUpload: "bg-slate-500",
   awaitingDesignReview: "bg-sky-500",
   awaitingDaSend: "bg-blue-500",
@@ -29,147 +29,157 @@ const BUCKET_TONE: Record<string, string> = {
   asBuiltRevision: "bg-rose-500",
 };
 
+// Same stage palette the Project Pipeline Funnel uses, so the two read alike.
+const STAGE_COLORS: Record<string, string> = {
+  "Site Survey": "bg-amber-500",
+  "Design & Engineering": "bg-blue-500",
+  "Permitting & Interconnection": "bg-purple-500",
+  "RTB - Blocked": "bg-red-500",
+  "Ready To Build": "bg-cyan-500",
+  Construction: "bg-green-500",
+  Inspection: "bg-emerald-500",
+  "Permission To Operate": "bg-teal-500",
+  "Close Out": "bg-sky-500",
+  "On Hold": "bg-yellow-500",
+};
+
+const segOpacity = (i: number) => Math.max(0.4, 1 - i * 0.18);
+
 function ageTone(days: number): string {
   if (days >= 30) return "text-red-400";
   if (days >= 14) return "text-amber-400";
   return "text-muted";
 }
 
-// Stable palette for status-breakdown segments within a group.
-const SEGMENT_COLORS = [
-  "bg-blue-500/50",
-  "bg-emerald-500/50",
-  "bg-amber-500/50",
-  "bg-violet-500/50",
-  "bg-rose-500/50",
-  "bg-cyan-500/50",
-  "bg-orange-500/50",
-  "bg-lime-500/50",
-  "bg-pink-500/50",
-  "bg-teal-500/50",
-];
-
-function StatusBar({ group }: { group: DesignFunnelGroup }) {
-  if (group.count === 0) return null;
+/** Drill-down table for one bucket / stage row — mirrors the project funnel's. */
+function DrillTable({ deals }: { deals: DesignFunnelDeal[] }) {
   return (
-    <div className="flex h-3 w-full overflow-hidden rounded bg-surface-2">
-      {group.statusBreakdown.map((seg, i) => (
-        <div
-          key={seg.status}
-          className={SEGMENT_COLORS[i % SEGMENT_COLORS.length]}
-          style={{ width: `${(seg.count / group.count) * 100}%` }}
-          title={`${seg.status}: ${seg.count}`}
-        />
-      ))}
-    </div>
-  );
-}
-
-function StatusLegend({ group }: { group: DesignFunnelGroup }) {
-  return (
-    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-      {group.statusBreakdown.map((seg, i) => (
-        <span key={seg.status} className="inline-flex items-center gap-1 text-[11px] text-muted">
-          <span className={`inline-block h-2 w-2 rounded-sm ${SEGMENT_COLORS[i % SEGMENT_COLORS.length]}`} />
-          {seg.status}
-          <span className="font-semibold text-foreground tabular-nums">{seg.count}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function DealTable({ deals }: { deals: DesignFunnelDeal[] }) {
-  return (
-    <table className="w-full text-[11px]">
-      <thead>
-        <tr className="text-muted border-b border-t-border">
-          <th className="text-left font-medium py-1 pr-2">Project</th>
-          <th className="text-left font-medium py-1 pr-2">Stage</th>
-          <th className="text-left font-medium py-1 pr-2">Design Status</th>
-          <th className="text-left font-medium py-1 pr-2 hidden sm:table-cell">Design Lead</th>
-          <th className="text-right font-medium py-1">Days in Stage</th>
-        </tr>
-      </thead>
-      <tbody>
-        {deals.map((d) => (
-          <tr key={d.id} className="border-b border-t-border/50 hover:bg-surface-2">
-            <td className="py-1 pr-2">
-              <a href={d.url} target="_blank" rel="noreferrer" className="text-foreground hover:text-blue-400">
-                {d.projectNumber || d.name}
-              </a>
-              <span className="text-muted"> · {d.pbLocation}</span>
-              {d.flag && (
-                <span
-                  className={`ml-1 px-1 rounded text-[9px] ${
-                    d.flag.tone === "red"
-                      ? "bg-red-500/20 text-red-300"
-                      : d.flag.tone === "orange"
-                        ? "bg-orange-500/20 text-orange-300"
-                        : "bg-yellow-500/20 text-yellow-300"
-                  }`}
-                  title={d.flag.reason || undefined}
-                >
-                  {d.flag.label}
-                </span>
-              )}
-            </td>
-            <td className="py-1 pr-2 text-muted truncate max-w-[150px]" title={d.stage}>{d.stage}</td>
-            <td className="py-1 pr-2 text-muted truncate max-w-[170px]" title={d.designStatus}>{d.designStatus}</td>
-            <td className="py-1 pr-2 text-muted hidden sm:table-cell truncate max-w-[120px]">{d.designLead || "—"}</td>
-            <td className={`py-1 text-right tabular-nums font-semibold ${ageTone(d.daysInStage)}`}>{d.daysInStage}d</td>
+    <div className="pl-[11.75rem] pt-1 pb-2 overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="text-muted border-b border-t-border">
+            <th className="text-left font-medium py-1 pr-3">Project</th>
+            <th className="text-left font-medium py-1 pr-3">Stage</th>
+            <th className="text-left font-medium py-1 pr-3">Design Lead</th>
+            <th className="text-right font-medium py-1 pr-3">Amount</th>
+            <th className="text-right font-medium py-1 pr-3">Days in stage</th>
+            <th className="text-left font-medium py-1">Design Status</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {deals.map((d) => (
+            <tr key={d.id} className="border-b border-t-border/40 hover:bg-surface-2/40">
+              <td className="py-1 pr-3 whitespace-nowrap">
+                <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 font-medium hover:text-cyan-400">
+                  {d.projectNumber || d.name}
+                </a>
+                {d.flag && (
+                  <span
+                    className={`ml-1 px-1 rounded text-[9px] ${
+                      d.flag.tone === "red"
+                        ? "bg-red-500/20 text-red-300"
+                        : d.flag.tone === "orange"
+                          ? "bg-orange-500/20 text-orange-300"
+                          : "bg-yellow-500/20 text-yellow-300"
+                    }`}
+                    title={d.flag.reason || undefined}
+                  >
+                    {d.flag.label}
+                  </span>
+                )}
+              </td>
+              <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.stage}</td>
+              <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.designLead || "—"}</td>
+              <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(d.amount)}</td>
+              <td className={`py-1 pr-3 text-right tabular-nums whitespace-nowrap ${ageTone(d.daysInStage)}`}>{d.daysInStage}d</td>
+              <td className="py-1 text-foreground/80">{d.designStatus}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-/** A collapsible group card used for both the funnel buckets and the stages. */
-function GroupCard({
-  group,
+/** Single "Current Pipeline Position"-style panel: one row per group. */
+function PositionPanel({
+  title,
+  subtitle,
+  groups,
   total,
-  accent,
+  colorFor,
 }: {
-  group: DesignFunnelGroup;
+  title: string;
+  subtitle: string;
+  groups: DesignFunnelGroup[];
   total: number;
-  accent?: string;
+  colorFor: (g: DesignFunnelGroup) => string;
 }) {
-  const [open, setOpen] = useState(false);
-  const share = total > 0 ? Math.round((group.count / total) * 100) : 0;
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const maxCount = Math.max(1, ...groups.map((g) => g.count));
+
   return (
-    <div className="bg-surface border border-t-border rounded-lg p-4">
-      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 text-left">
-        {accent && <span className={`h-8 w-1.5 rounded-full ${accent}`} />}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm font-semibold text-foreground truncate">{group.label}</span>
-            <span className="text-[11px] text-muted tabular-nums shrink-0">
-              {share}% · {formatCurrencyCompact(group.amount)}
-            </span>
-          </div>
-          <div className="mt-1.5">
-            <StatusBar group={group} />
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-2xl font-bold text-foreground tabular-nums leading-none">{group.count}</div>
-        </div>
-      </button>
-      {group.count > 0 && <StatusLegend group={group} />}
-      {group.deals.length > 0 && (
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="mt-2 text-[11px] text-muted hover:text-foreground transition-colors"
-        >
-          {open ? "Hide" : "Show"} {group.deals.length} project{group.deals.length === 1 ? "" : "s"}
-        </button>
-      )}
-      {open && (
-        <div className="mt-2 max-h-96 overflow-y-auto">
-          <DealTable deals={group.deals} />
-        </div>
-      )}
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">{title}</h3>
+      <p className="text-xs text-muted mb-4">{subtitle}</p>
+      <div className="space-y-1.5">
+        {groups.map((g) => {
+          const pct = total > 0 ? Math.round((g.count / total) * 100) : 0;
+          const color = colorFor(g);
+          const segs = g.statusBreakdown.length ? g.statusBreakdown : [{ status: "No status", count: g.count, amount: 0 }];
+          const segTotal = g.count || 1;
+          const hasRealStatus = g.statusBreakdown.some((s) => s.status !== "No status");
+          return (
+            <div key={g.key}>
+              <button
+                type="button"
+                className="flex items-center gap-3 w-full py-0.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                onClick={() => g.count > 0 && setExpanded(expanded === g.key ? null : g.key)}
+                disabled={g.count <= 0}
+              >
+                <span className="w-44 text-xs text-muted text-right shrink-0 flex items-center justify-end gap-1">
+                  {g.count > 0 && (
+                    <span className={`text-[10px] transition-transform ${expanded === g.key ? "rotate-90" : ""}`}>▶</span>
+                  )}
+                  <span className="truncate" title={g.label}>{g.label}</span>
+                </span>
+                <div className="flex items-center gap-2 flex-1">
+                  {g.count > 0 ? (
+                    <div
+                      className="flex h-6 rounded-md overflow-hidden"
+                      style={{ width: `${Math.max(6, (g.count / maxCount) * 100)}%` }}
+                    >
+                      {segs.map((seg, i) => (
+                        <div
+                          key={seg.status}
+                          className={`${color} h-full ${i > 0 ? "border-l border-black/25" : ""}`}
+                          style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: segOpacity(i) }}
+                          title={`${seg.status}: ${seg.count}`}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted/60 italic">—</span>
+                  )}
+                  <span className="text-[11px] text-muted shrink-0 tabular-nums">
+                    <span className="text-foreground font-semibold">{g.count}</span> · {formatCurrencyCompact(g.amount)} · {pct}%
+                  </span>
+                </div>
+              </button>
+              {g.count > 0 && hasRealStatus && (
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-[11.75rem] pt-0.5 text-[10px] text-muted">
+                  {g.statusBreakdown.map((seg) => (
+                    <span key={seg.status} className="whitespace-nowrap">
+                      <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {expanded === g.key && g.deals.length > 0 && <DrillTable deals={g.deals} />}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -244,27 +254,21 @@ export default function DesignEngineeringFunnelPage() {
         ) : isLoading || !data ? (
           <div className="py-20 flex justify-center"><LoadingSpinner /></div>
         ) : tab === "funnel" ? (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
-              Design status funnel — every active project in one bucket
-            </h2>
-            <div className="grid grid-cols-1 gap-2">
-              {data.buckets.map((b) => (
-                <GroupCard key={b.key} group={b} total={data.totalProjects} accent={BUCKET_TONE[b.key]} />
-              ))}
-            </div>
-          </section>
+          <PositionPanel
+            title="Design Status Funnel"
+            subtitle={`Where all ${data.totalProjects.toLocaleString()} active projects sit in the design process`}
+            groups={data.buckets}
+            total={data.totalProjects}
+            colorFor={(g) => BUCKET_COLOR[g.key] || "bg-zinc-500"}
+          />
         ) : (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted mb-2">
-              Deal stage — design status breakdown
-            </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-              {data.stageBreakdown.map((s) => (
-                <GroupCard key={s.key} group={s} total={data.totalProjects} />
-              ))}
-            </div>
-          </section>
+          <PositionPanel
+            title="Deal Stage — Design Status Breakdown"
+            subtitle={`Design status of all ${data.totalProjects.toLocaleString()} active projects, by pipeline stage`}
+            groups={data.stageBreakdown}
+            total={data.totalProjects}
+            colorFor={(g) => STAGE_COLORS[g.label] || "bg-zinc-500"}
+          />
         )}
       </div>
     </DashboardShell>
