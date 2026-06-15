@@ -306,7 +306,16 @@ async function processProject(
   if (usable.length === 0) return empty("no usable images after low-res/aspect screening");
 
   // --- Verify + order ------------------------------------------------------
+  // NOTE (deferred, spec §6): few-shot grounding with approved-on-v1 reference
+  // examples is not yet wired. `findApprovedOnV1` (pe-reference-library) is the
+  // selector for it; final-permit can pass `classifyDocument`'s `referenceFileId`,
+  // but policy-photos needs `triagePhotoBatch` extended to accept references —
+  // a change to the shared classifier lib, tracked as a follow-up. The classifier
+  // performs acceptably against the full checklist without references today.
   let orderedImages: UsableImage[];
+  // Index in `orderedImages` at which the Sales Order (item #6) is inserted.
+  // Defaults past the end (append last); set by rank for policy photos below.
+  let soInsertIndex = Number.MAX_SAFE_INTEGER;
 
   if (doc === "policy-photos") {
     const systemType = normalizeSystemType(project.assets.systemType);
@@ -339,6 +348,15 @@ async function processProject(
     orderedImages = ordered.map((c) => byId.get(c.fileId)!).filter(Boolean);
     if (orderedImages.length === 0) {
       return empty("no photos matched the policy shot checklist after triage");
+    }
+    // Slot the Sales Order (item #6) at its canonical rank among the shots that
+    // APPLY to this system type — not a fixed photo index. Storage-only systems
+    // drop the solar shots, so the invoice no longer sits at literal index 5.
+    const applicable = filterChecklist(PE_M1_CHECKLIST.filter((i) => i.isPhoto), systemType);
+    const invoiceRank = applicable.findIndex((i) => i.id === "m1.photos.6_invoice_bom");
+    if (invoiceRank >= 0) {
+      const rankOf = new Map(applicable.map((it, idx) => [it.id, idx]));
+      soInsertIndex = ordered.filter((c) => (rankOf.get(c.shotId) ?? Infinity) < invoiceRank).length;
     }
   } else {
     // final-permit: confirm each usable image is a signed/finaled permit or
@@ -390,43 +408,29 @@ async function processProject(
 
   // --- Assemble PDF --------------------------------------------------------
   const pdf = await PDFDocument.create();
-  let salesOrderSlotted = false;
+
+  // Locate-or-flag the Sales Order PDF and embed its pages (never regenerate).
+  const embedSalesOrder = async (): Promise<void> => {
+    const soBuf = await locateSalesOrderPdf(rootFolderId);
+    if (!soBuf) {
+      flags.push("Sales Order PDF not found — assembled without it (locate manually)");
+      return;
+    }
+    try {
+      const soDoc = await PDFDocument.load(soBuf, { ignoreEncryption: true });
+      const copied = await pdf.copyPages(soDoc, soDoc.getPageIndices());
+      copied.forEach((p) => pdf.addPage(p));
+    } catch (e) {
+      flags.push(`Sales Order PDF found but unembeddable: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   for (let i = 0; i < orderedImages.length; i++) {
-    // Policy photos embed the Sales Order at slot #6 (1-indexed).
-    if (cfg.embedsSalesOrder && !salesOrderSlotted && i === 5) {
-      const soBuf = await locateSalesOrderPdf(rootFolderId);
-      if (soBuf) {
-        try {
-          const soDoc = await PDFDocument.load(soBuf, { ignoreEncryption: true });
-          const copied = await pdf.copyPages(soDoc, soDoc.getPageIndices());
-          copied.forEach((p) => pdf.addPage(p));
-          salesOrderSlotted = true;
-        } catch (e) {
-          flags.push(`Sales Order PDF found but unembeddable: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      } else {
-        flags.push("Sales Order PDF not found — assembled without it (locate manually)");
-      }
-    }
+    if (cfg.embedsSalesOrder && i === soInsertIndex) await embedSalesOrder();
     await appendImagePage(pdf, orderedImages[i].buffer);
   }
-
-  // If we have fewer than 6 photos, the SO never reached slot #6 — append it last.
-  if (cfg.embedsSalesOrder && !salesOrderSlotted) {
-    const soBuf = await locateSalesOrderPdf(rootFolderId);
-    if (soBuf) {
-      try {
-        const soDoc = await PDFDocument.load(soBuf, { ignoreEncryption: true });
-        const copied = await pdf.copyPages(soDoc, soDoc.getPageIndices());
-        copied.forEach((p) => pdf.addPage(p));
-      } catch (e) {
-        flags.push(`Sales Order PDF found but unembeddable: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    } else {
-      flags.push("Sales Order PDF not found — assembled without it (locate manually)");
-    }
-  }
+  // SO ranks at or after every present photo (or there are none) — append last.
+  if (cfg.embedsSalesOrder && soInsertIndex >= orderedImages.length) await embedSalesOrder();
 
   const pdfBytes = await pdf.save();
 
