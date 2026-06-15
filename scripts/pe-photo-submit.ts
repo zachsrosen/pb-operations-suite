@@ -46,6 +46,7 @@ import {
 import {
   PE_M1_CHECKLIST,
   filterChecklist,
+  buildFolderMap,
   type SystemType,
 } from "@/lib/pe-turnover";
 import { searchWithRetry } from "@/lib/hubspot";
@@ -185,17 +186,6 @@ function resolveSourceFolderId(
   return null;
 }
 
-/** Build a prefix → folderId map from the deal's root Drive folder. */
-async function buildPrefixMap(rootFolderId: string): Promise<Map<string, string>> {
-  const byPrefix = new Map<string, string>();
-  const subs = await listDriveSubfolders(rootFolderId);
-  for (const f of subs) {
-    const m = f.name.match(/^(\d+)\./);
-    if (m) byPrefix.set(m[1], f.id);
-  }
-  return byPrefix;
-}
-
 interface UsableImage {
   driveId: string;
   name: string;
@@ -282,8 +272,9 @@ async function processProject(
   const rootFolderId = extractFolderId(rootRaw ?? "");
   if (!rootFolderId) return empty("deal has no resolvable root Drive folder");
 
-  const byPrefix = await buildPrefixMap(rootFolderId);
-  const sourceFolderId = resolveSourceFolderId(deal.properties, byPrefix, doc);
+  const folderMap = await buildFolderMap(rootFolderId);
+  for (const w of folderMap.warnings) flags.push(`drive: ${w}`);
+  const sourceFolderId = resolveSourceFolderId(deal.properties, folderMap.byPrefix, doc);
   if (!sourceFolderId) {
     return empty(`source folder ${cfg.sourceFolders.join("/")} not found in Drive`);
   }
@@ -352,7 +343,10 @@ async function processProject(
   } else {
     // final-permit: confirm each usable image is a signed/finaled permit or
     // inspection card; exclude rejects; order chronologically by filename.
-    const permitItem = PE_M1_CHECKLIST.find((i) => i.id.includes("final_permit")) ?? PE_M1_CHECKLIST[0];
+    const permitItem =
+      PE_M1_CHECKLIST.find((i) => i.id === "m1.inspection.ahj_permit") ??
+      PE_M1_CHECKLIST.find((i) => /permit|inspection/.test(i.id)) ??
+      PE_M1_CHECKLIST[0];
     const kept: UsableImage[] = [];
     for (const u of usable) {
       const input: VisionFileInput = {
