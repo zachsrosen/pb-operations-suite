@@ -2138,7 +2138,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           {/* 4b. Missing by Document */}
           <Section
             title="Missing by Document"
-            subtitle="Documents not yet uploaded, per doc type — across deals in a milestone (PTO owes the M1 docs; Close Out / Complete owe all 15). Click a bar to list the deals."
+            subtitle="Documents genuinely not uploaded, per doc type — deals in a milestone (PTO owes the M1 docs; Close Out / Complete owe all 15). Excludes docs PE waived on an already-approved milestone. Click a bar to list the deals."
           >
             <MissingByDocPanel byDoc={data.missingByDoc} />
           </Section>

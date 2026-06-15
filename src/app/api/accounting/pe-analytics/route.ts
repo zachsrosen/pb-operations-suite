@@ -675,10 +675,17 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
 
   // --- Missing by document: per-doc breakdown of NOT_UPLOADED across deals that
   // owe the doc (same milestone scope as the doc-status cards). Mirrors the
-  // Rejections-by-Document panel, with the same drill-down links.
+  // Rejections-by-Document panel, with the same drill-down links. Excludes MOOT
+  // docs: a NOT_UPLOADED doc whose milestone PE already Approved/Paid isn't a
+  // real gap (PE closed the milestone without it — e.g. CA State Disclosures).
+  const milestoneStatusById = new Map(deals.map((d) => [d.dealId, { m1: d.m1Status, m2: d.m2Status }]));
+  const MILESTONE_DONE = new Set(["Approved", "Paid"]);
   const missingMap = new Map<string, MissingDrillDeal[]>();
   for (const r of relevantRows) {
     if (r.status !== "NOT_UPLOADED") continue;
+    const ms = milestoneStatusById.get(r.dealId);
+    const milestoneStatus = m1DocSet.has(r.docName) ? ms?.m1 : ms?.m2;
+    if (milestoneStatus && MILESTONE_DONE.has(milestoneStatus)) continue; // moot
     const meta = dealMetaById.get(r.dealId);
     const arr = missingMap.get(r.docName) ?? [];
     arr.push({
