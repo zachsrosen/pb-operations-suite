@@ -53,7 +53,7 @@ import { searchWithRetry } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   extractFolderId,
-  listDriveImages,
+  listDriveImagesRecursive,
   downloadDriveImage,
   listDriveSubfolders,
   listDriveFilesRecursive,
@@ -161,6 +161,11 @@ async function searchDealsByPeCode(code: string): Promise<DealSearchResult[]> {
       "design_documents",
       "g_drive",
       "pb_tech_ops_url",
+      // Dedicated per-category folder properties (the real source folders).
+      "installation_documents",
+      "inspection_documents",
+      "permit_documents",
+      "participate_energy_documents_folder_id",
       "address_line_1",
       "city",
       "state",
@@ -173,12 +178,21 @@ async function searchDealsByPeCode(code: string): Promise<DealSearchResult[]> {
   }));
 }
 
-/** Resolve the numbered source folder for this doc type from a HubSpot deal. */
+/**
+ * Resolve the source Drive folder for this doc type. Prefer the dedicated
+ * HubSpot folder property (e.g. `installation_documents`) — that's where the
+ * real photos live (nested in subfolders). Fall back to the numbered subfolder
+ * under the all-documents parent only when no dedicated property is populated.
+ */
 function resolveSourceFolderId(
   props: Record<string, string | null | undefined>,
   byPrefix: Map<string, string>,
   doc: DocType,
 ): string | null {
+  for (const prop of DOC_CONFIGS[doc].folderProps) {
+    const id = extractFolderId(props[prop] || "");
+    if (id) return id;
+  }
   for (const prefix of DOC_CONFIGS[doc].sourceFolders) {
     const id = byPrefix.get(prefix);
     if (id) return id;
@@ -280,8 +294,16 @@ async function processProject(
   }
 
   // --- Pull + screen images ------------------------------------------------
-  const driveImages = await listDriveImages(sourceFolderId);
-  if (driveImages.length === 0) return empty(`source folder is empty (folder ${cfg.sourceFolders[0]})`);
+  // Photos are nested in subfolders (e.g. "Electrical Install", "PV Install"),
+  // so list recursively. Bounded to keep vision cost in check.
+  const driveImages = await listDriveImagesRecursive(sourceFolderId, 3, 60);
+  if (driveImages.length === 0) {
+    return empty(
+      doc === "policy-photos"
+        ? "no images in the installation_documents folder"
+        : "no images in the inspection/permit folder (6/3)",
+    );
+  }
 
   const usable: UsableImage[] = [];
   for (const di of driveImages) {
@@ -322,9 +344,15 @@ async function processProject(
     const photoItems = filterChecklist(PE_M1_CHECKLIST.filter((i) => i.isPhoto), systemType);
 
     // Upload each usable image to Anthropic Files, then triage in one batch.
+    // Anthropic caps dimensions at 2000px for many-image requests, and install
+    // photos are full-res — so downscale a COPY for vision (the PDF keeps full-res).
     const batchInputs: { anthropicFileId: string; fileName: string; driveFileId: string }[] = [];
     for (const u of usable) {
-      const anthropicFileId = await uploadToAnthropic(u.buffer, u.name, u.mimeType);
+      const visionBuf = await sharp(u.buffer)
+        .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      const anthropicFileId = await uploadToAnthropic(visionBuf, u.name, "image/jpeg");
       batchInputs.push({ anthropicFileId, fileName: u.name, driveFileId: u.driveId });
     }
     const triage = await triagePhotoBatch(batchInputs, photoItems);

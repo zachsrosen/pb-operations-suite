@@ -51,15 +51,17 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("DOC_CONFIGS", () => {
-  it("maps final-permit to folder 6 with fallback 3 and the signedFinalPermit key", () => {
+  it("maps final-permit to inspection/permit folder props (fallback numbered 6/3) and the signedFinalPermit key", () => {
     const c = DOC_CONFIGS["final-permit"];
+    expect(c.folderProps).toEqual(["inspection_documents", "permit_documents"]);
     expect(c.sourceFolders).toEqual(["6", "3"]);
     expect(c.peDocKey).toBe("signedFinalPermit");
     expect(c.embedsSalesOrder).toBe(false);
   });
 
-  it("maps policy-photos to folder 5 with the photos key and SO embed", () => {
+  it("maps policy-photos to the installation_documents folder prop (fallback numbered 5), photos key, SO embed", () => {
     const c = DOC_CONFIGS["policy-photos"];
+    expect(c.folderProps).toEqual(["installation_documents"]);
     expect(c.sourceFolders).toEqual(["5"]);
     expect(c.peDocKey).toBe("photos");
     expect(c.embedsSalesOrder).toBe(true);

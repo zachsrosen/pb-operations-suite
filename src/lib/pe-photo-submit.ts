@@ -13,7 +13,17 @@ import { PE_M1_CHECKLIST, filterChecklist, type SystemType } from "@/lib/pe-turn
 export type DocType = "final-permit" | "policy-photos";
 
 export interface DocConfig {
-  sourceFolders: string[];      // numbered Drive subfolder prefixes, in priority order
+  /**
+   * Dedicated HubSpot deal folder properties (URL-style) to resolve the source
+   * Drive folder from, in priority order. These point at the real per-category
+   * folders (photos are nested in subfolders within them, so list recursively).
+   */
+  folderProps: string[];
+  /**
+   * Fallback: numbered Drive subfolder prefixes under the all-documents parent,
+   * used only when none of `folderProps` is populated on the deal.
+   */
+  sourceFolders: string[];
   peDocKey: "signedFinalPermit" | "photos";
   embedsSalesOrder: boolean;
   outputDir: string;            // ~/Downloads subdir
@@ -21,12 +31,14 @@ export interface DocConfig {
 
 export const DOC_CONFIGS: Record<DocType, DocConfig> = {
   "final-permit": {
+    folderProps: ["inspection_documents", "permit_documents"],
     sourceFolders: ["6", "3"],
     peDocKey: "signedFinalPermit",
     embedsSalesOrder: false,
     outputDir: "pe-final-permit-pdfs",
   },
   "policy-photos": {
+    folderProps: ["installation_documents"],
     sourceFolders: ["5"],
     peDocKey: "photos",
     embedsSalesOrder: true,
