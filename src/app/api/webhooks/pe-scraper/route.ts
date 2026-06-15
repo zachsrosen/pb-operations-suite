@@ -17,10 +17,29 @@ import { sendPeDocChangeNotification } from "@/lib/pe-doc-notify";
  *
  * Request body: raw HTML string (Content-Type: text/html)
  *   OR JSON { html: string }
+ *
+ * RETIRED 2026-06-15: the PE Paddock API became the authoritative source for
+ * doc statuses on 2026-06-12 (PE_API_STATUS_AUTHORITY=true). The external
+ * HTML scraper's parser drifted out of sync with the portal and began writing
+ * NOT_UPLOADED over docs the API correctly reports as APPROVED, fighting the
+ * api-sync every run. This endpoint now no-ops unless explicitly re-enabled
+ * via PE_SCRAPER_WEBHOOK_ENABLED=true. Leave it off while the API is
+ * authoritative; flip it on only to temporarily fall back to the scraper.
  */
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
+  // Kill switch — the scraper is retired in favor of the authoritative PE API.
+  // Default OFF: accept the POST but write nothing, so the external bot doesn't
+  // error-loop while it's being decommissioned.
+  if (process.env.PE_SCRAPER_WEBHOOK_ENABLED !== "true") {
+    console.warn("[pe-scraper-webhook] Ignored — scraper retired (PE_SCRAPER_WEBHOOK_ENABLED!=true)");
+    return NextResponse.json(
+      { ok: true, disabled: true, reason: "PE scraper retired; PE API is authoritative" },
+      { status: 200 },
+    );
+  }
+
   const secret = process.env.API_SECRET_TOKEN;
   if (!secret) {
     return NextResponse.json({ error: "API_SECRET_TOKEN not configured" }, { status: 500 });
