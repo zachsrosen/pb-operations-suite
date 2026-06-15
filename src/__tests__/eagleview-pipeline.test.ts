@@ -414,4 +414,76 @@ describe("fetchAndStoreDeliverables", () => {
     expect(r.status).toBe("FAILED");
     expect(r.reason).toBe("order_not_found");
   });
+
+  it("uploads to BOTH design and site survey when both resolve", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({ driveSiteSurveyFolderId: "folder_survey_001" }),
+    );
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(4); // 2 files × 2 targets
+    expect(deps.spies.ensureDriveFolder).toHaveBeenCalledTimes(2);
+    const noteBody = deps.spies.postDealNote.mock.calls.at(-1)?.[1] as string;
+    expect(noteBody).toMatch(/Design and Site Survey folders/);
+  });
+
+  it("resolves the survey folder via findSiteSurveyFolder fallback", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.findSiteSurveyFolder.mockResolvedValue("folder_survey_fallback");
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.findSiteSurveyFolder).toHaveBeenCalledWith("folder_all_001");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(4);
+  });
+
+  it("delivers to survey only when design is missing", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({
+        driveDesignDocumentsFolderId: null,
+        driveAllDocumentsFolderId: null,
+        driveSiteSurveyFolderId: "folder_survey_only",
+      }),
+    );
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // one target, 2 files
+    expect(r.driveFolderId).toBe("sub_folder_survey_only");
+  });
+
+  it("does not double-upload when design and survey resolve to the same folder", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({ driveSiteSurveyFolderId: "folder_design_001" }), // == design
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // deduped to one target
+  });
 });
