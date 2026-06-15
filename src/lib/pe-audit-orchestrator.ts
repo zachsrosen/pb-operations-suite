@@ -118,7 +118,7 @@ export interface AuditRunOptions {
 // PE folder resolution — find or create "Participate Energy/" folder
 // ---------------------------------------------------------------------------
 
-async function findOrCreatePeFolder(rootFolderId: string): Promise<string> {
+export async function findOrCreatePeFolder(rootFolderId: string): Promise<string> {
   const subfolders = await listDriveSubfolders(rootFolderId);
   const peFolders = subfolders.filter((f) =>
     f.name.toLowerCase().includes("participate energy")

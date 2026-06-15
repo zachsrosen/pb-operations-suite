@@ -28,6 +28,38 @@ import {
   type DriveGenericFile,
 } from "@/lib/drive-plansets";
 import { getAnthropicClient } from "@/lib/anthropic";
+import type { PeDocumentInfo } from "@/lib/pe-api";
+
+// ---------------------------------------------------------------------------
+// Doc-level "approved-on-v1" selector
+// ---------------------------------------------------------------------------
+
+/**
+ * A doc is a "first-try pass" gold example when PE marked it APPROVED and it has
+ * exactly one uploaded version (never resubmitted). Cleaner signal than the
+ * deal-level `pe_m1_status === "Paid"` heuristic in `findApprovedDeals`.
+ */
+export function isApprovedOnV1(doc: PeDocumentInfo | undefined): boolean {
+  if (!doc) return false;
+  return (doc.status ?? "").toUpperCase() === "APPROVED" && (doc.versions?.length ?? 0) === 1;
+}
+
+/** Return up to `limit` projects whose `docKey` doc was approved on v1, newest first. */
+export async function findApprovedOnV1(
+  docKey: "signedFinalPermit" | "photos",
+  limit = 5,
+): Promise<{ projectId: string; dealRecordId: number | undefined; fileName?: string }[]> {
+  const { listAllProjects } = await import("@/lib/pe-api");
+  const projects = await listAllProjects();
+  return projects
+    .filter((p) => isApprovedOnV1((p.documents as Record<string, PeDocumentInfo | undefined>)?.[docKey]))
+    .slice(0, limit)
+    .map((p) => ({
+      projectId: p.projectId,
+      dealRecordId: p._hubspot?.recordId,
+      fileName: (p.documents as Record<string, PeDocumentInfo | undefined>)[docKey]?.versions?.[0]?.fileName,
+    }));
+}
 
 // ---------------------------------------------------------------------------
 // Types
