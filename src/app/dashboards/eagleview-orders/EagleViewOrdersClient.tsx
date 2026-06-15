@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { eagleViewLinks } from "@/lib/eagleview-links";
 
 interface EagleViewOrderSummary {
   id: string;
@@ -197,9 +198,31 @@ export default function EagleViewOrdersClient({ userEmail }: { userEmail: string
                         : "bg-zinc-500/10 text-muted"
                 }`}>
                   <span className="font-medium">{order.status}</span>
-                  {order.reportId && !order.reportId.startsWith("pending:") && (
-                    <span>— Report #{order.reportId}</span>
-                  )}
+                  {(() => {
+                    const links = eagleViewLinks(order.reportId);
+                    if (!links) return null;
+                    return (
+                      <>
+                        <span>— Report #{order.reportId}</span>
+                        <a
+                          href={links.trueDesign}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:no-underline"
+                        >
+                          Open in TrueDesign
+                        </a>
+                        <a
+                          href={links.orderPage}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline hover:no-underline"
+                        >
+                          View EagleView Order
+                        </a>
+                      </>
+                    );
+                  })()}
                   {order.errorMessage && <span>— {order.errorMessage}</span>}
                   {order.triggeredBy && (
                     <span className="ml-auto text-muted">by {order.triggeredBy}</span>
