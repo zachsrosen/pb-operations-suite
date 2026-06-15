@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { UNKNOWN_UPLOADER } from "@/lib/pe-analytics";
-import { prettyUploader, buildColorMap } from "@/components/pe/AnalyticsTab";
+import { prettyUploader } from "@/components/pe/uploader-colors";
 import type {
   PeReworkPayload,
   ReplacerStat,
@@ -225,7 +225,9 @@ const VIEWS = [
 ] as const;
 type ViewKey = (typeof VIEWS)[number]["key"];
 
-export default function DocReworkTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
+/** Document Rework & Attribution — embedded as a section on the Analytics tab
+ *  (fetches its own /api/accounting/pe-rework data). */
+export function ReworkSection() {
   const { data, isLoading, isError, refetch } = useQuery<PeReworkPayload & { lastUpdated?: string }>({
     queryKey: queryKeys.peRework.list(),
     queryFn: async () => {
@@ -237,21 +239,8 @@ export default function DocReworkTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
   });
   const [view, setView] = useState<ViewKey>("swaps");
 
-  // Color map kept consistent with the Analytics tab's uploader colors.
-  const colorMap = useMemo(() => buildColorMap((data?.swaps.byReplacer ?? []).map((s) => s.uploader)), [data]);
-  void colorMap;
-
   return (
-    <div className="space-y-5 max-w-5xl mx-auto px-4 py-6">
-      {tabsSlot}
-      <div>
-        <h1 className="text-lg font-semibold text-foreground">Document Rework &amp; Attribution</h1>
-        <p className="text-xs text-muted mt-0.5">
-          Who is redoing whose Participate Energy documents, why they bounce, and how the redos end up. Submission/approval volume
-          and recent rejection notes live on the <span className="text-emerald-400">Analytics</span> tab.
-        </p>
-      </div>
-
+    <div className="space-y-4">
       <div className="flex flex-wrap gap-1.5">
         {VIEWS.map((v) => (
           <button
