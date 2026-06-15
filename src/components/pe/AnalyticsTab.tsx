@@ -23,6 +23,7 @@ import {
   type UploaderOutcomeDocs,
   type UploaderDoc,
   type RejectionByDoc,
+  type MissingByDoc,
   type RejectionDrillDeal,
   type DailyUpload,
   type UploadsByPeriod,
@@ -1166,6 +1167,49 @@ function RejectionsByDocPanel({ byDoc }: { byDoc: RejectionByDoc[] }) {
   );
 }
 
+/** Missing-by-Document — one row per doc type, bar = # deals missing it,
+ *  click to drill into those deals with HubSpot / PE portal / Drive links. */
+function MissingByDocPanel({ byDoc }: { byDoc: MissingByDoc[] }) {
+  const [drill, setDrill] = useState<string | null>(null);
+  if (byDoc.length === 0) {
+    return <div className="text-xs text-muted py-4">No missing documents — every owed doc has been uploaded.</div>;
+  }
+  const max = Math.max(...byDoc.map((x) => x.missing), 1);
+  return (
+    <div className="space-y-1.5">
+      {byDoc.map((d) => {
+        const open = drill === d.docName;
+        const toggle = () => setDrill((c) => (c === d.docName ? null : d.docName));
+        return (
+          <div key={d.docName}>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted w-52 truncate" title={d.docName}>{d.docName}</span>
+              <button type="button" onClick={toggle}
+                className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex cursor-pointer" title={`${d.missing} missing — click to list`}>
+                <div className={`h-full bg-zinc-400/60 hover:bg-zinc-400/80 ${open ? "ring-1 ring-zinc-300" : ""}`} style={{ width: `${(d.missing / max) * 100}%` }} />
+              </button>
+              <button type="button" onClick={toggle}
+                className="text-[10px] w-20 text-right tabular-nums text-zinc-300 hover:underline cursor-pointer">{d.missing} missing</button>
+            </div>
+            {open && (
+              <div className="mt-1 ml-2 rounded-lg border border-zinc-500/30 bg-zinc-500/5 p-2 space-y-1.5 max-h-64 overflow-y-auto">
+                {d.deals.map((od, i) => (
+                  <div key={i} className="text-[11px] flex items-center gap-2 flex-wrap border-b border-t-border/30 pb-1 last:border-0 last:pb-0">
+                    <span className="text-foreground font-medium truncate max-w-[16rem]" title={od.dealName}>{od.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                    <a href={od.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">HS ↗</a>
+                    {od.pePortalUrl && <a href={od.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
+                    {od.driveUrl && <a href={od.driveUrl} target="_blank" rel="noopener noreferrer" className="text-yellow-400 hover:underline">Drive ↗</a>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Per-person × document-type matrix — who uploads which doc types. */
 function DocTypeByUploaderPanel({ rows }: { rows: UploaderDocTypes[] }) {
   if (rows.length === 0) {
@@ -2075,6 +2119,14 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               )}
             </Section>
           </div>
+
+          {/* 4b. Missing by Document */}
+          <Section
+            title="Missing by Document"
+            subtitle="Documents not yet uploaded, per doc type — across deals in a milestone (PTO owes the M1 docs; Close Out / Complete owe all 15). Click a bar to list the deals."
+          >
+            <MissingByDocPanel byDoc={data.missingByDoc} />
+          </Section>
 
           {/* 5. Milestone funnel */}
           <Section title="Milestone Funnel" subtitle="Deal counts by current M1/M2 status — deals in PTO, Close Out, or Complete stages only.">

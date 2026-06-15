@@ -8,6 +8,7 @@ import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { listAllProjects } from "@/lib/pe-api";
 import { getUploaderOverridesRaw } from "@/lib/pe-uploader-overrides";
+import { getPaymentAdjustments } from "@/lib/pe-payment-adjustments";
 import { prisma } from "@/lib/db";
 import {
   weekStartUTC,
@@ -32,6 +33,7 @@ import {
   type WeeklySplitCohort,
   type MilestoneDrillRow,
   type RejectionDrillDeal,
+  type MissingDrillDeal,
   type DocRejectionEvent,
   type PipelineGroupRow,
   type TimingSummary,
@@ -262,6 +264,19 @@ async function fetchStatusHistory(dealIds: string[]): Promise<Map<string, DealHi
 
 async function buildPayload(): Promise<PeAnalyticsPayload> {
   const deals = await fetchPeDeals();
+
+  // Admin-recorded short-pays: PE paid less than the milestone amount. Net them
+  // out of PAID milestone amounts so every "paid" figure (totalPaid, weekly
+  // paid, uploader paid) reflects dollars actually received. Approved-but-unpaid
+  // milestones are untouched.
+  const paymentAdjustments = await getPaymentAdjustments();
+  for (const d of deals) {
+    const adj = paymentAdjustments[d.dealId];
+    if (!adj) continue;
+    if (d.m1Status === "Paid" && d.paymentIC !== null) d.paymentIC = Math.max(0, d.paymentIC - (adj.m1Short ?? 0));
+    if (d.m2Status === "Paid" && d.paymentPC !== null) d.paymentPC = Math.max(0, d.paymentPC - (adj.m2Short ?? 0));
+  }
+
   const history = await fetchStatusHistory(deals.map((d) => d.dealId));
 
   // --- Per-milestone records ------------------------------------------------
@@ -657,6 +672,27 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     missingExpected: docStat(["NOT_UPLOADED"]),
     scopedDeals: scopedDeals.size,
   };
+
+  // --- Missing by document: per-doc breakdown of NOT_UPLOADED across deals that
+  // owe the doc (same milestone scope as the doc-status cards). Mirrors the
+  // Rejections-by-Document panel, with the same drill-down links.
+  const missingMap = new Map<string, MissingDrillDeal[]>();
+  for (const r of relevantRows) {
+    if (r.status !== "NOT_UPLOADED") continue;
+    const meta = dealMetaById.get(r.dealId);
+    const arr = missingMap.get(r.docName) ?? [];
+    arr.push({
+      dealName: meta?.name ?? r.dealId,
+      dealId: r.dealId,
+      hubspotUrl: rejectionHsUrl(r.dealId),
+      pePortalUrl: meta?.portal ?? null,
+      driveUrl: meta?.drive ?? null,
+    });
+    missingMap.set(r.docName, arr);
+  }
+  const missingByDoc = [...missingMap.entries()]
+    .map(([docName, ds]) => ({ docName, missing: ds.length, deals: ds.sort((a, b) => a.dealName.localeCompare(b.dealName)) }))
+    .sort((a, b) => b.missing - a.missing);
 
   const recentNotes = rejectionLog
     .filter((ev) => ev.newNotes)
@@ -1060,6 +1096,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     pipeline,
     timing: { overall, monthly },
     rejections: { byDoc, recentNotes },
+    missingByDoc,
     funnelDeals,
   };
 }
