@@ -509,6 +509,8 @@ function DocLine({ doc, review }: { doc: DocRequirement; review: DocReview | und
   const status = review?.status ?? null;
   const label = status ? DOC_STATUS_LABELS[status] : null;
   const isApproved = status === "APPROVED";
+  // Strip API-sync boilerplate; keep only a genuine PE rejection/action comment.
+  const note = cleanPeNote(review?.notes);
 
   return (
     <div className="flex items-start gap-2.5 py-1.5">
@@ -530,8 +532,8 @@ function DocLine({ doc, review }: { doc: DocRequirement; review: DocReview | und
         {doc.note && !isApproved && (
           <div className="text-[10px] text-muted/60 mt-0.5">{doc.note}</div>
         )}
-        {review?.notes && (
-          <div className="text-[10px] text-orange-400/80 mt-0.5">PE: {review.notes}</div>
+        {note && (
+          <div className="text-[10px] text-orange-400/80 mt-0.5">PE: {note}</div>
         )}
       </div>
       {label ? (
@@ -579,12 +581,12 @@ function DealLinks({ deal, iconClass }: { deal: PeDeal; iconClass: string }) {
   );
 }
 
-function DealCard({ summary, docMap, defaultExpanded }: {
+function DealCard({ summary, docMap, expanded, onToggle }: {
   summary: DealDocSummary;
   docMap: Map<string, DocReview>;
-  defaultExpanded: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const { deal, milestone, sections, category, csvOnly, csvStatus, csvNotes } = summary;
 
   // Count actionable items (items Layla needs to address)
@@ -594,8 +596,8 @@ function DealCard({ summary, docMap, defaultExpanded }: {
     <div className={`rounded-lg border transition-colors ${CATEGORY_COLORS[category]}`}>
       {/* Header — always visible */}
       <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface/30 transition-colors"
-        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface/30 transition-colors"
+        onClick={onToggle}
       >
         <ProgressRing approved={summary.approved} total={summary.totalDocs} />
         <div className="flex-1 min-w-0">
@@ -610,9 +612,6 @@ function DealCard({ summary, docMap, defaultExpanded }: {
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-[11px] text-muted">{deal.pbLocation}</span>
-            {deal.peProjectId && (
-              <span className="text-[10px] text-muted/50">{deal.peProjectId}</span>
-            )}
             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${m1m2Color(deal.peM1Status)}`}
               title={`M1: ${deal.peM1Status || "Not started"}`}>
               M1: {m1m2Short(deal.peM1Status)}
@@ -627,14 +626,6 @@ function DealCard({ summary, docMap, defaultExpanded }: {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Quick status dots */}
-          <div className="flex items-center gap-1" title={`${summary.approved} approved · ${summary.underReview} in review · ${summary.notUploaded} not uploaded · ${summary.actionRequired} action required · ${summary.rejected} rejected`}>
-            {summary.approved > 0 && <span className="text-[10px] text-green-400">{summary.approved}✓</span>}
-            {summary.underReview > 0 && <span className="text-[10px] text-blue-400">{summary.underReview}⟳</span>}
-            {(summary.notUploaded + summary.actionRequired + summary.rejected) > 0 && (
-              <span className="text-[10px] text-orange-400">{summary.notUploaded + summary.actionRequired + summary.rejected}!</span>
-            )}
-          </div>
           {/* External links */}
           <DealLinks deal={deal} iconClass="w-3.5 h-3.5" />
           {/* Chevron */}
@@ -775,21 +766,21 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
 // (Nearly Complete / Not Uploaded / Action Required)
 // ---------------------------------------------------------------------------
 
-function SectionDealRow({ summary, docs, badgeLabel, badgeClass, defaultExpanded }: {
+function SectionDealRow({ summary, docs, badgeLabel, badgeClass, expanded, onToggle }: {
   summary: DealDocSummary;
   docs: DocWithReview[];
   badgeLabel: string;
   badgeClass: string;
-  defaultExpanded: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const { deal, milestone } = summary;
 
   return (
     <div className="rounded-lg border border-border/40 bg-surface/30 transition-colors">
       <button
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface/40 transition-colors"
-        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-surface/40 transition-colors"
+        onClick={onToggle}
       >
         <ProgressRing approved={summary.approved} total={summary.totalDocs} />
         <div className="flex-1 min-w-0">
@@ -800,10 +791,7 @@ function SectionDealRow({ summary, docs, badgeLabel, badgeClass, defaultExpanded
               {badgeLabel}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[11px] text-muted">{deal.pbLocation}</span>
-            {deal.peProjectId && <span className="text-[10px] text-muted/50">{deal.peProjectId}</span>}
-          </div>
+          <span className="text-[11px] text-muted">{deal.pbLocation}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <DealLinks deal={deal} iconClass="w-3.5 h-3.5" />
@@ -920,12 +908,23 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const [milestoneFilter, setMilestoneFilter] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"sections" | "list" | "by-team">("sections");
   const [collapsedTeams, setCollapsedTeams] = useState<Set<DocTeam>>(new Set());
+  // Deal rows are collapsed by default; this Set holds the ones the user opened.
+  const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
 
   const toggleTeam = useCallback((team: DocTeam) => {
     setCollapsedTeams((prev) => {
       const next = new Set(prev);
       if (next.has(team)) next.delete(team);
       else next.add(team);
+      return next;
+    });
+  }, []);
+
+  const toggleDeal = useCallback((id: string) => {
+    setExpandedDeals((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
@@ -1078,6 +1077,24 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     setMilestoneFilter([]);
   }, []);
 
+  // Deal IDs visible in the active view, for the Expand/Collapse-all control.
+  const visibleDealIds = useMemo(() => {
+    if (viewMode === "sections") {
+      return [
+        ...emailSections.nearlyComplete,
+        ...emailSections.notUploaded,
+        ...emailSections.actionRequired,
+      ].map(({ summary }) => summary.deal.dealId);
+    }
+    if (viewMode === "list") return sorted.map((s) => s.deal.dealId);
+    return [];
+  }, [viewMode, emailSections, sorted]);
+
+  const allExpanded = visibleDealIds.length > 0 && visibleDealIds.every((id) => expandedDeals.has(id));
+  const toggleAll = useCallback(() => {
+    setExpandedDeals(allExpanded ? new Set() : new Set(visibleDealIds));
+  }, [allExpanded, visibleDealIds]);
+
   return (
     <DashboardShell title="PE Document Tracker" accentColor="emerald" lastUpdated={data?.lastUpdated} fullWidth>
       {tabsSlot}
@@ -1182,13 +1199,23 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       </div>
 
       {/* Results count */}
-      <div className="text-xs text-muted mb-3">
-        {viewMode === "sections" ? (
-          `${emailSections.nearlyComplete.length} nearly complete · ${emailSections.notUploaded.length} not uploaded · ${emailSections.actionRequired.length} need action`
-        ) : filtered.length === summaries.length ? (
-          `${summaries.length} deals`
-        ) : (
-          `${filtered.length} of ${summaries.length} deals`
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="text-xs text-muted">
+          {viewMode === "sections" ? (
+            `${emailSections.nearlyComplete.length} nearly complete · ${emailSections.notUploaded.length} not uploaded · ${emailSections.actionRequired.length} need action`
+          ) : filtered.length === summaries.length ? (
+            `${summaries.length} deals`
+          ) : (
+            `${filtered.length} of ${summaries.length} deals`
+          )}
+        </div>
+        {viewMode !== "by-team" && visibleDealIds.length > 0 && (
+          <button
+            onClick={toggleAll}
+            className="text-xs text-muted hover:text-foreground transition-colors whitespace-nowrap"
+          >
+            {allExpanded ? "Collapse all" : "Expand all"}
+          </button>
         )}
       </div>
 
@@ -1202,7 +1229,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       )}
 
       {!isLoading && viewMode === "sections" && (
-        <div className="space-y-8">
+        <div className="space-y-5">
           {/* Nearly Complete */}
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -1219,7 +1246,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             {emailSections.nearlyComplete.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">No deals nearly complete.</div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {emailSections.nearlyComplete.map(({ summary: s, docs }) => (
                   <SectionDealRow
                     key={s.deal.dealId}
@@ -1227,7 +1254,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                     docs={docs}
                     badgeLabel={`${docs.length} to finish`}
                     badgeClass="bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                    defaultExpanded={emailSections.nearlyComplete.length <= 15}
+                    expanded={expandedDeals.has(s.deal.dealId)}
+                    onToggle={() => toggleDeal(s.deal.dealId)}
                   />
                 ))}
               </div>
@@ -1250,7 +1278,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             {emailSections.notUploaded.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">Nothing missing uploads.</div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {emailSections.notUploaded.map(({ summary: s, docs }) => (
                   <SectionDealRow
                     key={s.deal.dealId}
@@ -1258,7 +1286,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                     docs={docs}
                     badgeLabel={`${docs.length} missing`}
                     badgeClass="bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
-                    defaultExpanded={emailSections.notUploaded.length <= 15}
+                    expanded={expandedDeals.has(s.deal.dealId)}
+                    onToggle={() => toggleDeal(s.deal.dealId)}
                   />
                 ))}
               </div>
@@ -1281,7 +1310,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             {emailSections.actionRequired.length === 0 ? (
               <div className="text-xs text-muted/60 px-1 py-2">No rejections or action items.</div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {emailSections.actionRequired.map(({ summary: s, docs }) => (
                   <SectionDealRow
                     key={s.deal.dealId}
@@ -1289,7 +1318,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                     docs={docs}
                     badgeLabel={docs.length === 1 ? "1 rejection" : `${docs.length} rejections`}
                     badgeClass="bg-orange-500/20 text-orange-400 border-orange-500/30"
-                    defaultExpanded={emailSections.actionRequired.length <= 15}
+                    expanded={expandedDeals.has(s.deal.dealId)}
+                    onToggle={() => toggleDeal(s.deal.dealId)}
                   />
                 ))}
               </div>
@@ -1309,7 +1339,13 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             />
           </div>
           {sorted.map((s) => (
-            <DealCard key={s.deal.dealId} summary={s} docMap={docMap} defaultExpanded={false} />
+            <DealCard
+              key={s.deal.dealId}
+              summary={s}
+              docMap={docMap}
+              expanded={expandedDeals.has(s.deal.dealId)}
+              onToggle={() => toggleDeal(s.deal.dealId)}
+            />
           ))}
         </div>
       )}
