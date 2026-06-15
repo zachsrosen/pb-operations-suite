@@ -227,22 +227,29 @@ export interface MonthlyTiming {
   approvals: number;
 }
 
-export interface RejectionOpenDeal {
+export interface RejectionDrillDeal {
   dealName: string;
-  pePortalUrl: string | null;
+  dealId: string;
   hubspotUrl: string;
+  pePortalUrl: string | null;
+  driveUrl: string | null;
+  comment: string | null; // latest genuine PE rejection reason
+  dateRejected: string | null; // YYYY-MM-DD
+  dateResubmitted: string | null;
+  dateApproved: string | null;
 }
 
 export interface RejectionByDoc {
   docName: string;
   totalEvents: number;
-  currentlyRejected: number;
-  currentActionRequired: number;
   trackedDeals: number;
-  // Open vs resolved, scoped to docs that were ever genuinely rejected.
-  open: number; // currently rejected/action-required (with real reviewer history)
-  resolved: number; // were rejected, now approved/in-review
-  openDeals: RejectionOpenDeal[]; // the open ones, for the drill-down
+  // Outcome of docs that were ever genuinely rejected, split three ways.
+  open: number; // still rejected / action-required
+  resubmitted: number; // fixed and back under review (awaiting PE)
+  approved: number; // PE accepted the fix
+  openDeals: RejectionDrillDeal[];
+  resubmittedDeals: RejectionDrillDeal[];
+  approvedDeals: RejectionDrillDeal[];
 }
 
 export interface RejectionNote {
@@ -746,6 +753,7 @@ export interface UploaderDoc {
   docName: string;
   hubspotUrl: string;
   pePortalUrl: string | null;
+  driveUrl: string | null;
   note: string | null; // latest PE reviewer note (rejections only); null otherwise
   overridden?: boolean; // credited uploader pinned by an admin override
   resubmitted?: boolean; // a newer version landed after the override — re-check

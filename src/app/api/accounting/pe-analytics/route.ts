@@ -31,6 +31,7 @@ import {
   type WeeklyLifecycle,
   type WeeklySplitCohort,
   type MilestoneDrillRow,
+  type RejectionDrillDeal,
   type DocRejectionEvent,
   type PipelineGroupRow,
   type TimingSummary,
@@ -541,67 +542,95 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       : Promise.resolve([]),
   ]);
 
-  const byDocMap = new Map<
-    string,
-    { totalEvents: number; currentlyRejected: number; currentActionRequired: number; trackedDeals: number }
-  >();
+  const byDocMap = new Map<string, { totalEvents: number; trackedDeals: number }>();
   // Status-change events that are genuine rejections (carry a reviewer comment),
   // not bare sync log lines — these drive the rejection counts and notes.
   const rejectionLog = changeLog
     .filter((ev) => ev.newStatus === "REJECTED" || ev.newStatus === "ACTION_REQUIRED")
     .filter((ev) => hasReviewerComment(ev.newNotes));
-  // deal+doc pairs that ever had a genuine (commented) rejection. The PE-API
-  // sync overwrites each doc's current `notes` with a generic "Synced from PE
-  // API | vN | milestone" line, so a currently-open doc's note no longer holds
-  // the reason — we cross-reference history to tell real open rejections from
-  // bare onboarding-intake action-required states.
+  // deal+doc pairs that ever had a genuine (commented) rejection.
   const realRejectionHistory = new Set<string>(rejectionLog.map((ev) => `${ev.dealId}::${ev.docName}`));
   for (const row of docRows) {
-    const d = byDocMap.get(row.docName) || { totalEvents: 0, currentlyRejected: 0, currentActionRequired: 0, trackedDeals: 0 };
+    const d = byDocMap.get(row.docName) || { totalEvents: 0, trackedDeals: 0 };
     d.trackedDeals++;
-    const reallyRejected = realRejectionHistory.has(`${row.dealId}::${row.docName}`);
-    if (row.status === "REJECTED" && reallyRejected) d.currentlyRejected++;
-    if (row.status === "ACTION_REQUIRED" && reallyRejected) d.currentActionRequired++;
     byDocMap.set(row.docName, d);
   }
   for (const ev of rejectionLog) {
-    const d = byDocMap.get(ev.docName) || { totalEvents: 0, currentlyRejected: 0, currentActionRequired: 0, trackedDeals: 0 };
+    const d = byDocMap.get(ev.docName) || { totalEvents: 0, trackedDeals: 0 };
     d.totalEvents++;
     byDocMap.set(ev.docName, d);
   }
-  // Per-doc open (currently rejected) vs resolved (was rejected, now cleared),
-  // plus the list of open deals for the drill-down → PE portal.
+
+  // Rejection drill-down: split every ever-rejected (deal, doc) into open /
+  // resubmitted / approved by current status, each with the rejected/resubmitted/
+  // approved dates, the reviewer comment, and HubSpot + PE portal + Drive links.
   const PORTAL_ID = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
-  const dealMetaById = new Map(deals.map((d) => [d.dealId, { name: d.dealName, portal: d.pePortalUrl }]));
   const rejectionHsUrl = (id: string) => (PORTAL_ID ? `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${id}` : "");
-  const everRejectedByDoc = new Map<string, number>();
-  for (const k of realRejectionHistory) {
-    const doc = k.slice(k.indexOf("::") + 2);
-    everRejectedByDoc.set(doc, (everRejectedByDoc.get(doc) ?? 0) + 1);
+  const dealMetaById = new Map(deals.map((d) => [d.dealId, {
+    name: d.dealName,
+    portal: d.pePortalUrl,
+    drive: d.driveFolderId ? `https://drive.google.com/drive/folders/${d.driveFolderId}` : null,
+  }]));
+  const statusByDealDoc = new Map<string, string>();
+  for (const r of docRows) statusByDealDoc.set(`${r.dealId}::${r.docName}`, r.status);
+  // Full status timeline per (deal, doc) for the rejected/resubmitted/approved dates.
+  const changeLogByKey = new Map<string, { status: string; date: string; note: string | null }[]>();
+  for (const ev of changeLog) {
+    const k = `${ev.dealId}::${ev.docName}`;
+    (changeLogByKey.get(k) ?? changeLogByKey.set(k, []).get(k)!).push({ status: ev.newStatus, date: ev.createdAt.toISOString(), note: ev.newNotes });
   }
-  const openDealsByDoc = new Map<string, { dealName: string; pePortalUrl: string | null; hubspotUrl: string }[]>();
-  for (const row of docRows) {
-    if (row.status !== "REJECTED" && row.status !== "ACTION_REQUIRED") continue;
-    if (!realRejectionHistory.has(`${row.dealId}::${row.docName}`)) continue;
-    const meta = dealMetaById.get(row.dealId);
-    const list = openDealsByDoc.get(row.docName) ?? [];
-    list.push({ dealName: meta?.name ?? row.dealId, pePortalUrl: meta?.portal ?? null, hubspotUrl: rejectionHsUrl(row.dealId) });
-    openDealsByDoc.set(row.docName, list);
+  for (const list of changeLogByKey.values()) list.sort((a, b) => a.date.localeCompare(b.date));
+  const dayOf = (iso: string | undefined) => (iso ? iso.slice(0, 10) : null);
+  const buildDrillRow = (key: string): RejectionDrillDeal => {
+    const dealId = key.slice(0, key.indexOf("::"));
+    const evs = changeLogByKey.get(key) ?? [];
+    const lastRej = evs.filter((e) => (e.status === "REJECTED" || e.status === "ACTION_REQUIRED") && hasReviewerComment(e.note)).at(-1);
+    const resub = evs.filter((e) => (e.status === "UNDER_REVIEW" || e.status === "UPLOADED") && (!lastRej || e.date > lastRej.date)).at(-1);
+    const appr = evs.filter((e) => e.status === "APPROVED").at(-1);
+    const meta = dealMetaById.get(dealId);
+    return {
+      dealName: meta?.name ?? dealId,
+      dealId,
+      hubspotUrl: rejectionHsUrl(dealId),
+      pePortalUrl: meta?.portal ?? null,
+      driveUrl: meta?.drive ?? null,
+      comment: lastRej ? cleanRejectionNote(lastRej.note ?? "") : null,
+      dateRejected: dayOf(lastRej?.date),
+      dateResubmitted: dayOf(resub?.date),
+      dateApproved: dayOf(appr?.date),
+    };
+  };
+  const bucketsByDoc = new Map<string, { open: RejectionDrillDeal[]; resubmitted: RejectionDrillDeal[]; approved: RejectionDrillDeal[] }>();
+  for (const key of realRejectionHistory) {
+    const dealId = key.slice(0, key.indexOf("::"));
+    const docName = key.slice(key.indexOf("::") + 2);
+    if (!dealMetaById.has(dealId)) continue;
+    const status = statusByDealDoc.get(key);
+    const b = bucketsByDoc.get(docName) ?? { open: [], resubmitted: [], approved: [] };
+    const row = buildDrillRow(key);
+    if (status === "APPROVED") b.approved.push(row);
+    else if (status === "UNDER_REVIEW" || status === "UPLOADED") b.resubmitted.push(row);
+    else b.open.push(row); // REJECTED / ACTION_REQUIRED / NOT_UPLOADED / missing
+    bucketsByDoc.set(docName, b);
   }
+  const byName = (a: RejectionDrillDeal, z: RejectionDrillDeal) => a.dealName.localeCompare(z.dealName);
   const byDoc = [...byDocMap.entries()]
     .map(([docName, d]) => {
-      const open = d.currentlyRejected + d.currentActionRequired;
-      const ever = everRejectedByDoc.get(docName) ?? open;
+      const b = bucketsByDoc.get(docName) ?? { open: [], resubmitted: [], approved: [] };
       return {
         docName,
-        ...d,
-        open,
-        resolved: Math.max(0, ever - open),
-        openDeals: (openDealsByDoc.get(docName) ?? []).sort((a, b) => a.dealName.localeCompare(b.dealName)),
+        totalEvents: d.totalEvents,
+        trackedDeals: d.trackedDeals,
+        open: b.open.length,
+        resubmitted: b.resubmitted.length,
+        approved: b.approved.length,
+        openDeals: [...b.open].sort(byName),
+        resubmittedDeals: [...b.resubmitted].sort(byName),
+        approvedDeals: [...b.approved].sort(byName),
       };
     })
-    .filter((d) => d.totalEvents > 0 || d.open > 0)
-    .sort((a, b) => b.totalEvents + b.open - (a.totalEvents + a.open));
+    .filter((d) => d.totalEvents > 0 || d.open + d.resubmitted + d.approved > 0)
+    .sort((a, b) => (b.open + b.resubmitted + b.approved) - (a.open + a.resubmitted + a.approved) || b.totalEvents - a.totalEvents);
 
   // --- Doc-status header stats -----------------------------------------------
   // All four cards are scoped to deals actively in a milestone (PTO stage owes
@@ -944,6 +973,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       docName,
       hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
       pePortalUrl: dealPortalUrl.get(dealId) ?? null,
+      driveUrl: dealMetaById.get(dealId)?.drive ?? null,
       note: clean,
       overridden: overrideKeys.has(k),
       resubmitted: resubmittedOverrideKeys.has(k),
@@ -978,6 +1008,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         docName,
         hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}` : "",
         pePortalUrl: dealPortalUrl.get(dealId) ?? null,
+      driveUrl: dealMetaById.get(dealId)?.drive ?? null,
         note: clean,
         overridden: overrideKeys.has(k),
         resubmitted: resubmittedOverrideKeys.has(k),

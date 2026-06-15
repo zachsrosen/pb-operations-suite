@@ -21,6 +21,7 @@ import {
   type UploaderOutcomeDocs,
   type UploaderDoc,
   type RejectionByDoc,
+  type RejectionDrillDeal,
   type DailyUpload,
   type UploadsByPeriod,
   type UploadGranularity,
@@ -950,6 +951,7 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
                     <span className="text-muted">·</span>
                     <a href={r.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate max-w-48">{r.dealName.split("|").slice(0, 2).join("|").trim()}</a>
                     {r.pePortalUrl && <a href={r.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
+                    {r.driveUrl && <a href={r.driveUrl} target="_blank" rel="noopener noreferrer" className="text-yellow-400 hover:underline">Drive ↗</a>}
                     {r.overridden && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Credited uploader was set by a super-admin override">override</span>}
                     {r.resubmitted && canOverride && <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30" title="A newer version was uploaded after this override was set — re-check whether the credit is still correct">resubmitted ⚠</span>}
                     {canOverride && (
@@ -1099,54 +1101,77 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
   );
 }
 
-/** Rejections by document type — open (orange) vs resolved (green); click the
- *  open portion to drill into those deals and jump to the PE portal. */
+/** Rejections by document type — open / resubmitted / approved, each segment and
+ *  count clickable to drill into those deals with the reason, dates, and links. */
+type RejBucket = "open" | "resubmitted" | "approved";
+const REJ_BUCKETS: { key: RejBucket; seg: string; segHover: string; ring: string; text: string; short: string; border: string; bg: string }[] = [
+  { key: "open", seg: "bg-orange-500/80", segHover: "hover:bg-orange-500", ring: "ring-orange-300", text: "text-orange-400", short: "open", border: "border-orange-500/30", bg: "bg-orange-500/5" },
+  { key: "resubmitted", seg: "bg-cyan-500/70", segHover: "hover:bg-cyan-500", ring: "ring-cyan-300", text: "text-cyan-300", short: "resub", border: "border-cyan-500/30", bg: "bg-cyan-500/5" },
+  { key: "approved", seg: "bg-emerald-500/60", segHover: "hover:bg-emerald-500", ring: "ring-emerald-300", text: "text-emerald-400", short: "ok", border: "border-emerald-500/30", bg: "bg-emerald-500/5" },
+];
+const rejDeals = (d: RejectionByDoc, k: RejBucket): RejectionDrillDeal[] =>
+  k === "open" ? d.openDeals : k === "resubmitted" ? d.resubmittedDeals : d.approvedDeals;
+const rejCount = (d: RejectionByDoc, k: RejBucket): number =>
+  k === "open" ? d.open : k === "resubmitted" ? d.resubmitted : d.approved;
+
 function RejectionsByDocPanel({ byDoc }: { byDoc: RejectionByDoc[] }) {
-  const [drill, setDrill] = useState<string | null>(null);
+  const [drill, setDrill] = useState<{ docName: string; bucket: RejBucket } | null>(null);
   if (byDoc.length === 0) return <div className="text-xs text-muted py-4">No rejection data yet.</div>;
-  const max = Math.max(...byDoc.map((x) => x.open + x.resolved), 1);
+  const max = Math.max(...byDoc.map((x) => x.open + x.resubmitted + x.approved), 1);
   return (
     <div className="space-y-1.5">
       {byDoc.map((d) => {
-        const isOpen = drill === d.docName;
-        const canDrill = d.openDeals.length > 0;
-        const toggle = () => canDrill && setDrill(isOpen ? null : d.docName);
+        const toggle = (k: RejBucket) => {
+          if (rejCount(d, k) === 0) return;
+          setDrill((cur) => (cur && cur.docName === d.docName && cur.bucket === k ? null : { docName: d.docName, bucket: k }));
+        };
+        const drilled = drill?.docName === d.docName ? drill : null;
+        const meta = drilled ? REJ_BUCKETS.find((b) => b.key === drilled.bucket)! : null;
         return (
           <div key={d.docName}>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-muted w-52 truncate" title={d.docName}>{d.docName}</span>
-              <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex" title={`${d.open} open · ${d.resolved} resolved`}>
-                {d.open > 0 && (
-                  <button
-                    type="button"
-                    onClick={toggle}
-                    className={`h-full bg-orange-500/80 ${canDrill ? "hover:bg-orange-500 cursor-pointer" : ""} ${isOpen ? "ring-1 ring-orange-300" : ""}`}
-                    style={{ width: `${(d.open / max) * 100}%` }}
-                    title={canDrill ? `${d.open} open — click to list` : `${d.open} open`}
-                  />
-                )}
-                {d.resolved > 0 && (
-                  <div className="h-full bg-emerald-500/60" style={{ width: `${(d.resolved / max) * 100}%` }} title={`${d.resolved} resolved`} />
-                )}
+              <div className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex" title={`${d.open} open · ${d.resubmitted} resubmitted · ${d.approved} approved`}>
+                {REJ_BUCKETS.map((b) => {
+                  const n = rejCount(d, b.key);
+                  if (n === 0) return null;
+                  const on = drilled?.bucket === b.key;
+                  return (
+                    <button key={b.key} type="button" onClick={() => toggle(b.key)}
+                      className={`h-full ${b.seg} ${b.segHover} cursor-pointer ${on ? `ring-1 ${b.ring}` : ""}`}
+                      style={{ width: `${(n / max) * 100}%` }}
+                      title={`${n} ${b.short} — click to list`} />
+                  );
+                })}
               </div>
-              <button
-                type="button"
-                onClick={toggle}
-                className={`text-[10px] w-24 text-right tabular-nums ${d.open > 0 && canDrill ? "hover:underline cursor-pointer" : "cursor-default"}`}
-                title={canDrill ? "Click to list the open ones" : undefined}
-              >
-                <span className={d.open > 0 ? "text-orange-400" : "text-muted"}>{d.open} open</span>
-                <span className="text-emerald-400/70"> · {d.resolved} ok</span>
-              </button>
+              <div className="text-[10px] w-36 text-right tabular-nums flex gap-1.5 justify-end">
+                {REJ_BUCKETS.map((b) => {
+                  const n = rejCount(d, b.key);
+                  return (
+                    <button key={b.key} type="button" disabled={n === 0} onClick={() => toggle(b.key)}
+                      className={n > 0 ? `${b.text} hover:underline cursor-pointer` : "text-muted/40 cursor-default"}>
+                      {n} {b.short}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            {isOpen && (
-              <div className="mt-1 ml-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-2 space-y-1 max-h-56 overflow-y-auto">
-                {d.openDeals.map((od, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[11px]">
-                    <a href={od.pePortalUrl ?? od.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline truncate flex-1">
-                      {od.dealName.split("|").slice(0, 2).join("|").trim()}
-                    </a>
-                    {od.pePortalUrl && <a href={od.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline flex-shrink-0">PE ↗</a>}
+            {drilled && meta && (
+              <div className={`mt-1 ml-2 rounded-lg border ${meta.border} ${meta.bg} p-2 space-y-1.5 max-h-64 overflow-y-auto`}>
+                {rejDeals(d, drilled.bucket).map((od, i) => (
+                  <div key={i} className="text-[11px] border-b border-t-border/30 pb-1 last:border-0 last:pb-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-foreground font-medium truncate max-w-[16rem]" title={od.dealName}>{od.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                      <a href={od.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">HS ↗</a>
+                      {od.pePortalUrl && <a href={od.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
+                      {od.driveUrl && <a href={od.driveUrl} target="_blank" rel="noopener noreferrer" className="text-yellow-400 hover:underline">Drive ↗</a>}
+                    </div>
+                    {od.comment && <div className="text-muted mt-0.5 leading-snug">{od.comment}</div>}
+                    <div className="text-[10px] text-muted/70 flex gap-2 mt-0.5 flex-wrap">
+                      {od.dateRejected && <span className="text-orange-400/80">rejected {od.dateRejected}</span>}
+                      {od.dateResubmitted && <span className="text-cyan-300/80">resubmitted {od.dateResubmitted}</span>}
+                      {od.dateApproved && <span className="text-emerald-400/80">approved {od.dateApproved}</span>}
+                    </div>
                   </div>
                 ))}
               </div>
