@@ -44,6 +44,21 @@ const M2_OPTIONS = [
   "Paid",
 ] as const;
 
+const WAITING_ON_INFO = "Waiting on Information";
+
+// Color category for an M1/M2 status value, driving the picker's text/tint.
+//   amber  = waiting on us/customer    red = rejected/needs resubmit
+//   green  = approved/paid             blue = submitted/in review
+//   muted  = blank or pre-submission "ready" states
+function statusColor(value: string | null): { text: string; tint: string } {
+  const v = value ?? "";
+  if (v === WAITING_ON_INFO) return { text: "text-amber-400", tint: "bg-amber-500/10 border-amber-500/30" };
+  if (/Reject|Ready to Resubmit/i.test(v)) return { text: "text-red-400", tint: "bg-red-500/10 border-red-500/30" };
+  if (v === "Approved" || v === "Paid") return { text: "text-green-400", tint: "bg-green-500/10 border-green-500/30" };
+  if (/Submitted|Resubmitted/i.test(v)) return { text: "text-blue-400", tint: "bg-blue-500/10 border-blue-500/30" };
+  return { text: "text-foreground", tint: "bg-surface-2 border-border" };
+}
+
 interface DocReviewFromHS {
   dealId: string;
   docName: string;
@@ -73,6 +88,7 @@ interface PeDeal {
   leaseFactor: number;
   peM1Status: string | null;
   peM2Status: string | null;
+  peInfoNeeded: string | null; // free-text reason, shown when a milestone is "Waiting on Information"
   m1PaymentShort: number; // admin-recorded short-pay on M1 (IC)
   m2PaymentShort: number; // admin-recorded short-pay on M2 (PC)
   milestoneHighlight: "m1" | "m2" | "complete" | null;
@@ -284,20 +300,85 @@ function StatusDropdown({
   saving: boolean;
   options: readonly string[];
 }) {
+  const { text, tint } = statusColor(value);
   return (
     <select
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
       disabled={saving}
       title={value || ""}
-      className={`text-xs rounded px-1 py-0.5 border border-border bg-surface-2 text-foreground cursor-pointer hover:bg-surface-elevated transition-colors max-w-[80px] truncate ${saving ? "opacity-50" : ""}`}
+      className={`text-xs font-medium rounded px-1 py-0.5 border cursor-pointer hover:bg-surface-elevated transition-colors max-w-[80px] truncate ${text} ${tint} ${saving ? "opacity-50" : ""}`}
     >
       {options.map((opt) => (
-        <option key={opt} value={opt}>
+        <option key={opt} value={opt} className="text-foreground bg-surface-2">
           {opt || "—"}
         </option>
       ))}
     </select>
+  );
+}
+
+// Compact amber "ⓘ" shown next to a "Waiting on Information" status. Tooltip
+// previews the reason; clicking expands the row to the editable field.
+function InfoNeededBadge({ reason, onClick }: { reason: string | null; onClick: () => void }) {
+  const has = !!reason && reason.trim() !== "";
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={has ? `Waiting on: ${reason}` : "Waiting on Information — no reason recorded. Click to add."}
+      className={`flex-shrink-0 w-4 h-4 inline-flex items-center justify-center rounded-full text-[10px] font-semibold border transition-colors ${
+        has
+          ? "bg-amber-500/15 text-amber-400 border-amber-500/40 hover:bg-amber-500/25"
+          : "bg-transparent text-amber-400/50 border-amber-500/30 hover:text-amber-400"
+      }`}
+    >
+      i
+    </button>
+  );
+}
+
+// Editable "PE Info Needed" reason in the expanded deal row. Saves on blur when
+// the text changed (mirrors the inline status-dropdown save). Writes pe_info_needed.
+function InfoNeededEditor({
+  value,
+  waiting,
+  saving,
+  onSave,
+}: {
+  value: string | null;
+  waiting: boolean;
+  saving: boolean;
+  onSave: (val: string) => void;
+}) {
+  // Seeded from the current value; the editor remounts whenever the row is
+  // re-expanded (it's conditionally rendered), so it always opens fresh.
+  const [text, setText] = useState(value ?? "");
+
+  const commit = () => {
+    const next = text.trim();
+    if (next !== (value ?? "").trim()) onSave(next);
+  };
+
+  return (
+    <div className={`mb-3 rounded-lg border p-2.5 ${waiting ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-surface"}`}>
+      <label className="flex items-center gap-1.5 mb-1 text-[11px] font-semibold text-amber-400">
+        <span className="w-3.5 h-3.5 inline-flex items-center justify-center rounded-full border border-amber-500/50 text-[9px]">i</span>
+        PE Info Needed
+        {saving && <span className="text-muted font-normal">· saving…</span>}
+      </label>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onClick={(e) => e.stopPropagation()}
+        disabled={saving}
+        rows={2}
+        maxLength={2000}
+        placeholder="What are we waiting on, and from whom? (e.g. Cust to sign COA)"
+        className="w-full text-xs rounded border border-border bg-surface-2 text-foreground px-2 py-1.5 resize-y focus:outline-none focus:border-amber-500/50"
+      />
+    </div>
   );
 }
 
@@ -320,7 +401,7 @@ function DealSection({
   deals: PeDeal[];
   sortArrow: (key: SortKey) => string;
   toggleSort: (key: SortKey, append: boolean) => void;
-  onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
+  onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status" | "pe_info_needed", value: string) => void;
   savingDeals: Set<string>;
   docMap: Map<string, DocReview>;
   collapsed: boolean;
@@ -489,26 +570,44 @@ function DealSection({
                       <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
                       <td className="px-1.5 py-1.5 text-emerald-400 whitespace-nowrap text-right font-medium">{fmt(deal.totalPBRevenue)}</td>
                       <td className="px-1.5 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <StatusDropdown
-                          value={deal.peM1Status}
-                          onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
-                          saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
-                          options={M1_OPTIONS}
-                        />
+                        <div className="flex items-center gap-1">
+                          <StatusDropdown
+                            value={deal.peM1Status}
+                            onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
+                            saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
+                            options={M1_OPTIONS}
+                          />
+                          {deal.peM1Status === WAITING_ON_INFO && (
+                            <InfoNeededBadge reason={deal.peInfoNeeded} onClick={() => setExpandedDeal(deal.dealId)} />
+                          )}
+                        </div>
                       </td>
                       <td className="px-1.5 py-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <StatusDropdown
-                          value={deal.peM2Status}
-                          onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
-                          saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
-                          options={M2_OPTIONS}
-                        />
+                        <div className="flex items-center gap-1">
+                          <StatusDropdown
+                            value={deal.peM2Status}
+                            onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
+                            saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
+                            options={M2_OPTIONS}
+                          />
+                          {deal.peM2Status === WAITING_ON_INFO && (
+                            <InfoNeededBadge reason={deal.peInfoNeeded} onClick={() => setExpandedDeal(deal.dealId)} />
+                          )}
+                        </div>
                       </td>
                     </tr>
                     {/* Expanded document breakdown */}
                     {isExpanded && (
                       <tr>
                         <td colSpan={COLUMNS.length} className="bg-surface-2/30 px-4 py-3 border-b border-border/50">
+                          {(deal.peM1Status === WAITING_ON_INFO || deal.peM2Status === WAITING_ON_INFO || deal.peInfoNeeded) && (
+                            <InfoNeededEditor
+                              value={deal.peInfoNeeded}
+                              waiting={deal.peM1Status === WAITING_ON_INFO || deal.peM2Status === WAITING_ON_INFO}
+                              saving={savingDeals.has(`${deal.dealId}:pe_info_needed`)}
+                              onSave={(val) => onStatusChange(deal.dealId, "pe_info_needed", val)}
+                            />
+                          )}
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {sections.map((sec) => {
                               const sectionDocs = PE_DOCUMENTS.filter((d) => d.section === sec);
@@ -680,7 +779,7 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   }, []);
 
   const handleStatusChange = useCallback(
-    async (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => {
+    async (dealId: string, field: "pe_m1_status" | "pe_m2_status" | "pe_info_needed", value: string) => {
       const key = `${dealId}:${field}`;
       setSavingDeals((prev) => new Set(prev).add(key));
 
@@ -693,7 +792,14 @@ export default function DealsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
             ...old,
             deals: old.deals.map((d) =>
               d.dealId === dealId
-                ? { ...d, [field === "pe_m1_status" ? "peM1Status" : "peM2Status"]: value || null }
+                ? {
+                    ...d,
+                    [field === "pe_m1_status"
+                      ? "peM1Status"
+                      : field === "pe_m2_status"
+                        ? "peM2Status"
+                        : "peInfoNeeded"]: value || null,
+                  }
                 : d,
             ),
           };
