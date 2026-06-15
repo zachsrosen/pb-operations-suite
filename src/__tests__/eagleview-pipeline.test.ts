@@ -123,6 +123,7 @@ const mkDealAddress = (over: Partial<DealAddressFields> = {}): DealAddressFields
   longitude: -104.9903,
   driveDesignDocumentsFolderId: "folder_design_001",
   driveAllDocumentsFolderId: "folder_all_001",
+  driveSiteSurveyFolderId: null,
   ...over,
 });
 
@@ -136,6 +137,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     fetchDealAddress: jest.Mock;
     geocode: jest.Mock;
     ensureDriveFolder: jest.Mock;
+    findSiteSurveyFolder: jest.Mock;
     uploadToDrive: jest.Mock;
     postDealNote: jest.Mock;
   };
@@ -163,6 +165,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
   const fetchDealAddress = jest.fn(async () => mkDealAddress());
   const geocode = jest.fn(async () => ({ latitude: 39.0, longitude: -105.0 }));
   const ensureDriveFolder = jest.fn(async () => "drive_folder_123");
+  const findSiteSurveyFolder = jest.fn(async () => null);
   const uploadToDrive = jest.fn(async (_: string, name: string) => ({ id: `f_${name}`, name }));
   const postDealNote = jest.fn(async () => undefined);
 
@@ -172,6 +175,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     fetchDealAddress,
     geocode,
     ensureDriveFolder,
+    findSiteSurveyFolder,
     uploadToDrive,
     postDealNote,
     spies: {
@@ -183,6 +187,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
       fetchDealAddress,
       geocode,
       ensureDriveFolder,
+      findSiteSurveyFolder,
       uploadToDrive,
       postDealNote,
     },

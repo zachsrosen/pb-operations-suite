@@ -70,6 +70,8 @@ export interface DealAddressFields {
   driveDesignDocumentsFolderId: string | null;
   /** Fallback parent folder. */
   driveAllDocumentsFolderId: string | null;
+  /** Direct Site Survey folder ID (from site_survey_documents). Null → resolve via findSiteSurveyFolder at delivery. */
+  driveSiteSurveyFolderId: string | null;
 }
 
 export interface PipelineDeps {
@@ -88,6 +90,8 @@ export interface PipelineDeps {
     parentFolderId: string,
     folderName: string,
   ) => Promise<string>;
+  /** Find the "Site Survey" subfolder under a parent folder. Returns null if none. Must never throw. */
+  findSiteSurveyFolder: (parentFolderId: string) => Promise<string | null>;
   /** Upload a binary blob to Drive. Returns the new file ID. */
   uploadToDrive: (
     parentId: string,
