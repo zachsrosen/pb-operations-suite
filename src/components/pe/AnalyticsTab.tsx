@@ -2046,7 +2046,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               <RejectionsByDocPanel byDoc={data.rejections.byDoc} />
             </Section>
 
-            <Section title="Recent Rejection Notes" subtitle="Latest PE reviewer comments on rejected docs.">
+            <Section title="Recent Rejection Notes" subtitle="Latest PE reviewer comments on docs that are still rejected / action-required.">
               {data.rejections.recentNotes.length === 0 ? (
                 <div className="text-xs text-muted py-4">No notes recorded.</div>
               ) : (
