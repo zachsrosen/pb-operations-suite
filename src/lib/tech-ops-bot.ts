@@ -202,7 +202,10 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             },
           });
 
-          // Notify the team (fire-and-forget; don't fail the request on email).
+          // Notify the team (don't fail the request on email). Track whether
+          // the email actually went out so we don't tell the user "notified"
+          // when it silently failed.
+          let emailSent = false;
           try {
             const emailResult = await sendBugReportEmail({
               reportId: report.id,
@@ -213,9 +216,10 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               reporterName: report.reporterName || undefined,
               reporterEmail: report.reporterEmail,
             });
+            emailSent = emailResult.success;
             await prisma.bugReport.update({
               where: { id: report.id },
-              data: { emailSent: emailResult.success },
+              data: { emailSent },
             });
           } catch (err) {
             console.warn("[tech-ops-bot] process request email failed:", err);
@@ -242,7 +246,10 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             submitted: true,
             reportId: report.id,
             title: report.title,
-            message: "Logged your process request — the team's been notified.",
+            emailSent,
+            message: emailSent
+              ? "Logged your process request — the team's been notified."
+              : "Logged your process request. Heads up: the email notification didn't go through, but it's saved in the review queue and Zach will see it there.",
           });
         },
       };
