@@ -18,6 +18,7 @@ import {
 
 // Base bar color per status-funnel bucket (cool→warm progression, revisions red).
 const BUCKET_COLOR: Record<string, string> = {
+  awaitingSiteSurvey: "bg-zinc-500",
   awaitingDesignUpload: "bg-slate-500",
   awaitingDesignReview: "bg-sky-500",
   awaitingDaSend: "bg-blue-500",
@@ -68,7 +69,7 @@ function DrillTable({ deals }: { deals: DesignFunnelDeal[] }) {
         </thead>
         <tbody>
           {deals.map((d) => (
-            <tr key={d.id} className="border-b border-t-border/40 hover:bg-surface-2/40">
+            <tr key={d.id} className={`border-b border-t-border/40 hover:bg-surface-2/40 ${d.muted ? "opacity-50" : ""}`}>
               <td className="py-1 pr-3 whitespace-nowrap">
                 <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 font-medium hover:text-cyan-400">
                   {d.projectNumber || d.name}
@@ -126,7 +127,7 @@ function PositionPanel({
         {groups.map((g) => {
           const pct = total > 0 ? Math.round((g.count / total) * 100) : 0;
           const color = colorFor(g);
-          const segs = g.statusBreakdown.length ? g.statusBreakdown : [{ status: "No status", count: g.count, amount: 0 }];
+          const segs = g.statusBreakdown.length ? g.statusBreakdown : [{ status: "No status", count: g.count, amount: 0, muted: false }];
           const segTotal = g.count || 1;
           const hasRealStatus = g.statusBreakdown.some((s) => s.status !== "No status");
           return (
@@ -152,9 +153,9 @@ function PositionPanel({
                       {segs.map((seg, i) => (
                         <div
                           key={seg.status}
-                          className={`${color} h-full ${i > 0 ? "border-l border-black/25" : ""}`}
-                          style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: segOpacity(i) }}
-                          title={`${seg.status}: ${seg.count}`}
+                          className={`${color} h-full ${i > 0 ? "border-l border-black/25" : ""} ${seg.muted ? "grayscale" : ""}`}
+                          style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: seg.muted ? 0.25 : segOpacity(i) }}
+                          title={`${seg.status}: ${seg.count}${seg.muted ? " (completed)" : ""}`}
                         />
                       ))}
                     </div>
@@ -169,7 +170,7 @@ function PositionPanel({
               {g.count > 0 && hasRealStatus && (
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-[11.75rem] pt-0.5 text-[10px] text-muted">
                   {g.statusBreakdown.map((seg) => (
-                    <span key={seg.status} className="whitespace-nowrap">
+                    <span key={seg.status} className={`whitespace-nowrap ${seg.muted ? "opacity-40" : ""}`}>
                       <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}
                     </span>
                   ))}
