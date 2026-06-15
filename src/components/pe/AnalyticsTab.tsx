@@ -1228,34 +1228,42 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
     return <div className="text-sm text-muted py-8 text-center">No milestone payments attributed yet.</div>;
   }
   const teamApproved = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
+  const teamPaid = attributed.reduce((sum, s) => sum + s.paidPaymentsOwned, 0);
   const teamPending = attributed.reduce((sum, s) => sum + s.pendingPaymentsOwned, 0);
   const unknownPay = unknown?.paymentsOwned ?? 0;
   const maxPay = Math.max(...attributed.map((s) => s.paymentsOwned + s.pendingPaymentsOwned), 1);
-  const COLS = "grid items-center gap-x-3 grid-cols-[7.5rem_1fr_5.5rem_5.5rem]";
-  const row = (s: UploaderStat, muted: boolean) => (
+  const COLS = "grid items-center gap-x-2 grid-cols-[6.25rem_1fr_4.5rem_4.5rem_4.5rem]";
+  const row = (s: UploaderStat, muted: boolean) => {
+    const approvedUnpaid = Math.max(0, s.paymentsOwned - s.paidPaymentsOwned);
+    return (
     <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
       <span className="text-xs text-foreground truncate" title={s.uploader}>
         {muted ? "Unknown" : prettyUploader(s.uploader)}
         {muted && <span className="text-[10px] text-muted block leading-tight">no known uploader</span>}
       </span>
       <div className="h-4 rounded bg-surface-2 overflow-hidden w-full flex">
-        <div className="h-full bg-cyan-500/80" style={{ width: `${Math.min(100, (s.paymentsOwned / maxPay) * 100)}%` }} title={`Approved: ${fmtMoney(s.paymentsOwned)}`} />
+        <div className="h-full bg-emerald-500/80" style={{ width: `${Math.min(100, (s.paidPaymentsOwned / maxPay) * 100)}%` }} title={`Paid: ${fmtMoney(s.paidPaymentsOwned)}`} />
+        <div className="h-full bg-cyan-500/70" style={{ width: `${Math.min(100, (approvedUnpaid / maxPay) * 100)}%` }} title={`Approved, awaiting payment: ${fmtMoney(approvedUnpaid)}`} />
         <div className="h-full bg-amber-500/50" style={{ width: `${Math.min(100, (s.pendingPaymentsOwned / maxPay) * 100)}%` }} title={`In review: ${fmtMoney(s.pendingPaymentsOwned)}`} />
       </div>
-      <span className="text-sm font-semibold text-cyan-400 text-right tabular-nums" title={`${s.milestonesOwned} approved milestone${s.milestonesOwned === 1 ? "" : "s"}`}>{fmtMoney(s.paymentsOwned)}</span>
+      <span className="text-sm font-semibold text-emerald-400 text-right tabular-nums" title={`${s.paidMilestonesOwned} paid milestone${s.paidMilestonesOwned === 1 ? "" : "s"}`}>{s.paidPaymentsOwned > 0 ? fmtMoney(s.paidPaymentsOwned) : "—"}</span>
+      <span className="text-xs text-cyan-400 text-right tabular-nums" title={`${s.milestonesOwned - s.paidMilestonesOwned} approved milestone${s.milestonesOwned - s.paidMilestonesOwned === 1 ? "" : "s"} awaiting payment`}>{approvedUnpaid > 0 ? fmtMoney(approvedUnpaid) : "—"}</span>
       <span className="text-xs text-amber-400 text-right tabular-nums" title={`${s.pendingMilestonesOwned} milestone${s.pendingMilestonesOwned === 1 ? "" : "s"} submitted, awaiting approval`}>{s.pendingPaymentsOwned > 0 ? fmtMoney(s.pendingPaymentsOwned) : "—"}</span>
     </div>
-  );
+    );
+  };
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-        <MiniStat label="Approved $ Owned" value={fmtMoney(teamApproved)} subtitle="credited to a known person" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+        <MiniStat label="Paid $" value={fmtMoney(teamPaid)} subtitle="PE has paid" />
+        <MiniStat label="Approved $" value={fmtMoney(teamApproved - teamPaid)} subtitle="approved, awaiting payment" />
         <MiniStat label="In Review $" value={fmtMoney(teamPending)} subtitle="submitted, awaiting PE approval" />
-        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader on milestone" />
+        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader" />
       </div>
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
-        <span>Payments owned — bar = $ (<span className="text-cyan-400/80">approved</span> + <span className="text-amber-400/80">in review</span>)</span>
+        <span>Payments owned — bar = $ (<span className="text-emerald-400/80">paid</span> + <span className="text-cyan-400/80">approved</span> + <span className="text-amber-400/80">in review</span>)</span>
+        <span className="text-right text-emerald-400/80">$ Paid</span>
         <span className="text-right text-cyan-400/80">$ Appr.</span>
         <span className="text-right text-amber-400/80">$ In Rev.</span>
       </div>
@@ -1283,7 +1291,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
             ? `Documents uploaded per ${grain}, segmented by who uploaded them.${grain === "day" ? " Last 90 days." : " All time."}`
             : tab === "doctype"
               ? "Which document types each person uploads — count of docs they're the latest uploader on, by type."
-              : "Approved milestone payments each person drove, by their share of the approved docs."
+              : "Milestone payments each person drove, split into paid, approved (awaiting payment), and in review."
       }
       actions={
         <div className="flex items-center gap-3 flex-shrink-0">

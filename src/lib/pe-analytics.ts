@@ -339,6 +339,10 @@ export interface UploaderStat {
   // no approved doc has a known uploader). Populated by buildPaymentOwnership.
   paymentsOwned: number; // $ of approved/paid milestone payments owned
   milestonesOwned: number; // count of those milestones
+  // Subset of paymentsOwned where PE has actually PAID the milestone (status
+  // "Paid"), so the UI can split approved-awaiting-payment from already-paid.
+  paidPaymentsOwned: number; // $ of paid milestone payments owned
+  paidMilestonesOwned: number; // count of those milestones
   // Same ownership, but for milestones submitted to PE and still awaiting
   // approval (not yet approved/paid) — the "in review" payment pipeline.
   pendingPaymentsOwned: number; // $ of submitted-but-unapproved milestone payments owned
@@ -351,6 +355,7 @@ export interface MilestonePayment {
   docNames: string[]; // the milestone's canonical doc set (M1 = 12, M2 = 3)
   amount: number;
   isApprovedPayment: boolean; // milestone status is Approved or Paid
+  isPaid: boolean; // milestone status is specifically Paid (subset of approved)
   isPendingPayment: boolean; // milestone submitted to PE, awaiting approval (not yet approved/paid)
 }
 
@@ -366,11 +371,11 @@ export function buildPaymentOwnership(
   milestones: MilestonePayment[],
   statusByDoc: Map<string, string>, // `${dealId}|${docName}` → status
   latestUploaderByDoc: Map<string, string | null>, // `${dealId}|${docName}` → uploader
-): Map<string, { amount: number; count: number; pendingAmount: number; pendingCount: number }> {
-  const owned = new Map<string, { amount: number; count: number; pendingAmount: number; pendingCount: number }>();
+): Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }> {
+  const owned = new Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>();
   const ensure = (who: string) => {
     let e = owned.get(who);
-    if (!e) { e = { amount: 0, count: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
+    if (!e) { e = { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
     return e;
   };
   // Credit a milestone's $ to the top KNOWN uploader of its `qualifying` docs
@@ -388,7 +393,10 @@ export function buildPaymentOwnership(
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
     const e = ensure(knownTop ? knownTop[0] : UNKNOWN_UPLOADER);
     if (pending) { e.pendingAmount += m.amount; e.pendingCount += 1; }
-    else { e.amount += m.amount; e.count += 1; }
+    else {
+      e.amount += m.amount; e.count += 1;
+      if (m.isPaid) { e.paidAmount += m.amount; e.paidCount += 1; }
+    }
   };
   const APPROVED = new Set(["APPROVED"]);
   const IN_REVIEW = new Set(["UNDER_REVIEW", "UPLOADED"]);
@@ -608,6 +616,8 @@ export function buildUploaderStats(
       inReview: e.inReview,
       paymentsOwned: 0, // merged in by the route via buildPaymentOwnership
       milestonesOwned: 0,
+      paidPaymentsOwned: 0,
+      paidMilestonesOwned: 0,
       pendingPaymentsOwned: 0,
       pendingMilestonesOwned: 0,
     }))
@@ -711,6 +721,8 @@ export function buildSharedUploaderStats(
       inReview: e.inReview,
       paymentsOwned: 0,
       milestonesOwned: 0,
+      paidPaymentsOwned: 0,
+      paidMilestonesOwned: 0,
       pendingPaymentsOwned: 0,
       pendingMilestonesOwned: 0,
     }))

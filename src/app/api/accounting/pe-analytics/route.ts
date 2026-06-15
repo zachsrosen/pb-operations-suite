@@ -919,8 +919,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
   const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
   const milestonePayments = deals.flatMap((d) => [
-    { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
-    { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
+    { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPaid: d.m1Status === "Paid", isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
+    { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPaid: d.m2Status === "Paid", isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
   ]);
   const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDoc);
   const withPaymentOwnership = buildUploaderStats(
@@ -930,7 +930,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     latestUploaderByDoc, // override-adjusted owner per doc → moves docsOwned/outcomes
   ).map((s) => {
     const pay = paymentOwnership.get(s.uploader);
-    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
+    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
   });
 
   // Shared (fractional) ownership: split each doc among its tracked uploaders by
@@ -942,7 +942,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const sharedOwners = computeSharedOwners(uploaderVersionRows, overrideByDoc);
   const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
     const pay = paymentOwnership.get(s.uploader);
-    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
+    return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
   });
 
   // Per-uploader owned docs split by current outcome (latest version owns the
