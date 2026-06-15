@@ -676,6 +676,30 @@ export async function listDriveSubfolders(folderId: string): Promise<DriveFolder
   return data.files ?? [];
 }
 
+/** Site survey subfolder patterns (canonical home; imported by site-survey-readiness.ts). */
+export const SITE_SURVEY_FOLDER_PATTERNS = [
+  /site\s*survey/i,
+  /^1\.\s*site\s*survey$/i,
+  /^ss$/i,
+];
+
+/**
+ * Look for a "Site Survey" subfolder inside the given parent folder.
+ * Matches names like "1. Site Survey", "Site Survey - CA", "SS".
+ * Returns the subfolder ID if found, null otherwise.
+ *
+ * NOTE: listDriveSubfolders throws on a non-OK Drive response, so the call is
+ * wrapped in `.catch(() => [])` — this helper must never throw, so the
+ * EagleView delivery path can degrade to "Design only" instead of failing.
+ */
+export async function findSiteSurveyFolder(parentFolderId: string): Promise<string | null> {
+  const subfolders = await listDriveSubfolders(parentFolderId).catch(() => []);
+  const match = subfolders.find((f) =>
+    SITE_SURVEY_FOLDER_PATTERNS.some((p) => p.test(f.name)),
+  );
+  return match?.id ?? null;
+}
+
 export interface DriveGenericFile {
   id: string;
   name: string;
