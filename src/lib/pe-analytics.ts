@@ -261,6 +261,22 @@ export interface RejectionNote {
   hubspotUrl: string;
 }
 
+/** A deal that owes a doc (in a milestone) but hasn't uploaded it yet. */
+export interface MissingDrillDeal {
+  dealName: string;
+  dealId: string;
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+  driveUrl: string | null;
+}
+
+/** Per-document breakdown of NOT_UPLOADED docs across deals that owe them. */
+export interface MissingByDoc {
+  docName: string;
+  missing: number; // count of scoped deals (in a milestone) missing this doc
+  deals: MissingDrillDeal[];
+}
+
 export interface FunnelDeal {
   location: string;
   m1: string | null;
@@ -812,5 +828,6 @@ export interface PeAnalyticsPayload {
   pipeline: PipelineGroupRow[];
   timing: { overall: TimingSummary[]; monthly: MonthlyTiming[] };
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
+  missingByDoc: MissingByDoc[];
   funnelDeals: FunnelDeal[];
 }
