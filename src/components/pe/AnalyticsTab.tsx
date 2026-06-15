@@ -1286,12 +1286,17 @@ function fmtMoney(n: number): string {
 }
 
 /** Approved-payment ownership leaderboard — bar length = $ owned. */
-function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
+function PaymentPanel({ stats, statsShared }: { stats: UploaderStat[]; statsShared: UploaderStat[] }) {
   const unk = useContext(UnknownLabelCtx);
-  const attributed = stats
+  // Owner = whole milestone $ to its top uploader (winner-take-all).
+  // Fractional = milestone $ split across its approved-doc uploaders by share.
+  const [mode, setMode] = useState<"owner" | "fractional">("owner");
+  const active = mode === "fractional" ? statsShared : stats;
+  const fmtCt = (n: number) => (mode === "fractional" ? n.toFixed(1) : String(n));
+  const attributed = active
     .filter((s) => s.uploader !== UNKNOWN_UPLOADER && (s.paymentsOwned > 0 || s.pendingPaymentsOwned > 0))
     .sort((a, b) => (b.paymentsOwned + b.pendingPaymentsOwned) - (a.paymentsOwned + a.pendingPaymentsOwned));
-  const unknown = stats.find((s) => s.uploader === UNKNOWN_UPLOADER);
+  const unknown = active.find((s) => s.uploader === UNKNOWN_UPLOADER);
   const hasUnknown = !!unknown && (unknown.paymentsOwned > 0 || unknown.pendingPaymentsOwned > 0);
   if (attributed.length === 0 && !hasUnknown) {
     return <div className="text-sm text-muted py-8 text-center">No milestone payments attributed yet.</div>;
@@ -1315,14 +1320,24 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
         <div className="h-full bg-cyan-500/70" style={{ width: `${Math.min(100, (approvedUnpaid / maxPay) * 100)}%` }} title={`Approved, awaiting payment: ${fmtMoney(approvedUnpaid)}`} />
         <div className="h-full bg-amber-500/50" style={{ width: `${Math.min(100, (s.pendingPaymentsOwned / maxPay) * 100)}%` }} title={`In review: ${fmtMoney(s.pendingPaymentsOwned)}`} />
       </div>
-      <span className="text-sm font-semibold text-emerald-400 text-right tabular-nums" title={`${s.paidMilestonesOwned} paid milestone${s.paidMilestonesOwned === 1 ? "" : "s"}`}>{s.paidPaymentsOwned > 0 ? fmtMoney(s.paidPaymentsOwned) : "—"}</span>
-      <span className="text-xs text-cyan-400 text-right tabular-nums" title={`${s.milestonesOwned - s.paidMilestonesOwned} approved milestone${s.milestonesOwned - s.paidMilestonesOwned === 1 ? "" : "s"} awaiting payment`}>{approvedUnpaid > 0 ? fmtMoney(approvedUnpaid) : "—"}</span>
-      <span className="text-xs text-amber-400 text-right tabular-nums" title={`${s.pendingMilestonesOwned} milestone${s.pendingMilestonesOwned === 1 ? "" : "s"} submitted, awaiting approval`}>{s.pendingPaymentsOwned > 0 ? fmtMoney(s.pendingPaymentsOwned) : "—"}</span>
+      <span className="text-sm font-semibold text-emerald-400 text-right tabular-nums" title={`${fmtCt(s.paidMilestonesOwned)} paid milestone(s)`}>{s.paidPaymentsOwned > 0 ? fmtMoney(s.paidPaymentsOwned) : "—"}</span>
+      <span className="text-xs text-cyan-400 text-right tabular-nums" title={`${fmtCt(s.milestonesOwned - s.paidMilestonesOwned)} approved milestone(s) awaiting payment`}>{approvedUnpaid > 0 ? fmtMoney(approvedUnpaid) : "—"}</span>
+      <span className="text-xs text-amber-400 text-right tabular-nums" title={`${fmtCt(s.pendingMilestonesOwned)} milestone(s) submitted, awaiting approval`}>{s.pendingPaymentsOwned > 0 ? fmtMoney(s.pendingPaymentsOwned) : "—"}</span>
     </div>
     );
   };
   return (
     <div>
+      <div className="flex justify-end mb-2">
+        <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]" title="Owner: whole milestone $ to its top uploader. Fractional: split across its approved-doc uploaders by share.">
+          {(["owner", "fractional"] as const).map((m) => (
+            <button key={m} onClick={() => setMode(m)}
+              className={`px-2.5 py-1 transition-colors ${mode === m ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"}`}>
+              {m === "owner" ? "Owner" : "Fractional"}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
         <MiniStat label="Paid $" value={fmtMoney(teamPaid)} subtitle="PE has paid" />
         <MiniStat label="Approved $" value={fmtMoney(teamApproved - teamPaid)} subtitle="approved, awaiting payment" />
@@ -1342,7 +1357,9 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
       {hasUnknown && (
         <div className="mt-2 pt-2 border-t border-t-border">{row(unknown!, true)}</div>
       )}
-      <p className="mt-3 text-[11px] text-muted">Each milestone&apos;s payment is credited to whoever uploaded the most of its docs — approved docs for approved milestones, in-review docs for ones still awaiting PE approval. Top known uploader wins.</p>
+      <p className="mt-3 text-[11px] text-muted">{mode === "fractional"
+        ? "Fractional: each milestone's payment is split across its approved-doc uploaders by their share of those docs (counts shown to 1 decimal)."
+        : "Owner: each milestone's payment goes to whoever uploaded the most of its docs — approved docs for approved milestones, in-review for ones still awaiting PE. Top known uploader wins."}</p>
     </div>
   );
 }
@@ -1390,7 +1407,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
       {tab === "submissions" ? <UploaderPanel stats={stats} docs={docs} statsShared={statsShared} docsShared={docsShared} />
         : tab === "timeline" ? <DailyUploadsChart daily={periods[grain]} stats={stats} granularity={grain} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
-            : <PaymentPanel stats={stats} />}
+            : <PaymentPanel stats={stats} statsShared={statsShared} />}
     </Section>
     </UnknownLabelCtx.Provider>
   );

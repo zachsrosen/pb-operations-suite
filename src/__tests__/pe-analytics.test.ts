@@ -8,6 +8,7 @@ import {
   buildSharedUploaderStats,
   computeSharedOwners,
   buildPaymentOwnership,
+  buildPaymentOwnershipFractional,
   buildPeriodUploads,
   buildDocTypeByUploader,
   UNKNOWN_UPLOADER,
@@ -310,6 +311,29 @@ describe("buildPaymentOwnership", () => {
     );
     // Paid milestone counts in BOTH the approved total and the paid subset.
     expect(owned.get("a@pb.com")).toEqual({ amount: 6000, count: 1, paidAmount: 6000, paidCount: 1, pendingAmount: 0, pendingCount: 0 });
+  });
+});
+
+describe("buildPaymentOwnershipFractional", () => {
+  it("splits a milestone's $ across its approved-doc uploaders by share", () => {
+    const status = new Map([
+      ["d1|Design Plan", "APPROVED"],
+      ["d1|Photos per Policy", "APPROVED"],
+      ["d1|Utility Bill", "APPROVED"],
+    ]);
+    const latest = new Map<string, string | null>([
+      ["d1|Design Plan", "a@pb.com"],
+      ["d1|Photos per Policy", "a@pb.com"],
+      ["d1|Utility Bill", "b@pb.com"],
+    ]);
+    const owned = buildPaymentOwnershipFractional(
+      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: true, isPendingPayment: false }],
+      status,
+      latest,
+    );
+    // a uploaded 2/3 of the approved docs → 2/3 of $9,000; b → 1/3.
+    expect(owned.get("a@pb.com")).toEqual({ amount: 6000, count: 2 / 3, paidAmount: 6000, paidCount: 2 / 3, pendingAmount: 0, pendingCount: 0 });
+    expect(owned.get("b@pb.com")).toEqual({ amount: 3000, count: 1 / 3, paidAmount: 3000, paidCount: 1 / 3, pendingAmount: 0, pendingCount: 0 });
   });
 });
 

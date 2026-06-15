@@ -424,6 +424,53 @@ export function buildPaymentOwnership(
   return owned;
 }
 
+/**
+ * Fractional variant of buildPaymentOwnership: instead of crediting a whole
+ * milestone's $ to its top uploader, SPLIT it across the uploaders of its
+ * qualifying docs by their share (uploader's doc count ÷ total qualifying docs).
+ * Counts become fractional too. Unknown gets the share of any docs with no
+ * known uploader. Same return shape as buildPaymentOwnership.
+ */
+export function buildPaymentOwnershipFractional(
+  milestones: MilestonePayment[],
+  statusByDoc: Map<string, string>,
+  latestUploaderByDoc: Map<string, string | null>,
+): Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }> {
+  const owned = new Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>();
+  const ensure = (who: string) => {
+    let e = owned.get(who);
+    if (!e) { e = { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
+    return e;
+  };
+  const credit = (m: MilestonePayment, qualifyingStatuses: Set<string>, pending: boolean) => {
+    const docs = m.docNames.filter((n) => qualifyingStatuses.has(statusByDoc.get(`${m.dealId}|${n}`) ?? ""));
+    if (docs.length === 0) return;
+    const tally = new Map<string, number>();
+    for (const n of docs) {
+      const by = latestUploaderByDoc.get(`${m.dealId}|${n}`)?.trim() || UNKNOWN_UPLOADER;
+      tally.set(by, (tally.get(by) ?? 0) + 1);
+    }
+    const total = docs.length;
+    for (const [who, cnt] of tally) {
+      const share = cnt / total;
+      const e = ensure(who);
+      if (pending) { e.pendingAmount += m.amount * share; e.pendingCount += share; }
+      else {
+        e.amount += m.amount * share; e.count += share;
+        if (m.isPaid) { e.paidAmount += m.amount * share; e.paidCount += share; }
+      }
+    }
+  };
+  const APPROVED = new Set(["APPROVED"]);
+  const IN_REVIEW = new Set(["UNDER_REVIEW", "UPLOADED"]);
+  for (const m of milestones) {
+    if (m.amount <= 0) continue;
+    if (m.isApprovedPayment) credit(m, APPROVED, false);
+    else if (m.isPendingPayment) credit(m, IN_REVIEW, true);
+  }
+  return owned;
+}
+
 /** Per-period upload counts segmented by uploader, for the stacked bars. */
 export interface DailyUpload {
   day: string; // period key: YYYY-MM-DD (day/week-start) or YYYY-MM (month)
