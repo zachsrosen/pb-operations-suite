@@ -830,4 +830,7 @@ export interface PeAnalyticsPayload {
   rejections: { byDoc: RejectionByDoc[]; recentNotes: RejectionNote[] };
   missingByDoc: MissingByDoc[];
   funnelDeals: FunnelDeal[];
+  // Date PE first recorded an uploader (YYYY-MM-DD). Uploads before this are the
+  // genuine pre-tracking "Unknown" bucket. Null if nothing is attributed yet.
+  attributionStart: string | null;
 }

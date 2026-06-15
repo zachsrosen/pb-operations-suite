@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, createContext, useContext } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { isSuperAdmin } from "@/lib/super-admin";
@@ -44,6 +44,20 @@ function weekLabel(iso: string): string {
   const d = new Date(iso + "T00:00:00Z");
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
+
+// "Unknown" uploader = no recorded uploader. After dropping phantom action-
+// resolutions server-side, these are almost all uploads from before PE began
+// attributing them (attributionStart). Shared via context so every sub-panel
+// labels Unknown the same way without prop-threading.
+function attrLabel(attr: string | null): { note: string; title: string } {
+  if (!attr) return { note: "no recorded uploader", title: "Uploads with no recorded uploader." };
+  const d = new Date(attr + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return {
+    note: `before ${d}`,
+    title: `Uploads with no recorded uploader — almost all from before PE began attributing uploads (~${d}); a few are recent uploads with no uploader on file.`,
+  };
+}
+const UnknownLabelCtx = createContext<{ note: string; title: string }>({ note: "no recorded uploader", title: "Uploads with no recorded uploader." });
 
 // ---------------------------------------------------------------------------
 // Weekly stacked bar chart (inline SVG, no deps)
@@ -773,6 +787,7 @@ function OutcomeBar({ approved, inReview, rejected, scale, uploads, onSeg }: { a
 function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsShared }: { stats: UploaderStat[]; docs: Record<string, UploaderOutcomeDocs>; statsShared: UploaderStat[]; docsShared: Record<string, UploaderOutcomeDocs> }) {
   // Owner (latest-version wins) vs Shared (fractional, split by version count).
   const [mode, setMode] = useState<"owner" | "shared">("owner");
+  const unk = useContext(UnknownLabelCtx);
   const stats = mode === "shared" ? statsShared : statsOwner;
   const docs = mode === "shared" ? docsShared : docsOwner;
   const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
@@ -854,9 +869,9 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
     const total = s.approved + s.inReview + s.rejected;
     return (
       <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
-        <span className="text-xs text-foreground truncate" title={`${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>
+        <span className="text-xs text-foreground truncate" title={muted ? unk.title : `${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>
           {muted ? "Unknown" : prettyUploader(s.uploader)}
-          {muted && <span className="text-[10px] text-muted block leading-tight">pre-tracking</span>}
+          {muted && <span className="text-[10px] text-muted block leading-tight">{unk.note}</span>}
         </span>
         <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} uploads={s.total} onSeg={(o) => toggle(s.uploader, o)} />
         <span className="text-xs text-muted text-right tabular-nums" title="Every upload action, including resubmissions of the same doc">{s.total.toLocaleString("en-US")}</span>
@@ -994,6 +1009,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
   // The day view spans ~90 periods and overflows wider than the card, so the
   // most-recent bars sit off-screen to the right. Scroll to the newest data.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const unk = useContext(UnknownLabelCtx);
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollLeft = el.scrollWidth;
@@ -1032,7 +1048,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
         {present.map((p) => (
           <span key={p} className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm" style={{ background: colors.get(p) }} />
-            <span className={p === UNKNOWN_UPLOADER ? "text-muted" : "text-foreground"}>{p === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(p)}</span>
+            <span className={p === UNKNOWN_UPLOADER ? "text-muted" : "text-foreground"} title={p === UNKNOWN_UPLOADER ? unk.title : undefined}>{p === UNKNOWN_UPLOADER ? `Unknown (${unk.note})` : prettyUploader(p)}</span>
           </span>
         ))}
       </div>
@@ -1219,6 +1235,7 @@ function MissingByDocPanel({ byDoc }: { byDoc: MissingByDoc[] }) {
 
 /** Per-person × document-type matrix — who uploads which doc types. */
 function DocTypeByUploaderPanel({ rows }: { rows: UploaderDocTypes[] }) {
+  const unk = useContext(UnknownLabelCtx);
   if (rows.length === 0) {
     return <div className="text-sm text-muted py-8 text-center">No attributed uploads yet.</div>;
   }
@@ -1252,7 +1269,7 @@ function DocTypeByUploaderPanel({ rows }: { rows: UploaderDocTypes[] }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.uploader} className={r.uploader === UNKNOWN_UPLOADER ? "opacity-70" : ""}>
-              <td className="text-foreground pr-4 py-0.5 whitespace-nowrap sticky left-0 bg-surface font-medium">{r.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(r.uploader)}</td>
+              <td className="text-foreground pr-4 py-0.5 whitespace-nowrap sticky left-0 bg-surface font-medium" title={r.uploader === UNKNOWN_UPLOADER ? unk.title : undefined}>{r.uploader === UNKNOWN_UPLOADER ? `Unknown (${unk.note})` : prettyUploader(r.uploader)}</td>
               {docs.map((d) => <td key={d} className="text-center text-foreground">{cell(r.byDoc[d] ?? 0)}</td>)}
               <td className="text-right font-semibold text-foreground tabular-nums">{r.total.toLocaleString("en-US")}</td>
             </tr>
@@ -1270,6 +1287,7 @@ function fmtMoney(n: number): string {
 
 /** Approved-payment ownership leaderboard — bar length = $ owned. */
 function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
+  const unk = useContext(UnknownLabelCtx);
   const attributed = stats
     .filter((s) => s.uploader !== UNKNOWN_UPLOADER && (s.paymentsOwned > 0 || s.pendingPaymentsOwned > 0))
     .sort((a, b) => (b.paymentsOwned + b.pendingPaymentsOwned) - (a.paymentsOwned + a.pendingPaymentsOwned));
@@ -1290,7 +1308,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
     <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
       <span className="text-xs text-foreground truncate" title={s.uploader}>
         {muted ? "Unknown" : prettyUploader(s.uploader)}
-        {muted && <span className="text-[10px] text-muted block leading-tight">no known uploader</span>}
+        {muted && <span className="text-[10px] text-muted block leading-tight" title={unk.title}>{unk.note}</span>}
       </span>
       <div className="h-4 rounded bg-surface-2 overflow-hidden w-full flex">
         <div className="h-full bg-emerald-500/80" style={{ width: `${Math.min(100, (s.paidPaymentsOwned / maxPay) * 100)}%` }} title={`Paid: ${fmtMoney(s.paidPaymentsOwned)}`} />
@@ -1309,7 +1327,7 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
         <MiniStat label="Paid $" value={fmtMoney(teamPaid)} subtitle="PE has paid" />
         <MiniStat label="Approved $" value={fmtMoney(teamApproved - teamPaid)} subtitle="approved, awaiting payment" />
         <MiniStat label="In Review $" value={fmtMoney(teamPending)} subtitle="submitted, awaiting PE approval" />
-        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader" />
+        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle={unk.note} />
       </div>
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
@@ -1329,15 +1347,17 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
   );
 }
 
-function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsShared }: { stats: UploaderStat[]; statsShared: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs> }) {
+function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsShared, attributionStart }: { stats: UploaderStat[]; statsShared: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null }) {
   const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
   const [grain, setGrain] = useState<UploadGranularity>("day");
+  const unk = useMemo(() => attrLabel(attributionStart), [attributionStart]);
   return (
+    <UnknownLabelCtx.Provider value={unk}>
     <Section
       title="Doc Uploaders"
       subtitle={
         tab === "submissions"
-          ? "Who uploaded each doc and their approval rate. PE began attributing uploads partway through — earlier uploads land in Unknown."
+          ? `Who uploaded each doc and their approval rate. "Unknown" = uploads with no recorded uploader, almost all ${unk.note} (before PE began attributing uploads).`
           : tab === "timeline"
             ? `Documents uploaded per ${grain}, segmented by who uploaded them.${grain === "day" ? " Last 90 days." : " All time."}`
             : tab === "doctype"
@@ -1372,6 +1392,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
             : <PaymentPanel stats={stats} />}
     </Section>
+    </UnknownLabelCtx.Provider>
   );
 }
 
@@ -1991,7 +2012,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} />
+          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} />
 
           {/* 2. Expected revenue pipeline */}
           <Section

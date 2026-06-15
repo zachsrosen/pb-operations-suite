@@ -549,7 +549,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       ? prisma.peDocVersion
           .findMany({
             where: { dealId: { not: null } },
-            select: { dealId: true, peProjectId: true, docName: true, version: true, uploadedAt: true, uploadedBy: true },
+            select: { dealId: true, peProjectId: true, docName: true, version: true, uploadedAt: true, uploadedBy: true, fileName: true, source: true },
           })
           // Table ships with this feature — don't 500 the dashboard if the
           // migration hasn't been applied yet.
@@ -933,12 +933,31 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   } catch (err) {
     console.warn("[pe-analytics] PE feed fetch failed; not filtering cancelled projects:", err);
   }
+  // PE began recording fileName + source + uploadedBy together (~Apr 2026). A
+  // version row dated after that with NO file AND NO source isn't a real upload
+  // — it's an action resolved without a document (e.g. a PandaDoc lien waiver
+  // pushed forward). Drop these "phantom" rows so they don't pollute uploader
+  // stats or inflate the Unknown bucket. Pre-tracking rows (before metadata
+  // existed) are genuine uploads and stay (they're the real "Unknown").
+  const metadataStart = Math.min(
+    ...versionRows.filter((v) => v.source).map((v) => new Date(v.uploadedAt).getTime()),
+    Infinity,
+  );
+  const isPhantomVersion = (v: (typeof versionRows)[number]) =>
+    !v.source && !v.fileName && new Date(v.uploadedAt).getTime() >= metadataStart;
+
   const uploaderVersionRows = versionRows.filter(
     (v) =>
       v.dealId &&
       dealNameById.has(v.dealId) &&
+      !isPhantomVersion(v) &&
       (!activeProjectIds || !v.peProjectId || activeProjectIds.has(v.peProjectId.trim().toUpperCase())),
   );
+
+  // When PE first recorded an uploader — everything before this is the genuine
+  // pre-tracking "Unknown". Shown in the UI so Unknown reads as "pre-{date}".
+  const attributionTimes = uploaderVersionRows.filter((v) => v.uploadedBy?.trim()).map((v) => new Date(v.uploadedAt).getTime());
+  const attributionStart = attributionTimes.length ? new Date(Math.min(...attributionTimes)).toISOString().slice(0, 10) : null;
 
   // Latest-version uploader per (deal, doc), then credit each approved/paid
   // milestone's payment to whoever owns the most of its approved docs.
@@ -1111,6 +1130,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     rejections: { byDoc, recentNotes },
     missingByDoc,
     funnelDeals,
+    attributionStart,
   };
 }
 
