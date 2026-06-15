@@ -330,8 +330,28 @@ export async function POST(request: NextRequest) {
             playbook: config?.playbook ?? "",
           });
           console.warn(`[google-chat] async DONE space=${spaceName}`);
+          // Resolve the idempotency key now that processing finished, so the
+          // record reflects completion (it was created as "processing").
+          if (messageName) {
+            await prisma.idempotencyKey
+              .update({
+                where: { key_scope: { key: messageName, scope: "google-chat" } },
+                data: { status: "complete" },
+              })
+              .catch(() => {});
+          }
         } catch (err) {
           console.error("[google-chat] Async processing failed:", err);
+          // Release the idempotency key on failure so an at-least-once
+          // redelivery of this same message can be reprocessed instead of
+          // being silently dropped as a duplicate.
+          if (messageName) {
+            await prisma.idempotencyKey
+              .delete({
+                where: { key_scope: { key: messageName, scope: "google-chat" } },
+              })
+              .catch(() => {});
+          }
           // Persist the error to the DB so it can be diagnosed without
           // relying on (sampled) Vercel logs.
           try {
