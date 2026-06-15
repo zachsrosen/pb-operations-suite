@@ -611,6 +611,109 @@ export function buildUploaderStats(
     });
 }
 
+export interface SharedOwner { who: string; weight: number }
+
+/**
+ * Shared (fractional) ownership per `${dealId}|${docName}`. A doc's credit is
+ * split among its TRACKED uploaders by how many versions each uploaded
+ * (person's tracked versions ÷ total tracked versions). Pre-tracking-only docs
+ * stay Unknown=1. An admin override pins the WHOLE doc (weight 1) to one person,
+ * ignoring the split. Weights for a doc always sum to 1.
+ */
+export function computeSharedOwners(
+  rows: VersionRow[],
+  overrideByDoc?: Map<string, string | null>,
+): Map<string, SharedOwner[]> {
+  const byKey = new Map<string, VersionRow[]>();
+  for (const r of rows) {
+    if (!r.dealId) continue;
+    const k = `${r.dealId}|${r.docName}`;
+    (byKey.get(k) ?? byKey.set(k, []).get(k)!).push(r);
+  }
+  const out = new Map<string, SharedOwner[]>();
+  for (const [k, list] of byKey) {
+    if (overrideByDoc?.has(k)) {
+      out.set(k, [{ who: overrideByDoc.get(k)?.trim() || UNKNOWN_UPLOADER, weight: 1 }]);
+      continue;
+    }
+    const tracked = list.filter((v) => v.uploadedBy?.trim());
+    if (tracked.length === 0) {
+      out.set(k, [{ who: UNKNOWN_UPLOADER, weight: 1 }]);
+      continue;
+    }
+    const counts = new Map<string, number>();
+    for (const v of tracked) {
+      const who = v.uploadedBy!.trim();
+      counts.set(who, (counts.get(who) ?? 0) + 1);
+    }
+    out.set(k, [...counts.entries()].map(([who, n]) => ({ who, weight: n / tracked.length })));
+  }
+  return out;
+}
+
+/**
+ * Uploader stats with fractional (shared) doc ownership. Upload *volume*
+ * (`total`/`last8w`/`deals`) still follows whoever actually uploaded; only
+ * docsOwned and the outcome buckets are split by `sharedOwners` weights.
+ */
+export function buildSharedUploaderStats(
+  rows: VersionRow[],
+  statusByDoc: Map<string, string>,
+  sharedOwners: Map<string, SharedOwner[]>,
+  now: Date = new Date(),
+): UploaderStat[] {
+  const cutoff = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000);
+  const byUploader = new Map<
+    string,
+    { total: number; last8w: number; deals: Set<string>; docsOwned: number; approved: number; rejected: number; inReview: number }
+  >();
+  const ensure = (key: string) => {
+    let e = byUploader.get(key);
+    if (!e) {
+      e = { total: 0, last8w: 0, deals: new Set<string>(), docsOwned: 0, approved: 0, rejected: 0, inReview: 0 };
+      byUploader.set(key, e);
+    }
+    return e;
+  };
+  for (const r of rows) {
+    const e = ensure(r.uploadedBy?.trim() || UNKNOWN_UPLOADER);
+    e.total++;
+    const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
+    if (at >= cutoff) e.last8w++;
+    if (r.dealId) e.deals.add(r.dealId);
+  }
+  for (const [k, owners] of sharedOwners) {
+    const status = statusByDoc.get(k);
+    for (const { who, weight } of owners) {
+      const e = ensure(who);
+      e.docsOwned += weight;
+      if (status === "APPROVED") e.approved += weight;
+      else if (status === "ACTION_REQUIRED" || status === "REJECTED") e.rejected += weight;
+      else if (status === "UNDER_REVIEW" || status === "UPLOADED") e.inReview += weight;
+    }
+  }
+  return [...byUploader.entries()]
+    .map(([uploader, e]) => ({
+      uploader,
+      total: e.total,
+      last8w: e.last8w,
+      deals: e.deals.size,
+      docsOwned: e.docsOwned,
+      approved: e.approved,
+      rejected: e.rejected,
+      inReview: e.inReview,
+      paymentsOwned: 0,
+      milestonesOwned: 0,
+      pendingPaymentsOwned: 0,
+      pendingMilestonesOwned: 0,
+    }))
+    .sort((a, b) => {
+      if (a.uploader === UNKNOWN_UPLOADER) return 1;
+      if (b.uploader === UNKNOWN_UPLOADER) return -1;
+      return b.total - a.total || a.uploader.localeCompare(b.uploader);
+    });
+}
+
 /** Per-milestone record powering the chart drill-down. */
 export interface MilestoneDrillRow {
   dealId: string;
@@ -646,6 +749,7 @@ export interface UploaderDoc {
   note: string | null; // latest PE reviewer note (rejections only); null otherwise
   overridden?: boolean; // credited uploader pinned by an admin override
   resubmitted?: boolean; // a newer version landed after the override — re-check
+  weight?: number; // fractional credit for this person in shared mode (1 in owner mode)
 }
 /** An uploader's owned docs split by current outcome. */
 export interface UploaderOutcomeDocs {
@@ -677,8 +781,12 @@ export interface PeAnalyticsPayload {
   docApprovalEvents: DocRejectionEvent[];
   /** Doc uploads per person (PE version history); Unknown bucket = pre-tracking uploads. */
   uploaderStats: UploaderStat[];
+  /** Same stats under shared (fractional) ownership — docs split across tracked contributors; overrides pin the whole doc. Powers the Owner⇄Shared toggle. */
+  uploaderStatsShared: UploaderStat[];
   /** Per-uploader owned docs split by outcome (approved / inReview / rejected) — powers the drill-downs. Keyed by uploader (UNKNOWN_UPLOADER for null). */
   uploaderDocs: Record<string, UploaderOutcomeDocs>;
+  /** Shared-mode drills — a multi-contributor doc appears under each person with its fractional `weight`. */
+  uploaderDocsShared: Record<string, UploaderOutcomeDocs>;
   uploadsByPeriod: UploadsByPeriod;
   docTypeByUploader: UploaderDocTypes[];
   pipeline: PipelineGroupRow[];
