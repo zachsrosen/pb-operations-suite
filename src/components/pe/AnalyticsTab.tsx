@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { isSuperAdmin } from "@/lib/super-admin";
@@ -23,6 +23,7 @@ import {
   type UploaderOutcomeDocs,
   type UploaderDoc,
   type RejectionByDoc,
+  type MissingByDoc,
   type RejectionDrillDeal,
   type DailyUpload,
   type UploadsByPeriod,
@@ -990,6 +991,13 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
 
 /** Uploads as stacked bars segmented by who uploaded, at day/week/month grain. */
 function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]; stats: UploaderStat[]; granularity: UploadGranularity }) {
+  // The day view spans ~90 periods and overflows wider than the card, so the
+  // most-recent bars sit off-screen to the right. Scroll to the newest data.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [granularity, daily]);
   if (daily.length === 0) {
     return <div className="text-sm text-muted py-8 text-center">No uploads in this range.</div>;
   }
@@ -1028,7 +1036,7 @@ function DailyUploadsChart({ daily, stats, granularity }: { daily: DailyUpload[]
           </span>
         ))}
       </div>
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} className="overflow-x-auto">
         {/* When the natural width fits, stretch to fill the full page via the
             viewBox (bars spread out, centered); when crowded, fixed width +
             horizontal scroll. Fixes the left-weighted look on week/month. */}
@@ -1166,6 +1174,49 @@ function RejectionsByDocPanel({ byDoc }: { byDoc: RejectionByDoc[] }) {
   );
 }
 
+/** Missing-by-Document — one row per doc type, bar = # deals missing it,
+ *  click to drill into those deals with HubSpot / PE portal / Drive links. */
+function MissingByDocPanel({ byDoc }: { byDoc: MissingByDoc[] }) {
+  const [drill, setDrill] = useState<string | null>(null);
+  if (byDoc.length === 0) {
+    return <div className="text-xs text-muted py-4">No missing documents — every owed doc has been uploaded.</div>;
+  }
+  const max = Math.max(...byDoc.map((x) => x.missing), 1);
+  return (
+    <div className="space-y-1.5">
+      {byDoc.map((d) => {
+        const open = drill === d.docName;
+        const toggle = () => setDrill((c) => (c === d.docName ? null : d.docName));
+        return (
+          <div key={d.docName}>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted w-52 truncate" title={d.docName}>{d.docName}</span>
+              <button type="button" onClick={toggle}
+                className="flex-1 h-4 rounded bg-surface-2 overflow-hidden flex cursor-pointer" title={`${d.missing} missing — click to list`}>
+                <div className={`h-full bg-zinc-400/60 hover:bg-zinc-400/80 ${open ? "ring-1 ring-zinc-300" : ""}`} style={{ width: `${(d.missing / max) * 100}%` }} />
+              </button>
+              <button type="button" onClick={toggle}
+                className="text-[10px] w-20 text-right tabular-nums text-zinc-300 hover:underline cursor-pointer">{d.missing} missing</button>
+            </div>
+            {open && (
+              <div className="mt-1 ml-2 rounded-lg border border-zinc-500/30 bg-zinc-500/5 p-2 space-y-1.5 max-h-64 overflow-y-auto">
+                {d.deals.map((od, i) => (
+                  <div key={i} className="text-[11px] flex items-center gap-2 flex-wrap border-b border-t-border/30 pb-1 last:border-0 last:pb-0">
+                    <span className="text-foreground font-medium truncate max-w-[16rem]" title={od.dealName}>{od.dealName.split("|").slice(0, 2).join("|").trim()}</span>
+                    <a href={od.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">HS ↗</a>
+                    {od.pePortalUrl && <a href={od.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE ↗</a>}
+                    {od.driveUrl && <a href={od.driveUrl} target="_blank" rel="noopener noreferrer" className="text-yellow-400 hover:underline">Drive ↗</a>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Per-person × document-type matrix — who uploads which doc types. */
 function DocTypeByUploaderPanel({ rows }: { rows: UploaderDocTypes[] }) {
   if (rows.length === 0) {
@@ -1228,34 +1279,42 @@ function PaymentPanel({ stats }: { stats: UploaderStat[] }) {
     return <div className="text-sm text-muted py-8 text-center">No milestone payments attributed yet.</div>;
   }
   const teamApproved = attributed.reduce((sum, s) => sum + s.paymentsOwned, 0);
+  const teamPaid = attributed.reduce((sum, s) => sum + s.paidPaymentsOwned, 0);
   const teamPending = attributed.reduce((sum, s) => sum + s.pendingPaymentsOwned, 0);
   const unknownPay = unknown?.paymentsOwned ?? 0;
   const maxPay = Math.max(...attributed.map((s) => s.paymentsOwned + s.pendingPaymentsOwned), 1);
-  const COLS = "grid items-center gap-x-3 grid-cols-[7.5rem_1fr_5.5rem_5.5rem]";
-  const row = (s: UploaderStat, muted: boolean) => (
+  const COLS = "grid items-center gap-x-2 grid-cols-[6.25rem_1fr_4.5rem_4.5rem_4.5rem]";
+  const row = (s: UploaderStat, muted: boolean) => {
+    const approvedUnpaid = Math.max(0, s.paymentsOwned - s.paidPaymentsOwned);
+    return (
     <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
       <span className="text-xs text-foreground truncate" title={s.uploader}>
         {muted ? "Unknown" : prettyUploader(s.uploader)}
         {muted && <span className="text-[10px] text-muted block leading-tight">no known uploader</span>}
       </span>
       <div className="h-4 rounded bg-surface-2 overflow-hidden w-full flex">
-        <div className="h-full bg-cyan-500/80" style={{ width: `${Math.min(100, (s.paymentsOwned / maxPay) * 100)}%` }} title={`Approved: ${fmtMoney(s.paymentsOwned)}`} />
+        <div className="h-full bg-emerald-500/80" style={{ width: `${Math.min(100, (s.paidPaymentsOwned / maxPay) * 100)}%` }} title={`Paid: ${fmtMoney(s.paidPaymentsOwned)}`} />
+        <div className="h-full bg-cyan-500/70" style={{ width: `${Math.min(100, (approvedUnpaid / maxPay) * 100)}%` }} title={`Approved, awaiting payment: ${fmtMoney(approvedUnpaid)}`} />
         <div className="h-full bg-amber-500/50" style={{ width: `${Math.min(100, (s.pendingPaymentsOwned / maxPay) * 100)}%` }} title={`In review: ${fmtMoney(s.pendingPaymentsOwned)}`} />
       </div>
-      <span className="text-sm font-semibold text-cyan-400 text-right tabular-nums" title={`${s.milestonesOwned} approved milestone${s.milestonesOwned === 1 ? "" : "s"}`}>{fmtMoney(s.paymentsOwned)}</span>
+      <span className="text-sm font-semibold text-emerald-400 text-right tabular-nums" title={`${s.paidMilestonesOwned} paid milestone${s.paidMilestonesOwned === 1 ? "" : "s"}`}>{s.paidPaymentsOwned > 0 ? fmtMoney(s.paidPaymentsOwned) : "—"}</span>
+      <span className="text-xs text-cyan-400 text-right tabular-nums" title={`${s.milestonesOwned - s.paidMilestonesOwned} approved milestone${s.milestonesOwned - s.paidMilestonesOwned === 1 ? "" : "s"} awaiting payment`}>{approvedUnpaid > 0 ? fmtMoney(approvedUnpaid) : "—"}</span>
       <span className="text-xs text-amber-400 text-right tabular-nums" title={`${s.pendingMilestonesOwned} milestone${s.pendingMilestonesOwned === 1 ? "" : "s"} submitted, awaiting approval`}>{s.pendingPaymentsOwned > 0 ? fmtMoney(s.pendingPaymentsOwned) : "—"}</span>
     </div>
-  );
+    );
+  };
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-        <MiniStat label="Approved $ Owned" value={fmtMoney(teamApproved)} subtitle="credited to a known person" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+        <MiniStat label="Paid $" value={fmtMoney(teamPaid)} subtitle="PE has paid" />
+        <MiniStat label="Approved $" value={fmtMoney(teamApproved - teamPaid)} subtitle="approved, awaiting payment" />
         <MiniStat label="In Review $" value={fmtMoney(teamPending)} subtitle="submitted, awaiting PE approval" />
-        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader on milestone" />
+        <MiniStat label="Unknown $" value={fmtMoney(unknownPay)} subtitle="no known uploader" />
       </div>
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
-        <span>Payments owned — bar = $ (<span className="text-cyan-400/80">approved</span> + <span className="text-amber-400/80">in review</span>)</span>
+        <span>Payments owned — bar = $ (<span className="text-emerald-400/80">paid</span> + <span className="text-cyan-400/80">approved</span> + <span className="text-amber-400/80">in review</span>)</span>
+        <span className="text-right text-emerald-400/80">$ Paid</span>
         <span className="text-right text-cyan-400/80">$ Appr.</span>
         <span className="text-right text-amber-400/80">$ In Rev.</span>
       </div>
@@ -1283,7 +1342,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
             ? `Documents uploaded per ${grain}, segmented by who uploaded them.${grain === "day" ? " Last 90 days." : " All time."}`
             : tab === "doctype"
               ? "Which document types each person uploads — count of docs they're the latest uploader on, by type."
-              : "Approved milestone payments each person drove, by their share of the approved docs."
+              : "Milestone payments each person drove, split into paid, approved (awaiting payment), and in review."
       }
       actions={
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -2046,7 +2105,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               <RejectionsByDocPanel byDoc={data.rejections.byDoc} />
             </Section>
 
-            <Section title="Recent Rejection Notes" subtitle="Latest PE reviewer comments on rejected docs.">
+            <Section title="Recent Rejection Notes" subtitle="Latest PE reviewer comments on docs that are still rejected / action-required.">
               {data.rejections.recentNotes.length === 0 ? (
                 <div className="text-xs text-muted py-4">No notes recorded.</div>
               ) : (
@@ -2075,6 +2134,14 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               )}
             </Section>
           </div>
+
+          {/* 4b. Missing by Document */}
+          <Section
+            title="Missing by Document"
+            subtitle="Documents not yet uploaded, per doc type — across deals in a milestone (PTO owes the M1 docs; Close Out / Complete owe all 15). Click a bar to list the deals."
+          >
+            <MissingByDocPanel byDoc={data.missingByDoc} />
+          </Section>
 
           {/* 5. Milestone funnel */}
           <Section title="Milestone Funnel" subtitle="Deal counts by current M1/M2 status — deals in PTO, Close Out, or Complete stages only.">

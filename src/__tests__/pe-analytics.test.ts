@@ -265,12 +265,12 @@ describe("buildPaymentOwnership", () => {
       ["d1|Photos per Policy", null], // Unknown
     ]);
     const owned = buildPaymentOwnership(
-      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPendingPayment: false }],
+      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
       status,
       latest,
     );
     // a@pb has 1 approved doc, Unknown has 1 — known wins the tie
-    expect(owned.get("a@pb.com")).toEqual({ amount: 9000, count: 1, pendingAmount: 0, pendingCount: 0 });
+    expect(owned.get("a@pb.com")).toEqual({ amount: 9000, count: 1, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 });
     expect(owned.get(UNKNOWN_UPLOADER)).toBeUndefined();
   });
 
@@ -279,13 +279,13 @@ describe("buildPaymentOwnership", () => {
     const latest = new Map<string, string | null>([["d1|Design Plan", null], ["d2|Design Plan", "z@pb.com"]]);
     const owned = buildPaymentOwnership(
       [
-        { dealId: "d1", docNames: ["Design Plan"], amount: 5000, isApprovedPayment: true, isPendingPayment: false }, // all-unknown
-        { dealId: "d2", docNames: ["Design Plan"], amount: 7000, isApprovedPayment: false, isPendingPayment: false }, // not approved → skip
+        { dealId: "d1", docNames: ["Design Plan"], amount: 5000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }, // all-unknown
+        { dealId: "d2", docNames: ["Design Plan"], amount: 7000, isApprovedPayment: false, isPaid: false, isPendingPayment: false }, // not approved → skip
       ],
       status,
       latest,
     );
-    expect(owned.get(UNKNOWN_UPLOADER)).toEqual({ amount: 5000, count: 1, pendingAmount: 0, pendingCount: 0 });
+    expect(owned.get(UNKNOWN_UPLOADER)).toEqual({ amount: 5000, count: 1, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 });
     expect(owned.get("z@pb.com")).toBeUndefined();
   });
 
@@ -293,11 +293,23 @@ describe("buildPaymentOwnership", () => {
     const status = new Map([["d1|Design Plan", "UNDER_REVIEW"], ["d1|Photos per Policy", "UPLOADED"]]);
     const latest = new Map<string, string | null>([["d1|Design Plan", "p@pb.com"], ["d1|Photos per Policy", "p@pb.com"]]);
     const owned = buildPaymentOwnership(
-      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy"], amount: 8000, isApprovedPayment: false, isPendingPayment: true }],
+      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy"], amount: 8000, isApprovedPayment: false, isPaid: false, isPendingPayment: true }],
       status,
       latest,
     );
-    expect(owned.get("p@pb.com")).toEqual({ amount: 0, count: 0, pendingAmount: 8000, pendingCount: 1 });
+    expect(owned.get("p@pb.com")).toEqual({ amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 8000, pendingCount: 1 });
+  });
+
+  it("breaks out the paid subset of an approved milestone into paidAmount/paidCount", () => {
+    const status = new Map([["d1|Design Plan", "APPROVED"]]);
+    const latest = new Map<string, string | null>([["d1|Design Plan", "a@pb.com"]]);
+    const owned = buildPaymentOwnership(
+      [{ dealId: "d1", docNames: ["Design Plan"], amount: 6000, isApprovedPayment: true, isPaid: true, isPendingPayment: false }],
+      status,
+      latest,
+    );
+    // Paid milestone counts in BOTH the approved total and the paid subset.
+    expect(owned.get("a@pb.com")).toEqual({ amount: 6000, count: 1, paidAmount: 6000, paidCount: 1, pendingAmount: 0, pendingCount: 0 });
   });
 });
 
