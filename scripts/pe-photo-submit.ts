@@ -295,8 +295,10 @@ async function processProject(
 
   // --- Pull + screen images ------------------------------------------------
   // Photos are nested in subfolders (e.g. "Electrical Install", "PV Install"),
-  // so list recursively. Bounded to keep vision cost in check.
-  const driveImages = await listDriveImagesRecursive(sourceFolderId, 3, 60);
+  // so list recursively. Capped at 45 to keep the single-call vision triage
+  // under its token budget (the classifier regresses past ~50 images) and to
+  // bound cost — 45 install photos is ample to cover the required shots.
+  const driveImages = await listDriveImagesRecursive(sourceFolderId, 3, 45);
   if (driveImages.length === 0) {
     return empty(
       doc === "policy-photos"
