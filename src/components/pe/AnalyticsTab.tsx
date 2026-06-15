@@ -7,6 +7,8 @@ import { isSuperAdmin } from "@/lib/super-admin";
 import { usePeAutoSync } from "@/hooks/usePeAutoSync";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
+import { prettyUploader, buildColorMap } from "@/components/pe/uploader-colors";
+import { ReworkSection } from "@/components/pe/DocReworkTab";
 import { queryKeys } from "@/lib/query-keys";
 import {
   PIPELINE_GROUP_ORDER,
@@ -734,16 +736,6 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
 // Uploads-by-person leaderboard (PE portal version history)
 // ---------------------------------------------------------------------------
 
-/** "lauren.soderholm@photonbrothers.com" → "Lauren Soderholm" */
-export function prettyUploader(email: string): string {
-  if (email === UNKNOWN_UPLOADER) return email;
-  const local = email.split("@")[0];
-  return local
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((p) => p[0].toUpperCase() + p.slice(1))
-    .join(" ");
-}
 
 /**
  * Horizontal outcome bar for one uploader. Bar LENGTH encodes volume — every
@@ -994,15 +986,6 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
       })()}
     </div>
   );
-}
-
-/** Distinct colors per person for the By-Day stacked bars; Unknown = zinc. */
-export const PERSON_COLORS = ["#22d3ee", "#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#fb923c", "#60a5fa", "#f87171", "#c084fc", "#2dd4bf"];
-export function buildColorMap(orderedPeople: string[]): Map<string, string> {
-  const m = new Map<string, string>();
-  orderedPeople.forEach((u, i) => m.set(u, PERSON_COLORS[i % PERSON_COLORS.length]));
-  m.set(UNKNOWN_UPLOADER, "#71717a");
-  return m;
 }
 
 /** Uploads as stacked bars segmented by who uploaded, at day/week/month grain. */
@@ -2122,6 +2105,11 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 <MilestoneFunnel deals={data.funnelDeals} milestone="m2" locFilter={locFilter} />
               </div>
             </div>
+          </Section>
+
+          {/* 6. Document rework & attribution (moved from its own tab) */}
+          <Section title="Document Rework &amp; Attribution" subtitle="Who is redoing whose Participate Energy documents, why they bounce, and how the redos end up.">
+            <ReworkSection />
           </Section>
         </div>
       )}
