@@ -96,6 +96,13 @@ function parseHubspotDate(v: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
+/** Deal/project names are "PROJ-#### | Last, First | Address" — keep #### + name. */
+function shortProjectName(name: string | null | undefined): string {
+  if (!name) return "(unnamed)";
+  const parts = name.split("|").map((p) => p.trim());
+  return parts.slice(0, 2).join(" — ") || name.trim();
+}
+
 // ── Section builders ──
 
 /** Resolve a raw pb_location against a set of canonical locations. */
@@ -128,8 +135,16 @@ async function buildStuckSection(
       ? new Set(stages.map((s) => s.toLowerCase()))
       : null;
 
-  // Bound the result set: only pull deals already past the *smallest* threshold,
-  // then apply the precise per-stage limit in code.
+  // Only the *active* stages we nudge on — derived from STUCK_THRESHOLDS so
+  // adding a threshold auto-includes it. Without this the query also returns
+  // years-old Cancelled/Closed deals, which (sorted oldest-first) crowd out the
+  // genuinely-stuck active deals.
+  const nudgedStageIds = Object.entries(DEAL_STAGE_MAP)
+    .filter(([, name]) => STUCK_THRESHOLDS[name.toLowerCase()] != null)
+    .map(([id]) => id);
+
+  // Bound the result set: active nudged stages, already past the *smallest*
+  // threshold; the precise per-stage limit is applied in code below.
   const minThresholdDays = Math.min(...Object.values(STUCK_THRESHOLDS));
   const cutoffMs = now - minThresholdDays * 86_400_000;
 
@@ -138,6 +153,7 @@ async function buildStuckSection(
       {
         filters: [
           { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
+          { propertyName: "dealstage", operator: FilterOperatorEnum.In, values: nudgedStageIds },
           {
             propertyName: "hs_v2_date_entered_current_stage",
             operator: FilterOperatorEnum.Lte,
@@ -148,7 +164,7 @@ async function buildStuckSection(
     ],
     properties: ["dealname", "dealstage", "pb_location", "hs_v2_date_entered_current_stage"],
     sorts: ["hs_v2_date_entered_current_stage"],
-    limit: 100,
+    limit: 200,
   });
 
   const stuck: Array<{ name: string; stage: string; days: number; location: string }> = [];
@@ -165,7 +181,7 @@ async function buildStuckSection(
     const location = r.properties?.pb_location ?? "";
     if (matches && !matches(location)) continue;
     stuck.push({
-      name: r.properties?.dealname ?? "(unnamed)",
+      name: shortProjectName(r.properties?.dealname),
       stage: stageName,
       days,
       location,
@@ -223,7 +239,7 @@ async function buildMilestoneSection(
         });
         const names = (res.results ?? [])
           .filter((r) => !matches || matches(r.properties?.pb_location ?? ""))
-          .map((r) => r.properties?.dealname ?? "(unnamed)");
+          .map((r) => shortProjectName(r.properties?.dealname));
         return { label: m.label, names };
       } catch {
         return { label: m.label, names: [] as string[] };
@@ -308,7 +324,7 @@ async function buildScheduleSection(
   for (const [date, dayJobs] of [...byDate.entries()].sort()) {
     lines.push(`${fmt(date)}:`);
     for (const j of dayJobs) {
-      lines.push(`   • ${j.type} — ${j.project}${j.crew ? ` (${j.crew})` : ""}`);
+      lines.push(`   • ${j.type} — ${shortProjectName(j.project)}${j.crew ? ` (${j.crew})` : ""}`);
     }
   }
   return `🗓️ Scheduled this week (${jobs.length})\n${lines.join("\n")}`;
