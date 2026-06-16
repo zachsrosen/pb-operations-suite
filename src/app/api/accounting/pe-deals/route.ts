@@ -117,6 +117,8 @@ const PE_DEAL_PROPERTIES = [
   // PE milestone statuses (confirmed via HubSpot property search)
   "pe_m1_status",
   "pe_m2_status",
+  // Free-text reason shown when a milestone is "Waiting on Information"
+  "pe_info_needed",
   // PE portal cross-reference
   "pe_portal_url",
   "pe_project_id",
@@ -345,6 +347,7 @@ export async function GET() {
         leaseFactor,
         peM1Status: deal.pe_m1_status ? String(deal.pe_m1_status) : null,
         peM2Status: deal.pe_m2_status ? String(deal.pe_m2_status) : null,
+        peInfoNeeded: deal.pe_info_needed ? String(deal.pe_info_needed) : null,
         m1PaymentShort: paymentAdjustments[dealId]?.m1Short ?? 0,
         m2PaymentShort: paymentAdjustments[dealId]?.m2Short ?? 0,
         milestoneHighlight:
@@ -427,7 +430,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const { dealId, field, value } = body as {
       dealId: string;
-      field: "pe_m1_status" | "pe_m2_status";
+      field: "pe_m1_status" | "pe_m2_status" | "pe_info_needed";
       value: string;
     };
 
@@ -435,13 +438,18 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Missing dealId or field" }, { status: 400 });
     }
 
-    if (field !== "pe_m1_status" && field !== "pe_m2_status") {
+    const isStatusField = field === "pe_m1_status" || field === "pe_m2_status";
+    if (!isStatusField && field !== "pe_info_needed") {
       return NextResponse.json({ error: "Invalid field" }, { status: 400 });
     }
 
-    // Allow clearing (empty string) or setting to a valid value
-    if (value && !VALID_M1M2_VALUES.includes(value)) {
+    // Status fields: allow clearing (empty) or a known status value.
+    if (isStatusField && value && !VALID_M1M2_VALUES.includes(value)) {
       return NextResponse.json({ error: "Invalid status value" }, { status: 400 });
+    }
+    // Free-text reason: allow clearing or any text up to a sane cap.
+    if (field === "pe_info_needed" && value && value.length > 2000) {
+      return NextResponse.json({ error: "Note too long (max 2000 chars)" }, { status: 400 });
     }
 
     await hubspotClient.crm.deals.basicApi.update(dealId, {
