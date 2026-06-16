@@ -142,54 +142,71 @@ export function createTechOpsBotTools() {
       const toStr = end.toISOString().slice(0, 10);
 
       // ScheduleRecord is the canonical "what was scheduled" table (survey /
-      // construction / inspection, with crew + status). It carries no location
-      // column, so when a location filter is requested we build a
-      // projectId → location map from BookedSlot (which does) for the same
-      // window and filter against it.
-      const [records, slots] = await Promise.all([
-        prisma.scheduleRecord.findMany({
-          where: {
-            scheduledDate: { gte: fromStr, lte: toStr },
-            status: { in: ["scheduled", "rescheduled"] },
-          },
-          orderBy: [{ scheduledDate: "asc" }],
-          take: 300,
-          select: {
-            scheduledDate: true,
-            scheduleType: true,
-            projectId: true,
-            projectName: true,
-            assignedUser: true,
-            status: true,
-          },
-        }),
-        canonicalLocation
-          ? prisma.bookedSlot.findMany({
-              where: { date: { gte: fromStr, lte: toStr } },
-              select: { projectId: true, location: true },
-            })
-          : Promise.resolve([] as Array<{ projectId: string; location: string }>),
-      ]);
+      // construction / inspection, with crew + status). It carries no location,
+      // so the authoritative location is the deal's own pb_location — we
+      // batch-read it from HubSpot and map projectId → location. (An earlier
+      // version derived location from BookedSlot, which is sparsely populated
+      // and silently dropped most jobs from location-filtered results.)
+      const records = await prisma.scheduleRecord.findMany({
+        where: {
+          scheduledDate: { gte: fromStr, lte: toStr },
+          status: { in: ["scheduled", "rescheduled"] },
+        },
+        orderBy: [{ scheduledDate: "asc" }],
+        take: 300,
+        select: {
+          scheduledDate: true,
+          scheduleType: true,
+          projectId: true,
+          projectName: true,
+          assignedUser: true,
+          status: true,
+        },
+      });
+
+      // Resolve each scheduled deal's pb_location via batch read (chunks of 100).
+      const dealIds = [...new Set(records.map((r) => r.projectId).filter(Boolean))];
+      const locByDeal = new Map<string, string>();
+      if (dealIds.length > 0) {
+        const { batchReadDealsWithRetry } = await import("@/lib/hubspot");
+        for (let i = 0; i < dealIds.length; i += 100) {
+          const chunk = dealIds.slice(i, i + 100);
+          try {
+            const res = await batchReadDealsWithRetry(chunk, ["pb_location"]);
+            for (const d of res.results ?? []) {
+              const loc = d.properties?.pb_location;
+              if (d.id && loc) locByDeal.set(d.id, loc);
+            }
+          } catch {
+            // Non-fatal: jobs whose deal we couldn't read just won't carry a
+            // location (and are excluded from a location-filtered view).
+          }
+        }
+      }
 
       let scoped = records;
       if (canonicalLocation) {
         const { normalizeLocation } = await import("@/lib/locations");
-        const allowed = new Set(
-          slots
-            .filter((s) => normalizeLocation(s.location) === canonicalLocation)
-            .map((s) => s.projectId)
+        scoped = records.filter(
+          (r) => normalizeLocation(locByDeal.get(r.projectId) ?? "") === canonicalLocation
         );
-        scoped = records.filter((r) => allowed.has(r.projectId));
       }
 
       const byDate: Record<
         string,
-        Array<{ type: string; project: string; crew: string | null; status: string }>
+        Array<{
+          type: string;
+          project: string;
+          location: string | null;
+          crew: string | null;
+          status: string;
+        }>
       > = {};
       for (const r of scoped) {
         (byDate[r.scheduledDate] ??= []).push({
           type: r.scheduleType,
           project: r.projectName,
+          location: locByDeal.get(r.projectId) ?? null,
           crew: r.assignedUser ?? null,
           status: r.status,
         });

@@ -220,7 +220,7 @@ export async function searchWithRetry(
  * 429 dropped a whole batch of 100 deals, and the incomplete snapshot was
  * cached as if complete (silently undercounting every dashboard fed by it).
  */
-async function batchReadDealsWithRetry(
+export async function batchReadDealsWithRetry(
   ids: string[],
   properties: string[],
   maxRetries = 5
