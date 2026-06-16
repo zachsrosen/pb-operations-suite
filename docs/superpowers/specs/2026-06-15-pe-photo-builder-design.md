@@ -22,8 +22,12 @@ This is the manual-input sibling of the existing `pe-policy-photos` CLI skill, w
 - **Page:** `/dashboards/pe-photo-builder`, surfaced as a card on the **Accounting suite**
   landing page.
 - **Roles:** ADMIN, OWNER, PROJECT_MANAGER, ACCOUNTING, SALES_MANAGER.
-- **API routes** (added to the same roles' `allowedRoutes` in `src/lib/roles.ts`, and the suite
-  card likewise implies the route allowlist):
+- **Suite card:** the Accounting suite is visible to ADMIN, OWNER, ACCOUNTING, SALES_MANAGER —
+  **not** PROJECT_MANAGER. PMs get the page+API allowlist and reach it by direct URL only (mirrors
+  the existing executive-dashboard pattern noted in CLAUDE.md). The page also gets a card on the
+  PM-visible Operations suite so PMs have a surface to land on.
+- **API routes** (added to the same roles' `allowedRoutes` in `src/lib/roles.ts`, and each suite
+  card likewise implies the route allowlist for every role that sees the suite):
   - `POST /api/pe/photo-package/triage`
   - `POST /api/pe/photo-package/assemble`
 
@@ -54,8 +58,14 @@ Vercel functions are stateless and the filesystem is ephemeral, so full-res orig
 held in memory between `/triage` and `/assemble`. Rather than introduce a blob store (with its own
 upload + lifecycle + cleanup), the browser — which already holds the `File` objects — re-sends them
 on `/assemble`. `/assemble` trusts the passed tags and skips re-triage, so it is fast and cheap.
-Each file carries a stable client-generated `clientId` so tags map back unambiguously (filenames
-can collide).
+Each file carries a stable client-generated `clientId` (sent as a parallel multipart field) so
+tags map back unambiguously (filenames can collide).
+
+`/assemble` reconciles the re-submitted files against the `assignments` JSON by `clientId`: it
+uses only files whose `clientId` appears in `assignments` with a kept shot. A `clientId` in
+`assignments` with no matching file is skipped with a warning in the response (it simply won't
+appear in the PDF); a file with no entry in `assignments` is ignored. This makes a torn/partial
+re-upload degrade gracefully rather than 500.
 
 ## Coverage / "what's missing" logic
 
@@ -86,7 +96,9 @@ For each required shot, given the photos assigned to it:
   vision flagged legibility/partial framing — verify before submitting).
 - **Missing** ❌ — zero photos assigned to that shot.
 
-The Sales Order shows **Covered** if `soFound`, else **Missing**.
+The Sales Order is rendered as a **distinct document row** in the coverage report (visually
+separated from the photo shots, with no re-tag affordance, since no uploaded photo can satisfy
+it). It shows **Covered** if `soFound`, else **Missing**.
 
 Photos matched to a shot that is *not* required for this system type are listed as **Bonus**
 (kept in the PDF, not counted against coverage). Photos the user drops (or the vision tags as
@@ -118,8 +130,12 @@ covered by its existing tests).
 - **No usable photos** (all sliver/low-res) → clear error listing what was rejected and why.
 - **Anthropic transient (503 "file storage unavailable")** → retry with backoff; if it still
   fails, surface "vision service busy, try again."
-- **Upload cap** → soft cap ~60 photos / ~200 MB per submission; warn and ask the user to split if
-  exceeded (also keeps vision triage within its token budget).
+- **Upload cap** → enforced **client-side first** (count + total bytes checked before any POST;
+  warn and ask the user to split if over ~60 photos / a size budget). The size budget must sit
+  under the route's serverless body limit — Next.js route handlers must set an explicit
+  `bodyParser`/`maxBodySize` (or stream the multipart) high enough for the budget, since the
+  default would hard-fail a large multipart POST before our soft-cap message can fire. The cap
+  also keeps vision triage within its token budget.
 
 ## Testing
 
