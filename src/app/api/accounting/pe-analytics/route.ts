@@ -13,6 +13,7 @@ import { prisma } from "@/lib/db";
 import {
   weekStartUTC,
   groupForStatus,
+  resolveSubmittedOn,
   computeMilestoneTiming,
   median,
   percentile,
@@ -302,7 +303,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     records.push(
       {
         deal, milestone: "M1", amount: deal.paymentIC, status: deal.m1Status, timing: m1Timing,
-        submittedOn: deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
+        submittedOn: resolveSubmittedOn(deal.m1SubmissionDate, deal.m1Status, m1Timing.firstSubmitted),
         approvedOn: deal.m1ApprovalDate ?? m1Timing.firstApproved,
         paidOn: deal.m1PaidDate ?? m1Timing.firstPaid,
         rejectedOn: deal.m1RejectionDate ?? m1Timing.firstRejected,
@@ -310,7 +311,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
-        submittedOn: deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
+        submittedOn: resolveSubmittedOn(deal.m2SubmissionDate, deal.m2Status, m2Timing.firstSubmitted),
         approvedOn: deal.m2ApprovalDate ?? m2Timing.firstApproved,
         paidOn: deal.m2PaidDate ?? m2Timing.firstPaid,
         rejectedOn: deal.m2RejectionDate ?? m2Timing.firstRejected,
