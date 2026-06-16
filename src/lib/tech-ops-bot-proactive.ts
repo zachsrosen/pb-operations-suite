@@ -431,13 +431,21 @@ export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]
     return routes.map((r) => ({ room: r.room, posted: false, reason }));
   }
 
-  const spaceByName = new Map(
-    spaces.map((s) => [s.displayName.trim().toLowerCase(), s.name])
-  );
+  // Resolve a configured room name to a space the bot belongs to. Matches the
+  // exact display name first, then tolerates a parenthetical suffix so
+  // "Colorado Project Team" matches "Colorado Project Team (Permitting & …)".
+  const norm = (s: string) => s.trim().toLowerCase();
+  const resolveSpace = (room: string): string | undefined => {
+    const target = norm(room);
+    const exact = spaces.find((s) => norm(s.displayName) === target);
+    if (exact) return exact.name;
+    const prefixed = spaces.find((s) => norm(s.displayName).startsWith(`${target} (`));
+    return prefixed?.name;
+  };
 
   const results: RoomDigestResult[] = [];
   for (const route of routes) {
-    const spaceName = spaceByName.get(route.room.trim().toLowerCase());
+    const spaceName = resolveSpace(route.room);
     if (!spaceName) {
       results.push({
         room: route.room,
