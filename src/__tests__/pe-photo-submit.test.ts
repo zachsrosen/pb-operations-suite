@@ -151,13 +151,25 @@ describe("orderPolicyPhotos", () => {
     const out = orderPolicyPhotos(photos, "solar");
     expect(out.map((p) => p.fileId)).toEqual(["b", "c", "d", "a"]);
   });
-  it("drops shots that do not apply to the system type", () => {
-    const storagePhotos = [
-      { fileId: "x", shotId: "m1.photos.2_pv_array" },       // SOLAR only
-      { fileId: "y", shotId: "m1.photos.9_storage_wide" },   // STORAGE
+  it("keeps every photo matched to a real shot, ordered canonically (no system-type drop)", () => {
+    // The vision only assigns a shot when its equipment is present, so we keep
+    // all matched photos and order by the full canonical sequence.
+    const mixed = [
+      { fileId: "x", shotId: "m1.photos.9_storage_wide" },   // rank 8
+      { fileId: "y", shotId: "m1.photos.4_electrical" },     // rank 3 — applies to battery too
     ];
-    const out = orderPolicyPhotos(storagePhotos, "battery");
-    expect(out.map((p) => p.fileId)).toEqual(["y"]);
+    const out = orderPolicyPhotos(mixed, "battery");
+    expect(out.map((p) => p.fileId)).toEqual(["y", "x"]);
+  });
+  it("drops only photos whose shotId is not a real photo shot", () => {
+    const out = orderPolicyPhotos(
+      [
+        { fileId: "keep", shotId: "m1.photos.1_site_address" },
+        { fileId: "junk", shotId: "not-a-real-shot" },
+      ],
+      "solar",
+    );
+    expect(out.map((p) => p.fileId)).toEqual(["keep"]);
   });
 });
 

@@ -25,7 +25,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import sharp from "sharp";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
 
 import {
   DOC_CONFIGS,
@@ -45,7 +45,6 @@ import {
 } from "@/lib/pe-api";
 import {
   PE_M1_CHECKLIST,
-  filterChecklist,
   buildFolderMap,
   type SystemType,
 } from "@/lib/pe-turnover";
@@ -232,13 +231,36 @@ async function locateSalesOrderPdf(rootFolderId: string): Promise<Buffer | null>
 }
 
 /** Convert an image buffer to a single full-page PDF page appended to `doc`. */
-async function appendImagePage(doc: PDFDocument, img: Buffer): Promise<void> {
+async function appendImagePage(
+  doc: PDFDocument,
+  img: Buffer,
+  caption?: string,
+  font?: PDFFont,
+): Promise<void> {
   // Normalize to PNG so pdf-lib embeds reliably regardless of source format.
   const png = await sharp(img).rotate().png().toBuffer();
   const embedded = await doc.embedPng(png);
   const { width, height } = embedded;
-  const page = doc.addPage([width, height]);
-  page.drawImage(embedded, { x: 0, y: 0, width, height });
+  const barH = caption && font ? Math.max(34, Math.round(width * 0.04)) : 0;
+  const page = doc.addPage([width, height + barH]);
+  page.drawImage(embedded, { x: 0, y: barH, width, height });
+  if (caption && font) {
+    page.drawRectangle({ x: 0, y: 0, width, height: barH, color: rgb(0.09, 0.1, 0.13) });
+    const size = Math.min(Math.round(barH * 0.42), 24);
+    // Truncate to fit the page width.
+    let text = caption;
+    while (text.length > 4 && font.widthOfTextAtSize(text, size) > width - 24) {
+      text = text.slice(0, -2);
+    }
+    if (text !== caption) text = text.replace(/\.\.\.$|.$/, "…");
+    page.drawText(text, {
+      x: 14,
+      y: Math.round((barH - size) / 2) + 1,
+      size,
+      font,
+      color: rgb(1, 1, 1),
+    });
+  }
 }
 
 async function processProject(
@@ -340,10 +362,17 @@ async function processProject(
   // Index in `orderedImages` at which the Sales Order (item #6) is inserted.
   // Defaults past the end (append last); set by rank for policy photos below.
   let soInsertIndex = Number.MAX_SAFE_INTEGER;
+  // Per-photo caption drawn on the PDF page (shot type + key detail the vision read).
+  const captionByFileId = new Map<string, string>();
+  const SHOT_LABEL = new Map(PE_M1_CHECKLIST.filter((i) => i.isPhoto).map((i) => [i.id, i.label]));
 
   if (doc === "policy-photos") {
-    const systemType = normalizeSystemType(project.assets.systemType);
-    const photoItems = filterChecklist(PE_M1_CHECKLIST.filter((i) => i.isPhoto), systemType);
+    // Offer the vision the FULL photo shot list (not the system-type subset) so
+    // every install photo can be matched to its real shot — electrical, MSP, etc.
+    // apply to battery systems too. We keep ALL photos matched to a real PE shot
+    // (multiple per shot is fine) and drop only the unmatched (JHA forms, random
+    // progress shots) and hard fails — per "required shots, multiple each".
+    const allPhotoItems = PE_M1_CHECKLIST.filter((i) => i.isPhoto);
 
     // Upload each usable image to Anthropic Files, then triage in one batch.
     // Anthropic caps dimensions at 2000px for many-image requests, and install
@@ -357,35 +386,40 @@ async function processProject(
       const anthropicFileId = await uploadToAnthropic(visionBuf, u.name, "image/jpeg");
       batchInputs.push({ anthropicFileId, fileName: u.name, driveFileId: u.driveId });
     }
-    const triage = await triagePhotoBatch(batchInputs, photoItems);
+    const triage = await triagePhotoBatch(batchInputs, allPhotoItems);
 
     const classified: ClassifiedPhoto[] = [];
     for (const [idx, assignment] of triage.assignments) {
       const u = usable[idx];
       if (!u) continue;
+      // Drop photos the vision couldn't match to a real PE shot (forms, junk).
+      if (!SHOT_LABEL.has(assignment.checklistId)) continue;
+      // Drop hard fails (wrong type / unusable); keep pass + needs_review.
       if (assignment.verdict === "fail") {
-        flags.push(`failed verify ${u.name} (${assignment.checklistId}): ${assignment.issues.join("; ")}`);
+        flags.push(`dropped ${u.name} (${assignment.checklistId}): ${assignment.issues[0] ?? "failed verification"}`);
         continue;
       }
       if (assignment.verdict === "needs_review") {
-        flags.push(`needs review ${u.name} (${assignment.checklistId}): ${assignment.issues.join("; ") || "low confidence"}`);
+        flags.push(`review ${u.name} (${SHOT_LABEL.get(assignment.checklistId)}): ${assignment.issues[0] ?? "low confidence"}`);
       }
       classified.push({ fileId: u.driveId, shotId: assignment.checklistId });
+      const detail = (assignment.equipmentVisible ?? []).slice(0, 2).join(", ");
+      captionByFileId.set(
+        u.driveId,
+        `${SHOT_LABEL.get(assignment.checklistId)}${detail ? ` — ${detail}` : ""}`,
+      );
     }
 
-    const ordered = orderPolicyPhotos(classified, systemType);
+    const ordered = orderPolicyPhotos(classified, normalizeSystemType(project.assets.systemType));
     const byId = new Map(usable.map((u) => [u.driveId, u]));
     orderedImages = ordered.map((c) => byId.get(c.fileId)!).filter(Boolean);
     if (orderedImages.length === 0) {
       return empty("no photos matched the policy shot checklist after triage");
     }
-    // Slot the Sales Order (item #6) at its canonical rank among the shots that
-    // APPLY to this system type — not a fixed photo index. Storage-only systems
-    // drop the solar shots, so the invoice no longer sits at literal index 5.
-    const applicable = filterChecklist(PE_M1_CHECKLIST.filter((i) => i.isPhoto), systemType);
-    const invoiceRank = applicable.findIndex((i) => i.id === "m1.photos.6_invoice_bom");
+    // Slot the Sales Order (item #6) at its canonical rank among ALL photo shots.
+    const invoiceRank = allPhotoItems.findIndex((i) => i.id === "m1.photos.6_invoice_bom");
     if (invoiceRank >= 0) {
-      const rankOf = new Map(applicable.map((it, idx) => [it.id, idx]));
+      const rankOf = new Map(allPhotoItems.map((it, idx) => [it.id, idx]));
       soInsertIndex = ordered.filter((c) => (rankOf.get(c.shotId) ?? Infinity) < invoiceRank).length;
     }
   } else {
@@ -427,6 +461,10 @@ async function processProject(
         if (result.classification.issues.length > 0) {
           flags.push(`${u.name}: ${result.classification.issues.join("; ")}`);
         }
+        captionByFileId.set(
+          u.driveId,
+          `Signed Final Permit${result.classification.documentType ? ` — ${result.classification.documentType}` : ""}`,
+        );
       }
       kept.push(u);
     }
@@ -438,6 +476,7 @@ async function processProject(
 
   // --- Assemble PDF --------------------------------------------------------
   const pdf = await PDFDocument.create();
+  const captionFont = await pdf.embedFont(StandardFonts.Helvetica);
 
   // Locate-or-flag the Sales Order PDF and embed its pages (never regenerate).
   const embedSalesOrder = async (): Promise<void> => {
@@ -457,7 +496,8 @@ async function processProject(
 
   for (let i = 0; i < orderedImages.length; i++) {
     if (cfg.embedsSalesOrder && i === soInsertIndex) await embedSalesOrder();
-    await appendImagePage(pdf, orderedImages[i].buffer);
+    const cap = captionByFileId.get(orderedImages[i].driveId);
+    await appendImagePage(pdf, orderedImages[i].buffer, cap, captionFont);
   }
   // SO ranks at or after every present photo (or there are none) — append last.
   if (cfg.embedsSalesOrder && soInsertIndex >= orderedImages.length) await embedSalesOrder();
