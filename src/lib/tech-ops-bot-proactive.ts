@@ -43,14 +43,30 @@ const STUCK_THRESHOLDS: Record<string, number> = {
   "permission to operate": 21,
 };
 
-/** Key milestones worth a heads-up, with their HubSpot date property. */
-const ALERT_MILESTONES: Array<{ label: string; prop: string }> = [
-  { label: "DA approved", prop: "layout_approval_date" },
-  { label: "Permit issued", prop: "permit_completion_date" },
-  { label: "Ready to Build", prop: "ready_to_build_date" },
-  { label: "Install complete", prop: "construction_complete_date" },
-  { label: "Inspection passed", prop: "inspections_completion_date" },
-  { label: "PTO granted", prop: "pto_completion_date" },
+/**
+ * Milestones worth a heads-up, with their HubSpot date property. `key` lets a
+ * route select a subset (e.g. the P&I room only wants permit/IC milestones).
+ */
+const ALERT_MILESTONES: Array<{ key: string; label: string; prop: string }> = [
+  { key: "da_approved", label: "DA approved", prop: "layout_approval_date" },
+  { key: "permit_submitted", label: "Permit submitted", prop: "permit_submit_date" },
+  { key: "permit_issued", label: "Permit issued", prop: "permit_completion_date" },
+  { key: "ic_submitted", label: "Interconnection submitted", prop: "interconnections_submit_date" },
+  { key: "ic_approved", label: "Interconnection approved", prop: "interconnections_completion_date" },
+  { key: "rtb", label: "Ready to Build", prop: "ready_to_build_date" },
+  { key: "construction_completed", label: "Install complete", prop: "construction_complete_date" },
+  { key: "inspection_passed", label: "Inspection passed", prop: "inspections_completion_date" },
+  { key: "pto_granted", label: "PTO granted", prop: "pto_completion_date" },
+];
+
+/** Default milestone set for broad digests (the headline wins). */
+const DEFAULT_MILESTONE_KEYS = [
+  "da_approved",
+  "permit_issued",
+  "rtb",
+  "construction_completed",
+  "inspection_passed",
+  "pto_granted",
 ];
 
 // ── Owner DM space helpers ──
@@ -98,13 +114,19 @@ async function locationMatcher(
 /** Section 1: deals sitting past their stage's threshold. */
 async function buildStuckSection(
   now: number,
-  locations?: string[] | null
+  locations?: string[] | null,
+  stages?: string[] | null
 ): Promise<string | null> {
   const { searchWithRetry, DEAL_STAGE_MAP } = await import("@/lib/hubspot");
   const { FilterOperatorEnum } = await import(
     "@hubspot/api-client/lib/codegen/crm/deals"
   );
   const matches = await locationMatcher(locations);
+  // Optional stage focus (e.g. P&I room → only "Permitting & Interconnection").
+  const stageFilter =
+    stages && stages.length > 0
+      ? new Set(stages.map((s) => s.toLowerCase()))
+      : null;
 
   // Bound the result set: only pull deals already past the *smallest* threshold,
   // then apply the precise per-stage limit in code.
@@ -133,6 +155,7 @@ async function buildStuckSection(
   for (const r of res.results ?? []) {
     const stageName = DEAL_STAGE_MAP[r.properties?.dealstage ?? ""] ?? null;
     if (!stageName) continue;
+    if (stageFilter && !stageFilter.has(stageName.toLowerCase())) continue;
     const threshold = STUCK_THRESHOLDS[stageName.toLowerCase()];
     if (threshold == null) continue; // not a stage we nudge on
     const enteredMs = parseHubspotDate(r.properties?.hs_v2_date_entered_current_stage);
@@ -163,7 +186,8 @@ async function buildStuckSection(
 /** Section 2: deals that hit a key milestone in the last 24h. */
 async function buildMilestoneSection(
   now: number,
-  locations?: string[] | null
+  locations?: string[] | null,
+  milestoneKeys?: string[] | null
 ): Promise<string | null> {
   const { searchWithRetry } = await import("@/lib/hubspot");
   const { FilterOperatorEnum } = await import(
@@ -172,8 +196,13 @@ async function buildMilestoneSection(
   const matches = await locationMatcher(locations);
   const fromMs = now - 24 * 60 * 60 * 1000;
 
+  const wantedKeys = new Set(
+    milestoneKeys && milestoneKeys.length > 0 ? milestoneKeys : DEFAULT_MILESTONE_KEYS
+  );
+  const selected = ALERT_MILESTONES.filter((m) => wantedKeys.has(m.key));
+
   const groups = await Promise.all(
-    ALERT_MILESTONES.map(async (m) => {
+    selected.map(async (m) => {
       try {
         const res = await searchWithRetry({
           filterGroups: [
@@ -289,21 +318,29 @@ async function buildScheduleSection(
 
 export type SectionKey = "stuck" | "milestones" | "schedule" | "escalations";
 
-/** Build the requested sections (scoped to `locations`); returns non-empty ones. */
+interface SectionOptions {
+  locations: string[] | null;
+  /** Limit stuck deals to these stage names (default: all nudged stages). */
+  stuckStages?: string[] | null;
+  /** Limit milestones to these ALERT_MILESTONES keys (default: headline wins). */
+  milestoneKeys?: string[] | null;
+}
+
+/** Build the requested sections with the given scope/focus; non-empty only. */
 async function buildSections(
   now: number,
   sections: SectionKey[],
-  locations: string[] | null
+  opts: SectionOptions
 ): Promise<string[]> {
   const built = await Promise.all(
     sections.map((key) => {
       switch (key) {
         case "stuck":
-          return buildStuckSection(now, locations).catch(() => null);
+          return buildStuckSection(now, opts.locations, opts.stuckStages).catch(() => null);
         case "milestones":
-          return buildMilestoneSection(now, locations).catch(() => null);
+          return buildMilestoneSection(now, opts.locations, opts.milestoneKeys).catch(() => null);
         case "schedule":
-          return buildScheduleSection(now, locations).catch(() => null);
+          return buildScheduleSection(now, opts.locations).catch(() => null);
         case "escalations":
           // Escalations are the owner's queue — never location-scoped.
           return buildEscalationSection(now).catch(() => null);
@@ -315,14 +352,16 @@ async function buildSections(
   return built.filter((s): s is string => Boolean(s));
 }
 
-function digestHeader(now: number, label: string): string {
+/** Compose the header line(s): "📋 <title> — <date>" plus an optional intro. */
+function digestHeader(now: number, title: string, intro?: string): string {
   const today = new Date(now).toLocaleDateString("en-US", {
     timeZone: "America/Denver",
     weekday: "short",
     month: "short",
     day: "numeric",
   });
-  return `📋 ${label} — ${today}`;
+  const head = `📋 ${title} — ${today}`;
+  return intro ? `${head}\n${intro}` : head;
 }
 
 // ── Room routes ──
@@ -330,26 +369,38 @@ function digestHeader(now: number, label: string): string {
 export interface DigestRoute {
   /** Google Chat room display name the bot must be a member of. */
   room: string;
+  /** Header title (defaults to a location label). */
+  title?: string;
+  /** Optional one-line intro under the header. */
+  intro?: string;
   /** Canonical locations to scope to; empty = all locations. */
   locations: string[];
   /** Which sections this room receives. */
   sections: SectionKey[];
+  /** Limit the stuck-deals section to these stage names. */
+  stuckStages?: string[];
+  /** Limit the milestones section to these ALERT_MILESTONES keys. */
+  milestones?: string[];
   enabled: boolean;
 }
 
 /**
- * Team-room digest routes. Each posts a scoped digest into a Google Chat room
- * (resolved by display name at runtime). Edit here to add/scope rooms.
- * Escalations are intentionally omitted — that's the owner's DM queue.
+ * Team-room digest routes. Each posts a scoped, tailored digest into a Google
+ * Chat room (resolved by display name at runtime). Edit here to retune copy,
+ * scope, sections, or content focus. Escalations are intentionally omitted —
+ * that's the owner's DM queue.
  */
 export const DIGEST_ROUTES: DigestRoute[] = [
   {
     room: "Tech Ops",
+    title: "Tech Ops — daily pulse",
+    intro: "Operational snapshot across all shops.",
     locations: [],
     sections: ["stuck", "milestones", "schedule"],
     enabled: true,
   },
   {
+    // TODO(zach): tailor once we know Fight Club's focus — broad default for now.
     room: "Fight Club",
     locations: [],
     sections: ["stuck", "milestones", "schedule"],
@@ -357,8 +408,12 @@ export const DIGEST_ROUTES: DigestRoute[] = [
   },
   {
     room: "Colorado Project Team",
+    title: "CO P&I — daily",
+    intro: "Where permitting & interconnection stand today.",
     locations: ["Westminster", "Centennial", "Colorado Springs"],
-    sections: ["stuck", "milestones", "schedule"],
+    sections: ["stuck", "milestones"],
+    stuckStages: ["Permitting & Interconnection"],
+    milestones: ["permit_submitted", "permit_issued", "ic_submitted", "ic_approved"],
     enabled: true,
   },
 ];
@@ -377,7 +432,9 @@ export interface DigestResult {
  */
 export async function buildDailyDigestMessage(nowMs?: number): Promise<string | null> {
   const now = nowMs ?? Date.now();
-  const sections = await buildSections(now, ["stuck", "milestones", "escalations"], null);
+  const sections = await buildSections(now, ["stuck", "milestones", "escalations"], {
+    locations: null,
+  });
   if (sections.length === 0) return null;
   return `${digestHeader(now, "Daily Tech Ops digest")}\n\n${sections.join("\n\n")}`;
 }
@@ -455,17 +512,22 @@ export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]
       continue;
     }
 
-    const sections = await buildSections(now, route.sections, route.locations);
+    const sections = await buildSections(now, route.sections, {
+      locations: route.locations.length > 0 ? route.locations : null,
+      stuckStages: route.stuckStages,
+      milestoneKeys: route.milestones,
+    });
     if (sections.length === 0) {
       results.push({ room: route.room, posted: false, reason: "nothing to report" });
       continue;
     }
 
-    const label =
-      route.locations.length > 0
+    const title =
+      route.title ??
+      (route.locations.length > 0
         ? `Daily digest (${route.locations.join(", ")})`
-        : "Daily Tech Ops digest";
-    const message = `${digestHeader(now, label)}\n\n${sections.join("\n\n")}`;
+        : "Daily Tech Ops digest");
+    const message = `${digestHeader(now, title, route.intro)}\n\n${sections.join("\n\n")}`;
     try {
       await postGoogleChatMessage({ spaceName, text: message });
       results.push({ room: route.room, posted: true });
