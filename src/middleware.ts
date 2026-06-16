@@ -30,10 +30,12 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/install-review",
   "/api/webhooks/hubspot/property",
   "/api/cron/audit-digest",
+  "/api/cron/tech-ops-bot-digest", // Tech Ops bot daily digest — CRON_SECRET validated in route
   "/api/cron/property-reconcile",
   "/api/cron/audit-retention",
   "/api/cron/pipeline-health",
   "/api/cron/daily-focus",
+  "/api/cron/morning-sweep", // Zach's proactive task/ticket sweep — CRON_SECRET validated in route
   "/api/cron/eod-summary",
   "/api/cron/deal-sync", // Deal mirror batch sync — CRON_SECRET validated in route
   "/api/cron/shovels-enrich", // Shovels property enrichment — CRON_SECRET validated in route
