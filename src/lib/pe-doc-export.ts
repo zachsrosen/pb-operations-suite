@@ -16,7 +16,6 @@ export interface PeExportRow {
   doc: string;
   status: string;
   reason: string;
-  blockerNote: string;
   hubspotUrl: string;
   portalUrl: string;
   driveUrl: string;
@@ -56,10 +55,10 @@ function csvCell(v: string): string {
 export function rowsToCsv(rows: PeExportRow[]): string {
   const head = [
     "Project", "Deal", "Location", "Stage", "Team", "Document",
-    "Status", "PE Reason", "Blocker Note", "HubSpot", "PE Portal", "Drive",
+    "Status", "PE Reason", "HubSpot", "PE Portal", "Drive",
   ];
   const lines = rows.map((r) =>
-    [r.proj, r.deal, r.location, r.stage, r.team, r.doc, r.status, r.reason, r.blockerNote, r.hubspotUrl, r.portalUrl, r.driveUrl]
+    [r.proj, r.deal, r.location, r.stage, r.team, r.doc, r.status, r.reason, r.hubspotUrl, r.portalUrl, r.driveUrl]
       .map((x) => csvCell(x ?? ""))
       .join(","),
   );
@@ -81,7 +80,7 @@ export function rowsToText(rows: PeExportRow[], title: string): string {
     lines.push("");
     lines.push(`• ${parseDealName(deal).name || deal}${proj} — ${first.stage}${first.location ? ` · ${first.location}` : ""}`);
     for (const r of rs) {
-      lines.push(`    - ${r.doc}: ${r.status}${r.reason ? ` — ${r.reason}` : ""}${r.blockerNote ? ` [blocked: ${r.blockerNote}]` : ""}`);
+      lines.push(`    - ${r.doc}: ${r.status}${r.reason ? ` — ${r.reason}` : ""}`);
     }
     const links = [
       first.hubspotUrl && `HubSpot: ${first.hubspotUrl}`,
