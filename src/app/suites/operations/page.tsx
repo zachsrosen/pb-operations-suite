@@ -295,20 +295,36 @@ const BASE_LINKS: SuitePageCard[] = [
   },
 ];
 
-const LINKS: SuitePageCard[] = BASE_LINKS.filter(
-  (l) => l.href !== "/dashboards/map" || process.env.NEXT_PUBLIC_UI_MAP_VIEW_ENABLED !== "false",
-);
+// Roles entitled to access /dashboards/pe-photo-builder (mirrors roles.ts allowlist).
+// OPERATIONS, OPERATIONS_MANAGER, and TECH_OPS are intentionally excluded — they see
+// the Operations suite but cannot reach that route, so we hide the card here to avoid
+// a silent 403 dead-end.
+const PE_PHOTO_BUILDER_ROLES = ["ADMIN", "EXECUTIVE", "PROJECT_MANAGER"] as const;
 
 export default async function OperationsSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/operations");
+
+  const canSeePePhotoBuilder = user.roles.some((r) =>
+    (PE_PHOTO_BUILDER_ROLES as readonly string[]).includes(r),
+  );
+
+  const links = BASE_LINKS.filter((l) => {
+    if (l.href === "/dashboards/map" && process.env.NEXT_PUBLIC_UI_MAP_VIEW_ENABLED === "false") {
+      return false;
+    }
+    if (l.href === "/dashboards/pe-photo-builder" && !canSeePePhotoBuilder) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <SuitePageShell
       currentSuiteHref="/suites/operations"
       title="Operations Suite"
       subtitle="Scheduling, field execution, and equipment management."
-      cards={LINKS}
+      cards={links}
       roles={user.roles}
     />
   );
