@@ -285,6 +285,19 @@ export async function POST(request: NextRequest) {
       return chatTextResponse("I can only respond to text messages.", isAddOn);
     }
 
+    // ── Capture the owner's DM space for proactive digests ──
+    // The first time the owner messages the bot in a DM (not a room), record
+    // the space so the daily digest cron knows where to post. Fire-and-forget.
+    if (!isRoomSpace(event.space)) {
+      void import("@/lib/tech-ops-bot-proactive")
+        .then(({ ownerEmail, setOwnerDmSpace }) => {
+          if (senderEmail.toLowerCase() === ownerEmail()) {
+            return setOwnerDmSpace(spaceName);
+          }
+        })
+        .catch(() => {});
+    }
+
     // ── Idempotency check ──
     if (messageName) {
       const existing = await prisma.idempotencyKey.findUnique({
