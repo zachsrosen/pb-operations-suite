@@ -82,12 +82,29 @@ function parseHubspotDate(v: string | null | undefined): number | null {
 
 // ── Section builders ──
 
+/** Resolve a raw pb_location against a set of canonical locations. */
+async function locationMatcher(
+  locations: string[] | null | undefined
+): Promise<((raw: string) => boolean) | null> {
+  if (!locations || locations.length === 0) return null;
+  const { normalizeLocation } = await import("@/lib/locations");
+  const wanted = new Set(locations);
+  return (raw: string) => {
+    const canon = normalizeLocation(raw ?? "");
+    return Boolean(canon && wanted.has(canon));
+  };
+}
+
 /** Section 1: deals sitting past their stage's threshold. */
-async function buildStuckSection(now: number): Promise<string | null> {
+async function buildStuckSection(
+  now: number,
+  locations?: string[] | null
+): Promise<string | null> {
   const { searchWithRetry, DEAL_STAGE_MAP } = await import("@/lib/hubspot");
   const { FilterOperatorEnum } = await import(
     "@hubspot/api-client/lib/codegen/crm/deals"
   );
+  const matches = await locationMatcher(locations);
 
   // Bound the result set: only pull deals already past the *smallest* threshold,
   // then apply the precise per-stage limit in code.
@@ -121,14 +138,15 @@ async function buildStuckSection(now: number): Promise<string | null> {
     const enteredMs = parseHubspotDate(r.properties?.hs_v2_date_entered_current_stage);
     if (enteredMs == null) continue;
     const days = Math.floor((now - enteredMs) / 86_400_000);
-    if (days >= threshold) {
-      stuck.push({
-        name: r.properties?.dealname ?? "(unnamed)",
-        stage: stageName,
-        days,
-        location: r.properties?.pb_location ?? "",
-      });
-    }
+    if (days < threshold) continue;
+    const location = r.properties?.pb_location ?? "";
+    if (matches && !matches(location)) continue;
+    stuck.push({
+      name: r.properties?.dealname ?? "(unnamed)",
+      stage: stageName,
+      days,
+      location,
+    });
   }
 
   if (stuck.length === 0) return null;
@@ -143,11 +161,15 @@ async function buildStuckSection(now: number): Promise<string | null> {
 }
 
 /** Section 2: deals that hit a key milestone in the last 24h. */
-async function buildMilestoneSection(now: number): Promise<string | null> {
+async function buildMilestoneSection(
+  now: number,
+  locations?: string[] | null
+): Promise<string | null> {
   const { searchWithRetry } = await import("@/lib/hubspot");
   const { FilterOperatorEnum } = await import(
     "@hubspot/api-client/lib/codegen/crm/deals"
   );
+  const matches = await locationMatcher(locations);
   const fromMs = now - 24 * 60 * 60 * 1000;
 
   const groups = await Promise.all(
@@ -170,7 +192,9 @@ async function buildMilestoneSection(now: number): Promise<string | null> {
           properties: ["dealname", "pb_location"],
           limit: 10,
         });
-        const names = (res.results ?? []).map((r) => r.properties?.dealname ?? "(unnamed)");
+        const names = (res.results ?? [])
+          .filter((r) => !matches || matches(r.properties?.pb_location ?? ""))
+          .map((r) => r.properties?.dealname ?? "(unnamed)");
         return { label: m.label, names };
       } catch {
         return { label: m.label, names: [] as string[] };
@@ -227,6 +251,118 @@ async function buildEscalationSection(now: number): Promise<string | null> {
   return `📣 Escalation queue\n${lines.join("\n")}`;
 }
 
+/** Section: the next 7 days of scheduled work, grouped by date. */
+async function buildScheduleSection(
+  now: number,
+  locations?: string[] | null
+): Promise<string | null> {
+  const { getUpcomingScheduledJobs } = await import("@/lib/tech-ops-schedule");
+  const { jobs } = await getUpcomingScheduledJobs({ days: 7, locations });
+  if (jobs.length === 0) return null;
+
+  const fmt = (d: string) =>
+    new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", {
+      timeZone: "America/Denver",
+      weekday: "short",
+      month: "numeric",
+      day: "numeric",
+    });
+
+  const byDate = new Map<string, typeof jobs>();
+  for (const j of jobs) {
+    const arr = byDate.get(j.date) ?? [];
+    arr.push(j);
+    byDate.set(j.date, arr);
+  }
+
+  const lines: string[] = [];
+  for (const [date, dayJobs] of [...byDate.entries()].sort()) {
+    lines.push(`${fmt(date)}:`);
+    for (const j of dayJobs) {
+      lines.push(`   • ${j.type} — ${j.project}${j.crew ? ` (${j.crew})` : ""}`);
+    }
+  }
+  return `🗓️ Scheduled this week (${jobs.length})\n${lines.join("\n")}`;
+}
+
+// ── Section composition ──
+
+export type SectionKey = "stuck" | "milestones" | "schedule" | "escalations";
+
+/** Build the requested sections (scoped to `locations`); returns non-empty ones. */
+async function buildSections(
+  now: number,
+  sections: SectionKey[],
+  locations: string[] | null
+): Promise<string[]> {
+  const built = await Promise.all(
+    sections.map((key) => {
+      switch (key) {
+        case "stuck":
+          return buildStuckSection(now, locations).catch(() => null);
+        case "milestones":
+          return buildMilestoneSection(now, locations).catch(() => null);
+        case "schedule":
+          return buildScheduleSection(now, locations).catch(() => null);
+        case "escalations":
+          // Escalations are the owner's queue — never location-scoped.
+          return buildEscalationSection(now).catch(() => null);
+        default:
+          return Promise.resolve(null);
+      }
+    })
+  );
+  return built.filter((s): s is string => Boolean(s));
+}
+
+function digestHeader(now: number, label: string): string {
+  const today = new Date(now).toLocaleDateString("en-US", {
+    timeZone: "America/Denver",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return `📋 ${label} — ${today}`;
+}
+
+// ── Room routes ──
+
+export interface DigestRoute {
+  /** Google Chat room display name the bot must be a member of. */
+  room: string;
+  /** Canonical locations to scope to; empty = all locations. */
+  locations: string[];
+  /** Which sections this room receives. */
+  sections: SectionKey[];
+  enabled: boolean;
+}
+
+/**
+ * Team-room digest routes. Each posts a scoped digest into a Google Chat room
+ * (resolved by display name at runtime). Edit here to add/scope rooms.
+ * Escalations are intentionally omitted — that's the owner's DM queue.
+ */
+export const DIGEST_ROUTES: DigestRoute[] = [
+  {
+    room: "Tech Ops",
+    locations: [],
+    sections: ["stuck", "milestones", "schedule"],
+    enabled: true,
+  },
+  {
+    room: "Fight Club",
+    locations: [],
+    sections: ["stuck", "milestones", "schedule"],
+    enabled: true,
+  },
+  {
+    room: "Colorado Project Team",
+    locations: ["Westminster", "Centennial", "Colorado Springs"],
+    sections: ["stuck", "milestones", "schedule"],
+    enabled: true,
+  },
+];
+
 // ── Orchestration ──
 
 export interface DigestResult {
@@ -236,29 +372,14 @@ export interface DigestResult {
 }
 
 /**
- * Build the digest message. Returns null if there's nothing worth reporting
- * (so we don't DM an empty "all quiet" every single day).
+ * Build the owner's digest message (all locations; stuck + milestones +
+ * escalations). Returns null when there's nothing worth reporting.
  */
 export async function buildDailyDigestMessage(nowMs?: number): Promise<string | null> {
   const now = nowMs ?? Date.now();
-  const [stuck, milestones, escalations] = await Promise.all([
-    buildStuckSection(now).catch(() => null),
-    buildMilestoneSection(now).catch(() => null),
-    buildEscalationSection(now).catch(() => null),
-  ]);
-
-  const sections = [stuck, milestones, escalations].filter(
-    (s): s is string => Boolean(s)
-  );
+  const sections = await buildSections(now, ["stuck", "milestones", "escalations"], null);
   if (sections.length === 0) return null;
-
-  const today = new Date(now).toLocaleDateString("en-US", {
-    timeZone: "America/Denver",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  return `📋 Daily Tech Ops digest — ${today}\n\n${sections.join("\n\n")}`;
+  return `${digestHeader(now, "Daily Tech Ops digest")}\n\n${sections.join("\n\n")}`;
 }
 
 /** Build and DM the digest to the owner. Safe to call when nothing is set up. */
@@ -280,4 +401,74 @@ export async function runDailyDigest(nowMs?: number): Promise<DigestResult> {
   const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
   await postGoogleChatMessage({ spaceName: space, text: message });
   return { posted: true, sections: message.split("\n\n").length - 1 };
+}
+
+export interface RoomDigestResult {
+  room: string;
+  posted: boolean;
+  reason?: string;
+}
+
+/**
+ * Build and post each enabled room route's scoped digest. Resolves room
+ * display names to space ids via the bot's space list. Rooms the bot isn't a
+ * member of, or routes with nothing to report, are skipped (with a reason).
+ */
+export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]> {
+  const routes = DIGEST_ROUTES.filter((r) => r.enabled);
+  if (routes.length === 0) return [];
+
+  const now = nowMs ?? Date.now();
+  const { listGoogleChatSpaces, postGoogleChatMessage } = await import(
+    "@/lib/google-chat-api"
+  );
+
+  let spaces: Awaited<ReturnType<typeof listGoogleChatSpaces>> = [];
+  try {
+    spaces = await listGoogleChatSpaces();
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : "spaces.list failed";
+    return routes.map((r) => ({ room: r.room, posted: false, reason }));
+  }
+
+  const spaceByName = new Map(
+    spaces.map((s) => [s.displayName.trim().toLowerCase(), s.name])
+  );
+
+  const results: RoomDigestResult[] = [];
+  for (const route of routes) {
+    const spaceName = spaceByName.get(route.room.trim().toLowerCase());
+    if (!spaceName) {
+      results.push({
+        room: route.room,
+        posted: false,
+        reason: "bot is not a member of this room",
+      });
+      continue;
+    }
+
+    const sections = await buildSections(now, route.sections, route.locations);
+    if (sections.length === 0) {
+      results.push({ room: route.room, posted: false, reason: "nothing to report" });
+      continue;
+    }
+
+    const label =
+      route.locations.length > 0
+        ? `Daily digest (${route.locations.join(", ")})`
+        : "Daily Tech Ops digest";
+    const message = `${digestHeader(now, label)}\n\n${sections.join("\n\n")}`;
+    try {
+      await postGoogleChatMessage({ spaceName, text: message });
+      results.push({ room: route.room, posted: true });
+    } catch (e) {
+      results.push({
+        room: route.room,
+        posted: false,
+        reason: e instanceof Error ? e.message : "post failed",
+      });
+    }
+  }
+
+  return results;
 }

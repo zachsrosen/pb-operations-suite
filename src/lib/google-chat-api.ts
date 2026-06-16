@@ -149,3 +149,50 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
     throw new Error(`Google Chat API error: ${resp.status} ${errText}`.slice(0, 800));
   }
 }
+
+export interface GoogleChatSpace {
+  name: string;          // "spaces/abc123"
+  displayName: string;   // human-readable room name ("" for DMs)
+  type: string;          // "ROOM" | "DM" (legacy spaceType)
+}
+
+/**
+ * List every space the bot is a member of (paginated). The bot's chat.bot
+ * token only returns spaces it belongs to — so this is how we resolve a
+ * configured room name (e.g. "Tech Ops") to its space id at runtime.
+ */
+export async function listGoogleChatSpaces(): Promise<GoogleChatSpace[]> {
+  const token = await getAccessToken();
+  const spaces: GoogleChatSpace[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const url = new URL(`${CHAT_API_BASE}/spaces`);
+    url.searchParams.set("pageSize", "1000");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const resp = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "unknown");
+      throw new Error(`Google Chat spaces.list error: ${resp.status} ${errText}`.slice(0, 800));
+    }
+
+    const data = (await resp.json()) as {
+      spaces?: Array<{ name?: string; displayName?: string; type?: string; spaceType?: string }>;
+      nextPageToken?: string;
+    };
+    for (const s of data.spaces ?? []) {
+      if (!s.name) continue;
+      spaces.push({
+        name: s.name,
+        displayName: s.displayName ?? "",
+        type: s.spaceType ?? s.type ?? "",
+      });
+    }
+    pageToken = data.nextPageToken || undefined;
+  } while (pageToken);
+
+  return spaces;
+}
