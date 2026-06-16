@@ -4,7 +4,7 @@
  * pe-policy-photos skills. All exported symbols are unit-tested.
  */
 
-import { PE_M1_CHECKLIST, filterChecklist, type SystemType } from "@/lib/pe-turnover";
+import { PE_M1_CHECKLIST, type SystemType } from "@/lib/pe-turnover";
 
 // ---------------------------------------------------------------------------
 // Task 1: Doc-type config
@@ -110,9 +110,17 @@ export function pickDealByAddress(deals: DealLike[], peAddress: string): PickRes
 
 export interface ClassifiedPhoto { fileId: string; shotId: string; }
 
-export function orderPolicyPhotos(photos: ClassifiedPhoto[], systemType: SystemType): ClassifiedPhoto[] {
-  const applicable = filterChecklist(PE_M1_CHECKLIST.filter((i) => i.isPhoto), systemType);
-  const rank = new Map(applicable.map((item, idx) => [item.id, idx]));
+/**
+ * Order classified photos by the canonical PE shot sequence, keeping EVERY photo
+ * matched to a real photo shot (multiple per shot is fine). Ranking is against
+ * the full photo checklist — NOT the system-type subset — because shots like
+ * "electrical" and "main service panel" apply to battery systems too, and the
+ * vision only assigns a shot when its equipment is actually present. The
+ * `systemType` arg is retained for signature stability but no longer filters.
+ */
+export function orderPolicyPhotos(photos: ClassifiedPhoto[], _systemType?: SystemType): ClassifiedPhoto[] {
+  const allShots = PE_M1_CHECKLIST.filter((i) => i.isPhoto);
+  const rank = new Map(allShots.map((item, idx) => [item.id, idx]));
   return photos
     .filter((p) => rank.has(p.shotId))
     .map((p, inputIdx) => ({ p, inputIdx }))
