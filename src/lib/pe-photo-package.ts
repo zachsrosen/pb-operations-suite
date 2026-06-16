@@ -64,6 +64,31 @@ export interface DealSearchResult {
   properties: Record<string, string | null | undefined>;
 }
 
+/**
+ * The full set of HubSpot deal properties needed by the PE photo-package routes.
+ * Used by both the PE-code filter search and the full-text PROJ/name searches so
+ * every downstream consumer always has the same fields available.
+ */
+const DEAL_PROPERTIES = [
+  "hs_object_id",
+  "all_document_parent_folder_id",
+  "design_documents",
+  "g_drive",
+  "pb_tech_ops_url",
+  // Dedicated per-category folder properties (the real source folders).
+  "installation_documents",
+  "inspection_documents",
+  "permit_documents",
+  "participate_energy_documents_folder_id",
+  "address_line_1",
+  "city",
+  "state",
+  // Identification fields — needed by resolveDealByCode cascade and callers.
+  "pe_project_id",
+  "project_number",
+  "dealname",
+] as const;
+
 /** Search HubSpot deals matching a PE project code via `pe_project_id`. */
 export async function searchDealsByPeCode(code: string): Promise<DealSearchResult[]> {
   const res = await searchWithRetry({
@@ -78,27 +103,87 @@ export async function searchDealsByPeCode(code: string): Promise<DealSearchResul
         ],
       },
     ],
-    properties: [
-      "hs_object_id",
-      "all_document_parent_folder_id",
-      "design_documents",
-      "g_drive",
-      "pb_tech_ops_url",
-      // Dedicated per-category folder properties (the real source folders).
-      "installation_documents",
-      "inspection_documents",
-      "permit_documents",
-      "participate_energy_documents_folder_id",
-      "address_line_1",
-      "city",
-      "state",
-    ],
+    properties: [...DEAL_PROPERTIES],
     limit: 25,
   });
   return (res.results ?? []).map((d) => ({
     id: String(d.id),
     properties: (d.properties ?? {}) as Record<string, string | null | undefined>,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// resolveDealByCode — multi-strategy cascade
+// ---------------------------------------------------------------------------
+
+export interface ResolveDealByCodeResult {
+  deals: DealSearchResult[];
+  matchedBy: "pe_code" | "proj" | "name";
+}
+
+/**
+ * Resolve a loose input string to a list of candidate deals by trying three
+ * strategies in priority order:
+ *
+ * 1. **PE code** — exact match on `pe_project_id` via `searchDealsByPeCode`.
+ * 2. **PROJ number** — if input looks like "PROJ-1234" or a bare 3-7 digit number,
+ *    run a full-text search for `PROJ-<digits>` and filter results by a
+ *    word-boundary regex on `dealname` (mirrors `resolveDealRef` in chat-tools.ts).
+ * 3. **Customer name / address** — full-text search on the raw input, deduped by id.
+ */
+export async function resolveDealByCode(input: string): Promise<ResolveDealByCodeResult> {
+  // ── Step 1: PE code exact match ──────────────────────────────────────────
+  const peDeals = await searchDealsByPeCode(input);
+  if (peDeals.length > 0) {
+    return { deals: peDeals, matchedBy: "pe_code" };
+  }
+
+  // ── Step 2: PROJ number ──────────────────────────────────────────────────
+  const projMatch = input.match(/PROJ[-\s]?(\d{2,})/i);
+  const bareNum = input.match(/^(\d{3,7})$/);
+  if (projMatch || bareNum) {
+    const digits = (projMatch?.[1] ?? bareNum?.[1])!;
+    const token = `PROJ-${digits}`;
+    const res = await searchWithRetry({
+      query: token,
+      properties: [...DEAL_PROPERTIES],
+      limit: 25,
+    });
+    const boundary = new RegExp(`(^|[^0-9])PROJ-${digits}([^0-9]|$)`, "i");
+    const matches = Array.from(
+      new Map(
+        (res.results ?? [])
+          .filter((r) => boundary.test(r.properties?.dealname ?? ""))
+          .map((r) => [r.id, r]),
+      ).values(),
+    );
+    if (matches.length > 0) {
+      return {
+        deals: matches.map((d) => ({
+          id: String(d.id),
+          properties: (d.properties ?? {}) as Record<string, string | null | undefined>,
+        })),
+        matchedBy: "proj",
+      };
+    }
+  }
+
+  // ── Step 3: Name / address full-text ─────────────────────────────────────
+  const res = await searchWithRetry({
+    query: input.trim(),
+    properties: [...DEAL_PROPERTIES],
+    limit: 25,
+  });
+  const matches = Array.from(
+    new Map((res.results ?? []).map((r) => [r.id, r])).values(),
+  );
+  return {
+    deals: matches.map((d) => ({
+      id: String(d.id),
+      properties: (d.properties ?? {}) as Record<string, string | null | undefined>,
+    })),
+    matchedBy: "name",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -211,11 +296,13 @@ export async function appendImagePage(
 export interface DealContextResult {
   deal: DealSearchResult | null;
   ambiguous?: boolean;
-  candidates?: Array<{ id: string; address: string }>;
+  candidates?: Array<{ id: string; address: string; dealName: string }>;
   rootFolderId?: string | null;
   sourceFolderId?: string | null;
   soBuffer?: Buffer | null;
   folderMapWarnings?: string[];
+  /** The matched deal's `pe_project_id` value; null when not yet linked to PE. */
+  peCode?: string | null;
 }
 
 /**
@@ -227,13 +314,17 @@ export interface DealContextResult {
  * `doc` controls which HubSpot folder properties and subfolder prefixes are
  * consulted when resolving `sourceFolderId`; defaults to `"policy-photos"`.
  * Pass `"final-permit"` for the final-permit photo route.
+ *
+ * The `input` parameter may be a PE project code, a PROJ number (e.g. "PROJ-1234"
+ * or bare "1234"), or a customer name / address — `resolveDealByCode` tries each
+ * strategy in turn.
  */
 export async function resolveDealContext(
-  code: string,
+  input: string,
   peAddress?: string,
   doc: DocType = "policy-photos",
 ): Promise<DealContextResult> {
-  const dealResults = await searchDealsByPeCode(code);
+  const { deals: dealResults } = await resolveDealByCode(input);
   if (dealResults.length === 0) return { deal: null };
 
   // Build DealLike[] for address disambiguation.
@@ -257,17 +348,21 @@ export async function resolveDealContext(
         address: [d.properties.address_line_1, d.properties.city, d.properties.state]
           .filter(Boolean)
           .join(", "),
+        dealName: (d.properties.dealname ?? "").trim() || `Deal ${d.id}`,
       })),
     };
   }
 
   const deal = dealResults.find((d) => d.id === picked.deal!.id)!;
 
+  // Compute peCode once — used in both early-return and normal-return paths.
+  const peCode = (deal.properties.pe_project_id ?? "").trim() || null;
+
   // Extract root Drive folder.
   const rootRaw =
     deal.properties.all_document_parent_folder_id ?? deal.properties.g_drive ?? "";
   const rootFolderId = extractFolderId(rootRaw);
-  if (!rootFolderId) return { deal, rootFolderId: null };
+  if (!rootFolderId) return { deal, rootFolderId: null, peCode };
 
   // Build folder map and resolve source folder.
   const folderMap = await buildFolderMap(rootFolderId);
@@ -283,6 +378,7 @@ export async function resolveDealContext(
     sourceFolderId,
     soBuffer,
     folderMapWarnings: folderMap.warnings,
+    peCode,
   };
 }
 

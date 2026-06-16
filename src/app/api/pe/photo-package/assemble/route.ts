@@ -70,6 +70,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Resolve deal context (SO, folder IDs) ────────────────────────────────────
   const ctx = await resolveDealContext(code);
 
+  if (ctx.ambiguous) {
+    return NextResponse.json(
+      { error: "Multiple deals matched — refine the code.", candidates: ctx.candidates },
+      { status: 409 },
+    );
+  }
+  if (!ctx.deal) {
+    return NextResponse.json(
+      { error: "No deal found for that code, PROJ number, or name." },
+      { status: 404 },
+    );
+  }
+
   // ── Download full-res buffers ─────────────────────────────────────────────────
   const bufferByClientId = new Map<string, Buffer>();
   await Promise.all(
