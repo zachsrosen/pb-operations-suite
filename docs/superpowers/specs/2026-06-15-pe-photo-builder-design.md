@@ -28,44 +28,49 @@ This is the manual-input sibling of the existing `pe-policy-photos` CLI skill, w
   PM-visible Operations suite so PMs have a surface to land on.
 - **API routes** (added to the same roles' `allowedRoutes` in `src/lib/roles.ts`, and each suite
   card likewise implies the route allowlist for every role that sees the suite):
-  - `POST /api/pe/photo-package/triage`
-  - `POST /api/pe/photo-package/assemble`
+  - `POST /api/pe/photo-package/upload-token` — issues a Vercel Blob client-upload token
+  - `POST /api/pe/photo-package/triage` (JSON body)
+  - `POST /api/pe/photo-package/assemble` (JSON body)
 
 ## User flow
 
-1. User types the **PROJ or PE code** and drag-drops N install photos.
-2. **Triage** (`POST /triage`, multipart: `code` + photo files):
+1. User types the **PROJ or PE code** and drag-drops N install photos. The browser uploads each
+   photo **directly to Vercel Blob** via `@vercel/blob/client` `upload()` (which calls
+   `/upload-token` for a client token, exactly like the existing `bom/upload-token` flow). Each
+   upload returns a blob URL; the browser keeps `{ clientId, name, blobUrl }` per photo and renders
+   thumbnails from the in-browser `File` objects. (This bypasses the serverless request-body size
+   limit — photos never transit a route handler.)
+2. **Triage** (`POST /triage`, JSON: `{ code, photos: [{ clientId, name, blobUrl }] }`):
    - Resolve the deal by code; read **system type** from the PE project record; locate the **SO
      PDF** in the deal's Drive.
-   - Screen images (low-res / sliver guard), downscale copies for vision, run `triagePhotoBatch`
-     against the full 11-shot checklist (chunked if > the single-call limit).
+   - Fetch each blob, screen images (low-res / sliver guard), downscale copies for vision, run
+     `triagePhotoBatch` against the full 11-shot checklist (chunked if > the single-call limit).
    - Respond with: per-photo `{ clientId, name, shot, verdict, issues[], equipmentVisible[] }`,
      the resolved `systemType`, `soFound: boolean`, and a **coverage map**.
-   - No PDF is built and no files are persisted server-side on this call.
+   - No PDF is built on this call; the blobs persist (they are the durable store between calls).
 3. The UI renders the **coverage report** and a chip per uploaded photo. The user can **re-tag** a
    mislabeled photo (pick a different shot, or "not a PE shot" to drop it) or **remove** it.
-   Thumbnails render client-side from the already-in-browser `File` objects.
-4. **Assemble** (`POST /assemble`, multipart: `code` + photo files + `assignments` JSON):
-   - Re-receive the same files from the browser, apply the user's final tags, order canonically,
-     caption each page, embed the SO (re-fetched by code), and build the PDF.
+4. **Assemble** (`POST /assemble`, JSON: `{ code, assignments: [{ clientId, blobUrl, shotId|null }] }`):
+   - Fetch the full-res blobs for kept assignments (`shotId !== null`), apply the user's final tags,
+     order canonically, caption each page, embed the SO (re-fetched by code), and build the PDF.
    - **Stage a copy** to the deal's Participate Energy Drive folder (`findOrCreatePeFolder` +
      `uploadDriveBinaryFile`).
    - Return the PDF for download plus the final coverage map.
 
-### Why two calls with a browser re-submit (no server-side temp store)
+### Why Blob + two JSON calls (no server-side temp store, no body-size limit)
 
-Vercel functions are stateless and the filesystem is ephemeral, so full-res originals cannot be
-held in memory between `/triage` and `/assemble`. Rather than introduce a blob store (with its own
-upload + lifecycle + cleanup), the browser — which already holds the `File` objects — re-sends them
-on `/assemble`. `/assemble` trusts the passed tags and skips re-triage, so it is fast and cheap.
-Each file carries a stable client-generated `clientId` (sent as a parallel multipart field) so
-tags map back unambiguously (filenames can collide).
+Vercel route handlers have a small request-body limit (multi-MB), so a 60-photo multipart POST
+would hard-fail. The codebase already solves this for planset PDFs with a Blob client-upload token
+(`/api/bom/upload-token` + `@vercel/blob/client`): the browser uploads straight to Blob and the
+route only ever sees a tiny JSON body of blob URLs. We reuse that pattern. The blobs are the durable
+store **between** `/triage` and `/assemble`, so neither call re-uploads bytes and the server stays
+stateless. Each photo carries a stable client-generated `clientId` so tags map back unambiguously
+(filenames can collide).
 
-`/assemble` reconciles the re-submitted files against the `assignments` JSON by `clientId`: it
-uses only files whose `clientId` appears in `assignments` with a kept shot. A `clientId` in
-`assignments` with no matching file is skipped with a warning in the response (it simply won't
-appear in the PDF); a file with no entry in `assignments` is ignored. This makes a torn/partial
-re-upload degrade gracefully rather than 500.
+`/assemble` reconciles the assignments by `clientId`/`blobUrl`: it uses only entries with a non-null
+`shotId`; an entry whose blob fetch fails is skipped with a warning in the response (it simply won't
+appear in the PDF) rather than failing the whole request. Blobs are written under a per-session
+pathname prefix and rely on Blob's retention (no explicit cleanup in v1 — a documented follow-up).
 
 ## Coverage / "what's missing" logic
 
@@ -81,9 +86,9 @@ A new pure module, unit-tested, computes the report.
 - **All types additionally require the Sales Order** (the "Invoice & BOM" slot), tracked via
   `soFound` rather than a photo assignment.
 
-This depends on the `appliesTo` correction from PR #1076: shots 4 (all-electrical) and 5 (MSP),
-currently mis-tagged SOLAR-only in `PE_M1_CHECKLIST`, are required on battery jobs too.
-`requiredShotsFor` derives from the corrected `appliesTo`, so there is a single source of truth.
+This requires a small data fix in `PE_M1_CHECKLIST` (this feature's first task, NOT in PR #1076):
+shots 4 (all-electrical) and 5 (MSP) are mis-tagged SOLAR-only but are required on battery jobs
+too. `requiredShotsFor` derives from the corrected `appliesTo`, so there is a single source of truth.
 
 ### Per-shot status (three states)
 
@@ -130,20 +135,23 @@ covered by its existing tests).
 - **No usable photos** (all sliver/low-res) → clear error listing what was rejected and why.
 - **Anthropic transient (503 "file storage unavailable")** → retry with backoff; if it still
   fails, surface "vision service busy, try again."
-- **Upload cap** → enforced **client-side first** (count + total bytes checked before any POST;
-  warn and ask the user to split if over ~60 photos / a size budget). The size budget must sit
-  under the route's serverless body limit — Next.js route handlers must set an explicit
-  `bodyParser`/`maxBodySize` (or stream the multipart) high enough for the budget, since the
-  default would hard-fail a large multipart POST before our soft-cap message can fire. The cap
-  also keeps vision triage within its token budget.
+- **Upload cap** → a **count** cap (~60 photos), enforced client-side before upload, that keeps
+  vision triage within its token budget. Photo *bytes* go straight to Blob (not through a route
+  handler), so the serverless request-body limit is a non-issue — the triage/assemble JSON bodies
+  carry only blob URLs. Individual file size is bounded by Blob's own limits.
+- **Blob upload / fetch failure** → a photo that fails to upload is reported in the UI and excluded;
+  a blob the server can't fetch during triage/assemble is skipped with a warning (per the
+  reconciliation rules above), never a 500.
+- **`BLOB_READ_WRITE_TOKEN` missing** → `/upload-token` returns 503 "Blob storage not configured"
+  (same as `bom/upload-token`).
 
 ## Testing
 
-- **Unit** (`src/lib/pe-photo-package`): `requiredShotsFor` per system type (incl. SO),
-  `computeCoverage` (covered / recheck / missing / bonus, SO-missing), `policyPhotosFilename`.
-- **Integration** (the two routes): mocked vision + Drive — triage returns a coverage map and
-  per-photo tags; assemble produces a non-empty PDF and calls the Drive stage helper. Auth/role
-  gating asserted.
+- **Unit** (`src/lib/pe-photo-coverage`): `requiredShotsFor` per system type (excludes the SO slot
+  from photo shots), `computeCoverage` (covered / recheck / missing / bonus, SO-missing, complete).
+- **Integration** (the routes): mocked vision + Drive + Blob fetch — triage returns a coverage map
+  and per-photo tags from blob URLs; assemble produces a non-empty PDF and calls the Drive stage
+  helper. Auth via `requireApiAuth`; route-level authorization is enforced by middleware (roles.ts).
 
 ## Out of scope (YAGNI)
 
