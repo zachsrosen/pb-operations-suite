@@ -31,6 +31,9 @@
     "src/app/api/cron/daily-focus/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/cron/morning-sweep/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/api/cron/eod-summary/route.ts": {
       "maxDuration": 300
     },
@@ -119,6 +122,10 @@
     },
     {
       "path": "/api/cron/daily-focus",
+      "schedule": "0 13 * * 1-5"
+    },
+    {
+      "path": "/api/cron/morning-sweep",
       "schedule": "0 13 * * 1-5"
     },
     {
