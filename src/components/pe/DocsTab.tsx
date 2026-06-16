@@ -858,6 +858,21 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
   const [expanded, setExpanded] = useState(false);
   const { deal } = summary;
 
+  // Top outstanding doc — surfaced as a summary row when collapsed so the
+  // reason + blocker note are visible without expanding. Action Required ranks
+  // above Not Uploaded (waived not-uploaded excluded). (PE has no separate
+  // "Rejected" doc status — REJECTED is treated as Action Required.)
+  const outstanding = teamDocs.filter(({ doc, review }) => {
+    const s = review?.status;
+    if (s === "ACTION_REQUIRED" || s === "REJECTED") return true;
+    if (s === "NOT_UPLOADED") return !isDocWaived(doc, deal);
+    return false;
+  });
+  const sevRank = (s: PeDocStatusValue | undefined) =>
+    s === "ACTION_REQUIRED" || s === "REJECTED" ? 0 : 1;
+  const topDoc = [...outstanding].sort((a, b) => sevRank(a.review?.status) - sevRank(b.review?.status))[0];
+  const moreCount = Math.max(0, outstanding.length - 1);
+
   return (
     <div className={`rounded-lg border transition-colors ${
       teamActionCount > 0 ? TEAM_BG[team] : "border-border/30 bg-surface/30"
@@ -902,6 +917,20 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
           </svg>
         </div>
       </button>
+      {/* Collapsed: surface the top outstanding doc (reason + editable note). */}
+      {!expanded && topDoc && (
+        <div className="px-3 pb-2 border-t border-border/10">
+          <DocLine doc={topDoc.doc} dealId={deal.dealId} review={topDoc.review} />
+          {moreCount > 0 && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="text-[9px] text-muted/60 hover:text-foreground pl-4 transition-colors"
+            >
+              +{moreCount} more outstanding — expand
+            </button>
+          )}
+        </div>
+      )}
       {expanded && (
         <div className="px-3 pb-2 border-t border-border/20">
           <div className="divide-y divide-border/20 mt-1">
@@ -1435,12 +1464,12 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       </div>
 
       {/* Doc status breakdown */}
-      <div className="grid grid-cols-3 md:grid-cols-5 gap-2 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
         <MiniStat label="Approved" value={stats.totalApproved} />
         <MiniStat label="In Review" value={stats.totalUnderReview} />
         <MiniStat label="Not Uploaded" value={stats.totalNotUploaded} />
-        <MiniStat label="Action Required" value={stats.totalActionReq} />
-        <MiniStat label="Rejected" value={stats.totalRejected} />
+        {/* PE has no separate "Rejected" doc status — it's Action Required. */}
+        <MiniStat label="Action Required" value={stats.totalActionReq + stats.totalRejected} />
       </div>
 
       {/* Filters */}
@@ -1461,7 +1490,6 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
         <MultiSelectFilter
           label="Status"
           options={[
-            { value: "rejected", label: "Rejected" },
             { value: "action-required", label: "Action Required" },
             { value: "needs-upload", label: "Needs Upload" },
             { value: "waiting-on-pe", label: "Waiting on PE" },
@@ -1739,6 +1767,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                       {buckets.map(({ bucket: g, items }) => {
                         const bucketKey = `${team}:${g.key}`;
                         const bucketCollapsed = collapsedTeamBuckets.has(bucketKey);
+                        const bucketDocs = items.reduce((sum, it) => sum + it.teamActionCount, 0);
                         return (
                           <div key={g.key} className="space-y-1.5">
                             <button
@@ -1747,7 +1776,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                             >
                               <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
                               <span className={`text-[10px] uppercase tracking-wide font-medium ${g.text}`}>{g.label}</span>
-                              <span className="text-[10px] text-muted">({items.length})</span>
+                              <span className="text-[10px] text-muted">{items.length} {items.length === 1 ? "deal" : "deals"} · {bucketDocs} {bucketDocs === 1 ? "doc" : "docs"}</span>
                               <svg className={`w-3 h-3 text-muted transition-transform ${bucketCollapsed ? "" : "rotate-180"}`}
                                 fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
