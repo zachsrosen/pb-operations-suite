@@ -24,7 +24,7 @@ export function requiredShotsFor(systemType: SystemType): RequiredShot[] {
     .map((i) => ({ id: i.id, label: i.label, pePhotoNumber: i.pePhotoNumber }));
 }
 
-interface Assignment { checklistId: string; verdict: "pass" | "fail" | "needs_review"; }
+export interface Assignment { checklistId: string; verdict: "pass" | "fail" | "needs_review"; }
 
 export function computeCoverage(
   assignments: Assignment[],
@@ -48,10 +48,14 @@ export function computeCoverage(
   });
   const photoShotIds = new Set(PE_M1_CHECKLIST.filter((i) => i.isPhoto && i.id !== SO_SHOT_ID).map((i) => i.id));
   const labelById = new Map(PE_M1_CHECKLIST.map((i) => [i.id, i.label]));
+  const numById = new Map(PE_M1_CHECKLIST.map((i) => [i.id, i.pePhotoNumber]));
   const bonus: RequiredShot[] = [...byShot.keys()]
     .filter((id) => photoShotIds.has(id) && !requiredIds.has(id))
-    .map((id) => ({ id, label: labelById.get(id) ?? id }));
+    .map((id) => ({ id, label: labelById.get(id) ?? id, pePhotoNumber: numById.get(id) }));
   const salesOrder = soFound ? "covered" : "missing";
+  // `complete` = every required slot has at least one photo AND the SO is present.
+  // A "recheck" shot counts as present (it has a photo, just flagged for human
+  // verification), so it does NOT block completeness — only a truly-missing slot does.
   const complete = shots.every((s) => s.status !== "missing") && soFound;
   return { systemType, shots, salesOrder, bonus, complete };
 }
