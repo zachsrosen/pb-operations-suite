@@ -13,7 +13,7 @@
  *   - appendImagePage (captioned, full-page PDF page)
  *   - UsableImage interface
  *   - resolveDealContext (full folder-resolution chain)
- *   - PackagePhoto / assemblePackage (PDF + SO embed helper)
+ *   - PackagePhoto / buildPhotoPdf (PDF + SO embed helper)
  */
 
 import sharp from "sharp";
@@ -215,6 +215,7 @@ export interface DealContextResult {
   rootFolderId?: string | null;
   sourceFolderId?: string | null;
   soBuffer?: Buffer | null;
+  folderMapWarnings?: string[];
 }
 
 /**
@@ -223,13 +224,14 @@ export interface DealContextResult {
  * multiple deals that share the same PE project code; when omitted and exactly
  * one deal exists it is used directly.
  *
- * The `sourceFolderId` is always resolved for `"policy-photos"` — the primary
- * API use-case.  Routes that need `"final-permit"` can call `resolveSourceFolderId`
- * directly with the returned `deal.properties` and a custom `DocType`.
+ * `doc` controls which HubSpot folder properties and subfolder prefixes are
+ * consulted when resolving `sourceFolderId`; defaults to `"policy-photos"`.
+ * Pass `"final-permit"` for the final-permit photo route.
  */
 export async function resolveDealContext(
   code: string,
   peAddress?: string,
+  doc: DocType = "policy-photos",
 ): Promise<DealContextResult> {
   const dealResults = await searchDealsByPeCode(code);
   if (dealResults.length === 0) return { deal: null };
@@ -264,12 +266,12 @@ export async function resolveDealContext(
   // Extract root Drive folder.
   const rootRaw =
     deal.properties.all_document_parent_folder_id ?? deal.properties.g_drive ?? "";
-  const rootFolderId = extractFolderId(rootRaw ?? "");
+  const rootFolderId = extractFolderId(rootRaw);
   if (!rootFolderId) return { deal, rootFolderId: null };
 
-  // Build folder map and resolve source folder (policy-photos).
+  // Build folder map and resolve source folder.
   const folderMap = await buildFolderMap(rootFolderId);
-  const sourceFolderId = resolveSourceFolderId(deal.properties, folderMap.byPrefix, "policy-photos");
+  const sourceFolderId = resolveSourceFolderId(deal.properties, folderMap.byPrefix, doc);
 
   // Locate the Sales Order PDF.
   const soBuffer = await locateSalesOrderPdf(rootFolderId);
@@ -280,28 +282,38 @@ export async function resolveDealContext(
     rootFolderId,
     sourceFolderId,
     soBuffer,
+    folderMapWarnings: folderMap.warnings,
   };
 }
 
 // ---------------------------------------------------------------------------
-// PackagePhoto / assemblePackage
+// PackagePhoto / buildPhotoPdf
 // ---------------------------------------------------------------------------
 
 export interface PackagePhoto { buffer: Buffer; caption: string; }
 
-/** Build the labeled PDF, embedding `soBuffer` (if present) at `soInsertIndex`. */
-export async function assemblePackage(
+/**
+ * Build the labeled PDF, embedding `soBuffer` (if present) at `soInsertIndex`.
+ * If the SO PDF is corrupt or otherwise unloadable, `onSOError` is called with
+ * the error and SO pages are skipped — photo pages still assemble normally.
+ */
+export async function buildPhotoPdf(
   photos: PackagePhoto[],
   soBuffer: Buffer | null,
   soInsertIndex: number,
+  onSOError?: (err: Error) => void,
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const embedSO = async () => {
     if (!soBuffer) return;
-    const so = await PDFDocument.load(soBuffer, { ignoreEncryption: true });
-    const copied = await pdf.copyPages(so, so.getPageIndices());
-    copied.forEach((p) => pdf.addPage(p));
+    try {
+      const so = await PDFDocument.load(soBuffer, { ignoreEncryption: true });
+      const copied = await pdf.copyPages(so, so.getPageIndices());
+      copied.forEach((p) => pdf.addPage(p));
+    } catch (e) {
+      onSOError?.(e instanceof Error ? e : new Error(String(e)));
+    }
   };
   for (let i = 0; i < photos.length; i++) {
     if (i === soInsertIndex) await embedSO();           // before page i — matches the CLI
