@@ -52,16 +52,23 @@ export function CoverageReport({ coverage }: CoverageReportProps) {
       </div>
 
       {/* Sales Order row — rendered distinctly */}
-      <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface-2 border border-t-border">
-        <span className="text-xs font-medium text-foreground">Sales Order (Invoice &amp; BOM)</span>
-        {coverage.salesOrder === "covered" ? (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-            Covered
-          </span>
-        ) : (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
-            Missing
-          </span>
+      <div className="rounded-lg bg-surface-2 border border-t-border px-3 py-2 space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-foreground">Sales Order (Invoice &amp; BOM)</span>
+          {coverage.salesOrder === "covered" ? (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              Covered
+            </span>
+          ) : (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+              Missing
+            </span>
+          )}
+        </div>
+        {coverage.salesOrder === "missing" && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            Sales Order not found in Drive — attach it manually before submitting to PE.
+          </p>
         )}
       </div>
 

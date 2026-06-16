@@ -68,7 +68,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const warnings: string[] = [];
 
   // ── Resolve deal context (SO, folder IDs) ────────────────────────────────────
-  const ctx = await resolveDealContext(code ?? "");
+  const ctx = await resolveDealContext(code);
 
   // ── Download full-res buffers ─────────────────────────────────────────────────
   const bufferByClientId = new Map<string, Buffer>();

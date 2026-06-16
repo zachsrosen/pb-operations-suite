@@ -38,9 +38,8 @@ interface TriageResponse {
 }
 
 interface Candidate {
-  address?: string;
-  dealId?: string;
-  dealname?: string;
+  id: string;
+  address: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -489,10 +488,10 @@ export default function PePhotoBuilderPage() {
                     Multiple deals matched &mdash; refine your project code:
                   </p>
                   <ul className="space-y-0.5">
-                    {candidates.map((c, i) => (
-                      <li key={c.dealId ?? String(i)} className="text-xs text-red-600 dark:text-red-400">
-                        {c.dealname ?? c.dealId ?? "Unknown deal"}
-                        {c.address ? ` — ${c.address}` : ""}
+                    {candidates.map((c) => (
+                      <li key={c.id} className="text-xs text-red-600 dark:text-red-400">
+                        {c.address}
+                        <span className="ml-1 text-red-400 dark:text-red-500">({c.id})</span>
                       </li>
                     ))}
                   </ul>
