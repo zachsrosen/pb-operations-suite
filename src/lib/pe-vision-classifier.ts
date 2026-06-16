@@ -734,7 +734,7 @@ For equipmentVisible, include everything you can read: brand, model, serial numb
   // photos with many readable nameplates). 4000 capped at ~20 photos; bumping
   // the photo cap to 50 silently truncated responses → all-missing regression.
   // Scale with photo count + a 2000-token margin, clamped to Sonnet's 16384 cap.
-  const maxTokens = Math.min(16000, Math.max(4000, photos.length * 250 + 2000));
+  const maxTokens = Math.min(16000, Math.max(4000, photos.length * 350 + 3000));
 
   try {
     const message = await client.beta.messages.create({

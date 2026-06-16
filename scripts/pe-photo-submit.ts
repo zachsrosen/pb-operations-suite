@@ -62,6 +62,7 @@ import {
   downloadDriveImage,
   uploadDriveBinaryFile,
 } from "@/lib/drive-plansets";
+import { zohoInventory } from "@/lib/zoho-inventory";
 import {
   uploadToAnthropic,
   triagePhotoBatch,
@@ -340,9 +341,28 @@ async function processProject(
 
   // Locate-or-flag the Sales Order PDF and embed its pages (never regenerate).
   const embedSalesOrder = async (): Promise<void> => {
-    const soBuf = await locateSalesOrderPdf(rootFolderId);
+    let soBuf = await locateSalesOrderPdf(rootFolderId);
     if (!soBuf) {
-      flags.push("Sales Order PDF not found — assembled without it (locate manually)");
+      // Fallback: pull the SO PDF straight from Zoho by the deal's project
+      // number. Match the unique reference_number exactly and only embed when
+      // exactly one SO matches — never risk embedding the wrong invoice.
+      const ref = deal.properties.project_number?.trim();
+      if (ref) {
+        try {
+          const { salesorders } = await zohoInventory.listSalesOrders({ search: ref, perPage: 50 });
+          const matches = salesorders.filter((so) => (so.reference_number ?? "").trim() === ref);
+          if (matches.length === 1) {
+            soBuf = await zohoInventory.getSalesOrderPdf(matches[0].salesorder_id);
+          } else if (matches.length > 1) {
+            flags.push(`Zoho SO fallback: ${matches.length} SOs matched reference ${ref} — not embedding (need exactly 1)`);
+          }
+        } catch (e) {
+          flags.push(`Zoho SO fallback failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+    if (!soBuf) {
+      flags.push("Sales Order PDF not found (Drive + Zoho) — assembled without it (locate manually)");
       return;
     }
     try {
