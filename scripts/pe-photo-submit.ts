@@ -25,7 +25,7 @@ import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import sharp from "sharp";
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 
 import {
   DOC_CONFIGS,
@@ -40,23 +40,26 @@ import {
   type ClassifiedPhoto,
 } from "@/lib/pe-photo-submit";
 import {
+  normalizeSystemType,
+  searchDealsByPeCode,
+  resolveSourceFolderId,
+  locateSalesOrderPdf,
+  appendImagePage,
+  type DealSearchResult,
+  type UsableImage,
+} from "@/lib/pe-photo-package";
+import {
   listAllProjects,
   type PeProjectListItem,
 } from "@/lib/pe-api";
 import {
   PE_M1_CHECKLIST,
   buildFolderMap,
-  type SystemType,
 } from "@/lib/pe-turnover";
-import { searchWithRetry } from "@/lib/hubspot";
-import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   extractFolderId,
   listDriveImagesRecursive,
   downloadDriveImage,
-  listDriveSubfolders,
-  listDriveFilesRecursive,
-  downloadDriveFile,
   uploadDriveBinaryFile,
 } from "@/lib/drive-plansets";
 import {
@@ -78,21 +81,6 @@ function getFlag(name: string): string | undefined {
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
-}
-
-// ---------------------------------------------------------------------------
-// System-type normalization (contract finding #2: no reusable normalizer for
-// PE's `assets.systemType` string). Maps "PV+Storage"/"Storage Only"/
-// "Solar Only" → the `SystemType` union the checklist filters on.
-// ---------------------------------------------------------------------------
-
-function normalizeSystemType(raw: string | undefined): SystemType {
-  const s = (raw ?? "").toLowerCase();
-  const hasSolar = s.includes("solar") || s.includes("pv");
-  const hasStorage = s.includes("battery") || s.includes("storage");
-  if (hasStorage && !hasSolar) return "battery";
-  if (hasStorage && hasSolar) return "solar+battery";
-  return "solar";
 }
 
 // ---------------------------------------------------------------------------
@@ -133,134 +121,6 @@ interface SummaryRow {
   flags: string[];
   portalUrl: string;
   pdfPath: string | null;
-}
-
-interface DealSearchResult {
-  id: string;
-  properties: Record<string, string | null | undefined>;
-}
-
-/** Search HubSpot deals matching a PE project code via `pe_project_id`. */
-async function searchDealsByPeCode(code: string): Promise<DealSearchResult[]> {
-  const res = await searchWithRetry({
-    filterGroups: [
-      {
-        filters: [
-          {
-            propertyName: "pe_project_id",
-            operator: FilterOperatorEnum.Eq,
-            value: code,
-          },
-        ],
-      },
-    ],
-    properties: [
-      "hs_object_id",
-      "all_document_parent_folder_id",
-      "design_documents",
-      "g_drive",
-      "pb_tech_ops_url",
-      // Dedicated per-category folder properties (the real source folders).
-      "installation_documents",
-      "inspection_documents",
-      "permit_documents",
-      "participate_energy_documents_folder_id",
-      "address_line_1",
-      "city",
-      "state",
-    ],
-    limit: 25,
-  });
-  return (res.results ?? []).map((d) => ({
-    id: String(d.id),
-    properties: (d.properties ?? {}) as Record<string, string | null | undefined>,
-  }));
-}
-
-/**
- * Resolve the source Drive folder for this doc type. Prefer the dedicated
- * HubSpot folder property (e.g. `installation_documents`) — that's where the
- * real photos live (nested in subfolders). Fall back to the numbered subfolder
- * under the all-documents parent only when no dedicated property is populated.
- */
-function resolveSourceFolderId(
-  props: Record<string, string | null | undefined>,
-  byPrefix: Map<string, string>,
-  doc: DocType,
-): string | null {
-  for (const prop of DOC_CONFIGS[doc].folderProps) {
-    const id = extractFolderId(props[prop] || "");
-    if (id) return id;
-  }
-  for (const prefix of DOC_CONFIGS[doc].sourceFolders) {
-    const id = byPrefix.get(prefix);
-    if (id) return id;
-  }
-  return null;
-}
-
-interface UsableImage {
-  driveId: string;
-  name: string;
-  buffer: Buffer;
-  mimeType: string;
-  width: number;
-  height: number;
-}
-
-/** Locate the Sales Order PDF in the project's "Participate Energy" / "0." folder. */
-async function locateSalesOrderPdf(rootFolderId: string): Promise<Buffer | null> {
-  const subs = await listDriveSubfolders(rootFolderId);
-  // Prefer the Participate Energy folder, then a numbered "0." folder.
-  const pe = subs.find((f) => f.name.toLowerCase().includes("participate energy"));
-  const zero = subs.find((f) => /^0\./.test(f.name));
-  const searchRoots = [pe?.id, zero?.id].filter(Boolean) as string[];
-  for (const folderId of searchRoots) {
-    const files = await listDriveFilesRecursive(folderId, 2, 60);
-    const so = files.find(
-      (f) =>
-        f.mimeType === "application/pdf" &&
-        /(sales\s*order|^so[_\s-]|_so[_\s.]|order)/i.test(f.name),
-    );
-    if (so) {
-      const { buffer } = await downloadDriveFile(so.id);
-      return buffer;
-    }
-  }
-  return null;
-}
-
-/** Convert an image buffer to a single full-page PDF page appended to `doc`. */
-async function appendImagePage(
-  doc: PDFDocument,
-  img: Buffer,
-  caption?: string,
-  font?: PDFFont,
-): Promise<void> {
-  // Normalize to PNG so pdf-lib embeds reliably regardless of source format.
-  const png = await sharp(img).rotate().png().toBuffer();
-  const embedded = await doc.embedPng(png);
-  const { width, height } = embedded;
-  const barH = caption && font ? Math.max(34, Math.round(width * 0.04)) : 0;
-  const page = doc.addPage([width, height + barH]);
-  page.drawImage(embedded, { x: 0, y: barH, width, height });
-  if (caption && font) {
-    page.drawRectangle({ x: 0, y: 0, width, height: barH, color: rgb(0.09, 0.1, 0.13) });
-    const size = Math.min(Math.round(barH * 0.42), 24);
-    // Truncate to fit the page width.
-    let text = caption;
-    while (text.length > 4 && font.widthOfTextAtSize(text, size) > width - 24) {
-      text = text.slice(0, -2);
-    }
-    if (text !== caption) text = text.replace(/\.\.\.$|.$/, "…");
-    page.drawText(text, {
-      x: 14,
-      y: Math.round((barH - size) / 2) + 1,
-      size,
-      font,
-      color: rgb(1, 1, 1),
-    });
-  }
 }
 
 async function processProject(
