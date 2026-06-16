@@ -264,6 +264,16 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Office Performance",
   },
 
+  // ── PE Tools ──
+  {
+    href: "/dashboards/pe-photo-builder",
+    title: "PE Photo Builder",
+    description: "Drop install photos + a project code to build a labeled Photos-per-Policy PDF and flag missing shots.",
+    tag: "PE",
+    icon: "📸",
+    section: "PE Tools",
+  },
+
   // ── Meetings ──
   {
     href: "/dashboards/idr-meeting",

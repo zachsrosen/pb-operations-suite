@@ -5,6 +5,14 @@ import { getCurrentUser } from "@/lib/auth-utils";
 const LINKS: SuitePageCard[] = [
   // ── Tools ──
   {
+    href: "/dashboards/pe-photo-builder",
+    title: "PE Photo Builder",
+    description: "Drop install photos + a project code to build a labeled Photos-per-Policy PDF and flag missing shots.",
+    tag: "PE",
+    icon: "📸",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/payment-action-queue",
     title: "Payment Action Queue",
     description: "Rejected invoices, overdue payments, and ready-to-invoice work milestones.",

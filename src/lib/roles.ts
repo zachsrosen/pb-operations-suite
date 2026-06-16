@@ -472,6 +472,9 @@ const PROJECT_MANAGER: RoleDefinition = {
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
+    // PE Photo Builder
+    "/dashboards/pe-photo-builder",
+    "/api/pe/photo-package",
   ],
   landingCards: [
     { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flags assigned to you — open, acknowledged, and resolved.", tag: "PM FLAGS", tagColor: "orange" },
@@ -1390,6 +1393,9 @@ const SALES_MANAGER: RoleDefinition = {
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
+    // PE Photo Builder
+    "/dashboards/pe-photo-builder",
+    "/api/pe/photo-package",
   ],
   landingCards: [],
   scope: "global",
@@ -1528,6 +1534,9 @@ const ACCOUNTING: RoleDefinition = {
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
+    // PE Photo Builder
+    "/dashboards/pe-photo-builder",
+    "/api/pe/photo-package",
   ],
   landingCards: [],
   scope: "global",
