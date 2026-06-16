@@ -3,7 +3,7 @@ import { parseDealName, cleanPeNote, rowsToCsv, rowsToText, type PeExportRow } f
 const row = (over: Partial<PeExportRow> = {}): PeExportRow => ({
   proj: "PROJ-9495", deal: "PROJ-9495 | Hylsky, Kenneth | 700 Cheyenne Dr, Fort Collins, CO",
   location: "DTC", stage: "PTO", team: "Accounting", doc: "Conditional Progress Lien Waiver",
-  status: "Action Required", reason: "", blockerNote: "", hubspotUrl: "https://app.hubspot.com/contacts/1/deal/9",
+  status: "Action Required", reason: "", hubspotUrl: "https://app.hubspot.com/contacts/1/deal/9",
   portalUrl: "https://raceway.participate.energy/projects/abc", driveUrl: "", ...over,
 });
 

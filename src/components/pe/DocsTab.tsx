@@ -19,7 +19,6 @@ interface DocReviewFromHS {
   status: string;
   notes: string | null;
   peComment: string | null;
-  internalNote: string | null;
 }
 
 interface PeDeal {
@@ -33,6 +32,7 @@ interface PeDeal {
   epcPrice: number | null;
   peM1Status: string | null;
   peM2Status: string | null;
+  peInfoNeeded: string | null; // deal-level "PE info needed" reason (editable)
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
@@ -47,8 +47,6 @@ interface DocReview {
   notes: string | null;
   // Full open PE reviewer comment (from PeActionItem), shown verbatim.
   peComment: string | null;
-  // Editable internal PB "why this is blocked" note.
-  internalNote: string | null;
 }
 
 type PeDocStatusValue =
@@ -372,7 +370,6 @@ function docsToExportRows(s: DealDocSummary, docs: DocWithReview[]): PeExportRow
     doc: doc.name,
     status: review ? DOC_STATUS_LABELS[review.status] : "Not Uploaded",
     reason: review?.peComment?.trim() || (review ? cleanPeNote(review.notes) : ""),
-    blockerNote: review?.internalNote?.trim() || "",
     hubspotUrl: s.deal.hubspotUrl,
     portalUrl: s.deal.pePortalUrl ?? "",
     driveUrl: s.deal.driveUrl ?? "",
@@ -515,14 +512,10 @@ function MilestoneBadge({ milestone }: { milestone: PeMilestone }) {
   );
 }
 
-// Editable per-doc "why this is blocked" note. Click to edit; saves on blur
-// to the deal's pe_doc_blocker_notes JSON map via the pe-deals PATCH endpoint,
-// with an optimistic React Query cache update.
-function BlockerNoteEditor({ dealId, docName, value }: {
-  dealId: string;
-  docName: string;
-  value: string | null;
-}) {
+// Editable deal-level "PE Info Needed" reason (writes pe_info_needed). Always
+// shown on the Documents-tab deal rows so it can be set regardless of milestone
+// status. Distinct from the per-doc blocker note.
+function InfoNeededInline({ dealId, value }: { dealId: string; value: string | null }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
@@ -530,30 +523,22 @@ function BlockerNoteEditor({ dealId, docName, value }: {
   const commit = useCallback(async () => {
     setEditing(false);
     const next = draft.trim();
-    const current = (value ?? "").trim();
-    if (next === current) return;
+    if (next === (value ?? "").trim()) return;
     qc.setQueryData<{ deals: PeDeal[]; lastUpdated: string }>(queryKeys.peDeals.list(), (old) =>
       old
-        ? {
-            ...old,
-            deals: old.deals.map((d) =>
-              d.dealId === dealId
-                ? { ...d, docReviews: d.docReviews.map((dr) => (dr.docName === docName ? { ...dr, internalNote: next || null } : dr)) }
-                : d,
-            ),
-          }
+        ? { ...old, deals: old.deals.map((d) => (d.dealId === dealId ? { ...d, peInfoNeeded: next || null } : d)) }
         : old,
     );
     try {
       await fetch("/api/accounting/pe-deals", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, field: "pe_doc_blocker_note", docName, value: next }),
+        body: JSON.stringify({ dealId, field: "pe_info_needed", value: next }),
       });
     } catch {
       qc.invalidateQueries({ queryKey: queryKeys.peDeals.list() });
     }
-  }, [draft, value, qc, dealId, docName]);
+  }, [draft, value, qc, dealId]);
 
   if (editing) {
     return (
@@ -562,14 +547,12 @@ function BlockerNoteEditor({ dealId, docName, value }: {
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
-        }}
+        onKeyDown={(e) => { if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); } }}
         onClick={(e) => e.stopPropagation()}
         rows={2}
-        maxLength={1000}
-        placeholder="Why is this blocked?"
-        className="w-full text-[10px] rounded border border-t-border bg-surface-2 px-1.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-none"
+        maxLength={2000}
+        placeholder="PE info needed — what are we waiting on, and from whom?"
+        className="w-full text-[10px] rounded border border-amber-500/40 bg-surface-2 px-1.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/50 resize-none"
       />
     );
   }
@@ -578,34 +561,30 @@ function BlockerNoteEditor({ dealId, docName, value }: {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); setDraft(value ?? ""); setEditing(true); }}
-      title={has ? value! : "Add a blocker reason"}
-      className={`w-full text-left text-[10px] rounded px-1.5 py-1 flex items-start gap-1 transition-colors ${
+      title={has ? `PE info needed: ${value}` : "Add PE info needed"}
+      className={`w-full text-left text-[10px] rounded px-1.5 py-0.5 flex items-center gap-1 transition-colors ${
         has
-          ? "bg-blue-500/10 text-blue-300 hover:bg-blue-500/20"
-          : "border border-dashed border-t-border text-muted/50 hover:text-foreground hover:border-foreground/40"
+          ? "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+          : "text-muted/40 hover:text-foreground"
       }`}
     >
-      <svg className="w-3 h-3 mt-px flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d={has ? "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" : "M12 4.5v15m7.5-7.5h-15"} />
-      </svg>
-      <span className="line-clamp-2">{has ? value : "Add blocker reason"}</span>
+      <span className="w-3 h-3 flex-shrink-0 inline-flex items-center justify-center rounded-full border border-current text-[7px] font-semibold">i</span>
+      <span className="truncate">{has ? value : "PE info needed"}</span>
     </button>
   );
 }
 
-function DocLine({ doc, review, dealId }: { doc: DocRequirement; review: DocReview | undefined; dealId: string }) {
+function DocLine({ doc, review }: { doc: DocRequirement; review: DocReview | undefined }) {
   const status = review?.status ?? null;
   const label = status ? DOC_STATUS_LABELS[status] : null;
   const isApproved = status === "APPROVED";
   // Prefer the full open PE reviewer comment (PeActionItem); fall back to the
   // cleaned email/portal note when there's no open action item.
   const peNote = review?.peComment?.trim() || cleanPeNote(review?.notes);
-  // Editable blocker note only on outstanding docs the user can act on.
-  const canNote = status === "ACTION_REQUIRED" || status === "REJECTED" || status === "NOT_UPLOADED";
 
   return (
-    <div className="grid grid-cols-12 gap-x-3 gap-y-1 items-start py-1.5">
-      <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5 min-w-0">
+    <div className="grid grid-cols-12 gap-x-3 gap-y-1 items-center py-1.5">
+      <div className="col-span-12 sm:col-span-5 flex items-center gap-1.5 min-w-0">
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
           status === "APPROVED" ? "bg-green-500" :
           status === "REJECTED" ? "bg-red-500" :
@@ -624,16 +603,11 @@ function DocLine({ doc, review, dealId }: { doc: DocRequirement; review: DocRevi
           <span className="text-[10px] text-muted/40">No data</span>
         )}
       </div>
-      <div className="col-span-8 sm:col-span-3 min-w-0 self-center">
+      <div className="col-span-8 sm:col-span-5 min-w-0">
         {peNote ? (
           <span className="text-[10px] text-orange-400/80 line-clamp-2" title={peNote}>PE: {peNote}</span>
         ) : doc.note && !isApproved ? (
           <span className="text-[10px] text-muted/50 line-clamp-2">{doc.note}</span>
-        ) : null}
-      </div>
-      <div className="col-span-12 sm:col-span-3 min-w-0">
-        {canNote ? (
-          <BlockerNoteEditor key={review?.internalNote ?? ""} dealId={dealId} docName={doc.name} value={review?.internalNote ?? null} />
         ) : null}
       </div>
     </div>
@@ -790,6 +764,11 @@ function DealCard({ summary, docMap, expanded, onToggle }: {
         </div>
       </button>
 
+      {/* Deal-level PE Info Needed — always editable inline. */}
+      <div className="px-4 py-0.5 border-t border-border/20">
+        <InfoNeededInline dealId={deal.dealId} value={deal.peInfoNeeded} />
+      </div>
+
       {/* Expanded doc checklist */}
       {expanded && (
         <div className="px-4 pb-4 border-t border-border/30">
@@ -815,7 +794,7 @@ function DealCard({ summary, docMap, expanded, onToggle }: {
                 </div>
                 <div className="divide-y divide-border/20">
                   {docs.map((doc) => (
-                    <DocLine key={doc.name} doc={doc} dealId={deal.dealId} review={docMap.get(`${deal.dealId}:${doc.name}`)} />
+                    <DocLine key={doc.name} doc={doc} review={docMap.get(`${deal.dealId}:${doc.name}`)} />
                   ))}
                 </div>
               </div>
@@ -859,7 +838,7 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
   const { deal } = summary;
 
   // Top outstanding doc — surfaced as a summary row when collapsed so the
-  // reason + blocker note are visible without expanding. Action Required ranks
+  // reason is visible without expanding. Action Required ranks
   // above Not Uploaded (waived not-uploaded excluded). (PE has no separate
   // "Rejected" doc status — REJECTED is treated as Action Required.)
   const outstanding = teamDocs.filter(({ doc, review }) => {
@@ -917,10 +896,14 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
           </svg>
         </div>
       </button>
+      {/* Deal-level PE Info Needed — always editable inline. */}
+      <div className="px-3 py-0.5 border-t border-border/10">
+        <InfoNeededInline dealId={deal.dealId} value={deal.peInfoNeeded} />
+      </div>
       {/* Collapsed: surface the top outstanding doc (reason + editable note). */}
       {!expanded && topDoc && (
-        <div className="px-3 pb-2 border-t border-border/10">
-          <DocLine doc={topDoc.doc} dealId={deal.dealId} review={topDoc.review} />
+        <div className="px-3 pb-2">
+          <DocLine doc={topDoc.doc} review={topDoc.review} />
           {moreCount > 0 && (
             <button
               onClick={() => setExpanded(true)}
@@ -935,7 +918,7 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
         <div className="px-3 pb-2 border-t border-border/20">
           <div className="divide-y divide-border/20 mt-1">
             {teamDocs.map(({ doc, review }) => (
-              <DocLine key={doc.name} doc={doc} dealId={deal.dealId} review={review} />
+              <DocLine key={doc.name} doc={doc} review={review} />
             ))}
           </div>
         </div>
@@ -984,11 +967,15 @@ function SectionDealRow({ summary, docs, badgeLabel, badgeClass, expanded, onTog
           </svg>
         </div>
       </button>
+      {/* Deal-level PE Info Needed — always editable inline. */}
+      <div className="px-4 py-0.5 border-t border-border/20">
+        <InfoNeededInline dealId={deal.dealId} value={deal.peInfoNeeded} />
+      </div>
       {expanded && (
         <div className="px-4 pb-3 border-t border-border/30">
           <div className="divide-y divide-border/20 mt-1">
             {docs.map(({ doc, review }) => (
-              <DocLine key={doc.name} doc={doc} dealId={deal.dealId} review={review} />
+              <DocLine key={doc.name} doc={doc} review={review} />
             ))}
           </div>
         </div>
@@ -1107,7 +1094,6 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           status,
           notes: dr.notes,
           peComment: dr.peComment,
-          internalNote: dr.internalNote,
         });
       }
     }
