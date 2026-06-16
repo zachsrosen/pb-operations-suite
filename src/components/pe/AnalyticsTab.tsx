@@ -37,6 +37,79 @@ import {
 } from "@/lib/pe-analytics";
 
 // ---------------------------------------------------------------------------
+// Drill-down copy/export — shared by the Doc Uploaders / Rejections / Missing
+// drill lists. Copy = readable text (chat/email/task); CSV for spreadsheets.
+// ---------------------------------------------------------------------------
+
+interface DrillExportRow {
+  doc: string;
+  deal: string;
+  reason?: string;
+  dates?: string;
+  hubspotUrl?: string;
+  pePortalUrl?: string;
+  driveUrl?: string;
+}
+
+const shortDeal = (deal: string) => deal.split("|").slice(0, 2).join(" | ").trim();
+const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "list";
+
+function drillToText(title: string, rows: DrillExportRow[]): string {
+  const lines = [`${title} (${rows.length})`];
+  for (const r of rows) {
+    const bits = [`- ${r.doc} · ${shortDeal(r.deal)}`];
+    if (r.reason) bits.push(`— ${r.reason.replace(/\s+/g, " ").trim()}`);
+    if (r.dates) bits.push(`(${r.dates})`);
+    lines.push(bits.join(" "));
+    const links = [
+      r.hubspotUrl && `HubSpot: ${r.hubspotUrl}`,
+      r.pePortalUrl && `PE: ${r.pePortalUrl}`,
+    ].filter(Boolean).join("  |  ");
+    if (links) lines.push(`    ${links}`);
+  }
+  return lines.join("\n");
+}
+
+const drillCsvCell = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+
+function drillToCsv(rows: DrillExportRow[]): string {
+  const head = ["Document", "Deal", "Reason", "Dates", "HubSpot", "PE Portal", "Drive"];
+  const lines = rows.map((r) =>
+    [r.doc, r.deal, r.reason ?? "", r.dates ?? "", r.hubspotUrl ?? "", r.pePortalUrl ?? "", r.driveUrl ?? ""]
+      .map((x) => drillCsvCell(x))
+      .join(","),
+  );
+  return [head.join(","), ...lines].join("\r\n");
+}
+
+function DrillCopyButtons({ title, rows, filename }: { title: string; rows: DrillExportRow[]; filename: string }) {
+  const [done, setDone] = useState<null | "copy" | "csv">(null);
+  if (rows.length === 0) return null;
+  const flash = (w: "copy" | "csv") => { setDone(w); setTimeout(() => setDone((c) => (c === w ? null : c)), 1500); };
+  const copy = () => { navigator.clipboard.writeText(drillToText(title, rows)).then(() => flash("copy")).catch(() => {}); };
+  const csv = () => {
+    const blob = new Blob([drillToCsv(rows)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    flash("csv");
+  };
+  return (
+    <div className="flex items-center gap-1">
+      <button onClick={copy} className="text-[10px] px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors" title="Copy this list as text">
+        {done === "copy" ? "Copied ✓" : "Copy"}
+      </button>
+      <button onClick={csv} className="text-[10px] px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors" title="Download this list as CSV">
+        {done === "csv" ? "Saved ✓" : "CSV"}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
 
@@ -950,7 +1023,14 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
               <div className="text-xs font-medium text-foreground">
                 {drill.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(drill.uploader)} — {list.length} {noun}
               </div>
-              <button onClick={() => setDrill(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
+              <div className="flex items-center gap-2">
+                <DrillCopyButtons
+                  title={`${drill.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(drill.uploader)} — ${noun}`}
+                  rows={list.map((r) => ({ doc: r.docName, deal: r.dealName, reason: r.note ?? undefined, hubspotUrl: r.hubspotUrl, pePortalUrl: r.pePortalUrl ?? undefined, driveUrl: r.driveUrl ?? undefined }))}
+                  filename={`pe-uploads-${slug(drill.uploader === UNKNOWN_UPLOADER ? "unknown" : prettyUploader(drill.uploader))}-${drill.outcome}.csv`}
+                />
+                <button onClick={() => setDrill(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
+              </div>
             </div>
             <div className="space-y-1.5 max-h-72 overflow-y-auto">
               {list.map((r, i) => (
@@ -1180,6 +1260,28 @@ function RejectionsByDocPanel({ byDoc }: { byDoc: RejectionByDoc[] }) {
             </div>
             {drilled && meta && (
               <div className={`mt-1 ml-2 rounded-lg border ${meta.border} ${meta.bg} p-2 space-y-1.5 max-h-64 overflow-y-auto`}>
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-medium ${meta.text}`}>
+                    {drilled.bucket === "open" ? "Open rejections" : drilled.bucket === "resubmitted" ? "Resubmitted" : "Approved"}
+                  </span>
+                  <DrillCopyButtons
+                    title={`${d.docName} — ${drilled.bucket === "open" ? "open rejections" : drilled.bucket}`}
+                    rows={rejDeals(d, drilled.bucket).map((od) => ({
+                      doc: d.docName,
+                      deal: od.dealName,
+                      reason: od.comment ?? undefined,
+                      dates: [
+                        od.dateRejected && `rejected ${od.dateRejected}`,
+                        od.dateResubmitted && `resubmitted ${od.dateResubmitted}`,
+                        od.dateApproved && `approved ${od.dateApproved}`,
+                      ].filter(Boolean).join(", ") || undefined,
+                      hubspotUrl: od.hubspotUrl,
+                      pePortalUrl: od.pePortalUrl ?? undefined,
+                      driveUrl: od.driveUrl ?? undefined,
+                    }))}
+                    filename={`pe-rejections-${slug(d.docName)}-${drilled.bucket}.csv`}
+                  />
+                </div>
                 {rejDeals(d, drilled.bucket).map((od, i) => (
                   <div key={i} className="text-[11px] border-b border-t-border/30 pb-1 last:border-0 last:pb-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1231,6 +1333,20 @@ function MissingByDocPanel({ byDoc }: { byDoc: MissingByDoc[] }) {
             </div>
             {open && (
               <div className="mt-1 ml-2 rounded-lg border border-zinc-500/30 bg-zinc-500/5 p-2 space-y-1.5 max-h-64 overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-zinc-300">{d.missing} missing</span>
+                  <DrillCopyButtons
+                    title={`${d.docName} — missing`}
+                    rows={d.deals.map((od) => ({
+                      doc: d.docName,
+                      deal: od.dealName,
+                      hubspotUrl: od.hubspotUrl,
+                      pePortalUrl: od.pePortalUrl ?? undefined,
+                      driveUrl: od.driveUrl ?? undefined,
+                    }))}
+                    filename={`pe-missing-${slug(d.docName)}.csv`}
+                  />
+                </div>
                 {d.deals.map((od, i) => (
                   <div key={i} className="text-[11px] flex items-center gap-2 flex-wrap border-b border-t-border/30 pb-1 last:border-0 last:pb-0">
                     <span className="text-foreground font-medium truncate max-w-[16rem]" title={od.dealName}>{od.dealName.split("|").slice(0, 2).join("|").trim()}</span>
