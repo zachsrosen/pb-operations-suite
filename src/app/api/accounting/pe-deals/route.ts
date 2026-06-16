@@ -85,6 +85,9 @@ interface PeDocReviewRow {
   docName: string;
   status: string;
   notes: string | null;
+  // Latest open PE reviewer comment for this doc (from PeActionItem). null when
+  // there's no open action item — `notes` typically holds only sync metadata.
+  peComment: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,14 +213,37 @@ export async function GET() {
     const dbDocs = await prisma.peDocumentReview.findMany({
       select: { dealId: true, docName: true, status: true, notes: true },
     });
+
+    // The genuine PE reviewer comment lives in PeActionItem (full reviewer note
+    // text), not peDocumentReview.notes — which holds only "Synced from PE API
+    // …" metadata for most action-required docs. Join the latest OPEN action
+    // item per (deal, doc); docLabel matches peDocumentReview.docName exactly.
+    const openActionItems = await prisma.peActionItem.findMany({
+      where: { resolvedAt: null, dealId: { not: null } },
+      select: { dealId: true, docLabel: true, notes: true },
+      orderBy: { actionDate: "desc" },
+    });
+    const commentByDoc = new Map<string, string>();
+    for (const ai of openActionItems) {
+      if (!ai.dealId) continue;
+      const note = ai.notes?.trim();
+      if (!note) continue;
+      const key = `${ai.dealId}::${ai.docLabel}`;
+      if (!commentByDoc.has(key)) commentByDoc.set(key, note); // desc order ⇒ first = latest
+    }
+
     const docsByDeal = new Map<string, PeDocReviewRow[]>();
     for (const d of dbDocs) {
       if (!docsByDeal.has(d.dealId)) docsByDeal.set(d.dealId, []);
+      // Only surface the comment on docs that are still actionable — an open
+      // action item can linger on a doc that's since been resubmitted/approved.
+      const actionable = d.status === "ACTION_REQUIRED" || d.status === "REJECTED";
       docsByDeal.get(d.dealId)!.push({
         dealId: d.dealId,
         docName: d.docName,
         status: d.status,
         notes: d.notes,
+        peComment: actionable ? (commentByDoc.get(`${d.dealId}::${d.docName}`) ?? null) : null,
       });
     }
 

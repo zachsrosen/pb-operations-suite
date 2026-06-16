@@ -18,6 +18,7 @@ interface DocReviewFromHS {
   docName: string;
   status: string;
   notes: string | null;
+  peComment: string | null;
 }
 
 interface PeDeal {
@@ -43,6 +44,8 @@ interface DocReview {
   docName: string;
   status: PeDocStatusValue;
   notes: string | null;
+  // Full open PE reviewer comment (from PeActionItem), shown verbatim.
+  peComment: string | null;
 }
 
 type PeDocStatusValue =
@@ -365,7 +368,7 @@ function docsToExportRows(s: DealDocSummary, docs: DocWithReview[]): PeExportRow
     team: TEAM_LABELS[doc.team],
     doc: doc.name,
     status: review ? DOC_STATUS_LABELS[review.status] : "Not Uploaded",
-    reason: review ? cleanPeNote(review.notes) : "",
+    reason: review?.peComment?.trim() || (review ? cleanPeNote(review.notes) : ""),
     hubspotUrl: s.deal.hubspotUrl,
     portalUrl: s.deal.pePortalUrl ?? "",
     driveUrl: s.deal.driveUrl ?? "",
@@ -512,8 +515,9 @@ function DocLine({ doc, review }: { doc: DocRequirement; review: DocReview | und
   const status = review?.status ?? null;
   const label = status ? DOC_STATUS_LABELS[status] : null;
   const isApproved = status === "APPROVED";
-  // Strip API-sync boilerplate; keep only a genuine PE rejection/action comment.
-  const note = cleanPeNote(review?.notes);
+  // Prefer the full open PE reviewer comment (PeActionItem); fall back to the
+  // cleaned email/portal note when there's no open action item.
+  const note = review?.peComment?.trim() || cleanPeNote(review?.notes);
 
   return (
     <div className="flex items-start gap-2.5 py-1.5">
@@ -992,6 +996,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           docName: dr.docName,
           status,
           notes: dr.notes,
+          peComment: dr.peComment,
         });
       }
     }
