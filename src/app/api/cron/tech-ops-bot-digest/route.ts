@@ -19,9 +19,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // ?preview=1 renders every digest without posting — for reviewing copy.
+  const preview = request.nextUrl.searchParams.get("preview") === "1";
+
   try {
-    const [owner, rooms] = await Promise.all([runDailyDigest(), runRoomDigests()]);
-    return NextResponse.json({ owner, rooms });
+    const [owner, rooms] = await Promise.all([
+      runDailyDigest(undefined, { preview }),
+      runRoomDigests(undefined, { preview }),
+    ]);
+    return NextResponse.json({ preview, owner, rooms });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     console.error("[tech-ops-bot-digest] failed:", message);

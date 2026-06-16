@@ -424,6 +424,8 @@ export interface DigestResult {
   posted: boolean;
   reason?: string;
   sections: number;
+  /** Rendered message text (preview mode only). */
+  message?: string;
 }
 
 /**
@@ -439,8 +441,23 @@ export async function buildDailyDigestMessage(nowMs?: number): Promise<string | 
   return `${digestHeader(now, "Daily Tech Ops digest")}\n\n${sections.join("\n\n")}`;
 }
 
-/** Build and DM the digest to the owner. Safe to call when nothing is set up. */
-export async function runDailyDigest(nowMs?: number): Promise<DigestResult> {
+/**
+ * Build and DM the digest to the owner. With `preview`, returns the rendered
+ * message without posting (and without needing the DM space). Safe to call
+ * when nothing is set up.
+ */
+export async function runDailyDigest(
+  nowMs?: number,
+  opts?: { preview?: boolean }
+): Promise<DigestResult> {
+  const message = await buildDailyDigestMessage(nowMs);
+
+  if (opts?.preview) {
+    return message
+      ? { posted: false, sections: message.split("\n\n").length - 1, message }
+      : { posted: false, reason: "nothing to report", sections: 0 };
+  }
+
   const space = await getOwnerDmSpace();
   if (!space) {
     return {
@@ -449,8 +466,6 @@ export async function runDailyDigest(nowMs?: number): Promise<DigestResult> {
       sections: 0,
     };
   }
-
-  const message = await buildDailyDigestMessage(nowMs);
   if (!message) {
     return { posted: false, reason: "nothing to report", sections: 0 };
   }
@@ -464,17 +479,24 @@ export interface RoomDigestResult {
   room: string;
   posted: boolean;
   reason?: string;
+  /** Rendered message text (preview mode only). */
+  message?: string;
 }
 
 /**
  * Build and post each enabled room route's scoped digest. Resolves room
  * display names to space ids via the bot's space list. Rooms the bot isn't a
  * member of, or routes with nothing to report, are skipped (with a reason).
+ * With `preview`, renders every route's message and returns it WITHOUT posting.
  */
-export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]> {
+export async function runRoomDigests(
+  nowMs?: number,
+  opts?: { preview?: boolean }
+): Promise<RoomDigestResult[]> {
   const routes = DIGEST_ROUTES.filter((r) => r.enabled);
   if (routes.length === 0) return [];
 
+  const preview = opts?.preview ?? false;
   const now = nowMs ?? Date.now();
   const { listGoogleChatSpaces, postGoogleChatMessage } = await import(
     "@/lib/google-chat-api"
@@ -485,7 +507,8 @@ export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]
     spaces = await listGoogleChatSpaces();
   } catch (e) {
     const reason = e instanceof Error ? e.message : "spaces.list failed";
-    return routes.map((r) => ({ room: r.room, posted: false, reason }));
+    // In preview we still want the rendered drafts even if listing failed.
+    if (!preview) return routes.map((r) => ({ room: r.room, posted: false, reason }));
   }
 
   // Resolve a configured room name to a space the bot belongs to. Matches the
@@ -503,7 +526,7 @@ export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]
   const results: RoomDigestResult[] = [];
   for (const route of routes) {
     const spaceName = resolveSpace(route.room);
-    if (!spaceName) {
+    if (!spaceName && !preview) {
       results.push({
         room: route.room,
         posted: false,
@@ -517,19 +540,34 @@ export async function runRoomDigests(nowMs?: number): Promise<RoomDigestResult[]
       stuckStages: route.stuckStages,
       milestoneKeys: route.milestones,
     });
-    if (sections.length === 0) {
-      results.push({ room: route.room, posted: false, reason: "nothing to report" });
-      continue;
-    }
 
     const title =
       route.title ??
       (route.locations.length > 0
         ? `Daily digest (${route.locations.join(", ")})`
         : "Daily Tech Ops digest");
-    const message = `${digestHeader(now, title, route.intro)}\n\n${sections.join("\n\n")}`;
+    const message =
+      sections.length > 0
+        ? `${digestHeader(now, title, route.intro)}\n\n${sections.join("\n\n")}`
+        : null;
+
+    if (preview) {
+      results.push({
+        room: route.room,
+        posted: false,
+        reason: spaceName ? undefined : "bot is not a member of this room",
+        message: message ?? "(nothing to report)",
+      });
+      continue;
+    }
+
+    if (!message) {
+      results.push({ room: route.room, posted: false, reason: "nothing to report" });
+      continue;
+    }
+
     try {
-      await postGoogleChatMessage({ spaceName, text: message });
+      await postGoogleChatMessage({ spaceName: spaceName!, text: message });
       results.push({ room: route.room, posted: true });
     } catch (e) {
       results.push({
