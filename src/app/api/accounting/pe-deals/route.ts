@@ -88,6 +88,9 @@ interface PeDocReviewRow {
   // Latest open PE reviewer comment for this doc (from PeActionItem). null when
   // there's no open action item — `notes` typically holds only sync metadata.
   peComment: string | null;
+  // Internal PB "why this doc is blocked" note (editable), from the deal's
+  // pe_doc_blocker_notes JSON map. null when none recorded.
+  internalNote: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +125,8 @@ const PE_DEAL_PROPERTIES = [
   "pe_m2_status",
   // Free-text reason shown when a milestone is "Waiting on Information"
   "pe_info_needed",
+  // Internal PB blocker notes per PE doc — JSON map { docName: reason }
+  "pe_doc_blocker_notes",
   // PE portal cross-reference
   "pe_portal_url",
   "pe_project_id",
@@ -244,6 +249,7 @@ export async function GET() {
         status: d.status,
         notes: d.notes,
         peComment: actionable ? (commentByDoc.get(`${d.dealId}::${d.docName}`) ?? null) : null,
+        internalNote: null, // filled per-deal from pe_doc_blocker_notes below
       });
     }
 
@@ -337,7 +343,18 @@ export async function GET() {
       }
 
       // PE per-document statuses — from the peDocumentReview DB table
-      const docReviews = docsByDeal.get(dealId) ?? [];
+      // Internal PB blocker notes — a JSON map { docName: reason } on the deal.
+      let blockerNotes: Record<string, string> = {};
+      try {
+        const raw = deal.pe_doc_blocker_notes ? String(deal.pe_doc_blocker_notes) : "";
+        if (raw) blockerNotes = JSON.parse(raw) || {};
+      } catch {
+        blockerNotes = {};
+      }
+      const docReviews = (docsByDeal.get(dealId) ?? []).map((dr) => ({
+        ...dr,
+        internalNote: blockerNotes[dr.docName] ?? null,
+      }));
 
       // Google Drive project folder. all_document_parent_folder_id is the
       // HubSpot-automation-created folder (most reliable); g_drive /
@@ -454,14 +471,42 @@ export async function PATCH(req: Request) {
 
   try {
     const body = await req.json();
-    const { dealId, field, value } = body as {
+    const { dealId, field, value, docName } = body as {
       dealId: string;
-      field: "pe_m1_status" | "pe_m2_status" | "pe_info_needed";
+      field: "pe_m1_status" | "pe_m2_status" | "pe_info_needed" | "pe_doc_blocker_note";
       value: string;
+      docName?: string;
     };
 
     if (!dealId || !field) {
       return NextResponse.json({ error: "Missing dealId or field" }, { status: 400 });
+    }
+
+    // Per-doc internal blocker note — stored in the pe_doc_blocker_notes JSON
+    // map ({ docName: reason }). Read-modify-write so other docs are preserved.
+    if (field === "pe_doc_blocker_note") {
+      if (!docName) {
+        return NextResponse.json({ error: "Missing docName" }, { status: 400 });
+      }
+      if (value && value.length > 1000) {
+        return NextResponse.json({ error: "Note too long (max 1000 chars)" }, { status: 400 });
+      }
+      const existing = await hubspotClient.crm.deals.basicApi.getById(dealId, ["pe_doc_blocker_notes"]);
+      let map: Record<string, string> = {};
+      try {
+        map = JSON.parse(existing.properties?.pe_doc_blocker_notes || "{}") || {};
+      } catch {
+        map = {};
+      }
+      const note = (value || "").trim();
+      if (note) map[docName] = note;
+      else delete map[docName];
+      const serialized = Object.keys(map).length ? JSON.stringify(map) : "";
+      await hubspotClient.crm.deals.basicApi.update(dealId, {
+        properties: { pe_doc_blocker_notes: serialized },
+      });
+      console.log(`[pe-deals] ${user.email} set blocker note on "${docName}" of deal ${dealId}`);
+      return NextResponse.json({ ok: true });
     }
 
     const isStatusField = field === "pe_m1_status" || field === "pe_m2_status";
