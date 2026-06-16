@@ -18,6 +18,8 @@ interface DocReviewFromHS {
   docName: string;
   status: string;
   notes: string | null;
+  peComment: string | null;
+  internalNote: string | null;
 }
 
 interface PeDeal {
@@ -43,6 +45,10 @@ interface DocReview {
   docName: string;
   status: PeDocStatusValue;
   notes: string | null;
+  // Full open PE reviewer comment (from PeActionItem), shown verbatim.
+  peComment: string | null;
+  // Editable internal PB "why this is blocked" note.
+  internalNote: string | null;
 }
 
 type PeDocStatusValue =
@@ -365,7 +371,8 @@ function docsToExportRows(s: DealDocSummary, docs: DocWithReview[]): PeExportRow
     team: TEAM_LABELS[doc.team],
     doc: doc.name,
     status: review ? DOC_STATUS_LABELS[review.status] : "Not Uploaded",
-    reason: review ? cleanPeNote(review.notes) : "",
+    reason: review?.peComment?.trim() || (review ? cleanPeNote(review.notes) : ""),
+    blockerNote: review?.internalNote?.trim() || "",
     hubspotUrl: s.deal.hubspotUrl,
     portalUrl: s.deal.pePortalUrl ?? "",
     driveUrl: s.deal.driveUrl ?? "",
@@ -508,44 +515,127 @@ function MilestoneBadge({ milestone }: { milestone: PeMilestone }) {
   );
 }
 
-function DocLine({ doc, review }: { doc: DocRequirement; review: DocReview | undefined }) {
+// Editable per-doc "why this is blocked" note. Click to edit; saves on blur
+// to the deal's pe_doc_blocker_notes JSON map via the pe-deals PATCH endpoint,
+// with an optimistic React Query cache update.
+function BlockerNoteEditor({ dealId, docName, value }: {
+  dealId: string;
+  docName: string;
+  value: string | null;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+
+  const commit = useCallback(async () => {
+    setEditing(false);
+    const next = draft.trim();
+    const current = (value ?? "").trim();
+    if (next === current) return;
+    qc.setQueryData<{ deals: PeDeal[]; lastUpdated: string }>(queryKeys.peDeals.list(), (old) =>
+      old
+        ? {
+            ...old,
+            deals: old.deals.map((d) =>
+              d.dealId === dealId
+                ? { ...d, docReviews: d.docReviews.map((dr) => (dr.docName === docName ? { ...dr, internalNote: next || null } : dr)) }
+                : d,
+            ),
+          }
+        : old,
+    );
+    try {
+      await fetch("/api/accounting/pe-deals", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, field: "pe_doc_blocker_note", docName, value: next }),
+      });
+    } catch {
+      qc.invalidateQueries({ queryKey: queryKeys.peDeals.list() });
+    }
+  }, [draft, value, qc, dealId, docName]);
+
+  if (editing) {
+    return (
+      <textarea
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { setDraft(value ?? ""); setEditing(false); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        rows={2}
+        maxLength={1000}
+        placeholder="Why is this blocked?"
+        className="w-full text-[10px] rounded border border-t-border bg-surface-2 px-1.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/50 resize-none"
+      />
+    );
+  }
+
+  const has = !!(value && value.trim());
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); setDraft(value ?? ""); setEditing(true); }}
+      title={has ? value! : "Add a blocker reason"}
+      className={`w-full text-left text-[10px] rounded px-1.5 py-1 flex items-start gap-1 transition-colors ${
+        has
+          ? "bg-blue-500/10 text-blue-300 hover:bg-blue-500/20"
+          : "border border-dashed border-t-border text-muted/50 hover:text-foreground hover:border-foreground/40"
+      }`}
+    >
+      <svg className="w-3 h-3 mt-px flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d={has ? "m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" : "M12 4.5v15m7.5-7.5h-15"} />
+      </svg>
+      <span className="line-clamp-2">{has ? value : "Add blocker reason"}</span>
+    </button>
+  );
+}
+
+function DocLine({ doc, review, dealId }: { doc: DocRequirement; review: DocReview | undefined; dealId: string }) {
   const status = review?.status ?? null;
   const label = status ? DOC_STATUS_LABELS[status] : null;
   const isApproved = status === "APPROVED";
-  // Strip API-sync boilerplate; keep only a genuine PE rejection/action comment.
-  const note = cleanPeNote(review?.notes);
+  // Prefer the full open PE reviewer comment (PeActionItem); fall back to the
+  // cleaned email/portal note when there's no open action item.
+  const peNote = review?.peComment?.trim() || cleanPeNote(review?.notes);
+  // Editable blocker note only on outstanding docs the user can act on.
+  const canNote = status === "ACTION_REQUIRED" || status === "REJECTED" || status === "NOT_UPLOADED";
 
   return (
-    <div className="flex items-start gap-2.5 py-1.5">
-      <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
-        status === "APPROVED" ? "bg-green-500" :
-        status === "REJECTED" ? "bg-red-500" :
-        status === "ACTION_REQUIRED" ? "bg-orange-500" :
-        status === "UNDER_REVIEW" || status === "UPLOADED" ? "bg-blue-500" :
-        status === "NOT_UPLOADED" ? "bg-zinc-500" :
-        "bg-zinc-700"
-      }`} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className={`text-xs ${isApproved ? "text-muted line-through" : "text-foreground"}`}>
-            {doc.name}
-          </span>
-          <span className="text-[9px] text-muted/50">{doc.owner}</span>
-        </div>
-        {doc.note && !isApproved && (
-          <div className="text-[10px] text-muted/60 mt-0.5">{doc.note}</div>
-        )}
-        {note && (
-          <div className="text-[10px] text-orange-400/80 mt-0.5">PE: {note}</div>
+    <div className="grid grid-cols-12 gap-x-3 gap-y-1 items-start py-1.5">
+      <div className="col-span-12 sm:col-span-4 flex items-center gap-1.5 min-w-0">
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          status === "APPROVED" ? "bg-green-500" :
+          status === "REJECTED" ? "bg-red-500" :
+          status === "ACTION_REQUIRED" ? "bg-orange-500" :
+          status === "UNDER_REVIEW" || status === "UPLOADED" ? "bg-blue-500" :
+          status === "NOT_UPLOADED" ? "bg-zinc-500" :
+          "bg-zinc-700"
+        }`} />
+        <span className={`text-xs truncate ${isApproved ? "text-muted line-through" : "text-foreground"}`}>{doc.name}</span>
+        <span className="text-[9px] text-muted/50 flex-shrink-0">{doc.owner}</span>
+      </div>
+      <div className="col-span-4 sm:col-span-2 flex items-center">
+        {label ? (
+          <span className={`text-[10px] rounded border px-1.5 py-0.5 whitespace-nowrap ${DOC_STATUS_COLORS[status!]}`}>{label}</span>
+        ) : (
+          <span className="text-[10px] text-muted/40">No data</span>
         )}
       </div>
-      {label ? (
-        <span className={`text-[10px] rounded border px-1.5 py-0.5 whitespace-nowrap ${DOC_STATUS_COLORS[status!]}`}>
-          {label}
-        </span>
-      ) : (
-        <span className="text-[10px] text-muted/40">No data</span>
-      )}
+      <div className="col-span-8 sm:col-span-3 min-w-0 self-center">
+        {peNote ? (
+          <span className="text-[10px] text-orange-400/80 line-clamp-2" title={peNote}>PE: {peNote}</span>
+        ) : doc.note && !isApproved ? (
+          <span className="text-[10px] text-muted/50 line-clamp-2">{doc.note}</span>
+        ) : null}
+      </div>
+      <div className="col-span-12 sm:col-span-3 min-w-0">
+        {canNote ? (
+          <BlockerNoteEditor key={review?.internalNote ?? ""} dealId={dealId} docName={doc.name} value={review?.internalNote ?? null} />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -725,7 +815,7 @@ function DealCard({ summary, docMap, expanded, onToggle }: {
                 </div>
                 <div className="divide-y divide-border/20">
                   {docs.map((doc) => (
-                    <DocLine key={doc.name} doc={doc} review={docMap.get(`${deal.dealId}:${doc.name}`)} />
+                    <DocLine key={doc.name} doc={doc} dealId={deal.dealId} review={docMap.get(`${deal.dealId}:${doc.name}`)} />
                   ))}
                 </div>
               </div>
@@ -776,20 +866,15 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
         className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface/30 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-foreground truncate">{deal.dealName}</span>
-            <MilestoneBadge milestone={summary.milestone} />
-            {teamActionCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
-                {teamActionCount} to do
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] text-muted">{deal.pbLocation}</span>
-            {deal.peProjectId && <span className="text-[10px] text-muted/50">{deal.peProjectId}</span>}
-          </div>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground truncate">{deal.dealName}</span>
+          {deal.peProjectId && <span className="text-[10px] text-muted/50 flex-shrink-0">{deal.peProjectId}</span>}
+          <MilestoneBadge milestone={summary.milestone} />
+          {teamActionCount > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium flex-shrink-0">
+              {teamActionCount} to do
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Quick doc status dots */}
@@ -821,7 +906,7 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
         <div className="px-3 pb-2 border-t border-border/20">
           <div className="divide-y divide-border/20 mt-1">
             {teamDocs.map(({ doc, review }) => (
-              <DocLine key={doc.name} doc={doc} review={review} />
+              <DocLine key={doc.name} doc={doc} dealId={deal.dealId} review={review} />
             ))}
           </div>
         </div>
@@ -874,7 +959,7 @@ function SectionDealRow({ summary, docs, badgeLabel, badgeClass, expanded, onTog
         <div className="px-4 pb-3 border-t border-border/30">
           <div className="divide-y divide-border/20 mt-1">
             {docs.map(({ doc, review }) => (
-              <DocLine key={doc.name} doc={doc} review={review} />
+              <DocLine key={doc.name} doc={doc} dealId={deal.dealId} review={review} />
             ))}
           </div>
         </div>
@@ -992,6 +1077,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           docName: dr.docName,
           status,
           notes: dr.notes,
+          peComment: dr.peComment,
+          internalNote: dr.internalNote,
         });
       }
     }
