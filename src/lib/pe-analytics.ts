@@ -63,6 +63,28 @@ export function groupForStatus(status: string | null | undefined): PipelineGroup
   return STATUS_TO_GROUP[status] ?? "Other";
 }
 
+/**
+ * Date a milestone counts as "submitted" for chart bucketing.
+ *
+ * Prefers the explicit submission-date property. Only falls back to the
+ * history-derived first-Submitted timestamp when the CURRENT status reflects
+ * an actual submission (In Review / Rejected / Approved / Paid). A status
+ * still in Onboarding or Ready to Submit (or blank) means the milestone is not
+ * actually submitted — even if its immutable status history contains a stray
+ * "Submitted" entry from a flip that was later reverted. Without this guard
+ * those reverted flips get permanently counted as phantom submissions.
+ */
+export function resolveSubmittedOn(
+  submissionDate: string | null | undefined,
+  status: string | null | undefined,
+  firstSubmitted: string | null | undefined,
+): string | null {
+  if (submissionDate) return submissionDate;
+  const group = groupForStatus(status);
+  if (!group || group === "Onboarding" || group === "Ready to Submit") return null;
+  return firstSubmitted ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Timing from property history
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import {
   weekStartUTC,
   groupForStatus,
+  resolveSubmittedOn,
   computeMilestoneTiming,
   median,
   percentile,
@@ -60,6 +61,39 @@ describe("groupForStatus", () => {
     expect(groupForStatus("Something New")).toBe("Other");
     expect(groupForStatus(null)).toBeNull();
     expect(groupForStatus("")).toBeNull();
+  });
+});
+
+describe("resolveSubmittedOn", () => {
+  it("prefers the explicit submission date when present", () => {
+    expect(resolveSubmittedOn("2026-06-09", "Submitted", "2026-06-08")).toBe("2026-06-09");
+  });
+
+  it("falls back to history firstSubmitted for submitted-or-later statuses", () => {
+    expect(resolveSubmittedOn(null, "Submitted", "2026-06-16")).toBe("2026-06-16");
+    expect(resolveSubmittedOn(null, "Approved", "2026-05-01")).toBe("2026-05-01");
+    expect(resolveSubmittedOn(null, "Paid", "2026-04-20")).toBe("2026-04-20");
+  });
+
+  it("still counts a rejected milestone that was genuinely submitted", () => {
+    expect(resolveSubmittedOn(null, "Rejected", "2026-04-30")).toBe("2026-04-30");
+    expect(resolveSubmittedOn(null, "Ready to Resubmit", "2026-04-30")).toBe("2026-04-30");
+  });
+
+  it("does NOT count a pre-submission status as submitted via history fallback", () => {
+    // The phantom case: status was briefly flipped to Submitted then reverted,
+    // leaving an immutable history entry but no real submission.
+    expect(resolveSubmittedOn(null, "Ready to Submit", "2026-06-16")).toBeNull();
+    expect(resolveSubmittedOn(null, "Waiting on Information", "2026-06-16")).toBeNull();
+    expect(resolveSubmittedOn(null, "Onboarding Rejected", "2026-06-16")).toBeNull();
+  });
+
+  it("returns null when there is no status and no submission date", () => {
+    expect(resolveSubmittedOn(null, null, "2026-06-16")).toBeNull();
+  });
+
+  it("returns null when nothing indicates a submission", () => {
+    expect(resolveSubmittedOn(null, "Ready to Submit", null)).toBeNull();
   });
 });
 
