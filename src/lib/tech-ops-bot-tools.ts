@@ -115,13 +115,7 @@ export function createTechOpsBotTools() {
         .describe("How many days ahead to look (default 7, max 30)"),
     }),
     run: async (input) => {
-      const { prisma } = await import("@/lib/db");
-      if (!prisma) {
-        return JSON.stringify({ error: "Schedule data is unavailable right now." });
-      }
-
-      // Resolve the optional location through the canonical normalizer so we
-      // can match it against whatever form is stored on each booking.
+      // Resolve the optional location through the canonical normalizer.
       let canonicalLocation: string | null = null;
       if (input.location) {
         const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
@@ -134,63 +128,13 @@ export function createTechOpsBotTools() {
         }
       }
 
-      const days = Math.min(Math.max(input.days ?? 7, 1), 30);
-      const today = new Date();
-      const fromStr = today.toISOString().slice(0, 10);
-      const end = new Date(today);
-      end.setDate(end.getDate() + days);
-      const toStr = end.toISOString().slice(0, 10);
-
-      // ScheduleRecord is the canonical "what was scheduled" table (survey /
-      // construction / inspection, with crew + status). It carries no location,
-      // so the authoritative location is the deal's own pb_location — we
-      // batch-read it from HubSpot and map projectId → location. (An earlier
-      // version derived location from BookedSlot, which is sparsely populated
-      // and silently dropped most jobs from location-filtered results.)
-      const records = await prisma.scheduleRecord.findMany({
-        where: {
-          scheduledDate: { gte: fromStr, lte: toStr },
-          status: { in: ["scheduled", "rescheduled"] },
-        },
-        orderBy: [{ scheduledDate: "asc" }],
-        take: 300,
-        select: {
-          scheduledDate: true,
-          scheduleType: true,
-          projectId: true,
-          projectName: true,
-          assignedUser: true,
-          status: true,
-        },
+      // Shared reader — pulls ScheduleRecord and resolves each job's location
+      // from the deal's pb_location (see tech-ops-schedule.ts).
+      const { getUpcomingScheduledJobs } = await import("@/lib/tech-ops-schedule");
+      const { from, to, days, jobs } = await getUpcomingScheduledJobs({
+        days: input.days,
+        locations: canonicalLocation ? [canonicalLocation] : null,
       });
-
-      // Resolve each scheduled deal's pb_location via batch read (chunks of 100).
-      const dealIds = [...new Set(records.map((r) => r.projectId).filter(Boolean))];
-      const locByDeal = new Map<string, string>();
-      if (dealIds.length > 0) {
-        const { batchReadDealsWithRetry } = await import("@/lib/hubspot");
-        for (let i = 0; i < dealIds.length; i += 100) {
-          const chunk = dealIds.slice(i, i + 100);
-          try {
-            const res = await batchReadDealsWithRetry(chunk, ["pb_location"]);
-            for (const d of res.results ?? []) {
-              const loc = d.properties?.pb_location;
-              if (d.id && loc) locByDeal.set(d.id, loc);
-            }
-          } catch {
-            // Non-fatal: jobs whose deal we couldn't read just won't carry a
-            // location (and are excluded from a location-filtered view).
-          }
-        }
-      }
-
-      let scoped = records;
-      if (canonicalLocation) {
-        const { normalizeLocation } = await import("@/lib/locations");
-        scoped = records.filter(
-          (r) => normalizeLocation(locByDeal.get(r.projectId) ?? "") === canonicalLocation
-        );
-      }
 
       const byDate: Record<
         string,
@@ -202,22 +146,22 @@ export function createTechOpsBotTools() {
           status: string;
         }>
       > = {};
-      for (const r of scoped) {
-        (byDate[r.scheduledDate] ??= []).push({
-          type: r.scheduleType,
-          project: r.projectName,
-          location: locByDeal.get(r.projectId) ?? null,
-          crew: r.assignedUser ?? null,
-          status: r.status,
+      for (const j of jobs) {
+        (byDate[j.date] ??= []).push({
+          type: j.type,
+          project: j.project,
+          location: j.location,
+          crew: j.crew,
+          status: j.status,
         });
       }
 
       return JSON.stringify({
-        range: { from: fromStr, to: toStr, days },
+        range: { from, to, days },
         location: canonicalLocation ?? "all locations",
-        total: scoped.length,
+        total: jobs.length,
         schedule: byDate,
-        ...(scoped.length === 0
+        ...(jobs.length === 0
           ? {
               note: canonicalLocation
                 ? `Nothing scheduled for ${canonicalLocation} in this window.`
