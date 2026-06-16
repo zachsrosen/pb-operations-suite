@@ -6,7 +6,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { PhotoChip } from "@/components/pe-builder/PhotoChip";
 import { CoverageReport } from "@/components/pe-builder/CoverageReport";
 import type { CoverageReport as CoverageReportType } from "@/lib/pe-photo-coverage";
-import { PE_M1_CHECKLIST } from "@/lib/pe-turnover";
+import { PE_M1_CHECKLIST } from "@/lib/pe-photo-shots";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
@@ -75,6 +75,10 @@ export default function PePhotoBuilderPage() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [countCapWarning, setCountCapWarning] = useState<string | null>(null);
 
+  // Track every object URL we create so we can revoke them on unmount even
+  // if the component never re-renders (fixes the stale-closure leak).
+  const objectUrlsRef = useRef<string[]>([]);
+
   // Triage
   const [triage, setTriage] = useState<TriageResponse | null>(null);
   const [assignments, setAssignments] = useState<Record<string, string | null>>({});
@@ -87,13 +91,14 @@ export default function PePhotoBuilderPage() {
   const [assembleError, setAssembleError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  // Revoke object URLs on unmount
+  // Revoke all tracked object URLs on unmount.
   useEffect(() => {
-    const currentFiles = files;
     return () => {
-      currentFiles.forEach((f) => URL.revokeObjectURL(f.objectUrl));
+      for (const url of objectUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      objectUrlsRef.current = [];
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---- Upload a single file to Blob ---- */
@@ -146,12 +151,16 @@ export default function PePhotoBuilderPage() {
 
       if (!accepted.length) return;
 
-      const newEntries: UploadedFile[] = accepted.map((file) => ({
-        clientId: crypto.randomUUID(),
-        file,
-        objectUrl: URL.createObjectURL(file),
-        uploading: true,
-      }));
+      const newEntries: UploadedFile[] = accepted.map((file) => {
+        const objectUrl = URL.createObjectURL(file);
+        objectUrlsRef.current.push(objectUrl);
+        return {
+          clientId: crypto.randomUUID(),
+          file,
+          objectUrl,
+          uploading: true,
+        };
+      });
 
       setFiles((prev) => [...prev, ...newEntries]);
 
@@ -193,7 +202,10 @@ export default function PePhotoBuilderPage() {
   const handleRemove = useCallback((clientId: string) => {
     setFiles((prev) => {
       const entry = prev.find((f) => f.clientId === clientId);
-      if (entry) URL.revokeObjectURL(entry.objectUrl);
+      if (entry) {
+        URL.revokeObjectURL(entry.objectUrl);
+        objectUrlsRef.current = objectUrlsRef.current.filter((u) => u !== entry.objectUrl);
+      }
       return prev.filter((f) => f.clientId !== clientId);
     });
     setAssignments((prev) => {
@@ -237,6 +249,17 @@ export default function PePhotoBuilderPage() {
           })),
         }),
       });
+
+      if (res.status === 404) {
+        setTriageError("PE project code not found — double-check the code.");
+        return;
+      }
+
+      if (res.status === 400) {
+        const data = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { error?: string };
+        setTriageError(`Check your input: ${data.error ?? "invalid request"}`);
+        return;
+      }
 
       if (res.status === 409) {
         const data = (await res.json()) as { error: string; candidates?: Candidate[] };
@@ -467,7 +490,7 @@ export default function PePhotoBuilderPage() {
                   </p>
                   <ul className="space-y-0.5">
                     {candidates.map((c, i) => (
-                      <li key={i} className="text-xs text-red-600 dark:text-red-400">
+                      <li key={c.dealId ?? String(i)} className="text-xs text-red-600 dark:text-red-400">
                         {c.dealname ?? c.dealId ?? "Unknown deal"}
                         {c.address ? ` — ${c.address}` : ""}
                       </li>
@@ -555,7 +578,7 @@ export default function PePhotoBuilderPage() {
                 </p>
                 <ul className="space-y-0.5">
                   {warnings.map((w, i) => (
-                    <li key={i} className="text-xs text-amber-700 dark:text-amber-300">
+                    <li key={w + i} className="text-xs text-amber-700 dark:text-amber-300">
                       {w}
                     </li>
                   ))}

@@ -34,7 +34,7 @@ export function CoverageReport({ coverage }: CoverageReportProps) {
   const systemLabel = SYSTEM_TYPE_LABELS[coverage.systemType] ?? coverage.systemType;
 
   return (
-    <div className="bg-surface border border-t-border rounded-xl shadow-card p-4 space-y-3">
+    <div className="bg-surface-2 rounded-xl p-4 space-y-3">
       {/* Header: system type + completeness badge */}
       <div className="flex items-center gap-3 flex-wrap">
         <h3 className="text-sm font-semibold text-foreground">
