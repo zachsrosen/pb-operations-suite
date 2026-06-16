@@ -38,6 +38,26 @@ interface TriagePhotoResult {
   equipmentVisible: string[];
 }
 
+// Module-level: holds photos that passed the image-quality gate, indexed for Map lookups
+interface UsableEntry { clientId: string; name: string; anthropicFileId: string }
+
+/**
+ * Run `fn` over `items` with at most `limit` concurrent executions.
+ * Result order matches input order.
+ */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Auth ────────────────────────────────────────────────────────────────────
   const auth = await requireApiAuth();
@@ -85,62 +105,85 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const soFound = !!ctx.soBuffer;
 
-  // ── Download + filter photos ─────────────────────────────────────────────────
-  // usable[]: holds photos that passed the image-quality gate, indexed for Map lookups
-  interface UsableEntry { idx: number; clientId: string; name: string; anthropicFileId: string }
+  // ── Download + filter photos (bounded concurrency: 10 at a time) ─────────────
   const usable: UsableEntry[] = [];
   const results: TriagePhotoResult[] = [];
 
-  await Promise.all(
-    photos.map(async (photo, idx) => {
-      // Download the blob
-      let rawBuf: Buffer;
+  // mapLimit preserves index ordering; we use a separate usableIdx for Map lookups below
+  type PhotoSlotResult =
+    | { kind: "unusable"; result: TriagePhotoResult }
+    | { kind: "usable"; entry: UsableEntry };
+
+  const slotResults = await mapLimit<TriagePhotoInput, PhotoSlotResult>(
+    photos,
+    10,
+    async (photo) => {
       try {
+        // Fix 1: explicit non-200 check — a 403/404 body would otherwise corrupt sharp
         const res = await fetch(photo.blobUrl);
-        rawBuf = Buffer.from(await res.arrayBuffer());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const rawBuf = Buffer.from(await res.arrayBuffer());
+
+        // Check dimensions
+        const meta = await sharp(rawBuf).metadata();
+        const usability = isUsableImage(meta.width ?? 0, meta.height ?? 0);
+        if (!usability.ok) {
+          return {
+            kind: "unusable",
+            result: {
+              clientId: photo.clientId,
+              name: photo.name,
+              shot: null,
+              verdict: "needs_review",
+              issues: [`image not usable: ${usability.reason ?? "unknown"}`],
+              equipmentVisible: [],
+            },
+          } as PhotoSlotResult;
+        }
+
+        // Downscale for Anthropic upload (keep bandwidth low)
+        const downscaled = await sharp(rawBuf)
+          .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+
+        const anthropicFileId = await uploadToAnthropic(downscaled, photo.name, "image/jpeg");
+
+        return {
+          kind: "usable",
+          entry: { clientId: photo.clientId, name: photo.name, anthropicFileId },
+        } as PhotoSlotResult;
       } catch (err) {
-        results.push({
-          clientId: photo.clientId,
-          name: photo.name,
-          shot: null,
-          verdict: "needs_review",
-          issues: [`fetch failed: ${err instanceof Error ? err.message : String(err)}`],
-          equipmentVisible: [],
-        });
-        return;
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          kind: "unusable",
+          result: {
+            clientId: photo.clientId,
+            name: photo.name,
+            shot: null,
+            verdict: "needs_review",
+            issues: [`fetch/process failed: ${msg}`],
+            equipmentVisible: [],
+          },
+        } as PhotoSlotResult;
       }
-
-      // Check dimensions
-      const meta = await sharp(rawBuf).metadata();
-      const usability = isUsableImage(meta.width ?? 0, meta.height ?? 0);
-      if (!usability.ok) {
-        results.push({
-          clientId: photo.clientId,
-          name: photo.name,
-          shot: null,
-          verdict: "needs_review",
-          issues: [`image not usable: ${usability.reason ?? "unknown"}`],
-          equipmentVisible: [],
-        });
-        return;
-      }
-
-      // Downscale for Anthropic upload (keep bandwidth low)
-      const downscaled = await sharp(rawBuf)
-        .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-
-      const anthropicFileId = await uploadToAnthropic(downscaled, photo.name, "image/jpeg");
-
-      usable.push({ idx, clientId: photo.clientId, name: photo.name, anthropicFileId });
-    }),
+    },
   );
+
+  // Partition slot results: push unusable into results[], collect usable[] for triage
+  for (const slot of slotResults) {
+    if (slot.kind === "unusable") {
+      results.push(slot.result);
+    } else {
+      usable.push(slot.entry);
+    }
+  }
 
   // ── Batch triage via vision ──────────────────────────────────────────────────
   const photoChecklistItems = PE_M1_CHECKLIST.filter((i) => i.isPhoto);
 
   let triageResult: Awaited<ReturnType<typeof triagePhotoBatch>>;
+  // triagePhotoBatch currently swallows internal errors and returns an empty Map; this catch is defensive in case that changes.
   try {
     const triageInputs = usable.map((u) => ({
       anthropicFileId: u.anthropicFileId,

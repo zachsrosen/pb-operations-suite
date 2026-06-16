@@ -109,31 +109,38 @@ jest.mock("@/lib/pe-turnover", () => {
   };
 });
 
-// pe-photo-submit — avoid pulling in pe-turnover via its import
-jest.mock("@/lib/pe-photo-submit", () => ({
-  isUsableImage: jest.fn(),
-  orderPolicyPhotos: jest.fn((photos: Array<{ fileId: string; shotId: string }>) => photos),
-  policyPhotosFilename: jest.fn(
-    (addr: { street?: string; city?: string }) =>
-      `${addr.street ?? "UNKNOWN"}_${addr.city ?? ""}.pdf`
-  ),
-  ClassifiedPhoto: undefined, // type only
-  DOC_CONFIGS: {
-    "policy-photos": {
-      folderProps: ["installation_documents"],
-      sourceFolders: ["5"],
-      peDocKey: "photos",
-      embedsSalesOrder: true,
+// pe-photo-submit — avoid pulling in pe-turnover via its import.
+// orderPolicyPhotos and policyPhotosFilename use jest.requireActual so the real
+// ordering logic is exercised (pe-turnover is already mocked above, so the real
+// fn sees our stub checklist with no heavy/Prisma imports).
+jest.mock("@/lib/pe-photo-submit", () => {
+  const actual = jest.requireActual<typeof import("@/lib/pe-photo-submit")>(
+    "@/lib/pe-photo-submit"
+  );
+  return {
+    ...actual,
+    isUsableImage: jest.fn(),
+    // Pass through the real orderPolicyPhotos and policyPhotosFilename
+    orderPolicyPhotos: actual.orderPolicyPhotos,
+    policyPhotosFilename: actual.policyPhotosFilename,
+    ClassifiedPhoto: undefined, // type only
+    DOC_CONFIGS: {
+      "policy-photos": {
+        folderProps: ["installation_documents"],
+        sourceFolders: ["5"],
+        peDocKey: "photos",
+        embedsSalesOrder: true,
+      },
+      "final-permit": {
+        folderProps: ["inspection_documents", "permit_documents"],
+        sourceFolders: ["6", "3"],
+        peDocKey: "signedFinalPermit",
+        embedsSalesOrder: false,
+      },
     },
-    "final-permit": {
-      folderProps: ["inspection_documents", "permit_documents"],
-      sourceFolders: ["6", "3"],
-      peDocKey: "signedFinalPermit",
-      embedsSalesOrder: false,
-    },
-  },
-  pickDealByAddress: jest.fn(),
-}));
+    pickDealByAddress: jest.fn(),
+  };
+});
 
 // Drive helpers for assemble
 jest.mock("@/lib/pe-audit-orchestrator", () => ({
@@ -158,7 +165,7 @@ import {
   uploadToAnthropic,
   triagePhotoBatch,
 } from "@/lib/pe-vision-classifier";
-import { isUsableImage, orderPolicyPhotos } from "@/lib/pe-photo-submit";
+import { isUsableImage } from "@/lib/pe-photo-submit";
 import { findOrCreatePeFolder } from "@/lib/pe-audit-orchestrator";
 import { uploadDriveBinaryFile } from "@/lib/drive-plansets";
 
@@ -170,7 +177,7 @@ const mockBuildPhotoPdf = buildPhotoPdf as jest.MockedFunction<typeof buildPhoto
 const mockUploadToAnthropic = uploadToAnthropic as jest.MockedFunction<typeof uploadToAnthropic>;
 const mockTriagePhotoBatch = triagePhotoBatch as jest.MockedFunction<typeof triagePhotoBatch>;
 const mockIsUsableImage = isUsableImage as jest.MockedFunction<typeof isUsableImage>;
-const mockOrderPolicyPhotos = orderPolicyPhotos as jest.MockedFunction<typeof orderPolicyPhotos>;
+// orderPolicyPhotos is the real implementation (not a jest.fn) — no mock handle needed
 
 const mockFindOrCreatePeFolder = findOrCreatePeFolder as jest.MockedFunction<typeof findOrCreatePeFolder>;
 const mockUploadDriveBinaryFile = uploadDriveBinaryFile as jest.MockedFunction<typeof uploadDriveBinaryFile>;
@@ -278,7 +285,7 @@ function setupVision() {
 
 function setupAssemble() {
   mockBuildPhotoPdf.mockResolvedValue(minimalPdfBytes);
-  mockOrderPolicyPhotos.mockImplementation((photos) => photos);
+  // orderPolicyPhotos is the real implementation — no mock setup needed
   mockFindOrCreatePeFolder.mockResolvedValue("pe-folder-id");
   mockUploadDriveBinaryFile.mockResolvedValue({ id: "uploaded-file-id", name: "test.pdf" });
 }
@@ -524,5 +531,43 @@ describe("POST /api/pe/photo-package/assemble", () => {
     expect(res.status).toBe(200);
     const warnings = JSON.parse(res.headers.get("x-pe-warnings") ?? "[]") as string[];
     expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it("soInsertIndex is the count of photos ordered before m1.photos.6_invoice_bom", async () => {
+    // Provide 4 photos: shots 1, 4, 5 (rank 0,1,2 — BEFORE invoice_bom rank 3)
+    // and shot 6_invoice_bom itself (rank 3 — NOT strictly before, so not counted).
+    // Real orderPolicyPhotos (backed by the mock checklist) will order them by rank
+    // and filter out any IDs not in the checklist.
+    // Expected soInsertIndex = 3 (three photos ranked strictly before invoice_bom).
+    const EXPECTED_SO_INSERT_INDEX = 3;
+
+    // Make buildPhotoPdf return a real small PDF so the response body is non-empty
+    const soDoc = await (await import("pdf-lib")).PDFDocument.create();
+    soDoc.addPage([612, 792]);
+    const smallPdf = await soDoc.save();
+    mockBuildPhotoPdf.mockResolvedValue(smallPdf);
+
+    const req = makeRequest("/api/pe/photo-package/assemble", {
+      code: "CO9999-TEST1",
+      assignments: [
+        { clientId: "c1", blobUrl: "https://blob/p1.png", shotId: "m1.photos.1_site_address" },
+        { clientId: "c4", blobUrl: "https://blob/p4.png", shotId: "m1.photos.4_electrical" },
+        { clientId: "c5", blobUrl: "https://blob/p5.png", shotId: "m1.photos.5_msp" },
+        { clientId: "c6", blobUrl: "https://blob/p6.png", shotId: "m1.photos.6_invoice_bom" },
+      ],
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/pdf");
+
+    // Verify buildPhotoPdf was called with the correct soInsertIndex
+    expect(mockBuildPhotoPdf).toHaveBeenCalledTimes(1);
+    const [, , soInsertIndex] = mockBuildPhotoPdf.mock.calls[0];
+    expect(soInsertIndex).toBe(EXPECTED_SO_INSERT_INDEX);
+
+    // Response body should be non-empty (real PDF bytes)
+    const body = await res.arrayBuffer();
+    expect(body.byteLength).toBeGreaterThan(0);
   });
 });

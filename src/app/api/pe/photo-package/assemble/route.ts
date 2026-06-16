@@ -52,6 +52,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
+  if (!code) {
+    return NextResponse.json({ error: "code is required" }, { status: 400 });
+  }
+
   // ── Filter to kept assignments (shotId !== null) ──────────────────────────────
   const kept = assignments.filter((a) => a.shotId !== null);
   if (!kept.length) {
@@ -110,6 +114,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ── Determine soInsertIndex ────────────────────────────────────────────────────
   // SO is inserted before the first photo whose shot rank >= rank(6_invoice_bom).
   // In practice: SO goes between photo 5 (MSP) and photo 6 (Invoice/BOM).
+  //
+  // Invariant: `ordered` and `packagePhotos` are 1:1 because `classified` is
+  // pre-filtered to entries present in `bufferByClientId`, and `packagePhotos`
+  // maps `ordered` with the same filter (null-entries are filtered out, but those
+  // would only appear if bufferByClientId somehow lost an entry between the two
+  // passes — impossible since the Map is never mutated after population). Therefore
+  // soInsertIndex computed over `ordered` is a valid index into `packagePhotos`.
   const SO_SHOT_ID = "m1.photos.6_invoice_bom";
   const allPhotoShots = PE_M1_CHECKLIST.filter((i) => i.isPhoto);
   const rankOf = new Map(allPhotoShots.map((item, idx) => [item.id, idx]));
