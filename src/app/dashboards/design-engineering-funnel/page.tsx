@@ -53,9 +53,9 @@ function ageTone(days: number): string {
 }
 
 /** Drill-down table for one bucket / stage row — mirrors the project funnel's. */
-function DrillTable({ deals }: { deals: DesignFunnelDeal[] }) {
+function DrillTable({ deals, indent = true }: { deals: DesignFunnelDeal[]; indent?: boolean }) {
   return (
-    <div className="pl-[11.75rem] pt-1 pb-2 overflow-x-auto">
+    <div className={`${indent ? "pl-[11.75rem]" : ""} pt-1 pb-2 overflow-x-auto`}>
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr className="text-muted border-b border-t-border">
@@ -185,6 +185,153 @@ function PositionPanel({
   );
 }
 
+// ── Branch/tree view of the status funnel ────────────────────────────────────
+// Awaiting Site Survey branches into the two next steps the design process can
+// take (upload a design, or send the DA), each flowing on; Design Complete
+// branches into the three post-completion revision loops.
+interface TreeDef {
+  key: string;
+  children?: TreeDef[];
+}
+const FUNNEL_TREE: TreeDef = {
+  key: "awaitingSiteSurvey",
+  children: [
+    { key: "awaitingDesignUpload", children: [{ key: "awaitingDesignReview" }] },
+    {
+      key: "awaitingDaSend",
+      children: [
+        {
+          key: "awaitingDaApproval",
+          children: [
+            {
+              key: "awaitingDesignComplete",
+              children: [
+                {
+                  key: "designComplete",
+                  children: [
+                    { key: "utilityRevision" },
+                    { key: "permitRevision" },
+                    { key: "asBuiltRevision" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+function TreeNode({
+  node,
+  byKey,
+  maxCount,
+  total,
+  expanded,
+  setExpanded,
+  connector,
+}: {
+  node: TreeDef;
+  byKey: Record<string, DesignFunnelGroup>;
+  maxCount: number;
+  total: number;
+  expanded: string | null;
+  setExpanded: (k: string | null) => void;
+  connector: boolean;
+}) {
+  const g = byKey[node.key];
+  if (!g) return null;
+  const pct = total > 0 ? Math.round((g.count / total) * 100) : 0;
+  const color = BUCKET_COLOR[g.key] || "bg-zinc-500";
+  const segs = g.statusBreakdown.length ? g.statusBreakdown : [{ status: "No status", count: g.count, amount: 0, muted: false }];
+  const segTotal = g.count || 1;
+  const isOpen = expanded === g.key;
+
+  return (
+    <div className="relative">
+      {connector && <span className="absolute -left-4 top-[1.4rem] w-4 border-t border-t-border" aria-hidden />}
+      <button
+        type="button"
+        className="flex items-center gap-2.5 w-full text-left py-1 rounded-md hover:bg-surface-2/50 transition-colors disabled:hover:bg-transparent"
+        onClick={() => g.count > 0 && setExpanded(isOpen ? null : g.key)}
+        disabled={g.count <= 0}
+        title={`${g.label} · ${formatCurrencyCompact(g.amount)}`}
+      >
+        <span className={`h-9 w-1.5 rounded-full shrink-0 ${color} ${g.count <= 0 ? "opacity-30" : ""}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-semibold text-foreground truncate flex items-center gap-1">
+              {g.count > 0 && <span className={`text-[10px] text-muted transition-transform ${isOpen ? "rotate-90" : ""}`}>▶</span>}
+              {g.label}
+            </span>
+            <span className="text-[11px] text-muted shrink-0 tabular-nums">
+              <span className="text-foreground font-semibold">{g.count}</span> · {pct}%
+            </span>
+          </div>
+          {g.count > 0 ? (
+            <div
+              className="mt-1 flex h-2.5 rounded overflow-hidden bg-surface-2"
+              style={{ width: `${Math.max(8, (g.count / maxCount) * 100)}%` }}
+            >
+              {segs.map((seg, i) => (
+                <div
+                  key={seg.status}
+                  className={`${color} h-full ${i > 0 ? "border-l border-black/25" : ""} ${seg.muted ? "grayscale" : ""}`}
+                  style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: seg.muted ? 0.25 : segOpacity(i) }}
+                  title={`${seg.status}: ${seg.count}${seg.muted ? " (completed)" : ""}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 text-[10px] text-muted/50 italic">none</div>
+          )}
+        </div>
+      </button>
+      {isOpen && g.deals.length > 0 && <DrillTable deals={g.deals} indent={false} />}
+      {node.children && node.children.length > 0 && (
+        <div className="ml-[0.65rem] border-l border-t-border pl-4 mt-0.5 space-y-0.5">
+          {node.children.map((c) => (
+            <TreeNode
+              key={c.key}
+              node={c}
+              byKey={byKey}
+              maxCount={maxCount}
+              total={total}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              connector
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BranchFunnel({ buckets, total }: { buckets: DesignFunnelGroup[]; total: number }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const byKey = useMemo(() => Object.fromEntries(buckets.map((b) => [b.key, b])) as Record<string, DesignFunnelGroup>, [buckets]);
+  const maxCount = Math.max(1, ...buckets.map((b) => b.count));
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">Design Status Funnel</h3>
+      <p className="text-xs text-muted mb-4">
+        Where all {total.toLocaleString()} active projects sit — Awaiting Site Survey branches into the design path
+      </p>
+      <TreeNode
+        node={FUNNEL_TREE}
+        byKey={byKey}
+        maxCount={maxCount}
+        total={total}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        connector={false}
+      />
+    </div>
+  );
+}
+
 export default function DesignEngineeringFunnelPage() {
   const [locations, setLocations] = useState<string[]>([]);
   const [leads, setLeads] = useState<string[]>([]);
@@ -255,13 +402,7 @@ export default function DesignEngineeringFunnelPage() {
         ) : isLoading || !data ? (
           <div className="py-20 flex justify-center"><LoadingSpinner /></div>
         ) : tab === "funnel" ? (
-          <PositionPanel
-            title="Design Status Funnel"
-            subtitle={`Where all ${data.totalProjects.toLocaleString()} active projects sit in the design process`}
-            groups={data.buckets}
-            total={data.totalProjects}
-            colorFor={(g) => BUCKET_COLOR[g.key] || "bg-zinc-500"}
-          />
+          <BranchFunnel buckets={data.buckets} total={data.totalProjects} />
         ) : (
           <PositionPanel
             title="Deal Stage — Design Status Breakdown"
