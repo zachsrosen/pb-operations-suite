@@ -742,15 +742,20 @@ function DealCard({ summary, docMap, expanded, onToggle }: {
 // ---------------------------------------------------------------------------
 
 // Within a team's list, group deals by their most-severe outstanding status.
-type DealStatusBucket = "rejected" | "action" | "notUploaded";
+// PE treats a rejected doc as "Action Required", so there's no separate Rejected
+// bucket — REJECTED folds into the Action Required group.
+type DealStatusBucket = "action" | "notUploaded";
 const TEAM_STATUS_GROUPS: { key: DealStatusBucket; label: string; dot: string; text: string }[] = [
-  { key: "rejected", label: "Rejected", dot: "bg-red-500", text: "text-red-400" },
   { key: "action", label: "Action Required", dot: "bg-orange-500", text: "text-orange-400" },
   { key: "notUploaded", label: "Not Uploaded", dot: "bg-zinc-500", text: "text-zinc-400" },
 ];
+// Active-chip styling per bucket (matches the doc-status badge palette).
+const BUCKET_ACTIVE_CLASS: Record<DealStatusBucket, string> = {
+  action: "bg-orange-500/20 text-orange-400 border-orange-500/40",
+  notUploaded: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40",
+};
 function dealStatusBucket(teamDocs: { doc: DocRequirement; review: DocReview | undefined }[]): DealStatusBucket {
-  if (teamDocs.some(({ review }) => review?.status === "REJECTED")) return "rejected";
-  if (teamDocs.some(({ review }) => review?.status === "ACTION_REQUIRED")) return "action";
+  if (teamDocs.some(({ review }) => review?.status === "ACTION_REQUIRED" || review?.status === "REJECTED")) return "action";
   return "notUploaded"; // remaining actionable docs are not-uploaded (waived ones are excluded upstream)
 }
 
@@ -1016,6 +1021,12 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(["nearlyComplete", "notUploaded", "actionRequired"]),
   );
+  // By-Team bucket filter (empty = show all buckets). Chips at the top of the
+  // By-Team view scope it to Rejected / Action Required / Not Uploaded.
+  const [bucketFilter, setBucketFilter] = useState<Set<DealStatusBucket>>(new Set());
+  // Per-(team, bucket) collapse state, keyed `${team}:${bucketKey}`. Default
+  // expanded — a key present here means that bucket section is collapsed.
+  const [collapsedTeamBuckets, setCollapsedTeamBuckets] = useState<Set<string>>(new Set());
 
   const toggleTeam = useCallback((team: DocTeam) => {
     setCollapsedTeams((prev) => {
@@ -1040,6 +1051,24 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleBucketFilter = useCallback((key: DealStatusBucket) => {
+    setBucketFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleTeamBucket = useCallback((teamBucketKey: string) => {
+    setCollapsedTeamBuckets((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamBucketKey)) next.delete(teamBucketKey);
+      else next.add(teamBucketKey);
       return next;
     });
   }, []);
@@ -1182,6 +1211,34 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     }).filter((g) => g.dealsWithIssues.length > 0);
   }, [sorted, docMap]);
 
+  // Deal counts per status bucket across all teams — drives the chip labels.
+  const bucketCounts = useMemo(() => {
+    const c: Record<DealStatusBucket, number> = { action: 0, notUploaded: 0 };
+    for (const g of teamGrouped)
+      for (const d of g.dealsWithIssues) c[dealStatusBucket(d.teamDocs)]++;
+    return c;
+  }, [teamGrouped]);
+
+  // Apply the bucket-chip filter: per team, keep only the selected (and
+  // non-empty) status buckets; drop teams left with nothing to show.
+  const byTeamVisible = useMemo(() => {
+    return teamGrouped
+      .map((g) => {
+        const buckets = TEAM_STATUS_GROUPS.filter(
+          (b) => bucketFilter.size === 0 || bucketFilter.has(b.key),
+        )
+          .map((b) => ({
+            bucket: b,
+            items: g.dealsWithIssues.filter(
+              ({ teamDocs }) => dealStatusBucket(teamDocs) === b.key,
+            ),
+          }))
+          .filter((x) => x.items.length > 0);
+        return { ...g, buckets };
+      })
+      .filter((g) => g.buckets.length > 0);
+  }, [teamGrouped, bucketFilter]);
+
   // Aggregate stats
   const stats = useMemo(() => {
     const total = summaries.length;
@@ -1209,6 +1266,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     setLocFilter([]);
     setCategoryFilter([]);
     setMilestoneFilter([]);
+    setBucketFilter(new Set());
   }, []);
 
   // Deal IDs visible in the active view, for the Expand/Collapse-all control.
@@ -1226,7 +1284,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
 
   // The toggle opens/closes whatever the active view groups by: sections view →
   // the three groups; by-team view → the team groups; list view → the deal rows.
-  const teamKeys = useMemo(() => teamGrouped.map((g) => g.team), [teamGrouped]);
+  const teamKeys = useMemo(() => byTeamVisible.map((g) => g.team), [byTeamVisible]);
   const allExpanded = viewMode === "sections"
     ? SECTION_KEYS.every((k) => !collapsedSections.has(k))
     : viewMode === "by-team"
@@ -1495,84 +1553,138 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       )}
 
       {!isLoading && viewMode === "by-team" && (
-        <div className="space-y-6">
-          {teamGrouped.map(({ team, dealsWithIssues, totalActionable, totalApproved, totalDocs }) => {
-            const collapsed = collapsedTeams.has(team);
-            return (
-              <div key={team}>
-                <div className="flex items-center gap-2 mb-3">
+        <>
+          {/* Bucket filter chips — scope every team group to these statuses */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-4">
+            <span className="text-[11px] text-muted mr-0.5">Show:</span>
+            {TEAM_STATUS_GROUPS.map((g) => {
+              const active = bucketFilter.has(g.key);
+              const count = bucketCounts[g.key];
+              return (
                 <button
-                  className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
-                  onClick={() => toggleTeam(team)}
+                  key={g.key}
+                  onClick={() => toggleBucketFilter(g.key)}
+                  disabled={count === 0}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    active ? BUCKET_ACTIVE_CLASS[g.key] : "border-border text-muted hover:text-foreground hover:border-foreground/30"
+                  }`}
                 >
-                  <span className={`w-2.5 h-2.5 rounded-full ${TEAM_DOT[team]}`} />
-                  <h3 className={`text-sm font-semibold ${TEAM_COLORS[team]}`}>{TEAM_LABELS[team]}</h3>
-                  <span className="text-xs text-muted">
-                    {dealsWithIssues.length} deals
-                  </span>
-                  <span className="text-[10px] text-muted/60">
-                    {totalApproved}/{totalDocs} approved
-                  </span>
-                  {totalActionable > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
-                      {totalActionable} to do
-                    </span>
-                  )}
-                  <svg className={`w-3.5 h-3.5 text-muted transition-transform ${collapsed ? "" : "rotate-180"}`}
-                    fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                  </svg>
+                  <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
+                  {g.label}
+                  <span className="opacity-60">({count})</span>
                 </button>
-                <ExportButtons
-                  rows={dealsWithIssues.flatMap(({ summary, teamDocs }) =>
-                    docsToExportRows(
-                      summary,
-                      teamDocs.filter(({ review }) =>
-                        !!review && review.status !== "APPROVED" && review.status !== "UNDER_REVIEW" && review.status !== "UPLOADED",
+              );
+            })}
+            {bucketFilter.size > 0 && (
+              <button
+                onClick={() => setBucketFilter(new Set())}
+                className="text-[11px] text-muted hover:text-foreground transition-colors ml-1"
+              >
+                Show all
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            {byTeamVisible.map(({ team, dealsWithIssues, totalApproved, totalDocs, buckets }) => {
+              const collapsed = collapsedTeams.has(team);
+              // "to do" reflects only the buckets currently visible after filtering.
+              const visibleActionable = buckets.reduce(
+                (sum, { items }) => sum + items.reduce((s, it) => s + it.teamActionCount, 0),
+                0,
+              );
+              const visibleDealCount = buckets.reduce((sum, { items }) => sum + items.length, 0);
+              return (
+                <div key={team}>
+                  <div className="flex items-center gap-2 mb-3">
+                  <button
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                    onClick={() => toggleTeam(team)}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full ${TEAM_DOT[team]}`} />
+                    <h3 className={`text-sm font-semibold ${TEAM_COLORS[team]}`}>{TEAM_LABELS[team]}</h3>
+                    <span className="text-xs text-muted">
+                      {visibleDealCount} deals
+                    </span>
+                    <span className="text-[10px] text-muted/60">
+                      {totalApproved}/{totalDocs} approved
+                    </span>
+                    {visibleActionable > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+                        {visibleActionable} to do
+                      </span>
+                    )}
+                    <svg className={`w-3.5 h-3.5 text-muted transition-transform ${collapsed ? "" : "rotate-180"}`}
+                      fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </button>
+                  <ExportButtons
+                    rows={dealsWithIssues.flatMap(({ summary, teamDocs }) =>
+                      docsToExportRows(
+                        summary,
+                        teamDocs.filter(({ review }) =>
+                          !!review && review.status !== "APPROVED" && review.status !== "UNDER_REVIEW" && review.status !== "UPLOADED",
+                        ),
                       ),
-                    ),
-                  )}
-                  title={`PE — ${TEAM_LABELS[team]}`}
-                  filename={`pe-${team}.csv`}
-                />
-                </div>
-                {!collapsed && (
-                  <div className="space-y-3">
-                    {TEAM_STATUS_GROUPS.map((g) => {
-                      const items = dealsWithIssues.filter(({ teamDocs: tDocs }) => dealStatusBucket(tDocs) === g.key);
-                      if (items.length === 0) return null;
-                      return (
-                        <div key={g.key} className="space-y-1.5">
-                          <div className="flex items-center gap-1.5 px-1">
-                            <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
-                            <span className={`text-[10px] uppercase tracking-wide font-medium ${g.text}`}>{g.label}</span>
-                            <span className="text-[10px] text-muted">({items.length})</span>
-                          </div>
-                          {items.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
-                            <TeamDealRow
-                              key={s.deal.dealId}
-                              summary={s}
-                              team={team}
-                              teamActionCount={teamActionCount}
-                              teamDocs={tDocs}
-                            />
-                          ))}
-                        </div>
-                      );
-                    })}
+                    )}
+                    title={`PE — ${TEAM_LABELS[team]}`}
+                    filename={`pe-${team}.csv`}
+                  />
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {!collapsed && (
+                    <div className="space-y-3">
+                      {buckets.map(({ bucket: g, items }) => {
+                        const bucketKey = `${team}:${g.key}`;
+                        const bucketCollapsed = collapsedTeamBuckets.has(bucketKey);
+                        return (
+                          <div key={g.key} className="space-y-1.5">
+                            <button
+                              className="flex items-center gap-1.5 px-1 w-full text-left hover:opacity-80 transition-opacity"
+                              onClick={() => toggleTeamBucket(bucketKey)}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
+                              <span className={`text-[10px] uppercase tracking-wide font-medium ${g.text}`}>{g.label}</span>
+                              <span className="text-[10px] text-muted">({items.length})</span>
+                              <svg className={`w-3 h-3 text-muted transition-transform ${bucketCollapsed ? "" : "rotate-180"}`}
+                                fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                              </svg>
+                            </button>
+                            {!bucketCollapsed && items.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
+                              <TeamDealRow
+                                key={s.deal.dealId}
+                                summary={s}
+                                team={team}
+                                teamActionCount={teamActionCount}
+                                teamDocs={tDocs}
+                              />
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {byTeamVisible.length === 0 && (
+            <div className="text-center py-12 text-muted">
+              {hasFilters || bucketFilter.size > 0
+                ? "No deals match the current filters."
+                : "No PE deals found."}
+            </div>
+          )}
+        </>
       )}
 
       {!isLoading && viewMode === "by-document" && filtered.length > 0 && (
         <ByDocumentView rows={byDocument} />
       )}
 
-      {!isLoading && viewMode !== "sections" && filtered.length === 0 && (
+      {!isLoading && viewMode !== "sections" && viewMode !== "by-team" && filtered.length === 0 && (
         <div className="text-center py-12 text-muted">
           {hasFilters ? "No deals match the current filters." : "No PE deals found."}
         </div>
