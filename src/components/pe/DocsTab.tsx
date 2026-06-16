@@ -1213,9 +1213,24 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
 
   // Deal counts per status bucket across all teams — drives the chip labels.
   const bucketCounts = useMemo(() => {
-    const c: Record<DealStatusBucket, number> = { action: 0, notUploaded: 0 };
-    for (const g of teamGrouped)
-      for (const d of g.dealsWithIssues) c[dealStatusBucket(d.teamDocs)]++;
+    const c: Record<DealStatusBucket, { deals: number; docs: number }> = {
+      action: { deals: 0, docs: 0 },
+      notUploaded: { deals: 0, docs: 0 },
+    };
+    for (const g of teamGrouped) {
+      for (const d of g.dealsWithIssues) {
+        // deals = one By-Team worklist row, bucketed by its most-severe status.
+        c[dealStatusBucket(d.teamDocs)].deals++;
+        // docs = outstanding docs counted by their OWN status (so the totals
+        // match the doc-level stat cards — an Action Required row can still hold
+        // not-uploaded docs).
+        for (const { doc, review } of d.teamDocs) {
+          const st = review?.status;
+          if (st === "ACTION_REQUIRED" || st === "REJECTED") c.action.docs++;
+          else if (st === "NOT_UPLOADED" && !isDocWaived(doc, d.summary.deal)) c.notUploaded.docs++;
+        }
+      }
+    }
     return c;
   }, [teamGrouped]);
 
@@ -1564,14 +1579,14 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                 <button
                   key={g.key}
                   onClick={() => toggleBucketFilter(g.key)}
-                  disabled={count === 0}
+                  disabled={count.deals === 0}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     active ? BUCKET_ACTIVE_CLASS[g.key] : "border-border text-muted hover:text-foreground hover:border-foreground/30"
                   }`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
                   {g.label}
-                  <span className="opacity-60">({count})</span>
+                  <span className="opacity-60">{count.deals} deals · {count.docs} docs</span>
                 </button>
               );
             })}
