@@ -70,7 +70,9 @@
     "src/app/api/cron/pe-api-sync/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/shovels-enrich/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/zuper-property-sync/route.ts": { "maxDuration": 300 },
-    "src/app/api/cron/zuper-job-backfill/route.ts": { "maxDuration": 120 }
+    "src/app/api/cron/zuper-job-backfill/route.ts": { "maxDuration": 120 },
+    "src/app/api/pe/photo-package/triage/route.ts": { "maxDuration": 300 },
+    "src/app/api/pe/photo-package/assemble/route.ts": { "maxDuration": 300 }
   },
   "crons": [
     {
