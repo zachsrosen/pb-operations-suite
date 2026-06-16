@@ -84,25 +84,39 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "photos must be non-empty" }, { status: 400 });
   }
 
-  // ── Resolve PE project ───────────────────────────────────────────────────────
-  const allProjects = await listAllProjects();
-  const project = allProjects.find((p) => p.projectId === code);
-  if (!project) {
-    return NextResponse.json({ error: `Project not found: ${code}` }, { status: 404 });
-  }
-  const systemType = normalizeSystemType(project.assets.systemType);
-
-  // ── Resolve HubSpot deal context ─────────────────────────────────────────────
+  // ── Resolve HubSpot deal context (supports PE code, PROJ number, or name) ────
   const ctx = await resolveDealContext(code);
   if (ctx.ambiguous) {
     return NextResponse.json(
-      { error: "Multiple deals matched this PE code — supply peAddress to disambiguate", candidates: ctx.candidates },
+      {
+        error: "Multiple deals matched — supply a more specific PE code, PROJ number, or address to disambiguate",
+        candidates: ctx.candidates,
+      },
       { status: 409 },
     );
   }
   if (!ctx.deal) {
-    return NextResponse.json({ error: `No deal found for project: ${code}` }, { status: 404 });
+    return NextResponse.json(
+      { error: "No deal found for that code, PROJ number, or name." },
+      { status: 404 },
+    );
   }
+
+  // ── Resolve PE project (use the canonical pe_project_id from the deal) ───────
+  const peCode = ctx.peCode ?? code;
+  const allProjects = await listAllProjects();
+  const project = allProjects.find((p) => p.projectId === peCode);
+  if (!project) {
+    return NextResponse.json(
+      {
+        error:
+          "Found the deal, but it isn't linked to a PE project yet — no system type / required-shot list available.",
+      },
+      { status: 404 },
+    );
+  }
+  const systemType = normalizeSystemType(project.assets.systemType);
+
   const soFound = !!ctx.soBuffer;
 
   // ── Download + filter photos (bounded concurrency: 10 at a time) ─────────────

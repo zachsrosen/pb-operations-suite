@@ -261,6 +261,7 @@ function setupDealContext() {
     sourceFolderId: "src-folder-id",
     soBuffer: soBuffer,
     folderMapWarnings: [],
+    peCode: FAKE_PROJECT.projectId,
   });
 }
 
@@ -363,14 +364,54 @@ describe("POST /api/pe/photo-package/triage", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 404 when project not found", async () => {
-    mockListAllProjects.mockResolvedValue([]);
+  it("returns 404 when no deal is found at all", async () => {
+    // resolveDealContext returns no deal (cascade exhausted)
+    mockResolveDealContext.mockResolvedValue({ deal: null });
     const req = makeRequest("/api/pe/photo-package/triage", {
       code: "CO9999-NOTFOUND",
       photos: [{ clientId: "c1", name: "a.png", blobUrl: "https://blob/a.png" }],
     });
     const res = await POST(req);
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/no deal found/i);
+  });
+
+  it("returns 404 with 'not linked to a PE project' when deal found but no PE project", async () => {
+    // Deal resolved but pe_project_id is absent → ctx.peCode is null
+    // listAllProjects returns a project with a different ID → no match
+    mockResolveDealContext.mockResolvedValue({
+      deal: FAKE_DEAL,
+      ambiguous: false,
+      rootFolderId: "root-folder-id",
+      sourceFolderId: "src-folder-id",
+      soBuffer: null,
+      folderMapWarnings: [],
+      peCode: null, // ← no PE code on this deal
+    });
+    mockListAllProjects.mockResolvedValue([FAKE_PROJECT as never]);
+    const req = makeRequest("/api/pe/photo-package/triage", {
+      code: "PROJ-1234",
+      photos: [{ clientId: "c1", name: "a.png", blobUrl: "https://blob/a.png" }],
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/isn't linked to a PE project/i);
+  });
+
+  it("resolves when given a PROJ number — uses ctx.peCode to look up the PE project", async () => {
+    // resolveDealContext is already set up to return peCode: FAKE_PROJECT.projectId
+    // via setupDealContext() called in beforeEach. listAllProjects returns FAKE_PROJECT.
+    const req = makeRequest("/api/pe/photo-package/triage", {
+      code: "PROJ-9999",
+      photos: [{ clientId: "c1", name: "a.png", blobUrl: "https://blob/a.png" }],
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // FAKE_PROJECT.assets.systemType = "Storage Only" → "battery"
+    expect(body.systemType).toBe("battery");
   });
 
   it("returns 409 when deal is ambiguous", async () => {
@@ -378,8 +419,8 @@ describe("POST /api/pe/photo-package/triage", () => {
       deal: null,
       ambiguous: true,
       candidates: [
-        { id: "d1", address: "123 Main St, Denver, CO" },
-        { id: "d2", address: "456 Oak Ave, Denver, CO" },
+        { id: "d1", address: "123 Main St, Denver, CO", dealName: "Smith Solar PROJ-100" },
+        { id: "d2", address: "456 Oak Ave, Denver, CO", dealName: "Jones Solar PROJ-101" },
       ],
     });
     const req = makeRequest("/api/pe/photo-package/triage", {

@@ -40,6 +40,7 @@ interface TriageResponse {
 interface Candidate {
   id: string;
   address: string;
+  dealName: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -381,19 +382,19 @@ export default function PePhotoBuilderPage() {
 
           <div className="flex items-center gap-3 flex-wrap">
             <label htmlFor="pe-code" className="text-sm text-muted shrink-0">
-              PE Project Code
+              PE code, PROJ number, or customer name
             </label>
             <input
               id="pe-code"
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="e.g. PB-12345"
-              className="rounded-lg border border-t-border bg-surface-2 text-foreground text-sm px-3 py-1.5 w-52 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="e.g. CO1234-ABC1 · PROJ-789 · Smith"
+              className="rounded-lg border border-t-border bg-surface-2 text-foreground text-sm px-3 py-1.5 w-64 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             {!code.trim() && (
               <span className="text-xs text-amber-600 dark:text-amber-400">
-                Enter a code before uploading photos.
+                Enter a PE code, PROJ number, or customer name before uploading photos.
               </span>
             )}
           </div>
@@ -485,12 +486,15 @@ export default function PePhotoBuilderPage() {
               {candidates.length > 0 && (
                 <div>
                   <p className="text-xs text-red-600 dark:text-red-400 mb-1">
-                    Multiple deals matched &mdash; refine your project code:
+                    Multiple deals matched &mdash; be more specific (add address, PROJ number, or PE code):
                   </p>
-                  <ul className="space-y-0.5">
+                  <ul className="space-y-1">
                     {candidates.map((c) => (
-                      <li key={c.id} className="text-xs text-red-600 dark:text-red-400">
-                        {c.address}
+                      <li key={c.id} className="text-xs text-red-700 dark:text-red-300">
+                        <span className="font-medium">{c.dealName}</span>
+                        {c.address && (
+                          <span className="text-red-600 dark:text-red-400 ml-1">&mdash; {c.address}</span>
+                        )}
                         <span className="ml-1 text-red-400 dark:text-red-500">({c.id})</span>
                       </li>
                     ))}
