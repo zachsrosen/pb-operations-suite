@@ -522,6 +522,18 @@ describe("POST /api/pe/photo-package/assemble", () => {
     expect(res.status).toBe(401);
   });
 
+  it("returns 404 when resolveDealContext returns no deal", async () => {
+    mockResolveDealContext.mockResolvedValue({ deal: null });
+    const req = makeRequest("/api/pe/photo-package/assemble", {
+      code: "CO9999-NOTFOUND",
+      assignments: [{ clientId: "c1", blobUrl: "https://blob/a.png", shotId: "m1.photos.1_site_address" }],
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe("No deal found for that code, PROJ number, or name.");
+  });
+
   it("returns 400 when no assignments have a shotId", async () => {
     const req = makeRequest("/api/pe/photo-package/assemble", {
       code: "CO9999-TEST1",

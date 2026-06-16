@@ -355,12 +355,14 @@ export async function resolveDealContext(
 
   const deal = dealResults.find((d) => d.id === picked.deal!.id)!;
 
+  // Compute peCode once — used in both early-return and normal-return paths.
+  const peCode = (deal.properties.pe_project_id ?? "").trim() || null;
+
   // Extract root Drive folder.
   const rootRaw =
     deal.properties.all_document_parent_folder_id ?? deal.properties.g_drive ?? "";
   const rootFolderId = extractFolderId(rootRaw);
-  const peCodeEarly = (deal.properties.pe_project_id ?? "").trim() || null;
-  if (!rootFolderId) return { deal, rootFolderId: null, peCode: peCodeEarly };
+  if (!rootFolderId) return { deal, rootFolderId: null, peCode };
 
   // Build folder map and resolve source folder.
   const folderMap = await buildFolderMap(rootFolderId);
@@ -368,8 +370,6 @@ export async function resolveDealContext(
 
   // Locate the Sales Order PDF.
   const soBuffer = await locateSalesOrderPdf(rootFolderId);
-
-  const peCode = (deal.properties.pe_project_id ?? "").trim() || null;
 
   return {
     deal,
