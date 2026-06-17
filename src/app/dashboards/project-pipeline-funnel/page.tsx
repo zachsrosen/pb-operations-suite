@@ -750,10 +750,33 @@ const INCOMING_GATES: Array<{
   { key: "awaitingCloseOut", label: "Close Out", milestone: null, prev: "ptoGranted", color: "bg-sky-500" },
 ];
 
+// Median days for the hop that LANDS a deal at each gate's milestone (index
+// aligns with INCOMING_GATES). Used to estimate how long the upstream deals
+// take to travel down to a given step.
+const INCOMING_HOP_MEDIAN: Array<keyof ProjectFunnelResponse["medianDays"] | null> = [
+  "closedToSurveyScheduled",
+  "surveyScheduledToComplete",
+  "surveyToDaSent",
+  "daSentToApproved",
+  "approvedToDesignComplete",
+  "designCompleteToPermitSubmit",
+  "permitSubmitToIssued",
+  "permitIssuedToConstructionScheduled",
+  "constructionScheduledToComplete",
+  "constructionCompleteToInspection",
+  "inspectionToPto",
+  null,
+];
+
 function IncomingView({ data }: { data: ProjectFunnelResponse }) {
   const rows = useMemo(() => {
     const counts = INCOMING_GATES.map((g) => data.drillDown[g.key]?.length ?? 0);
     const amounts = INCOMING_GATES.map((g) => (data.drillDown[g.key] ?? []).reduce((s, d) => s + (d.amount || 0), 0));
+    // Cumulative median days to reach each gate from the top, so the transit time
+    // from gate i down to step m is cumHop[m] − cumHop[i].
+    const hopDays = INCOMING_HOP_MEDIAN.map((k) => (k ? data.medianDays[k] ?? 0 : 0));
+    const cumHop = [0];
+    for (let i = 0; i < hopDays.length; i++) cumHop[i + 1] = cumHop[i] + hopDays[i];
     return INCOMING_GATES.map((g, i) => {
       const backlogNow = counts[i];
       const backlogAmount = amounts[i];
@@ -768,6 +791,17 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
       const breakdown = INCOMING_GATES.slice(0, i)
         .map((ug, j) => ({ label: ug.label, color: ug.color, count: counts[j] }))
         .filter((seg) => seg.count > 0);
+      // Count-weighted average travel time for those upstream deals to reach this
+      // step (sum of median stage hops between where each sits and here).
+      let weighted = 0;
+      let maxEta = 0;
+      for (let j = 0; j < i; j++) {
+        if (counts[j] <= 0) continue;
+        const transit = cumHop[i] - cumHop[j];
+        weighted += counts[j] * transit;
+        if (transit > maxEta) maxEta = transit;
+      }
+      const avgEta = notHereYet > 0 ? Math.round(weighted / notHereYet) : null;
       return {
         key: g.key as string,
         label: g.label,
@@ -778,6 +812,8 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
         notHereYet,
         notHereYetAmount,
         breakdown,
+        avgEta,
+        maxEta,
         in30,
         out30,
         net: (in30 ?? 0) - (out30 ?? 0),
@@ -835,13 +871,14 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
       {/* Flow table */}
       <div className="bg-surface rounded-xl border border-t-border p-5 overflow-x-auto">
         <h3 className="text-sm font-semibold text-foreground/80 mb-3">Flow by step</h3>
-        <table className="w-full text-xs border-collapse min-w-[760px]">
+        <table className="w-full text-xs border-collapse min-w-[860px]">
           <thead>
             <tr className="text-muted border-b border-t-border">
               <th className="text-left font-medium py-1.5 pr-3">Step</th>
               <th className="text-right font-medium py-1.5 pr-3" title="At this step right now, waiting">Backlog now</th>
               <th className="text-right font-medium py-1.5 pr-3" title="In the immediately-upstream step — the next wave in">Queued behind</th>
               <th className="text-right font-medium py-1.5 pr-3" title="Everything in any strictly-upstream step — the full pipeline feeding this one">Not here yet</th>
+              <th className="text-right font-medium py-1.5 pr-3" title="Count-weighted average time for the not-here-yet deals to travel down to this step, using median stage durations">Avg to arrive</th>
               <th className="text-right font-medium py-1.5 pr-3" title="Reached this step in the last 30 days">30d In</th>
               <th className="text-right font-medium py-1.5 pr-3" title="Moved past this step in the last 30 days">30d Out</th>
               <th className="text-right font-medium py-1.5" title="In − Out: positive = backlog growing">Net</th>
@@ -863,6 +900,9 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
                   <span className="text-foreground/90">{r.notHereYet || "—"}</span>
                   {r.notHereYet > 0 && <span className="block text-[10px] text-muted/70">{formatCurrencyCompact(r.notHereYetAmount)}</span>}
                 </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-foreground/80" title={r.avgEta != null ? `Furthest-back deals ~${r.maxEta}d out` : undefined}>
+                  {r.avgEta != null ? `~${r.avgEta}d` : "—"}
+                </td>
                 <td className="py-1.5 pr-3 text-right tabular-nums text-cyan-400/90">{r.in30 ?? "—"}</td>
                 <td className="py-1.5 pr-3 text-right tabular-nums text-muted">{r.out30 ?? "—"}</td>
                 <td className={`py-1.5 text-right tabular-nums font-semibold ${netTone(r.net)}`}>{r.net > 0 ? "+" : ""}{r.net}</td>
@@ -872,6 +912,7 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
         </table>
         <p className="text-[10px] text-muted/70 mt-3">
           Net is last-30-day inflow − outflow: <span className="text-amber-400">amber</span> = backlog growing, <span className="text-green-400">green</span> = shrinking.
+          {" "}Avg to arrive estimates how long the upstream deals take to reach the step, from median stage durations.
         </p>
       </div>
     </>
