@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
+import MetricsTrendPanel from "@/components/pe/MetricsTrendPanel";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
 import { usePeAutoSync } from "@/hooks/usePeAutoSync";
@@ -1376,6 +1377,30 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     };
   }, [summaries]);
 
+  // Record today's card numbers once per visit (the endpoint dedupes per day)
+  // so "what were these N days ago" becomes an exact lookup. Posts the exact
+  // computed stats, so the history always matches the cards.
+  const snapshotPosted = useRef(false);
+  useEffect(() => {
+    if (snapshotPosted.current || isLoading || !data || stats.total === 0) return;
+    snapshotPosted.current = true;
+    fetch("/api/accounting/pe-metrics-snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: new Date().toISOString().slice(0, 10),
+        peDeals: stats.total,
+        actionable: stats.actionableDeals,
+        inReview: stats.totalUnderReview,
+        allDocsApproved: stats.allApprovedDeals,
+        approvalRate: stats.totalDecided > 0 ? Math.round((stats.totalApproved / stats.totalDecided) * 100) : null,
+        approved: stats.totalApproved,
+        notUploaded: stats.totalNotUploaded,
+        actionRequired: stats.totalActionReq + stats.totalRejected,
+      }),
+    }).catch(() => {});
+  }, [isLoading, data, stats]);
+
   const hasFilters = search || locFilter.length > 0 || categoryFilter.length > 0 || milestoneFilter.length > 0;
 
   const clearFilters = useCallback(() => {
@@ -1457,6 +1482,9 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
         {/* PE has no separate "Rejected" doc status — it's Action Required. */}
         <MiniStat label="Action Required" value={stats.totalActionReq + stats.totalRejected} />
       </div>
+
+      {/* Daily snapshot history — "what were these numbers N days ago" */}
+      <MetricsTrendPanel />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
