@@ -103,20 +103,21 @@ function ProjectPipelineFunnelInner() {
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
-  const tab: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts" =
+  const tab: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts" | "incoming" =
     tabParam === "activity" ? "activity"
       : tabParam === "cohorts" ? "cohorts"
       : tabParam === "bottlenecks" ? "bottlenecks"
+      : tabParam === "incoming" ? "incoming"
       : tabParam === "sales-funnel" ? "sales-funnel"
       : "funnel";
   const setTab = useCallback(
-    (v: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts") => setParam("tab", v === "funnel" ? "" : v),
+    (v: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts" | "incoming") => setParam("tab", v === "funnel" ? "" : v),
     [setParam]
   );
   // The Funnel tab + Bottlenecks are the live active-pipeline snapshot (no date
   // window). Sales Funnel, Analysis, and Monthly Activity are time-based: Sales
   // Funnel is the same hero/backlog but windowed by close date (sales cohort).
-  const useActiveScope = tab === "funnel";
+  const useActiveScope = tab === "funnel" || tab === "incoming";
   // Funnel and Sales Funnel both render the stage-funnel hero + backlog.
   const isFunnelView = tab === "funnel" || tab === "sales-funnel";
   // The Bottlenecks tab self-fetches its own data, so skip the page-level query.
@@ -212,6 +213,7 @@ function ProjectPipelineFunnelInner() {
         {([
           { key: "funnel", label: "Active Pipeline" },
           { key: "sales-funnel", label: "Sales Funnel" },
+          { key: "incoming", label: "Incoming" },
           { key: "activity", label: "Monthly Throughput" },
           // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
           // re-add { key: "bottlenecks", ... } / { key: "cohorts", label: "Analysis" } to restore.
@@ -257,7 +259,7 @@ function ProjectPipelineFunnelInner() {
           placeholder="All Owners"
           accentColor="cyan"
         />
-        {tab === "funnel" || tab === "bottlenecks" ? (
+        {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">
             Live snapshot · all active deals
           </span>
@@ -305,6 +307,8 @@ function ProjectPipelineFunnelInner() {
         <LoadingSpinner />
       ) : tab === "activity" ? (
         <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
+      ) : tab === "incoming" ? (
+        <IncomingView data={data} />
       ) : tab === "cohorts" ? (
         <>
           <MonthlyFunnelChart cohorts={data.cohorts} />
@@ -721,6 +725,132 @@ const FLAG_TEXT: Record<string, string> = {
   red: "text-red-400/80",
   orange: "text-orange-400/80",
 };
+
+// ── Incoming tab ─────────────────────────────────────────────────────────────
+// Per step: backlog now, queued behind (immediate upstream), "not here yet" (the
+// full strictly-upstream pipeline), and 30-day inflow vs outflow + net.
+const INCOMING_GATES: Array<{
+  key: keyof ProjectFunnelDrillDown;
+  label: string;
+  milestone: ProjectFunnelStageKey | null;
+  prev: ProjectFunnelStageKey | null;
+  color: string;
+}> = [
+  { key: "awaitingSurveySchedule", label: "Survey Scheduling", milestone: "surveyScheduled", prev: "salesClosed", color: "bg-orange-500" },
+  { key: "awaitingSurvey", label: "Survey Completion", milestone: "surveyDone", prev: "surveyScheduled", color: "bg-amber-500" },
+  { key: "awaitingDaSend", label: "DA Send", milestone: "daSent", prev: "surveyDone", color: "bg-lime-500" },
+  { key: "awaitingApproval", label: "DA Approval", milestone: "daApproved", prev: "daSent", color: "bg-blue-500" },
+  { key: "awaitingDesignComplete", label: "Design Complete", milestone: "designCompleted", prev: "daApproved", color: "bg-indigo-500" },
+  { key: "awaitingPermitSubmit", label: "Permit Submit", milestone: "permitsSubmitted", prev: "designCompleted", color: "bg-purple-500" },
+  { key: "awaitingPermitIssue", label: "Permit Issue", milestone: "permitsIssued", prev: "permitsSubmitted", color: "bg-violet-500" },
+  { key: "awaitingConstructionSchedule", label: "Construction Scheduling", milestone: "constructionScheduled", prev: "permitsIssued", color: "bg-cyan-500" },
+  { key: "awaitingConstructionComplete", label: "Construction Complete", milestone: "constructionComplete", prev: "constructionScheduled", color: "bg-green-500" },
+  { key: "awaitingInspection", label: "Inspection", milestone: "inspectionPassed", prev: "constructionComplete", color: "bg-emerald-500" },
+  { key: "awaitingPto", label: "PTO", milestone: "ptoGranted", prev: "inspectionPassed", color: "bg-teal-500" },
+  { key: "awaitingCloseOut", label: "Close Out", milestone: null, prev: "ptoGranted", color: "bg-sky-500" },
+];
+
+function IncomingView({ data }: { data: ProjectFunnelResponse }) {
+  const rows = useMemo(() => {
+    const counts = INCOMING_GATES.map((g) => data.drillDown[g.key]?.length ?? 0);
+    const amounts = INCOMING_GATES.map((g) => (data.drillDown[g.key] ?? []).reduce((s, d) => s + (d.amount || 0), 0));
+    return INCOMING_GATES.map((g, i) => {
+      const backlogNow = counts[i];
+      const backlogAmount = amounts[i];
+      const queued = i > 0 ? counts[i - 1] : 0;
+      // "Not here yet" = everything in strictly-upstream gates (prefix sum).
+      const notHereYet = counts.slice(0, i).reduce((a, b) => a + b, 0);
+      const notHereYetAmount = amounts.slice(0, i).reduce((a, b) => a + b, 0);
+      const in30 = g.prev ? data.inflow30d[g.prev] ?? 0 : null;
+      const out30 = g.milestone ? data.inflow30d[g.milestone] ?? 0 : null;
+      return {
+        key: g.key as string,
+        label: g.label,
+        color: g.color,
+        backlogNow,
+        backlogAmount,
+        queued,
+        notHereYet,
+        notHereYetAmount,
+        in30,
+        out30,
+        net: (in30 ?? 0) - (out30 ?? 0),
+      };
+    });
+  }, [data]);
+
+  const maxNotHereYet = Math.max(1, ...rows.map((r) => r.notHereYet));
+  const netTone = (net: number) => (net > 0 ? "text-amber-400" : net < 0 ? "text-green-400" : "text-muted");
+
+  return (
+    <>
+      {/* "Not here yet" — the upstream pipeline feeding each step */}
+      <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+        <h3 className="text-sm font-semibold text-foreground/80 mb-1">Not Here Yet — pipeline feeding each step</h3>
+        <p className="text-xs text-muted mb-4">Active deals upstream of each step (haven&apos;t reached its prerequisite yet)</p>
+        <div className="space-y-1.5">
+          {rows.map((r) => (
+            <div key={r.key} className="flex items-center gap-3">
+              <span className="w-48 text-xs text-muted text-right shrink-0 truncate" title={r.label}>{r.label}</span>
+              <div className="flex items-center gap-2 flex-1">
+                {r.notHereYet > 0 ? (
+                  <div className={`h-5 rounded-md ${r.color}`} style={{ width: `${Math.max(3, (r.notHereYet / maxNotHereYet) * 100)}%`, opacity: 0.75 }} />
+                ) : (
+                  <span className="text-xs text-muted/50 italic">—</span>
+                )}
+                <span className="text-xs font-semibold text-foreground tabular-nums shrink-0">{r.notHereYet}</span>
+                <span className="text-[11px] text-muted shrink-0 tabular-nums">{formatCurrencyCompact(r.notHereYetAmount)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Flow table */}
+      <div className="bg-surface rounded-xl border border-t-border p-5 overflow-x-auto">
+        <h3 className="text-sm font-semibold text-foreground/80 mb-3">Flow by step</h3>
+        <table className="w-full text-xs border-collapse min-w-[760px]">
+          <thead>
+            <tr className="text-muted border-b border-t-border">
+              <th className="text-left font-medium py-1.5 pr-3">Step</th>
+              <th className="text-right font-medium py-1.5 pr-3" title="At this step right now, waiting">Backlog now</th>
+              <th className="text-right font-medium py-1.5 pr-3" title="In the immediately-upstream step — the next wave in">Queued behind</th>
+              <th className="text-right font-medium py-1.5 pr-3" title="Everything in any strictly-upstream step — the full pipeline feeding this one">Not here yet</th>
+              <th className="text-right font-medium py-1.5 pr-3" title="Reached this step in the last 30 days">30d In</th>
+              <th className="text-right font-medium py-1.5 pr-3" title="Moved past this step in the last 30 days">30d Out</th>
+              <th className="text-right font-medium py-1.5" title="In − Out: positive = backlog growing">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className="border-b border-t-border/40 hover:bg-surface-2/40">
+                <td className="py-1.5 pr-3 whitespace-nowrap">
+                  <span className={`inline-block h-2 w-2 rounded-sm mr-2 ${r.color}`} />
+                  {r.label}
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  <span className="font-semibold text-foreground">{r.backlogNow}</span>
+                  <span className="block text-[10px] text-muted/70">{formatCurrencyCompact(r.backlogAmount)}</span>
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-muted">{r.queued || "—"}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">
+                  <span className="text-foreground/90">{r.notHereYet || "—"}</span>
+                  {r.notHereYet > 0 && <span className="block text-[10px] text-muted/70">{formatCurrencyCompact(r.notHereYetAmount)}</span>}
+                </td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-cyan-400/90">{r.in30 ?? "—"}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-muted">{r.out30 ?? "—"}</td>
+                <td className={`py-1.5 text-right tabular-nums font-semibold ${netTone(r.net)}`}>{r.net > 0 ? "+" : ""}{r.net}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[10px] text-muted/70 mt-3">
+          Net is last-30-day inflow − outflow: <span className="text-amber-400">amber</span> = backlog growing, <span className="text-green-400">green</span> = shrinking.
+        </p>
+      </div>
+    </>
+  );
+}
 
 function BacklogSection({
   summary,
