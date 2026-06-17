@@ -66,23 +66,23 @@ export function groupForStatus(status: string | null | undefined): PipelineGroup
 /**
  * Date a milestone counts as "submitted" for chart bucketing.
  *
- * Prefers the explicit submission-date property. Only falls back to the
- * history-derived first-Submitted timestamp when the CURRENT status reflects
- * an actual submission (In Review / Rejected / Approved / Paid). A status
- * still in Onboarding or Ready to Submit (or blank) means the milestone is not
- * actually submitted — even if its immutable status history contains a stray
- * "Submitted" entry from a flip that was later reverted. Without this guard
- * those reverted flips get permanently counted as phantom submissions.
+ * Strictly the explicit submission-date property. We deliberately do NOT fall
+ * back to status history. The PE API / submission workflow stamps
+ * pe_m*_submission_date on every real submission, so a missing date means the
+ * milestone is simply not counted yet. Status history is unreliable for this:
+ * a status briefly flipped to "Submitted" and then reverted leaves a permanent
+ * entry that would otherwise be miscounted as a phantom submission.
+ *
+ * `status` / `firstSubmitted` are still accepted (call sites pass them) so this
+ * stays the single decision point if a history fallback is ever reconsidered,
+ * but they are intentionally unused today.
  */
 export function resolveSubmittedOn(
   submissionDate: string | null | undefined,
-  status: string | null | undefined,
-  firstSubmitted: string | null | undefined,
+  _status?: string | null,
+  _firstSubmitted?: string | null,
 ): string | null {
-  if (submissionDate) return submissionDate;
-  const group = groupForStatus(status);
-  if (!group || group === "Onboarding" || group === "Ready to Submit") return null;
-  return firstSubmitted ?? null;
+  return submissionDate || null;
 }
 
 // ---------------------------------------------------------------------------
