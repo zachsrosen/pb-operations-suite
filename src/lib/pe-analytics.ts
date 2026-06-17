@@ -477,6 +477,7 @@ export interface DailyUpload {
   total: number;
   deals: number; // distinct deals touched that period
   byUploader: Record<string, number>; // uploader → uploads that period
+  byDocType: Record<string, number>; // canonical doc name → uploads that period
 }
 
 export type UploadGranularity = "day" | "week" | "month";
@@ -503,12 +504,13 @@ function weekKey(at: Date): string {
  * oldest → newest.
  */
 export function buildPeriodUploads(
-  rows: { uploadedAt: Date | string; uploadedBy: string | null; dealId?: string | null }[],
+  rows: { uploadedAt: Date | string; uploadedBy: string | null; dealId?: string | null; docName?: string | null }[],
   granularity: UploadGranularity = "day",
   now: Date = new Date(),
 ): DailyUpload[] {
   const cutoff = granularity === "day" ? new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000) : null;
   const buckets = new Map<string, Map<string, number>>();
+  const docBuckets = new Map<string, Map<string, number>>();
   const dealsByKey = new Map<string, Set<string>>();
   for (const r of rows) {
     const at = typeof r.uploadedAt === "string" ? new Date(r.uploadedAt) : r.uploadedAt;
@@ -518,6 +520,12 @@ export function buildPeriodUploads(
     const m = buckets.get(key) ?? new Map<string, number>();
     m.set(who, (m.get(who) ?? 0) + 1);
     buckets.set(key, m);
+    const doc = r.docName?.trim();
+    if (doc) {
+      const dm = docBuckets.get(key) ?? new Map<string, number>();
+      dm.set(doc, (dm.get(doc) ?? 0) + 1);
+      docBuckets.set(key, dm);
+    }
     if (r.dealId) {
       const s = dealsByKey.get(key) ?? new Set<string>();
       s.add(r.dealId);
@@ -533,13 +541,15 @@ export function buildPeriodUploads(
         byUploader[who] = n;
         total += n;
       }
-      return { day, total, deals: dealsByKey.get(day)?.size ?? 0, byUploader };
+      const byDocType: Record<string, number> = {};
+      for (const [doc, n] of docBuckets.get(day) ?? []) byDocType[doc] = n;
+      return { day, total, deals: dealsByKey.get(day)?.size ?? 0, byUploader, byDocType };
     });
 }
 
 /** Build all three period series in one pass. */
 export function buildUploadsByPeriod(
-  rows: { uploadedAt: Date | string; uploadedBy: string | null; dealId?: string | null }[],
+  rows: { uploadedAt: Date | string; uploadedBy: string | null; dealId?: string | null; docName?: string | null }[],
   now: Date = new Date(),
 ): UploadsByPeriod {
   return {
