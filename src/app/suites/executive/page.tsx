@@ -93,7 +93,7 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
-    href: "/dashboards/pipeline-incoming",
+    href: "/dashboards/project-pipeline-funnel?tab=incoming",
     title: "Pipeline Incoming",
     description: "Per step: what's queued behind it, the full upstream pipeline not here yet, and 30-day inflow vs outflow (is the backlog growing?).",
     tag: "PIPELINE",
