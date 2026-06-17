@@ -56,6 +56,7 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/executive-calls": "Executive",
   "/dashboards/territory-map": "Executive",
   "/dashboards/project-pipeline-funnel": "Executive",
+  "/dashboards/pipeline-incoming": "Executive",
   "/dashboards/forecast-accuracy": "Executive",
   "/dashboards/forecast-timeline": "Executive",
   "/dashboards/office-performance/all": "Executive",       // also operations
