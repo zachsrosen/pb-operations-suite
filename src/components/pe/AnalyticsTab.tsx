@@ -1646,7 +1646,6 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
   const payStats = uploaderFilter.length === 0 ? stats : stats.filter((s) => uploaderFilter.includes(s.uploader));
   const payStatsShared = uploaderFilter.length === 0 ? statsShared : statsShared.filter((s) => uploaderFilter.includes(s.uploader));
 
-  const sel = "text-[11px] bg-surface-2 border border-t-border rounded-lg px-2 py-1 text-foreground focus:outline-none max-w-[11rem] truncate";
   return (
     <UnknownLabelCtx.Provider value={unk}>
     <Section
