@@ -93,6 +93,14 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
+    href: "/dashboards/pipeline-incoming",
+    title: "Pipeline Incoming",
+    description: "Per step: what's queued behind it, the full upstream pipeline not here yet, and 30-day inflow vs outflow (is the backlog growing?).",
+    tag: "PIPELINE",
+    icon: "📥",
+    section: "Sales",
+  },
+  {
     href: "/estimator/new-install?step=address",
     title: "Customer Estimator (preview)",
     description: "Public-facing instant solar estimator — walk a customer quote from address through results.",
