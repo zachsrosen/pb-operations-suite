@@ -763,6 +763,11 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
       const notHereYetAmount = amounts.slice(0, i).reduce((a, b) => a + b, 0);
       const in30 = g.prev ? data.inflow30d[g.prev] ?? 0 : null;
       const out30 = g.milestone ? data.inflow30d[g.milestone] ?? 0 : null;
+      // Where the "not here yet" deals actually are: one segment per upstream
+      // step they're currently sitting in.
+      const breakdown = INCOMING_GATES.slice(0, i)
+        .map((ug, j) => ({ label: ug.label, color: ug.color, count: counts[j] }))
+        .filter((seg) => seg.count > 0);
       return {
         key: g.key as string,
         label: g.label,
@@ -772,6 +777,7 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
         queued,
         notHereYet,
         notHereYetAmount,
+        breakdown,
         in30,
         out30,
         net: (in30 ?? 0) - (out30 ?? 0),
@@ -786,15 +792,35 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
     <>
       {/* "Not here yet" — the upstream pipeline feeding each step */}
       <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
-        <h3 className="text-sm font-semibold text-foreground/80 mb-1">Not Here Yet — pipeline feeding each step</h3>
-        <p className="text-xs text-muted mb-4">Active deals upstream of each step (haven&apos;t reached its prerequisite yet)</p>
+        <h3 className="text-sm font-semibold text-foreground/80 mb-1">Not Here Yet — where the upstream deals are</h3>
+        <p className="text-xs text-muted mb-3">Each bar = deals not yet at that step, colored by the step they&apos;re sitting in now</p>
+        {/* Legend: color → step */}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
+          {INCOMING_GATES.map((g) => (
+            <span key={g.key as string} className="inline-flex items-center gap-1 text-[10px] text-muted">
+              <span className={`inline-block h-2 w-2 rounded-sm ${g.color}`} />{g.label}
+            </span>
+          ))}
+        </div>
         <div className="space-y-1.5">
           {rows.map((r) => (
             <div key={r.key} className="flex items-center gap-3">
               <span className="w-48 text-xs text-muted text-right shrink-0 truncate" title={r.label}>{r.label}</span>
               <div className="flex items-center gap-2 flex-1">
                 {r.notHereYet > 0 ? (
-                  <div className={`h-5 rounded-md ${r.color}`} style={{ width: `${Math.max(3, (r.notHereYet / maxNotHereYet) * 100)}%`, opacity: 0.75 }} />
+                  <div
+                    className="flex h-5 rounded-md overflow-hidden"
+                    style={{ width: `${Math.max(3, (r.notHereYet / maxNotHereYet) * 100)}%` }}
+                  >
+                    {r.breakdown.map((seg, i) => (
+                      <div
+                        key={seg.label}
+                        className={`${seg.color} h-full ${i > 0 ? "border-l border-black/25" : ""}`}
+                        style={{ width: `${(seg.count / r.notHereYet) * 100}%`, opacity: 0.8 }}
+                        title={`${seg.count} at ${seg.label}`}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <span className="text-xs text-muted/50 italic">—</span>
                 )}
