@@ -834,32 +834,23 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
   teamActionCount: number;
   teamDocs: { doc: DocRequirement; review: DocReview | undefined }[];
 }) {
-  const [expanded, setExpanded] = useState(false);
   const { deal } = summary;
 
-  // Top outstanding doc — surfaced as a summary row when collapsed so the
-  // reason is visible without expanding. Action Required ranks
-  // above Not Uploaded (waived not-uploaded excluded). (PE has no separate
-  // "Rejected" doc status — REJECTED is treated as Action Required.)
+  // Outstanding docs for this team — always shown inline (no per-deal expand).
+  // Action Required / Not Uploaded; REJECTED is treated as Action Required;
+  // waived not-uploaded excluded.
   const outstanding = teamDocs.filter(({ doc, review }) => {
     const s = review?.status;
     if (s === "ACTION_REQUIRED" || s === "REJECTED") return true;
     if (s === "NOT_UPLOADED") return !isDocWaived(doc, deal);
     return false;
   });
-  const sevRank = (s: PeDocStatusValue | undefined) =>
-    s === "ACTION_REQUIRED" || s === "REJECTED" ? 0 : 1;
-  const topDoc = [...outstanding].sort((a, b) => sevRank(a.review?.status) - sevRank(b.review?.status))[0];
-  const moreCount = Math.max(0, outstanding.length - 1);
 
   return (
     <div className={`rounded-lg border transition-colors ${
       teamActionCount > 0 ? TEAM_BG[team] : "border-border/30 bg-surface/30"
     }`}>
-      <button
-        className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-surface/30 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
+      <div className="w-full flex items-center gap-3 px-3 py-2">
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-xs font-medium text-foreground truncate">{deal.dealName}</span>
           {deal.peProjectId && <span className="text-[10px] text-muted/50 flex-shrink-0">{deal.peProjectId}</span>}
@@ -871,7 +862,7 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Quick doc status dots */}
+          {/* Quick doc status dots — at-a-glance incl. approved/in-review */}
           {teamDocs.map(({ doc, review }) => {
             const status = review?.status;
             return (
@@ -890,34 +881,17 @@ function TeamDealRow({ summary, team, teamActionCount, teamDocs }: {
           <div className="ml-1">
             <DealLinks deal={deal} iconClass="w-3 h-3" />
           </div>
-          <svg className={`w-3.5 h-3.5 text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
-            fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
         </div>
-      </button>
+      </div>
       {/* Deal-level PE Info Needed — always editable inline. */}
       <div className="px-3 py-0.5 border-t border-border/10">
         <InfoNeededInline dealId={deal.dealId} value={deal.peInfoNeeded} />
       </div>
-      {/* Collapsed: surface the top outstanding doc (reason + editable note). */}
-      {!expanded && topDoc && (
-        <div className="px-3 pb-2">
-          <DocLine doc={topDoc.doc} review={topDoc.review} />
-          {moreCount > 0 && (
-            <button
-              onClick={() => setExpanded(true)}
-              className="text-[9px] text-muted/60 hover:text-foreground pl-4 transition-colors"
-            >
-              +{moreCount} more outstanding — expand
-            </button>
-          )}
-        </div>
-      )}
-      {expanded && (
-        <div className="px-3 pb-2 border-t border-border/20">
-          <div className="divide-y divide-border/20 mt-1">
-            {teamDocs.map(({ doc, review }) => (
+      {/* All outstanding docs, always inline (no expand). */}
+      {outstanding.length > 0 && (
+        <div className="px-3 pb-2 border-t border-border/10">
+          <div className="divide-y divide-border/20">
+            {outstanding.map(({ doc, review }) => (
               <DocLine key={doc.name} doc={doc} review={review} />
             ))}
           </div>
