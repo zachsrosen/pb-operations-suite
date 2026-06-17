@@ -332,7 +332,7 @@ function ProjectPipelineFunnelInner() {
           )}
 
           {/* Backlog */}
-          <BacklogSection summary={s} drillDown={data.drillDown} expanded={expandedBacklog} onToggle={setExpandedBacklog} />
+          <BacklogSection summary={s} drillDown={data.drillDown} inflow30d={data.inflow30d} expanded={expandedBacklog} onToggle={setExpandedBacklog} />
 
           {/* Current pipeline position */}
           <div className="mt-6">
@@ -722,14 +722,34 @@ const FLAG_TEXT: Record<string, string> = {
   orange: "text-orange-400/80",
 };
 
+// Each backlog bucket's milestone (deals leave the queue when they reach it) and
+// the prior milestone (deals enter the queue when they reach that). Used to read
+// 30-day inflow (entering) vs outflow (leaving) per backlog.
+const BACKLOG_FLOW: Record<string, { prev: ProjectFunnelStageKey | null; milestone: ProjectFunnelStageKey | null }> = {
+  awaitingSurveySchedule: { prev: "salesClosed", milestone: "surveyScheduled" },
+  awaitingSurvey: { prev: "surveyScheduled", milestone: "surveyDone" },
+  awaitingDaSend: { prev: "surveyDone", milestone: "daSent" },
+  awaitingApproval: { prev: "daSent", milestone: "daApproved" },
+  awaitingDesignComplete: { prev: "daApproved", milestone: "designCompleted" },
+  awaitingPermitSubmit: { prev: "designCompleted", milestone: "permitsSubmitted" },
+  awaitingPermitIssue: { prev: "permitsSubmitted", milestone: "permitsIssued" },
+  awaitingConstructionSchedule: { prev: "permitsIssued", milestone: "constructionScheduled" },
+  awaitingConstructionComplete: { prev: "constructionScheduled", milestone: "constructionComplete" },
+  awaitingInspection: { prev: "constructionComplete", milestone: "inspectionPassed" },
+  awaitingPto: { prev: "inspectionPassed", milestone: "ptoGranted" },
+  awaitingCloseOut: { prev: "ptoGranted", milestone: null },
+};
+
 function BacklogSection({
   summary,
   drillDown,
+  inflow30d,
   expanded,
   onToggle,
 }: {
   summary: ProjectFunnelResponse["summary"];
   drillDown: ProjectFunnelDrillDown;
+  inflow30d: ProjectFunnelResponse["inflow30d"];
   expanded: string | null;
   onToggle: (key: string | null) => void;
 }) {
@@ -780,6 +800,16 @@ function BacklogSection({
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
   const anyCancelled = backlogs.some((b) => b.cancelled > 0);
+
+  // "Not here yet" = every deal sitting in a strictly-upstream backlog (hasn't
+  // reached this step's prerequisite). cumulativeUpstream[i] = sum of counts
+  // before bucket i, so e.g. Construction Schedule shows the whole survey→permit
+  // pipeline feeding it.
+  const cumulativeUpstream: number[] = [];
+  backlogs.reduce((acc, b, i) => {
+    cumulativeUpstream[i] = acc;
+    return acc + Math.max(0, b.count);
+  }, 0);
 
   // Revenue per backlog = sum of its drill-down deals (the bucket membership).
   const backlogRevenue = (b: { deals: ProjectFunnelDrillDownDeal[] }) =>
@@ -836,12 +866,20 @@ function BacklogSection({
         <div className="mb-4" />
       )}
       <div className="space-y-1">
-        {backlogs.map((b) => {
+        {backlogs.map((b, idx) => {
           const revenue = backlogRevenue(b);
           const segs = statusBreakdown(b.deals);
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
           const flags = flagsInBucket(b.deals);
+          // Incoming indicators: how big the pipeline behind this step is, and
+          // the last-30-day flow in vs out (net = is this backlog growing?).
+          const flow = BACKLOG_FLOW[b.key];
+          const notHereYet = cumulativeUpstream[idx] ?? 0;
+          const queued = idx > 0 ? Math.max(0, backlogs[idx - 1].count) : 0;
+          const inflow = flow?.prev ? inflow30d[flow.prev] : null;
+          const outflow = flow?.milestone ? inflow30d[flow.milestone] : null;
+          const net = (inflow ?? 0) - (outflow ?? 0);
           return (
           <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
@@ -919,6 +957,30 @@ function BacklogSection({
                     <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}
                   </span>
                 ))}
+              </div>
+            )}
+            {/* Incoming: pipeline behind this step + last-30-day flow in/out. */}
+            {(notHereYet > 0 || queued > 0 || inflow != null || outflow != null) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[11.75rem] pb-1.5 text-[10px]">
+                {notHereYet > 0 && (
+                  <span className="text-muted/80" title="Active deals not yet at this step — the full upstream pipeline feeding it">
+                    <span className="text-foreground/70 font-semibold tabular-nums">{notHereYet}</span> not here yet
+                  </span>
+                )}
+                {queued > 0 && (
+                  <span className="text-muted/80" title="In the immediately-upstream backlog — the next wave into this step">
+                    ↘ <span className="text-foreground/70 font-semibold tabular-nums">{queued}</span> queued behind
+                  </span>
+                )}
+                {(inflow != null || outflow != null) && (
+                  <span className="text-muted/80" title="Reached this step (in) vs moved past it (out) in the last 30 days — net shows whether this backlog is growing">
+                    30d <span className="text-cyan-400/80 font-semibold tabular-nums">{inflow ?? 0}</span> in ·{" "}
+                    <span className="text-foreground/60 font-semibold tabular-nums">{outflow ?? 0}</span> out · net{" "}
+                    <span className={`font-semibold tabular-nums ${net > 0 ? "text-amber-400" : net < 0 ? "text-green-400" : "text-muted"}`}>
+                      {net > 0 ? "+" : ""}{net}
+                    </span>
+                  </span>
+                )}
               </div>
             )}
             {expanded === b.key && b.deals.length > 0 && (

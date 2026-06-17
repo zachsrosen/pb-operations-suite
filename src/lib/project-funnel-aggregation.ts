@@ -211,6 +211,8 @@ export interface ProjectFunnelResponse {
   summaryByLocation: Record<string, Record<ProjectFunnelStageKey, ProjectFunnelStageData>>;
   /** Throughput activity totals broken out per PB location (for the activity hero matrix). */
   activityByLocation: Record<string, ProjectMonthlyActivity>;
+  /** Per-milestone count of deals that reached it in the last 30 days (the "incoming" rate). */
+  inflow30d: Record<ProjectFunnelStageKey, number>;
   generatedAt: string;
 }
 
@@ -971,6 +973,35 @@ export function buildProjectFunnelData(
   const activityByLocation: Record<string, ProjectMonthlyActivity> = {};
   for (const [loc, act] of activityLocMap) activityByLocation[loc] = act;
 
+  // 30-day inflow per milestone: deals (in the current scope) that reached each
+  // milestone within the last 30 days — the "incoming" rate feeding each backlog.
+  const inflow30d = Object.fromEntries(
+    PROJECT_FUNNEL_STAGES.map((k) => [k, 0])
+  ) as Record<ProjectFunnelStageKey, number>;
+  const inflowCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const MILESTONE_FIELD: Array<[ProjectFunnelStageKey, keyof Project]> = [
+    ["salesClosed", "closeDate"],
+    ["surveyScheduled", "siteSurveyScheduleDate"],
+    ["surveyDone", "siteSurveyCompletionDate"],
+    ["daSent", "designApprovalSentDate"],
+    ["daApproved", "designApprovalDate"],
+    ["designCompleted", "designCompletionDate"],
+    ["permitsSubmitted", "permitSubmitDate"],
+    ["permitsIssued", "permitIssueDate"],
+    ["constructionScheduled", "constructionScheduleDate"],
+    ["constructionComplete", "constructionCompleteDate"],
+    ["inspectionPassed", "inspectionPassDate"],
+    ["ptoGranted", "ptoGrantedDate"],
+  ];
+  for (const p of filtered) {
+    for (const [key, field] of MILESTONE_FIELD) {
+      const dv = p[field] as string | null;
+      if (!dv) continue;
+      const d = new Date(dv + "T12:00:00");
+      if (d >= inflowCutoff && d <= now) inflow30d[key] += 1;
+    }
+  }
+
   return {
     summary,
     previousSummary,
@@ -981,6 +1012,7 @@ export function buildProjectFunnelData(
     filterOptions,
     summaryByLocation,
     activityByLocation,
+    inflow30d,
     medianDays: {
       closedToSurveyScheduled: median(dClosedToSurveyScheduled),
       surveyScheduledToComplete: median(dSurveyScheduledToComplete),
