@@ -219,7 +219,7 @@ function designFlag(p: Project): DesignFunnelFlag | null {
     return { label: "On hold", tone: "yellow", reason: p.onHoldReason || null };
   }
   if (p.stageId === RTB_BLOCKED_STAGE_ID) {
-    return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || null };
+    return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || p.katsNotes || p.notesForInstall || null };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
     return {
