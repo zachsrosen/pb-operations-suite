@@ -222,7 +222,11 @@ function designFlag(p: Project): DesignFunnelFlag | null {
     return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || null };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
-    return { label: "Sales change", tone: "orange", reason: p.salesChangeOrderNotes || null };
+    return {
+      label: "Sales change",
+      tone: "orange",
+      reason: p.salesChangeOrderNotes || p.salesCommunicationReason || p.pbShitShowReason || null,
+    };
   }
   return null;
 }

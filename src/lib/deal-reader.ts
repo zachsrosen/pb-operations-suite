@@ -339,6 +339,8 @@ export function dealToProject(deal: PrismaDeal): Project {
     onHoldReason: null,
     onHoldNotes: null,
     salesChangeOrderNotes: null,
+    salesCommunicationReason: null,
+    pbShitShowReason: null,
 
     // Priority
     priorityScore,

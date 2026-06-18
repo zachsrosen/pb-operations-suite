@@ -342,7 +342,7 @@ function ProjectPipelineFunnelInner() {
           )}
 
           {/* Backlog */}
-          <BacklogSection summary={s} drillDown={data.drillDown} expanded={expandedBacklog} onToggle={setExpandedBacklog} />
+          <BacklogSection summary={s} drillDown={data.drillDown} medianDays={data.medianDays} expanded={expandedBacklog} onToggle={setExpandedBacklog} />
 
           {/* Current pipeline position */}
           <div className="mt-6">
@@ -474,6 +474,21 @@ function ConvConnector({
     </div>
   );
 }
+
+/** Each backlog bucket → the median-leg-time key that benchmarks "how long this stage takes". */
+const BACKLOG_LEG: Record<string, keyof ProjectFunnelResponse["medianDays"]> = {
+  awaitingSurveySchedule: "closedToSurveyScheduled",
+  awaitingSurvey: "surveyScheduledToComplete",
+  awaitingDaSend: "surveyToDaSent",
+  awaitingApproval: "daSentToApproved",
+  awaitingDesignComplete: "approvedToDesignComplete",
+  awaitingPermitSubmit: "designCompleteToPermitSubmit",
+  awaitingPermitIssue: "permitSubmitToIssued",
+  awaitingConstructionSchedule: "permitIssuedToConstructionScheduled",
+  awaitingConstructionComplete: "constructionScheduledToComplete",
+  awaitingInspection: "constructionCompleteToInspection",
+  awaitingPto: "inspectionToPto",
+};
 
 /** Each between-card connector maps to the backlog of deals stuck at that transition. */
 const STAGE_TO_BACKLOG: Partial<Record<ProjectFunnelStageKey, string>> = {
@@ -1054,11 +1069,13 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
 function BacklogSection({
   summary,
   drillDown,
+  medianDays,
   expanded,
   onToggle,
 }: {
   summary: ProjectFunnelResponse["summary"];
   drillDown: ProjectFunnelDrillDown;
+  medianDays: ProjectFunnelResponse["medianDays"];
   expanded: string | null;
   onToggle: (key: string | null) => void;
 }) {
@@ -1171,6 +1188,12 @@ function BacklogSection({
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
           const flags = flagsInBucket(b.deals);
+          // Backlog aging: deals waiting longer than this stage's typical time.
+          const legKey = BACKLOG_LEG[b.key];
+          const benchmark = legKey ? medianDays[legKey] : null;
+          const lateCount = benchmark != null
+            ? b.deals.filter((d) => !d.flag?.parked && d.daysWaiting > benchmark).length
+            : 0;
           return (
           <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
@@ -1219,6 +1242,14 @@ function BacklogSection({
                     {avgDays}d in stage
                   </span>
                 )}
+                {lateCount > 0 && benchmark != null && (
+                  <span
+                    className="text-xs text-red-400/90 shrink-0 tabular-nums font-medium"
+                    title={`Waiting longer than the ${benchmark}d typical time for this stage`}
+                  >
+                    · {lateCount} late
+                  </span>
+                )}
                 {flags.map((f) => (
                   <span
                     key={f.label}
@@ -1251,7 +1282,7 @@ function BacklogSection({
               </div>
             )}
             {expanded === b.key && b.deals.length > 0 && (
-              <DrillDownTable deals={b.deals} staffCols={b.staffCols} />
+              <DrillDownTable deals={b.deals} staffCols={b.staffCols} benchmark={benchmark} />
             )}
           </div>
           );
@@ -1269,9 +1300,12 @@ function formatShortDate(dateStr: string): string {
 function DrillDownTable({
   deals,
   staffCols = [],
+  benchmark = null,
 }: {
   deals: ProjectFunnelDrillDownDeal[];
   staffCols?: Array<{ key: keyof ProjectFunnelDrillDownDeal; label: string }>;
+  /** Avg days this stage takes; deals waiting longer are flagged "late". */
+  benchmark?: number | null;
 }) {
   const hasScheduled = deals.some((d) => d.scheduledDate);
   const hasExtra = deals.some((d) => d.extraDate);
@@ -1416,6 +1450,9 @@ function DrillDownTable({
               )}
               <td className={`text-right py-1 px-1.5 font-medium ${d.flag?.parked ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
+                {!d.flag?.parked && benchmark != null && d.daysWaiting > benchmark && (
+                  <span className="ml-1 text-[9px] text-red-400/90 font-semibold uppercase" title={`Over the ${benchmark}d stage average`}>late</span>
+                )}
               </td>
               <td className="py-1 px-1.5 text-muted truncate max-w-[120px]" title={d.status || "—"}>
                 {d.status || <span className="italic text-muted/60">—</span>}
