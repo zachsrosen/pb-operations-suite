@@ -90,6 +90,7 @@ function statusBucket(status: string | null | undefined): SubGroup {
     case "Ready to Resubmit":
     case "Onboarding Rejected":
     case "Onboarding Ready to Resubmit":
+    case "Internally Rejected":
       return "action";
     case "Submitted":
     case "Resubmitted":

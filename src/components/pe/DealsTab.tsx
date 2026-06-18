@@ -24,6 +24,7 @@ const M1_OPTIONS = [
   "Onboarding Resubmitted",
   "Ready to Submit",
   "Waiting on Information",
+  "Internally Rejected",
   "Submitted",
   "Rejected",
   "Ready to Resubmit",
@@ -36,6 +37,7 @@ const M2_OPTIONS = [
   "",
   "Ready to Submit",
   "Waiting on Information",
+  "Internally Rejected",
   "Submitted",
   "Rejected",
   "Ready to Resubmit",
@@ -53,6 +55,8 @@ const WAITING_ON_INFO = "Waiting on Information";
 function statusColor(value: string | null): { text: string; tint: string } {
   const v = value ?? "";
   if (v === WAITING_ON_INFO) return { text: "text-amber-400", tint: "bg-amber-500/10 border-amber-500/30" };
+  // Internally rejected (our court, pre-PE) — distinct from a real PE rejection.
+  if (v === "Internally Rejected") return { text: "text-purple-300", tint: "bg-purple-500/10 border-purple-500/30" };
   if (/Reject|Ready to Resubmit/i.test(v)) return { text: "text-red-400", tint: "bg-red-500/10 border-red-500/30" };
   if (v === "Approved" || v === "Paid") return { text: "text-green-400", tint: "bg-green-500/10 border-green-500/30" };
   if (/Submitted|Resubmitted/i.test(v)) return { text: "text-blue-400", tint: "bg-blue-500/10 border-blue-500/30" };

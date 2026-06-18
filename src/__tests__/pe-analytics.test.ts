@@ -2,6 +2,9 @@ import {
   weekStartUTC,
   groupForStatus,
   resolveSubmittedOn,
+  resolveApprovedOn,
+  resolveRejectedOn,
+  resolvePaidOn,
   computeMilestoneTiming,
   median,
   percentile,
@@ -57,6 +60,10 @@ describe("groupForStatus", () => {
     expect(groupForStatus("Paid")).toBe("Paid");
   });
 
+  it("maps the internally-rejected status to its own group", () => {
+    expect(groupForStatus("Internally Rejected")).toBe("Internally Rejected");
+  });
+
   it("returns Other for unknown statuses and null for empty", () => {
     expect(groupForStatus("Something New")).toBe("Other");
     expect(groupForStatus(null)).toBeNull();
@@ -64,36 +71,41 @@ describe("groupForStatus", () => {
   });
 });
 
-describe("resolveSubmittedOn", () => {
-  it("prefers the explicit submission date when present", () => {
+describe("resolveSubmittedOn (strict stamped-date)", () => {
+  it("returns the stamped submission date when present", () => {
     expect(resolveSubmittedOn("2026-06-09", "Submitted", "2026-06-08")).toBe("2026-06-09");
   });
 
-  it("falls back to history firstSubmitted for submitted-or-later statuses", () => {
-    expect(resolveSubmittedOn(null, "Submitted", "2026-06-16")).toBe("2026-06-16");
-    expect(resolveSubmittedOn(null, "Approved", "2026-05-01")).toBe("2026-05-01");
-    expect(resolveSubmittedOn(null, "Paid", "2026-04-20")).toBe("2026-04-20");
+  it("does NOT fall back to status history — a missing date means not-counted", () => {
+    // The phantom case: a status briefly flipped to Submitted/Approved/etc. and
+    // reverted leaves an immutable history entry. Without a stamped date we never
+    // count it, no matter what the (extra, ignored) status/history args say.
+    expect(resolveSubmittedOn(null, "Submitted", "2026-06-16")).toBeNull();
+    expect(resolveSubmittedOn(null, "Approved", "2026-05-01")).toBeNull();
+    expect(resolveSubmittedOn(null, "Paid", "2026-04-20")).toBeNull();
+    expect(resolveSubmittedOn(null, "Rejected", "2026-04-30")).toBeNull();
   });
 
-  it("still counts a rejected milestone that was genuinely submitted", () => {
-    expect(resolveSubmittedOn(null, "Rejected", "2026-04-30")).toBe("2026-04-30");
-    expect(resolveSubmittedOn(null, "Ready to Resubmit", "2026-04-30")).toBe("2026-04-30");
+  it("returns null for blank/empty date", () => {
+    expect(resolveSubmittedOn(null)).toBeNull();
+    expect(resolveSubmittedOn("")).toBeNull();
+    expect(resolveSubmittedOn(undefined)).toBeNull();
+  });
+});
+
+describe("resolveApprovedOn / resolveRejectedOn / resolvePaidOn (strict stamped-date)", () => {
+  it("returns the stamped date when present", () => {
+    expect(resolveApprovedOn("2026-06-05")).toBe("2026-06-05");
+    expect(resolveRejectedOn("2026-06-04")).toBe("2026-06-04");
+    expect(resolvePaidOn("2026-06-18")).toBe("2026-06-18");
   });
 
-  it("does NOT count a pre-submission status as submitted via history fallback", () => {
-    // The phantom case: status was briefly flipped to Submitted then reverted,
-    // leaving an immutable history entry but no real submission.
-    expect(resolveSubmittedOn(null, "Ready to Submit", "2026-06-16")).toBeNull();
-    expect(resolveSubmittedOn(null, "Waiting on Information", "2026-06-16")).toBeNull();
-    expect(resolveSubmittedOn(null, "Onboarding Rejected", "2026-06-16")).toBeNull();
-  });
-
-  it("returns null when there is no status and no submission date", () => {
-    expect(resolveSubmittedOn(null, null, "2026-06-16")).toBeNull();
-  });
-
-  it("returns null when nothing indicates a submission", () => {
-    expect(resolveSubmittedOn(null, "Ready to Submit", null)).toBeNull();
+  it("returns null when the stamped date is missing — no history fallback", () => {
+    for (const fn of [resolveApprovedOn, resolveRejectedOn, resolvePaidOn]) {
+      expect(fn(null)).toBeNull();
+      expect(fn("")).toBeNull();
+      expect(fn(undefined)).toBeNull();
+    }
   });
 });
 

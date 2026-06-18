@@ -2351,7 +2351,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 const row = data.pipeline.find((p) => p.group === g)!;
                 const total = row.m1Amount + row.m2Amount;
                 return (
-                  <div key={g} className={`rounded-lg border p-3 ${g === "Paid" ? "border-green-500/40 bg-green-500/5" : g === "Approved (unpaid)" ? "border-emerald-500/40 bg-emerald-500/5" : g === "Rejected — pending fix" ? "border-orange-500/40 bg-orange-500/5" : "border-t-border bg-surface-2"}`}>
+                  <div key={g} className={`rounded-lg border p-3 ${g === "Paid" ? "border-green-500/40 bg-green-500/5" : g === "Approved (unpaid)" ? "border-emerald-500/40 bg-emerald-500/5" : g === "Rejected — pending fix" ? "border-orange-500/40 bg-orange-500/5" : g === "Internally Rejected" ? "border-purple-500/40 bg-purple-500/5" : "border-t-border bg-surface-2"}`}>
                     <div className="text-[11px] text-muted mb-1 truncate" title={g}>{g}</div>
                     <div className="text-lg font-semibold text-foreground">{fmtUsdK(total)}</div>
                     <div className="text-[10px] text-muted mt-1">

@@ -25,6 +25,7 @@ export function weekStartUTC(d: Date): string {
 export type PipelineGroup =
   | "Onboarding"
   | "Ready to Submit"
+  | "Internally Rejected"
   | "In Review"
   | "Rejected — pending fix"
   | "Approved (unpaid)"
@@ -34,6 +35,7 @@ export type PipelineGroup =
 export const PIPELINE_GROUP_ORDER: PipelineGroup[] = [
   "Onboarding",
   "Ready to Submit",
+  "Internally Rejected",
   "In Review",
   "Rejected — pending fix",
   "Approved (unpaid)",
@@ -49,6 +51,10 @@ const STATUS_TO_GROUP: Record<string, PipelineGroup> = {
   "Onboarding Ready to Resubmit": "Onboarding",
   "Onboarding Resubmitted": "Onboarding",
   "Ready to Submit": "Ready to Submit",
+  // Set by us before/instead of a real PE submission — back in our court, not a
+  // PE review state. Not "submitted" (it has no stamped submission date, so the
+  // strict-date resolvers never count it).
+  "Internally Rejected": "Internally Rejected",
   Submitted: "In Review",
   Resubmitted: "In Review",
   Rejected: "Rejected — pending fix",
@@ -64,25 +70,42 @@ export function groupForStatus(status: string | null | undefined): PipelineGroup
 }
 
 /**
- * Date a milestone counts as "submitted" for chart bucketing.
+ * Date a milestone counts as "submitted" / "approved" / "rejected" / "paid" for
+ * chart bucketing — STRICTLY the stamped HubSpot property, no status-history
+ * fallback.
  *
- * Prefers the explicit submission-date property. Only falls back to the
- * history-derived first-Submitted timestamp when the CURRENT status reflects
- * an actual submission (In Review / Rejected / Approved / Paid). A status
- * still in Onboarding or Ready to Submit (or blank) means the milestone is not
- * actually submitted — even if its immutable status history contains a stray
- * "Submitted" entry from a flip that was later reverted. Without this guard
- * those reverted flips get permanently counted as phantom submissions.
+ * The PE workflow stamps pe_m*_submission_date / _approval_date / _rejection_date
+ * / _paid_date on every real event, so a missing date means the event simply
+ * isn't counted yet. Status history is unreliable here: a status briefly flipped
+ * to (e.g.) "Submitted" or "Paid" and then reverted leaves a permanent entry
+ * that would otherwise be miscounted as a phantom event. Counting only stamped
+ * dates can't be fooled by those reverted flips.
+ *
+ * resolveSubmittedOn keeps its 3-arg signature (call sites pass status /
+ * firstSubmitted) so this stays the single decision point if a history fallback
+ * is ever reconsidered, but the extra args are intentionally unused today.
  */
 export function resolveSubmittedOn(
   submissionDate: string | null | undefined,
-  status: string | null | undefined,
-  firstSubmitted: string | null | undefined,
+  _status?: string | null,
+  _firstSubmitted?: string | null,
 ): string | null {
-  if (submissionDate) return submissionDate;
-  const group = groupForStatus(status);
-  if (!group || group === "Onboarding" || group === "Ready to Submit") return null;
-  return firstSubmitted ?? null;
+  return submissionDate || null;
+}
+
+/** Date a milestone counts as approved — strictly the stamped pe_m*_approval_date. */
+export function resolveApprovedOn(approvalDate: string | null | undefined): string | null {
+  return approvalDate || null;
+}
+
+/** Date a milestone counts as rejected — strictly the stamped pe_m*_rejection_date. */
+export function resolveRejectedOn(rejectionDate: string | null | undefined): string | null {
+  return rejectionDate || null;
+}
+
+/** Date a milestone counts as paid — strictly the stamped pe_m*_paid_date. */
+export function resolvePaidOn(paidDate: string | null | undefined): string | null {
+  return paidDate || null;
 }
 
 // ---------------------------------------------------------------------------
