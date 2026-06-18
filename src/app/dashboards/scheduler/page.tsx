@@ -1175,6 +1175,12 @@ export default function SchedulerPage() {
           // Skip if this deal somehow got loaded already
           if (loadedDealIds.includes(oj.dealId)) continue;
           const isSurvey = oj.category === "survey";
+          // Honor the Zuper job's completion status so a done job never renders
+          // as overdue. The orphaned endpoint already filters completed jobs out,
+          // so this is a safety net rather than the primary guard.
+          const ojStatusLower = (oj.status ?? "").trim().toLowerCase();
+          const jobCompleted = ojStatusLower.startsWith("completed") || ojStatusLower === "passed";
+          const completionMarker = oj.scheduledStart ? oj.scheduledStart.split("T")[0] : "completed";
           const synthetic: SchedulerProject = {
             id: oj.dealId,
             name: oj.projectName,
@@ -1195,8 +1201,10 @@ export default function SchedulerPage() {
             surveyScheduleDate: isSurvey && oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
             constructionScheduleDate: null,
             inspectionScheduleDate: !isSurvey && oj.scheduledStart ? oj.scheduledStart.split("T")[0] : null,
-            surveyCompleted: null, constructionCompleted: null,
-            inspectionCompleted: null, inspectionStatus: null,
+            surveyCompleted: isSurvey && jobCompleted ? completionMarker : null,
+            constructionCompleted: null,
+            inspectionCompleted: !isSurvey && jobCompleted ? completionMarker : null,
+            inspectionStatus: null,
             hubspotUrl: `https://app.hubspot.com/contacts/21710069/record/0-3/${oj.dealId}`,
             isPE: false,
             daysToInstall: null,

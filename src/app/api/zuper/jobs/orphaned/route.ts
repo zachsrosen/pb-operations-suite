@@ -33,7 +33,19 @@ export async function POST(request: Request) {
         ...(loadedDealIds.length > 0 ? { notIn: loadedDealIds } : {}),
       },
       scheduledStart: { gte: sevenDaysAgo, lte: sixtyDaysOut },
-      jobStatus: { notIn: ["COMPLETED", "CANCELLED", "CLOSED"] },
+      // Exclude done jobs. Zuper stores these title-cased (e.g. "Completed",
+      // "Passed"), so an exact uppercase `notIn` silently let them leak through
+      // and render as overdue. Match case-insensitively, and only on the
+      // genuinely-finished statuses: completed surveys and passed inspections.
+      // "Failed"/"Partial Pass"/"Needs Revisit" must still surface as
+      // actionable re-inspections.
+      NOT: [
+        { jobStatus: { startsWith: "completed", mode: "insensitive" } },
+        { jobStatus: { equals: "passed", mode: "insensitive" } },
+        { jobStatus: { equals: "cancelled", mode: "insensitive" } },
+        { jobStatus: { equals: "canceled", mode: "insensitive" } },
+        { jobStatus: { equals: "closed", mode: "insensitive" } },
+      ],
     },
     orderBy: { scheduledStart: "asc" },
     take: 100,
