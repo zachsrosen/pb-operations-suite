@@ -213,7 +213,28 @@ export interface ProjectFunnelResponse {
   activityByLocation: Record<string, ProjectMonthlyActivity>;
   /** Per-milestone count of deals that reached it in the last 30 days (the "incoming" rate). */
   inflow30d: Record<ProjectFunnelStageKey, number>;
+  /** Capacity & backlog snapshot for the Active Pipeline tab (RTB bench, runway, blocked risk). */
+  capacity: ProjectFunnelCapacity;
   generatedAt: string;
+}
+
+export interface ProjectFunnelCapacity {
+  /** Trailing 8-week install completions ÷ 8. */
+  weeklyInstallRate: number;
+  /** Shovel-ready: active deals in Ready To Build. */
+  rtbBenchCount: number;
+  rtbBenchAmount: number;
+  /** rtbBench ÷ weeklyInstallRate (null if no install pace). */
+  weeksOfRtbCoverage: number | null;
+  /** Active deals in Site Survey → D&E → P&I → RTB-Blocked → Ready To Build. */
+  preconBacklogCount: number;
+  preconBacklogAmount: number;
+  /** preconBacklog ÷ weeklyInstallRate. */
+  weeksOfBacklog: number | null;
+  /** RTB-Blocked deals (jammed capacity, not available bench). */
+  blockedCount: number;
+  blockedAmount: number;
+  blockedTopReason: string | null;
 }
 
 const CANCELLED_STAGE_ID = "68229433";
@@ -1002,6 +1023,60 @@ export function buildProjectFunnelData(
     }
   }
 
+  // Capacity & backlog snapshot (live): RTB bench, weeks of runway, blocked risk.
+  // Computed over the location/staff-matched set so the page filters apply; the
+  // bench/backlog/blocked are active-only, install pace counts any completion.
+  const READY_TO_BUILD_STAGE = "22580871";
+  const PRECON_STAGES = new Set(["20461936", "20461937", "20461938", "71052436", "22580871"]);
+  const installCutoff = new Date(now.getTime() - 56 * 24 * 60 * 60 * 1000);
+  let installs8wk = 0;
+  let rtbBenchCount = 0;
+  let rtbBenchAmount = 0;
+  let preconBacklogCount = 0;
+  let preconBacklogAmount = 0;
+  let blockedCount = 0;
+  let blockedAmount = 0;
+  const blockedReasons = new Map<string, number>();
+  for (const p of projects) {
+    if (!matchesLocation(p) || !matchesStaff(p)) continue;
+    if (p.constructionCompleteDate) {
+      const d = new Date(p.constructionCompleteDate + "T12:00:00");
+      if (d >= installCutoff && d <= now) installs8wk += 1;
+    }
+    if (!isActiveDeal(p)) continue;
+    const amt = p.amount || 0;
+    if (p.stageId === READY_TO_BUILD_STAGE) {
+      rtbBenchCount += 1;
+      rtbBenchAmount += amt;
+    }
+    if (p.stageId && PRECON_STAGES.has(p.stageId)) {
+      preconBacklogCount += 1;
+      preconBacklogAmount += amt;
+    }
+    if (p.stageId === RTB_BLOCKED_STAGE_ID) {
+      blockedCount += 1;
+      blockedAmount += amt;
+      const r = p.rtbBlockedReason?.trim();
+      if (r) blockedReasons.set(r, (blockedReasons.get(r) || 0) + 1);
+    }
+  }
+  const weeklyInstallRate = installs8wk / 8;
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const capacity: ProjectFunnelCapacity = {
+    weeklyInstallRate: round1(weeklyInstallRate),
+    rtbBenchCount,
+    rtbBenchAmount,
+    weeksOfRtbCoverage: weeklyInstallRate > 0 ? round1(rtbBenchCount / weeklyInstallRate) : null,
+    preconBacklogCount,
+    preconBacklogAmount,
+    weeksOfBacklog: weeklyInstallRate > 0 ? round1(preconBacklogCount / weeklyInstallRate) : null,
+    blockedCount,
+    blockedAmount,
+    blockedTopReason: blockedReasons.size
+      ? [...blockedReasons.entries()].sort((a, b) => b[1] - a[1])[0][0]
+      : null,
+  };
+
   return {
     summary,
     previousSummary,
@@ -1013,6 +1088,7 @@ export function buildProjectFunnelData(
     summaryByLocation,
     activityByLocation,
     inflow30d,
+    capacity,
     medianDays: {
       closedToSurveyScheduled: median(dClosedToSurveyScheduled),
       surveyScheduledToComplete: median(dSurveyScheduledToComplete),
