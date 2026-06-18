@@ -20,6 +20,7 @@ import type {
   MilestoneCohortResponse,
   MilestoneCohortBucket,
   ProjectFunnelCapacity,
+  ProjectFunnelRtbForecast,
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -311,6 +312,7 @@ function ProjectPipelineFunnelInner() {
       ) : tab === "incoming" ? (
         <>
           {data.capacity && <CapacityRow capacity={data.capacity} />}
+          {data.rtbForecast && <RtbForecastSection forecast={data.rtbForecast} />}
           <IncomingView data={data} />
         </>
       ) : tab === "cohorts" ? (
@@ -793,6 +795,64 @@ function CapacityRow({ capacity: c }: { capacity: ProjectFunnelCapacity }) {
             {c.blockedTopReason ? ` · ${c.blockedTopReason}` : " · jammed capacity"}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── RTB inflow forecast (leading indicator) ──────────────────────────────────
+// Projects how many DA-approved deals will ARRIVE in Ready-To-Build over the
+// next 8 weeks, aged forward by average leg times and haircut by conversion.
+function RtbForecastSection({ forecast: f }: { forecast: ProjectFunnelRtbForecast }) {
+  const maxWeek = Math.max(1, ...f.weeks.map((w) => w.count));
+  const weekLabel = (i: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i * 7);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+      <div className="flex items-baseline justify-between mb-1">
+        <h3 className="text-sm font-semibold text-foreground/80">RTB Inflow Forecast</h3>
+        <span className="text-[11px] text-muted">
+          From {f.population} DA-approved deals · {Math.round(f.conversionRate * 100)}% convert to RTB
+        </span>
+      </div>
+      <p className="text-xs text-muted mb-4">
+        Projected arrivals into Ready-To-Build, aged forward by avg stage times ({f.legDays.approvedToDesignComplete}+{f.legDays.designCompleteToPermitSubmit}+{f.legDays.permitSubmitToIssued}d)
+      </p>
+
+      {/* Rollups */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+        <div className="bg-gradient-to-br from-emerald-500/20 to-transparent border border-emerald-500/30 rounded-lg px-4 py-3">
+          <div className="text-2xl font-bold text-foreground tabular-nums leading-none">{f.next2wkCount}</div>
+          <div className="text-xs font-semibold text-emerald-300 mt-1.5">Next 2 weeks</div>
+          <div className="text-[11px] text-muted mt-0.5 tabular-nums">{formatCurrencyCompact(f.next2wkAmount)}</div>
+        </div>
+        <div className="bg-gradient-to-br from-cyan-500/20 to-transparent border border-cyan-500/30 rounded-lg px-4 py-3">
+          <div className="text-2xl font-bold text-foreground tabular-nums leading-none">{f.next4wkCount}</div>
+          <div className="text-xs font-semibold text-cyan-300 mt-1.5">Next 4 weeks</div>
+          <div className="text-[11px] text-muted mt-0.5 tabular-nums">{formatCurrencyCompact(f.next4wkAmount)}</div>
+        </div>
+        <div className="bg-surface-2 border border-t-border rounded-lg px-4 py-3">
+          <div className="text-2xl font-bold text-muted tabular-nums leading-none">{f.beyond8wkCount}</div>
+          <div className="text-xs font-semibold text-muted mt-1.5">Beyond 8 weeks</div>
+          <div className="text-[11px] text-muted/70 mt-0.5 tabular-nums">{formatCurrencyCompact(f.beyond8wkAmount)}</div>
+        </div>
+      </div>
+
+      {/* Weekly bars */}
+      <div className="flex items-end gap-2 h-28">
+        {f.weeks.map((w, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1" title={`Week of ${weekLabel(i)}: ${w.count} jobs · ${formatCurrencyCompact(w.amount)}`}>
+            <span className="text-[10px] text-foreground/80 font-semibold tabular-nums">{w.count || ""}</span>
+            <div
+              className="w-full bg-emerald-500/60 rounded-t"
+              style={{ height: `${Math.max(w.count > 0 ? 6 : 0, (w.count / maxWeek) * 88)}px` }}
+            />
+            <span className="text-[10px] text-muted tabular-nums">{weekLabel(i)}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

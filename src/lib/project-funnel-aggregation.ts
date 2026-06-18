@@ -215,7 +215,26 @@ export interface ProjectFunnelResponse {
   inflow30d: Record<ProjectFunnelStageKey, number>;
   /** Capacity & backlog snapshot for the Active Pipeline tab (RTB bench, runway, blocked risk). */
   capacity: ProjectFunnelCapacity;
+  /** DA-Approved → Ready-To-Build inflow forecast (leading indicator). */
+  rtbForecast: ProjectFunnelRtbForecast;
   generatedAt: string;
+}
+
+export interface ProjectFunnelRtbForecast {
+  /** Trailing DA-Approved → Permits-Issued conversion rate (0–1), applied as a haircut. */
+  conversionRate: number;
+  /** Deals in the forecast population (DA approved, not yet RTB, not RTB-Blocked). */
+  population: number;
+  /** Average leg times (days) used to age each deal forward. */
+  legDays: { approvedToDesignComplete: number; designCompleteToPermitSubmit: number; permitSubmitToIssued: number };
+  /** Haircut-weighted projected RTB arrivals per week for the next 8 weeks. */
+  weeks: Array<{ count: number; amount: number }>;
+  next2wkCount: number;
+  next2wkAmount: number;
+  next4wkCount: number;
+  next4wkAmount: number;
+  beyond8wkCount: number;
+  beyond8wkAmount: number;
 }
 
 export interface ProjectFunnelCapacity {
@@ -1077,6 +1096,66 @@ export function buildProjectFunnelData(
       : null,
   };
 
+  // DA-Approved → RTB inflow forecast (cohort-aging). Age each not-yet-RTB,
+  // DA-approved deal forward by the AVERAGE remaining leg times, haircut by the
+  // trailing DA→permits-issued conversion rate, and bucket by arrival week.
+  const meanDays = (arr: number[]) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 14);
+  const L1 = meanDays(dApprovedToDesignComplete); // approved → design complete
+  const L2 = meanDays(dDesignCompleteToPermitSubmit); // design complete → permit submit
+  const L3 = meanDays(dPermitSubmitToIssued); // permit submit → issued (⇒ enters RTB)
+  const convRate =
+    summary.daApproved.count > 0 ? Math.min(1, summary.permitsIssued.count / summary.daApproved.count) : 0;
+  const today0 = new Date(todayStr() + "T12:00:00").getTime();
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const fcWeeks = Array.from({ length: 8 }, () => ({ count: 0, amount: 0 }));
+  let fcBeyondCount = 0;
+  let fcBeyondAmount = 0;
+  let fcPopulation = 0;
+  for (const p of projects) {
+    if (!matchesLocation(p) || !matchesStaff(p) || !isActiveDeal(p)) continue;
+    if (p.stageId === RTB_BLOCKED_STAGE_ID) continue; // unpredictable timing
+    const m = resolveMilestones(p);
+    if (!m.hasDaApproved || m.hasPermitIssued) continue; // already at/past RTB, or not yet DA-approved
+    fcPopulation += 1;
+    let remaining: number;
+    let anchorStr: string | null;
+    if (m.hasPermitSubmit) {
+      remaining = L3;
+      anchorStr = p.permitSubmitDate;
+    } else if (m.hasDesignComplete) {
+      remaining = L2 + L3;
+      anchorStr = p.designCompletionDate;
+    } else {
+      remaining = L1 + L2 + L3;
+      anchorStr = p.designApprovalDate;
+    }
+    const anchor = anchorStr ? new Date(anchorStr + "T12:00:00").getTime() : today0;
+    const expected = Math.max(today0, anchor + remaining * 24 * 60 * 60 * 1000);
+    const weekIdx = Math.floor((expected - today0) / WEEK_MS);
+    const amt = (p.amount || 0) * convRate;
+    if (weekIdx >= 8) {
+      fcBeyondCount += convRate;
+      fcBeyondAmount += amt;
+    } else {
+      fcWeeks[weekIdx].count += convRate;
+      fcWeeks[weekIdx].amount += amt;
+    }
+  }
+  const sumRange = (n: number) => fcWeeks.slice(0, n).reduce((a, w) => a + w.count, 0);
+  const sumRangeAmt = (n: number) => fcWeeks.slice(0, n).reduce((a, w) => a + w.amount, 0);
+  const rtbForecast: ProjectFunnelRtbForecast = {
+    conversionRate: Math.round(convRate * 100) / 100,
+    population: fcPopulation,
+    legDays: { approvedToDesignComplete: L1, designCompleteToPermitSubmit: L2, permitSubmitToIssued: L3 },
+    weeks: fcWeeks.map((w) => ({ count: Math.round(w.count), amount: Math.round(w.amount) })),
+    next2wkCount: Math.round(sumRange(2)),
+    next2wkAmount: Math.round(sumRangeAmt(2)),
+    next4wkCount: Math.round(sumRange(4)),
+    next4wkAmount: Math.round(sumRangeAmt(4)),
+    beyond8wkCount: Math.round(fcBeyondCount),
+    beyond8wkAmount: Math.round(fcBeyondAmount),
+  };
+
   return {
     summary,
     previousSummary,
@@ -1089,6 +1168,7 @@ export function buildProjectFunnelData(
     activityByLocation,
     inflow30d,
     capacity,
+    rtbForecast,
     medianDays: {
       closedToSurveyScheduled: median(dClosedToSurveyScheduled),
       surveyScheduledToComplete: median(dSurveyScheduledToComplete),
