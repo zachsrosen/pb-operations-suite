@@ -865,12 +865,16 @@ export interface UploaderDoc {
   overridden?: boolean; // credited uploader pinned by an admin override
   resubmitted?: boolean; // a newer version landed after the override — re-check
   weight?: number; // fractional credit for this person in shared mode (1 in owner mode)
+  version?: number; // the upload's version number (superseded uploads)
+  uploadedAt?: string; // YYYY-MM-DD this version landed (superseded uploads)
 }
 /** An uploader's owned docs split by current outcome. */
 export interface UploaderOutcomeDocs {
   approved: UploaderDoc[];
   inReview: UploaderDoc[];
   rejected: UploaderDoc[];
+  /** Older versions of a doc that a newer upload replaced (resubmissions). */
+  superseded: UploaderDoc[];
 }
 
 export interface PeAnalyticsPayload {
