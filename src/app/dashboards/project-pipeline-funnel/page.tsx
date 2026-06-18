@@ -19,6 +19,7 @@ import type {
   ProjectFunnelStageDeal,
   MilestoneCohortResponse,
   MilestoneCohortBucket,
+  ProjectFunnelCapacity,
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -318,6 +319,8 @@ function ProjectPipelineFunnelInner() {
         </>
       ) : (
         <>
+          {/* Capacity & Backlog — Active Pipeline tab only (live shovel-ready snapshot). */}
+          {tab === "funnel" && data.capacity && <CapacityRow capacity={data.capacity} />}
           {/* Funnel tab = active snapshot (cancelled always 0 → hidden, no prior-
               period trend). Sales Funnel = the same hero windowed by close date
               (sales cohort), so it shows cancelled + trend vs the prior window. */}
@@ -725,6 +728,74 @@ const FLAG_TEXT: Record<string, string> = {
   red: "text-red-400/80",
   orange: "text-orange-400/80",
 };
+
+// ── Capacity & Backlog row (Active Pipeline tab) ─────────────────────────────
+// Answers "do we have enough shovel-ready work, and how many weeks of runway?"
+// Backlog health: 4–8 wks green, 3 or 9–10 yellow, else red (shop-health bands).
+function backlogTone(w: number | null): string {
+  if (w == null) return "text-muted";
+  if (w >= 4 && w <= 8) return "text-green-400";
+  if ((w >= 3 && w < 4) || (w > 8 && w <= 10)) return "text-amber-400";
+  return "text-red-400";
+}
+// RTB coverage: ≥2 wks green, 1–2 yellow, <1 red (shop-health RTB band).
+function coverageTone(w: number | null): string {
+  if (w == null) return "text-muted";
+  if (w >= 2) return "text-green-400";
+  if (w >= 1) return "text-amber-400";
+  return "text-red-400";
+}
+
+function CapacityRow({ capacity: c }: { capacity: ProjectFunnelCapacity }) {
+  const rate = c.weeklyInstallRate;
+  return (
+    <div className="mb-6">
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="text-sm font-semibold text-foreground/80">Capacity &amp; Backlog</h3>
+        <span className="text-[11px] text-muted">
+          Install pace ~<span className="text-foreground font-semibold tabular-nums">{rate}</span>/wk (trailing 8 wks)
+        </span>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* RTB Bench */}
+        <div className="bg-gradient-to-br from-cyan-500/20 to-transparent border border-cyan-500/30 rounded-lg px-4 py-3">
+          <div className="text-2xl font-bold text-foreground tabular-nums leading-none">{c.rtbBenchCount}</div>
+          <div className="text-xs font-semibold text-cyan-300 mt-1.5">RTB Bench</div>
+          <div className="text-[11px] text-muted mt-0.5 tabular-nums">
+            {formatCurrencyCompact(c.rtbBenchAmount)} · shovel-ready
+          </div>
+        </div>
+        {/* Weeks of RTB coverage */}
+        <div className="bg-surface border border-t-border rounded-lg px-4 py-3">
+          <div className={`text-2xl font-bold tabular-nums leading-none ${coverageTone(c.weeksOfRtbCoverage)}`}>
+            {c.weeksOfRtbCoverage == null ? "—" : `${c.weeksOfRtbCoverage}w`}
+          </div>
+          <div className="text-xs font-semibold text-foreground mt-1.5">RTB Runway</div>
+          <div className="text-[11px] text-muted mt-0.5">weeks before crews run dry</div>
+        </div>
+        {/* Weeks of backlog */}
+        <div className="bg-surface border border-t-border rounded-lg px-4 py-3">
+          <div className={`text-2xl font-bold tabular-nums leading-none ${backlogTone(c.weeksOfBacklog)}`}>
+            {c.weeksOfBacklog == null ? "—" : `${c.weeksOfBacklog}w`}
+          </div>
+          <div className="text-xs font-semibold text-foreground mt-1.5">Total Backlog</div>
+          <div className="text-[11px] text-muted mt-0.5 tabular-nums">
+            {c.preconBacklogCount} precon · runway
+          </div>
+        </div>
+        {/* RTB-Blocked risk */}
+        <div className="bg-gradient-to-br from-red-500/15 to-transparent border border-red-500/30 rounded-lg px-4 py-3">
+          <div className="text-2xl font-bold text-foreground tabular-nums leading-none">{c.blockedCount}</div>
+          <div className="text-xs font-semibold text-red-300 mt-1.5">RTB‑Blocked</div>
+          <div className="text-[11px] text-muted mt-0.5 truncate" title={c.blockedTopReason || undefined}>
+            {formatCurrencyCompact(c.blockedAmount)}
+            {c.blockedTopReason ? ` · ${c.blockedTopReason}` : " · jammed capacity"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Incoming tab ─────────────────────────────────────────────────────────────
 // Per step: backlog now, queued behind (immediate upstream), "not here yet" (the
