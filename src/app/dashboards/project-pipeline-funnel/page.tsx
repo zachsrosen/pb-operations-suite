@@ -309,7 +309,10 @@ function ProjectPipelineFunnelInner() {
       ) : tab === "activity" ? (
         <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
       ) : tab === "incoming" ? (
-        <IncomingView data={data} />
+        <>
+          {data.capacity && <CapacityRow capacity={data.capacity} />}
+          <IncomingView data={data} />
+        </>
       ) : tab === "cohorts" ? (
         <>
           <MonthlyFunnelChart cohorts={data.cohorts} />
@@ -319,8 +322,6 @@ function ProjectPipelineFunnelInner() {
         </>
       ) : (
         <>
-          {/* Capacity & Backlog — Active Pipeline tab only (live shovel-ready snapshot). */}
-          {tab === "funnel" && data.capacity && <CapacityRow capacity={data.capacity} />}
           {/* Funnel tab = active snapshot (cancelled always 0 → hidden, no prior-
               period trend). Sales Funnel = the same hero windowed by close date
               (sales cohort), so it shows cancelled + trend vs the prior window. */}
