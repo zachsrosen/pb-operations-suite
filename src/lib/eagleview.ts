@@ -218,6 +218,31 @@ function shouldRetry(status: number): boolean {
   return status === 429 || (status >= 500 && status < 600);
 }
 
+/**
+ * Classify an EagleView `displayStatus` as a terminal non-success outcome.
+ *
+ * Returns:
+ *   - "CANCELLED" only for explicitly cancelled orders.
+ *   - "FAILED" for processing failures/errors AND EagleView's "Closed - …"
+ *     terminations ("Closed - Wrong House", "Closed - Poor Images") — these
+ *     never produce a deliverable, so they're treated as failures.
+ *   - null when the status is not a terminal failure (still in progress, or a
+ *     success status like "Completed" — success is handled separately by the
+ *     caller, which downloads files).
+ *
+ * Before this existed the poller only matched fail/error/cancel, so "Closed - …"
+ * statuses fell through to PENDING and were re-polled forever.
+ */
+export function classifyTerminalStatus(
+  displayStatus: string | null | undefined,
+): "FAILED" | "CANCELLED" | null {
+  const s = (displayStatus ?? "").toLowerCase();
+  if (!s) return null;
+  if (s.includes("cancel")) return "CANCELLED";
+  if (s.includes("closed") || s.includes("fail") || s.includes("error")) return "FAILED";
+  return null;
+}
+
 // ============================================================
 // Client
 // ============================================================
@@ -426,10 +451,14 @@ export class EagleViewClient {
    * GET /v3/Report/{reportId}/file-links — signed URLs for file downloads.
    */
   async getFileLinks(reportId: number | string): Promise<FileLinksResponse> {
-    return this.request<FileLinksResponse>(
+    // A Completed-but-no-files-yet report returns HTTP 204 (empty body), which
+    // request() normalizes to {}. Coalesce to an empty links array so callers
+    // never see `undefined`.
+    const res = await this.request<Partial<FileLinksResponse>>(
       "GET",
       `/v3/Report/${encodeURIComponent(String(reportId))}/file-links`,
     );
+    return { links: res.links ?? [] };
   }
 
   /**
@@ -526,7 +555,17 @@ export class EagleViewClient {
       );
     }
 
-    const raw = await response.json();
+    // Some endpoints return 204 / an empty body on success (e.g. file-links for
+    // a Completed-but-no-files-yet report). response.json() would throw
+    // "Unexpected end of JSON input" — treat empty bodies as {} instead.
+    if (response.status === 204) {
+      return camelizeKeys({}) as T;
+    }
+    const text = await response.text();
+    if (!text || text.trim() === "") {
+      return camelizeKeys({}) as T;
+    }
+    const raw = JSON.parse(text) as unknown;
     return camelizeKeys(raw) as T;
   }
 }

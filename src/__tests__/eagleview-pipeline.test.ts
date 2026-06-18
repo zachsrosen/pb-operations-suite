@@ -81,6 +81,7 @@ function makeFakePrisma() {
           orderedAt: now,
           deliveredAt: null,
           errorMessage: null,
+          failedAttempts: 0,
           estimatedDeliveryAt: null,
           driveFolderId: null,
           imageDriveFileId: null,
@@ -98,7 +99,23 @@ function makeFakePrisma() {
       update: jest.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
         const idx = rows.findIndex((r) => r.id === args.where.id);
         if (idx === -1) throw new Error("not found");
-        rows[idx] = { ...rows[idx], ...args.data, updatedAt: new Date() } as FakeRow;
+        // Resolve Prisma atomic operators (e.g. { increment: n }) the way the real client would.
+        const resolved: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(args.data)) {
+          if (
+            value &&
+            typeof value === "object" &&
+            "increment" in (value as Record<string, unknown>)
+          ) {
+            const current = (rows[idx] as unknown as Record<string, unknown>)[key];
+            resolved[key] =
+              (typeof current === "number" ? current : 0) +
+              ((value as { increment: number }).increment ?? 0);
+          } else {
+            resolved[key] = value;
+          }
+        }
+        rows[idx] = { ...rows[idx], ...resolved, updatedAt: new Date() } as FakeRow;
         return rows[idx];
       }),
     },
@@ -408,5 +425,125 @@ describe("fetchAndStoreDeliverables", () => {
     const r = await fetchAndStoreDeliverables(deps, "doesnt_exist");
     expect(r.status).toBe("FAILED");
     expect(r.reason).toBe("order_not_found");
+  });
+});
+
+// ============================================================
+// fetchAndStoreDeliverables — failures must be persisted, not swallowed
+// (regression: 38 orders silently stranded in ORDERED with errorMessage=null)
+// ============================================================
+
+describe("fetchAndStoreDeliverables — failure persistence", () => {
+  it("records errorMessage + increments failedAttempts but keeps status ORDERED when no files yet", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.getFileLinks.mockResolvedValueOnce({ links: [] });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("FAILED");
+    expect(r.reason).toBe("no_files_yet");
+    // Row must stay ORDERED (retryable) but the failure must be visible in the DB.
+    expect(p.rows[0].status).toBe("ORDERED");
+    expect(p.rows[0].errorMessage).toBe("no_files_yet");
+    expect(p.rows[0].failedAttempts).toBe(1);
+  });
+
+  it("persists errorMessage on drive_folder_missing while staying ORDERED", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.fetchDealAddress.mockResolvedValueOnce(
+      mkDealAddress({
+        driveDesignDocumentsFolderId: null,
+        driveAllDocumentsFolderId: null,
+      }),
+    );
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("FAILED");
+    expect(r.reason).toBe("drive_folder_missing");
+    expect(p.rows[0].status).toBe("ORDERED");
+    expect(p.rows[0].errorMessage).toBe("drive_folder_missing");
+    expect(p.rows[0].failedAttempts).toBe(1);
+  });
+
+  it("persists errorMessage on get_file_links_failed while staying ORDERED", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.getFileLinks.mockRejectedValueOnce(new Error("boom"));
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("FAILED");
+    expect(r.reason).toBe("get_file_links_failed");
+    expect(p.rows[0].status).toBe("ORDERED");
+    expect(p.rows[0].errorMessage).toBe("get_file_links_failed");
+    expect(p.rows[0].failedAttempts).toBe(1);
+  });
+
+  it("persists errorMessage on all_uploads_failed while staying ORDERED", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.downloadFile.mockRejectedValue(new Error("download boom"));
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("FAILED");
+    expect(r.reason).toBe("all_uploads_failed");
+    expect(p.rows[0].status).toBe("ORDERED");
+    expect(p.rows[0].errorMessage).toBe("all_uploads_failed");
+    expect(p.rows[0].failedAttempts).toBe(1);
+  });
+
+  it("accumulates failedAttempts across repeated failures", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.getFileLinks.mockResolvedValue({ links: [] });
+
+    await fetchAndStoreDeliverables(deps, "12345");
+    await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(p.rows[0].status).toBe("ORDERED");
+    expect(p.rows[0].failedAttempts).toBe(2);
+  });
+});
+
+// ============================================================
+// fetchAndStoreDeliverables — EagleView's real file-link types
+// ============================================================
+
+describe("fetchAndStoreDeliverables — EagleView file-link type mapping", () => {
+  it("maps ExtendedOrthoImage/Shading/ExtendedOrthoImageMetadata to correct columns + extensions", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.getFileLinks.mockResolvedValueOnce({
+      links: [
+        { link: "https://signed.example.com/ortho", expireTimestamp: "", fileType: "ExtendedOrthoImage" },
+        { link: "https://signed.example.com/meta", expireTimestamp: "", fileType: "ExtendedOrthoImageMetadata" },
+        { link: "https://signed.example.com/shade", expireTimestamp: "", fileType: "Shading" },
+      ],
+    });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+    expect(r.status).toBe("DELIVERED");
+
+    const row = p.rows[0];
+    // ExtendedOrthoImage → image column, .jpg extension (NOT .bin)
+    expect(row.imageDriveFileId).not.toBeNull();
+    expect(row.imageDriveFileId).toContain("ExtendedOrthoImage.jpg");
+    // Shading → shade column, .json extension (NOT .bin)
+    expect(row.shadeJsonDriveFileId).not.toBeNull();
+    expect(row.shadeJsonDriveFileId).toContain("Shading.json");
+    // Metadata must not be misfiled as an image (.jpg); it is JSON.
+    const uploadedNames = deps.spies.uploadToDrive.mock.calls.map((c) => c[1]);
+    expect(uploadedNames).toContain("ExtendedOrthoImageMetadata.json");
+    expect(uploadedNames).not.toContain("Shading.bin");
   });
 });

@@ -292,10 +292,12 @@ export async function fetchAndStoreDeliverables(
       tags: { feature: "eagleview", phase: "getFileLinks" },
       extra: { reportId: reportIdStr },
     });
+    await recordDeliveryFailure(deps.prisma, order.id, "get_file_links_failed");
     return { status: "FAILED", reason: "get_file_links_failed" };
   }
 
   if (!links.links || links.links.length === 0) {
+    await recordDeliveryFailure(deps.prisma, order.id, "no_files_yet");
     return { status: "FAILED", reason: "no_files_yet" };
   }
 
@@ -307,6 +309,7 @@ export async function fetchAndStoreDeliverables(
     null;
 
   if (!parentFolderId) {
+    await recordDeliveryFailure(deps.prisma, order.id, "drive_folder_missing");
     return { status: "FAILED", reason: "drive_folder_missing" };
   }
 
@@ -322,6 +325,7 @@ export async function fetchAndStoreDeliverables(
       tags: { feature: "eagleview", phase: "ensureDriveFolder" },
       extra: { reportId: reportIdStr, dealId: order.dealId },
     });
+    await recordDeliveryFailure(deps.prisma, order.id, "drive_folder_create_failed");
     return { status: "FAILED", reason: "drive_folder_create_failed" };
   }
 
@@ -353,6 +357,7 @@ export async function fetchAndStoreDeliverables(
   }
 
   if (uploadedNames.length === 0) {
+    await recordDeliveryFailure(deps.prisma, order.id, "all_uploads_failed");
     return { status: "FAILED", reason: "all_uploads_failed" };
   }
 
@@ -362,6 +367,7 @@ export async function fetchAndStoreDeliverables(
     data: {
       status: "DELIVERED",
       deliveredAt: new Date(),
+      errorMessage: null, // clear any failure recorded by earlier retry attempts
       driveFolderId,
       imageDriveFileId: fileIdByType["image"] ?? null,
       layoutJsonDriveFileId: fileIdByType["layout"] ?? null,
@@ -431,14 +437,47 @@ async function markFailed(
   });
 }
 
+/**
+ * Record a deliverable-fetch failure WITHOUT moving the order out of ORDERED.
+ *
+ * The order itself succeeded at EagleView; only our file pull failed — usually
+ * transiently (Drive hiccup, files not ready yet, missing folder that gets
+ * created later). We persist the reason and bump `failedAttempts` so the failure
+ * is visible in the DB and the poller keeps retrying on its next tick.
+ *
+ * Before this, every failure path returned FAILED to the caller but never wrote
+ * the row, leaving orders stuck in ORDERED with errorMessage=null — which is how
+ * 38 orders were silently stranded for weeks.
+ */
+async function recordDeliveryFailure(
+  prisma: Pick<PrismaClient, "eagleViewOrder">,
+  orderId: string,
+  reason: string,
+): Promise<void> {
+  await prisma.eagleViewOrder.update({
+    where: { id: orderId },
+    data: {
+      errorMessage: reason,
+      failedAttempts: { increment: 1 },
+    },
+  });
+}
+
 const FILE_TYPE_NORMALIZATIONS: Record<string, string> = {
   "design-image": "image",
   image: "image",
   aerial: "image",
+  // EagleView's actual file-link type for the aerial ortho image.
+  extendedorthoimage: "image",
+  // Companion JSON metadata for the ortho image — no dedicated column, but we
+  // still normalize it so it isn't misfiled and uploads with the right name.
+  extendedorthoimagemetadata: "metadata",
   "panel-layout": "layout",
   layout: "layout",
   "shade-analysis": "shade",
   shade: "shade",
+  // EagleView's actual file-link type for shade analysis.
+  shading: "shade",
   "measurement-pdf": "report-pdf",
   "measurement-report": "report-pdf",
   "report-pdf": "report-pdf",
@@ -454,9 +493,14 @@ function normalizeFileType(raw: string): string {
 function inferMimeAndExt(link: ReportFileLink): { mimeType: string; ext: string } {
   const lower = link.fileType.toLowerCase();
   if (lower.includes("xml")) return { mimeType: "application/xml", ext: "xml" };
+  // Metadata is JSON describing the ortho image. Check before pdf/image so
+  // "ExtendedOrthoImageMetadata" isn't misfiled as .pdf or .jpg.
+  if (lower.includes("metadata")) return { mimeType: "application/json", ext: "json" };
   if (lower.includes("pdf") || lower.includes("report"))
     return { mimeType: "application/pdf", ext: "pdf" };
-  if (lower.includes("json") || lower.includes("layout") || lower.includes("shade"))
+  // "shad" matches both "shade" and EagleView's "Shading"; layout payloads are
+  // JSON too.
+  if (lower.includes("json") || lower.includes("layout") || lower.includes("shad"))
     return { mimeType: "application/json", ext: "json" };
   if (lower.includes("png")) return { mimeType: "image/png", ext: "png" };
   if (lower.includes("jpg") || lower.includes("jpeg") || lower.includes("image"))
