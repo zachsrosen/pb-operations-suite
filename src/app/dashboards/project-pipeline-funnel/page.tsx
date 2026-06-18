@@ -510,19 +510,43 @@ const PE_OPTIONS = [
 ] as const;
 
 /** Each backlog bucket → the median-leg-time key that benchmarks "how long this stage takes". */
-const BACKLOG_LEG: Record<string, keyof ProjectFunnelResponse["medianDays"]> = {
-  awaitingSurveySchedule: "closedToSurveyScheduled",
-  awaitingSurvey: "surveyScheduledToComplete",
-  awaitingDaSend: "surveyToDaSent",
-  awaitingApproval: "daSentToApproved",
-  awaitingDesignComplete: "approvedToDesignComplete",
-  awaitingPermitSubmit: "designCompleteToPermitSubmit",
-  awaitingPermitIssue: "permitSubmitToIssued",
-  awaitingConstructionSchedule: "permitIssuedToConstructionScheduled",
-  awaitingConstructionComplete: "constructionScheduledToComplete",
-  awaitingInspection: "constructionCompleteToInspection",
-  awaitingPto: "inspectionToPto",
+// Median leg(s) that benchmark how long each bucket should take. Most buckets
+// anchor "days waiting" on the prior milestone date, so a single leg matches.
+// Awaiting Survey Complete anchors on the CLOSE date (its survey may be future-
+// dated), so its benchmark is cumulative: close→scheduled + scheduled→complete.
+const BACKLOG_LEG: Record<string, Array<keyof ProjectFunnelResponse["medianDays"]>> = {
+  awaitingSurveySchedule: ["closedToSurveyScheduled"],
+  awaitingSurvey: ["closedToSurveyScheduled", "surveyScheduledToComplete"],
+  awaitingDaSend: ["surveyToDaSent"],
+  awaitingApproval: ["daSentToApproved"],
+  awaitingDesignComplete: ["approvedToDesignComplete"],
+  awaitingPermitSubmit: ["designCompleteToPermitSubmit"],
+  awaitingPermitIssue: ["permitSubmitToIssued"],
+  awaitingConstructionSchedule: ["permitIssuedToConstructionScheduled"],
+  awaitingConstructionComplete: ["constructionScheduledToComplete"],
+  awaitingInspection: ["constructionCompleteToInspection"],
+  awaitingPto: ["inspectionToPto"],
 };
+
+/** Sum of the bucket's benchmark legs (null if no median data). */
+function backlogBenchmark(bucketKey: string, medianDays: ProjectFunnelResponse["medianDays"]): number | null {
+  const legs = BACKLOG_LEG[bucketKey];
+  if (!legs) return null;
+  const vals = legs.map((k) => medianDays[k]).filter((v): v is number => v != null);
+  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) : null;
+}
+
+/**
+ * A deal is "late" if it's waited past its stage benchmark — but NOT if it has a
+ * future scheduled date (survey/construction booked ahead = an appointment, not
+ * overdue) or is parked (on hold).
+ */
+function isDealLate(d: ProjectFunnelDrillDownDeal, benchmark: number | null): boolean {
+  if (benchmark == null || d.flag?.parked) return false;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  if (d.scheduledDate && d.scheduledDate > todayIso) return false; // upcoming appointment
+  return d.daysWaiting > benchmark;
+}
 
 /** Each between-card connector maps to the backlog of deals stuck at that transition. */
 const STAGE_TO_BACKLOG: Partial<Record<ProjectFunnelStageKey, string>> = {
@@ -1222,12 +1246,10 @@ function BacklogSection({
           const segTotal = b.deals.length || 1;
           const avgDays = avgDaysInStage(b.deals);
           const flags = flagsInBucket(b.deals);
-          // Backlog aging: deals waiting longer than this stage's typical time.
-          const legKey = BACKLOG_LEG[b.key];
-          const benchmark = legKey ? medianDays[legKey] : null;
-          const lateCount = benchmark != null
-            ? b.deals.filter((d) => !d.flag?.parked && d.daysWaiting > benchmark).length
-            : 0;
+          // Backlog aging: deals waiting longer than this stage's typical time
+          // (future-scheduled / on-hold deals excluded — see isDealLate).
+          const benchmark = backlogBenchmark(b.key, medianDays);
+          const lateCount = b.deals.filter((d) => isDealLate(d, benchmark)).length;
           return (
           <div key={b.key} id={`backlog-${b.key}`} className="scroll-mt-24">
             <button
@@ -1484,7 +1506,7 @@ function DrillDownTable({
               )}
               <td className={`text-right py-1 px-1.5 font-medium ${d.flag?.parked ? "text-muted/60" : d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
                 {d.daysWaiting}d
-                {!d.flag?.parked && benchmark != null && d.daysWaiting > benchmark && (
+                {isDealLate(d, benchmark) && (
                   <span className="ml-1 text-[9px] text-red-400/90 font-semibold uppercase" title={`Over the ${benchmark}d stage average`}>late</span>
                 )}
               </td>
