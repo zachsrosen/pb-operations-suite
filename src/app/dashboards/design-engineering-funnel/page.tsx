@@ -82,11 +82,14 @@ function DrillTable({ deals, indent = true }: { deals: DesignFunnelDeal[]; inden
                         : d.flag.tone === "orange"
                           ? "bg-orange-500/20 text-orange-300"
                           : "bg-yellow-500/20 text-yellow-300"
-                    }`}
-                    title={d.flag.reason || undefined}
+                    } ${d.flag.reason ? "" : "opacity-60"}`}
+                    title={d.flag.reason || "No reason given in HubSpot"}
                   >
                     {d.flag.label}
                   </span>
+                )}
+                {d.flag && !d.flag.reason && (
+                  <span className="ml-1 text-[9px] italic text-muted/50">no reason given</span>
                 )}
               </td>
               <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.stage}</td>

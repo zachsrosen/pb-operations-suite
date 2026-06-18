@@ -1289,11 +1289,15 @@ function DrillDownTable({
                 {d.status || <span className="italic text-muted/60">—</span>}
               </td>
             </tr>
-            {d.flag && (d.flag.reason || d.flag.note) && (
+            {d.flag && (
               <tr className="border-b border-t-border/30">
                 <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
                   <span className={`text-[11px] ${FLAG_TEXT[d.flag.tone] || "text-muted"}`}>↳ {d.flag.label}</span>
-                  {d.flag.reason && <span className="text-[11px] text-muted/80"> · {d.flag.reason}</span>}
+                  {d.flag.reason ? (
+                    <span className="text-[11px] text-muted/80"> · {d.flag.reason}</span>
+                  ) : (
+                    <span className="text-[11px] text-muted/50 italic"> · no reason given in HubSpot</span>
+                  )}
                   {d.flag.note && <span className="text-[11px] text-muted/70 italic"> — {d.flag.note}</span>}
                 </td>
               </tr>
