@@ -836,12 +836,12 @@ function DocActivityChart({ events, noun, statLabel, barClass, pillClass, swatch
  * a 600-doc person's bar dwarfs a 2-doc person's. Segments within show the
  * approved / in-review / rejected split. Overflows clip (e.g. the Unknown row).
  */
-type Outcome = "approved" | "inReview" | "rejected";
-function OutcomeBar({ approved, inReview, rejected, scale, uploads, onSeg }: { approved: number; inReview: number; rejected: number; scale: number; uploads?: number; onSeg?: (o: Outcome) => void }) {
+type Outcome = "approved" | "inReview" | "rejected" | "superseded";
+function OutcomeBar({ approved, inReview, rejected, scale, uploads, supersededCount, onSeg }: { approved: number; inReview: number; rejected: number; scale: number; uploads?: number; supersededCount?: number; onSeg?: (o: Outcome) => void }) {
   const owned = approved + inReview + rejected;
-  // When `uploads` is given the bar is scaled to total uploads (matching the
-  // table sort); the extra width past owned docs = superseded/resubmitted uploads.
-  const superseded = uploads != null ? Math.max(0, uploads - owned) : 0;
+  // Prefer the exact superseded count (matches the drill-down list); otherwise
+  // estimate from total uploads past owned docs.
+  const superseded = supersededCount ?? (uploads != null ? Math.max(0, uploads - owned) : 0);
   const w = (n: number) => `${Math.min(100, (n / scale) * 100)}%`;
   const seg = (n: number, o: Outcome, cls: string, label: string) =>
     n > 0 ? (
@@ -857,7 +857,7 @@ function OutcomeBar({ approved, inReview, rejected, scale, uploads, onSeg }: { a
       {seg(approved, "approved", "bg-emerald-500/80", "approved")}
       {seg(inReview, "inReview", "bg-zinc-400/60", "in review")}
       {seg(rejected, "rejected", "bg-orange-500/80", "rejected")}
-      {superseded > 0 && <div className="h-full bg-zinc-700/50" style={{ width: w(superseded), minWidth: 2 }} title={`${superseded} superseded / resubmitted uploads`} />}
+      {seg(superseded, "superseded", "bg-zinc-700/50", "superseded / resubmitted")}
     </div>
   );
 }
@@ -938,26 +938,29 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
     approved: { border: "border-emerald-500/30", bg: "bg-emerald-500/5", doc: "text-emerald-400", noun: "approved" },
     inReview: { border: "border-zinc-400/30", bg: "bg-zinc-400/5", doc: "text-foreground", noun: "in review" },
     rejected: { border: "border-orange-500/30", bg: "bg-orange-500/5", doc: "text-orange-400", noun: "to fix" },
+    superseded: { border: "border-zinc-600/40", bg: "bg-zinc-600/5", doc: "text-muted", noun: "superseded upload" },
   };
 
   // Shared column template so the header labels line up with every row.
-  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_3rem_2.75rem_2.75rem_2.75rem_2.5rem]";
+  const COLS = "grid items-center gap-x-2 grid-cols-[7rem_1fr_3rem_3rem_3rem_2.75rem_2.75rem_2.75rem_2.75rem_2.5rem]";
   const renderRow = (s: UploaderStat, muted: boolean) => {
     const rate = rateOf(s);
     const total = s.approved + s.inReview + s.rejected;
+    const supersededN = docs[s.uploader]?.superseded?.length ?? 0;
     return (
       <div className={`${COLS} ${muted ? "opacity-70" : ""}`}>
         <span className="text-xs text-foreground truncate" title={muted ? unk.title : `${s.uploader} · ${s.total} uploads across ${s.deals} deals`}>
           {muted ? "Unknown" : prettyUploader(s.uploader)}
           {muted && <span className="text-[10px] text-muted block leading-tight">{unk.note}</span>}
         </span>
-        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} uploads={s.total} onSeg={(o) => toggle(s.uploader, o)} />
+        <OutcomeBar approved={s.approved} inReview={s.inReview} rejected={s.rejected} scale={barScale} uploads={s.total} supersededCount={supersededN} onSeg={(o) => toggle(s.uploader, o)} />
         <span className="text-xs text-muted text-right tabular-nums" title="Every upload action, including resubmissions of the same doc">{s.total.toLocaleString("en-US")}</span>
         <span className="text-sm font-semibold text-foreground text-right tabular-nums" title={mode === "shared" ? "Fractional docs owned (split by version count)" : "Distinct docs you're the latest uploader on"}>{fmt(total)}</span>
         <span className="text-xs text-cyan-400 text-right tabular-nums" title={`distinct deals — ${s.deals}`}>{s.deals.toLocaleString("en-US")}</span>
         {oc(s, "approved", s.approved, "text-emerald-400")}
         {oc(s, "inReview", s.inReview, "text-muted")}
         {oc(s, "rejected", s.rejected, "text-orange-400")}
+        {oc(s, "superseded", supersededN, "text-zinc-400")}
         <span className="text-xs text-foreground text-right tabular-nums" title="Approved ÷ (approved + rejected)">{rate === null ? "—" : `${Math.round(rate * 100)}%`}</span>
       </div>
     );
@@ -1000,6 +1003,7 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
         <span className="text-right text-emerald-400/80" title="Click to view these docs">Appr. ⌕</span>
         <span className="text-right" title="Click to view these docs">In rev. ⌕</span>
         <span className="text-right text-orange-400/80" title="Click to view these docs">Rej. ⌕</span>
+        <span className="text-right text-zinc-400/80" title="Older versions replaced by a resubmission — click to view">Sup. ⌕</span>
         <span className="text-right">Rate</span>
       </div>
 
@@ -1017,7 +1021,9 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
         const list = docs[drill.uploader]?.[drill.outcome] ?? [];
         if (list.length === 0) return null;
         const st = drillStyle[drill.outcome];
-        const noun = drill.outcome === "rejected" ? `doc${list.length === 1 ? "" : "s"} to fix` : `${st.noun} doc${list.length === 1 ? "" : "s"}`;
+        const noun = drill.outcome === "rejected" ? `doc${list.length === 1 ? "" : "s"} to fix`
+          : drill.outcome === "superseded" ? `superseded upload${list.length === 1 ? "" : "s"}`
+            : `${st.noun} doc${list.length === 1 ? "" : "s"}`;
         return (
           <div className={`mt-3 rounded-lg border ${st.border} ${st.bg} p-3`}>
             <div className="flex items-center justify-between mb-2">
@@ -1038,6 +1044,7 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
                 <div key={`${r.dealName}-${r.docName}-${i}`} className="text-xs border-b border-t-border/40 pb-1.5 last:border-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`${st.doc} font-medium`}>{r.docName}</span>
+                    {r.version != null && <span className="text-[10px] text-muted tabular-nums" title="superseded version + date">v{r.version}{r.uploadedAt ? ` · ${r.uploadedAt}` : ""}</span>}
                     {mode === "shared" && r.weight != null && r.weight < 0.999 && (
                       <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/25" title="This person's fractional share of this shared doc">{fmt(r.weight)}</span>
                     )}

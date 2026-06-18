@@ -1053,7 +1053,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       : null;
     const clean = note ? cleanRejectionNote(note) : null;
     const key = who?.trim() || UNKNOWN_UPLOADER;
-    const entry = (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [] });
+    const entry = (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] });
     const doc: UploaderDoc = {
       dealId,
       dealName: dealNameById.get(dealId) ?? dealId,
@@ -1088,7 +1088,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const clean = note ? cleanRejectionNote(note) : null;
     for (const { who, weight } of owners) {
       const key = who?.trim() || UNKNOWN_UPLOADER;
-      const entry = (uploaderDocsShared[key] ??= { approved: [], inReview: [], rejected: [] });
+      const entry = (uploaderDocsShared[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] });
       entry[bucket].push({
         dealId,
         dealName: dealNameById.get(dealId) ?? dealId,
@@ -1102,6 +1102,30 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         weight,
       });
     }
+  }
+
+  // Superseded uploads: any version below the latest for its (deal, doc) — an
+  // older upload that a resubmission replaced — credited to whoever uploaded it.
+  // Feeds both owner and shared drill-downs (it's the same upload event).
+  for (const v of uploaderVersionRows) {
+    if (!v.dealId) continue;
+    const k = `${v.dealId}|${v.docName}`;
+    if (v.version >= (maxVerByKey.get(k) ?? 0)) continue; // the latest isn't superseded
+    if (!dealNameById.has(v.dealId)) continue;
+    const key = v.uploadedBy?.trim() || UNKNOWN_UPLOADER;
+    const doc: UploaderDoc = {
+      dealId: v.dealId,
+      dealName: dealNameById.get(v.dealId) ?? v.dealId,
+      docName: v.docName,
+      hubspotUrl: portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${v.dealId}` : "",
+      pePortalUrl: dealPortalUrl.get(v.dealId) ?? null,
+      driveUrl: dealMetaById.get(v.dealId)?.drive ?? null,
+      note: null,
+      version: v.version,
+      uploadedAt: new Date(v.uploadedAt).toISOString().slice(0, 10),
+    };
+    (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] }).superseded.push(doc);
+    (uploaderDocsShared[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] }).superseded.push(doc);
   }
 
   return {
