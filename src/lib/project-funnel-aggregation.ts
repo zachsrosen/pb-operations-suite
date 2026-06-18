@@ -352,7 +352,10 @@ function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
     return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || null, note: null, parked: false };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
-    return { label: "Sales change", tone: "orange", reason: p.salesChangeOrderNotes || null, note: null, parked: false };
+    // The dedicated field is often blank; the change is usually recorded in the
+    // sales-communication note (or the catch-all rationale), so fall back to those.
+    const reason = p.salesChangeOrderNotes || p.salesCommunicationReason || p.pbShitShowReason || null;
+    return { label: "Sales change", tone: "orange", reason, note: null, parked: false };
   }
   return null;
 }

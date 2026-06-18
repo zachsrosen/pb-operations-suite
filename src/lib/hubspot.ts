@@ -475,6 +475,8 @@ export interface Project {
   onHoldReason: string | null; // dropdown selection
   onHoldNotes: string | null;  // free-text explanation
   salesChangeOrderNotes: string | null; // "Pending Sales Changes" DA status: the change requested
+  salesCommunicationReason: string | null; // fallback reason field
+  pbShitShowReason: string | null; // last-resort reason fallback
 
   // Priority & Scoring
   priorityScore: number;
@@ -747,6 +749,8 @@ const DEAL_PROPERTIES = [
   "on_hold_selection",    // On Hold stage: dropdown reason
   "on_hold_reason",       // On Hold stage: free-text notes
   "sales_change_order_notes", // "Pending Sales Changes" DA status: the change requested
+  "sales_communication_reason", // fallback reason when the dedicated field is blank
+  "pb_shit_show_reason",        // free-text rationale; last-resort reason fallback
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -1145,6 +1149,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     onHoldReason: deal.on_hold_selection ? String(deal.on_hold_selection) : null,
     onHoldNotes: deal.on_hold_reason ? String(deal.on_hold_reason) : null,
     salesChangeOrderNotes: deal.sales_change_order_notes ? String(deal.sales_change_order_notes) : null,
+    salesCommunicationReason: deal.sales_communication_reason ? String(deal.sales_communication_reason) : null,
+    pbShitShowReason: deal.pb_shit_show_reason ? String(deal.pb_shit_show_reason) : null,
 
     // Priority
     priorityScore,
