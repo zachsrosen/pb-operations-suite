@@ -867,6 +867,7 @@ export interface UploaderDoc {
   weight?: number; // fractional credit for this person in shared mode (1 in owner mode)
   version?: number; // the upload's version number (superseded uploads)
   uploadedAt?: string; // YYYY-MM-DD this version landed (superseded uploads)
+  supersededBy?: string; // uploader of the latest version that replaced this one
 }
 /** An uploader's owned docs split by current outcome. */
 export interface UploaderOutcomeDocs {

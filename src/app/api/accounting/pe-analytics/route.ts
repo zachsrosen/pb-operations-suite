@@ -1104,6 +1104,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
   }
 
+  // Who superseded each doc: the actual latest-version uploader (pre-override).
+  const latestVerUploaderByKey = new Map<string, string | null>();
+  for (const v of uploaderVersionRows) {
+    if (!v.dealId) continue;
+    const k = `${v.dealId}|${v.docName}`;
+    if (v.version >= (maxVerByKey.get(k) ?? 0)) latestVerUploaderByKey.set(k, v.uploadedBy);
+  }
   // Superseded uploads: any version below the latest for its (deal, doc) — an
   // older upload that a resubmission replaced — credited to whoever uploaded it.
   // Feeds both owner and shared drill-downs (it's the same upload event).
@@ -1123,6 +1130,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       note: null,
       version: v.version,
       uploadedAt: new Date(v.uploadedAt).toISOString().slice(0, 10),
+      supersededBy: latestVerUploaderByKey.get(k)?.trim() || undefined,
     };
     (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] }).superseded.push(doc);
     (uploaderDocsShared[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] }).superseded.push(doc);
