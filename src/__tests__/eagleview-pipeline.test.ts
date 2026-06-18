@@ -156,6 +156,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     ensureDriveFolder: jest.Mock;
     uploadToDrive: jest.Mock;
     postDealNote: jest.Mock;
+    stampStatus: jest.Mock;
   };
 } {
   const placeOrder = jest.fn(async () => ({ reportIds: [12345], orderId: 99 }));
@@ -183,6 +184,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
   const ensureDriveFolder = jest.fn(async () => "drive_folder_123");
   const uploadToDrive = jest.fn(async (_: string, name: string) => ({ id: `f_${name}`, name }));
   const postDealNote = jest.fn(async () => undefined);
+  const stampStatus = jest.fn(async () => undefined);
 
   return {
     prisma: prismaDouble as unknown as PipelineDeps["prisma"],
@@ -192,6 +194,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     ensureDriveFolder,
     uploadToDrive,
     postDealNote,
+    stampStatus,
     spies: {
       placeOrder,
       checkSolarAvailability,
@@ -203,6 +206,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
       ensureDriveFolder,
       uploadToDrive,
       postDealNote,
+      stampStatus,
     },
   };
 }

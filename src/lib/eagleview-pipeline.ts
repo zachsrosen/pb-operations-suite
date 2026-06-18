@@ -98,6 +98,14 @@ export interface PipelineDeps {
   ) => Promise<{ id: string; name: string }>;
   /** Post a note on the HubSpot deal timeline. Best-effort; log on failure. */
   postDealNote: (dealId: string, body: string) => Promise<void>;
+  /**
+   * Best-effort stamp of EagleView lifecycle state onto the originating CRM
+   * object (ticket if ticketId set, else deal). Must never throw.
+   */
+  stampStatus: (
+    target: { dealId: string; ticketId: string | null },
+    fields: EagleViewStampFields,
+  ) => Promise<void>;
 }
 
 export interface EagleViewStampFields {
