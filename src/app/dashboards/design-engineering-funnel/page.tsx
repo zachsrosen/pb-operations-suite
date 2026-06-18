@@ -52,6 +52,12 @@ function ageTone(days: number): string {
   return "text-muted";
 }
 
+const PE_OPTIONS = [
+  { v: "all", label: "All" },
+  { v: "pe", label: "PE" },
+  { v: "non-pe", label: "Non-PE" },
+] as const;
+
 /** Drill-down table for one bucket / stage row — mirrors the project funnel's. */
 function DrillTable({ deals, indent = true }: { deals: DesignFunnelDeal[]; indent?: boolean }) {
   return (
@@ -339,15 +345,19 @@ export default function DesignEngineeringFunnelPage() {
   const [locations, setLocations] = useState<string[]>([]);
   const [leads, setLeads] = useState<string[]>([]);
   const [pms, setPms] = useState<string[]>([]);
+  const [pe, setPe] = useState<"all" | "pe" | "non-pe">("all");
+  const [includeOnHold, setIncludeOnHold] = useState(true);
   const [tab, setTab] = useState<"funnel" | "stages">("funnel");
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<DesignFunnelResponse>({
-    queryKey: queryKeys.funnel.designFunnel(locations, leads, pms),
+    queryKey: [...queryKeys.funnel.designFunnel(locations, leads, pms), pe, includeOnHold],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (locations.length > 0) params.set("locations", locations.join(","));
       if (leads.length > 0) params.set("leads", leads.join(","));
       if (pms.length > 0) params.set("pms", pms.join(","));
+      if (pe !== "all") params.set("pe", pe);
+      if (!includeOnHold) params.set("onhold", "0");
       const res = await fetch(`/api/deals/design-funnel?${params}`);
       if (!res.ok) throw new Error("Failed to fetch design funnel data");
       return res.json();
@@ -393,6 +403,29 @@ export default function DesignEngineeringFunnelPage() {
           <MultiSelectFilter label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
           <MultiSelectFilter label="Design Lead" options={leadOptions} selected={leads} onChange={setLeads} />
           <MultiSelectFilter label="Project Mgr" options={pmOptions} selected={pms} onChange={setPms} />
+          {/* Participate Energy filter */}
+          <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-xs">
+            {PE_OPTIONS.map((o) => (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => setPe(o.v)}
+                className={`px-2.5 py-1.5 transition-colors ${pe === o.v ? "bg-purple-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+                title="Filter by Participate Energy"
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {/* On-hold toggle */}
+          <button
+            type="button"
+            onClick={() => setIncludeOnHold(!includeOnHold)}
+            className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeOnHold ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-yellow-500/40 bg-yellow-500/10 text-yellow-300"}`}
+            title={includeOnHold ? "On-hold deals included — click to hide" : "On-hold deals hidden — click to show"}
+          >
+            {includeOnHold ? "On Hold: shown" : "On Hold: hidden"}
+          </button>
           {data && (
             <span className="text-xs text-muted ml-auto">
               {data.totalProjects.toLocaleString()} active projects · {formatCurrencyCompact(data.totalAmount)}
