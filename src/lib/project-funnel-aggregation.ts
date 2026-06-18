@@ -349,7 +349,10 @@ function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
     return { label: "On hold", tone: "yellow", reason: p.onHoldReason || null, note: p.onHoldNotes || null, parked: true };
   }
   if (p.stageId === RTB_BLOCKED_STAGE_ID) {
-    return { label: "RTB blocked", tone: "red", reason: p.rtbBlockedReason || null, note: null, parked: false };
+    // rtb_blocked_reason is often blank; the block is usually noted in Kat's
+    // notes (or install-prep notes), so fall back to those.
+    const reason = p.rtbBlockedReason || p.katsNotes || p.notesForInstall || null;
+    return { label: "RTB blocked", tone: "red", reason, note: null, parked: false };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
     // The dedicated field is often blank; the change is usually recorded in the

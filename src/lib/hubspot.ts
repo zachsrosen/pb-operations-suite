@@ -477,6 +477,8 @@ export interface Project {
   salesChangeOrderNotes: string | null; // "Pending Sales Changes" DA status: the change requested
   salesCommunicationReason: string | null; // fallback reason field
   pbShitShowReason: string | null; // last-resort reason fallback
+  katsNotes: string | null; // RTB-Blocked reason fallback
+  notesForInstall: string | null; // RTB-Blocked reason fallback
 
   // Priority & Scoring
   priorityScore: number;
@@ -751,6 +753,8 @@ const DEAL_PROPERTIES = [
   "sales_change_order_notes", // "Pending Sales Changes" DA status: the change requested
   "sales_communication_reason", // fallback reason when the dedicated field is blank
   "pb_shit_show_reason",        // free-text rationale; last-resort reason fallback
+  "kats_notes",                 // general ops note; RTB-Blocked reason fallback
+  "notes_for_install",          // install-prep note; RTB-Blocked reason fallback
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -1151,6 +1155,8 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     salesChangeOrderNotes: deal.sales_change_order_notes ? String(deal.sales_change_order_notes) : null,
     salesCommunicationReason: deal.sales_communication_reason ? String(deal.sales_communication_reason) : null,
     pbShitShowReason: deal.pb_shit_show_reason ? String(deal.pb_shit_show_reason) : null,
+    katsNotes: deal.kats_notes ? String(deal.kats_notes) : null,
+    notesForInstall: deal.notes_for_install ? String(deal.notes_for_install) : null,
 
     // Priority
     priorityScore,
