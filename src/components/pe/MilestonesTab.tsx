@@ -160,12 +160,21 @@ const COLUMNS: { key: SortCol | "links"; label: string; right?: boolean; sortabl
 ];
 
 export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
-  const [milestone, setMilestone] = useState<MilestoneTab>("ic");
-  const [sub, setSub] = useState<SubGroup | "all">("all");
+  const [milestone, setMilestone] = useState<MilestoneTab>("all");
+  // Empty set = show all. Bubbles are multi-select; the "All" bubble clears.
+  const [subs, setSubs] = useState<Set<SubGroup>>(new Set());
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" }>({
     col: "amount",
     dir: "desc",
   });
+
+  const toggleSub = (key: SubGroup) =>
+    setSubs((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const toggleSort = (col: SortCol) =>
     setSort((s) =>
@@ -211,7 +220,7 @@ export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode
   const totalAmount = useMemo(() => scoped.reduce((s, r) => s + r.amount, 0), [scoped]);
 
   const visibleRows = useMemo(() => {
-    const rows = sub === "all" ? scoped : scoped.filter((r) => r.sub === sub);
+    const rows = subs.size === 0 ? scoped : scoped.filter((r) => subs.has(r.sub));
     const mul = sort.dir === "asc" ? 1 : -1;
     const val = (r: (typeof rows)[number]): string | number => {
       switch (sort.col) {
@@ -235,11 +244,11 @@ export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * mul;
       return String(av).localeCompare(String(bv)) * mul;
     });
-  }, [scoped, sub, sort]);
+  }, [scoped, subs, sort]);
 
   const exportData = useMemo(
     () => ({
-      filename: `pe-${milestone}-${sub}.csv`,
+      filename: `pe-${milestone}-${subs.size ? [...subs].join("+") : "all"}.csv`,
       data: visibleRows.map((r) => ({
         project: r.deal.peProjectId ?? "",
         customer: r.deal.dealName,
@@ -252,7 +261,7 @@ export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode
         pePortal: r.deal.pePortalUrl ?? "",
       })),
     }),
-    [visibleRows, milestone, sub],
+    [visibleRows, milestone, subs],
   );
 
   if (error) {
@@ -282,7 +291,7 @@ export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode
               key={t.key}
               onClick={() => {
                 setMilestone(t.key);
-                setSub("all");
+                setSubs(new Set());
               }}
               className={`text-sm px-3.5 py-1.5 rounded-lg border transition-colors ${
                 active
@@ -306,9 +315,9 @@ export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode
       {/* Subgroup cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-5">
         <button
-          onClick={() => setSub("all")}
+          onClick={() => setSubs(new Set())}
           className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
-            sub === "all"
+            subs.size === 0
               ? "border-emerald-500/50 bg-emerald-500/10"
               : "border-t-border bg-surface hover:bg-surface-2"
           }`}
@@ -320,11 +329,11 @@ export default function MilestonesTab({ tabsSlot }: { tabsSlot?: React.ReactNode
         {SUBGROUPS.map((s) => {
           const t = subTotals.get(s.key)!;
           if (t.count === 0) return null;
-          const active = sub === s.key;
+          const active = subs.has(s.key);
           return (
             <button
               key={s.key}
-              onClick={() => setSub(s.key)}
+              onClick={() => toggleSub(s.key)}
               className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
                 active ? s.accent : "border-t-border bg-surface hover:bg-surface-2"
               }`}
