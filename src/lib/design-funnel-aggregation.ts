@@ -292,8 +292,20 @@ class GroupBuilder {
 export function buildDesignFunnelData(
   projects: Project[],
   locations?: string[],
-  filters?: { designLeads?: string[]; projectManagers?: string[] }
+  filters?: { designLeads?: string[]; projectManagers?: string[] },
+  options?: { pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean }
 ): DesignFunnelResponse {
+  // Participate-Energy / on-hold filters, applied up front so they flow through.
+  const peFilter = options?.pe ?? "all";
+  const includeOnHold = options?.includeOnHold !== false;
+  if (peFilter !== "all" || !includeOnHold) {
+    projects = projects.filter((p) => {
+      if (peFilter === "pe" && !p.isParticipateEnergy) return false;
+      if (peFilter === "non-pe" && p.isParticipateEnergy) return false;
+      if (!includeOnHold && p.stageId === ON_HOLD_STAGE_ID) return false;
+      return true;
+    });
+  }
   const locSet = locations && locations.length > 0 ? new Set(locations) : null;
   function matchesLocation(p: Project): boolean {
     if (!locSet) return true;

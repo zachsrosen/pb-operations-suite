@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
     const leads = (searchParams.get("leads") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const pms = (searchParams.get("pms") || "").split(",").map((s) => s.trim()).filter(Boolean);
     const filters = leads.length > 0 || pms.length > 0 ? { designLeads: leads, projectManagers: pms } : undefined;
+    const peParam = searchParams.get("pe");
+    const pe = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
+    const includeOnHold = searchParams.get("onhold") !== "0";
 
     const { data: projects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
       CACHE_KEYS.PROJECTS_ALL,
@@ -32,7 +35,8 @@ export async function GET(request: NextRequest) {
     const data = buildDesignFunnelData(
       projects || [],
       locations.length > 0 ? locations : undefined,
-      filters
+      filters,
+      { pe, includeOnHold }
     );
 
     return NextResponse.json({ ...data, cached, stale, lastUpdated });
