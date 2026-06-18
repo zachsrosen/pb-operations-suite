@@ -350,8 +350,9 @@ function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
   }
   if (p.stageId === RTB_BLOCKED_STAGE_ID) {
     // rtb_blocked_reason is often blank; the block is usually noted in Kat's
-    // notes (or install-prep notes), so fall back to those.
-    const reason = p.rtbBlockedReason || p.katsNotes || p.notesForInstall || null;
+    // notes, so fall back to that. (Install notes are install-prep, not the
+    // block reason, so they're intentionally excluded.)
+    const reason = p.rtbBlockedReason || p.katsNotes || null;
     return { label: "RTB blocked", tone: "red", reason, note: null, parked: false };
   }
   if (p.layoutStatus === "Pending Sales Changes") {

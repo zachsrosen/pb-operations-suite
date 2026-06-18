@@ -342,7 +342,6 @@ export function dealToProject(deal: PrismaDeal): Project {
     salesCommunicationReason: null,
     pbShitShowReason: null,
     katsNotes: null,
-    notesForInstall: null,
 
     // Priority
     priorityScore,
