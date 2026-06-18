@@ -102,6 +102,9 @@ function ProjectPipelineFunnelInner() {
   const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
   const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
+  const peParam = searchParams.get("pe");
+  const pe: "all" | "pe" | "non-pe" = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
+  const includeOnHold = searchParams.get("oh") !== "0";
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
@@ -150,12 +153,14 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners),
+    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
       if (pms.length > 0) params.set("pms", pms.join(","));
       if (owners.length > 0) params.set("owners", owners.join(","));
+      if (pe !== "all") params.set("pe", pe);
+      if (!includeOnHold) params.set("onhold", "0");
       if (useActiveScope) {
         // Funnel tab: live snapshot of all active deals, no date window.
         params.set("scope", "active");
@@ -261,6 +266,29 @@ function ProjectPipelineFunnelInner() {
           placeholder="All Owners"
           accentColor="cyan"
         />
+        {/* Participate Energy filter */}
+        <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-xs">
+          {PE_OPTIONS.map((o) => (
+            <button
+              key={o.v}
+              type="button"
+              onClick={() => setParam("pe", o.v === "all" ? "" : o.v)}
+              className={`px-2.5 py-1.5 transition-colors ${pe === o.v ? "bg-cyan-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+              title="Filter by Participate Energy"
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        {/* On-hold toggle */}
+        <button
+          type="button"
+          onClick={() => setParam("oh", includeOnHold ? "0" : "")}
+          className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeOnHold ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-yellow-500/40 bg-yellow-500/10 text-yellow-300"}`}
+          title={includeOnHold ? "On-hold deals included — click to hide" : "On-hold deals hidden — click to show"}
+        >
+          {includeOnHold ? "On Hold: shown" : "On Hold: hidden"}
+        </button>
         {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">
             Live snapshot · all active deals
@@ -474,6 +502,12 @@ function ConvConnector({
     </div>
   );
 }
+
+const PE_OPTIONS = [
+  { v: "all", label: "All" },
+  { v: "pe", label: "PE" },
+  { v: "non-pe", label: "Non-PE" },
+] as const;
 
 /** Each backlog bucket → the median-leg-time key that benchmarks "how long this stage takes". */
 const BACKLOG_LEG: Record<string, keyof ProjectFunnelResponse["medianDays"]> = {
