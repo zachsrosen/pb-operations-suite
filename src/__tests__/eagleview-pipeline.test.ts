@@ -358,6 +358,13 @@ describe("orderTrueDesign", () => {
     expect(second.orderId).toBe(first.orderId);
     expect(deps.spies.placeOrder).toHaveBeenCalledTimes(1);
   });
+
+  it("persists ticketId on the order row when provided", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", ticketId: "t99", triggeredBy: "test" });
+    expect(p.rows[0].ticketId).toBe("t99");
+  });
 });
 
 // ============================================================

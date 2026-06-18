@@ -37,6 +37,7 @@ import { claimOrder } from "@/lib/eagleview-dedup";
 
 export interface OrderTrueDesignInput {
   dealId: string;
+  ticketId?: string | null;
   triggeredBy: string;
   surveyDate?: Date | null;
 }
@@ -128,6 +129,7 @@ export async function orderTrueDesign(
   // 2. Idempotency claim (atomic insert-or-fetch-existing)
   const claim = await claimOrder(deps.prisma, {
     dealId: input.dealId,
+    ticketId: input.ticketId ?? null,
     productCode: "TDP",
     address: addressParts,
     triggeredBy: input.triggeredBy,

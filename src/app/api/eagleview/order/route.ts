@@ -98,16 +98,9 @@ export async function POST(request: NextRequest) {
   try {
     const result = await orderTrueDesign(defaultPipelineDeps(), {
       dealId,
+      ticketId: ticketId ?? null,
       triggeredBy: auth.email ?? "manual",
     });
-
-    // If ticketId provided, link it to the order row
-    if (ticketId && result.orderId) {
-      await prisma.eagleViewOrder.update({
-        where: { id: result.orderId },
-        data: { ticketId },
-      }).catch(() => { /* best-effort */ });
-    }
 
     return NextResponse.json(result);
   } catch (err) {
