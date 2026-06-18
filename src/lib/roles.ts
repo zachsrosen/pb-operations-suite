@@ -523,6 +523,7 @@ const OPERATIONS: RoleDefinition = {
     "/dashboards/construction",
     "/dashboards/pe-pipeline",
     "/dashboards/pipeline-tracker",
+    "/dashboards/project-pipeline-funnel",
     "/dashboards/inspection-scheduler",
     "/dashboards/service-scheduler",
     "/dashboards/service-unscheduled",

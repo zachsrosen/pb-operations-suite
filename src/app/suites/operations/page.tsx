@@ -124,6 +124,14 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "🚧",
     section: "Construction",
   },
+  {
+    href: "/dashboards/project-pipeline-funnel",
+    title: "Project Pipeline Funnel",
+    description: "Full Sales-Closed → PTO funnel — backlog, RTB bench & runway, incoming forecast, and median stage times.",
+    tag: "OPS",
+    icon: "🏗️",
+    section: "Construction",
+  },
 
   // ── Inspections ──
   {
