@@ -448,6 +448,8 @@ function m1m2Color(status: string | null): string {
   const s = status.toLowerCase();
   if (s === "paid") return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
   if (s === "approved") return "bg-green-500/20 text-green-400 border-green-500/30";
+  // Internally rejected (our court, pre-PE) — distinct from a real PE rejection.
+  if (s === "internally rejected") return "bg-purple-500/20 text-purple-300 border-purple-500/30";
   if (s.includes("rejected")) return "bg-red-500/20 text-red-400 border-red-500/30";
   if (s.includes("ready to resubmit")) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
   if (s === "submitted" || s === "resubmitted" || s.includes("onboarding submitted") || s.includes("onboarding resubmitted"))
@@ -467,6 +469,7 @@ function m1m2Short(status: string | null): string {
   if (status === "Onboarding Ready to Resubmit") return "Onb. Resubmit";
   if (status === "Onboarding Resubmitted") return "Onb. Resubmitted";
   if (status === "Waiting on Information") return "Waiting Info";
+  if (status === "Internally Rejected") return "Int. Rejected";
   if (status === "Ready to Resubmit") return "Resubmit";
   if (status === "Ready to Submit") return "Ready";
   return status;
