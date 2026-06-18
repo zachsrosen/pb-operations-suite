@@ -70,6 +70,8 @@ export interface DealAddressFields {
   driveDesignDocumentsFolderId: string | null;
   /** Fallback parent folder. */
   driveAllDocumentsFolderId: string | null;
+  /** Direct Site Survey folder ID (from site_survey_documents). Null → resolve via findSiteSurveyFolder at delivery. */
+  driveSiteSurveyFolderId: string | null;
 }
 
 export interface PipelineDeps {
@@ -88,6 +90,8 @@ export interface PipelineDeps {
     parentFolderId: string,
     folderName: string,
   ) => Promise<string>;
+  /** Find the "Site Survey" subfolder under a parent folder. Returns null if none. Must never throw. */
+  findSiteSurveyFolder: (parentFolderId: string) => Promise<string | null>;
   /** Upload a binary blob to Drive. Returns the new file ID. */
   uploadToDrive: (
     parentId: string,
@@ -250,7 +254,7 @@ export async function orderTrueDesign(
   await deps
     .postDealNote(
       input.dealId,
-      `<p>EagleView TrueDesign ordered (Report #${realReportId}). Files will land in the design-docs folder when delivery completes.</p>`,
+      `<p>EagleView TrueDesign ordered (Report #${realReportId}). Files will land in the design and site survey folders when delivery completes.</p>`,
     )
     .catch((err) => {
       console.warn("[eagleview-pipeline] postDealNote failed", err);
@@ -299,83 +303,130 @@ export async function fetchAndStoreDeliverables(
     return { status: "FAILED", reason: "no_files_yet" };
   }
 
-  // 2. Resolve Drive folder
+  // 2. Resolve Drive folder targets — Design (existing precedence) + Site Survey.
   const dealFields = await deps.fetchDealAddress(order.dealId);
-  const parentFolderId =
+
+  const designParent =
     dealFields?.driveDesignDocumentsFolderId ??
     dealFields?.driveAllDocumentsFolderId ??
     null;
 
-  if (!parentFolderId) {
+  // Site Survey: prefer the direct ID; else find the subfolder under the
+  // all-documents root. The Drive find call only runs here, at delivery time.
+  let surveyParent: string | null = dealFields?.driveSiteSurveyFolderId ?? null;
+  if (!surveyParent && dealFields?.driveAllDocumentsFolderId) {
+    surveyParent = await deps.findSiteSurveyFolder(dealFields.driveAllDocumentsFolderId);
+  }
+
+  // Deduped target list. Design first so it owns the recorded driveFolderId
+  // and per-type file IDs (the DB columns reference openable design-folder files).
+  const targets: Array<{ label: string; parentFolderId: string }> = [];
+  if (designParent) targets.push({ label: "Design", parentFolderId: designParent });
+  if (surveyParent && surveyParent !== designParent) {
+    targets.push({ label: "Site Survey", parentFolderId: surveyParent });
+  }
+
+  if (targets.length === 0) {
     return { status: "FAILED", reason: "drive_folder_missing" };
   }
 
-  let driveFolderId: string;
-  try {
-    driveFolderId = await deps.ensureDriveFolder(
-      order.dealId,
-      parentFolderId,
-      `eagleview-${reportIdStr}`,
-    );
-  } catch (err) {
-    Sentry.captureException(err, {
-      tags: { feature: "eagleview", phase: "ensureDriveFolder" },
-      extra: { reportId: reportIdStr, dealId: order.dealId },
-    });
-    return { status: "FAILED", reason: "drive_folder_create_failed" };
-  }
-
-  // 3. Download + upload each file. Group by FileType so we can record specific
-  //    Drive file IDs on the order row.
-  const fileIdByType: Record<string, string> = {};
-  const uploadedNames: string[] = [];
-
-  for (const link of links.links) {
+  // Ensure the eagleview-{reportId} subfolder in each target. A create failure
+  // for one target is logged and skipped, not fatal to the others.
+  const resolved: Array<{ label: string; folderId: string }> = [];
+  for (const t of targets) {
     try {
-      const bytes = await deps.client.downloadFile(link.link);
-      const { mimeType, ext } = inferMimeAndExt(link);
-      const filename = sanitizeFilename(`${link.fileType}.${ext}`);
-      const uploaded = await deps.uploadToDrive(
-        driveFolderId,
-        filename,
-        bytes,
-        mimeType,
+      const folderId = await deps.ensureDriveFolder(
+        order.dealId,
+        t.parentFolderId,
+        `eagleview-${reportIdStr}`,
       );
-      fileIdByType[normalizeFileType(link.fileType)] = uploaded.id;
-      uploadedNames.push(uploaded.name);
+      resolved.push({ label: t.label, folderId });
     } catch (err) {
       Sentry.captureException(err, {
-        tags: { feature: "eagleview", phase: "downloadAndUpload" },
-        extra: { reportId: reportIdStr, fileType: link.fileType },
+        tags: { feature: "eagleview", phase: "ensureDriveFolder" },
+        extra: { reportId: reportIdStr, dealId: order.dealId, target: t.label },
       });
-      // Continue trying other files; partial success is better than no success.
     }
   }
 
-  if (uploadedNames.length === 0) {
+  if (resolved.length === 0) {
+    return { status: "FAILED", reason: "drive_folder_create_failed" };
+  }
+
+  // 3. Download each file ONCE, then upload the bytes to every resolved target.
+  //    Track results per target so the DB row records a folder that actually
+  //    received files (not an empty one if some target's uploads all failed).
+  const perTarget = resolved.map((t) => ({
+    label: t.label,
+    folderId: t.folderId,
+    fileIdByType: {} as Record<string, string>,
+    names: [] as string[],
+  }));
+
+  for (const link of links.links) {
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await deps.client.downloadFile(link.link);
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { feature: "eagleview", phase: "downloadFile" },
+        extra: { reportId: reportIdStr, fileType: link.fileType },
+      });
+      continue; // can't upload a file we couldn't download
+    }
+    const { mimeType, ext } = inferMimeAndExt(link);
+    const filename = sanitizeFilename(`${link.fileType}.${ext}`);
+
+    for (const target of perTarget) {
+      try {
+        const uploaded = await deps.uploadToDrive(target.folderId, filename, bytes, mimeType);
+        target.fileIdByType[normalizeFileType(link.fileType)] = uploaded.id;
+        target.names.push(uploaded.name);
+      } catch (err) {
+        Sentry.captureException(err, {
+          tags: { feature: "eagleview", phase: "uploadToDrive" },
+          extra: { reportId: reportIdStr, fileType: link.fileType, target: target.label },
+        });
+        // Continue; partial success across files/targets is better than none.
+      }
+    }
+  }
+
+  // Targets that actually received at least one file.
+  const delivered = perTarget.filter((t) => t.names.length > 0);
+  if (delivered.length === 0) {
     return { status: "FAILED", reason: "all_uploads_failed" };
   }
 
-  // 4. Update order row
+  // The recording target owns the DB driveFolderId + per-type file IDs.
+  // Prefer Design (if it received files), else the first delivered target.
+  const primary = delivered.find((t) => t.label === "Design") ?? delivered[0];
+
+  // 4. Update order row — driveFolderId + per-type IDs come from the primary folder.
   await deps.prisma.eagleViewOrder.update({
     where: { id: order.id },
     data: {
       status: "DELIVERED",
       deliveredAt: new Date(),
-      driveFolderId,
-      imageDriveFileId: fileIdByType["image"] ?? null,
-      layoutJsonDriveFileId: fileIdByType["layout"] ?? null,
-      shadeJsonDriveFileId: fileIdByType["shade"] ?? null,
-      reportPdfDriveFileId: fileIdByType["report-pdf"] ?? null,
-      reportXmlDriveFileId: fileIdByType["report-xml"] ?? null,
+      driveFolderId: primary.folderId,
+      imageDriveFileId: primary.fileIdByType["image"] ?? null,
+      layoutJsonDriveFileId: primary.fileIdByType["layout"] ?? null,
+      shadeJsonDriveFileId: primary.fileIdByType["shade"] ?? null,
+      reportPdfDriveFileId: primary.fileIdByType["report-pdf"] ?? null,
+      reportXmlDriveFileId: primary.fileIdByType["report-xml"] ?? null,
     },
   });
 
-  // 5. Best-effort HubSpot note
+  // 5. Best-effort HubSpot note naming the folder(s) the files landed in.
+  const labels = delivered.map((t) => t.label);
+  const folderText =
+    labels.length > 1
+      ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]} folders`
+      : `${labels[0]} folder`;
   await deps
     .postDealNote(
       order.dealId,
-      `<p>EagleView files delivered (${uploadedNames.length} files): ${uploadedNames
+      `<p>EagleView files delivered to ${folderText} (${primary.names.length} files): ${primary.names
         .map((n) => `<code>${escapeHtml(n)}</code>`)
         .join(", ")}.</p>`,
     )
@@ -383,7 +434,7 @@ export async function fetchAndStoreDeliverables(
       console.warn("[eagleview-pipeline] delivered-note failed", err);
     });
 
-  return { status: "DELIVERED", driveFolderId };
+  return { status: "DELIVERED", driveFolderId: primary.folderId };
 }
 
 // ============================================================

@@ -11,6 +11,8 @@ import {
   uploadDriveBinaryFile,
   createDriveFolder,
   listDriveSubfolders,
+  findSiteSurveyFolder,
+  extractFolderId,
 } from "@/lib/drive-plansets";
 import { getDealProperties } from "@/lib/hubspot";
 import { createDealNote } from "@/lib/hubspot-engagements";
@@ -37,6 +39,7 @@ const DEAL_PROPERTIES = [
   "design_documents",
   "design_document_folder_id",
   "all_document_parent_folder_id",
+  "site_survey_documents",
 ];
 
 async function fetchDealAddress(dealId: string): Promise<DealAddressFields | null> {
@@ -57,9 +60,18 @@ async function fetchDealAddress(dealId: string): Promise<DealAddressFields | nul
     zip: props.postal_code ?? props.zip ?? "",
     latitude: num(props.latitude),
     longitude: num(props.longitude),
+    // `design_documents` is usually a full Drive URL (the bare-ID
+    // `design_document_folder_id` is rarely populated). Both must be reduced to
+    // a bare folder ID — Google Drive's API 404s on a URL passed as a file id,
+    // which silently stranded orders in ORDERED. `extractFolderId` passes bare
+    // IDs through unchanged.
     driveDesignDocumentsFolderId:
-      props.design_document_folder_id ?? props.design_documents ?? null,
-    driveAllDocumentsFolderId: props.all_document_parent_folder_id ?? null,
+      extractFolderId(props.design_document_folder_id ?? "") ??
+      extractFolderId(props.design_documents ?? "") ??
+      null,
+    driveAllDocumentsFolderId:
+      extractFolderId(props.all_document_parent_folder_id ?? "") ?? null,
+    driveSiteSurveyFolderId: extractFolderId(props.site_survey_documents ?? "") ?? null,
   };
 }
 
@@ -88,6 +100,7 @@ export function defaultPipelineDeps(): PipelineDeps {
       return { latitude: r.latitude, longitude: r.longitude };
     },
     ensureDriveFolder,
+    findSiteSurveyFolder,
     uploadToDrive: (parentId, filename, bytes, mimeType) =>
       uploadDriveBinaryFile(parentId, filename, bytes, mimeType),
     postDealNote: createDealNote,

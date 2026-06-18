@@ -123,6 +123,7 @@ const mkDealAddress = (over: Partial<DealAddressFields> = {}): DealAddressFields
   longitude: -104.9903,
   driveDesignDocumentsFolderId: "folder_design_001",
   driveAllDocumentsFolderId: "folder_all_001",
+  driveSiteSurveyFolderId: null,
   ...over,
 });
 
@@ -136,6 +137,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     fetchDealAddress: jest.Mock;
     geocode: jest.Mock;
     ensureDriveFolder: jest.Mock;
+    findSiteSurveyFolder: jest.Mock;
     uploadToDrive: jest.Mock;
     postDealNote: jest.Mock;
   };
@@ -163,6 +165,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
   const fetchDealAddress = jest.fn(async () => mkDealAddress());
   const geocode = jest.fn(async () => ({ latitude: 39.0, longitude: -105.0 }));
   const ensureDriveFolder = jest.fn(async () => "drive_folder_123");
+  const findSiteSurveyFolder = jest.fn(async () => null);
   const uploadToDrive = jest.fn(async (_: string, name: string) => ({ id: `f_${name}`, name }));
   const postDealNote = jest.fn(async () => undefined);
 
@@ -172,6 +175,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     fetchDealAddress,
     geocode,
     ensureDriveFolder,
+    findSiteSurveyFolder,
     uploadToDrive,
     postDealNote,
     spies: {
@@ -183,6 +187,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
       fetchDealAddress,
       geocode,
       ensureDriveFolder,
+      findSiteSurveyFolder,
       uploadToDrive,
       postDealNote,
     },
@@ -408,5 +413,107 @@ describe("fetchAndStoreDeliverables", () => {
     const r = await fetchAndStoreDeliverables(deps, "doesnt_exist");
     expect(r.status).toBe("FAILED");
     expect(r.reason).toBe("order_not_found");
+  });
+
+  it("uploads to BOTH design and site survey when both resolve", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({ driveSiteSurveyFolderId: "folder_survey_001" }),
+    );
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(4); // 2 files × 2 targets
+    expect(deps.spies.ensureDriveFolder).toHaveBeenCalledTimes(2);
+    const noteBody = deps.spies.postDealNote.mock.calls.at(-1)?.[1] as string;
+    expect(noteBody).toMatch(/Design and Site Survey folders/);
+  });
+
+  it("records the survey folder when design uploads fail but survey succeeds", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({ driveSiteSurveyFolderId: "folder_survey_001" }),
+    );
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    // Design folder uploads always fail; Site Survey uploads succeed.
+    deps.spies.uploadToDrive.mockImplementation(
+      async (folderId: string, name: string) => {
+        if (folderId === "sub_folder_design_001") throw new Error("design upload failed");
+        return { id: `f_${name}`, name };
+      },
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(r.driveFolderId).toBe("sub_folder_survey_001");
+    const row = p.rows[0];
+    expect(row.driveFolderId).toBe("sub_folder_survey_001");
+    expect(row.imageDriveFileId).toContain("image"); // recorded from the survey folder
+    const noteBody = deps.spies.postDealNote.mock.calls.at(-1)?.[1] as string;
+    expect(noteBody).toMatch(/Site Survey folder/);
+    expect(noteBody).not.toMatch(/Design/);
+  });
+
+  it("resolves the survey folder via findSiteSurveyFolder fallback", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.findSiteSurveyFolder.mockResolvedValue("folder_survey_fallback");
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.findSiteSurveyFolder).toHaveBeenCalledWith("folder_all_001");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(4);
+  });
+
+  it("delivers to survey only when design is missing", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({
+        driveDesignDocumentsFolderId: null,
+        driveAllDocumentsFolderId: null,
+        driveSiteSurveyFolderId: "folder_survey_only",
+      }),
+    );
+    deps.spies.ensureDriveFolder.mockImplementation(
+      async (_dealId: string, parent: string) => `sub_${parent}`,
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // one target, 2 files
+    expect(r.driveFolderId).toBe("sub_folder_survey_only");
+  });
+
+  it("does not double-upload when design and survey resolve to the same folder", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.fetchDealAddress.mockResolvedValue(
+      mkDealAddress({ driveSiteSurveyFolderId: "folder_design_001" }), // == design
+    );
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledTimes(2); // deduped to one target
   });
 });

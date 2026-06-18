@@ -14,7 +14,7 @@
 
 import { registerChecks } from "./index";
 import type { CheckFn } from "./types";
-import { getDriveToken, extractFolderId } from "@/lib/drive-plansets";
+import { getDriveToken, extractFolderId, SITE_SURVEY_FOLDER_PATTERNS } from "@/lib/drive-plansets";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -164,13 +164,6 @@ export async function walkDriveFolder(
 // ---------------------------------------------------------------------------
 // Survey folder resolution
 // ---------------------------------------------------------------------------
-
-/** Site survey subfolder patterns. */
-const SITE_SURVEY_FOLDER_PATTERNS = [
-  /site\s*survey/i,
-  /^1\.\s*site\s*survey$/i,
-  /^ss$/i,
-];
 
 /**
  * Find the site survey folder ID from deal properties.
