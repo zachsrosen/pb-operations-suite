@@ -1033,7 +1033,7 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
               <div className="flex items-center gap-2">
                 <DrillCopyButtons
                   title={`${drill.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(drill.uploader)} — ${noun}`}
-                  rows={list.map((r) => ({ doc: r.docName, deal: r.dealName, reason: r.note ?? undefined, hubspotUrl: r.hubspotUrl, pePortalUrl: r.pePortalUrl ?? undefined, driveUrl: r.driveUrl ?? undefined }))}
+                  rows={list.map((r) => ({ doc: r.docName, deal: r.dealName, reason: r.note ?? (r.supersededBy ? `replaced by ${prettyUploader(r.supersededBy)}` : undefined), hubspotUrl: r.hubspotUrl, pePortalUrl: r.pePortalUrl ?? undefined, driveUrl: r.driveUrl ?? undefined }))}
                   filename={`pe-uploads-${slug(drill.uploader === UNKNOWN_UPLOADER ? "unknown" : prettyUploader(drill.uploader))}-${drill.outcome}.csv`}
                 />
                 <button onClick={() => setDrill(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
@@ -1045,6 +1045,7 @@ function UploaderPanel({ stats: statsOwner, docs: docsOwner, statsShared, docsSh
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`${st.doc} font-medium`}>{r.docName}</span>
                     {r.version != null && <span className="text-[10px] text-muted tabular-nums" title="superseded version + date">v{r.version}{r.uploadedAt ? ` · ${r.uploadedAt}` : ""}</span>}
+                    {r.supersededBy && <span className="text-[10px] px-1 py-0.5 rounded bg-zinc-700/40 text-zinc-300 border border-zinc-600/40" title="Uploader of the newer version that replaced this one">↳ {prettyUploader(r.supersededBy)}</span>}
                     {mode === "shared" && r.weight != null && r.weight < 0.999 && (
                       <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/25" title="This person's fractional share of this shared doc">{fmt(r.weight)}</span>
                     )}
