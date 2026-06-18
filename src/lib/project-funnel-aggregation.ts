@@ -585,8 +585,20 @@ export function buildProjectFunnelData(
    * when any milestone happened — a snapshot of the live pipeline. Default
    * "cohort" windows deals by close date as before.
    */
-  options?: { scope?: "cohort" | "active" }
+  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean }
 ): ProjectFunnelResponse {
+  // Global deal-set filters applied up front so they flow through every section
+  // (summary, backlog, capacity, forecast, …): Participate-Energy and on-hold.
+  const peFilter = options?.pe ?? "all";
+  const includeOnHold = options?.includeOnHold !== false;
+  if (peFilter !== "all" || !includeOnHold) {
+    projects = projects.filter((p) => {
+      if (peFilter === "pe" && !p.isParticipateEnergy) return false;
+      if (peFilter === "non-pe" && p.isParticipateEnergy) return false;
+      if (!includeOnHold && p.stageId === ON_HOLD_STAGE_ID) return false;
+      return true;
+    });
+  }
   const activeScope = options?.scope === "active";
   const now = new Date();
   // Active scope spans all time (epoch → no end), so every date-based filter

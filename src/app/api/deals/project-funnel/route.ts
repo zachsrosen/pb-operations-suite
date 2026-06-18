@@ -42,6 +42,10 @@ export async function GET(request: NextRequest) {
 
     // scope=active → snapshot of all currently-active deals, ignoring the date window.
     const scope = searchParams.get("scope") === "active" ? "active" : "cohort";
+    const peParam = searchParams.get("pe");
+    const pe = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
+    // onhold=0 hides on-hold deals; default includes them.
+    const includeOnHold = searchParams.get("onhold") !== "0";
 
     // Cache only the expensive, filter-independent project fetch (~6,500 deals)
     // under the shared PROJECTS_ALL key that other metrics routes already warm.
@@ -61,7 +65,7 @@ export async function GET(request: NextRequest) {
       locations.length > 0 ? locations : undefined,
       range,
       filters,
-      { scope }
+      { scope, pe, includeOnHold }
     );
 
     return NextResponse.json({
