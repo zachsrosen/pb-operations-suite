@@ -100,6 +100,31 @@ export interface PipelineDeps {
   postDealNote: (dealId: string, body: string) => Promise<void>;
 }
 
+export interface EagleViewStampFields {
+  status: "Ordered" | "Delivered" | "Failed" | "Cancelled";
+  reportId?: string;
+  driveFolderUrl?: string | null;
+  orderedDate?: Date | null;
+  deliveredDate?: Date | null;
+}
+
+/** Format a Date to YYYY-MM-DD in UTC (HubSpot date props accept this string). */
+function toHubSpotDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** Map typed stamp fields to the HubSpot property map. Omits absent/null keys. */
+export function buildEagleViewProps(
+  fields: EagleViewStampFields,
+): Record<string, string> {
+  const props: Record<string, string> = { eagleview_status: fields.status };
+  if (fields.reportId) props.eagleview_report_id = fields.reportId;
+  if (fields.driveFolderUrl) props.eagleview_drive_folder_url = fields.driveFolderUrl;
+  if (fields.orderedDate) props.eagleview_ordered_date = toHubSpotDate(fields.orderedDate);
+  if (fields.deliveredDate) props.eagleview_delivered_date = toHubSpotDate(fields.deliveredDate);
+  return props;
+}
+
 // ============================================================
 // Order placement
 // ============================================================

@@ -6,6 +6,7 @@
 import {
   orderTrueDesign,
   fetchAndStoreDeliverables,
+  buildEagleViewProps,
   type PipelineDeps,
   type DealAddressFields,
 } from "@/lib/eagleview-pipeline";
@@ -552,5 +553,43 @@ describe("fetchAndStoreDeliverables — EagleView file-link type mapping", () =>
     const uploadedNames = deps.spies.uploadToDrive.mock.calls.map((c) => c[1]);
     expect(uploadedNames).toContain("ExtendedOrthoImageMetadata.json");
     expect(uploadedNames).not.toContain("Shading.bin");
+  });
+});
+
+// ============================================================
+// buildEagleViewProps
+// ============================================================
+
+describe("buildEagleViewProps", () => {
+  it("maps fields to HubSpot internal names and formats dates as UTC YYYY-MM-DD", () => {
+    const props = buildEagleViewProps({
+      status: "Delivered",
+      reportId: "12345",
+      driveFolderUrl: "https://drive.google.com/drive/folders/abc",
+      orderedDate: new Date("2026-06-01T00:00:00Z"),
+      deliveredDate: new Date("2026-06-18T23:30:00Z"),
+    });
+    expect(props).toEqual({
+      eagleview_status: "Delivered",
+      eagleview_report_id: "12345",
+      eagleview_drive_folder_url: "https://drive.google.com/drive/folders/abc",
+      eagleview_ordered_date: "2026-06-01",
+      eagleview_delivered_date: "2026-06-18",
+    });
+  });
+
+  it("omits absent/null keys", () => {
+    expect(buildEagleViewProps({ status: "Failed" })).toEqual({
+      eagleview_status: "Failed",
+    });
+  });
+
+  it("formats a date near a UTC boundary without timezone drift", () => {
+    // 2026-06-18T23:30:00Z must stay 2026-06-18 regardless of local TZ.
+    const props = buildEagleViewProps({
+      status: "Delivered",
+      deliveredDate: new Date(Date.UTC(2026, 5, 18, 23, 30, 0)),
+    });
+    expect(props.eagleview_delivered_date).toBe("2026-06-18");
   });
 });
