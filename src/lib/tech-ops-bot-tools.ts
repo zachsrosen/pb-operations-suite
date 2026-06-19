@@ -44,10 +44,13 @@ export function createTechOpsBotTools() {
       // Fetch deal properties
       const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
         "dealname", "dealstage", "amount", "pb_location",
+        "project_type",
         "design_status", "permitting_status", "site_survey_status",
         "install_date", "inspection_date", "pto_date",
         "system_size_kw", "module_type", "inverter_type",
         "battery_type", "battery_count",
+        // PE milestone payment amounts (Interconnection / Project Complete)
+        "pe_payment_ic", "pe_payment_pc",
       ]);
 
       // Check for Zuper job
