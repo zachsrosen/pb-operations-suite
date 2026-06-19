@@ -17,6 +17,7 @@ import { sendBugReportEmail } from "@/lib/email";
 import {
   createFreshserviceTicket,
   buildBugReportTicketHtml,
+  fetchAgentIdByEmail,
 } from "@/lib/freshservice";
 import { prisma, logActivity } from "@/lib/db";
 
@@ -163,7 +164,8 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
       return {
         ...tool,
         run: async (input: { question: string; context: string }) => {
-          // Write escalation with real context
+          // Write escalation with real context (kept regardless; also surfaced
+          // in the admin escalations page).
           if (prisma) {
             await prisma.techOpsBotEscalation.create({
               data: {
@@ -176,6 +178,27 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
                 status: "PENDING",
               },
             });
+          }
+          // Also file a Freshservice ticket assigned to Zach so the escalation
+          // lands in his queue, not just the admin page. Best-effort: the DB
+          // row above is the safety net if this fails.
+          try {
+            const descriptionHtml = buildBugReportTicketHtml({
+              description: `Question: ${input.question}\n\nBot context: ${input.context}`,
+              reporterName: senderName,
+              reporterEmail: senderEmail,
+              pageUrl: undefined,
+            });
+            const assigneeId = await fetchAgentIdByEmail("zach@photonbrothers.com");
+            await createFreshserviceTicket({
+              subject: `Escalation: ${input.question.slice(0, 150)}`,
+              descriptionHtml,
+              requesterEmail: senderEmail,
+              type: "Service Request",
+              responderId: assigneeId ?? undefined,
+            });
+          } catch (err) {
+            console.warn("[tech-ops-bot] escalation ticket create failed:", err);
           }
           return JSON.stringify({
             escalated: true,

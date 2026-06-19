@@ -213,6 +213,8 @@ export interface CreateFreshserviceTicketParams {
   status?: number;
   /** Source code (2=Portal). Defaults to 2 (Portal). */
   source?: number;
+  /** Agent id to assign the ticket to (responder_id). Omit for normal routing. */
+  responderId?: number;
 }
 
 /**
@@ -234,6 +236,7 @@ export async function createFreshserviceTicket(
       priority: params.priority ?? 1,
       status: params.status ?? 2,
       source: params.source ?? 2,
+      ...(params.responderId ? { responder_id: params.responderId } : {}),
     }),
   });
 
