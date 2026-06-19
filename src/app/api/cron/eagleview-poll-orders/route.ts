@@ -75,6 +75,12 @@ export async function GET(request: NextRequest) {
             errorMessage: `EV status: ${status.displayStatus}`,
           },
         });
+        await deps
+          .stampStatus(
+            { dealId: order.dealId, ticketId: order.ticketId ?? null },
+            { status: terminal === "CANCELLED" ? "Cancelled" : "Failed" },
+          )
+          .catch((err) => console.warn("[eagleview-poll] stamp terminal failed", err));
         results.push({
           reportId: order.reportId,
           outcome: terminal,
