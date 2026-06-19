@@ -1,5 +1,9 @@
 import { logActivity, prisma } from "@/lib/db";
 import { sendBugReportEmail } from "@/lib/email";
+import {
+  createFreshserviceTicket,
+  buildBugReportTicketHtml,
+} from "@/lib/freshservice";
 
 interface CreateAutomatedBugReportInput {
   title: string;
@@ -63,25 +67,46 @@ export async function createAutomatedBugReport(
     },
   });
 
+  // Create a Freshservice ticket directly via the API; fall back to email
+  // (which Freshservice ingests) only when the API call fails.
   let emailSent = false;
   try {
-    const emailResult = await sendBugReportEmail({
-      reportId: report.id,
-      type: "BUG",
-      title: report.title,
+    const descriptionHtml = buildBugReportTicketHtml({
       description: report.description,
-      pageUrl: report.pageUrl || undefined,
-      reporterName: report.reporterName || undefined,
+      reporterName: report.reporterName,
       reporterEmail: report.reporterEmail,
+      pageUrl: report.pageUrl,
     });
-    emailSent = emailResult.success;
+    await createFreshserviceTicket({
+      subject: `Bug Report: ${report.title}`,
+      descriptionHtml,
+      requesterEmail: report.reporterEmail,
+      type: "Incident",
+    });
+  } catch (apiErr) {
+    console.warn(
+      "Freshservice ticket create failed, falling back to email:",
+      apiErr
+    );
+    try {
+      const emailResult = await sendBugReportEmail({
+        reportId: report.id,
+        type: "BUG",
+        title: report.title,
+        description: report.description,
+        pageUrl: report.pageUrl || undefined,
+        reporterName: report.reporterName || undefined,
+        reporterEmail: report.reporterEmail,
+      });
+      emailSent = emailResult.success;
 
-    await prisma.bugReport.update({
-      where: { id: report.id },
-      data: { emailSent },
-    });
-  } catch (emailErr) {
-    console.warn("Failed to send automated bug report email:", emailErr);
+      await prisma.bugReport.update({
+        where: { id: report.id },
+        data: { emailSent },
+      });
+    } catch (emailErr) {
+      console.warn("Failed to send automated bug report email:", emailErr);
+    }
   }
 
   await logActivity({
