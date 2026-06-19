@@ -7,7 +7,8 @@ import {
   filterProjectsForContext,
   type Project,
 } from "@/lib/hubspot";
-import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { CACHE_KEYS } from "@/lib/cache";
+import { getOrFetchHotPath } from "@/lib/shared-cache-store";
 import { getDealSyncSource, formatStaleness, verifyShadow } from "@/lib/deal-sync";
 import { dealToProject } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
@@ -233,7 +234,7 @@ export async function GET(request: NextRequest) {
     // filtering — much faster than fetching all ~6,500 deals.
     const cacheKey = activeOnly ? CACHE_KEYS.PROJECTS_ACTIVE : CACHE_KEYS.PROJECTS_ALL;
 
-    const { data: cachedProjects, cached, stale, lastUpdated } = await appCache.getOrFetch<Project[]>(
+    const { data: cachedProjects, cached, stale, lastUpdated } = await getOrFetchHotPath<Project[]>(
       cacheKey,
       () => fetchAllProjects({ activeOnly }),
       forceRefresh

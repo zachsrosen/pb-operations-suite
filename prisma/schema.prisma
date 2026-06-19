@@ -564,6 +564,17 @@ model AppSetting {
   @@index([key])
 }
 
+// Cross-instance shared cache for hot HubSpot read paths (projects/deals).
+// Backs lib/shared-cache.ts: one fleet-wide refresh per key via a lease lock
+// (lockedAt), with the last-good payload (value) served to all instances.
+// A value-less row (value = NULL) is a lock-only placeholder for a cold key.
+model SharedCacheEntry {
+  key       String    @id
+  value     Json?
+  updatedAt DateTime  @default(now())
+  lockedAt  DateTime?
+}
+
 // ===========================================
 // ZUPER JOB CACHE
 // ===========================================

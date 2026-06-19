@@ -3,7 +3,8 @@ import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
-import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { CACHE_KEYS } from "@/lib/cache";
+import { getOrFetchHotPath } from "@/lib/shared-cache-store";
 import { requireApiAuth } from "@/lib/api-auth";
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages, getStageOrder } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
@@ -441,8 +442,9 @@ export async function GET(request: NextRequest) {
     // Default path: HubSpot-sourced
     // -----------------------------------------------------------------------
 
-    // Use shared cache with stale-while-revalidate + request coalescing
-    const { data: allDeals, cached, stale, lastUpdated } = await appCache.getOrFetch<Deal[]>(
+    // Two-tier cache: in-memory L1 → cross-instance shared store (single-flight)
+    // → HubSpot. Collapses the cold-instance fetch herd that exhausts the rate limit.
+    const { data: allDeals, cached, stale, lastUpdated } = await getOrFetchHotPath<Deal[]>(
       CACHE_KEYS.DEALS(pipeline),
       () => fetchDealsForPipeline(pipeline),
       forceRefresh
