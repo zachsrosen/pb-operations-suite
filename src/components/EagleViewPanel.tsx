@@ -113,14 +113,24 @@ export function EagleViewPanel({ dealId }: Props) {
       )}
 
       {order && !order.reportId.startsWith("pending:") && (
-        <a
-          href={`https://apps.eagleview.com/truedesign/${encodeURIComponent(order.reportId)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full text-center bg-surface-2 hover:bg-surface-elevated text-foreground text-sm font-medium rounded px-3 py-2"
-        >
-          View in TrueDesign ↗
-        </a>
+        <div className="grid grid-cols-2 gap-2">
+          <a
+            href={`https://apps.eagleview.com/truedesign/${encodeURIComponent(order.reportId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-center bg-surface-2 hover:bg-surface-elevated text-foreground text-sm font-medium rounded px-3 py-2"
+          >
+            TrueDesign ↗
+          </a>
+          <a
+            href={`https://apps.eagleview.com/myev/orders/report/${encodeURIComponent(order.reportId)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-center bg-surface-2 hover:bg-surface-elevated text-foreground text-sm font-medium rounded px-3 py-2"
+          >
+            Full order ↗
+          </a>
+        </div>
       )}
 
       {!order && (

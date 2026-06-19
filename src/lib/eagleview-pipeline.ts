@@ -127,6 +127,11 @@ export function buildEagleViewProps(
 ): Record<string, string> {
   const props: Record<string, string> = { eagleview_status: fields.status };
   if (fields.reportId) props.eagleview_report_id = fields.reportId;
+  // Deterministic EagleView links from the reportId (skip placeholder ids).
+  if (fields.reportId && !fields.reportId.startsWith("pending:")) {
+    props.eagleview_truedesign_url = `https://apps.eagleview.com/truedesign/${fields.reportId}`;
+    props.eagleview_order_url = `https://apps.eagleview.com/myev/orders/report/${fields.reportId}`;
+  }
   if (fields.driveFolderUrl) props.eagleview_drive_folder_url = fields.driveFolderUrl;
   if (fields.orderedDate) props.eagleview_ordered_date = toHubSpotDate(fields.orderedDate);
   if (fields.deliveredDate) props.eagleview_delivered_date = toHubSpotDate(fields.deliveredDate);
