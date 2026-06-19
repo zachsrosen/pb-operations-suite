@@ -34,6 +34,15 @@ export function BugReportButton() {
       .catch(() => setUserRole(null));
   }, [status]);
 
+  // Open the modal when the header feedback button dispatches the event.
+  useEffect(() => {
+    function handleOpen() {
+      setOpen(true);
+    }
+    window.addEventListener("open-feedback-modal", handleOpen);
+    return () => window.removeEventListener("open-feedback-modal", handleOpen);
+  }, []);
+
   // Don't render for unauthenticated or confirmed-VIEWER users.
   // If role fetch fails (no DB, network error), still show for authenticated users.
   if (status !== "authenticated") return null;
@@ -112,19 +121,7 @@ export function BugReportButton() {
 
   return (
     <>
-      {/* Floating feedback button — bottom-left to avoid toast overlap */}
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-6 left-6 z-40 flex items-center gap-2 px-3.5 py-2 rounded-full bg-surface border border-t-border shadow-card hover:border-orange-500/40 hover:shadow-card-lg transition-all group cursor-pointer"
-        title="Send feedback — report a bug or request a feature"
-      >
-        <svg className="w-4 h-4 text-orange-400 group-hover:text-orange-300 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-        </svg>
-        <span className="text-xs font-medium text-muted group-hover:text-foreground transition-colors">Send Feedback</span>
-      </button>
-
-      {/* Modal backdrop + form */}
+      {/* Modal backdrop + form. Opened from the header feedback button. */}
       {open && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"

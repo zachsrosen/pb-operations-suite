@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { HeaderControls } from "@/components/HeaderControls";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -558,6 +559,7 @@ export default function MobileDashboardPage() {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              <HeaderControls buttonClassName="text-orange-100 hover:text-foreground transition-colors p-1 rounded" />
               <ThemeToggle />
               <Link
                 href="/"
