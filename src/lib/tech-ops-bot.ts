@@ -14,6 +14,11 @@ import { createReadOnlyChatTools } from "@/lib/chat-tools";
 import { createTechOpsBotTools } from "@/lib/tech-ops-bot-tools";
 import { postGoogleChatMessage } from "@/lib/google-chat-api";
 import { sendBugReportEmail } from "@/lib/email";
+import {
+  createFreshserviceTicket,
+  buildBugReportTicketHtml,
+  fetchAgentIdByEmail,
+} from "@/lib/freshservice";
 import { prisma, logActivity } from "@/lib/db";
 
 // ── System Prompt Builder ──
@@ -159,7 +164,8 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
       return {
         ...tool,
         run: async (input: { question: string; context: string }) => {
-          // Write escalation with real context
+          // Write escalation with real context (kept regardless; also surfaced
+          // in the admin escalations page).
           if (prisma) {
             await prisma.techOpsBotEscalation.create({
               data: {
@@ -172,6 +178,27 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
                 status: "PENDING",
               },
             });
+          }
+          // Also file a Freshservice ticket assigned to Zach so the escalation
+          // lands in his queue, not just the admin page. Best-effort: the DB
+          // row above is the safety net if this fails.
+          try {
+            const descriptionHtml = buildBugReportTicketHtml({
+              description: `Question: ${input.question}\n\nBot context: ${input.context}`,
+              reporterName: senderName,
+              reporterEmail: senderEmail,
+              pageUrl: undefined,
+            });
+            const assigneeId = await fetchAgentIdByEmail("zach@photonbrothers.com");
+            await createFreshserviceTicket({
+              subject: `Escalation: ${input.question.slice(0, 150)}`,
+              descriptionHtml,
+              requesterEmail: senderEmail,
+              type: "Service Request",
+              responderId: assigneeId ?? undefined,
+            });
+          } catch (err) {
+            console.warn("[tech-ops-bot] escalation ticket create failed:", err);
           }
           return JSON.stringify({
             escalated: true,
@@ -204,35 +231,60 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             },
           });
 
-          // Notify the team (don't fail the request on email). Track whether
-          // the email actually went out so we don't tell the user "notified"
-          // when it silently failed.
+          // Notify the team (don't fail the request on notification). Create a
+          // Freshservice ticket directly via the API, with the asker as the
+          // requester. On failure, fall back to emailing techops@ (which
+          // Freshservice ingests). emailSent tracks the fallback so we don't
+          // tell the user "notified" when it silently failed.
           let emailSent = false;
+          let notified = false;
           try {
-            // File under a dedicated bot requester (not the asker, who is also
-            // a Freshservice agent) so later agent replies don't reopen the
-            // ticket via the "reopen when requester responds" automation
-            // (FS #786). The asker still shows as "Reported by" in the body.
-            // Falls back to current behavior when the env var is unset.
-            const botRequester = process.env.TECH_OPS_BOT_REQUESTER_EMAIL;
-            const emailResult = await sendBugReportEmail({
-              reportId: report.id,
-              type: report.type,
-              title: report.title,
+            const descriptionHtml = buildBugReportTicketHtml({
               description: report.description,
-              pageUrl: report.pageUrl || undefined,
-              reporterName: report.reporterName || undefined,
+              reporterName: report.reporterName,
               reporterEmail: report.reporterEmail,
-              requesterEmail: botRequester || undefined,
-              requesterName: botRequester ? "Tech Ops Bot" : undefined,
+              pageUrl: report.pageUrl,
             });
-            emailSent = emailResult.success;
-            await prisma.bugReport.update({
-              where: { id: report.id },
-              data: { emailSent },
+            await createFreshserviceTicket({
+              // FEATURE_REQUEST under the hood → "Feature Request:" prefix.
+              subject: `Feature Request: ${report.title}`,
+              descriptionHtml,
+              requesterEmail: report.reporterEmail,
+              type: "Service Request",
             });
-          } catch (err) {
-            console.warn("[tech-ops-bot] process request email failed:", err);
+            notified = true;
+          } catch (apiErr) {
+            console.warn(
+              "[tech-ops-bot] Freshservice ticket create failed, falling back to email:",
+              apiErr
+            );
+            try {
+              // File under a dedicated bot requester (not the asker, who is also
+              // a Freshservice agent) so later agent replies don't reopen the
+              // ticket via the "reopen when requester responds" automation
+              // (FS #786). The asker still shows as "Reported by" in the body.
+              // Falls back to current behavior when the env var is unset.
+              const botRequester = process.env.TECH_OPS_BOT_REQUESTER_EMAIL;
+              const emailResult = await sendBugReportEmail({
+                reportId: report.id,
+                type: report.type,
+                title: report.title,
+                description: report.description,
+                pageUrl: report.pageUrl || undefined,
+                reporterName: report.reporterName || undefined,
+                reporterEmail: report.reporterEmail,
+                requesterEmail: botRequester || undefined,
+                requesterName: botRequester ? "Tech Ops Bot" : undefined,
+              });
+              emailSent = emailResult.success;
+              notified = emailResult.success;
+              await prisma.bugReport.update({
+                where: { id: report.id },
+                data: { emailSent },
+              });
+            } catch (err) {
+              console.warn("[tech-ops-bot] process request email failed:", err);
+            }
           }
 
           try {
@@ -257,9 +309,9 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             reportId: report.id,
             title: report.title,
             emailSent,
-            message: emailSent
-              ? "Logged your process request — the team's been notified."
-              : "Logged your process request. Heads up: the email notification didn't go through, but it's saved in the review queue and Zach will see it there.",
+            message: notified
+              ? "Logged your process request — a ticket's been created and the team's been notified."
+              : "Logged your process request. Heads up: I couldn't create the ticket just now, but it's saved in the review queue and Zach will see it there.",
           });
         },
       };

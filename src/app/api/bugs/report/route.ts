@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, prisma } from "@/lib/db";
 import { sendBugReportEmail } from "@/lib/email";
+import {
+  createFreshserviceTicket,
+  buildBugReportTicketHtml,
+} from "@/lib/freshservice";
 import { headers } from "next/headers";
 
 /**
@@ -70,27 +74,51 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send email notification (fire and forget)
+    // Create a Freshservice ticket directly via the API. On failure, fall
+    // back to emailing techops@ (which Freshservice ingests) so nothing is
+    // lost. emailSent stays false when the API path succeeds.
     let emailSent = false;
+    const kindPrefix =
+      report.type === "FEATURE_REQUEST" ? "Feature Request" : "Bug Report";
+    const subject = `${kindPrefix}: ${report.title}`;
     try {
-      const emailResult = await sendBugReportEmail({
-        reportId: report.id,
-        type: report.type,
-        title: report.title,
+      const descriptionHtml = buildBugReportTicketHtml({
         description: report.description,
-        pageUrl: report.pageUrl || undefined,
-        reporterName: report.reporterName || undefined,
+        reporterName: report.reporterName,
         reporterEmail: report.reporterEmail,
+        pageUrl: report.pageUrl,
       });
-      emailSent = emailResult.success;
+      await createFreshserviceTicket({
+        subject,
+        descriptionHtml,
+        requesterEmail: report.reporterEmail,
+        type: report.type === "FEATURE_REQUEST" ? "Service Request" : "Incident",
+      });
+    } catch (apiErr) {
+      console.warn(
+        "Freshservice ticket create failed, falling back to email:",
+        apiErr
+      );
+      try {
+        const emailResult = await sendBugReportEmail({
+          reportId: report.id,
+          type: report.type,
+          title: report.title,
+          description: report.description,
+          pageUrl: report.pageUrl || undefined,
+          reporterName: report.reporterName || undefined,
+          reporterEmail: report.reporterEmail,
+        });
+        emailSent = emailResult.success;
 
-      // Update email status
-      await prisma.bugReport.update({
-        where: { id: report.id },
-        data: { emailSent },
-      });
-    } catch (emailErr) {
-      console.warn("Failed to send bug report email:", emailErr);
+        // Update email status
+        await prisma.bugReport.update({
+          where: { id: report.id },
+          data: { emailSent },
+        });
+      } catch (emailErr) {
+        console.warn("Failed to send bug report email:", emailErr);
+      }
     }
 
     // Log the activity

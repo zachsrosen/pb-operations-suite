@@ -169,6 +169,88 @@ export async function fetchTicketsByAgentId(
   return data;
 }
 
+// ─── Ticket creation ────────────────────────────────────────────────────
+
+/** Minimal HTML escape for user-supplied text embedded in a ticket body. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
+ * Build the HTML description for a bug-report / feature-request ticket:
+ * the description, a divider, then the reporter line and (optional) page URL.
+ * Newlines become <br>; user text is minimally escaped.
+ */
+export function buildBugReportTicketHtml(params: {
+  description: string;
+  reporterName?: string | null;
+  reporterEmail: string;
+  pageUrl?: string | null;
+}): string {
+  const body = escapeHtml(params.description).replace(/\r?\n/g, "<br>");
+  const reporter = `Reported by ${escapeHtml(params.reporterName || "Unknown")} (${escapeHtml(
+    params.reporterEmail
+  )})`;
+  const pageLine = params.pageUrl
+    ? `<p>Page: ${escapeHtml(params.pageUrl)}</p>`
+    : "";
+  return `<p>${body}</p><hr><p>${reporter}</p>${pageLine}`;
+}
+
+
+export interface CreateFreshserviceTicketParams {
+  subject: string;
+  descriptionHtml: string;
+  requesterEmail: string;
+  /** Freshservice ticket type, e.g. "Incident" or "Service Request". */
+  type?: string;
+  /** Priority code (1=Low, 2=Medium, 3=High, 4=Urgent). Defaults to 1 (Low). */
+  priority?: number;
+  /** Status code (2=Open, 3=Pending, 4=Resolved, 5=Closed). Defaults to 2 (Open). */
+  status?: number;
+  /** Source code (2=Portal). Defaults to 2 (Portal). */
+  source?: number;
+  /** Agent id to assign the ticket to (responder_id). Omit for normal routing. */
+  responderId?: number;
+}
+
+/**
+ * Create a Freshservice ticket via the REST API. Used in place of emailing
+ * techops@ (which Freshservice ingests). The requester is the actual reporter
+ * so the ticket attributes to them. Throws on a non-ok response so callers can
+ * fall back to the email path.
+ */
+export async function createFreshserviceTicket(
+  params: CreateFreshserviceTicketParams
+): Promise<{ id: number }> {
+  const res = await freshserviceFetch("/api/v2/tickets", {
+    method: "POST",
+    body: JSON.stringify({
+      subject: params.subject,
+      description: params.descriptionHtml,
+      email: params.requesterEmail,
+      type: params.type,
+      priority: params.priority ?? 1,
+      status: params.status ?? 2,
+      source: params.source ?? 2,
+      ...(params.responderId ? { responder_id: params.responderId } : {}),
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Freshservice create failed ${res.status}: ${text.slice(0, 300)}`
+    );
+  }
+
+  const body = (await res.json()) as { ticket: { id: number } };
+  return { id: body.ticket.id };
+}
+
 export async function fetchTicketDetail(id: number): Promise<FreshserviceTicket> {
   const cacheKey = `freshservice:ticket:${id}`;
   const { data } = await ticketsCache.getOrFetch<FreshserviceTicket>(cacheKey, async () => {
