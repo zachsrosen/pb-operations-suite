@@ -431,6 +431,18 @@ export async function fetchAndStoreDeliverables(
     },
   });
 
+  await deps
+    .stampStatus(
+      { dealId: order.dealId, ticketId: order.ticketId ?? null },
+      {
+        status: "Delivered",
+        reportId: reportIdStr,
+        driveFolderUrl: `https://drive.google.com/drive/folders/${driveFolderId}`,
+        deliveredDate: new Date(),
+      },
+    )
+    .catch((err) => console.warn("[eagleview-pipeline] stamp Delivered failed", err));
+
   // 5. Best-effort HubSpot note
   await deps
     .postDealNote(

@@ -603,6 +603,31 @@ describe("fetchAndStoreDeliverables — EagleView file-link type mapping", () =>
   });
 });
 
+describe("fetchAndStoreDeliverables — HubSpot stamping", () => {
+  it("stamps Delivered with report id, folder url, delivered date", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    await fetchAndStoreDeliverables(deps, "12345");
+    const call = deps.spies.stampStatus.mock.calls.find((c) => c[1].status === "Delivered");
+    expect(call).toBeDefined();
+    expect(call![0]).toEqual({ dealId: "d1", ticketId: null });
+    expect(call![1].reportId).toBe("12345");
+    expect(call![1].driveFolderUrl).toContain("drive_folder_123");
+    expect(call![1].deliveredDate).toBeInstanceOf(Date);
+  });
+
+  it("does NOT stamp on retryable failure (status stays ORDERED)", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.stampStatus.mockClear();
+    deps.spies.getFileLinks.mockResolvedValueOnce({ links: [] });
+    await fetchAndStoreDeliverables(deps, "12345");
+    expect(deps.spies.stampStatus).not.toHaveBeenCalled();
+  });
+});
+
 // ============================================================
 // buildEagleViewProps
 // ============================================================
