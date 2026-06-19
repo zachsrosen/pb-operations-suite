@@ -139,6 +139,12 @@ export default function SuitePageShell({
     ? getSuiteSwitcherEntriesForRoles(roles)
     : SUITE_NAV_ENTRIES;
 
+  // Atlas is a top-level peer destination available to every authenticated
+  // user, not a department suite — render it as its own pill in the switcher.
+  const canSeeAtlas = roles
+    ? roles.some((r) => canAccessRoute(r, "/dashboards/atlas"))
+    : true;
+
   const visibleCards = roles
     ? cards.filter((card) => {
         const routePath = toRoutePath(card.href);
@@ -188,7 +194,7 @@ export default function SuitePageShell({
               <HeaderControls />
               <UserMenu />
             </div>
-            {visibleSuites.length > 0 && (
+            {(visibleSuites.length > 0 || canSeeAtlas) && (
               <div className="flex flex-wrap justify-end gap-1.5">
                 {visibleSuites.map((suite) => {
                   const isCurrent = suite.href === currentSuiteHref;
@@ -209,6 +215,15 @@ export default function SuitePageShell({
                     </Link>
                   );
                 })}
+                {canSeeAtlas && (
+                  <Link
+                    href="/dashboards/atlas"
+                    className="text-xs px-2.5 py-1.5 rounded-md transition-colors bg-surface-elevated/50 text-muted hover:text-foreground"
+                    title="Atlas"
+                  >
+                    Atlas
+                  </Link>
+                )}
               </div>
             )}
           </div>

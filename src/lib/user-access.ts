@@ -215,6 +215,15 @@ function normalizeRoles(raw: UserRole[]): UserRole[] {
  * apply — existing sync call sites (middleware, non-auth endpoints) keep
  * working unchanged.
  */
+/**
+ * Routes granted to every authenticated user who has at least one real role,
+ * regardless of department. Injected once in `resolveEffectiveRole` so we don't
+ * have to append to all ~15 per-role `allowedRoutes` arrays (and risk a missed
+ * role silently 403ing). The no-role empty fallback intentionally does NOT get
+ * these — those users are redirected to `/unassigned`.
+ */
+const UNIVERSAL_ROUTES: readonly string[] = ["/dashboards/atlas"];
+
 export function resolveEffectiveRole(
   rawRoles: UserRole[],
   overrides?: ReadonlyMap<UserRole, RoleDefinition>,
@@ -267,6 +276,13 @@ export function resolveEffectiveRole(
     }
     for (const key of CAPABILITY_KEYS) {
       if (def.defaultCapabilities[key]) caps[key] = true;
+    }
+  }
+
+  for (const route of UNIVERSAL_ROUTES) {
+    if (!routesSeen.has(route)) {
+      routesSeen.add(route);
+      allowedRoutes.push(route);
     }
   }
 
