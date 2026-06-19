@@ -11,6 +11,7 @@ import { ProjectDetail } from "./ProjectDetail";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { AddEscalationDialog } from "./AddEscalationDialog";
 import { MeetingSearch } from "./MeetingSearch";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -344,6 +345,28 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     },
   });
 
+  // ── Remove an item from the queue (e.g. one added by mistake) ──
+  // Same endpoint as skip; for a regular (non-escalation) item the server
+  // deletes it outright rather than re-queuing it for the next session.
+  const [pendingRemove, setPendingRemove] = useState<IdrItem | null>(null);
+  const removeItem = useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await fetch(`/api/idr-meeting/items/${itemId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove");
+      return res.json();
+    },
+    onSuccess: (_data, itemId) => {
+      if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
+      }
+      if (selectedItemId === itemId) setSelectedItemId(null);
+      addToast({ type: "success", title: "Removed from queue" });
+    },
+    onError: () => {
+      addToast({ type: "error", title: "Failed to remove item" });
+    },
+  });
+
   // ── Auto-join today's active session ──
   // Runs on initial load AND on subsequent sessions-list updates, so a user
   // sitting in prep drops into a session that someone else just started.
@@ -536,6 +559,9 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
             loading={displayLoading}
             isPreview={isPreview}
             presenceUsers={presenceUsers}
+            onRemoveItem={
+              !isPreview && !isArchive ? (item) => setPendingRemove(item) : undefined
+            }
           />
 
           <ProjectDetail
@@ -569,6 +595,23 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       {showEscalationDialog && (
         <AddEscalationDialog onClose={() => setShowEscalationDialog(false)} />
       )}
+
+      <ConfirmDialog
+        open={!!pendingRemove}
+        title="Remove from queue"
+        message={
+          pendingRemove
+            ? `Remove "${pendingRemove.dealName}" from this session's queue? This can't be undone.`
+            : ""
+        }
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={() => {
+          if (pendingRemove) removeItem.mutate(pendingRemove.id);
+          setPendingRemove(null);
+        }}
+        onCancel={() => setPendingRemove(null)}
+      />
     </div>
   );
 }

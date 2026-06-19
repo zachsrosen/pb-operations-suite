@@ -9,6 +9,8 @@ interface Props {
   loading: boolean;
   isPreview?: boolean;
   presenceUsers?: PresenceUser[];
+  /** Remove an item from the queue (e.g. one added by mistake). Omit to hide the control. */
+  onRemoveItem?: (item: IdrItem) => void;
 }
 
 const BADGE_COLORS: Record<string, string> = {
@@ -55,7 +57,7 @@ function regionSortKey(region: string): number {
   return REGION_ORDER[region] ?? 99;
 }
 
-export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isPreview, presenceUsers = [] }: Props) {
+export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isPreview, presenceUsers = [], onRemoveItem }: Props) {
   // Build a map of itemId → users viewing it
   const viewersByItem = new Map<string, PresenceUser[]>();
   for (const u of presenceUsers) {
@@ -111,13 +113,17 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                 const viewers = viewersByItem.get(item.id);
 
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm transition-colors hover:bg-surface-2 ${
+                    className={`group flex items-stretch transition-colors hover:bg-surface-2 ${
                       isSelected ? "bg-surface-2" : ""
                     } ${item.reviewed ? "opacity-60" : ""} ${viewers?.length ? "ring-1 ring-inset ring-blue-400/50" : ""}`}
-                    onClick={() => onSelectItem(item.id)}
                   >
+                    <button
+                      type="button"
+                      className="flex-1 min-w-0 text-left px-3 py-2 flex items-center gap-2 text-sm"
+                      onClick={() => onSelectItem(item.id)}
+                    >
                     {/* Badge dot — or checkmark if reviewed */}
                     {item.reviewed ? (
                       <span className="h-2.5 w-2.5 shrink-0 flex items-center justify-center text-emerald-500 text-[10px]" title="Reviewed">
@@ -178,7 +184,22 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                     <span className={`${viewers?.length ? "" : "ml-auto"} shrink-0 text-xs ${sync.color}`}>
                       {sync.symbol}
                     </span>
-                  </button>
+                    </button>
+                    {onRemoveItem && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveItem(item);
+                        }}
+                        className="shrink-0 px-2 flex items-center text-muted opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
+                        title="Remove from queue"
+                        aria-label="Remove from queue"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
                 );
               })}
           </div>
