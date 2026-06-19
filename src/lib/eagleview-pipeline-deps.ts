@@ -18,6 +18,10 @@ import { updateTicketProperties } from "@/lib/hubspot-tickets";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { geocodeFreeform } from "@/lib/geocode";
 import {
+  resolveStampEnabled,
+  EAGLEVIEW_STAMP_ENABLED_KEY,
+} from "@/lib/eagleview-stamp-flag";
+import {
   buildEagleViewProps,
   type PipelineDeps,
   type DealAddressFields,
@@ -81,11 +85,37 @@ async function ensureDriveFolder(
   return created.id;
 }
 
+// Forward-stamping toggle: env override OR a 60s-cached SystemConfig DB row.
+// The DB row is the prod switch (Vercel's env-var cap blocks the env var there).
+let stampFlagCache: { value: boolean; at: number } | null = null;
+const STAMP_FLAG_TTL_MS = 60_000;
+
+async function isEagleViewStampEnabled(): Promise<boolean> {
+  const envValue = process.env.EAGLEVIEW_HUBSPOT_STAMP_ENABLED;
+  if (envValue === "true") return true;
+  const now = Date.now();
+  if (stampFlagCache && now - stampFlagCache.at < STAMP_FLAG_TTL_MS) {
+    return stampFlagCache.value;
+  }
+  let dbValue: string | null = null;
+  try {
+    const row = await prisma.systemConfig.findUnique({
+      where: { key: EAGLEVIEW_STAMP_ENABLED_KEY },
+    });
+    dbValue = row?.value ?? null;
+  } catch {
+    dbValue = null;
+  }
+  const value = resolveStampEnabled(envValue, dbValue);
+  stampFlagCache = { value, at: now };
+  return value;
+}
+
 async function stampStatus(
   target: { dealId: string; ticketId: string | null },
   fields: EagleViewStampFields,
 ): Promise<void> {
-  if (process.env.EAGLEVIEW_HUBSPOT_STAMP_ENABLED !== "true") return;
+  if (!(await isEagleViewStampEnabled())) return;
   try {
     const props = buildEagleViewProps(fields);
     // Ticket branch FIRST so a ticket-origin synthetic dealId ("ticket:<id>")
