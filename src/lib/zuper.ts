@@ -1370,6 +1370,59 @@ export class ZuperClient {
     };
   }
 
+  /**
+   * Fetch jobs newest-first (Zuper `filter.sort_by=created_at&filter.order=desc`),
+   * paginating until the match predicate is satisfied or the page budget runs out.
+   *
+   * Replaces the old fixed 500-job window search behind reschedule lookups: a
+   * reschedule can arrive seconds-to-minutes after the Zuper job is created, so
+   * the target is almost always among the newest jobs. Sorting newest-first puts
+   * it on page 1 and early-exits, instead of scanning a stale 270-day window that
+   * capped at 500 of ~5.4k jobs and silently missed just-created ones.
+   *
+   * Note: the bare `sort_by`/`order` params are ignored by Zuper — the `filter.`
+   * prefix is required (same quirk as `filter.from_date`).
+   */
+  async getRecentJobs(
+    opts: { maxPages?: number; pageSize?: number; match?: (job: ZuperJob) => boolean } = {},
+    caller?: string,
+  ): Promise<ZuperApiResponse<ZuperJob[]>> {
+    const pageSize = opts.pageSize ?? 100;
+    const maxPages = opts.maxPages ?? 35;
+    const all: ZuperJob[] = [];
+
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams({
+        "filter.sort_by": "created_at",
+        "filter.order": "desc",
+        count: String(pageSize),
+        page: String(page),
+      });
+      const result = await this.request<{ type: string; data: ZuperJob[]; total_records?: number }>(
+        `/jobs?${params.toString()}`,
+        {},
+        30000,
+        caller ?? "getRecentJobs",
+      );
+
+      if (result.type !== "success") {
+        // Return whatever we gathered so far rather than failing the whole lookup.
+        return all.length > 0
+          ? { type: "success", data: all }
+          : { type: result.type, error: result.error, data: [] };
+      }
+
+      const zuperResponse = (result.data ?? {}) as { data?: ZuperJob[] };
+      const jobs = Array.isArray(zuperResponse.data) ? zuperResponse.data : [];
+      all.push(...jobs);
+
+      if (opts.match && jobs.some(opts.match)) break; // found a likely match — stop early
+      if (jobs.length < pageSize) break; // last (partial) page
+    }
+
+    return { type: "success", data: all };
+  }
+
   // ========== CUSTOMER OPERATIONS ==========
 
   /**
