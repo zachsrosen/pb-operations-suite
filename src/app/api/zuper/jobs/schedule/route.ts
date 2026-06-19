@@ -647,36 +647,34 @@ export async function PUT(request: NextRequest) {
       console.log(`  - PROJ Number: ${projNumber || "none"}`);
       console.log(`  - HubSpot Tag: ${hubspotTag}`);
 
-      // Do TWO searches in parallel for maximum coverage:
-      // 1. Name-based search (fuzzy, finds by customer name in title)
-      // 2. Broad date-range search (finds by deal ID custom field, tags, PROJ number)
-      const [nameSearch, broadSearch] = await Promise.all([
-        customerLastName
-          ? zuper.searchJobs({ limit: 100, search: customerLastName })
-          : Promise.resolve({ type: "success" as const, data: { jobs: [] as ZuperJob[], total: 0 } }),
-        zuper.searchJobs({
-          limit: 500,
-          from_date: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-          to_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        }),
-      ]);
-
-      // Merge results, deduplicating by job_uid
-      const allJobs = new Map<string, ZuperJob>();
-      for (const result of [nameSearch, broadSearch]) {
-        if (result.type === "success" && result.data?.jobs) {
-          for (const job of result.data.jobs) {
-            if (job.job_uid && !allJobs.has(job.job_uid)) {
-              allJobs.set(job.job_uid, job);
-            }
-          }
+      // Fetch jobs newest-first and stop as soon as one looks like this project.
+      // A reschedule can arrive seconds-to-minutes after the Zuper job is created,
+      // so the target is almost always among the newest jobs. Sorting by
+      // created_at desc finds it on the first page instead of scanning a stale
+      // 270-day window capped at 500 of ~5.4k jobs (which silently missed
+      // just-created jobs — the root of the false "no job found" reports).
+      const looksLikeThisProject = (job: ZuperJob): boolean => {
+        if (!categoryMatches(job)) return false;
+        if (getHubSpotDealId(job) === project.id) return true; // strongest signal
+        if (hubspotTag && job.job_tags?.includes(hubspotTag)) return true;
+        if (projNumber) {
+          const p = projNumber.toLowerCase();
+          if (job.job_tags?.some((t) => t.toLowerCase() === p)) return true;
+          if ((job.job_title?.toLowerCase() || "").includes(p)) return true;
         }
-      }
+        return false;
+      };
 
-      console.log(`[Zuper Schedule] Combined search: ${allJobs.size} unique jobs (name: ${nameSearch.data?.jobs?.length || 0}, broad: ${broadSearch.data?.jobs?.length || 0})`);
+      const recent = await zuper.getRecentJobs(
+        { maxPages: 35, pageSize: 100, match: looksLikeThisProject },
+        "schedule-lookup",
+      );
+      const recentJobs = recent.type === "success" && Array.isArray(recent.data) ? recent.data : [];
+
+      console.log(`[Zuper Schedule] Recent-jobs lookup: scanned ${recentJobs.length} jobs (newest-first)`);
 
       // Filter to target category
-      const categoryJobs = [...allJobs.values()].filter(categoryMatches);
+      const categoryJobs = recentJobs.filter(categoryMatches);
 
       // Match 3a: HubSpot Deal ID custom field (most reliable API match)
       if (!existingJob) {
