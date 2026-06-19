@@ -81,6 +81,21 @@ export const prismaSharedCacheStore: SharedCacheStore = {
   },
 };
 
+/**
+ * Drop the shared-cache rows for every key starting with `prefix`. Mirror this
+ * wherever L1 (`appCache.invalidateByPrefix`) is invalidated for a hot key so
+ * the two tiers stay consistent — otherwise L2 would keep serving stale data
+ * after a deal write until its TTL expires. Best-effort; degrades to a no-op.
+ */
+export async function invalidateSharedPrefix(prefix: string): Promise<void> {
+  if (!prisma) return;
+  try {
+    await prisma.$executeRaw`DELETE FROM "SharedCacheEntry" WHERE "key" LIKE ${`${prefix}%`}`;
+  } catch (err) {
+    console.error(`[shared-cache-store] invalidateSharedPrefix failed for "${prefix}":`, err);
+  }
+}
+
 // Tunables for the hot HubSpot read paths. Fresh for 2 min; serve last-good for
 // up to 20 min on failure; a refresh lease longer than the slowest full fetch.
 const HOT_PATH_OPTS = {

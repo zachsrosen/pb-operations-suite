@@ -2121,12 +2121,17 @@ export async function updateDealProperty(
       }
     }
 
-    // Invalidate caches so updated data is fetched on next request
+    // Invalidate caches so updated data is fetched on next request. Clear both
+    // the in-memory L1 cache AND the cross-instance shared L2 cache so neither
+    // tier serves stale data after the write.
     try {
       const { appCache } = await import("@/lib/cache");
       appCache.invalidateByPrefix("projects:");
       appCache.invalidateByPrefix("deals:");
       appCache.invalidate("stats");
+      const { invalidateSharedPrefix } = await import("@/lib/shared-cache-store");
+      await invalidateSharedPrefix("projects:");
+      await invalidateSharedPrefix("deals:");
       console.log(`[HubSpot] Cache invalidated after deal ${dealId} update`);
     } catch {
       // Cache invalidation is best-effort, don't fail the update

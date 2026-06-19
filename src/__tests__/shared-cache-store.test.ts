@@ -3,7 +3,7 @@
 // to a no-op so the caller falls back to a direct fetch instead of throwing.
 jest.mock("@/lib/db", () => ({ prisma: null }));
 
-import { prismaSharedCacheStore } from "@/lib/shared-cache-store";
+import { prismaSharedCacheStore, invalidateSharedPrefix } from "@/lib/shared-cache-store";
 
 describe("prismaSharedCacheStore (degraded: no database)", () => {
   it("read returns null", async () => {
@@ -20,5 +20,9 @@ describe("prismaSharedCacheStore (degraded: no database)", () => {
 
   it("releaseLock does not throw", async () => {
     await expect(prismaSharedCacheStore.releaseLock("k")).resolves.toBeUndefined();
+  });
+
+  it("invalidateSharedPrefix is a no-op that does not throw", async () => {
+    await expect(invalidateSharedPrefix("deals:")).resolves.toBeUndefined();
   });
 });
