@@ -123,6 +123,7 @@ const TICKET_PROPERTIES = [
   "notes_last_contacted",
   "hubspot_owner_id",
   "service_type",
+  "hs_ticket_category",        // ticket category enum — drives Service Production Issues filter
   "pb_location",
   "ticket_documents",          // Drive folder URL for ticket docs (preferred)
   "ticket_document_folder_id", // bare folder ID fallback
@@ -355,6 +356,130 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
     });
   } catch (error) {
     console.error("[HubSpotTickets] Error fetching service tickets:", error);
+    return [];
+  }
+}
+
+/**
+ * Service ticket categories that count as a "production issue" for the
+ * Production Issues dashboard (Service view). HubSpot `hs_ticket_category`
+ * is a multi-select enum; a ticket qualifies if it carries either value.
+ */
+export const PRODUCTION_ISSUE_TICKET_CATEGORIES = [
+  "Production Guarantee",
+  "System Failure/Underperformance",
+] as const;
+
+/** A qualifying open service ticket, flattened for the Service Production Issues list. */
+export interface ProductionIssueTicket {
+  id: string;
+  /** Ticket subject — used as the customer/title display. */
+  subject: string;
+  /** Matched category value (e.g. "Production Guarantee"). */
+  category: string;
+  /** Derived street address (ticket → deal), if resolvable. */
+  address: string | null;
+  /** PB shop location (ticket pb_location → deal → company city). */
+  location: string | null;
+  /** Ticket createdate (ISO). */
+  createDate: string | null;
+  /** HubSpot ticket deep-link. */
+  url: string;
+}
+
+/**
+ * Fetch OPEN service-pipeline tickets whose `hs_ticket_category` is one of the
+ * production-issue categories. Mirrors `fetchServiceTickets` (open-stage
+ * exclusion + location derivation) but adds a category filter and surfaces the
+ * matched category + derived address for the Service Production Issues list.
+ *
+ * "Open" = any stage NOT labeled closed/done/resolved/completed (same
+ * convention as fetchServiceTickets). Resolved/closed tickets are excluded
+ * server-side via NOT_IN on those stage IDs.
+ */
+export async function fetchProductionIssueTickets(): Promise<ProductionIssueTicket[]> {
+  try {
+    const { map: stageMap } = await getTicketStageMap();
+
+    const closedStageIds = Object.entries(stageMap)
+      .filter(([, label]) => /closed|done|resolved|completed/i.test(label))
+      .map(([id]) => id);
+
+    // HubSpot search filterGroups are OR'd across groups, AND'd within a group.
+    // We need: pipeline=service AND open-stage AND (category=A OR category=B).
+    // hs_ticket_category is a multi-enum, so use IN with both values in one group.
+    const baseFilters: Array<Record<string, unknown>> = [
+      {
+        propertyName: "hs_pipeline",
+        operator: FilterOperatorEnum.Eq,
+        value: SERVICE_TICKET_PIPELINE_ID,
+      },
+      {
+        propertyName: "hs_ticket_category",
+        operator: "IN",
+        values: [...PRODUCTION_ISSUE_TICKET_CATEGORIES],
+      },
+    ];
+    if (closedStageIds.length > 0) {
+      baseFilters.push({
+        propertyName: "hs_pipeline_stage",
+        operator: "NOT_IN",
+        values: closedStageIds,
+      });
+    }
+
+    let tickets: HubSpotTicket[] = [];
+    let after: string | undefined;
+    do {
+      const searchRequest = {
+        filterGroups: [{ filters: baseFilters }],
+        properties: TICKET_PROPERTIES,
+        limit: 100,
+        ...(after ? { after } : {}),
+      };
+      const response = await searchTicketsWithRetry(
+        searchRequest as unknown as Parameters<typeof searchTicketsWithRetry>[0]
+      );
+      const page = (response.results || []).map((t) => ({
+        id: t.id,
+        properties: t.properties as Record<string, string | undefined>,
+      }));
+      tickets = tickets.concat(page);
+      after = response.paging?.next?.after;
+    } while (after);
+
+    if (tickets.length === 0) return [];
+
+    const ticketIds = tickets.map((t) => t.id);
+    const [locationMap, addressMap] = await Promise.all([
+      resolveTicketLocations(ticketIds),
+      resolveTicketAddresses(ticketIds),
+    ]);
+
+    return tickets.map((ticket) => {
+      const props = ticket.properties;
+      const addr = addressMap.get(ticket.id);
+      const address = addr
+        ? [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(", ")
+        : null;
+      // hs_ticket_category may hold multiple ";"-separated values — surface the
+      // first one that matches our production-issue set.
+      const rawCategory = props.hs_ticket_category || "";
+      const matched = (PRODUCTION_ISSUE_TICKET_CATEGORIES as readonly string[]).find((c) =>
+        rawCategory.split(";").map((v) => v.trim()).includes(c)
+      );
+      return {
+        id: ticket.id,
+        subject: props.subject || "Untitled Ticket",
+        category: matched || rawCategory || "Production Issue",
+        address,
+        location: props.pb_location || locationMap.get(ticket.id) || null,
+        createDate: props.createdate || null,
+        url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
+      };
+    });
+  } catch (error) {
+    console.error("[HubSpotTickets] Error fetching production-issue tickets:", error);
     return [];
   }
 }

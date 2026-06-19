@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import FlagProjectModal from "@/components/FlagProjectModal";
+import ServiceIssuesView from "./ServiceIssuesView";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { RawProject } from "@/lib/types";
@@ -115,6 +116,20 @@ export default function ProductionIssuesPage() {
   const [equipTab, setEquipTab] = useState<"inverter" | "module" | "battery">("inverter");
   const [flagModalOpen, setFlagModalOpen] = useState(false);
   const [unflagging, setUnflagging] = useState<string | null>(null);
+
+  // Install | Service toggle. Install is the original view (unchanged); Service
+  // renders the merged ticket+deal production-issue list from a separate endpoint.
+  const [view, setView] = useState<"install" | "service">("install");
+  const [serviceLocations, setServiceLocations] = useState<string[]>([]);
+  const [serviceExport, setServiceExport] = useState<Record<string, unknown>[]>([]);
+  const [serviceLastUpdated, setServiceLastUpdated] = useState<string | null>(null);
+  const handleServiceData = useCallback(
+    (rows: Record<string, unknown>[], updated: string | null) => {
+      setServiceExport(rows);
+      setServiceLastUpdated(updated);
+    },
+    []
+  );
 
   const handleUnflag = async (dealId: string) => {
     setUnflagging(dealId);
@@ -320,13 +335,46 @@ export default function ProductionIssuesPage() {
     [filteredFlagged]
   );
 
+  const viewToggle = (
+    <div className="inline-flex rounded-lg border border-t-border bg-surface-2 p-0.5 text-sm">
+      {(["install", "service"] as const).map((v) => (
+        <button
+          key={v}
+          onClick={() => setView(v)}
+          className={`px-3 py-1 rounded-md capitalize transition-colors ${
+            view === v
+              ? "bg-red-600 text-white"
+              : "text-muted hover:text-foreground"
+          }`}
+        >
+          {v}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <DashboardShell
       title="Production Issues"
       accentColor="red"
-      lastUpdated={lastUpdated}
-      exportData={{ data: exportRows, filename: "production-issues.csv" }}
+      lastUpdated={view === "service" ? serviceLastUpdated : lastUpdated}
+      exportData={{
+        data: view === "service" ? serviceExport : exportRows,
+        filename:
+          view === "service"
+            ? "service-production-issues.csv"
+            : "production-issues.csv",
+      }}
+      headerRight={viewToggle}
     >
+      {view === "service" ? (
+        <ServiceIssuesView
+          selectedLocations={serviceLocations}
+          onLocationsChange={setServiceLocations}
+          onData={handleServiceData}
+        />
+      ) : (
+        <>
       {/* Hero strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MiniStat label="Total flagged" value={loading ? null : totalFlagged} />
@@ -540,6 +588,8 @@ export default function ProductionIssuesPage() {
         onClose={() => setFlagModalOpen(false)}
         onFlagged={() => refetch()}
       />
+        </>
+      )}
     </DashboardShell>
   );
 }
