@@ -47,7 +47,11 @@ echo
 echo "DATABASE_URL: $MASKED_URL"
 echo
 echo "Pending migrations:"
-npx prisma migrate status 2>&1 | tail -20
+# `prisma migrate status` exits non-zero whenever migrations are pending or the
+# history diverges. Under `set -e` that aborts the script before the CONFIRM
+# apply block — so it would print status and silently never apply. Neutralize
+# the exit code; this line is informational only.
+npx prisma migrate status 2>&1 | tail -20 || true
 echo
 
 if [[ "${1:-}" != "CONFIRM" ]]; then
