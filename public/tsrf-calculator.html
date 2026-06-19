@@ -567,6 +567,11 @@ footer {
         <div class="stat-val red" id="r-clip-hrs">—</div>
         <div class="stat-sub" id="r-clip-sub">summer solstice</div>
       </div>
+      <div class="stat-card clip">
+        <div class="stat-lbl">✂️ Clip Hours / Year</div>
+        <div class="stat-val red" id="r-clip-yr">—</div>
+        <div class="stat-sub" id="r-clip-yr-sub">est. annual</div>
+      </div>
       <div class="stat-card ilr">
         <div class="stat-lbl">📐 DC:AC Ratio</div>
         <div class="stat-val green" id="r-ilr">—</div>
@@ -928,6 +933,24 @@ function analyzeClipping(dc_arr, inv_kw) {
   return { clippedKwh, clipHours, peakRatioPct, startIdx, endIdx };
 }
 
+// ── Annual clipping estimate ──────────────────────────────────────
+// Sum clipped hours/energy across the 12 representative days (one per month,
+// Klein 1977), scaling each day by its month length. Solstice is the worst
+// case, so a clean (zero-clip) solstice → ~zero annual clipping. Mirrors the
+// monthlyPeaksDC loop and uses the same clear-sky model + TSRF derate.
+function annualClipping(lat, tilt, panelAz, array_kw, nonOF, tempCoeff, inv_kw) {
+  let totalHours = 0, totalKwh = 0, monthsClipping = 0;
+  for (let m = 0; m < 12; m++) {
+    const T = ambientTemp(lat, MONTH_DOY[m]);
+    const day = simulateDay(lat, MONTH_DOY[m], tilt, panelAz, array_kw, nonOF, T, tempCoeff);
+    const c = analyzeClipping(day.dc, inv_kw);
+    if (c.clipHours > 0) monthsClipping++;
+    totalHours += c.clipHours  * MONTH_LEN[m];
+    totalKwh   += c.clippedKwh * MONTH_LEN[m];
+  }
+  return { totalHours, totalKwh, monthsClipping };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────
 function fmtHour(h) {
   const hh = Math.floor(h);
@@ -1041,6 +1064,7 @@ function calculate() {
   const ilr        = array_kw / inv_kw;
   const clip       = analyzeClipping(sumDay.dc, inv_kw);
   const monthPeaks = monthlyPeaksDC(lat, pitch, azimuth, array_kw, nonOF, tempCoeff);
+  const annClip    = annualClipping(lat, pitch, azimuth, array_kw, nonOF, tempCoeff, inv_kw);
 
   // ── Stats bar ──────────────────────────────────────────────────
   document.getElementById('r-sum-peak').textContent  = sumPeak.toFixed(2);
@@ -1049,6 +1073,10 @@ function calculate() {
   document.getElementById('r-clip-sub').textContent  = clip.clipHours > 0
     ? `hrs/day · ${clip.peakRatioPct.toFixed(1)}% over limit`
     : 'No clipping on solstice day';
+  document.getElementById('r-clip-yr').textContent   = annClip.totalHours > 0 ? Math.round(annClip.totalHours).toLocaleString() : '0';
+  document.getElementById('r-clip-yr-sub').textContent = annClip.totalHours > 0
+    ? `hrs/yr · ~${Math.round(annClip.totalKwh).toLocaleString()} kWh clipped`
+    : 'No clipping year-round';
   document.getElementById('r-ilr').textContent       = ilr.toFixed(3);
   document.getElementById('r-ilr-sub').textContent   = ilr > 1.4 ? '⚠️ High — heavy clipping likely'
     : ilr > 1.2 ? '✓ Moderate — typical residential'
