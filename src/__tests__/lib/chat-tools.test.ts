@@ -154,7 +154,7 @@ describe("createChatTools", () => {
     });
 
     const payload = await filterByStage.run({ stage: "construction" });
-    const parsed = JSON.parse(payload) as { stage: string; count: number; deals: Array<{ dealId: string }> };
+    const parsed = JSON.parse(payload) as { stage: string; total: number; deals: Array<{ dealId: string }> };
 
     expect(mockSearchWithRetry).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -171,7 +171,7 @@ describe("createChatTools", () => {
       })
     );
     expect(parsed.stage).toBe("Construction");
-    expect(parsed.count).toBe(1);
+    expect(parsed.total).toBe(1);
     expect(parsed.deals[0]?.dealId).toBe("d1");
   });
 
