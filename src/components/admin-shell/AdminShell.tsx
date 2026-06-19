@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AdminSidebar } from "./AdminSidebar";
 import { AdminSearch } from "./AdminSearch";
 import { UserMenu } from "@/components/UserMenu";
+import { HeaderControls } from "@/components/HeaderControls";
 
 export interface AdminShellProps {
   children: ReactNode;
@@ -43,6 +44,7 @@ export function AdminShell({ children }: AdminShellProps) {
         <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-t-border/60 bg-surface/60 px-6 py-3 backdrop-blur-sm">
           <div className="min-w-0 flex-1" />
           <AdminSearch />
+          <HeaderControls />
           <UserMenu />
         </div>
         <main className="flex-1 px-6 py-6">{children}</main>

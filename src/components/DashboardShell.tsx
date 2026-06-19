@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
+import { HeaderControls } from "./HeaderControls";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
@@ -378,6 +379,7 @@ export default function DashboardShell({
                 </button>
               )}
               <ThemeToggle />
+              <HeaderControls />
               {headerRight}
             </div>
           </div>

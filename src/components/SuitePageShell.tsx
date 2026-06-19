@@ -6,6 +6,7 @@ import type { UserRole } from "@/generated/prisma/enums";
 import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 import { UserMenu } from "./UserMenu";
+import { HeaderControls } from "./HeaderControls";
 
 export interface SuitePageCard {
   href: string;
@@ -183,7 +184,10 @@ export default function SuitePageShell({
 
           {/* Right: inline suite switcher + user menu */}
           <div className="flex flex-col items-end gap-2">
-            <UserMenu />
+            <div className="flex items-center gap-2">
+              <HeaderControls />
+              <UserMenu />
+            </div>
             {visibleSuites.length > 0 && (
               <div className="flex flex-wrap justify-end gap-1.5">
                 {visibleSuites.map((suite) => {

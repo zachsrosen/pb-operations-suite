@@ -15,6 +15,7 @@ import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { UserMenu } from "@/components/UserMenu";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { HeaderControls } from "@/components/HeaderControls";
 import { prefetchDashboard } from "@/lib/prefetch";
 import PhotonBrothersBadge from "@/components/PhotonBrothersBadge";
 
@@ -531,6 +532,7 @@ export default function Home() {
             </span>
 
             <ThemeToggle />
+            <HeaderControls />
             <UserMenu />
           </div>
         </div>
