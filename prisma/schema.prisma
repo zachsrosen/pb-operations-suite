@@ -3913,6 +3913,12 @@ model EagleViewOrder {
   shadeJsonDriveFileId  String?
   reportPdfDriveFileId  String? // bundled measurement report PDF
   reportXmlDriveFileId  String? // bundled measurement XML
+  // TrueDesign design exports (pulled when eagleview_status flips to Reviewed)
+  designVersionId       String? // TrueDesign design version UUID used for the export
+  dxfDriveFileId        String? // TrueDesign DXF
+  dwgDriveFileId        String? // TrueDesign DWG (CAD)
+  designPdfDriveFileId  String? // TrueDesign design PDF
+  designFilesPulledAt   DateTime?
   cost                  Float? // populated when known
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
