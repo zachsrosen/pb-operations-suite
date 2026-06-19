@@ -33,14 +33,27 @@ interface SearchResult {
   priority: string | null;
   eagleviewOrder: {
     id: string;
+    dealId: string;
     reportId: string;
+    productCode: string;
     status: string;
     triggeredBy: string;
+    surveyDate: string | null;
     orderedAt: string;
     deliveredAt: string | null;
-    driveFolderId: string | null;
+    estimatedDeliveryAt: string | null;
     errorMessage: string | null;
+    failedAttempts: number;
+    cost: number | null;
+    driveFolderId: string | null;
+    imageDriveFileId: string | null;
+    layoutJsonDriveFileId: string | null;
+    shadeJsonDriveFileId: string | null;
+    reportPdfDriveFileId: string | null;
+    reportXmlDriveFileId: string | null;
     ticketId: string | null;
+    createdAt: string;
+    updatedAt: string;
   } | null;
 }
 
@@ -132,14 +145,27 @@ export async function GET(request: NextRequest) {
         if (o) {
           r.eagleviewOrder = {
             id: o.id,
+            dealId: o.dealId,
             reportId: o.reportId,
+            productCode: String(o.productCode),
             status: o.status,
             triggeredBy: o.triggeredBy,
+            surveyDate: o.surveyDate?.toISOString() ?? null,
             orderedAt: o.orderedAt.toISOString(),
             deliveredAt: o.deliveredAt?.toISOString() ?? null,
-            driveFolderId: o.driveFolderId ?? null,
+            estimatedDeliveryAt: o.estimatedDeliveryAt?.toISOString() ?? null,
             errorMessage: o.errorMessage ?? null,
+            failedAttempts: o.failedAttempts,
+            cost: o.cost ?? null,
+            driveFolderId: o.driveFolderId ?? null,
+            imageDriveFileId: o.imageDriveFileId ?? null,
+            layoutJsonDriveFileId: o.layoutJsonDriveFileId ?? null,
+            shadeJsonDriveFileId: o.shadeJsonDriveFileId ?? null,
+            reportPdfDriveFileId: o.reportPdfDriveFileId ?? null,
+            reportXmlDriveFileId: o.reportXmlDriveFileId ?? null,
             ticketId: o.ticketId ?? null,
+            createdAt: o.createdAt.toISOString(),
+            updatedAt: o.updatedAt.toISOString(),
           };
         }
       }
@@ -164,14 +190,27 @@ export async function GET(request: NextRequest) {
         if (o) {
           r.eagleviewOrder = {
             id: o.id,
+            dealId: o.dealId,
             reportId: o.reportId,
+            productCode: String(o.productCode),
             status: o.status,
             triggeredBy: o.triggeredBy,
+            surveyDate: o.surveyDate?.toISOString() ?? null,
             orderedAt: o.orderedAt.toISOString(),
             deliveredAt: o.deliveredAt?.toISOString() ?? null,
-            driveFolderId: o.driveFolderId ?? null,
+            estimatedDeliveryAt: o.estimatedDeliveryAt?.toISOString() ?? null,
             errorMessage: o.errorMessage ?? null,
+            failedAttempts: o.failedAttempts,
+            cost: o.cost ?? null,
+            driveFolderId: o.driveFolderId ?? null,
+            imageDriveFileId: o.imageDriveFileId ?? null,
+            layoutJsonDriveFileId: o.layoutJsonDriveFileId ?? null,
+            shadeJsonDriveFileId: o.shadeJsonDriveFileId ?? null,
+            reportPdfDriveFileId: o.reportPdfDriveFileId ?? null,
+            reportXmlDriveFileId: o.reportXmlDriveFileId ?? null,
             ticketId: o.ticketId ?? null,
+            createdAt: o.createdAt.toISOString(),
+            updatedAt: o.updatedAt.toISOString(),
           };
         }
       }
