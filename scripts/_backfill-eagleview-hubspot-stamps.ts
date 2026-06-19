@@ -49,8 +49,8 @@ async function main() {
         const ok = o.ticketId
           ? await updateTicketProperties(o.ticketId, props)
           : await updateDealProperty(o.dealId, props);
-        ok ? stamped++ : failed++;
-        if (!ok) console.warn(`    write returned false for ${targetLabel}`);
+        if (ok) stamped++;
+        else { failed++; console.warn(`    write returned false for ${targetLabel}`); }
       } catch (e) {
         failed++;
         console.warn(`    error stamping ${targetLabel}:`, e instanceof Error ? e.message : e);
