@@ -763,6 +763,34 @@ export default function Home() {
           </div>
         )}
 
+        {/* Atlas — top-level peer destination available to everyone */}
+        {(userAccess.allowedRoutes.includes("/dashboards/atlas") ||
+          userAccess.allowedRoutes.includes("*")) && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold text-foreground/80 mb-4">Atlas</h2>
+            <Link
+              href="/dashboards/atlas"
+              className="group flex items-center gap-4 rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm transition-all hover:border-cyan-500/50 hover:bg-surface"
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 text-cyan-400">
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18M12 3a15 15 0 000 18" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-foreground group-hover:text-cyan-400 transition-colors">
+                  Atlas
+                </h3>
+                <p className="text-sm text-muted">Open the Atlas workspace.</p>
+              </div>
+              <span className="ml-auto text-sm text-muted opacity-40 group-hover:opacity-70 transition-opacity">
+                Open &rarr;
+              </span>
+            </Link>
+          </div>
+        )}
+
         {/* Suites the user can access */}
         {visibleSuites.length > 0 && (
           <div>
