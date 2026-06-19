@@ -1640,6 +1640,15 @@ interface SendBugReportEmailParams {
   pageUrl?: string;
   reporterName?: string;
   reporterEmail: string;
+  /**
+   * Override the email's From address (which becomes the Freshservice
+   * requester) separately from the reporter shown in the body. The Tech Ops
+   * bot uses this to file under a non-agent requester so an agent reply does
+   * not trip the "reopen when requester responds" automation (FS #786).
+   * Defaults to the reporter when omitted.
+   */
+  requesterEmail?: string;
+  requesterName?: string;
 }
 
 export async function sendBugReportEmail(
@@ -1672,9 +1681,13 @@ export async function sendBugReportEmail(
     })
   );
 
-  const fromOverride = params.reporterName
-    ? `${params.reporterName} <${params.reporterEmail}>`
-    : params.reporterEmail;
+  // The From address becomes the Freshservice requester. Default to the
+  // reporter, but allow a requester override (see SendBugReportEmailParams).
+  const requesterEmail = params.requesterEmail || params.reporterEmail;
+  const requesterDisplayName = params.requesterName || params.reporterName;
+  const fromOverride = requesterDisplayName
+    ? `${requesterDisplayName} <${requesterEmail}>`
+    : requesterEmail;
 
   return sendEmailMessage({
     to: recipient,
@@ -1691,7 +1704,7 @@ Ticket ID: ${params.reportId}
 
 - PB Operations`,
     fromOverride,
-    senderEmailOverride: params.reporterEmail,
+    senderEmailOverride: requesterEmail,
     debugFallbackTitle: `${kindLabel.toUpperCase()} NOTIFICATION for ${recipient}`,
     debugFallbackBody: [
       `Title: ${params.title}`,
