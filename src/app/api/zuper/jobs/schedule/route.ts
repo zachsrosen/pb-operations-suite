@@ -690,20 +690,20 @@ export async function PUT(request: NextRequest) {
           { maxPages: 35, match: looksLikeThisProject },
           "schedule-lookup",
         ),
-        zuper.getUnscheduledJobs(),
+        zuper.getUnscheduledJobs(
+          { maxPages: 30, match: looksLikeThisProject },
+          "schedule-lookup",
+        ),
       ]);
 
-      // Merge results, deduplicating by job_uid
+      // Merge results, deduplicating by job_uid. Both helpers return a flat
+      // ZuperJob[] in `.data` (already paginated + early-exited on match).
       const allJobs = new Map<string, ZuperJob>();
       const windowJobs =
         windowResult.type === "success" && Array.isArray(windowResult.data) ? windowResult.data : [];
-      const rawUnscheduled: unknown =
-        unscheduledResult.type === "success" ? unscheduledResult.data : null;
-      // /jobs/unscheduled may return a bare array or a { data: [...] } envelope.
-      const unscheduledJobs: ZuperJob[] = Array.isArray(rawUnscheduled)
-        ? (rawUnscheduled as ZuperJob[])
-        : Array.isArray((rawUnscheduled as { data?: ZuperJob[] })?.data)
-          ? (rawUnscheduled as { data: ZuperJob[] }).data
+      const unscheduledJobs: ZuperJob[] =
+        unscheduledResult.type === "success" && Array.isArray(unscheduledResult.data)
+          ? unscheduledResult.data
           : [];
       for (const job of [...windowJobs, ...unscheduledJobs]) {
         if (job.job_uid && !allJobs.has(job.job_uid)) {

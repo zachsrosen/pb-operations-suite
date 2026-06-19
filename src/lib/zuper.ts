@@ -1099,10 +1099,47 @@ export class ZuperClient {
   }
 
   /**
-   * Get unscheduled jobs
+   * Get unscheduled jobs (jobs awaiting a first scheduled date).
+   *
+   * Paginated — `/jobs/unscheduled` returns thousands of jobs (~10–100/page)
+   * under a nested `{ data: { unscheduled_jobs: [...] }, total_pages }` envelope.
+   * Mirrors getScheduledJobsInWindow: walk pages up to maxPages, early-exit as
+   * soon as the optional `match` predicate is satisfied, stop on a short page.
    */
-  async getUnscheduledJobs(): Promise<ZuperApiResponse<ZuperJob[]>> {
-    return this.request<ZuperJob[]>("/jobs/unscheduled");
+  async getUnscheduledJobs(
+    opts: { maxPages?: number; pageSize?: number; match?: (job: ZuperJob) => boolean } = {},
+    caller?: string,
+  ): Promise<ZuperApiResponse<ZuperJob[]>> {
+    const pageSize = opts.pageSize ?? 100;
+    const maxPages = opts.maxPages ?? 30;
+    const all: ZuperJob[] = [];
+
+    for (let page = 1; page <= maxPages; page++) {
+      const params = new URLSearchParams({ count: String(pageSize), page: String(page) });
+      const result = await this.request<{ data?: { unscheduled_jobs?: ZuperJob[] } }>(
+        `/jobs/unscheduled?${params.toString()}`,
+        {},
+        30000,
+        caller ?? "getUnscheduledJobs",
+      );
+
+      if (result.type !== "success") {
+        return all.length > 0 ? { type: "success", data: all } : { type: "error", error: result.error };
+      }
+
+      // request() wraps the Zuper response:
+      //   result.data = { data: { unscheduled_jobs: [...] }, total_records, ... }
+      const resp = (result.data ?? {}) as { data?: { unscheduled_jobs?: ZuperJob[] } };
+      const jobs: ZuperJob[] = Array.isArray(resp?.data?.unscheduled_jobs)
+        ? resp.data!.unscheduled_jobs!
+        : [];
+      all.push(...jobs);
+
+      if (opts.match && jobs.some(opts.match)) break; // found it — stop early
+      if (jobs.length < pageSize) break; // last page
+    }
+
+    return { type: "success", data: all };
   }
 
   /**

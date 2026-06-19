@@ -106,3 +106,58 @@ describe("ZuperClient.getScheduledJobsInWindow", () => {
     expect(calls).toHaveLength(3);
   });
 });
+
+// /jobs/unscheduled returns a nested { data: { unscheduled_jobs: [...] } } envelope
+// and is paginated (thousands of jobs). getUnscheduledJobs must parse that shape,
+// paginate, and early-exit on match — mirroring getScheduledJobsInWindow.
+function unscheduledPage(jobs: ZuperJob[]): string {
+  return JSON.stringify({ data: { unscheduled_jobs: jobs }, total_records: 9999 });
+}
+
+function mockUnscheduledSequence(pages: ZuperJob[][]) {
+  let i = 0;
+  global.fetch = jest.fn(async (url: string) => {
+    calls.push({ url: String(url) });
+    const body = unscheduledPage(pages[i] ?? []);
+    i += 1;
+    return { ok: true, status: 200, text: async () => body } as unknown as Response;
+  }) as unknown as typeof fetch;
+}
+
+describe("ZuperClient.getUnscheduledJobs", () => {
+  beforeEach(() => {
+    calls.length = 0;
+    process.env.ZUPER_API_KEY = "test-key";
+  });
+
+  it("parses data.unscheduled_jobs and paginates until a short page", async () => {
+    mockUnscheduledSequence([
+      [job("a", "x"), job("b", "y")], // full page (pageSize 2)
+      [job("c", "z")], // short page → stop
+    ]);
+    const client = new ZuperClient();
+
+    const res = await client.getUnscheduledJobs({ pageSize: 2, maxPages: 10 });
+
+    expect(res.type).toBe("success");
+    expect((res.data as ZuperJob[]).map((j) => j.job_uid)).toEqual(["a", "b", "c"]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toContain("/jobs/unscheduled");
+  });
+
+  it("early-exits as soon as the match predicate is satisfied", async () => {
+    mockUnscheduledSequence([
+      [job("a", "Smith"), job("b", "PROJ-9949 | Montiview")], // match on page 1
+      [job("c", "should-not-fetch")],
+    ]);
+    const client = new ZuperClient();
+
+    const res = await client.getUnscheduledJobs({
+      pageSize: 2,
+      match: (j) => (j.job_title || "").includes("PROJ-9949"),
+    });
+
+    expect(calls).toHaveLength(1); // stopped after the matching page
+    expect((res.data as ZuperJob[]).some((j) => j.job_title?.includes("Montiview"))).toBe(true);
+  });
+});
