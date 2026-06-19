@@ -633,17 +633,16 @@ export async function PUT(request: NextRequest) {
 
     // --- Strategy 3: Search Zuper API with multiple matching methods ---
     if (!existingJob) {
-      // Extract customer name parts for matching
+      // Extract the project number for matching.
       // HubSpot format: "PROJ-9031 | LastName, FirstName | Address"
       const nameParts = project.name?.split(" | ") || [];
-      const customerName = nameParts.length >= 2
-        ? nameParts[1]?.trim()
-        : nameParts[0]?.trim() || "";
-      const customerLastName = customerName.split(",")[0]?.trim() || "";
       const projNumber = nameParts[0]?.trim().match(/PROJ-\d+/i)?.[0] || "";
+      // Match the PROJ# as a whole token so "PROJ-9031" can't match "PROJ-90310".
+      const projNumberRegex = projNumber
+        ? new RegExp(`\\b${projNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i")
+        : null;
 
       console.log(`[Zuper Schedule] Searching Zuper API:`);
-      console.log(`  - Customer Last Name: ${customerLastName}`);
       console.log(`  - PROJ Number: ${projNumber || "none"}`);
       console.log(`  - HubSpot Tag: ${hubspotTag}`);
 
@@ -660,7 +659,7 @@ export async function PUT(request: NextRequest) {
         if (projNumber) {
           const p = projNumber.toLowerCase();
           if (job.job_tags?.some((t) => t.toLowerCase() === p)) return true;
-          if ((job.job_title?.toLowerCase() || "").includes(p)) return true;
+          if (projNumberRegex?.test(job.job_title || "")) return true;
         }
         return false;
       };
@@ -702,25 +701,20 @@ export async function PUT(request: NextRequest) {
         if (existingJob) matchMethod = "proj_tag";
       }
 
-      // Match 3d: PROJ number in job title
-      if (!existingJob && projNumber) {
-        const normalizedProj = projNumber.toLowerCase();
+      // Match 3d: PROJ number as a whole token in job title
+      if (!existingJob && projNumberRegex) {
         existingJob = categoryJobs.find((job) =>
-          (job.job_title?.toLowerCase() || "").includes(normalizedProj)
+          projNumberRegex.test(job.job_title || "")
         );
         if (existingJob) matchMethod = "proj_in_title";
       }
 
-      // Match 3e: Customer last name in job title
-      if (!existingJob && customerLastName.length > 2) {
-        const normalizedLastName = customerLastName.toLowerCase().trim();
-        existingJob = categoryJobs.find((job) => {
-          const title = job.job_title?.toLowerCase() || "";
-          return title.includes(normalizedLastName + ",") ||
-                 title.startsWith(normalizedLastName + " ");
-        });
-        if (existingJob) matchMethod = "name_in_title";
-      }
+      // NOTE: a last-name-in-title fallback was intentionally removed. When this
+      // project's Zuper job did not exist yet (a reschedule can arrive before the
+      // job is created), surname matching could grab a *different* customer's job
+      // with the same last name and reschedule the wrong job. We now match only on
+      // identifiers unique to this project (deal-id, hubspot tag, PROJ#); a job
+      // that genuinely isn't there correctly returns "no job found".
 
       if (existingJob) {
         console.log(`[Zuper Schedule] Found existing job: ${existingJob.job_uid} (matched by: ${matchMethod})`);
