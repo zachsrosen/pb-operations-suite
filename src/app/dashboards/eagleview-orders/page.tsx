@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import DashboardShell from "@/components/DashboardShell";
 import { prisma } from "@/lib/db";
 import { batchReadDealsWithRetry } from "@/lib/hubspot";
+import { getHubSpotDealUrl } from "@/lib/external-links";
 import EagleViewOrdersClient, { type OrderListRow } from "./EagleViewOrdersClient";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ const DEAL_NAME_PROPS = [
   "state",
   "postal_code",
   "zip",
+  "pb_location",
 ];
 
 export default async function EagleViewOrdersPage() {
@@ -31,7 +33,10 @@ export default async function EagleViewOrdersPage() {
   const dealIds = Array.from(
     new Set(orders.map((o) => o.dealId).filter((d) => d && !d.startsWith("ticket:"))),
   );
-  const byDeal = new Map<string, { dealName: string | null; address: string | null }>();
+  const byDeal = new Map<
+    string,
+    { dealName: string | null; address: string | null; pbLocation: string | null }
+  >();
   try {
     for (let i = 0; i < dealIds.length; i += 100) {
       const chunk = dealIds.slice(i, i + 100);
@@ -42,7 +47,11 @@ export default async function EagleViewOrdersPage() {
           [p.address_line_1 ?? p.address, p.city, p.state, p.postal_code ?? p.zip]
             .filter(Boolean)
             .join(", ") || null;
-        byDeal.set(d.id, { dealName: p.dealname ?? null, address: addr });
+        byDeal.set(d.id, {
+          dealName: p.dealname ?? null,
+          address: addr,
+          pbLocation: p.pb_location ?? null,
+        });
       }
     }
   } catch (err) {
@@ -65,6 +74,8 @@ export default async function EagleViewOrdersPage() {
       failedAttempts: o.failedAttempts,
       dealName: d?.dealName ?? null,
       address: d?.address ?? null,
+      pbLocation: d?.pbLocation ?? null,
+      hubspotUrl: o.dealId && !o.dealId.startsWith("ticket:") ? getHubSpotDealUrl(o.dealId) : null,
     };
   });
 
