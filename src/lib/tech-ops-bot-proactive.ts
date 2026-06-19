@@ -406,6 +406,8 @@ export interface DigestRoute {
  * scope, sections, or content focus. Escalations are intentionally omitted —
  * that's the owner's DM queue.
  */
+// Team-room digests PAUSED at Zach's request (too noisy in the chat groups).
+// Flip `enabled` back to true to resume. The owner DM is unaffected.
 export const DIGEST_ROUTES: DigestRoute[] = [
   {
     room: "Tech Ops",
@@ -413,14 +415,14 @@ export const DIGEST_ROUTES: DigestRoute[] = [
     intro: "Operational snapshot across all shops.",
     locations: [],
     sections: ["stuck", "milestones", "schedule"],
-    enabled: true,
+    enabled: false,
   },
   {
     // TODO(zach): tailor once we know Fight Club's focus — broad default for now.
     room: "Fight Club",
     locations: [],
     sections: ["stuck", "milestones", "schedule"],
-    enabled: true,
+    enabled: false,
   },
   {
     room: "Colorado Project Team",
@@ -430,7 +432,7 @@ export const DIGEST_ROUTES: DigestRoute[] = [
     sections: ["stuck", "milestones"],
     stuckStages: ["Permitting & Interconnection"],
     milestones: ["permit_submitted", "permit_issued", "ic_submitted", "ic_approved"],
-    enabled: true,
+    enabled: false,
   },
 ];
 
