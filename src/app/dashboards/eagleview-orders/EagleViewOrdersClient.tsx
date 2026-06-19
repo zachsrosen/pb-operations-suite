@@ -198,7 +198,18 @@ export default function EagleViewOrdersClient({ userEmail }: { userEmail: string
                 }`}>
                   <span className="font-medium">{order.status}</span>
                   {order.reportId && !order.reportId.startsWith("pending:") && (
-                    <span>— Report #{order.reportId}</span>
+                    <span>
+                      —{" "}
+                      <a
+                        href={`https://apps.eagleview.com/truedesign/${order.reportId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-2 hover:opacity-80"
+                        title="Open this design in EagleView TrueDesign"
+                      >
+                        Report #{order.reportId} ↗
+                      </a>
+                    </span>
                   )}
                   {order.errorMessage && <span>— {order.errorMessage}</span>}
                   {order.triggeredBy && (
