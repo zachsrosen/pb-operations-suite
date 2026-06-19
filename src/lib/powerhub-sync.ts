@@ -687,6 +687,9 @@ export async function pollAlerts(): Promise<AlertPollResult> {
     }> = [];
 
     let cursor: string | undefined;
+    // Did we read every page of active alerts? Only when fully drained is
+    // `activeAlertIds` the complete fleet-wide picture (see resolution below).
+    let fullyDrained = false;
     for (let page = 0; page < ALERT_MAX_PAGES; page++) {
       const response = await client.getActiveAlerts(groupId, cursor);
       const alerts = response.data || [];
@@ -738,7 +741,10 @@ export async function pollAlerts(): Promise<AlertPollResult> {
 
       // Check for more pages
       const nextCursor = response.metadata?.next_cursor;
-      if (!nextCursor) break;
+      if (!nextCursor) {
+        fullyDrained = true;
+        break;
+      }
       cursor = nextCursor;
 
       // Rate limit between pages
@@ -808,16 +814,22 @@ export async function pollAlerts(): Promise<AlertPollResult> {
       }
     }
 
-    // 5. Resolve alerts that are no longer in the active set
-    //    Only resolve for sites that appeared in this poll — don't resolve
-    //    alerts for sites we didn't fetch alerts about.
+    // 5. Resolve alerts that are no longer in the active set.
+    //    When the fetch fully drained, `activeAlertIds` is the complete
+    //    fleet-wide active set, so we can resolve any DB alert that's no longer
+    //    active — including sites whose alerts ALL cleared and therefore dropped
+    //    out of this poll entirely. That drop-out was the cause of stale
+    //    false-positive alerts in the Service suite (FS #649).
+    //    If the fetch was truncated by the page cap, fall back to resolving only
+    //    sites we actually saw, so we never clear an alert that was simply on a
+    //    page we didn't fetch.
     const siteIdsInPoll = new Set(allAlerts.map((a) => a.siteId));
-    if (siteIdsInPoll.size > 0) {
+    const resolveWhere = fullyDrained
+      ? { isActive: true }
+      : { isActive: true, siteId: { in: [...siteIdsInPoll] } };
+    if (fullyDrained || siteIdsInPoll.size > 0) {
       const currentlyActive = await prisma.powerhubAlert.findMany({
-        where: {
-          siteId: { in: [...siteIdsInPoll] },
-          isActive: true,
-        },
+        where: resolveWhere,
         select: { id: true, siteId: true, deviceId: true, alertName: true, reportedAt: true },
       });
 
