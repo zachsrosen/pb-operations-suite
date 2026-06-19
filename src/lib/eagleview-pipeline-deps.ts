@@ -5,6 +5,7 @@
  * production HubSpot client, Google Drive helpers, geocoder, and Prisma.
  * Tests bypass this and pass their own mock-shaped deps directly.
  */
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
 import { getEagleViewClient } from "@/lib/eagleview";
 import {
@@ -12,12 +13,15 @@ import {
   createDriveFolder,
   listDriveSubfolders,
 } from "@/lib/drive-plansets";
-import { getDealProperties } from "@/lib/hubspot";
+import { getDealProperties, updateDealProperty } from "@/lib/hubspot";
+import { updateTicketProperties } from "@/lib/hubspot-tickets";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { geocodeFreeform } from "@/lib/geocode";
-import type {
-  PipelineDeps,
-  DealAddressFields,
+import {
+  buildEagleViewProps,
+  type PipelineDeps,
+  type DealAddressFields,
+  type EagleViewStampFields,
 } from "@/lib/eagleview-pipeline";
 
 // HubSpot deal properties for address. PB uses `address_line_1` / `postal_code`
@@ -77,6 +81,29 @@ async function ensureDriveFolder(
   return created.id;
 }
 
+async function stampStatus(
+  target: { dealId: string; ticketId: string | null },
+  fields: EagleViewStampFields,
+): Promise<void> {
+  if (process.env.EAGLEVIEW_HUBSPOT_STAMP_ENABLED !== "true") return;
+  try {
+    const props = buildEagleViewProps(fields);
+    // Ticket branch FIRST so a ticket-origin synthetic dealId ("ticket:<id>")
+    // is never passed to updateDealProperty.
+    if (target.ticketId) {
+      await updateTicketProperties(target.ticketId, props);
+    } else {
+      await updateDealProperty(target.dealId, props);
+    }
+  } catch (err) {
+    Sentry.captureException(err, {
+      tags: { feature: "eagleview", phase: "stampStatus" },
+      extra: { target, status: fields.status },
+    });
+    console.warn("[eagleview-pipeline-deps] stampStatus failed", err);
+  }
+}
+
 export function defaultPipelineDeps(): PipelineDeps {
   return {
     prisma,
@@ -91,5 +118,6 @@ export function defaultPipelineDeps(): PipelineDeps {
     uploadToDrive: (parentId, filename, bytes, mimeType) =>
       uploadDriveBinaryFile(parentId, filename, bytes, mimeType),
     postDealNote: createDealNote,
+    stampStatus,
   };
 }
