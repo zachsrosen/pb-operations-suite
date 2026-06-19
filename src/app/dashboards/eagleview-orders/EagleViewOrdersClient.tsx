@@ -199,6 +199,8 @@ export interface OrderListRow {
   failedAttempts: number;
   dealName: string | null;
   address: string | null;
+  pbLocation: string | null;
+  hubspotUrl: string | null;
 }
 
 const STATUS_FILTERS = ["ALL", "ORDERED", "DELIVERED", "FAILED", "CANCELLED"] as const;
@@ -213,6 +215,7 @@ export default function EagleViewOrdersClient({
 }) {
   void userEmail;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [locationFilter, setLocationFilter] = useState<string>("ALL");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -224,12 +227,20 @@ export default function EagleViewOrdersClient({
 
   // Default view = all orders; the search results replace it once you type (>=2 chars).
   const showList = query.length < 2;
+  const locations = Array.from(
+    new Set(initialOrders.map((o) => o.pbLocation).filter((l): l is string => Boolean(l))),
+  ).sort();
+  // Counts reflect the current location filter so the chip numbers match the list.
+  const locScoped =
+    locationFilter === "ALL"
+      ? initialOrders
+      : initialOrders.filter((o) => o.pbLocation === locationFilter);
   const statusCounts = STATUS_FILTERS.reduce((acc, s) => {
-    acc[s] = s === "ALL" ? initialOrders.length : initialOrders.filter((o) => o.status === s).length;
+    acc[s] = s === "ALL" ? locScoped.length : locScoped.filter((o) => o.status === s).length;
     return acc;
   }, {} as Record<StatusFilter, number>);
   const filteredOrders =
-    statusFilter === "ALL" ? initialOrders : initialOrders.filter((o) => o.status === statusFilter);
+    statusFilter === "ALL" ? locScoped : locScoped.filter((o) => o.status === statusFilter);
 
   const doSearch = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -327,20 +338,37 @@ export default function EagleViewOrdersClient({
       {/* Default view: all EagleView orders with status filter */}
       {showList && (
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {STATUS_FILTERS.map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  statusFilter === s
-                    ? "bg-orange-600 text-white"
-                    : "bg-surface-2 text-muted hover:text-foreground"
-                }`}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              {STATUS_FILTERS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    statusFilter === s
+                      ? "bg-orange-600 text-white"
+                      : "bg-surface-2 text-muted hover:text-foreground"
+                  }`}
+                >
+                  {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()} ({statusCounts[s]})
+                </button>
+              ))}
+            </div>
+            {locations.length > 1 && (
+              <select
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                aria-label="Filter by location"
               >
-                {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()} ({statusCounts[s]})
-              </button>
-            ))}
+                <option value="ALL">All locations</option>
+                {locations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {initialOrders.length === 0 ? (
@@ -366,9 +394,21 @@ export default function EagleViewOrdersClient({
                       >
                         {o.status}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                        {title}
-                      </span>
+                      {o.hubspotUrl ? (
+                        <a
+                          href={o.hubspotUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:text-orange-400 hover:underline"
+                          title="Open deal in HubSpot"
+                        >
+                          {title}
+                        </a>
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                          {title}
+                        </span>
+                      )}
                       {hasReport && (
                         <a
                           href={trueDesignUrl(o.reportId)}
@@ -391,6 +431,11 @@ export default function EagleViewOrdersClient({
                       )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted">
+                      {o.pbLocation && (
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-foreground">
+                          {o.pbLocation}
+                        </span>
+                      )}
                       {o.address && <span className="truncate">{o.address}</span>}
                       <span>Ordered {fmtDateTime(o.orderedAt)}</span>
                       {o.deliveredAt && <span>· Delivered {fmtDateTime(o.deliveredAt)}</span>}
