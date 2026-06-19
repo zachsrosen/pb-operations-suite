@@ -168,6 +168,20 @@ describe("PowerHub Client — Error Handling", () => {
     expect(mockFetch).toHaveBeenCalledTimes(4);
   });
 
+  it("should retry when fetch throws a network error (e.g. proxy connection reset)", async () => {
+    mockFetch
+      .mockResolvedValueOnce(tokenResponse("jwt"))
+      .mockRejectedValueOnce(new Error("ECONNRESET"))
+      .mockResolvedValueOnce(dataResponse([]));
+
+    const client = createPowerHubClient();
+    const result = await client.getGroups();
+
+    expect(result).toEqual([]);
+    // token + failed network attempt + retry success = 3
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
   it("should throw immediately on 403", async () => {
     mockFetch
       .mockResolvedValueOnce(tokenResponse("jwt"))
