@@ -5,14 +5,17 @@
  * `eagleview_status` flips to "Reviewed". Pulls the completed TrueDesign design
  * exports (DXF/DWG/PDF) into the deal's Drive folder and records the file IDs.
  *
- * Auth: shared-secret bearer (EAGLEVIEW_WEBHOOK_SECRET), like the other EV webhooks.
+ * Auth: HubSpot v3 webhook signature (same validator as eagleview-tdp-order), so
+ * the workflow "Send a webhook" action needs no custom header / Authentication = None.
  * Gated by SystemConfig flag `eagleview_truedesign_pull_enabled = "true"`.
  *
  * Body: { dealId?: string, reportId?: string, objectId?: string|number }
+ * (configure the HubSpot action's request body to send dealId = the deal Record ID)
  */
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
+import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 import { defaultPipelineDeps } from "@/lib/eagleview-pipeline-deps";
 import {
   listDesignVersionIds,
@@ -39,12 +42,21 @@ async function pullEnabled(): Promise<boolean> {
 }
 
 export async function POST(request: NextRequest) {
-  const expected = process.env.EAGLEVIEW_WEBHOOK_SECRET;
-  if (!expected) {
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 503 });
-  }
-  if (request.headers.get("authorization") !== `Bearer ${expected}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const rawBody = await request.text();
+
+  // Auth: HubSpot v3 webhook signature (same as the eagleview-tdp-order webhook).
+  // The HubSpot workflow "Send a webhook" action signs requests automatically,
+  // so the action's Authentication type can stay "None".
+  const validation = validateHubSpotWebhook({
+    rawBody,
+    signature: request.headers.get("x-hubspot-signature-v3") ?? "",
+    timestamp: request.headers.get("x-hubspot-request-timestamp") ?? "",
+    requestUrl: request.url,
+    method: "POST",
+  });
+  if (!validation.valid) {
+    console.warn(`[eagleview-reviewed] auth fail: ${validation.error}`);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   if (!(await pullEnabled())) {
@@ -53,7 +65,7 @@ export async function POST(request: NextRequest) {
 
   let body: { dealId?: string; reportId?: string; objectId?: string | number };
   try {
-    body = (await request.json()) as typeof body;
+    body = JSON.parse(rawBody) as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
