@@ -25,7 +25,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await syncFromPeApi();
+    // Full sync (not incremental): the PE API's `since` filter keys on project
+    // updatedAt, which a document upload often does NOT bump — so an incremental
+    // run fetches 0 projects and silently misses new docs. A full pass is only
+    // ~84s for ~388 projects (well under maxDuration) and reliably catches every
+    // upload. The manual "Sync now" button remains for instant refreshes.
+    const result = await syncFromPeApi({ fullSync: true });
     return NextResponse.json({
       ok: true,
       runId: result.runId,
