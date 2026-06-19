@@ -16,6 +16,7 @@ import {
   EagleViewError,
   EAGLEVIEW_PRODUCT_ID,
   EAGLEVIEW_TOKEN_URL,
+  classifyTerminalStatus,
 } from "@/lib/eagleview";
 
 const mkResp = (
@@ -315,6 +316,48 @@ describe("EagleViewClient — placeOrder + reports", () => {
     );
   });
 
+  it("getFileLinks returns { links: [] } on 204 No Content (Completed-but-no-files-yet)", async () => {
+    // A 204 has an empty body; calling response.json() on it throws
+    // "Unexpected end of JSON input". The client must handle this gracefully.
+    const emptyBody: Response = {
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      text: async () => "",
+      json: async () => {
+        throw new SyntaxError("Unexpected end of JSON input");
+      },
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(tokenResponse)
+      .mockResolvedValueOnce(emptyBody);
+    const c = makeClient();
+    const result = await c.getFileLinks(777);
+    expect(result).toEqual({ links: [] });
+  });
+
+  it("getFileLinks returns { links: [] } on a 200 with an empty body", async () => {
+    const emptyBody: Response = {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => "",
+      json: async () => {
+        throw new SyntaxError("Unexpected end of JSON input");
+      },
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(tokenResponse)
+      .mockResolvedValueOnce(emptyBody);
+    const c = makeClient();
+    const result = await c.getFileLinks(777);
+    expect(result).toEqual({ links: [] });
+  });
+
   it("downloadFile uses signed URL without bearer token", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(
       mkResp(200, "binary-data"),
@@ -333,5 +376,32 @@ describe("EagleViewClient — placeOrder + reports", () => {
     await expect(c.downloadFile("https://signed.example.com/file.pdf")).rejects.toThrow(
       EagleViewError,
     );
+  });
+});
+
+describe("classifyTerminalStatus", () => {
+  it("classifies EagleView 'Closed - …' statuses as FAILED", () => {
+    // These never produce a deliverable; they were re-polled forever before the
+    // fix (38-order strand regression). Treated as failures, not cancellations.
+    expect(classifyTerminalStatus("Closed - Wrong House")).toBe("FAILED");
+    expect(classifyTerminalStatus("Closed - Poor Images")).toBe("FAILED");
+    expect(classifyTerminalStatus("Closed")).toBe("FAILED");
+  });
+
+  it("classifies explicit cancellation statuses as CANCELLED", () => {
+    expect(classifyTerminalStatus("Order Cancelled")).toBe("CANCELLED");
+    expect(classifyTerminalStatus("Canceled")).toBe("CANCELLED");
+  });
+
+  it("classifies failure/error statuses as FAILED", () => {
+    expect(classifyTerminalStatus("Failed")).toBe("FAILED");
+    expect(classifyTerminalStatus("Processing Error")).toBe("FAILED");
+  });
+
+  it("returns null for non-terminal / in-progress statuses", () => {
+    expect(classifyTerminalStatus("In Progress")).toBeNull();
+    expect(classifyTerminalStatus("Pending")).toBeNull();
+    expect(classifyTerminalStatus("Completed")).toBeNull();
+    expect(classifyTerminalStatus("")).toBeNull();
   });
 });

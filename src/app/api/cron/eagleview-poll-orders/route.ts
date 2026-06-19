@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { fetchAndStoreDeliverables } from "@/lib/eagleview-pipeline";
 import { defaultPipelineDeps } from "@/lib/eagleview-pipeline-deps";
+import { classifyTerminalStatus } from "@/lib/eagleview";
 
 export const maxDuration = 300;
 
@@ -55,6 +56,8 @@ export async function GET(request: NextRequest) {
       const status = await deps.client.getReport(order.reportId);
       const display = (status.displayStatus ?? "").toLowerCase();
 
+      const terminal = classifyTerminalStatus(status.displayStatus);
+
       if (display.includes("complet") || display.includes("delivered")) {
         const r = await fetchAndStoreDeliverables(deps, order.reportId);
         results.push({
@@ -62,17 +65,19 @@ export async function GET(request: NextRequest) {
           outcome: r.status,
           reason: r.reason,
         });
-      } else if (display.includes("fail") || display.includes("error") || display.includes("cancel")) {
+      } else if (terminal) {
+        // Includes EagleView "Closed - Wrong House" / "Closed - Poor Images",
+        // which previously fell through to PENDING and were re-polled forever.
         await prisma.eagleViewOrder.update({
           where: { id: order.id },
           data: {
-            status: display.includes("cancel") ? "CANCELLED" : "FAILED",
+            status: terminal,
             errorMessage: `EV status: ${status.displayStatus}`,
           },
         });
         results.push({
           reportId: order.reportId,
-          outcome: "FAILED",
+          outcome: terminal,
           reason: status.displayStatus ?? "ev_terminal_status",
         });
       } else {

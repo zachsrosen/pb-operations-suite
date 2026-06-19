@@ -3893,7 +3893,8 @@ model EagleViewOrder {
   surveyDate            DateTime?
   orderedAt             DateTime             @default(now())
   deliveredAt           DateTime?
-  errorMessage          String?
+  errorMessage          String? // last failure reason; set even while status stays ORDERED for retryable delivery failures
+  failedAttempts        Int                  @default(0) // count of failed deliverable-fetch attempts; lets us spot orders stuck retrying
   estimatedDeliveryAt   DateTime?
   driveFolderId         String?
   imageDriveFileId      String?
