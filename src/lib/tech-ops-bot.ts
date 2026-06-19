@@ -213,8 +213,9 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
             // a Freshservice agent) so later agent replies don't reopen the
             // ticket via the "reopen when requester responds" automation
             // (FS #786). The asker still shows as "Reported by" in the body.
-            // Falls back to current behavior when the env var is unset.
-            const botRequester = process.env.TECH_OPS_BOT_REQUESTER_EMAIL;
+            // Defaults to the bot address; overridable via env.
+            const botRequester =
+              process.env.TECH_OPS_BOT_REQUESTER_EMAIL || "tech-ops-bot@photonbrothers.com";
             const emailResult = await sendBugReportEmail({
               reportId: report.id,
               type: report.type,
@@ -223,8 +224,8 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
               pageUrl: report.pageUrl || undefined,
               reporterName: report.reporterName || undefined,
               reporterEmail: report.reporterEmail,
-              requesterEmail: botRequester || undefined,
-              requesterName: botRequester ? "Tech Ops Bot" : undefined,
+              requesterEmail: botRequester,
+              requesterName: "Tech Ops Bot",
             });
             emailSent = emailResult.success;
             await prisma.bugReport.update({
