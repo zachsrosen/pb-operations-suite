@@ -178,6 +178,14 @@ export async function orderTrueDesign(
     };
   }
 
+  const stampFailed = () =>
+    deps
+      .stampStatus(
+        { dealId: claim.order.dealId, ticketId: claim.order.ticketId ?? null },
+        { status: "Failed" },
+      )
+      .catch((err) => console.warn("[eagleview-pipeline] stamp Failed failed", err));
+
   // 3. Geocode if needed
   let { latitude, longitude } = dealFields;
   if (latitude == null || longitude == null) {
@@ -185,6 +193,7 @@ export async function orderTrueDesign(
     const geo = await deps.geocode(formatted).catch(() => null);
     if (!geo) {
       await markFailed(deps.prisma, claim.order.id, "geocode_failed");
+      await stampFailed();
       return {
         orderId: claim.order.id,
         reportId: claim.order.reportId,
@@ -213,6 +222,7 @@ export async function orderTrueDesign(
     );
     if (!tdp?.isAvailable) {
       await markFailed(deps.prisma, claim.order.id, "tdp_unavailable_at_address");
+      await stampFailed();
       return {
         orderId: claim.order.id,
         reportId: claim.order.reportId,
@@ -227,6 +237,7 @@ export async function orderTrueDesign(
       extra: { dealId: input.dealId, orderId: claim.order.id },
     });
     await markFailed(deps.prisma, claim.order.id, "availability_check_failed");
+    await stampFailed();
     return {
       orderId: claim.order.id,
       reportId: claim.order.reportId,
@@ -266,6 +277,7 @@ export async function orderTrueDesign(
       extra: { dealId: input.dealId, orderId: claim.order.id },
     });
     await markFailed(deps.prisma, claim.order.id, "place_order_failed");
+    await stampFailed();
     return {
       orderId: claim.order.id,
       reportId: claim.order.reportId,
@@ -280,6 +292,13 @@ export async function orderTrueDesign(
     where: { id: claim.order.id },
     data: { reportId: realReportId, status: "ORDERED" },
   });
+
+  await deps
+    .stampStatus(
+      { dealId: claim.order.dealId, ticketId: claim.order.ticketId ?? null },
+      { status: "Ordered", reportId: realReportId, orderedDate: claim.order.orderedAt },
+    )
+    .catch((err) => console.warn("[eagleview-pipeline] stamp Ordered failed", err));
 
   // 7. Best-effort HubSpot note
   await deps

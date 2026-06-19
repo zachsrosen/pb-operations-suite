@@ -372,6 +372,49 @@ describe("orderTrueDesign", () => {
   });
 });
 
+describe("orderTrueDesign — HubSpot stamping", () => {
+  it("stamps Ordered with report id + ordered date on the deal", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(deps.spies.stampStatus).toHaveBeenCalledWith(
+      { dealId: "d1", ticketId: null },
+      expect.objectContaining({ status: "Ordered", reportId: "12345" }),
+    );
+    const fields = deps.spies.stampStatus.mock.calls[0][1];
+    expect(fields.orderedDate).toBeInstanceOf(Date);
+  });
+
+  it("stamps Failed when placeOrder throws", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.placeOrder.mockRejectedValueOnce(new Error("HTTP 500"));
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(deps.spies.stampStatus).toHaveBeenCalledWith(
+      { dealId: "d1", ticketId: null },
+      { status: "Failed" },
+    );
+  });
+
+  it("targets the ticket when the order originated from a ticket", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", ticketId: "t7", triggeredBy: "test" });
+    expect(deps.spies.stampStatus).toHaveBeenCalledWith(
+      { dealId: "d1", ticketId: "t7" },
+      expect.objectContaining({ status: "Ordered" }),
+    );
+  });
+
+  it("does not fail the order if stampStatus throws (best-effort)", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.stampStatus.mockRejectedValue(new Error("hubspot down"));
+    const r = await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(r.status).toBe("ORDERED");
+  });
+});
+
 // ============================================================
 // fetchAndStoreDeliverables
 // ============================================================
