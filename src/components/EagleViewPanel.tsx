@@ -112,6 +112,17 @@ export function EagleViewPanel({ dealId }: Props) {
         </div>
       )}
 
+      {order && !order.reportId.startsWith("pending:") && (
+        <a
+          href={`https://apps.eagleview.com/truedesign/${encodeURIComponent(order.reportId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full text-center bg-surface-2 hover:bg-surface-elevated text-foreground text-sm font-medium rounded px-3 py-2"
+        >
+          View in TrueDesign ↗
+        </a>
+      )}
+
       {!order && (
         <button
           type="button"
