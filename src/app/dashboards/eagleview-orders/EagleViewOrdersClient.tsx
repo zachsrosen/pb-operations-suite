@@ -184,7 +184,35 @@ interface SearchResult {
   eagleviewOrder: EagleViewOrderSummary | null;
 }
 
-export default function EagleViewOrdersClient({ userEmail }: { userEmail: string }) {
+/** Lightweight row for the default "all orders" list (server-fetched + cache-joined). */
+export interface OrderListRow {
+  id: string;
+  dealId: string;
+  ticketId: string | null;
+  reportId: string;
+  status: string;
+  triggeredBy: string;
+  orderedAt: string;
+  deliveredAt: string | null;
+  driveFolderId: string | null;
+  errorMessage: string | null;
+  failedAttempts: number;
+  dealName: string | null;
+  address: string | null;
+}
+
+const STATUS_FILTERS = ["ALL", "ORDERED", "DELIVERED", "FAILED", "CANCELLED"] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+export default function EagleViewOrdersClient({
+  userEmail,
+  initialOrders,
+}: {
+  userEmail: string;
+  initialOrders: OrderListRow[];
+}) {
+  void userEmail;
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -193,6 +221,15 @@ export default function EagleViewOrdersClient({ userEmail }: { userEmail: string
   const [orderResults, setOrderResults] = useState<Record<string, { status: string; reportId?: string; reason?: string }>>({});
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detailOrder, setDetailOrder] = useState<{ order: EagleViewOrderSummary; result: SearchResult } | null>(null);
+
+  // Default view = all orders; the search results replace it once you type (>=2 chars).
+  const showList = query.length < 2;
+  const statusCounts = STATUS_FILTERS.reduce((acc, s) => {
+    acc[s] = s === "ALL" ? initialOrders.length : initialOrders.filter((o) => o.status === s).length;
+    return acc;
+  }, {} as Record<StatusFilter, number>);
+  const filteredOrders =
+    statusFilter === "ALL" ? initialOrders : initialOrders.filter((o) => o.status === statusFilter);
 
   const doSearch = useCallback(async (q: string) => {
     if (q.length < 2) {
@@ -287,10 +324,91 @@ export default function EagleViewOrdersClient({ userEmail }: { userEmail: string
         </div>
       )}
 
-      {/* Empty state */}
-      {!searching && results.length === 0 && query.length < 2 && (
-        <div className="py-16 text-center text-muted">
-          Search for a deal or ticket to order EagleView imagery
+      {/* Default view: all EagleView orders with status filter */}
+      {showList && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {STATUS_FILTERS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  statusFilter === s
+                    ? "bg-orange-600 text-white"
+                    : "bg-surface-2 text-muted hover:text-foreground"
+                }`}
+              >
+                {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()} ({statusCounts[s]})
+              </button>
+            ))}
+          </div>
+
+          {initialOrders.length === 0 ? (
+            <div className="py-16 text-center text-muted">
+              No EagleView orders yet. Search above to order one.
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="py-12 text-center text-muted">No orders with this status.</div>
+          ) : (
+            <ul className="space-y-2">
+              {filteredOrders.map((o) => {
+                const hasReport = o.reportId && !o.reportId.startsWith("pending:");
+                const title =
+                  o.dealName ||
+                  (o.ticketId ? `Ticket ${o.ticketId}` : `Deal ${o.dealId}`);
+                return (
+                  <li key={o.id} className="rounded-lg border border-border bg-surface p-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span
+                        className={`inline-flex shrink-0 rounded px-2 py-0.5 text-xs font-medium ${
+                          STATUS_CLASSES[o.status] ?? "bg-zinc-500/10 text-muted"
+                        }`}
+                      >
+                        {o.status}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                        {title}
+                      </span>
+                      {hasReport && (
+                        <a
+                          href={trueDesignUrl(o.reportId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-xs text-orange-400 underline underline-offset-2 hover:opacity-80"
+                        >
+                          Report #{o.reportId} ↗
+                        </a>
+                      )}
+                      {o.driveFolderId && (
+                        <a
+                          href={driveFolderUrl(o.driveFolderId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-xs text-blue-400 underline underline-offset-2 hover:opacity-80"
+                        >
+                          📁 Drive ↗
+                        </a>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-muted">
+                      {o.address && <span className="truncate">{o.address}</span>}
+                      <span>Ordered {fmtDateTime(o.orderedAt)}</span>
+                      {o.deliveredAt && <span>· Delivered {fmtDateTime(o.deliveredAt)}</span>}
+                      <span>· by {o.triggeredBy}</span>
+                    </div>
+                    {o.status === "FAILED" && o.errorMessage && (
+                      <div className="mt-1 text-xs text-red-400">
+                        {o.errorMessage}
+                        {o.failedAttempts > 0
+                          ? ` (${o.failedAttempts} attempt${o.failedAttempts === 1 ? "" : "s"})`
+                          : ""}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
 
