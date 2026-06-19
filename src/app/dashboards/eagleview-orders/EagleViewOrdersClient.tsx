@@ -30,6 +30,7 @@ interface EagleViewOrderSummary {
 const driveFolderUrl = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 const driveFileUrl = (id: string) => `https://drive.google.com/file/d/${id}/view`;
 const trueDesignUrl = (reportId: string) => `https://apps.eagleview.com/truedesign/${reportId}`;
+const orderUrl = (reportId: string) => `https://apps.eagleview.com/myev/orders/report/${reportId}`;
 
 function fmtDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -104,6 +105,16 @@ function OrderDetailDrawer({
               className="text-xs text-orange-400 underline underline-offset-2 hover:opacity-80"
             >
               Open in TrueDesign ↗
+            </a>
+          )}
+          {hasReport && (
+            <a
+              href={orderUrl(order.reportId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-400 underline underline-offset-2 hover:opacity-80"
+            >
+              View full order ↗
             </a>
           )}
         </div>
@@ -419,6 +430,16 @@ export default function EagleViewOrdersClient({
                           Report #{o.reportId} ↗
                         </a>
                       )}
+                      {hasReport && (
+                        <a
+                          href={orderUrl(o.reportId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-xs text-blue-400 underline underline-offset-2 hover:opacity-80"
+                        >
+                          Order ↗
+                        </a>
+                      )}
                       {o.driveFolderId && (
                         <a
                           href={driveFolderUrl(o.driveFolderId)}
@@ -528,6 +549,16 @@ export default function EagleViewOrdersClient({
                         title="Open this design in EagleView TrueDesign"
                       >
                         Report #{order.reportId} ↗
+                      </a>
+                      {" · "}
+                      <a
+                        href={orderUrl(order.reportId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-2 hover:opacity-80"
+                        title="View the full EagleView order"
+                      >
+                        Order ↗
                       </a>
                     </span>
                   )}

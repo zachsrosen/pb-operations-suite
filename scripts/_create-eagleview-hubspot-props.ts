@@ -24,6 +24,8 @@ const PROPS = [
     })),
   },
   { name: "eagleview_report_id", label: "EagleView Report ID", type: "string", fieldType: "text" },
+  { name: "eagleview_truedesign_url", label: "EagleView TrueDesign URL", type: "string", fieldType: "text" },
+  { name: "eagleview_order_url", label: "EagleView Order URL", type: "string", fieldType: "text" },
   { name: "eagleview_drive_folder_url", label: "EagleView Drive Folder URL", type: "string", fieldType: "text" },
   { name: "eagleview_ordered_date", label: "EagleView Ordered Date", type: "date", fieldType: "date" },
   { name: "eagleview_delivered_date", label: "EagleView Delivered Date", type: "date", fieldType: "date" },

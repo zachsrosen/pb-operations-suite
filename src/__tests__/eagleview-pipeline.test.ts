@@ -644,10 +644,22 @@ describe("buildEagleViewProps", () => {
     expect(props).toEqual({
       eagleview_status: "Delivered",
       eagleview_report_id: "12345",
+      eagleview_truedesign_url: "https://apps.eagleview.com/truedesign/12345",
+      eagleview_order_url: "https://apps.eagleview.com/myev/orders/report/12345",
       eagleview_drive_folder_url: "https://drive.google.com/drive/folders/abc",
       eagleview_ordered_date: "2026-06-01",
       eagleview_delivered_date: "2026-06-18",
     });
+  });
+
+  it("derives truedesign + order URLs from reportId, and omits them for pending ids", () => {
+    expect(buildEagleViewProps({ status: "Ordered", reportId: "99" })).toMatchObject({
+      eagleview_truedesign_url: "https://apps.eagleview.com/truedesign/99",
+      eagleview_order_url: "https://apps.eagleview.com/myev/orders/report/99",
+    });
+    const pending = buildEagleViewProps({ status: "Ordered", reportId: "pending:x" });
+    expect(pending.eagleview_truedesign_url).toBeUndefined();
+    expect(pending.eagleview_order_url).toBeUndefined();
   });
 
   it("omits absent/null keys", () => {
