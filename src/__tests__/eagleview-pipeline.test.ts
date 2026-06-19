@@ -6,6 +6,7 @@
 import {
   orderTrueDesign,
   fetchAndStoreDeliverables,
+  buildEagleViewProps,
   type PipelineDeps,
   type DealAddressFields,
 } from "@/lib/eagleview-pipeline";
@@ -155,6 +156,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     ensureDriveFolder: jest.Mock;
     uploadToDrive: jest.Mock;
     postDealNote: jest.Mock;
+    stampStatus: jest.Mock;
   };
 } {
   const placeOrder = jest.fn(async () => ({ reportIds: [12345], orderId: 99 }));
@@ -182,6 +184,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
   const ensureDriveFolder = jest.fn(async () => "drive_folder_123");
   const uploadToDrive = jest.fn(async (_: string, name: string) => ({ id: `f_${name}`, name }));
   const postDealNote = jest.fn(async () => undefined);
+  const stampStatus = jest.fn(async () => undefined);
 
   return {
     prisma: prismaDouble as unknown as PipelineDeps["prisma"],
@@ -191,6 +194,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     ensureDriveFolder,
     uploadToDrive,
     postDealNote,
+    stampStatus,
     spies: {
       placeOrder,
       checkSolarAvailability,
@@ -202,6 +206,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
       ensureDriveFolder,
       uploadToDrive,
       postDealNote,
+      stampStatus,
     },
   };
 }
@@ -357,6 +362,56 @@ describe("orderTrueDesign", () => {
     expect(second.isNew).toBe(false);
     expect(second.orderId).toBe(first.orderId);
     expect(deps.spies.placeOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists ticketId on the order row when provided", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", ticketId: "t99", triggeredBy: "test" });
+    expect(p.rows[0].ticketId).toBe("t99");
+  });
+});
+
+describe("orderTrueDesign — HubSpot stamping", () => {
+  it("stamps Ordered with report id + ordered date on the deal", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(deps.spies.stampStatus).toHaveBeenCalledWith(
+      { dealId: "d1", ticketId: null },
+      expect.objectContaining({ status: "Ordered", reportId: "12345" }),
+    );
+    const fields = deps.spies.stampStatus.mock.calls[0][1];
+    expect(fields.orderedDate).toBeInstanceOf(Date);
+  });
+
+  it("stamps Failed when placeOrder throws", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.placeOrder.mockRejectedValueOnce(new Error("HTTP 500"));
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(deps.spies.stampStatus).toHaveBeenCalledWith(
+      { dealId: "d1", ticketId: null },
+      { status: "Failed" },
+    );
+  });
+
+  it("targets the ticket when the order originated from a ticket", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", ticketId: "t7", triggeredBy: "test" });
+    expect(deps.spies.stampStatus).toHaveBeenCalledWith(
+      { dealId: "d1", ticketId: "t7" },
+      expect.objectContaining({ status: "Ordered" }),
+    );
+  });
+
+  it("does not fail the order if stampStatus throws (best-effort)", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.stampStatus.mockRejectedValue(new Error("hubspot down"));
+    const r = await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(r.status).toBe("ORDERED");
   });
 });
 
@@ -545,5 +600,68 @@ describe("fetchAndStoreDeliverables — EagleView file-link type mapping", () =>
     const uploadedNames = deps.spies.uploadToDrive.mock.calls.map((c) => c[1]);
     expect(uploadedNames).toContain("ExtendedOrthoImageMetadata.json");
     expect(uploadedNames).not.toContain("Shading.bin");
+  });
+});
+
+describe("fetchAndStoreDeliverables — HubSpot stamping", () => {
+  it("stamps Delivered with report id, folder url, delivered date", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    await fetchAndStoreDeliverables(deps, "12345");
+    const call = deps.spies.stampStatus.mock.calls.find((c) => c[1].status === "Delivered");
+    expect(call).toBeDefined();
+    expect(call![0]).toEqual({ dealId: "d1", ticketId: null });
+    expect(call![1].reportId).toBe("12345");
+    expect(call![1].driveFolderUrl).toContain("drive_folder_123");
+    expect(call![1].deliveredDate).toBeInstanceOf(Date);
+  });
+
+  it("does NOT stamp on retryable failure (status stays ORDERED)", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    deps.spies.stampStatus.mockClear();
+    deps.spies.getFileLinks.mockResolvedValueOnce({ links: [] });
+    await fetchAndStoreDeliverables(deps, "12345");
+    expect(deps.spies.stampStatus).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// buildEagleViewProps
+// ============================================================
+
+describe("buildEagleViewProps", () => {
+  it("maps fields to HubSpot internal names and formats dates as UTC YYYY-MM-DD", () => {
+    const props = buildEagleViewProps({
+      status: "Delivered",
+      reportId: "12345",
+      driveFolderUrl: "https://drive.google.com/drive/folders/abc",
+      orderedDate: new Date("2026-06-01T00:00:00Z"),
+      deliveredDate: new Date("2026-06-18T23:30:00Z"),
+    });
+    expect(props).toEqual({
+      eagleview_status: "Delivered",
+      eagleview_report_id: "12345",
+      eagleview_drive_folder_url: "https://drive.google.com/drive/folders/abc",
+      eagleview_ordered_date: "2026-06-01",
+      eagleview_delivered_date: "2026-06-18",
+    });
+  });
+
+  it("omits absent/null keys", () => {
+    expect(buildEagleViewProps({ status: "Failed" })).toEqual({
+      eagleview_status: "Failed",
+    });
+  });
+
+  it("formats a date near a UTC boundary without timezone drift", () => {
+    // 2026-06-18T23:30:00Z must stay 2026-06-18 regardless of local TZ.
+    const props = buildEagleViewProps({
+      status: "Delivered",
+      deliveredDate: new Date(Date.UTC(2026, 5, 18, 23, 30, 0)),
+    });
+    expect(props.eagleview_delivered_date).toBe("2026-06-18");
   });
 });

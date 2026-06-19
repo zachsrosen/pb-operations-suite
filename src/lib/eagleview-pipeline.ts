@@ -37,6 +37,7 @@ import { claimOrder } from "@/lib/eagleview-dedup";
 
 export interface OrderTrueDesignInput {
   dealId: string;
+  ticketId?: string | null;
   triggeredBy: string;
   surveyDate?: Date | null;
 }
@@ -97,6 +98,39 @@ export interface PipelineDeps {
   ) => Promise<{ id: string; name: string }>;
   /** Post a note on the HubSpot deal timeline. Best-effort; log on failure. */
   postDealNote: (dealId: string, body: string) => Promise<void>;
+  /**
+   * Best-effort stamp of EagleView lifecycle state onto the originating CRM
+   * object (ticket if ticketId set, else deal). Must never throw.
+   */
+  stampStatus: (
+    target: { dealId: string; ticketId: string | null },
+    fields: EagleViewStampFields,
+  ) => Promise<void>;
+}
+
+export interface EagleViewStampFields {
+  status: "Ordered" | "Delivered" | "Failed" | "Cancelled";
+  reportId?: string;
+  driveFolderUrl?: string | null;
+  orderedDate?: Date | null;
+  deliveredDate?: Date | null;
+}
+
+/** Format a Date to YYYY-MM-DD in UTC (HubSpot date props accept this string). */
+function toHubSpotDate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** Map typed stamp fields to the HubSpot property map. Omits absent/null keys. */
+export function buildEagleViewProps(
+  fields: EagleViewStampFields,
+): Record<string, string> {
+  const props: Record<string, string> = { eagleview_status: fields.status };
+  if (fields.reportId) props.eagleview_report_id = fields.reportId;
+  if (fields.driveFolderUrl) props.eagleview_drive_folder_url = fields.driveFolderUrl;
+  if (fields.orderedDate) props.eagleview_ordered_date = toHubSpotDate(fields.orderedDate);
+  if (fields.deliveredDate) props.eagleview_delivered_date = toHubSpotDate(fields.deliveredDate);
+  return props;
 }
 
 // ============================================================
@@ -128,6 +162,7 @@ export async function orderTrueDesign(
   // 2. Idempotency claim (atomic insert-or-fetch-existing)
   const claim = await claimOrder(deps.prisma, {
     dealId: input.dealId,
+    ticketId: input.ticketId ?? null,
     productCode: "TDP",
     address: addressParts,
     triggeredBy: input.triggeredBy,
@@ -143,6 +178,14 @@ export async function orderTrueDesign(
     };
   }
 
+  const stampFailed = () =>
+    deps
+      .stampStatus(
+        { dealId: claim.order.dealId, ticketId: claim.order.ticketId ?? null },
+        { status: "Failed" },
+      )
+      .catch((err) => console.warn("[eagleview-pipeline] stamp Failed failed", err));
+
   // 3. Geocode if needed
   let { latitude, longitude } = dealFields;
   if (latitude == null || longitude == null) {
@@ -150,6 +193,7 @@ export async function orderTrueDesign(
     const geo = await deps.geocode(formatted).catch(() => null);
     if (!geo) {
       await markFailed(deps.prisma, claim.order.id, "geocode_failed");
+      await stampFailed();
       return {
         orderId: claim.order.id,
         reportId: claim.order.reportId,
@@ -178,6 +222,7 @@ export async function orderTrueDesign(
     );
     if (!tdp?.isAvailable) {
       await markFailed(deps.prisma, claim.order.id, "tdp_unavailable_at_address");
+      await stampFailed();
       return {
         orderId: claim.order.id,
         reportId: claim.order.reportId,
@@ -192,6 +237,7 @@ export async function orderTrueDesign(
       extra: { dealId: input.dealId, orderId: claim.order.id },
     });
     await markFailed(deps.prisma, claim.order.id, "availability_check_failed");
+    await stampFailed();
     return {
       orderId: claim.order.id,
       reportId: claim.order.reportId,
@@ -231,6 +277,7 @@ export async function orderTrueDesign(
       extra: { dealId: input.dealId, orderId: claim.order.id },
     });
     await markFailed(deps.prisma, claim.order.id, "place_order_failed");
+    await stampFailed();
     return {
       orderId: claim.order.id,
       reportId: claim.order.reportId,
@@ -245,6 +292,13 @@ export async function orderTrueDesign(
     where: { id: claim.order.id },
     data: { reportId: realReportId, status: "ORDERED" },
   });
+
+  await deps
+    .stampStatus(
+      { dealId: claim.order.dealId, ticketId: claim.order.ticketId ?? null },
+      { status: "Ordered", reportId: realReportId, orderedDate: claim.order.orderedAt },
+    )
+    .catch((err) => console.warn("[eagleview-pipeline] stamp Ordered failed", err));
 
   // 7. Best-effort HubSpot note
   await deps
@@ -376,6 +430,18 @@ export async function fetchAndStoreDeliverables(
       reportXmlDriveFileId: fileIdByType["report-xml"] ?? null,
     },
   });
+
+  await deps
+    .stampStatus(
+      { dealId: order.dealId, ticketId: order.ticketId ?? null },
+      {
+        status: "Delivered",
+        reportId: reportIdStr,
+        driveFolderUrl: `https://drive.google.com/drive/folders/${driveFolderId}`,
+        deliveredDate: new Date(),
+      },
+    )
+    .catch((err) => console.warn("[eagleview-pipeline] stamp Delivered failed", err));
 
   // 5. Best-effort HubSpot note
   await deps

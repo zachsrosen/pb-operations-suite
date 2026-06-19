@@ -15,6 +15,7 @@ import { addressHash, type AddressParts } from "@/lib/address-hash";
 
 export interface ClaimOrderInput {
   dealId: string;
+  ticketId?: string | null;
   productCode: EagleViewProduct;
   address: AddressParts;
   triggeredBy: string;
@@ -92,6 +93,7 @@ export async function claimOrder(
     const created = await prisma.eagleViewOrder.create({
       data: {
         dealId: input.dealId,
+        ticketId: input.ticketId ?? null,
         productCode: input.productCode,
         addressHash: hash,
         reportId: placeholderReportId,
