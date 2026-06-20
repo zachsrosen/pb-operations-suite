@@ -1201,7 +1201,7 @@ These require approval and credentials; perform with the user.
 
 - [ ] Apply the additive `VishtikSyncRun` migration to prod (`prisma migrate deploy`, with user approval — orchestrator only).
 - [ ] Run `npx tsx scripts/create-vishtik-url-property.ts` to create `vishtik_project_url`.
-- [ ] Add `VISHTIK_USERNAME` / `VISHTIK_PASSWORD` to Vercel **production** (`printf '%s' "<val>" | vercel env add ...`; verify with `vercel env pull`). Sync any other missing env per the pre-rollout convention.
+- [ ] Add `VISHTIK_USERNAME` / `VISHTIK_PASSWORD` to Vercel **production** (`printf '%s' "<val>" | vercel env add ...`; verify with `vercel env pull`). Sync any other missing env per the pre-rollout convention. **Decision (2026-06-20): use Zach's personal Vishtik login.** Caveat to revisit later: the cron will break whenever that password changes — migrate to a dedicated service account if it becomes flaky.
 - [ ] Deploy via GitHub PR → merge (no `vercel --prod`). Flag stays **off** (`vishtik_sync_enabled` unset).
 - [ ] **Dry-run validation:** invoke `syncVishtikIds({ dryRun: true }, liveDeps({ dryRun: true }))` via a guarded one-off script (or local run with prod creds). Because `dryRun` is threaded through, this writes nothing AND does not persist the cursor/last-good-count. Confirm: (a) headless login succeeds (CSRF param name correct), (b) `complete: true` with a sane `fetchedCount` (~2,300), (c) `written`/`ambiguous`/`unmatchedCount` look right. **This is where the two empirical unknowns (CSRF field name, cntr-vs-tiling) are confirmed.**
 - [ ] If login/CSRF needs adjustment, fix `fetchTransport`, redeploy, re-validate.
