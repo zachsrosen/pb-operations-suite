@@ -191,24 +191,48 @@ export async function orderTrueDesign(
       )
       .catch((err) => console.warn("[eagleview-pipeline] stamp Failed failed", err));
 
-  // 3. Geocode if needed
-  let { latitude, longitude } = dealFields;
-  if (latitude == null || longitude == null) {
-    const formatted = formatAddressOneLine(addressParts);
-    const geo = await deps.geocode(formatted).catch(() => null);
-    if (!geo) {
-      await markFailed(deps.prisma, claim.order.id, "geocode_failed");
-      await stampFailed();
-      return {
-        orderId: claim.order.id,
-        reportId: claim.order.reportId,
-        status: "FAILED",
-        isNew: true,
-        reason: "geocode_failed",
-      };
-    }
+  // 3. Resolve coordinates from the CURRENT address.
+  // The address is authoritative: humans verify it, and it drives the EV satellite
+  // preview. A stored lat/lng can be stale from a prior address and silently send
+  // TrueDesign to the wrong house — see FS #821, where stored coords were ~17 miles
+  // off the correct address. So we geocode the address and only fall back to stored
+  // coords if geocoding fails.
+  let latitude: number;
+  let longitude: number;
+  const formatted = formatAddressOneLine(addressParts);
+  const geo = await deps.geocode(formatted).catch(() => null);
+  if (geo) {
     latitude = geo.latitude;
     longitude = geo.longitude;
+    // Surface stale deal data: stored coords that disagree with the geocoded address.
+    if (
+      dealFields.latitude != null &&
+      dealFields.longitude != null &&
+      (Math.abs(dealFields.latitude - geo.latitude) > 0.02 ||
+        Math.abs(dealFields.longitude - geo.longitude) > 0.02)
+    ) {
+      console.warn(
+        `[eagleview] deal ${input.dealId}: stored coords (${dealFields.latitude}, ${dealFields.longitude}) ` +
+          `diverge from geocoded address (${geo.latitude}, ${geo.longitude}); using geocoded.`,
+      );
+    }
+  } else if (dealFields.latitude != null && dealFields.longitude != null) {
+    // Geocode failed — fall back to stored coords rather than block the order.
+    latitude = dealFields.latitude;
+    longitude = dealFields.longitude;
+    console.warn(
+      `[eagleview] deal ${input.dealId}: geocode failed for "${formatted}"; falling back to stored coords.`,
+    );
+  } else {
+    await markFailed(deps.prisma, claim.order.id, "geocode_failed");
+    await stampFailed();
+    return {
+      orderId: claim.order.id,
+      reportId: claim.order.reportId,
+      status: "FAILED",
+      isNew: true,
+      reason: "geocode_failed",
+    };
   }
 
   const evAddress: AddressInput = {

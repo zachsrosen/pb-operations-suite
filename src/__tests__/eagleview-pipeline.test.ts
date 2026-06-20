@@ -298,11 +298,28 @@ describe("orderTrueDesign", () => {
     expect(deps.spies.postDealNote).toHaveBeenCalledTimes(1);
   });
 
-  it("uses HubSpot lat/lng without geocoding if present", async () => {
+  it("geocodes the address (authoritative) even when stored coords are present", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);
     await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
-    expect(deps.spies.geocode).not.toHaveBeenCalled();
+    // The verified address drives the order, not a possibly-stale stored lat/lng (FS #821).
+    expect(deps.spies.geocode).toHaveBeenCalledTimes(1);
+    // Order uses geocoded coords (39.0, -105.0), NOT the stored ones (39.7392, -104.9903).
+    expect(deps.spies.checkSolarAvailability).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: 39.0, longitude: -105.0 }),
+      expect.anything(),
+    );
+  });
+
+  it("falls back to stored coords when geocoding fails", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    deps.spies.geocode.mockResolvedValueOnce(null);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    expect(deps.spies.checkSolarAvailability).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: 39.7392, longitude: -104.9903 }),
+      expect.anything(),
+    );
   });
 
   it("geocodes when HubSpot lacks coordinates", async () => {
