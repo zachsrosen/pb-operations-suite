@@ -74,9 +74,15 @@ function toProjects(rows: ProjectPage["data"]): VishtikProject[] {
 /**
  * Fetch the entire Vishtik project list. Strategy:
  *  1. Page through with cntr=1..total_page at showtotal=100.
- *  2. If the cursor is stuck (current_page stops advancing with cntr), fall
- *     back to showtotal tiling: page-2-of-size-S returns rows [S+1, 2S];
- *     a halving sequence of S covers the list, row 1 is grabbed separately.
+ *  2. If the server's cursor is stuck (it ignores `cntr` and keeps returning one
+ *     fixed page — detected when page 2 does not report `current_page === 2`),
+ *     fall back to a best-effort showtotal tiling: requesting page 2 of size S
+ *     returns the window [S+1, 2S], and a halving sequence of S values is unioned
+ *     to cover the list. A separate cntr:1 call at the largest S grabs the head
+ *     [1, S] in case the stuck page happens to be page 1 (which the cntr:2 tiles
+ *     would miss). This is a best-effort union validated empirically at rollout,
+ *     not a guaranteed-complete enumeration; the `complete` gate below is the
+ *     safety net.
  * Returns {complete:false} if coverage < tolerance of total_row (so the caller
  * suppresses writes rather than under-matching on a partial scrape).
  */
@@ -92,14 +98,14 @@ export async function fetchAllProjects(
   ingest(first.data);
   const totalRow = first.total_row;
 
-  // Detect whether cntr paginates: fetch page 2 and see if it differs.
+  // Detect whether cntr paginates: fetch page 2 and check the server honored the
+  // page number (current_page === 2). A stuck cursor ignores cntr and returns a
+  // fixed page, so current_page won't reflect the requested page.
   let cursorWorks = true;
   if (first.total_page > 1) {
     const second = await t.getProjectPage({ cntr: 2, showtotal: 100 });
-    const firstIds = new Set(first.data.map((r) => String(r.id)));
-    const secondNew = second.data.some((r) => !firstIds.has(String(r.id)));
-    cursorWorks = secondNew;
-    ingest(second.data);
+    cursorWorks = second.current_page === 2;
+    ingest(second.data); // keep page 2's rows regardless of detection outcome
     if (cursorWorks) {
       for (let p = 3; p <= first.total_page; p++) {
         ingest((await t.getProjectPage({ cntr: p, showtotal: 100 })).data);
@@ -108,13 +114,16 @@ export async function fetchAllProjects(
   }
 
   if (!cursorWorks) {
-    // Tiling fallback: server is stuck returning "page 2"; window = [S+1, 2S].
+    // Best-effort tiling fallback: the server is stuck returning one fixed page.
+    // For each size S, page 2 of size S yields the window [S+1, 2S]; a halving
+    // sequence of S values is unioned (de-duped by id via `ingest`) to cover the
+    // list. One cntr:1 call at the largest S covers the head [1, S] — needed in
+    // case the stuck page happens to BE page 1, which the cntr:2 tiles miss.
     const sizes = [1140, 570, 285, 143, 72, 36, 18, 9, 5, 3, 2, 1];
+    ingest((await t.getProjectPage({ cntr: 1, showtotal: sizes[0] })).data);
     for (const S of sizes) {
-      ingest((await t.getProjectPage({ cntr: 1, showtotal: S })).data);
+      ingest((await t.getProjectPage({ cntr: 2, showtotal: S })).data);
     }
-    // row 1 is only reachable from a fresh page-1 render (DOM in the browser
-    // skill); server-side it is covered by the smallest tile when present.
   }
 
   const projects = [...byId.values()];
@@ -191,6 +200,7 @@ export function fetchTransport(): VishtikTransport {
         await doLogin();
         r = await call();
       }
+      if (!r.ok) throw new VishtikAuthError(`Get-Project ${r.status}`);
       const json = (await r.json()) as ProjectPage;
       jar.absorb(r.headers.getSetCookie());
       return json;
