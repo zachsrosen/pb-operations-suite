@@ -122,3 +122,78 @@ export async function fetchAllProjects(
     : projects.length >= Math.floor(totalRow * COMPLETENESS_TOLERANCE);
   return { projects, complete };
 }
+
+const TIMEZONE = "America/Denver";
+
+/** Live transport. Logs in with env creds; re-logins once on a mid-run 401. */
+export function fetchTransport(): VishtikTransport {
+  const jar = new CookieJar();
+  let loggedIn = false;
+
+  async function doLogin(): Promise<void> {
+    const user = process.env.VISHTIK_USERNAME;
+    const pass = process.env.VISHTIK_PASSWORD;
+    if (!user || !pass) throw new VishtikAuthError("VISHTIK_USERNAME/PASSWORD not set");
+    // Warm cookies (CI sets ci_session + csrf cookie on GET /login).
+    const g = await fetch(`${VISHTIK_BASE}/login`, { redirect: "manual" });
+    jar.absorb(g.headers.getSetCookie());
+    const body = new URLSearchParams({
+      back_url: "",
+      timezone: TIMEZONE,
+      username: user,
+      password: pass,
+    });
+    const csrf = jar.csrfToken();
+    if (csrf) body.set("ci_csrf_token", csrf); // exact field name confirmed in dry-run
+    const r = await fetch(`${VISHTIK_BASE}/login-auth`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: jar.header(),
+      },
+      body,
+    });
+    jar.absorb(r.headers.getSetCookie());
+    const location = r.headers.get("location") || "";
+    if (location.includes("/login")) throw new VishtikAuthError("Vishtik login rejected");
+    loggedIn = true;
+  }
+
+  return {
+    async login() {
+      if (!loggedIn) await doLogin();
+    },
+    async getProjectPage({ cntr, showtotal }) {
+      const params = new URLSearchParams({
+        cntr: String(cntr),
+        recorddata: String(showtotal),
+        showtotal: String(showtotal),
+        search: "", status: "", servicetype: "",
+        startdate: "", enddate: "", bylastdate: "", pe_stamp: "",
+        allproject: "1", assigned_user: "", assigned_me: "0", created_user: "",
+      });
+      const csrf = jar.csrfToken();
+      if (csrf) params.set("ci_csrf_token", csrf);
+      const call = () =>
+        fetch(`${VISHTIK_BASE}/Project/Project/Get-Project`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+            Cookie: jar.header(),
+          },
+          body: params,
+        });
+      let r = await call();
+      if (r.status === 401 || r.status === 302) {
+        loggedIn = false;
+        await doLogin();
+        r = await call();
+      }
+      const json = (await r.json()) as ProjectPage;
+      jar.absorb(r.headers.getSetCookie());
+      return json;
+    },
+  };
+}
