@@ -98,9 +98,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "PE fetch failed" }, { status: 502 });
   }
 
-  const properties = composeRejectionNotes(detail.actionItems ?? []);
+  const properties = composeRejectionNotes(detail.documents, detail.actionItems ?? []);
   if (Object.keys(properties).length === 0) {
-    return NextResponse.json({ status: "ok", updated: 0, reason: "no action items" });
+    return NextResponse.json({ status: "ok", updated: 0, reason: "no currently-rejected docs" });
   }
 
   try {

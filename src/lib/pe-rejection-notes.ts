@@ -1,15 +1,28 @@
 /**
- * Compose per-team PE rejection notes from a project's live PE action items.
+ * Compose per-team PE rejection notes from a project's live PE data.
  *
- * When a deal's M1 is rejected, the pe-m1-rejected webhook pulls the project's
- * action items live from the PE API (getProjectDetail), and this module routes
- * each rejected document's reviewer note into the team that owns it, producing
- * "Design Plan - <reason>" lines per `pe_rejection_notes_for_*` field.
+ * When a deal's M1/M2 is rejected, the pe-rejection webhook pulls the project
+ * detail live from the PE API (getProjectDetail) and this module routes each
+ * CURRENTLY-rejected document's reviewer note to the team that owns it,
+ * producing "Design Plan - <reason>" lines per `pe_rejection_notes_for_*` field.
  *
- * Note: "Load Justification Form" is a PB-internal M1 document — PE has no action
- * item for it — so it is intentionally NOT covered by the live PE pull.
+ * Authoritative signal is the document's current status (RESPONSE_NEEDED), not
+ * the presence of an action item — action items have no resolved flag and an
+ * approved doc can still carry a stale one. Action items supply only the reason.
+ *
+ * Note: "Load Justification Form" is a PB-internal document — PE has no doc/action
+ * item for it — but PE bundles its feedback into the Proposal note, which we
+ * mirror to Design.
  */
-import { PE_ACTION_DOC_MAP, type PeActionItem } from "@/lib/pe-api";
+import {
+  PE_ACTION_DOC_MAP,
+  PE_API_DOC_MAP,
+  type PeActionItem,
+  type PeDocuments,
+} from "@/lib/pe-api";
+
+/** Document status that means "currently rejected / needs a response". */
+const REJECTED_DOC_STATUS = "RESPONSE_NEEDED";
 
 /**
  * Canonical PE document name → team rejection-notes field. Keyed on the names
@@ -54,41 +67,58 @@ export function peInternalIdFromPortalUrl(
 }
 
 /**
- * Group PE action items into per-team rejection notes.
+ * Build per-team rejection notes from a project's current documents + action items.
  *
- * Each action item is a per-document rejection carrying the reviewer's note.
- * Returns only the fields that have at least one routed action item, as
- * "{Document Label} - {note}" lines (a bare "{Label} - " when PE left no note),
- * so unrelated team fields are never touched. Covers M1 and M2 documents; action
- * items for documents not in the routing map are skipped.
+ * Includes only documents whose CURRENT status is RESPONSE_NEEDED (so resolved /
+ * approved docs with a lingering action item are excluded), routes each to the
+ * owning team, and uses the document's action item(s) for the reason — emitting
+ * "{Document} - {reason}" lines (a bare "{Document} - " when there's no note).
+ * Returns only fields that have at least one currently-rejected doc.
  */
 export function composeRejectionNotes(
+  documents: PeDocuments,
   actionItems: PeActionItem[],
 ): Record<string, string> {
-  const byField: Record<string, string[]> = {};
-
+  // Reviewer notes grouped by canonical document name (action items are the
+  // only source of the reason text).
+  const notesByDoc: Record<string, string[]> = {};
   for (const item of actionItems) {
-    const docId = item.document?.id ?? "";
-    const canonical = PE_ACTION_DOC_MAP[docId] ?? item.document?.label ?? "";
-    const field = PE_DOC_TO_TEAM_FIELD[canonical];
-    if (!field) continue; // unknown / non-M1-team document — skip
-
-    const label = item.document?.label || canonical;
+    const canonical = PE_ACTION_DOC_MAP[item.document?.id ?? ""] ?? item.document?.label ?? "";
+    if (!canonical) continue;
     const note = (item.notes ?? "").trim();
-    (byField[field] ??= []).push(note ? `${label} - ${note}` : `${label} - `);
+    if (note) (notesByDoc[canonical] ??= []).push(note);
+  }
+
+  const byField: Record<string, string[]> = {};
+  for (const [docKey, info] of Object.entries(documents)) {
+    if (!info || info.status !== REJECTED_DOC_STATUS) continue; // not currently rejected
+    const canonical = PE_API_DOC_MAP[docKey];
+    if (!canonical) continue;
+    const field = PE_DOC_TO_TEAM_FIELD[canonical];
+    if (!field) continue; // doc not routed to a team
+
+    const notes = notesByDoc[canonical] ?? [];
+    if (notes.length) {
+      for (const n of notes) (byField[field] ??= []).push(`${canonical} - ${n}`);
+    } else {
+      (byField[field] ??= []).push(`${canonical} - `); // rejected, but PE left no note
+    }
 
     // PE has no standalone "Load Justification Form" document — it bundles that
-    // feedback into the Proposal rejection note. When the Proposal note mentions
-    // it, also surface it to Design (LJF is a Design concern).
-    if (canonical === "Signed Proposal" && /load\s*justification|\bLJF\b/i.test(note)) {
-      (byField[DESIGN_FIELD] ??= []).push(`Load Justification Form - ${note}`);
+    // feedback into the Proposal note. When the Proposal note mentions it, also
+    // surface it to Design (LJF is a Design concern).
+    if (canonical === "Signed Proposal") {
+      for (const n of notes) {
+        if (/load\s*justification|\bLJF\b/i.test(n)) {
+          (byField[DESIGN_FIELD] ??= []).push(`Load Justification Form - ${n}`);
+        }
+      }
     }
   }
 
   const out: Record<string, string> = {};
   for (const [field, lines] of Object.entries(byField)) {
-    // PE returns each action item more than once — dedupe identical lines so a
-    // team field doesn't repeat the same "Doc - reason".
+    // PE returns each action item more than once — dedupe identical lines.
     out[field] = [...new Set(lines)].join("\n");
   }
   return out;
