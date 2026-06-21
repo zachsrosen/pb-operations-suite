@@ -87,7 +87,9 @@ export function composeRejectionNotes(
 
   const out: Record<string, string> = {};
   for (const [field, lines] of Object.entries(byField)) {
-    out[field] = lines.join("\n");
+    // PE returns each action item more than once — dedupe identical lines so a
+    // team field doesn't repeat the same "Doc - reason".
+    out[field] = [...new Set(lines)].join("\n");
   }
   return out;
 }

@@ -124,6 +124,17 @@ describe("composeRejectionNotes", () => {
     expect(Object.keys(out)).toEqual(["pe_rejection_notes_for_ops"]);
   });
 
+  it("dedupes identical action items (PE returns each one more than once)", () => {
+    const out = composeRejectionNotes([
+      item("design_plan", "Design Plan", "[H106] incomplete"),
+      item("design_plan", "Design Plan", "[H106] incomplete"), // duplicate from PE
+      item("design_plan", "Design Plan", "[H200] also wrong"), // genuinely different — kept
+    ]);
+    expect(out["pe_rejection_notes_for_design"]).toBe(
+      "Design Plan - [H106] incomplete\nDesign Plan - [H200] also wrong",
+    );
+  });
+
   it("maps every routed doc to a real pe_rejection_notes_for_* field", () => {
     for (const field of Object.values(PE_DOC_TO_TEAM_FIELD)) {
       expect(field).toMatch(/^pe_rejection_notes_for_/);
