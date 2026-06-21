@@ -1,4 +1,10 @@
 // src/__tests__/vishtik-sync.test.ts
+// vishtik-sync.ts transitively imports @/lib/db (Task 2.3 live deps), whose
+// generated Prisma client uses `import.meta` and fails Jest's transform. Mock it
+// so the module loads; these are pure-logic / injected-dep tests that never touch
+// the real client.
+jest.mock("@/lib/db", () => ({ prisma: null }));
+
 import { buildProjIndex, classifyMatch } from "@/lib/vishtik-sync";
 import type { VishtikProject } from "@/lib/vishtik";
 
@@ -93,5 +99,65 @@ describe("syncVishtikIds", () => {
     );
     expect(res.aborted).toBe("suspicious-count");
     expect(writeDeal).not.toHaveBeenCalled();
+  });
+});
+
+import { makeCandidateIterator, type SearchPage } from "@/lib/vishtik-sync";
+
+function fakeCfg(initial: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    store,
+    cfgGet: async (k: string) => store.get(k) ?? null,
+    cfgSet: async (k: string, v: string) => { store.set(k, v); },
+  };
+}
+
+function pages(...batches: SearchPage[]) {
+  let i = 0;
+  return async () => batches[i++] ?? { results: [] };
+}
+
+describe("makeCandidateIterator", () => {
+  it("advances the cursor to the last createdate when !dryRun", async () => {
+    const cfg = fakeCfg();
+    const search = pages(
+      { results: [{ id: "d1", properties: { project_number: "PROJ-1", createdate: "2026-01-01T00:00:00Z" } }], paging: {} },
+    );
+    const gen = makeCandidateIterator({ search, ...cfg, dryRun: false });
+    const seen: string[] = [];
+    for await (const b of gen()) b.forEach((c) => seen.push(c.dealId));
+    expect(seen).toEqual(["d1"]);
+    expect(cfg.store.get("vishtik_sync_cursor")).toBe(String(new Date("2026-01-01T00:00:00Z").getTime()));
+  });
+
+  it("does NOT persist the cursor under dryRun", async () => {
+    const cfg = fakeCfg({ vishtik_sync_cursor: "12345" });
+    const search = pages(
+      { results: [{ id: "d1", properties: { project_number: "PROJ-1", createdate: "2026-01-01T00:00:00Z" } }], paging: {} },
+    );
+    const gen = makeCandidateIterator({ search, ...cfg, dryRun: true });
+    for await (const _ of gen()) { /* drain */ }
+    expect(cfg.store.get("vishtik_sync_cursor")).toBe("12345"); // unchanged
+  });
+
+  it("wraps the cursor to 0 when the filtered set is exhausted", async () => {
+    const cfg = fakeCfg({ vishtik_sync_cursor: "999" });
+    const search = pages({ results: [] });
+    const gen = makeCandidateIterator({ search, ...cfg, dryRun: false });
+    for await (const _ of gen()) { /* drain */ }
+    expect(cfg.store.get("vishtik_sync_cursor")).toBe("0");
+  });
+
+  it("follows the after token across pages within a run", async () => {
+    const cfg = fakeCfg();
+    const search = pages(
+      { results: [{ id: "d1", properties: { project_number: "PROJ-1", createdate: "2026-01-01T00:00:00Z" } }], paging: { next: { after: "100" } } },
+      { results: [{ id: "d2", properties: { project_number: "PROJ-2", createdate: "2026-01-02T00:00:00Z" } }], paging: {} },
+    );
+    const gen = makeCandidateIterator({ search, ...cfg, dryRun: false });
+    const seen: string[] = [];
+    for await (const b of gen()) b.forEach((c) => seen.push(c.dealId));
+    expect(seen).toEqual(["d1", "d2"]);
   });
 });

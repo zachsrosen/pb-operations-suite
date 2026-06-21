@@ -188,7 +188,12 @@ export function makeCandidateIterator(deps: IteratorDeps) {
       const lc = results[results.length - 1].properties?.createdate;
       if (lc) lastCreate = new Date(lc).getTime();
       after = page.paging?.next?.after;
-      if (!after) { reachedEnd = true; break; } // exhausted the filtered set
+      // No more pages in this run. Don't wrap here: a non-empty page without an
+      // `after` token means we consumed all currently-available rows but haven't
+      // proven the filtered set is exhausted — advance the cursor to lastCreate so
+      // the next run resumes from the boundary (re-reads are idempotent). Only an
+      // EMPTY search result (handled above) proves exhaustion and wraps to "0".
+      if (!after) break;
     }
 
     if (!deps.dryRun) {
