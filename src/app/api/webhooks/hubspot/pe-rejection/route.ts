@@ -67,9 +67,8 @@ export async function POST(req: NextRequest) {
 
   const { hubspotClient } = await import("@/lib/hubspot");
   const { getProjectDetail } = await import("@/lib/pe-api");
-  const { composeRejectionNotes, peInternalIdFromPortalUrl } = await import(
-    "@/lib/pe-rejection-notes"
-  );
+  const { composeRejectionNotes, composeRejectedDocuments, peInternalIdFromPortalUrl } =
+    await import("@/lib/pe-rejection-notes");
 
   let deal;
   try {
@@ -104,7 +103,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "PE fetch failed" }, { status: 502 });
   }
 
-  const properties = composeRejectionNotes(detail.documents, detail.actionItems ?? []);
+  const properties: Record<string, string> = composeRejectionNotes(
+    detail.documents,
+    detail.actionItems ?? [],
+  );
+
+  // Also tick the P.E. M{1,2} Documents checkboxes for the currently-rejected
+  // docs — but only for the milestone that was actually rejected (a rejected M1
+  // shouldn't touch pe_m2_documents even if PE has open M2 docs, and vice versa).
+  const rejectedDocs = composeRejectedDocuments(detail.documents, detail.actionItems ?? []);
+  if (props.pe_m1_status === "Rejected" && rejectedDocs.pe_m1_documents) {
+    properties.pe_m1_documents = rejectedDocs.pe_m1_documents;
+  }
+  if (props.pe_m2_status === "Rejected" && rejectedDocs.pe_m2_documents) {
+    properties.pe_m2_documents = rejectedDocs.pe_m2_documents;
+  }
+
   if (Object.keys(properties).length === 0) {
     return NextResponse.json({ status: "ok", updated: 0, reason: "no currently-rejected docs" });
   }

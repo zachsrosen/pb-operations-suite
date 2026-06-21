@@ -1,5 +1,6 @@
 import {
   composeRejectionNotes,
+  composeRejectedDocuments,
   peInternalIdFromPortalUrl,
   PE_DOC_TO_TEAM_FIELD,
 } from "@/lib/pe-rejection-notes";
@@ -158,5 +159,89 @@ describe("composeRejectionNotes", () => {
     for (const field of Object.values(PE_DOC_TO_TEAM_FIELD)) {
       expect(field).toMatch(/^pe_rejection_notes_for_/);
     }
+  });
+});
+
+describe("composeRejectedDocuments", () => {
+  it("ticks pe_m1_documents for each currently-rejected M1 doc (checkbox labels, not PE names)", () => {
+    const out = composeRejectedDocuments(
+      docs({
+        designPlan: "RESPONSE_NEEDED",
+        photos: "RESPONSE_NEEDED",
+        customerAgreement: "RESPONSE_NEEDED",
+      }),
+      [
+        item("design_plan", "Design Plan", "x"),
+        item("photos_per_policy", "Photos per Policy", "x"),
+        item("customer_agreement", "Customer Agreement (PPA/ESA)", "x"),
+      ],
+    );
+    expect(out.pe_m1_documents).toBe("Design Plan;Photos;Customer Agreement");
+    expect(out.pe_m2_documents).toBeUndefined();
+  });
+
+  it("excludes APPROVED / under-review / not-uploaded docs", () => {
+    const out = composeRejectedDocuments(
+      docs({ designPlan: "APPROVED", photos: "PENDING_REVIEW", utilityBill: null }),
+      [item("design_plan", "Design Plan", "stale")],
+    );
+    expect(out).toEqual({});
+  });
+
+  it("Proposal with only an LJF note ticks just 'Load Justification Form'", () => {
+    const out = composeRejectedDocuments(docs({ signedProposal: "RESPONSE_NEEDED" }), [
+      item("signed_proposal", "Signed Proposal", "Energy offset exceeds 135% — submit a Load Justification form"),
+    ]);
+    expect(out.pe_m1_documents).toBe("Load Justification Form");
+  });
+
+  it("Proposal with a proposal-document note ticks just 'Proposal'", () => {
+    const out = composeRejectedDocuments(docs({ signedProposal: "RESPONSE_NEEDED" }), [
+      item("signed_proposal", "Signed Proposal", "Remove the 30% tax credit language from the proposal"),
+    ]);
+    expect(out.pe_m1_documents).toBe("Proposal");
+  });
+
+  it("Proposal with mixed issues (proposal + LJF) ticks BOTH", () => {
+    const out = composeRejectedDocuments(docs({ signedProposal: "RESPONSE_NEEDED" }), [
+      item(
+        "signed_proposal",
+        "Signed Proposal",
+        "Page 14 — 30% discount language visible in the proposal\nPage 10 — offset exceeds 135%, requires Load Justification",
+      ),
+    ]);
+    expect(out.pe_m1_documents).toBe("Proposal;Load Justification Form");
+  });
+
+  it("Proposal rejected with no note defaults to 'Proposal'", () => {
+    const out = composeRejectedDocuments(docs({ signedProposal: "RESPONSE_NEEDED" }), []);
+    expect(out.pe_m1_documents).toBe("Proposal");
+  });
+
+  it("ticks pe_m2_documents with the M2 checkbox values (PTO and waiver differ from labels)", () => {
+    const out = composeRejectedDocuments(
+      docs({
+        signedInterconnectionAgreement: "RESPONSE_NEEDED",
+        permissionToOperate: "RESPONSE_NEEDED",
+        conditionalWaiverReleaseFinalPayment: "RESPONSE_NEEDED",
+      }),
+      [],
+    );
+    expect(out.pe_m2_documents).toBe(
+      "Signed Interconnection Agreement;Permission to Operate;Conditional Waiver and Release",
+    );
+    expect(out.pe_m1_documents).toBeUndefined();
+  });
+
+  it("dedupes (PE returns duplicate action items)", () => {
+    const out = composeRejectedDocuments(docs({ photos: "RESPONSE_NEEDED" }), [
+      item("photos_per_policy", "Photos per Policy", "x"),
+      item("photos_per_policy", "Photos per Policy", "x"),
+    ]);
+    expect(out.pe_m1_documents).toBe("Photos");
+  });
+
+  it("returns {} when nothing is currently rejected", () => {
+    expect(composeRejectedDocuments(docs({ designPlan: "APPROVED" }), [])).toEqual({});
   });
 });
