@@ -2257,6 +2257,21 @@ model HubSpotSyncRun {
   @@index([createdAt])
 }
 
+model VishtikSyncRun {
+  id             String    @id @default(cuid())
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  written        Int       @default(0)
+  unmatchedCount Int       @default(0)
+  ambiguousCount Int       @default(0)
+  writeFailures  Int       @default(0)
+  fetchedCount   Int       @default(0)
+  aborted        String?
+  durationMs     Int       @default(0)
+
+  @@index([startedAt])
+}
+
 // ===========================================
 // SOLAR SURVEYOR
 // ===========================================
