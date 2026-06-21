@@ -370,7 +370,6 @@ function ProjectPipelineFunnelInner() {
           )}
 
           {/* Backlog */}
-          {tab === "funnel" && <MissingReasonsPanel drillDown={data.drillDown} />}
           <BacklogSection summary={s} drillDown={data.drillDown} medianDays={data.medianDays} expanded={expandedBacklog} onToggle={setExpandedBacklog} />
 
           {/* Current pipeline position */}
@@ -1125,80 +1124,6 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
   );
 }
 
-// ── Data quality: flagged deals missing a reason ─────────────────────────────
-// A live nudge — RTB-Blocked / Sales-Change / On-Hold deals whose reason field
-// (after fallbacks) is still blank, so the team can fill them in HubSpot.
-function MissingReasonsPanel({ drillDown }: { drillDown: ProjectFunnelDrillDown }) {
-  const [open, setOpen] = useState(false);
-  const groups = useMemo(() => {
-    const seen = new Set<number>();
-    const byLabel = new Map<string, { tone: string; deals: ProjectFunnelDrillDownDeal[] }>();
-    for (const bucket of Object.values(drillDown)) {
-      for (const d of bucket as ProjectFunnelDrillDownDeal[]) {
-        if (!d.flag || d.flag.reason || d.flag.note || seen.has(d.id)) continue;
-        seen.add(d.id);
-        const g = byLabel.get(d.flag.label) || { tone: d.flag.tone, deals: [] };
-        g.deals.push(d);
-        byLabel.set(d.flag.label, g);
-      }
-    }
-    return [...byLabel.entries()]
-      .map(([label, v]) => ({ label, tone: v.tone, deals: v.deals }))
-      .sort((a, b) => b.deals.length - a.deals.length);
-  }, [drillDown]);
-
-  const total = groups.reduce((sum, g) => sum + g.deals.length, 0);
-  if (total === 0) return null;
-
-  return (
-    <div className="bg-surface rounded-xl border border-amber-500/30 p-4 mb-6">
-      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 text-left">
-        <h3 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
-          <span className="text-amber-400">⚠</span> Data Quality — flagged deals missing a reason
-        </h3>
-        <span className="text-xs text-muted">
-          <span className="text-amber-400 font-semibold tabular-nums">{total}</span> to fill in HubSpot
-          <span className={`ml-2 inline-block text-[10px] transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
-        </span>
-      </button>
-      {!open && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-muted">
-          {groups.map((g) => (
-            <span key={g.label}>
-              <span className={`font-semibold ${FLAG_TEXT[g.tone] || "text-foreground"}`}>{g.deals.length}</span> {g.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {open && (
-        <div className="mt-3 space-y-3">
-          {groups.map((g) => (
-            <div key={g.label}>
-              <div className={`text-xs font-semibold mb-1 ${FLAG_TEXT[g.tone] || "text-foreground"}`}>
-                {g.label} · {g.deals.length}
-              </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-                {g.deals.map((d) => (
-                  <a
-                    key={d.id}
-                    href={d.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-foreground/80 hover:text-cyan-400 whitespace-nowrap"
-                    title={`${d.name} · ${d.pbLocation}`}
-                  >
-                    {d.projectNumber || d.name}
-                    <span className="text-muted/60"> · {d.pbLocation}</span>
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function BacklogSection({
   summary,
