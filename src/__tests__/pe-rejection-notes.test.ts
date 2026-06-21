@@ -52,8 +52,8 @@ describe("composeRejectionNotes", () => {
         item("signed_proposal", "Signed Proposal", "wrong system size"),
       ],
     );
-    expect(out["pe_rejection_notes_for_design"]).toBe("Design Plan - issue with model number");
-    expect(out["pe_rejection_notes_for_sales"]).toBe("Signed Proposal - wrong system size");
+    expect(out["pe_rejection_notes_for_design"]).toBe("Design Plan:\n• issue with model number");
+    expect(out["pe_rejection_notes_for_sales"]).toBe("Signed Proposal:\n• wrong system size");
   });
 
   it("EXCLUDES a doc whose current status is APPROVED, even with a stale action item", () => {
@@ -65,7 +65,7 @@ describe("composeRejectionNotes", () => {
       ],
     );
     expect(out["pe_rejection_notes_for_design"]).toBeUndefined();
-    expect(out["pe_rejection_notes_for_sales"]).toBe("Signed Proposal - current issue");
+    expect(out["pe_rejection_notes_for_sales"]).toBe("Signed Proposal:\n• current issue");
   });
 
   it("ignores docs under review (PENDING_*) or not uploaded (null)", () => {
@@ -90,35 +90,40 @@ describe("composeRejectionNotes", () => {
       ],
     );
     expect(out["pe_rejection_notes_for_sales"]).toBe(
-      "Customer Agreement (PPA/ESA) - missing signature\nUtility Bill - illegible\nInstallation Order - outdated",
+      "Customer Agreement (PPA/ESA):\n• missing signature\n\nUtility Bill:\n• illegible\n\nInstallation Order:\n• outdated",
     );
   });
 
-  it("emits a bare 'Doc - ' when the doc is rejected but PE left no note", () => {
+  it("emits a header with a placeholder bullet when the doc is rejected but PE left no note", () => {
     const out = composeRejectionNotes(docs({ designPlan: "RESPONSE_NEEDED" }), []);
-    expect(out["pe_rejection_notes_for_design"]).toBe("Design Plan - ");
+    expect(out["pe_rejection_notes_for_design"]).toBe("Design Plan:\n• (no reviewer note provided)");
   });
 
-  it("dedupes identical action items (PE returns each one more than once)", () => {
+  it("dedupes identical issue lines and splits multi-issue blobs into bullets", () => {
     const out = composeRejectionNotes(docs({ designPlan: "RESPONSE_NEEDED" }), [
-      item("design_plan", "Design Plan", "[H106] incomplete"),
-      item("design_plan", "Design Plan", "[H106] incomplete"), // duplicate from PE
-      item("design_plan", "Design Plan", "[H200] also wrong"), // genuinely different — kept
+      item("design_plan", "Design Plan", "[H106] incomplete\n[H200] also wrong"),
+      item("design_plan", "Design Plan", "[H106] incomplete\n[H200] also wrong"), // duplicate from PE
     ]);
     expect(out["pe_rejection_notes_for_design"]).toBe(
-      "Design Plan - [H106] incomplete\nDesign Plan - [H200] also wrong",
+      "Design Plan:\n• [H106] incomplete\n• [H200] also wrong",
     );
   });
 
-  it("mirrors Load Justification Form to Design when the Proposal note mentions it", () => {
+  it("mirrors ONLY the LJF lines to Design; proposal-document comments stay with Sales", () => {
     const out = composeRejectionNotes(docs({ signedProposal: "RESPONSE_NEEDED" }), [
-      item("signed_proposal", "Signed Proposal", "Load Justification Form usage is wrong; also pricing"),
+      item(
+        "signed_proposal",
+        "Signed Proposal",
+        "Page 14 — 30% tax credit language in the proposal\nPage 10 — offset exceeds 135%, submit a Load Justification form",
+      ),
     ]);
+    // Sales sees the full proposal note (both lines).
     expect(out["pe_rejection_notes_for_sales"]).toBe(
-      "Signed Proposal - Load Justification Form usage is wrong; also pricing",
+      "Signed Proposal:\n• Page 14 — 30% tax credit language in the proposal\n• Page 10 — offset exceeds 135%, submit a Load Justification form",
     );
+    // Design sees ONLY the LJF line — not the 30% proposal comment.
     expect(out["pe_rejection_notes_for_design"]).toBe(
-      "Load Justification Form - Load Justification Form usage is wrong; also pricing",
+      "Load Justification Form:\n• Page 10 — offset exceeds 135%, submit a Load Justification form",
     );
   });
 
@@ -143,9 +148,11 @@ describe("composeRejectionNotes", () => {
       ],
     );
     expect(out["pe_rejection_notes_for_intercocnnection"]).toBe(
-      "Signed Interconnection Agreement - missing signature\nPermission to Operate (PTO) - utility denied",
+      "Signed Interconnection Agreement:\n• missing signature\n\nPermission to Operate (PTO):\n• utility denied",
     );
-    expect(out["pe_rejection_notes_for_accounting"]).toBe("Conditional Waiver — Final Payment - amount wrong");
+    expect(out["pe_rejection_notes_for_accounting"]).toBe(
+      "Conditional Waiver — Final Payment:\n• amount wrong",
+    );
   });
 
   it("returns only fields that have a currently-rejected, routed doc", () => {

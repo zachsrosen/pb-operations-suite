@@ -119,6 +119,30 @@ function buildNotesByDoc(actionItems: PeActionItem[]): Record<string, string[]> 
 }
 
 /**
+ * Flatten a document's reviewer notes into individual, deduped issue lines. PE
+ * packs every page-level issue for a doc into one newline-separated blob (and
+ * returns each action item more than once), so we split on newlines and dedupe.
+ */
+function splitIssues(notes: string[]): string[] {
+  const lines = notes
+    .flatMap((n) => n.split("\n"))
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return [...new Set(lines)];
+}
+
+/**
+ * Render one document's block: a "{Doc}:" header followed by a bullet per issue
+ * line, e.g.
+ *   Design Plan:
+ *   • Page 8 — [H024] ...
+ */
+function formatDocBlock(doc: string, issueLines: string[]): string {
+  const bullets = issueLines.length ? issueLines : ["(no reviewer note provided)"];
+  return [`${doc}:`, ...bullets.map((l) => `• ${l}`)].join("\n");
+}
+
+/**
  * Decide which checkbox options a rejected Proposal should tick. PE bundles the
  * Load Justification Form request into the Proposal note, so we split the note
  * into per-issue lines: LJF lines tick "Load Justification Form", any other line
@@ -126,10 +150,7 @@ function buildNotesByDoc(actionItems: PeActionItem[]): Record<string, string[]> 
  * no notes defaults to "Proposal" (it's a proposal-document rejection).
  */
 function proposalCheckboxes(notes: string[]): string[] {
-  const lines = notes
-    .flatMap((n) => n.split("\n"))
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const lines = splitIssues(notes);
   const hasLjf = lines.some((l) => LJF_RE.test(l));
   const hasProposalIssue = lines.length === 0 || lines.some((l) => !LJF_RE.test(l));
   const out: string[] = [];
@@ -151,10 +172,14 @@ export function peInternalIdFromPortalUrl(
  * Build per-team rejection notes from a project's current documents + action items.
  *
  * Includes only documents whose CURRENT status is RESPONSE_NEEDED (so resolved /
- * approved docs with a lingering action item are excluded), routes each to the
- * owning team, and uses the document's action item(s) for the reason — emitting
- * "{Document} - {reason}" lines (a bare "{Document} - " when there's no note).
- * Returns only fields that have at least one currently-rejected doc.
+ * approved docs with a lingering action item are excluded) and routes each to the
+ * owning team. Output is grouped by document — a "{Doc}:" header with one bullet
+ * per page-level issue — and documents within a field are separated by a blank
+ * line. Returns only fields that have at least one currently-rejected doc.
+ *
+ * The Proposal is sales-owned, so its full note stays on Sales. Only the
+ * LJF-specific lines are mirrored to Design (proposal-document comments do NOT
+ * leak to Design).
  */
 export function composeRejectionNotes(
   documents: PeDocuments,
@@ -164,7 +189,8 @@ export function composeRejectionNotes(
   // only source of the reason text).
   const notesByDoc = buildNotesByDoc(actionItems);
 
-  const byField: Record<string, string[]> = {};
+  // field -> ordered { doc, lines } blocks (one block per rejected document).
+  const byField: Record<string, { doc: string; lines: string[] }[]> = {};
   for (const [docKey, info] of Object.entries(documents)) {
     if (!info || info.status !== REJECTED_DOC_STATUS) continue; // not currently rejected
     const canonical = PE_API_DOC_MAP[docKey];
@@ -172,29 +198,23 @@ export function composeRejectionNotes(
     const field = PE_DOC_TO_TEAM_FIELD[canonical];
     if (!field) continue; // doc not routed to a team
 
-    const notes = notesByDoc[canonical] ?? [];
-    if (notes.length) {
-      for (const n of notes) (byField[field] ??= []).push(`${canonical} - ${n}`);
-    } else {
-      (byField[field] ??= []).push(`${canonical} - `); // rejected, but PE left no note
-    }
+    const lines = splitIssues(notesByDoc[canonical] ?? []);
+    (byField[field] ??= []).push({ doc: canonical, lines });
 
     // PE has no standalone "Load Justification Form" document — it bundles that
-    // feedback into the Proposal note. When the Proposal note mentions it, also
-    // surface it to Design (LJF is a Design concern).
+    // feedback into the Proposal note. Mirror ONLY the LJF-specific lines to
+    // Design; the proposal-document comments stay with Sales.
     if (canonical === "Signed Proposal") {
-      for (const n of notes) {
-        if (LJF_RE.test(n)) {
-          (byField[DESIGN_FIELD] ??= []).push(`Load Justification Form - ${n}`);
-        }
+      const ljfLines = lines.filter((l) => LJF_RE.test(l));
+      if (ljfLines.length) {
+        (byField[DESIGN_FIELD] ??= []).push({ doc: "Load Justification Form", lines: ljfLines });
       }
     }
   }
 
   const out: Record<string, string> = {};
-  for (const [field, lines] of Object.entries(byField)) {
-    // PE returns each action item more than once — dedupe identical lines.
-    out[field] = [...new Set(lines)].join("\n");
+  for (const [field, blocks] of Object.entries(byField)) {
+    out[field] = blocks.map((b) => formatDocBlock(b.doc, b.lines)).join("\n\n");
   }
   return out;
 }
