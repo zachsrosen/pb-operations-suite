@@ -55,8 +55,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!dealId) {
-    return NextResponse.json({ error: "Missing dealId" }, { status: 400 });
+  // HubSpot deal ids are numeric — reject anything else so the value can't be
+  // an arbitrary user-controlled string downstream.
+  if (!/^\d+$/.test(dealId)) {
+    return NextResponse.json({ error: "Missing or invalid dealId" }, { status: 400 });
   }
 
   const { hubspotClient } = await import("@/lib/hubspot");
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
       "pe_portal_url",
     ]);
   } catch (err) {
-    console.error(`[pe-rejection] deal ${dealId} read failed:`, err);
+    console.error("[pe-rejection] deal read failed:", dealId, err);
     return NextResponse.json({ error: "Deal read failed" }, { status: 502 });
   }
 
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest) {
   try {
     detail = await getProjectDetail(internalId);
   } catch (err) {
-    console.error(`[pe-rejection] PE fetch failed for deal ${dealId} (${internalId}):`, err);
+    console.error("[pe-rejection] PE fetch failed for deal:", dealId, internalId, err);
     return NextResponse.json({ error: "PE fetch failed" }, { status: 502 });
   }
 
@@ -106,11 +108,11 @@ export async function POST(req: NextRequest) {
   try {
     await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
   } catch (err) {
-    console.error(`[pe-rejection] deal ${dealId} update failed:`, err);
+    console.error("[pe-rejection] deal update failed:", dealId, err);
     return NextResponse.json({ error: "Deal update failed" }, { status: 502 });
   }
 
   const fields = Object.keys(properties);
-  console.log(`[pe-rejection] deal ${dealId}: wrote ${fields.join(", ")}`);
+  console.log("[pe-rejection] wrote fields for deal:", dealId, fields);
   return NextResponse.json({ status: "ok", updated: fields.length, fields });
 }
