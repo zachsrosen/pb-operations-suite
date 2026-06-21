@@ -5,7 +5,7 @@
  * Apply:    tsx scripts/_create-internal-rejection-hubspot-props.ts --apply
  *
  * Creates (all on the `deals` object, in an "Internal Rejection" group):
- *   - 1 checkbox  `internal_rejection_documents` (options mirror pe_m1_documents + pe_m2_documents)
+ *   - 2 checkbox  `internal_m1_documents` / `internal_m2_documents` (mirror pe_m{1,2}_documents)
  *   - 16 textarea `internal_reason_*` reviewer inputs (one per rejectable doc)
  *   - 7 textarea  `internal_rejection_notes_for_*` per-team outputs
  *   - 1 textarea  `internal_rejection_comments` combined output
@@ -20,6 +20,8 @@ import {
   INTERNAL_REJECTION_DOCS,
   INTERNAL_REJECTION_TEAM_FIELDS,
   INTERNAL_REJECTION_COMMENTS_FIELD,
+  INTERNAL_M1_DOCUMENTS_FIELD,
+  INTERNAL_M2_DOCUMENTS_FIELD,
 } from "../src/lib/internal-rejection-notes";
 
 const OBJECT_TYPE = "deals";
@@ -50,20 +52,31 @@ interface PropDef {
   options?: { label: string; value: string; displayOrder: number }[];
 }
 
+function milestoneOptions(milestone: "m1" | "m2") {
+  return INTERNAL_REJECTION_DOCS.filter((d) => d.milestone === milestone).map((d, i) => ({
+    label: DOC_LABEL_OVERRIDES[d.checkbox] ?? d.checkbox,
+    value: d.checkbox,
+    displayOrder: i,
+  }));
+}
+
 function buildProps(): PropDef[] {
   const props: PropDef[] = [];
 
-  // 1) The selector checkbox — options mirror the pe_m{1,2}_documents option values.
+  // 1) The two milestone selector checkboxes — options mirror pe_m{1,2}_documents.
   props.push({
-    name: "internal_rejection_documents",
-    label: "Internal Rejection Documents",
+    name: INTERNAL_M1_DOCUMENTS_FIELD,
+    label: "Internal M1 Documents",
     type: "enumeration",
     fieldType: "checkbox",
-    options: INTERNAL_REJECTION_DOCS.map((d, i) => ({
-      label: DOC_LABEL_OVERRIDES[d.checkbox] ?? d.checkbox,
-      value: d.checkbox,
-      displayOrder: i,
-    })),
+    options: milestoneOptions("m1"),
+  });
+  props.push({
+    name: INTERNAL_M2_DOCUMENTS_FIELD,
+    label: "Internal M2 Documents",
+    type: "enumeration",
+    fieldType: "checkbox",
+    options: milestoneOptions("m2"),
   });
 
   // 2) 16 per-doc reason inputs (textarea).

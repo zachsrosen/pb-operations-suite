@@ -2,9 +2,12 @@ import {
   composeInternalRejectionNotes,
   scopeCheckedDocsToMilestones,
   parseCheckedDocs,
+  internalDocsForMilestone,
   INTERNAL_DOC_TO_TEAM_FIELD,
   INTERNAL_REASON_FIELD_BY_DOC,
   INTERNAL_REJECTION_TEAM_FIELDS,
+  INTERNAL_M1_DOCUMENTS_FIELD,
+  INTERNAL_M2_DOCUMENTS_FIELD,
 } from "@/lib/internal-rejection-notes";
 
 describe("composeInternalRejectionNotes", () => {
@@ -232,6 +235,25 @@ describe("registry integrity", () => {
     for (const field of Object.values(INTERNAL_REASON_FIELD_BY_DOC)) {
       expect(field).toMatch(/^internal_reason_/);
     }
+  });
+
+  it("partitions the 16 docs into 13 M1 + 3 M2 checkbox options", () => {
+    const m1 = internalDocsForMilestone("m1");
+    const m2 = internalDocsForMilestone("m2");
+    expect(m1).toHaveLength(13);
+    expect(m2).toHaveLength(3);
+    expect(m2).toEqual([
+      "Signed Interconnection Agreement",
+      "Permission to Operate",
+      "Conditional Waiver and Release",
+    ]);
+    // No overlap, and together they cover every routed doc.
+    expect(new Set([...m1, ...m2]).size).toBe(16);
+  });
+
+  it("names the two milestone checkbox fields", () => {
+    expect(INTERNAL_M1_DOCUMENTS_FIELD).toBe("internal_m1_documents");
+    expect(INTERNAL_M2_DOCUMENTS_FIELD).toBe("internal_m2_documents");
   });
 
   it("exposes exactly the 7 unique team fields", () => {

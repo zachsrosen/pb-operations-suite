@@ -7,7 +7,8 @@
  * Fired by a HubSpot workflow when a deal's `pe_m1_status` or `pe_m2_status` flips
  * to "Internally Rejected". Unlike the PE flow there is no live PE pull — the
  * reviewer supplies everything in HubSpot:
- *   - `internal_rejection_documents` — the rejected docs (checkbox),
+ *   - `internal_m1_documents` / `internal_m2_documents` — the rejected docs per
+ *     milestone (checkboxes that mirror pe_m{1,2}_documents),
  *   - `internal_reason_*` — each rejected doc's reason text.
  *
  * This route reads those fields, scopes the checked docs to whichever milestone
@@ -81,6 +82,8 @@ export async function POST(req: NextRequest) {
     parseCheckedDocs,
     INTERNAL_REASON_FIELDS,
     INTERNAL_REASON_FIELD_BY_DOC,
+    INTERNAL_M1_DOCUMENTS_FIELD,
+    INTERNAL_M2_DOCUMENTS_FIELD,
   } = await import("@/lib/internal-rejection-notes");
 
   let deal;
@@ -88,7 +91,8 @@ export async function POST(req: NextRequest) {
     deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
       "pe_m1_status",
       "pe_m2_status",
-      "internal_rejection_documents",
+      INTERNAL_M1_DOCUMENTS_FIELD,
+      INTERNAL_M2_DOCUMENTS_FIELD,
       ...INTERNAL_REASON_FIELDS,
     ]);
   } catch (err) {
@@ -106,9 +110,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Scope the reviewer's checked docs to the milestone(s) actually rejected.
+  // Read both milestone checkboxes and scope to the milestone(s) actually
+  // rejected — scoping by each doc's registry milestone means a stray check in
+  // the wrong box (or a leftover from a since-resolved milestone) can't leak in.
   const checkedDocs = scopeCheckedDocsToMilestones(
-    parseCheckedDocs(props.internal_rejection_documents),
+    [
+      ...parseCheckedDocs(props[INTERNAL_M1_DOCUMENTS_FIELD]),
+      ...parseCheckedDocs(props[INTERNAL_M2_DOCUMENTS_FIELD]),
+    ],
     { m1: m1Rejected, m2: m2Rejected },
   );
 

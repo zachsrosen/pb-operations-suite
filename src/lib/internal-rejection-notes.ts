@@ -16,7 +16,9 @@
  * `splitIssues`/`formatDocBlock`.
  *
  * Key differences from PE:
- *  - The reviewer's checkbox is authoritative — there is no live pull.
+ *  - The reviewer's checkboxes are authoritative — there is no live pull.
+ *  - Rejected docs are picked in two milestone checkboxes that mirror PE:
+ *    `internal_m1_documents` and `internal_m2_documents`.
  *  - "Load Justification Form" is its OWN document (its own reason field), routed
  *    straight to Design. No proposal-note parsing, no synthetic block.
  *  - The combined field includes the LJF block normally (no PE-style de-dup of it).
@@ -98,6 +100,15 @@ export const INTERNAL_REJECTION_TEAM_FIELDS: readonly string[] = [
 
 /** The combined master field. */
 export const INTERNAL_REJECTION_COMMENTS_FIELD = "internal_rejection_comments";
+
+/** The two milestone document-selector checkboxes (mirror pe_m{1,2}_documents). */
+export const INTERNAL_M1_DOCUMENTS_FIELD = "internal_m1_documents";
+export const INTERNAL_M2_DOCUMENTS_FIELD = "internal_m2_documents";
+
+/** Checkbox option values (= block headers) for each milestone, in registry order. */
+export function internalDocsForMilestone(milestone: "m1" | "m2"): string[] {
+  return INTERNAL_REJECTION_DOCS.filter((d) => d.milestone === milestone).map((d) => d.checkbox);
+}
 
 /** Parse a semicolon-joined HubSpot checkbox value into trimmed, non-empty doc labels. */
 export function parseCheckedDocs(value: string | null | undefined): string[] {
