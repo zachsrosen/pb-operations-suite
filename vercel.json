@@ -196,7 +196,7 @@
     { "path": "/api/cron/goals-digest", "schedule": "0 14 * * 1,2" },
     { "path": "/api/cron/pe-invoice-audit", "schedule": "7 * * * *" },
     { "path": "/api/cron/pe-email-sync", "schedule": "*/30 * * * *" },
-    { "path": "/api/cron/pe-api-sync", "schedule": "*/30 0-3,12-23 * * *" },
+    { "path": "/api/cron/pe-api-sync", "schedule": "0 0-3,12-23 * * *" },
     { "path": "/api/cron/pe-doc-digest", "schedule": "30 13 * * 1-5" },
     { "path": "/api/cron/shovels-enrich", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/zuper-property-sync", "schedule": "0 */6 * * *" },

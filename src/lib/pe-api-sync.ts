@@ -29,11 +29,18 @@ import { PeDocStatus } from "@/generated/prisma/enums";
 import {
   listAllProjects,
   getProjectDetails,
+  projectNeedsActionItemDetail,
+  quotaBlockActive,
+  isDailyQuotaError,
+  parseQuotaResetAt,
   PE_API_DOC_MAP,
   PE_ACTION_DOC_MAP,
   type PeProjectListItem,
   type PeProjectDetail,
 } from "@/lib/pe-api";
+
+/** SystemConfig key holding the ISO timestamp until which PE is daily-quota blocked. */
+const QUOTA_BLOCK_KEY = "pe_api_quota_blocked_until";
 import { buildPeDealMap, matchProjectToDeal } from "@/lib/pe-scraper-sync";
 import { syncPeDocStatusesToHubSpot } from "@/lib/pe-hubspot-sync";
 import { detectAndConsumeResubmissions } from "@/lib/pe-uploader-overrides";
@@ -294,6 +301,33 @@ export async function syncFromPeApi(options?: {
   } = options ?? {};
   const deadlineMs = startTime + timeBudgetMs;
 
+  // Circuit breaker: if a prior run recorded a daily-quota block that hasn't
+  // reset yet, skip entirely. Hammering an exhausted quota only logs more
+  // failures (and, before the retry fix, burned even more calls).
+  const blockRow = await prisma.systemConfig.findUnique({ where: { key: QUOTA_BLOCK_KEY } });
+  if (quotaBlockActive(blockRow?.value, startTime)) {
+    console.warn(`[pe-api-sync] Skipped — PE daily quota blocked until ${blockRow?.value}`);
+    const skipped = await prisma.peApiSyncRun.create({
+      data: {
+        status: "skipped",
+        completedAt: new Date(),
+        errors: [`Skipped: PE daily quota blocked until ${blockRow?.value}`],
+      },
+    });
+    return {
+      runId: skipped.id,
+      projectsFetched: 0,
+      projectsMatched: 0,
+      docsUpserted: 0,
+      versionsUpserted: 0,
+      actionItemsUpserted: 0,
+      errors: [],
+      unmatchedProjects: [],
+      durationMs: Date.now() - startTime,
+      incremental: false,
+    };
+  }
+
   // Create run record
   const run = await prisma.peApiSyncRun.create({
     data: { status: "running" },
@@ -361,20 +395,19 @@ export async function syncFromPeApi(options?: {
     let detailMap = new Map<string, PeProjectDetail>();
 
     if (!skipActionItems) {
+      // Only fetch DETAIL for projects with a RESPONSE_NEEDED doc. The DETAIL
+      // endpoint's sole addition over the (cheap, already-fetched) LIST is
+      // `actionItems` — reviewer notes that only exist for RESPONSE_NEEDED docs.
+      // Doc status + version history come from the LIST for every project, so
+      // narrowing here cuts ~391 per-project calls/run down to the handful with
+      // an open rejection — the fix for blowing the PE daily quota.
       const idsNeedingDetail = projects
-        .filter((p) => {
-          // Check if any document in this project is present
-          for (const docKey of Object.keys(PE_API_DOC_MAP)) {
-            const docInfo = p.documents[docKey];
-            if (docInfo?.present) return true;
-          }
-          return false;
-        })
+        .filter((p) => projectNeedsActionItemDetail(p))
         .map((p) => p.id);
 
       console.warn(
         `[pe-api-sync] Fetching details for ${idsNeedingDetail.length}/${projects.length} ` +
-          `projects with present docs (concurrency=${concurrency})...`,
+          `projects with a RESPONSE_NEEDED doc (concurrency=${concurrency})...`,
       );
       detailMap = await getProjectDetails(idsNeedingDetail, concurrency, deadlineMs);
       console.warn(`[pe-api-sync] Fetched details for ${detailMap.size} projects`);
@@ -874,6 +907,13 @@ export async function syncFromPeApi(options?: {
       },
     });
 
+    // A successful run means quota is available again — clear any stale block.
+    if (blockRow) {
+      await prisma.systemConfig
+        .deleteMany({ where: { key: QUOTA_BLOCK_KEY } })
+        .catch(() => {});
+    }
+
     console.warn(
       `[pe-api-sync] Sync complete: ${result.projectsFetched} projects, ` +
         `${result.projectsMatched} matched, ${result.docsUpserted} docs, ` +
@@ -899,6 +939,22 @@ export async function syncFromPeApi(options?: {
     result.durationMs = Date.now() - startTime;
     const msg = error instanceof Error ? error.message : String(error);
     result.errors.push(`Fatal sync error: ${msg}`);
+
+    // If we hit the PE daily-quota cap, record a block so subsequent scheduled
+    // runs skip until it resets instead of repeatedly failing on the cap.
+    if (isDailyQuotaError(msg)) {
+      const resetsAt = parseQuotaResetAt(msg);
+      if (resetsAt) {
+        await prisma.systemConfig
+          .upsert({
+            where: { key: QUOTA_BLOCK_KEY },
+            create: { key: QUOTA_BLOCK_KEY, value: resetsAt },
+            update: { value: resetsAt },
+          })
+          .catch(() => {});
+        console.warn(`[pe-api-sync] PE daily quota hit — blocking syncs until ${resetsAt}`);
+      }
+    }
 
     await prisma.peApiSyncRun.update({
       where: { id: run.id },

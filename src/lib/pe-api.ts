@@ -251,35 +251,80 @@ function getConfig() {
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
+/**
+ * True if a PE error body is the DAILY quota cap (`QUOTA_EXCEEDED` /
+ * `dailyApiCalls`). Retrying these is pointless — they don't recover until the
+ * daily reset — and each retry burns another call against the same quota.
+ */
+export function isDailyQuotaError(body: string): boolean {
+  return /QUOTA_EXCEEDED|dailyApiCalls/i.test(body);
+}
+
+/** Pull the `resetsAt` ISO timestamp out of a PE quota error body, or null. */
+export function parseQuotaResetAt(body: string): string | null {
+  const m = body.match(/"resetsAt"\s*:\s*"([^"]+)"/);
+  return m ? m[1] : null;
+}
+
 async function fetchWithRetry(
   url: string,
   options: RequestInit,
   retries = MAX_RETRIES,
 ): Promise<Response> {
+  let last: Response | undefined;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const response = await fetch(url, options);
+    last = response;
 
     if (response.ok) return response;
 
-    // Don't retry client errors (except 429)
-    if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+    if (response.status === 429) {
+      // A daily-quota 429 won't recover until reset — return immediately rather
+      // than retrying (which only burns more of the exhausted quota).
+      const body = await response.clone().text().catch(() => "");
+      if (isDailyQuotaError(body)) return response;
+      // otherwise fall through: transient rate limit, retry with backoff
+    } else if (response.status >= 400 && response.status < 500) {
+      // Other client errors aren't retryable.
       return response;
     }
 
-    // Retry on 429 or 5xx
+    // Retry on transient 429 or 5xx, unless this was the last attempt.
     if (attempt < retries) {
       const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
-      // Check Retry-After header for 429
       const retryAfter = response.headers.get("Retry-After");
-      const waitMs = retryAfter
-        ? parseInt(retryAfter, 10) * 1000
-        : backoff;
+      const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : backoff;
       await new Promise((r) => setTimeout(r, waitMs));
     }
   }
 
-  // If we exhausted retries, return the last response
-  return fetch(url, options);
+  // Retries exhausted — return the last response (no extra fetch).
+  return last!;
+}
+
+/** Exported for unit testing the retry/quota behavior. */
+export { fetchWithRetry };
+
+/**
+ * True if a project has at least one document in `RESPONSE_NEEDED` — the only
+ * projects whose DETAIL (action items / reviewer notes) we need to fetch. Doc
+ * `status` + `versions[]` come from the cheap LIST response for every project,
+ * so projects with nothing in `RESPONSE_NEEDED` don't need a per-project call.
+ */
+export function projectNeedsActionItemDetail(p: {
+  documents: Record<string, { status?: string | null } | undefined>;
+}): boolean {
+  return Object.values(p.documents || {}).some((d) => d?.status === "RESPONSE_NEEDED");
+}
+
+/** True if a stored quota-block timestamp is still in the future (sync should skip). */
+export function quotaBlockActive(
+  blockedUntilIso: string | null | undefined,
+  nowMs: number,
+): boolean {
+  if (!blockedUntilIso) return false;
+  const t = Date.parse(blockedUntilIso);
+  return !Number.isNaN(t) && t > nowMs;
 }
 
 // ---------------------------------------------------------------------------
