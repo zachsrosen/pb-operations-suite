@@ -1,9 +1,9 @@
 /**
- * HubSpot Deal Property Change Webhook — PE M1 Rejection notes
+ * HubSpot Deal Property Change Webhook — PE M1/M2 Rejection notes
  *
- * POST /api/webhooks/hubspot/pe-m1-rejected
+ * POST /api/webhooks/hubspot/pe-rejection
  *
- * Fired by a HubSpot workflow when a deal's `pe_m1_status` flips to "Rejected".
+ * Fired by a HubSpot workflow when a deal pe_m1_status or pe_m2_status flips to "Rejected".
  * Pulls the project's action items LIVE from the PE API (no dependence on the
  * nightly sync), routes each rejected document's reviewer note to the team that
  * owns it, and writes the per-team `pe_rejection_notes_for_*` fields on the deal.
@@ -53,16 +53,20 @@ export async function POST(req: NextRequest) {
   try {
     deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
       "pe_m1_status",
+      "pe_m2_status",
       "pe_portal_url",
     ]);
   } catch (err) {
-    console.error(`[pe-m1-rejected] deal ${dealId} read failed:`, err);
+    console.error(`[pe-rejection] deal ${dealId} read failed:`, err);
     return NextResponse.json({ error: "Deal read failed" }, { status: 502 });
   }
 
   const props = deal.properties;
-  if (props.pe_m1_status !== "Rejected") {
-    return NextResponse.json({ status: "skipped", reason: "pe_m1_status not Rejected" });
+  // Fires from either the M1 or M2 rejection workflow. Action items don't carry
+  // a milestone, so we compose from whatever PE currently has open and route by
+  // the combined doc→team map regardless of which status flipped.
+  if (props.pe_m1_status !== "Rejected" && props.pe_m2_status !== "Rejected") {
+    return NextResponse.json({ status: "skipped", reason: "neither M1 nor M2 is Rejected" });
   }
 
   const internalId = peInternalIdFromPortalUrl(props.pe_portal_url);
@@ -74,23 +78,23 @@ export async function POST(req: NextRequest) {
   try {
     detail = await getProjectDetail(internalId);
   } catch (err) {
-    console.error(`[pe-m1-rejected] PE fetch failed for deal ${dealId} (${internalId}):`, err);
+    console.error(`[pe-rejection] PE fetch failed for deal ${dealId} (${internalId}):`, err);
     return NextResponse.json({ error: "PE fetch failed" }, { status: 502 });
   }
 
   const properties = composeRejectionNotes(detail.actionItems ?? []);
   if (Object.keys(properties).length === 0) {
-    return NextResponse.json({ status: "ok", updated: 0, reason: "no M1 action items" });
+    return NextResponse.json({ status: "ok", updated: 0, reason: "no action items" });
   }
 
   try {
     await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
   } catch (err) {
-    console.error(`[pe-m1-rejected] deal ${dealId} update failed:`, err);
+    console.error(`[pe-rejection] deal ${dealId} update failed:`, err);
     return NextResponse.json({ error: "Deal update failed" }, { status: 502 });
   }
 
   const fields = Object.keys(properties);
-  console.log(`[pe-m1-rejected] deal ${dealId}: wrote ${fields.join(", ")}`);
+  console.log(`[pe-rejection] deal ${dealId}: wrote ${fields.join(", ")}`);
   return NextResponse.json({ status: "ok", updated: fields.length, fields });
 }

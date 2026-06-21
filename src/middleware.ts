@@ -29,7 +29,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/fdr-check",
   "/api/webhooks/hubspot/install-review",
   "/api/webhooks/hubspot/property",
-  "/api/webhooks/hubspot/pe-m1-rejected", // PE M1 rejection → live-pull per-team rejection notes; bearer-validated in route
+  "/api/webhooks/hubspot/pe-rejection", // PE M1/M2 rejection → live-pull per-team rejection notes; bearer-validated in route
   "/api/cron/audit-digest",
   "/api/cron/tech-ops-bot-digest", // Tech Ops bot daily digest — CRON_SECRET validated in route
   "/api/cron/property-reconcile",

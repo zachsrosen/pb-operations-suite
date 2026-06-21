@@ -102,12 +102,20 @@ describe("composeRejectionNotes", () => {
     expect(out["pe_rejection_notes_for_design"]).toBeUndefined();
   });
 
-  it("skips M2 / unknown documents (not in the M1 routing map)", () => {
+  it("routes M2 docs: Interconnection + PTO → Interconnection, Final-Payment waiver → Accounting", () => {
     const out = composeRejectionNotes([
-      item("permission_to_operate", "Permission to Operate (PTO)", "M2 doc"),
-      item("signed_interconnection_agreement", "Signed Interconnection Agreement", "M2 doc"),
-      item("something_unknown", "Mystery Doc", "ignore me"),
+      item("signed_interconnection_agreement", "Signed Interconnection Agreement", "missing signature"),
+      item("permission_to_operate", "Permission to Operate (PTO)", "utility denied"),
+      item("conditional_waiver_final_payment", "Conditional Waiver — Final Payment", "amount wrong"),
     ]);
+    expect(out["pe_rejection_notes_for_intercocnnection"]).toBe(
+      "Signed Interconnection Agreement - missing signature\nPermission to Operate (PTO) - utility denied",
+    );
+    expect(out["pe_rejection_notes_for_accounting"]).toBe("Conditional Waiver — Final Payment - amount wrong");
+  });
+
+  it("skips documents not in the routing map", () => {
+    const out = composeRejectionNotes([item("something_unknown", "Mystery Doc", "ignore me")]);
     expect(out).toEqual({});
   });
 

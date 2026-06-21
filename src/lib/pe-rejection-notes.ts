@@ -13,11 +13,12 @@ import { PE_ACTION_DOC_MAP, type PeActionItem } from "@/lib/pe-api";
 
 /**
  * Canonical PE document name → team rejection-notes field. Keyed on the names
- * PE_ACTION_DOC_MAP normalizes action-item document ids to. M2 documents
- * (Signed Interconnection, Conditional Waiver — Final Payment, PTO) are absent
- * on purpose: this is the M1 routing map.
+ * PE_ACTION_DOC_MAP normalizes action-item document ids to. Covers both M1 and
+ * M2 documents — action items don't carry a milestone, but each document belongs
+ * to exactly one team, so one combined map routes whichever milestone rejected.
  */
 export const PE_DOC_TO_TEAM_FIELD: Record<string, string> = {
+  // --- M1 ---
   "Design Plan": "pe_rejection_notes_for_design",
   "Signed Proposal": "pe_rejection_notes_for_sales",
   "State Disclosures": "pe_rejection_notes_for_sales",
@@ -30,6 +31,10 @@ export const PE_DOC_TO_TEAM_FIELD: Record<string, string> = {
   "Attestation of Customer Payment": "pe_rejection_notes_for_compliance",
   "Certificate of Acceptance": "pe_rejection_notes_for_compliance",
   "Conditional Progress Lien Waiver": "pe_rejection_notes_for_accounting",
+  // --- M2 ---
+  "Signed Interconnection Agreement": "pe_rejection_notes_for_intercocnnection",
+  "Permission to Operate (PTO)": "pe_rejection_notes_for_intercocnnection",
+  "Conditional Waiver — Final Payment": "pe_rejection_notes_for_accounting",
 };
 
 /** All team fields this module manages. */
@@ -52,10 +57,10 @@ export function peInternalIdFromPortalUrl(
  * Group PE action items into per-team rejection notes.
  *
  * Each action item is a per-document rejection carrying the reviewer's note.
- * Returns only the fields that have at least one M1-team action item, as
+ * Returns only the fields that have at least one routed action item, as
  * "{Document Label} - {note}" lines (a bare "{Label} - " when PE left no note),
- * so unrelated team fields are never touched. Action items for documents not in
- * the M1 routing map (e.g. M2 docs) are skipped.
+ * so unrelated team fields are never touched. Covers M1 and M2 documents; action
+ * items for documents not in the routing map are skipped.
  */
 export function composeRejectionNotes(
   actionItems: PeActionItem[],
