@@ -67,8 +67,12 @@ export async function POST(req: NextRequest) {
 
   const { hubspotClient } = await import("@/lib/hubspot");
   const { getProjectDetail } = await import("@/lib/pe-api");
-  const { composeRejectionNotes, composeRejectedDocuments, peInternalIdFromPortalUrl } =
-    await import("@/lib/pe-rejection-notes");
+  const {
+    composeRejectionNotes,
+    composeAllRejectionComments,
+    composeRejectedDocuments,
+    peInternalIdFromPortalUrl,
+  } = await import("@/lib/pe-rejection-notes");
 
   let deal;
   try {
@@ -107,6 +111,10 @@ export async function POST(req: NextRequest) {
     detail.documents,
     detail.actionItems ?? [],
   );
+
+  // Mirror every rejected doc into the single combined field, same per-doc layout.
+  const allComments = composeAllRejectionComments(detail.documents, detail.actionItems ?? []);
+  if (allComments) properties.pe_rejection_comments = allComments;
 
   // Also tick the P.E. M{1,2} Documents checkboxes for the currently-rejected
   // docs — but only for the milestone that was actually rejected (a rejected M1

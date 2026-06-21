@@ -1,5 +1,6 @@
 import {
   composeRejectionNotes,
+  composeAllRejectionComments,
   composeRejectedDocuments,
   peInternalIdFromPortalUrl,
   PE_DOC_TO_TEAM_FIELD,
@@ -166,6 +167,46 @@ describe("composeRejectionNotes", () => {
     for (const field of Object.values(PE_DOC_TO_TEAM_FIELD)) {
       expect(field).toMatch(/^pe_rejection_notes_for_/);
     }
+  });
+});
+
+describe("composeAllRejectionComments", () => {
+  it("combines every rejected doc into one field, one block per doc", () => {
+    const out = composeAllRejectionComments(
+      docs({
+        designPlan: "RESPONSE_NEEDED",
+        photos: "RESPONSE_NEEDED",
+        customerAgreement: "RESPONSE_NEEDED",
+      }),
+      [
+        item("design_plan", "Design Plan", "module mismatch"),
+        item("photos_per_policy", "Photos per Policy", "blurry"),
+        item("customer_agreement", "Customer Agreement (PPA/ESA)", "missing signature"),
+      ],
+    );
+    expect(out).toBe(
+      "Design Plan:\n• module mismatch\n\n" +
+        "Photos per Policy:\n• blurry\n\n" +
+        "Customer Agreement (PPA/ESA):\n• missing signature",
+    );
+  });
+
+  it("does NOT duplicate the LJF line — Proposal block carries it, no separate LJF block", () => {
+    const out = composeAllRejectionComments(docs({ signedProposal: "RESPONSE_NEEDED" }), [
+      item(
+        "signed_proposal",
+        "Signed Proposal",
+        "Page 14 — 30% language in proposal\nPage 10 — offset exceeds 135%, submit a Load Justification form",
+      ),
+    ]);
+    expect(out).toBe(
+      "Signed Proposal:\n• Page 14 — 30% language in proposal\n• Page 10 — offset exceeds 135%, submit a Load Justification form",
+    );
+    expect(out).not.toContain("Load Justification Form:");
+  });
+
+  it("returns an empty string when nothing is currently rejected", () => {
+    expect(composeAllRejectionComments(docs({ designPlan: "APPROVED" }), [])).toBe("");
   });
 });
 

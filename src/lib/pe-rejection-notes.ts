@@ -168,29 +168,29 @@ export function peInternalIdFromPortalUrl(
   return id || null;
 }
 
+/** One rendered rejection block: a document, its issue lines, and the owning team field. */
+interface RejectionBlock {
+  doc: string;
+  lines: string[];
+  field: string;
+  /** True for the synthetic "Load Justification Form" block mirrored from the Proposal. */
+  synthetic?: boolean;
+}
+
 /**
- * Build per-team rejection notes from a project's current documents + action items.
+ * Build the ordered list of rejection blocks from a project's current documents.
  *
- * Includes only documents whose CURRENT status is RESPONSE_NEEDED (so resolved /
- * approved docs with a lingering action item are excluded) and routes each to the
- * owning team. Output is grouped by document — a "{Doc}:" header with one bullet
- * per page-level issue — and documents within a field are separated by a blank
- * line. Returns only fields that have at least one currently-rejected doc.
- *
- * The Proposal is sales-owned, so its full note stays on Sales. Only the
- * LJF-specific lines are mirrored to Design (proposal-document comments do NOT
- * leak to Design).
+ * One block per document whose CURRENT status is RESPONSE_NEEDED (resolved /
+ * approved docs with a lingering action item are excluded). The Proposal also
+ * yields a synthetic "Load Justification Form" block carrying only its LJF lines,
+ * routed to Design — the proposal-document comments themselves stay with Sales.
  */
-export function composeRejectionNotes(
+function buildRejectionBlocks(
   documents: PeDocuments,
   actionItems: PeActionItem[],
-): Record<string, string> {
-  // Reviewer notes grouped by canonical document name (action items are the
-  // only source of the reason text).
+): RejectionBlock[] {
   const notesByDoc = buildNotesByDoc(actionItems);
-
-  // field -> ordered { doc, lines } blocks (one block per rejected document).
-  const byField: Record<string, { doc: string; lines: string[] }[]> = {};
+  const blocks: RejectionBlock[] = [];
   for (const [docKey, info] of Object.entries(documents)) {
     if (!info || info.status !== REJECTED_DOC_STATUS) continue; // not currently rejected
     const canonical = PE_API_DOC_MAP[docKey];
@@ -199,7 +199,7 @@ export function composeRejectionNotes(
     if (!field) continue; // doc not routed to a team
 
     const lines = splitIssues(notesByDoc[canonical] ?? []);
-    (byField[field] ??= []).push({ doc: canonical, lines });
+    blocks.push({ doc: canonical, lines, field });
 
     // PE has no standalone "Load Justification Form" document — it bundles that
     // feedback into the Proposal note. Mirror ONLY the LJF-specific lines to
@@ -207,9 +207,33 @@ export function composeRejectionNotes(
     if (canonical === "Signed Proposal") {
       const ljfLines = lines.filter((l) => LJF_RE.test(l));
       if (ljfLines.length) {
-        (byField[DESIGN_FIELD] ??= []).push({ doc: "Load Justification Form", lines: ljfLines });
+        blocks.push({
+          doc: "Load Justification Form",
+          lines: ljfLines,
+          field: DESIGN_FIELD,
+          synthetic: true,
+        });
       }
     }
+  }
+  return blocks;
+}
+
+/**
+ * Build per-team rejection notes from a project's current documents + action items.
+ *
+ * Routes each currently-rejected document to the owning team. Output is grouped by
+ * document — a "{Doc}:" header with one bullet per page-level issue — and documents
+ * within a field are separated by a blank line. Returns only fields that have at
+ * least one currently-rejected doc.
+ */
+export function composeRejectionNotes(
+  documents: PeDocuments,
+  actionItems: PeActionItem[],
+): Record<string, string> {
+  const byField: Record<string, RejectionBlock[]> = {};
+  for (const block of buildRejectionBlocks(documents, actionItems)) {
+    (byField[block.field] ??= []).push(block);
   }
 
   const out: Record<string, string> = {};
@@ -217,6 +241,25 @@ export function composeRejectionNotes(
     out[field] = blocks.map((b) => formatDocBlock(b.doc, b.lines)).join("\n\n");
   }
   return out;
+}
+
+/**
+ * Compose ALL rejection comments into a single field (`pe_rejection_comments`),
+ * one "{Doc}:" block per currently-rejected document — the same per-doc layout as
+ * the individual team fields, but combined into one master list.
+ *
+ * Excludes the synthetic "Load Justification Form" block: its lines already live
+ * under the Proposal block, so dropping it avoids duplicating the offset line.
+ * Returns "" when nothing is currently rejected.
+ */
+export function composeAllRejectionComments(
+  documents: PeDocuments,
+  actionItems: PeActionItem[],
+): string {
+  return buildRejectionBlocks(documents, actionItems)
+    .filter((b) => !b.synthetic)
+    .map((b) => formatDocBlock(b.doc, b.lines))
+    .join("\n\n");
 }
 
 /**
