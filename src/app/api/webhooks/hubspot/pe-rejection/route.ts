@@ -67,8 +67,12 @@ export async function POST(req: NextRequest) {
 
   const { hubspotClient } = await import("@/lib/hubspot");
   const { getProjectDetail } = await import("@/lib/pe-api");
-  const { composeRejectionNotes, composeRejectedDocuments, peInternalIdFromPortalUrl } =
-    await import("@/lib/pe-rejection-notes");
+  const {
+    composeRejectionNotes,
+    composeAllRejectionComments,
+    composeRejectedDocuments,
+    peInternalIdFromPortalUrl,
+  } = await import("@/lib/pe-rejection-notes");
 
   let deal;
   try {
@@ -103,34 +107,63 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "PE fetch failed" }, { status: 502 });
   }
 
-  const properties: Record<string, string> = composeRejectionNotes(
+  // Phase 1 — the rejection notes (per-team + combined). These must land BEFORE
+  // the document checkboxes, because ticking pe_m{1,2}_documents is what triggers
+  // the per-team task workflows, and those tasks read these note fields.
+  const noteProps: Record<string, string> = composeRejectionNotes(
     detail.documents,
     detail.actionItems ?? [],
   );
+  const allComments = composeAllRejectionComments(detail.documents, detail.actionItems ?? []);
+  if (allComments) noteProps.pe_rejection_comments = allComments;
 
-  // Also tick the P.E. M{1,2} Documents checkboxes for the currently-rejected
-  // docs — but only for the milestone that was actually rejected (a rejected M1
+  // Phase 2 — the P.E. M{1,2} Documents checkboxes for the currently-rejected
+  // docs, but only for the milestone that was actually rejected (a rejected M1
   // shouldn't touch pe_m2_documents even if PE has open M2 docs, and vice versa).
   const rejectedDocs = composeRejectedDocuments(detail.documents, detail.actionItems ?? []);
+  const docProps: Record<string, string> = {};
   if (props.pe_m1_status === "Rejected" && rejectedDocs.pe_m1_documents) {
-    properties.pe_m1_documents = rejectedDocs.pe_m1_documents;
+    docProps.pe_m1_documents = rejectedDocs.pe_m1_documents;
   }
   if (props.pe_m2_status === "Rejected" && rejectedDocs.pe_m2_documents) {
-    properties.pe_m2_documents = rejectedDocs.pe_m2_documents;
+    docProps.pe_m2_documents = rejectedDocs.pe_m2_documents;
   }
 
-  if (Object.keys(properties).length === 0) {
+  if (Object.keys(noteProps).length === 0 && Object.keys(docProps).length === 0) {
     return NextResponse.json({ status: "ok", updated: 0, reason: "no currently-rejected docs" });
   }
 
+  // Write notes first and await them so they're committed before the checkbox
+  // change fires the task-creation workflows.
   try {
-    await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
+    if (Object.keys(noteProps).length > 0) {
+      await hubspotClient.crm.deals.basicApi.update(dealId, { properties: noteProps });
+    }
   } catch (err) {
-    console.error("[pe-rejection] deal update failed:", dealId, err);
-    return NextResponse.json({ error: "Deal update failed" }, { status: 502 });
+    console.error("[pe-rejection] notes update failed:", dealId, err);
+    return NextResponse.json({ error: "Notes update failed" }, { status: 502 });
   }
 
-  const fields = Object.keys(properties);
+  // Then tick the document checkboxes — this is the trigger for the team tasks.
+  try {
+    if (Object.keys(docProps).length > 0) {
+      await hubspotClient.crm.deals.basicApi.update(dealId, { properties: docProps });
+    }
+  } catch (err) {
+    console.error("[pe-rejection] documents update failed:", dealId, err);
+    // Notes already landed; surface the partial failure rather than silently 200.
+    return NextResponse.json(
+      { error: "Documents update failed", notesWritten: Object.keys(noteProps) },
+      { status: 502 },
+    );
+  }
+
+  const fields = [...Object.keys(noteProps), ...Object.keys(docProps)];
   console.log("[pe-rejection] wrote fields for deal:", dealId, fields);
-  return NextResponse.json({ status: "ok", updated: fields.length, fields });
+  return NextResponse.json({
+    status: "ok",
+    updated: fields.length,
+    notes: Object.keys(noteProps),
+    documents: Object.keys(docProps),
+  });
 }
