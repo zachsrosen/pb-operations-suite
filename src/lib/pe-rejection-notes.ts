@@ -37,6 +37,8 @@ export const PE_REJECTION_TEAM_FIELDS = [
   ...new Set(Object.values(PE_DOC_TO_TEAM_FIELD)),
 ];
 
+const DESIGN_FIELD = "pe_rejection_notes_for_design";
+
 /** Extract the PE internal (Raceway) id from a deal's pe_portal_url. */
 export function peInternalIdFromPortalUrl(
   url: string | null | undefined,
@@ -69,6 +71,13 @@ export function composeRejectionNotes(
     const label = item.document?.label || canonical;
     const note = (item.notes ?? "").trim();
     (byField[field] ??= []).push(note ? `${label} - ${note}` : `${label} - `);
+
+    // PE has no standalone "Load Justification Form" document — it bundles that
+    // feedback into the Proposal rejection note. When the Proposal note mentions
+    // it, also surface it to Design (LJF is a Design concern).
+    if (canonical === "Signed Proposal" && /load\s*justification|\bLJF\b/i.test(note)) {
+      (byField[DESIGN_FIELD] ??= []).push(`Load Justification Form - ${note}`);
+    }
   }
 
   const out: Record<string, string> = {};

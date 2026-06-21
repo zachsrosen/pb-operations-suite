@@ -75,6 +75,33 @@ describe("composeRejectionNotes", () => {
     );
   });
 
+  it("mirrors Load Justification Form to Design when the Proposal note mentions it", () => {
+    const out = composeRejectionNotes([
+      item("signed_proposal", "Signed Proposal", "Load Justification Form usage is wrong; also pricing"),
+    ]);
+    expect(out["pe_rejection_notes_for_sales"]).toBe(
+      "Signed Proposal - Load Justification Form usage is wrong; also pricing",
+    );
+    expect(out["pe_rejection_notes_for_design"]).toBe(
+      "Load Justification Form - Load Justification Form usage is wrong; also pricing",
+    );
+  });
+
+  it("matches the 'LJF' abbreviation too", () => {
+    const out = composeRejectionNotes([
+      item("signed_proposal", "Signed Proposal", "LJF needs the updated panel count"),
+    ]);
+    expect(out["pe_rejection_notes_for_design"]).toContain("Load Justification Form - ");
+  });
+
+  it("does NOT mirror to Design when the Proposal note has no LJF mention", () => {
+    const out = composeRejectionNotes([
+      item("signed_proposal", "Signed Proposal", "system size mismatch"),
+    ]);
+    expect(out["pe_rejection_notes_for_sales"]).toBe("Signed Proposal - system size mismatch");
+    expect(out["pe_rejection_notes_for_design"]).toBeUndefined();
+  });
+
   it("skips M2 / unknown documents (not in the M1 routing map)", () => {
     const out = composeRejectionNotes([
       item("permission_to_operate", "Permission to Operate (PTO)", "M2 doc"),
