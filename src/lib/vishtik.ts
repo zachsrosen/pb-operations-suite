@@ -136,15 +136,47 @@ export async function fetchAllProjects(
 
 const TIMEZONE = "America/Denver";
 
-/** Live transport. Logs in with env creds; re-logins once on a mid-run 401. */
+/**
+ * Resolve Vishtik credentials. Prefers env vars (local dev / dry-run); falls
+ * back to `SystemConfig` rows `vishtik_username` / `vishtik_password` for prod,
+ * where the Vercel env store is full (same DB-row pattern as the Enphase /
+ * EagleView tokens). Prisma is imported dynamically so the parse helpers and
+ * their tests don't pull in the DB client at module load.
+ */
+async function resolveVishtikCreds(): Promise<{ user: string; pass: string }> {
+  let user = process.env.VISHTIK_USERNAME;
+  let pass = process.env.VISHTIK_PASSWORD;
+  if (!user || !pass) {
+    try {
+      const { prisma } = await import("@/lib/db");
+      if (prisma) {
+        const rows = await prisma.systemConfig.findMany({
+          where: { key: { in: ["vishtik_username", "vishtik_password"] } },
+        });
+        for (const row of rows) {
+          if (row.key === "vishtik_username") user = user || row.value;
+          if (row.key === "vishtik_password") pass = pass || row.value;
+        }
+      }
+    } catch {
+      // DB unavailable — fall through to the not-set error below.
+    }
+  }
+  if (!user || !pass) {
+    throw new VishtikAuthError(
+      "Vishtik creds not set (env VISHTIK_USERNAME/PASSWORD or SystemConfig vishtik_username/vishtik_password)",
+    );
+  }
+  return { user, pass };
+}
+
+/** Live transport. Logs in with resolved creds; re-logins once on a mid-run 401. */
 export function fetchTransport(): VishtikTransport {
   const jar = new CookieJar();
   let loggedIn = false;
 
   async function doLogin(): Promise<void> {
-    const user = process.env.VISHTIK_USERNAME;
-    const pass = process.env.VISHTIK_PASSWORD;
-    if (!user || !pass) throw new VishtikAuthError("VISHTIK_USERNAME/PASSWORD not set");
+    const { user, pass } = await resolveVishtikCreds();
     // Warm cookies (CI sets ci_session + csrf cookie on GET /login).
     const g = await fetch(`${VISHTIK_BASE}/login`, { redirect: "manual" });
     jar.absorb(g.headers.getSetCookie());
