@@ -94,6 +94,47 @@ export const HUBSPOT_TO_PE_STATUS: Record<string, PeDocStatus> = {
 // Notes extraction
 // ---------------------------------------------------------------------------
 
+/**
+ * PeActionItem.docLabel mostly matches the canonical PeDocumentReview docName,
+ * but a few raw PE labels differ. Normalize those so action-item comments join
+ * to the right document property.
+ */
+const ACTION_ITEM_DOCLABEL_ALIASES: Record<string, string> = {
+  "Conditional Waiver/Release on Final Payment": "Conditional Waiver — Final Payment",
+};
+
+export function normalizeActionItemDocName(docLabel: string): string {
+  return ACTION_ITEM_DOCLABEL_ALIASES[docLabel] ?? docLabel;
+}
+
+/**
+ * Group open PE action items into the real reviewer-comment text per document,
+ * keyed `${dealId}::${canonicalDocName}`. Multiple items for one doc are merged,
+ * each note split into lines, trimmed, and de-duplicated. This is the genuine
+ * rejection comment (page/error-code text) — distinct from PeDocumentReview.notes
+ * which only holds sync metadata.
+ */
+export function actionItemNotesByDoc(
+  items: { dealId: string; docLabel: string; notes: string | null }[],
+): Map<string, string> {
+  const byKey = new Map<string, string[]>();
+  for (const it of items) {
+    const note = (it.notes ?? "").trim();
+    if (!note) continue;
+    const key = `${it.dealId}::${normalizeActionItemDocName(it.docLabel)}`;
+    const lines = note
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const arr = byKey.get(key) ?? [];
+    arr.push(...lines);
+    byKey.set(key, arr);
+  }
+  const out = new Map<string, string>();
+  for (const [k, lines] of byKey) out.set(k, [...new Set(lines)].join("\n"));
+  return out;
+}
+
 export function extractHubSpotNotes(rawNotes: string): string {
   if (!rawNotes) return "";
 
@@ -133,6 +174,19 @@ export async function syncPeDocStatusesToHubSpot(dealIds: string[]): Promise<voi
     select: { dealId: true, docName: true, status: true, notes: true },
   });
 
+  // The genuine reviewer comment lives in PeActionItem (page/error-code text),
+  // not PeDocumentReview.notes (sync metadata). Pull open action items so we can
+  // write the real comment into each pe_doc_*_notes property.
+  const openActionItems = await prisma.peActionItem.findMany({
+    where: { dealId: { in: uniqueDealIds }, resolvedAt: null },
+    select: { dealId: true, docLabel: true, notes: true },
+  });
+  const commentByDoc = actionItemNotesByDoc(
+    openActionItems.filter((a): a is { dealId: string; docLabel: string; notes: string | null } =>
+      a.dealId !== null,
+    ),
+  );
+
   const byDeal = new Map<string, typeof rows>();
   for (const row of rows) {
     const existing = byDeal.get(row.dealId) ?? [];
@@ -150,7 +204,10 @@ export async function syncPeDocStatusesToHubSpot(dealIds: string[]): Promise<voi
       if (!entry) continue;
 
       properties[entry.statusProp] = PE_STATUS_TO_HUBSPOT[doc.status as PeDocStatus] ?? "not_uploaded";
-      properties[entry.notesProp] = extractHubSpotNotes(doc.notes ?? "");
+      // Prefer the real reviewer comment (PeActionItem); fall back to the legacy
+      // Approver/Partner extraction for any scraper-era PeDocumentReview.notes.
+      properties[entry.notesProp] =
+        commentByDoc.get(`${dealId}::${doc.docName}`) ?? extractHubSpotNotes(doc.notes ?? "");
     }
 
     if (Object.keys(properties).length > 0) {
