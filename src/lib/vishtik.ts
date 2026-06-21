@@ -98,13 +98,16 @@ export async function fetchAllProjects(
   ingest(first.data);
   const totalRow = first.total_row;
 
-  // Detect whether cntr paginates: fetch page 2 and check the server honored the
-  // page number (current_page === 2). A stuck cursor ignores cntr and returns a
-  // fixed page, so current_page won't reflect the requested page.
-  let cursorWorks = true;
+  // Detect whether cntr paginates by comparing ROW IDENTITY across pages. A
+  // working cursor returns different rows for page 2. The live Vishtik server is
+  // known to ignore cntr and serve one fixed page — and it lies, reporting
+  // current_page:2 even for cntr:1 — so we must NOT trust current_page; we check
+  // whether page 2 actually contains rows page 1 didn't.
+  let cursorWorks = false;
   if (first.total_page > 1) {
     const second = await t.getProjectPage({ cntr: 2, showtotal: 100 });
-    cursorWorks = second.current_page === 2;
+    const firstIds = new Set(first.data.map((r) => String(r.id)));
+    cursorWorks = second.data.some((r) => !firstIds.has(String(r.id)));
     ingest(second.data); // keep page 2's rows regardless of detection outcome
     if (cursorWorks) {
       for (let p = 3; p <= first.total_page; p++) {
@@ -113,14 +116,13 @@ export async function fetchAllProjects(
     }
   }
 
-  if (!cursorWorks) {
-    // Best-effort tiling fallback: the server is stuck returning one fixed page.
-    // For each size S, page 2 of size S yields the window [S+1, 2S]; a halving
-    // sequence of S values is unioned (de-duped by id via `ingest`) to cover the
-    // list. One cntr:1 call at the largest S covers the head [1, S] — needed in
-    // case the stuck page happens to BE page 1, which the cntr:2 tiles miss.
+  if (first.total_page > 1 && !cursorWorks) {
+    // Stuck cursor: the server serves one fixed page ("page 2") regardless of
+    // cntr, where page 2 of size S is the window [S+1, 2S]. A halving sequence
+    // of S unions (de-duped by id via `ingest`) to cover rows 2..total_row.
+    // Row 1 (the single newest project) is unreachable — no page-2 window starts
+    // at row 1 — which the completeness tolerance below accommodates.
     const sizes = [1140, 570, 285, 143, 72, 36, 18, 9, 5, 3, 2, 1];
-    ingest((await t.getProjectPage({ cntr: 1, showtotal: sizes[0] })).data);
     for (const S of sizes) {
       ingest((await t.getProjectPage({ cntr: 2, showtotal: S })).data);
     }
