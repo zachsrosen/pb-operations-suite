@@ -18,12 +18,16 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
 
-  // Authenticate: bearer token OR HubSpot v3 signature (the native workflow
-  // webhook action signs with the app secret, like the fdr-check webhook).
-  const bearer = req.headers.get("authorization")?.replace("Bearer ", "");
+  // Authenticate, any of:
+  //  - bearer token,
+  //  - `?token=` query param (the native HubSpot workflow "Send a webhook"
+  //    action can't add custom headers, so the shared secret rides on the URL),
+  //  - HubSpot v3 signature.
   const secret = process.env.PIPELINE_WEBHOOK_SECRET || process.env.API_SECRET_TOKEN;
-  const isBearerAuth = bearer && secret && bearer === secret;
-  if (!isBearerAuth) {
+  const bearer = req.headers.get("authorization")?.replace("Bearer ", "");
+  const token = req.nextUrl.searchParams.get("token");
+  const isSecretAuth = !!secret && (bearer === secret || token === secret);
+  if (!isSecretAuth) {
     const validation = validateHubSpotWebhook({
       rawBody,
       signature: req.headers.get("x-hubspot-signature-v3") ?? "",
