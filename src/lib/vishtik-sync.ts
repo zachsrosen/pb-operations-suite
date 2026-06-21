@@ -45,19 +45,20 @@ export interface SyncResult {
   durationMs: number;
 }
 
-// NOTE: plan specified ABS_FLOOR = 500, but the Task 2.2 unit-test fixture uses a
-// 3-project list on the happy/dryRun paths, which 500 would always trip as
-// "suspicious-count". Lowered to 1 so the absolute floor only guards against a
-// near-empty fetch; the relative-drop gate (DROP_TOLERANCE vs lastGoodCount)
-// remains the primary plausibility check the tests exercise.
-const ABS_FLOOR = 1;
+// Production sanity floor: a full Vishtik fetch returns ~2,300 projects, so a
+// result far below this means a partial/broken fetch we must NOT act on. The
+// floor is injectable via opts.minProjects so unit tests with tiny fixtures can
+// exercise the matching logic without tripping it; the relative-drop gate
+// (DROP_TOLERANCE vs lastGoodCount) is the secondary plausibility check.
+const DEFAULT_MIN_PROJECTS = 500;
 const DROP_TOLERANCE = 0.85; // abort if fetched < 85% of last-good
 
 export async function syncVishtikIds(
-  opts: { dryRun: boolean },
+  opts: { dryRun: boolean; minProjects?: number },
   deps: SyncDeps,
 ): Promise<SyncResult> {
   const start = Date.now();
+  const floor = opts.minProjects ?? DEFAULT_MIN_PROJECTS;
   const base: SyncResult = {
     totalScanned: 0, written: 0, ambiguous: [], unmatchedCount: 0,
     writeFailures: 0, fetchedCount: 0, durationMs: 0,
@@ -69,7 +70,7 @@ export async function syncVishtikIds(
 
   const lastGood = await deps.lastGoodCount();
   const suspicious =
-    projects.length < ABS_FLOOR ||
+    projects.length < floor ||
     (lastGood != null && lastGood > 0 && projects.length < lastGood * DROP_TOLERANCE);
   if (suspicious) return { ...base, aborted: "suspicious-count", durationMs: Date.now() - start };
 
@@ -157,11 +158,15 @@ export interface IteratorDeps {
 /**
  * Yields batches of candidates from the createdate watermark forward.
  * - Pages WITHIN a run via the `after` token (no same-ms boundary skip).
- * - Persists the watermark only when `!dryRun`. On reaching the end of the
- *   filtered set, wraps the watermark to "0" so the next run re-sweeps (heals
- *   previously-unmatched deals; already-written deals are excluded by the filter).
- * - Watermark is set to the LAST seen createdate (no +1) so a same-ms boundary
- *   straddling a run is re-read, not skipped (re-reads are cheap + idempotent).
+ * - Persists the watermark only when `!dryRun`. The filtered set is EXHAUSTED
+ *   when the search returns empty results OR a page returns results but carries
+ *   no `next.after` token (that page is the last of the set); in both cases the
+ *   watermark wraps to "0" so the next run re-sweeps (heals previously-unmatched
+ *   deals; already-written deals are excluded by the filter).
+ * - Only when the loop stops because it hit the per-run cap WHILE an `after`
+ *   token still remained does the watermark advance to the LAST seen createdate
+ *   (no wrap, no +1) so the next run resumes from that boundary (re-reads are
+ *   cheap + idempotent).
  */
 export function makeCandidateIterator(deps: IteratorDeps) {
   const cap = deps.perRunCap ?? PER_RUN_CAP;
@@ -188,12 +193,12 @@ export function makeCandidateIterator(deps: IteratorDeps) {
       const lc = results[results.length - 1].properties?.createdate;
       if (lc) lastCreate = new Date(lc).getTime();
       after = page.paging?.next?.after;
-      // No more pages in this run. Don't wrap here: a non-empty page without an
-      // `after` token means we consumed all currently-available rows but haven't
-      // proven the filtered set is exhausted — advance the cursor to lastCreate so
-      // the next run resumes from the boundary (re-reads are idempotent). Only an
-      // EMPTY search result (handled above) proves exhaustion and wraps to "0".
-      if (!after) break;
+      // A page with no `after` token is the LAST page of the filtered set: the
+      // set is exhausted, so wrap the cursor to "0" next so the following run
+      // re-sweeps and re-checks previously-unmatched deals. We only advance the
+      // cursor (no wrap) when the loop stops on the per-run cap while an `after`
+      // token still remains (more pages pending).
+      if (!after) { reachedEnd = true; break; }
     }
 
     if (!deps.dryRun) {

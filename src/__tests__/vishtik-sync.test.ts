@@ -60,7 +60,7 @@ function deps(over: Partial<SyncDeps>): SyncDeps {
 describe("syncVishtikIds", () => {
   it("writes only single matches with id + url, never null", async () => {
     const writeDeal = jest.fn(async () => true);
-    const res = await syncVishtikIds({ dryRun: false }, deps({ writeDeal }));
+    const res = await syncVishtikIds({ dryRun: false, minProjects: 1 }, deps({ writeDeal }));
     expect(res.written).toBe(1);
     expect(res.ambiguous).toHaveLength(1);
     expect(res.unmatchedCount).toBe(1);
@@ -73,7 +73,7 @@ describe("syncVishtikIds", () => {
 
   it("dryRun does the matching but writes nothing", async () => {
     const writeDeal = jest.fn(async () => true);
-    const res = await syncVishtikIds({ dryRun: true }, deps({ writeDeal }));
+    const res = await syncVishtikIds({ dryRun: true, minProjects: 1 }, deps({ writeDeal }));
     expect(res.written).toBe(1); // counted as would-write
     expect(writeDeal).not.toHaveBeenCalled();
   });
@@ -119,12 +119,15 @@ function pages(...batches: SearchPage[]) {
 }
 
 describe("makeCandidateIterator", () => {
-  it("advances the cursor to the last createdate when !dryRun", async () => {
+  it("advances the cursor to the last createdate when the per-run cap is hit with more pages pending", async () => {
     const cfg = fakeCfg();
+    // First page carries an `after` token, so the set is NOT exhausted. With
+    // perRunCap=1 the loop stops on the cap while `after` is still present, so
+    // the cursor must ADVANCE to this page's last createdate (not wrap to "0").
     const search = pages(
-      { results: [{ id: "d1", properties: { project_number: "PROJ-1", createdate: "2026-01-01T00:00:00Z" } }], paging: {} },
+      { results: [{ id: "d1", properties: { project_number: "PROJ-1", createdate: "2026-01-01T00:00:00Z" } }], paging: { next: { after: "100" } } },
     );
-    const gen = makeCandidateIterator({ search, ...cfg, dryRun: false });
+    const gen = makeCandidateIterator({ search, ...cfg, dryRun: false, perRunCap: 1 });
     const seen: string[] = [];
     for await (const b of gen()) b.forEach((c) => seen.push(c.dealId));
     expect(seen).toEqual(["d1"]);
