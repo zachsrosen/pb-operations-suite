@@ -86,6 +86,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/enphase-status-check", // Enphase status check — CRON_SECRET validated in route
   "/api/hubspot-card/enphase",      // HubSpot UI Extension — HubSpot signature v3 validated in route
   "/api/webhooks/google-chat", // Google Chat Tech Ops bot — JWT signature validated in route
+  "/api/cron/vishtik-id-sync", // Vishtik project-id sync — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
