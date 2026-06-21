@@ -23,6 +23,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Scheduling & Planning",
   },
   {
+    href: "/dashboards/atlas",
+    title: "Atlas",
+    description: "Mapbox map of jobs, deals, and customers with AHJ, utility, and territory overlays.",
+    tag: "MAP",
+    icon: "🌐",
+    section: "Scheduling & Planning",
+  },
+  {
     href: "/dashboards/map",
     title: "Jobs Map",
     description: "Map of scheduled and unscheduled work with crew positions and proximity insights.",
