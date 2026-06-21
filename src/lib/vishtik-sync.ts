@@ -98,3 +98,136 @@ export async function syncVishtikIds(
   }
   return { ...base, durationMs: Date.now() - start };
 }
+
+import { prisma } from "@/lib/db";
+import { searchWithRetry, updateDealProperty } from "@/lib/hubspot";
+import { fetchAllProjects, fetchTransport } from "@/lib/vishtik";
+
+const CURSOR_KEY = "vishtik_sync_cursor";       // createdate watermark (ms epoch as string)
+const LAST_GOOD_KEY = "vishtik_last_good_count";
+const LOCK_KEY = "vishtik_sync_running";        // value = owner token (ISO timestamp)
+const LOCK_TTL_MS = 30 * 60 * 1000;
+const PER_RUN_CAP = 4000;                        // deals processed per tick
+const PAGE = 100;
+
+async function cfgGet(key: string): Promise<string | null> {
+  if (!prisma) return null;
+  const row = await prisma.systemConfig.findUnique({ where: { key } });
+  return row?.value ?? null;
+}
+async function cfgSet(key: string, value: string): Promise<void> {
+  if (!prisma) return;
+  await prisma.systemConfig.upsert({ where: { key }, create: { key, value }, update: { value } });
+}
+
+/**
+ * Acquire the run lock. Returns an owner token on success, or null if a fresh
+ * lock is already held. The token must be passed to releaseLock so a stale
+ * takeover by a later run can't have its lock deleted by the original owner's
+ * finally block.
+ */
+export async function acquireLock(now: Date): Promise<string | null> {
+  const existing = await cfgGet(LOCK_KEY);
+  if (existing) {
+    const age = now.getTime() - new Date(existing).getTime();
+    if (age >= 0 && age < LOCK_TTL_MS) return null; // held & fresh
+  }
+  const token = now.toISOString();
+  await cfgSet(LOCK_KEY, token);
+  return token;
+}
+export async function releaseLock(token: string): Promise<void> {
+  // Only delete if we still own it (compare-and-delete).
+  if (prisma) await prisma.systemConfig.deleteMany({ where: { key: LOCK_KEY, value: token } });
+}
+
+// Minimal shapes we depend on from the HubSpot search response.
+export interface SearchPage {
+  results: { id: string; properties?: Record<string, string> }[];
+  paging?: { next?: { after?: string } };
+}
+export interface IteratorDeps {
+  search: (args: { cursor: number; after?: string; limit: number }) => Promise<SearchPage>;
+  cfgGet: (key: string) => Promise<string | null>;
+  cfgSet: (key: string, value: string) => Promise<void>;
+  dryRun: boolean;
+  perRunCap?: number;
+}
+
+/**
+ * Yields batches of candidates from the createdate watermark forward.
+ * - Pages WITHIN a run via the `after` token (no same-ms boundary skip).
+ * - Persists the watermark only when `!dryRun`. On reaching the end of the
+ *   filtered set, wraps the watermark to "0" so the next run re-sweeps (heals
+ *   previously-unmatched deals; already-written deals are excluded by the filter).
+ * - Watermark is set to the LAST seen createdate (no +1) so a same-ms boundary
+ *   straddling a run is re-read, not skipped (re-reads are cheap + idempotent).
+ */
+export function makeCandidateIterator(deps: IteratorDeps) {
+  const cap = deps.perRunCap ?? PER_RUN_CAP;
+  return async function* (): AsyncGenerator<Candidate[]> {
+    const cursor = Number((await deps.cfgGet(CURSOR_KEY)) ?? "0");
+    let after: string | undefined;
+    let processed = 0;
+    let lastCreate: number | null = null;
+    let reachedEnd = false;
+
+    while (processed < cap) {
+      const page = await deps.search({ cursor, after, limit: PAGE });
+      const results = page.results ?? [];
+      if (results.length === 0) { reachedEnd = true; break; }
+
+      const batch: Candidate[] = [];
+      for (const d of results) {
+        const projNumber = d.properties?.project_number;
+        if (projNumber) batch.push({ dealId: d.id, projNumber });
+      }
+      if (batch.length) yield batch;
+
+      processed += results.length;
+      const lc = results[results.length - 1].properties?.createdate;
+      if (lc) lastCreate = new Date(lc).getTime();
+      after = page.paging?.next?.after;
+      if (!after) { reachedEnd = true; break; } // exhausted the filtered set
+    }
+
+    if (!deps.dryRun) {
+      if (reachedEnd) await deps.cfgSet(CURSOR_KEY, "0");      // wrap for next sweep
+      else if (lastCreate != null) await deps.cfgSet(CURSOR_KEY, String(lastCreate));
+    }
+  };
+}
+
+/** Live deps: Vishtik fetch + HubSpot candidate iteration + writes. */
+export function liveDeps(opts: { dryRun: boolean }): SyncDeps {
+  const search = async ({ cursor, after, limit }: { cursor: number; after?: string; limit: number }) => {
+    const res = await searchWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: "project_number", operator: "HAS_PROPERTY" },
+          { propertyName: "vishtik_project_id", operator: "NOT_HAS_PROPERTY" },
+          { propertyName: "createdate", operator: "GTE", value: String(cursor) },
+        ],
+      }],
+      sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+      properties: ["project_number", "createdate"],
+      limit,
+      ...(after ? { after } : {}),
+      // Cast through `unknown`: this SDK version types `sorts` as `string[]`, so
+      // the object-form sort below doesn't structurally overlap with
+      // PublicObjectSearchRequest. The object form is what the HubSpot search API
+      // actually accepts at runtime (used elsewhere in hubspot.ts).
+    } as unknown as Parameters<typeof searchWithRetry>[0]);
+    return res as unknown as SearchPage;
+  };
+  return {
+    fetchProjects: () => fetchAllProjects(fetchTransport()),
+    lastGoodCount: async () => {
+      const v = await cfgGet(LAST_GOOD_KEY);
+      return v ? Number(v) : null;
+    },
+    setLastGoodCount: (n) => cfgSet(LAST_GOOD_KEY, String(n)),
+    writeDeal: (dealId, props) => updateDealProperty(dealId, props),
+    iterateCandidates: makeCandidateIterator({ search, cfgGet, cfgSet, dryRun: opts.dryRun }),
+  };
+}
