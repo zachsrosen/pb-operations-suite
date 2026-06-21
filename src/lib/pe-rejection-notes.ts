@@ -122,8 +122,11 @@ function buildNotesByDoc(actionItems: PeActionItem[]): Record<string, string[]> 
  * Flatten a document's reviewer notes into individual, deduped issue lines. PE
  * packs every page-level issue for a doc into one newline-separated blob (and
  * returns each action item more than once), so we split on newlines and dedupe.
+ *
+ * Shared with the internal-rejection formatter (`internal-rejection-notes.ts`),
+ * where the reviewer types each doc's reasons free-form (one issue per line).
  */
-function splitIssues(notes: string[]): string[] {
+export function splitIssues(notes: string[]): string[] {
   const lines = notes
     .flatMap((n) => n.split("\n"))
     .map((l) => l.trim())
@@ -136,9 +139,25 @@ function splitIssues(notes: string[]): string[] {
  * line, e.g.
  *   Design Plan:
  *   • Page 8 — [H024] ...
+ *
+ * `emptyPlaceholder` controls the no-issue case: PE passes the default
+ * "(no reviewer note provided)" bullet (every rejected doc always has a PE note,
+ * so this is a safety net). The internal-rejection formatter passes `null` to
+ * render a bare "{Doc}:" header when the reviewer checked a doc without a reason.
+ *
+ * Shared with `internal-rejection-notes.ts`.
  */
-function formatDocBlock(doc: string, issueLines: string[]): string {
-  const bullets = issueLines.length ? issueLines : ["(no reviewer note provided)"];
+export function formatDocBlock(
+  doc: string,
+  issueLines: string[],
+  emptyPlaceholder: string | null = "(no reviewer note provided)",
+): string {
+  const bullets =
+    issueLines.length > 0
+      ? issueLines
+      : emptyPlaceholder != null
+        ? [emptyPlaceholder]
+        : [];
   return [`${doc}:`, ...bullets.map((l) => `• ${l}`)].join("\n");
 }
 
