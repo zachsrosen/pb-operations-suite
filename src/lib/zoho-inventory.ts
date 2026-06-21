@@ -1290,6 +1290,37 @@ export class ZohoInventoryClient {
     return response.salesorder;
   }
 
+  /** Fetch the official Sales Order PDF via Zoho's `?accept=pdf`. Returns raw PDF bytes. */
+  async getSalesOrderPdf(salesorderId: string): Promise<Buffer> {
+    const id = trimOrUndefined(salesorderId);
+    if (!id) throw new Error("Sales order id is required");
+    if (!this.organizationId) throw new Error("ZOHO_INVENTORY_ORG_ID is not configured");
+    const params = new URLSearchParams();
+    params.set("organization_id", this.organizationId);
+    params.set("accept", "pdf");
+    const url = `${buildUrl(this.configuredBaseUrl, `/salesorders/${encodeURIComponent(id)}`)}?${params.toString()}`;
+    const fetchPdf = (token: string) =>
+      withTimeout(
+        fetch(url, {
+          method: "GET",
+          headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: "application/pdf" },
+          cache: "no-store",
+        }),
+        this.timeoutMs,
+      );
+    let token = await this.getAccessToken();
+    let res = await fetchPdf(token);
+    if (res.status === 401) {
+      token = await this.getAccessToken(true);
+      res = await fetchPdf(token);
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Zoho SO PDF fetch failed (${res.status}): ${body.slice(0, 200)}`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
   async getSalesOrder(soNumber: string): Promise<ZohoSalesOrderRecord> {
     const lookup = normalizeSalesOrderLookup(soNumber);
     if (!lookup) {
