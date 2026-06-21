@@ -20,6 +20,9 @@ jest.mock("@/lib/db", () => ({
       findUnique: jest.fn(),
       upsert: jest.fn(),
     },
+    peActionItem: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   },
 }));
 
