@@ -11,20 +11,36 @@
  * Auth: bearer token (PIPELINE_WEBHOOK_SECRET || API_SECRET_TOKEN).
  */
 import { NextRequest, NextResponse } from "next/server";
+import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const rawBody = await req.text();
+
+  // Authenticate: bearer token OR HubSpot v3 signature (the native workflow
+  // webhook action signs with the app secret, like the fdr-check webhook).
   const bearer = req.headers.get("authorization")?.replace("Bearer ", "");
   const secret = process.env.PIPELINE_WEBHOOK_SECRET || process.env.API_SECRET_TOKEN;
-  if (!secret || bearer !== secret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const isBearerAuth = bearer && secret && bearer === secret;
+  if (!isBearerAuth) {
+    const validation = validateHubSpotWebhook({
+      rawBody,
+      signature: req.headers.get("x-hubspot-signature-v3") ?? "",
+      timestamp: req.headers.get("x-hubspot-request-timestamp") ?? "",
+      requestUrl: req.url,
+      method: "POST",
+    });
+    if (!validation.valid) {
+      console.warn(`[pe-rejection] auth failed: ${validation.error} (no valid bearer either)`);
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   // Workflow payload: {objectId} or {dealId} or {properties:{hs_object_id}}
   let dealId = "";
   try {
-    const body = (await req.json()) as {
+    const body = JSON.parse(rawBody) as {
       objectId?: number | string;
       dealId?: number | string;
       properties?: { hs_object_id?: { value?: string } | string };
