@@ -4,6 +4,88 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-19
+
+### PE Action Tasks Cross-Reference (Major)
+- New `pe-crossref` subsystem that turns binary PE audit verdicts into a rich, P-coded action task list (per `PE_Action_Task_List_2026-05-17.pdf`)
+- Five analyzers operating on structured data extracted once per run:
+  - **HardwareAnalyzer** (P1, P6) — PowerHub vs nameplate mismatch detection
+  - **SalesOrderAnalyzer** (P2–P5, P7, P8, P9) — line-item discrepancies
+  - **PlansetAnalyzer** (P10, P10B, P10C) — lean implementation reusing audit vision
+  - **InboxScanAnalyzer** — locates PE docs in shared mailboxes
+  - Photo-critique and monitoring analyzers
+- Persistent `PeActionTask` rows with identity-based reconciliation across re-runs
+- Manual resolve/dismiss state machine, per-deal panel, and batch `/dashboards/pe-action-queue` dashboard
+- Auto-trigger after PE audit completion (decoupled so audit timeouts/failures are independent)
+
+### PE & Compliance Suite (Major)
+- New `/suites/pe-compliance` consolidating PE submission and compliance workflows for PMs, Ops Managers, and Accounting
+- PE Approved Vendor List dashboard page
+- Two-way PE document status sync with HubSpot deal properties
+- Switched PE action items to scraper source + added scraper sync endpoints
+- Property rollups now read native HubSpot rollup properties (systemSizeKwDc, panelCount, hasBattery, hasEvCharger, totalDealValue) instead of recomputing from line items
+- Added PE & Compliance suite to home page `SUITE_METADATA`
+
+### PE Audit Improvements
+- Vision concurrency bumped 6→10 with per-call telemetry
+- Drive resilience: token cache, retry logic, surfaced failure modes
+- Recursive subfolder listing for doc candidates and AHJ permit search widened to folders 6 + 3 (Inspections + Permitting)
+- Photo caps raised; PE-named photos prioritized in triage
+- Triage `max_tokens` now scales with photo count + truncation logging
+- Parallelized PandaDoc per-key search and per-doc download
+- PandaDoc drafts now pulled; `PE_CON` contract added; IA folder fix
+- Dashboard fields aligned to actual PE API response shape
+
+### EagleView Integration
+- New sandbox integration test page for Go-Live proof
+- Use TDP (product 91) instead of Inform Advanced
+- Normalize PascalCase API response keys to camelCase
+- React 19 JSX conditional type fix
+
+### IDR Meeting
+- Previous review notes surfaced on re-reviews + richer search results
+- Design/permit lead owner IDs resolved via Owners API
+- Owner directory indexed by `userId` for lookup correctness
+- Stale numeric lead IDs in completed snapshots resolved to current names
+
+### Shop Health Dashboard
+- New Weekly Revenue hero card (actual vs target from completed installs)
+- Pipeline section now shows monthly/weekly revenue targets, avg deal size, and derived install/inspection volume
+- Targets derived from revenue goals instead of crew capacity, with `CREWS_CONFIG` fallback
+- Replaced heavyweight office-performance call with cached `fetchAllProjects`
+- `activeOnly` fetch prevents API timeouts; 429s avoided via cache
+- UI polish + floating-point hero delta formatting
+
+### Property Hub
+- Enhanced header with equipment summaries, revenue, and Zuper link
+- New Photos tab pulling Zuper job photos
+- `upsertPropertyFromGeocode` now validates address quality before write
+
+### PE Prep
+- All Zuper job photos surfaced on PE Prep detail page
+- Queue filtered by deal stage rather than PE portal status
+
+### PowerHub
+- Cross-system Tesla portal URL linking across HubSpot, Zuper, and the Suite
+
+### Design Review
+- New `design_match` AI category — downloads the Design Approval (DA) file from the project's `da` Drive subfolder and compares panel counts, roof-face assignments, and layout against the planset
+
+### Production Issues
+- Flag Project button + inline unflag action
+
+### AHJ / Utility
+- Bulk spreadsheet update script for AHJ/Utility custom objects
+
+### Bug Fixes
+- BOM: sanitize filename before Claude Files API upload
+- BOM pipeline: subfolder-aware PDF listing
+- Drive: use full drive scope for DWD token requests
+- Drive: recursive subfolder search for planset PDFs
+- Install Review: fall back to all-documents folder when install folder absent
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
