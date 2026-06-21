@@ -4,6 +4,66 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-03
+
+### PE Doc Change Digest (Major)
+- Daily cron emails surface every change to PE document submission status with Drive folder links per deal
+- Restructured into 4 actionable sections: Needs Attention, Recently Submitted, In Review, Approved
+- Dropped noisy "Today's Changes" section in favor of mirrored email content with deeper Drive links
+- Slimmed standard delivery to summary + tracker link; full breakdown available in tracker
+- Added one-shot replay endpoint and cron for re-delivering missed digest batches
+- Relabel notes-only changes (avoid misleading "Uploaded → Uploaded" status transitions)
+- Allowlisted `/api/cron/pe-doc-digest` in middleware so cron can fire without auth
+
+### Google Chat OOO Bot (Major)
+- New bot auto-replies in Google Chat when a tagged team member is out of office
+- SOP integration enables bot to answer with project-aware context drawn from the SOP system
+- JWT auth handles multiple audiences and falls back across JWKS sources for resilience
+- Supports Google Workspace add-on envelope format for varied Chat payloads
+- Service account key accepted in plain or base64-encoded form
+- Async post errors captured to DB with detailed Chat API error logging
+- Replies post to the main channel timeline rather than threading off the original message
+
+### PE Deals Dashboard
+- Split PE Deals card into Pre-Construction vs Construction+ segments with stage-bucketed pipeline bar
+- Added Awaiting PTO segment to surface deals stuck post-install
+- Customer Paid? column added next to customer payment amount
+- Multi-column sort with smarter Cust Paid ordering; default sort switched to PE Total
+- Excluded Cancelled deals; auto-renamed "Other" → "On Hold"
+- Hero count changed from x/y to submitted total with under-review badge
+
+### Shop Health Dashboard (Major)
+- New Service + D&R/Roofing sections added alongside existing pipeline rollups
+- Lightweight overview path: one Project fetch with no ticket calls, dropping latency dramatically
+- Stopped duplicate Project pipeline fetch on overview load
+- Closed-ticket cache layered in; new Service/D&R fetches fail open instead of breaking the page
+
+### Master Scheduler
+- Weekend visibility toggle — opt-in Saturday/Sunday columns without breaking the default Mon–Fri view
+- Fixed weekend events being shifted onto Saturday when the toggle was off
+- Weekend cells now render events without stealing space from Monday's column
+
+### Zuper Performance
+- Skip API sweep on DB-cache hits; `/jobs/by-category` results now cached
+- Explicit caller attribution on `[zuper-call]` logs to find chatty consumers
+- Throttled `useCalendarData` polling; trimmed `zuper-job-backfill` from hourly to every 6h
+- Throttled `property-sync` cron from every 2h to every 6h
+- Lazy-imported call counter so client bundles stop pulling Prisma
+- Inlined JOB_CATEGORY UIDs in roofing-scheduler to remove client→server import
+
+### Bug Fixes
+- `pe-scraper-sync`: override NOT_UPLOADED → UPLOADED for unknown statuses when a submitted date is present
+- `project-funnel`: show design approval status inside the Awaiting DA Send column
+- `daily-focus`: morning snapshot saves before emails fire (prevents lost state on send failure)
+- `eod-summary`: morning items resolved now tracks actual action items completed
+- `admin-tickets`: gracefully handle invalid `pageUrl` values in the ticket table render
+
+### Specs Added
+- Google Chat OOO bot design spec (with SOP integration and tool safety review)
+- Weekend install scheduling design spec
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
