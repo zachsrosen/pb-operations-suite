@@ -10,6 +10,7 @@ import StageTrack from "./StageTrack";
 import StagePanes from "./StagePanes";
 import FlowDetail from "./FlowDetail";
 import SearchResults from "./SearchResults";
+import WorkflowFlowchart from "./WorkflowFlowchart";
 import {
   CROSS_CUTTING_ID,
   CROSS_CUTTING_LABEL,
@@ -26,8 +27,10 @@ type DrillState = {
 };
 
 type ViewMode = "plain" | "technical";
+type DisplayMode = "flowchart" | "list";
 
 const VIEW_STORAGE_KEY = "workflow-map-view";
+const VIEWMODE_STORAGE_KEY = "workflow-map-viewmode";
 
 function isEmpty(data: ApiResponse | undefined): data is { empty: true } {
   return !!data && "empty" in data && data.empty === true;
@@ -40,6 +43,16 @@ function readStoredView(): ViewMode {
     return stored === "technical" ? "technical" : "plain";
   } catch {
     return "plain";
+  }
+}
+
+function readStoredDisplayMode(): DisplayMode {
+  if (typeof window === "undefined") return "flowchart";
+  try {
+    const stored = window.localStorage.getItem(VIEWMODE_STORAGE_KEY);
+    return stored === "list" ? "list" : "flowchart";
+  } catch {
+    return "flowchart";
   }
 }
 
@@ -59,12 +72,24 @@ export default function WorkflowMapClient({
   // Plain vs Technical wording, persisted to localStorage. Lazy initializer
   // reads the stored preference once so there's no setState-in-effect churn.
   const [view, setView] = useState<ViewMode>(readStoredView);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(
+    readStoredDisplayMode,
+  );
   const [search, setSearch] = useState("");
 
   function changeView(next: ViewMode) {
     setView(next);
     try {
       window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // ignore persistence failures
+    }
+  }
+
+  function changeDisplayMode(next: DisplayMode) {
+    setDisplayMode(next);
+    try {
+      window.localStorage.setItem(VIEWMODE_STORAGE_KEY, next);
     } catch {
       // ignore persistence failures
     }
@@ -248,6 +273,24 @@ export default function WorkflowMapClient({
         </nav>
 
         <div className="flex items-center gap-3 ml-auto">
+          {/* Flowchart / List segmented control */}
+          <div className="inline-flex items-center rounded-full border border-t-border bg-surface-2 p-0.5">
+            {(["flowchart", "list"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => changeDisplayMode(mode)}
+                className={`text-xs px-3 py-1 rounded-full transition-colors capitalize ${
+                  displayMode === mode
+                    ? "bg-cyan-500/20 text-cyan-400"
+                    : "text-muted hover:text-foreground"
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
           {/* Plain / Technical segmented control */}
           <div className="inline-flex items-center rounded-full border border-t-border bg-surface-2 p-0.5">
             {(["plain", "technical"] as const).map((mode) => (
@@ -286,13 +329,32 @@ export default function WorkflowMapClient({
         </div>
       )}
 
-      {/* Search overrides the drill levels with a flat, filtered flow list. */}
+      {/* Search overrides every view with a flat, filtered flow list. */}
       {searching ? (
         <SearchResults
           snapshot={snapshot}
           query={search}
           onSelect={openFlow}
         />
+      ) : displayMode === "flowchart" ? (
+        // Flowchart mode — zoomable canvas driven by the same drill state.
+        // When a flow is selected, FlowDetail sits below the canvas.
+        <div className="space-y-5">
+          <WorkflowFlowchart
+            snapshot={snapshot}
+            drill={drill}
+            setDrill={setDrill}
+          />
+          {flow && (
+            <FlowDetail
+              flow={flow}
+              on={cloneFamilyOn(flow, snapshot)}
+              view={view}
+              links={snapshot.links}
+              onOpenFlowByName={openFlowByName}
+            />
+          )}
+        </div>
       ) : !drill.pipelineId ? (
         // Level 1 — pipeline cards.
         <PipelineCards
