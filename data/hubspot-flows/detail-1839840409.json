@@ -1,0 +1,325 @@
+{
+ "id": "1839840409",
+ "isEnabled": true,
+ "objectTypeId": "0-3",
+ "flowType": "WORKFLOW",
+ "revisionId": "5",
+ "name": "M2 Rejection Notes Update",
+ "description": "Sends a webhook when the \"P.E. M2 Status\" is set to \"Rejected\" to update rejection notes accordingly.",
+ "createdAt": "2026-06-21T00:44:37.292Z",
+ "updatedAt": "2026-06-21T03:11:55.916Z",
+ "startActionId": "1",
+ "nextAvailableActionId": "2",
+ "actions": [
+  {
+   "actionId": "1",
+   "method": "POST",
+   "webhookUrl": "https://www.pbtechops.com/api/webhooks/hubspot/pe-rejection?token=98b419122561a23ed6803c334855fbed745307cd49dd5cda12e7cb1784b31386",
+   "queryParams": [],
+   "type": "WEBHOOK"
+  }
+ ],
+ "enrollmentCriteria": {
+  "shouldReEnroll": true,
+  "listFilterBranch": {
+   "filterBranches": [
+    {
+     "filterBranches": [],
+     "filters": [
+      {
+       "property": "pe_m2_status",
+       "operation": {
+        "operator": "IS_ANY_OF",
+        "includeObjectsWithNoValueSet": false,
+        "values": [
+         "Rejected"
+        ],
+        "operationType": "ENUMERATION"
+       },
+       "filterType": "PROPERTY"
+      }
+     ],
+     "filterBranchType": "AND",
+     "filterBranchOperator": "AND"
+    }
+   ],
+   "filters": [],
+   "filterBranchType": "OR",
+   "filterBranchOperator": "OR"
+  },
+  "unEnrollObjectsNotMeetingCriteria": false,
+  "reEnrollmentTriggersFilterBranches": [
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "pe_m1_status",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_ANY_OF",
+       "includeObjectsWithNoValueSet": false,
+       "values": [
+        "Rejected"
+       ],
+       "operationType": "ENUMERATION"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_name",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_name",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_value",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "pe_m1_status",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_value",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_ANY_OF",
+       "includeObjectsWithNoValueSet": false,
+       "values": [
+        "Rejected"
+       ],
+       "operationType": "ENUMERATION"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_name",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "pe_m1_status",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_name",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_value",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_value",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_value",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   },
+   {
+    "filterBranches": [],
+    "filters": [
+     {
+      "property": "hs_name",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_value",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     },
+     {
+      "property": "hs_value",
+      "operation": {
+       "operator": "IS_EQUAL_TO",
+       "includeObjectsWithNoValueSet": false,
+       "value": "hs_name",
+       "operationType": "STRING"
+      },
+      "filterType": "PROPERTY"
+     }
+    ],
+    "filterBranchType": "AND",
+    "filterBranchOperator": "AND"
+   }
+  ],
+  "type": "LIST_BASED"
+ },
+ "timeWindows": [],
+ "blockedDates": [],
+ "customProperties": {},
+ "dataSources": [
+  {
+   "name": "fetched_object_313446257",
+   "objectTypeId": "0-1",
+   "associationTypeId": 3,
+   "associationCategory": "HUBSPOT_DEFINED",
+   "sortBy": {
+    "property": "hs_lastmodifieddate",
+    "missing": null,
+    "order": "DESC"
+   },
+   "type": "ASSOCIATION"
+  },
+  {
+   "name": "fetched_object_313446255",
+   "objectTypeId": "0-1",
+   "associationTypeId": 3,
+   "associationCategory": "HUBSPOT_DEFINED",
+   "type": "ASSOCIATION"
+  },
+  {
+   "name": "fetched_object_313446256",
+   "objectTypeId": "0-8",
+   "associationTypeId": 19,
+   "associationCategory": "HUBSPOT_DEFINED",
+   "sortBy": {
+    "property": "hs_lastmodifieddate",
+    "missing": null,
+    "order": "DESC"
+   },
+   "type": "ASSOCIATION"
+  },
+  {
+   "name": "fetched_object_313446254",
+   "objectTypeId": "0-2",
+   "associationTypeId": 341,
+   "associationCategory": "HUBSPOT_DEFINED",
+   "sortBy": {
+    "property": "hs_lastmodifieddate",
+    "missing": null,
+    "order": "DESC"
+   },
+   "type": "ASSOCIATION"
+  }
+ ],
+ "crmObjectCreationStatus": "COMPLETE",
+ "type": "PLATFORM_FLOW"
+}

@@ -1,0 +1,333 @@
+{
+ "matched": [
+  [
+   "PTO Granted",
+   "Date Stamp | PTO Granted Date",
+   true
+  ],
+  [
+   "Submit Xcel PTO Photos at Inspection",
+   "Submit Xcel PTO Photos at Inspection",
+   false
+  ],
+  [
+   "08. Revision Returned From Design",
+   "(Turned Off) Design Flow - Design Revision Returned From Designers",
+   false
+  ],
+  [
+   "01. Quality Flow - Review Needed",
+   "01. Quality Flow - Review Needed",
+   false
+  ],
+  [
+   "01e. Quality Flow - Review Needed (Survey Sched)",
+   "01e. Quality Flow - Review Needed (Survey Scheduling)",
+   true
+  ],
+  [
+   "02a - Survey Scheduled",
+   "04. Site Survey Flow - Survey Scheduled",
+   false
+  ],
+  [
+   "03 - Survey Complete",
+   "PM Notification | Site Survey Completed",
+   true
+  ],
+  [
+   "DA Flow - DA Ready to Send",
+   "01. DA Flow - DA Ready to Send",
+   true
+  ],
+  [
+   "PandaDoc DA Sent",
+   "PandaDoc DA Sent",
+   true
+  ],
+  [
+   "Design Approved",
+   "Design Lead - Design Approved - WMS",
+   false
+  ],
+  [
+   "DA Flow - Sales Change Needed",
+   "08. DA Flow - Sales Change Needed",
+   true
+  ],
+  [
+   "DA Flow - Design Change Needed",
+   "08. DA Flow - Design Change Needed",
+   true
+  ],
+  [
+   "01 - Ready for Permitting",
+   "01a. Permit Flow - Ready for Permitting",
+   true
+  ],
+  [
+   "02 - Submitted to Customer",
+   "02a. Permit Flow - Submitted To Customer",
+   true
+  ],
+  [
+   "03 - Submitted to AHJ",
+   "04. Permit Flow - Permit Submitted to AHJ",
+   true
+  ],
+  [
+   "04 - Permit Issued",
+   "Precon Lead - Permit Issued - WMS",
+   false
+  ],
+  [
+   "05a - 14 Day AHJ Follow Up",
+   "05b. Permit Flow - 30 Day AHJ Follow Up",
+   true
+  ],
+  [
+   "05b - 30 Day AHJ Follow Up",
+   "05b. Permit Flow - 30 Day AHJ Follow Up",
+   true
+  ],
+  [
+   "05c - 45 Day AHJ Follow Up",
+   "05b. Permit Flow - 30 Day AHJ Follow Up",
+   true
+  ],
+  [
+   "05d - 60 Day AHJ Follow Up",
+   "05b. Permit Flow - 30 Day AHJ Follow Up",
+   true
+  ],
+  [
+   "SolarApp+ Selected",
+   "00. Permit Flow - SolarApp+ Selected",
+   true
+  ],
+  [
+   "PM Arapahoe Compliance Letter",
+   "PM Arapahoe Compliance Letter Task - WMS",
+   true
+  ],
+  [
+   "Permit Expiration in 30 Days",
+   "10a. Permit Flow - Permit Expiration in 30 Days",
+   true
+  ],
+  [
+   "ZRS | Utility Flow | 01 - Ready",
+   "01. Utility Flow - Ready for Interconnection",
+   true
+  ],
+  [
+   "ZRS | Utility Flow | 02 - Submitted to Customer",
+   "02a. Utility Flow - Submitted To Customer",
+   true
+  ],
+  [
+   "ZRS | Utility Flow | 03 - Submitted to Utility",
+   "04a. Utility Flow - Submitted to Utility",
+   true
+  ],
+  [
+   "ZRS | Utility Flow | 04 - Approved",
+   "01b. Permit Flow - Ready for Permitting After Utility Approved",
+   true
+  ],
+  [
+   "Utility Bill Upload #1",
+   "03f. Utility Flow - Utility Bill Uploaded (#1)",
+   true
+  ],
+  [
+   "Utility Bill Upload #2",
+   "03f. Utility Flow - Utility Bill Uploaded (#1)",
+   true
+  ],
+  [
+   "Utility Bill Upload #3",
+   "03f. Utility Flow - Utility Bill Uploaded (#1)",
+   true
+  ],
+  [
+   "Signature Retrieved #1",
+   "Utility Flow - Signature Retrieved (#1)",
+   true
+  ],
+  [
+   "Signature Retrieved #2",
+   "Utility Flow - Signature Retrieved (#2)",
+   true
+  ],
+  [
+   "Signature Retrieved #3",
+   "Utility Flow - Signature Retrieved (#3)",
+   true
+  ],
+  [
+   "14 Day Utility Follow Up",
+   "05a. Utility Flow - 14 Day Utility Follow Up",
+   true
+  ],
+  [
+   "04. RTB 5 Days Ago",
+   "04. Construction Flow - RTB 5 Days Ago",
+   true
+  ],
+  [
+   "05. Construction Scheduled 5 Days",
+   "05. Construction Flow - Construction Scheduled 5 Days Ago",
+   true
+  ],
+  [
+   "06. Design Rejected",
+   "06. Construction Flow - Design Rejected",
+   true
+  ],
+  [
+   "09. Loose Ends Remaining",
+   "09. Construction Flow - Loose Ends Remaining",
+   true
+  ],
+  [
+   "Construction Complete",
+   "Date Stamp | Construction Complete Date",
+   true
+  ],
+  [
+   "Inspection Scheduled",
+   "Inspection Scheduled",
+   true
+  ],
+  [
+   "09. Inspection Flow - Inspection Failed",
+   "09. Inspection Flow - Inspection Failed",
+   true
+  ],
+  [
+   "Inspection Passed",
+   "01. PTO Flow - Inspection Passed",
+   true
+  ],
+  [
+   "First Time Inspection Pass",
+   "First Time Inspection Pass",
+   true
+  ],
+  [
+   "08. Revision Returned From Design",
+   "(Turned Off) Design Flow - Design Revision Returned From Designers",
+   false
+  ],
+  [
+   "PTO Submission",
+   "Date Stamp | PTO Submission Date",
+   true
+  ],
+  [
+   "PTO Granted",
+   "Date Stamp | PTO Granted Date",
+   true
+  ],
+  [
+   "10 Day PTO Follow Up",
+   "04a. PTO Flow - 10 Day PTO Follow-Up",
+   true
+  ],
+  [
+   "30 Day PTO Follow Up",
+   "04b. PTO Flow - 30 Day PTO Follow-Up",
+   true
+  ],
+  [
+   "60 Day PTO Follow Up",
+   "04c. PTO Flow - 60 Day PTO Follow-Up",
+   true
+  ],
+  [
+   "07d - Xcel Photos Uploaded #2",
+   "07d. PTO Flow - Xcel Photos Uploaded",
+   true
+  ],
+  [
+   "07c - Xcel Photos Rejected",
+   "07c. PTO Flow - Xcel Photos Rejected",
+   true
+  ],
+  [
+   "01 - Quality Flow - Review Needed",
+   "01. Quality Flow - Review Needed",
+   false
+  ],
+  [
+   "01b - Review Needed (Site Survey)",
+   "01b. Quality Flow - Review Needed (Site Survey)",
+   true
+  ],
+  [
+   "01c - Review Needed (Sales)",
+   "01c. Quality Flow - Review Needed (Sales) ",
+   true
+  ],
+  [
+   "01d - Review Needed (90 Days)",
+   "01d. Quality Flow - Review Needed (90 Days)",
+   true
+  ],
+  [
+   "01e - Review Needed (Survey Sched)",
+   "01e. Quality Flow - Review Needed (Survey Scheduling)",
+   true
+  ],
+  [
+   "02 - Review Completed",
+   "02. Quality Flow - Review Completed",
+   true
+  ],
+  [
+   "Site Survey Complete",
+   "PM Notification | Site Survey Completed",
+   true
+  ],
+  [
+   "Design Reviewed",
+   "02. New Construction Flow - Design Reviewed",
+   true
+  ],
+  [
+   "Permit Issued",
+   "Precon Lead - Permit Issued - WMS",
+   false
+  ],
+  [
+   "RTB Drone",
+   "04. New Construction Flow - RTB Drone",
+   true
+  ],
+  [
+   "Design Need",
+   "09a. Design Flow - Xcel Design Needed",
+   true
+  ],
+  [
+   "Design Uploaded",
+   "02. Design Flow - Design Uploaded / Ready for Review",
+   true
+  ],
+  [
+   "Date Stamp | Design Completion",
+   "Date Stamp | Design Completion Date",
+   true
+  ]
+ ],
+ "missing": [
+  "01a - Ready for Survey",
+  "02b - Survey Scheduled SMS",
+  "02c - Survey Scheduled Email",
+  "04 - Waiting on Change Order",
+  "DA Revision Needed",
+  "Xcel Site Plan & SLD Needed",
+  "07a - Xcel Photo Start"
+ ]
+}

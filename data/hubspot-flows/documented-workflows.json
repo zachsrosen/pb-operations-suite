@@ -1,0 +1,357 @@
+[
+ {
+  "name": "PTO Granted",
+  "trigger": "PTO",
+  "action": "Currently OFF \u2014 PTO granted may be handled by a different workflow or manual process"
+ },
+ {
+  "name": "Submit Xcel PTO Photos at Inspection",
+  "trigger": "PTO",
+  "action": "Currently OFF \u2014 photo submission now triggered separately from inspection"
+ },
+ {
+  "name": "08. Revision Returned From Design",
+  "trigger": "Inspection",
+  "action": "Currently OFF \u2014 updates final inspection when as-built revision returns from design"
+ },
+ {
+  "name": "01. Quality Flow - Review Needed",
+  "trigger": "Quality Review",
+  "action": "Currently OFF \u2014 general trigger replaced by specific variants (01b\u201301e)"
+ },
+ {
+  "name": "01e. Quality Flow - Review Needed (Survey Sched)",
+  "trigger": "Quality Review",
+  "action": "Duplicate copy \u2014 one is ON, one is OFF"
+ },
+ {
+  "name": "01a - Ready for Survey",
+  "trigger": "Deal enters Site Survey stage",
+  "action": "Sets status to \"Ready for Survey\""
+ },
+ {
+  "name": "02a - Survey Scheduled",
+  "trigger": "Zuper job scheduled",
+  "action": "Sets status, records booking date"
+ },
+ {
+  "name": "02b - Survey Scheduled SMS",
+  "trigger": "Status \u2192 Scheduled",
+  "action": "Customer SMS notification"
+ },
+ {
+  "name": "02c - Survey Scheduled Email",
+  "trigger": "Status \u2192 Scheduled",
+  "action": "Customer email notification"
+ },
+ {
+  "name": "03 - Survey Complete",
+  "trigger": "Zuper job completed",
+  "action": "Records completion, advances to Design"
+ },
+ {
+  "name": "04 - Waiting on Change Order",
+  "trigger": "Change order flagged in survey",
+  "action": "Holds design until resolved"
+ },
+ {
+  "name": "DA Flow - DA Ready to Send",
+  "trigger": "Design complete, ready for customer",
+  "action": "Queues DA for sending"
+ },
+ {
+  "name": "PandaDoc DA Sent",
+  "trigger": "PandaDoc document sent",
+  "action": "Sets DA Status, records sent date"
+ },
+ {
+  "name": "Design Approved",
+  "trigger": "PandaDoc document approved",
+  "action": "Sets approval, advances pipeline"
+ },
+ {
+  "name": "DA Flow - Sales Change Needed",
+  "trigger": "Sales change identified",
+  "action": "Routes back to sales team"
+ },
+ {
+  "name": "DA Flow - Design Change Needed",
+  "trigger": "Design revision required",
+  "action": "Routes to design team; auto-emails Vishtik Technologies"
+ },
+ {
+  "name": "DA Revision Needed",
+  "trigger": "Customer rejects DA",
+  "action": "Triggers DA revision cycle"
+ },
+ {
+  "name": "01 - Ready for Permitting",
+  "trigger": "Deal enters Permit & IC stage",
+  "action": "Sets permit status"
+ },
+ {
+  "name": "02 - Submitted to Customer",
+  "trigger": "Permit package sent",
+  "action": "Tracks customer signature"
+ },
+ {
+  "name": "03 - Submitted to AHJ",
+  "trigger": "Application submitted",
+  "action": "Records submit date, starts follow-up timer"
+ },
+ {
+  "name": "04 - Permit Issued",
+  "trigger": "Manual status set",
+  "action": "Records date, calculates turnaround, checks RTB gate"
+ },
+ {
+  "name": "05a - 14 Day AHJ Follow Up",
+  "trigger": "14 days since submission",
+  "action": "First follow-up reminder to Permit Lead"
+ },
+ {
+  "name": "05b - 30 Day AHJ Follow Up",
+  "trigger": "30 days since submission",
+  "action": "Second follow-up reminder"
+ },
+ {
+  "name": "05c - 45 Day AHJ Follow Up",
+  "trigger": "45 days since submission",
+  "action": "Third follow-up reminder"
+ },
+ {
+  "name": "05d - 60 Day AHJ Follow Up",
+  "trigger": "60 days since submission",
+  "action": "Escalation follow-up"
+ },
+ {
+  "name": "SolarApp+ Selected",
+  "trigger": "AHJ supports SolarApp+",
+  "action": "Routes to fast-track path"
+ },
+ {
+  "name": "PM Arapahoe Compliance Letter",
+  "trigger": "Arapahoe County project",
+  "action": "Generates compliance letter"
+ },
+ {
+  "name": "Permit Expiration in 30 Days",
+  "trigger": "Permit nearing expiry",
+  "action": "Warning notification to Permit Lead"
+ },
+ {
+  "name": "ZRS | Utility Flow | 01 - Ready",
+  "trigger": "Deal enters Permit & IC stage",
+  "action": "Sets interconnection status"
+ },
+ {
+  "name": "ZRS | Utility Flow | 02 - Submitted to Customer",
+  "trigger": "Application sent to customer",
+  "action": "Tracks customer signature"
+ },
+ {
+  "name": "ZRS | Utility Flow | 03 - Submitted to Utility",
+  "trigger": "Application submitted to utility",
+  "action": "Records submit date, starts follow-up"
+ },
+ {
+  "name": "ZRS | Utility Flow | 04 - Approved",
+  "trigger": "Manual status set",
+  "action": "Records approval, checks RTB gate"
+ },
+ {
+  "name": "Utility Bill Upload #1",
+  "trigger": "First utility bill request",
+  "action": "Customer upload request"
+ },
+ {
+  "name": "Utility Bill Upload #2",
+  "trigger": "Follow-up request",
+  "action": "Second request for bill"
+ },
+ {
+  "name": "Utility Bill Upload #3",
+  "trigger": "Final request",
+  "action": "Escalation for missing bill"
+ },
+ {
+  "name": "Signature Retrieved #1",
+  "trigger": "First signature attempt",
+  "action": "Customer signature request"
+ },
+ {
+  "name": "Signature Retrieved #2",
+  "trigger": "Follow-up attempt",
+  "action": "Second signature request"
+ },
+ {
+  "name": "Signature Retrieved #3",
+  "trigger": "Final attempt",
+  "action": "Escalation for missing signature"
+ },
+ {
+  "name": "14 Day Utility Follow Up",
+  "trigger": "14 days after submission",
+  "action": "Follow-up to utility"
+ },
+ {
+  "name": "Xcel Site Plan & SLD Needed",
+  "trigger": "Xcel Energy project",
+  "action": "Routes site plan/SLD requirements"
+ },
+ {
+  "name": "04. RTB 5 Days Ago",
+  "trigger": "5 days after RTB reached",
+  "action": "Alert: construction not yet scheduled"
+ },
+ {
+  "name": "05. Construction Scheduled 5 Days",
+  "trigger": "5 days before construction date",
+  "action": "Pre-construction reminder"
+ },
+ {
+  "name": "06. Design Rejected",
+  "trigger": "Design rejected during construction",
+  "action": "Routes back to design team"
+ },
+ {
+  "name": "09. Loose Ends Remaining",
+  "trigger": "CC checklist flags loose ends",
+  "action": "Creates punch-list follow-up task"
+ },
+ {
+  "name": "Construction Complete",
+  "trigger": "CC checklist submitted",
+  "action": "Records date, advances to Inspection, triggers M2 invoice"
+ },
+ {
+  "name": "Inspection Scheduled",
+  "trigger": "Zuper inspection job scheduled",
+  "action": "Sets flag, creates prep tasks"
+ },
+ {
+  "name": "09. Inspection Flow - Inspection Failed",
+  "trigger": "Inspection failed checklist",
+  "action": "Creates correction tasks by location (CA\u2192Katlyyn/Nick, CO\u2192Ops Lead)"
+ },
+ {
+  "name": "Inspection Passed",
+  "trigger": "Zuper passes inspection",
+  "action": "Records pass date, advances to PTO"
+ },
+ {
+  "name": "First Time Inspection Pass",
+  "trigger": "Passed on first attempt",
+  "action": "Sets First Time Inspection Pass? \u2192 Yes"
+ },
+ {
+  "name": "08. Revision Returned From Design",
+  "trigger": "As-built revision complete",
+  "action": "Routes back for re-inspection (currently OFF)"
+ },
+ {
+  "name": "PTO Submission",
+  "trigger": "PTO application ready",
+  "action": "Submits to utility"
+ },
+ {
+  "name": "PTO Granted",
+  "trigger": "Manual status set",
+  "action": "Records date, advances to Close Out, triggers M3 invoice"
+ },
+ {
+  "name": "10 Day PTO Follow Up",
+  "trigger": "10 days after submission",
+  "action": "First follow-up"
+ },
+ {
+  "name": "30 Day PTO Follow Up",
+  "trigger": "30 days after submission",
+  "action": "Second follow-up"
+ },
+ {
+  "name": "60 Day PTO Follow Up",
+  "trigger": "60 days after submission",
+  "action": "Escalation follow-up"
+ },
+ {
+  "name": "07a - Xcel Photo Start",
+  "trigger": "Initiates photo submission process 07d - Xcel Photos Uploaded #1",
+  "action": "First batch of photos uploaded"
+ },
+ {
+  "name": "07d - Xcel Photos Uploaded #2",
+  "trigger": "Second batch (if needed) 07d - Xcel Photos Uploaded #3",
+  "action": "Third batch (if needed)"
+ },
+ {
+  "name": "07c - Xcel Photos Rejected",
+  "trigger": "Xcel rejects photos \u2014 triggers re-upload 07e - Xcel Photos Resubmitted #1\u2013#3",
+  "action": "Resubmission attempts after rejection"
+ },
+ {
+  "name": "01 - Quality Flow - Review Needed",
+  "trigger": "General review trigger",
+  "action": "Creates QA review task (currently OFF)"
+ },
+ {
+  "name": "01b - Review Needed (Site Survey)",
+  "trigger": "Issue flagged at site survey",
+  "action": "Creates QA review task"
+ },
+ {
+  "name": "01c - Review Needed (Sales)",
+  "trigger": "Sales-related issue",
+  "action": "5-minute delay \u2192 sets Quality Review Needed? \u2192 Yes"
+ },
+ {
+  "name": "01d - Review Needed (90 Days)",
+  "trigger": "Deal tagged \"Stuck 90 Days\"",
+  "action": "5-minute delay \u2192 sets Quality Review Needed? + Quality Review Reason"
+ },
+ {
+  "name": "01e - Review Needed (Survey Sched)",
+  "trigger": "Survey scheduling issue",
+  "action": "Creates QA review task (one copy ON, one copy OFF)"
+ },
+ {
+  "name": "02 - Review Completed",
+  "trigger": "QA review finished",
+  "action": "Updates review properties, routes to resolution"
+ },
+ {
+  "name": "Site Survey Complete",
+  "trigger": "NC survey done",
+  "action": "Routes to NC design review"
+ },
+ {
+  "name": "Design Reviewed",
+  "trigger": "NC design reviewed",
+  "action": "Routes to NC permitting"
+ },
+ {
+  "name": "Permit Issued",
+  "trigger": "NC permit issued",
+  "action": "Routes to NC RTB check"
+ },
+ {
+  "name": "RTB Drone",
+  "trigger": "RTB reached for NC",
+  "action": "Schedules drone survey for NC site"
+ },
+ {
+  "name": "Design Need",
+  "trigger": "NC design requested",
+  "action": "Creates NC design task"
+ },
+ {
+  "name": "Design Uploaded",
+  "trigger": "NC design files uploaded",
+  "action": "Moves to NC design review"
+ },
+ {
+  "name": "Date Stamp | Design Completion",
+  "trigger": "NC design complete",
+  "action": "Records completion date"
+ }
+]

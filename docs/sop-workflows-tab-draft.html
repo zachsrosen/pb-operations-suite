@@ -1,0 +1,869 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PB SOP — Workflows Tab (DRAFT refresh 2026-06-21)</title><style>
+
+:root{--primary:#ea580c;--primary-light:#fff7ed;--primary-dark:#c2410c;--success:#059669;--success-light:#ecfdf5;--warning:#d97706;--warning-light:#fffbeb;--danger:#dc2626;--danger-light:#fef2f2;--gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;--tag-auto:#7c3aed;--tag-auto-bg:#ede9fe;--tag-manual:#b45309;--tag-manual-bg:#fef3c7;--tag-trigger:#2563eb;--tag-trigger-bg:#dbeafe;--tag-zuper:#059669;--tag-zuper-bg:#dcfce7;--tag-check:#db2777;--tag-check-bg:#fce7f3;--tag-calc:#0d9488;--tag-calc-bg:#ccfbf1;--tag-notif:#4f46e5;--tag-notif-bg:#e0e7ff;--teal-400:#2dd4bf;--teal-500:#14b8a6;--blue-300:#93c5fd;--blue-400:#60a5fa;--blue-500:#3b82f6;--blue-100:#dbeafe;--blue-600:#2563eb;--orange-100:#ffedd5;--orange-300:#fdba74;--orange-400:#fb923c;--orange-500:#f97316;--orange-600:#ea580c;--green-100:#dcfce7;--green-400:#4ade80;--green-500:#22c55e;--green-600:#16a34a;--purple-400:#a78bfa;--purple-500:#8b5cf6;--red-400:#f87171;--radius:8px;--shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:var(--gray-800);background:var(--gray-50);line-height:1.6;}
+.top-bar{background:#111827;border-bottom:none;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1000;}
+.tab-bar{background:#fff;border-bottom:1px solid var(--gray-200);padding:0 24px;display:flex;gap:0;position:sticky;top:49px;z-index:999;box-shadow:var(--shadow);}
+.tab-bar button{background:none;border:none;padding:10px 20px;font-size:13px;font-weight:600;color:var(--gray-500);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;}
+.tab-bar button:hover{color:var(--gray-700);background:var(--gray-50);}
+.tab-bar button.active{color:var(--primary);border-bottom-color:var(--primary);}
+.top-bar .logo{font-weight:700;font-size:17px;color:var(--primary);display:flex;align-items:center;gap:8px;}.top-bar .meta{color:var(--gray-400);}
+.search-box{display:flex;align-items:center;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:var(--radius);padding:5px 12px;width:300px;color:#fff;}.search-box input{color:#fff;}.search-box input::placeholder{color:var(--gray-400);}.search-box svg{color:var(--gray-400);}
+.search-box input{border:none;background:transparent;outline:none;font-size:13px;width:100%;margin-left:8px;color:var(--gray-700);}
+.search-box .kbd{font-size:10px;background:rgba(255,255,255,.15);border-radius:3px;padding:1px 5px;color:var(--gray-400);font-family:monospace;}
+.top-bar .meta{font-size:11px;color:var(--gray-500);}
+.layout{display:flex;min-height:calc(100vh - 90px);}
+.sidebar{width:260px;background:#fff;border-right:1px solid var(--gray-200);padding:14px 0;position:sticky;top:90px;height:calc(100vh - 90px);overflow-y:auto;flex-shrink:0;}
+.sidebar-section{margin-bottom:4px;}
+.sidebar-section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--gray-400);padding:10px 18px 3px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;}
+.sidebar-section-title:hover{color:var(--gray-600);}
+.sidebar-section-title::after{content:"▾";font-size:9px;transition:transform .15s;}
+.sidebar-section.collapsed .sidebar-section-title::after{transform:rotate(-90deg);}
+.sidebar-section.collapsed a{display:none;}
+.sidebar a{display:flex;align-items:center;gap:7px;padding:5px 18px;text-decoration:none;color:var(--gray-600);font-size:13px;transition:all .12s;border-left:3px solid transparent;}
+.sidebar a:hover{background:var(--gray-50);color:var(--gray-900);}
+.sidebar a.active{background:var(--primary-light);color:var(--primary);font-weight:600;border-left-color:var(--primary);}
+.sidebar .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.dot-blue{background:var(--primary);}.dot-green{background:var(--success);}.dot-amber{background:var(--warning);}.dot-red{background:var(--danger);}.dot-purple{background:var(--tag-auto);}.dot-pink{background:var(--tag-check);}.dot-teal{background:var(--tag-calc);}.dot-indigo{background:var(--tag-notif);}
+.main{flex:1;padding:28px 44px;max-width:980px;}
+.main h1{font-size:26px;font-weight:700;color:var(--gray-900);margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid var(--primary);}
+.subtitle{color:var(--gray-500);font-size:14px;margin-bottom:20px;}
+.main h2{font-size:20px;font-weight:700;color:var(--gray-900);margin:32px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--gray-200);}
+.main h3{font-size:16px;font-weight:600;color:var(--gray-800);margin:20px 0 6px;}
+.main h4{font-size:14px;font-weight:600;color:var(--gray-700);margin:14px 0 4px;}
+.main p,.main li{font-size:13.5px;color:var(--gray-700);}
+.main p{margin-bottom:8px;}
+.main a{color:var(--primary);text-decoration:underline;text-underline-offset:2px;font-weight:500;cursor:pointer;}.main a:hover{color:var(--primary-dark);}
+.app-link{display:inline-flex;align-items:center;gap:4px;background:var(--primary-light);color:var(--primary-dark);text-decoration:none;font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;border:1px solid rgba(234,88,12,.2);}.app-link:hover{background:var(--primary);color:#fff;text-decoration:none;}.app-link::before{content:"↗";font-size:10px;}
+.section{display:none;}.section.active{display:block;}
+/* Tags */
+.t{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:10px;vertical-align:middle;margin:0 1px;white-space:nowrap;}
+.t-auto{background:var(--tag-auto-bg);color:var(--tag-auto);}.t-man{background:var(--tag-manual-bg);color:var(--tag-manual);}.t-trig{background:var(--tag-trigger-bg);color:var(--tag-trigger);}.t-zup{background:var(--tag-zuper-bg);color:var(--tag-zuper);}.t-chk{background:var(--tag-check-bg);color:var(--tag-check);}.t-calc{background:var(--tag-calc-bg);color:var(--tag-calc);}.t-not{background:var(--tag-notif-bg);color:var(--tag-notif);}
+/* Cards & Tables */
+.card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;margin:12px 0;box-shadow:var(--shadow);}
+.card-hd{font-weight:600;font-size:14px;color:var(--gray-900);margin-bottom:6px;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0;}
+th{background:var(--gray-100);text-align:left;padding:7px 10px;font-weight:600;color:var(--gray-700);border-bottom:2px solid var(--gray-200);}
+td{padding:7px 10px;border-bottom:1px solid var(--gray-100);vertical-align:top;}
+tr:hover td{background:var(--gray-50);}
+code{font-family:'SF Mono',Consolas,monospace;font-size:11px;background:var(--gray-100);padding:1px 4px;border-radius:3px;color:var(--primary-dark);}
+/* Status flows */
+.sf{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:8px 0;padding:8px 10px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius);}
+.sp{font-size:11px;padding:2px 9px;border-radius:11px;background:white;border:1px solid var(--gray-200);color:var(--gray-600);white-space:nowrap;}
+.sp-r{background:var(--danger-light);color:var(--danger);border-color:#fca5a5;}.sp-h{background:var(--warning-light);color:var(--warning);border-color:#fcd34d;}
+.fa{color:var(--gray-300);font-size:13px;}
+/* Auto chains */
+.ac{border-left:3px solid var(--tag-auto);margin:10px 0;padding:6px 14px;background:var(--tag-auto-bg);border-radius:0 var(--radius) var(--radius) 0;font-size:12.5px;}
+.ac.ac-trig{border-left-color:var(--tag-trigger);background:var(--tag-trigger-bg);}
+.ac.ac-chk{border-left-color:var(--tag-check);background:var(--tag-check-bg);}
+.ac.ac-zup{border-left-color:var(--tag-zuper);background:var(--tag-zuper-bg);}
+.ac.ac-not{border-left-color:var(--tag-notif);background:var(--tag-notif-bg);}
+.ac.ac-calc{border-left-color:var(--tag-calc);background:var(--tag-calc-bg);}
+.ac div{margin:3px 0;padding-left:16px;position:relative;}
+.ac div::before{content:"";position:absolute;left:0;top:7px;width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.4;}
+.warn{background:#fef2f2;border:1px solid #fecaca;border-radius:var(--radius);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#991b1b;}
+.review{background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:var(--radius);padding:10px 14px;margin:14px 0;font-size:12px;color:#92400e;}
+.info{background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#1e40af;}
+.tip{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:var(--radius);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#065f46;}
+/* Pipeline visual */
+.pv{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:12px 0;}
+.ps{padding:5px 12px;border-radius:16px;font-size:12px;font-weight:500;white-space:nowrap;}
+.ps-s{background:#dbeafe;color:#1e40af;}.ps-p{background:#dcfce7;color:#166534;}.ps-d{background:#fef3c7;color:#92400e;}.ps-v{background:#ede9fe;color:#5b21b6;}.ps-r{background:#ffe4e6;color:#9f1239;}.ps-g{background:var(--gray-100);color:var(--gray-600);}
+.pa{color:var(--gray-300);font-size:16px;}
+/* Legend grid */
+.lg{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:14px 0;}
+.lc{border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px;text-align:center;}
+.lc .t{font-size:11px;margin-bottom:6px;}
+.lc p{font-size:11.5px;color:var(--gray-600);margin:0;}
+/* Section summaries */
+.summary{background:linear-gradient(135deg,#f0f7ff,#f5f3ff);border:1px solid #dbeafe;border-radius:var(--radius);padding:14px 18px;margin:0 0 20px;font-size:13px;line-height:1.7;}
+.summary strong{color:var(--gray-900);}
+.summary ul{margin:6px 0 0;padding-left:18px;}
+.summary li{margin:2px 0;color:var(--gray-700);}
+.summary li::marker{color:var(--primary);}
+/* Your action vs system action distinction */
+.you{background:#ecfdf5;border-left:3px solid var(--success);border-radius:0 var(--radius) var(--radius) 0;padding:8px 14px;margin:10px 0;font-size:12.5px;}
+.you::before{content:"👤 Your action: ";font-weight:700;color:#065f46;}
+.sys{background:#eff6ff;border-left:3px solid var(--primary);border-radius:0 var(--radius) var(--radius) 0;padding:8px 14px;margin:10px 0;font-size:12.5px;}
+.sys::before{content:"⚡ System does: ";font-weight:700;color:#1e40af;}
+@media print{.top-bar,.sidebar{display:none!important;}.layout{display:block!important;}.main{max-width:100%!important;padding:0!important;}.section{display:block!important;page-break-before:always;}.card{break-inside:avoid;}}
+@media(max-width:768px){.sidebar{display:none;}.main{padding:16px;}.search-box{width:180px;}}
+/* Admin mode & TBD system */
+.admin-only{display:none;}
+body.admin-mode .admin-only{display:block;}
+body.admin-mode .tbd-placeholder{display:none!important;}
+.tbd-placeholder{background:var(--gray-50);border:2px dashed var(--gray-300);border-radius:var(--radius);padding:40px 32px;margin:14px 0;text-align:center;}
+.role-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;user-select:none;}
+.role-badge.role-admin{background:var(--tag-auto-bg);color:var(--tag-auto);border:1px solid rgba(124,58,237,.3);}
+.role-badge.role-user{background:var(--gray-100);color:var(--gray-500);border:1px solid var(--gray-200);}
+body.admin-mode .review{border-left-color:var(--tag-auto);}
+/* PM Guide styles */
+.region-bar{display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#fef3c7,#fff7ed);border:1px solid #fde68a;border-radius:var(--radius);padding:8px 14px;margin:0 0 18px;font-size:12px;color:#92400e;}
+.region-bar svg{flex-shrink:0;}
+.region-bar .market{font-weight:700;}
+.region-cosp{background:#eff6ff;border:1px solid #bfdbfe;border-left:3px solid #3b82f6;border-radius:0 var(--radius) var(--radius) 0;padding:10px 14px;margin:10px 0;font-size:12.5px;color:#1e40af;}
+.region-cosp::before{content:"🏔 Colorado Springs: ";font-weight:700;}
+.pm-tbd{background:var(--gray-50);border:2px dashed var(--gray-300);border-radius:var(--radius);padding:40px 32px;margin:16px 0;text-align:center;color:var(--gray-500);font-size:13px;}
+.pm-step{counter-increment:pm-step;margin:14px 0;padding:10px 14px 10px 40px;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;position:relative;box-shadow:var(--shadow);}
+.pm-step::before{content:counter(pm-step);position:absolute;left:10px;top:10px;width:22px;height:22px;background:var(--primary);color:#fff;border-radius:50%;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.pm-step strong{color:var(--gray-900);}
+.pm-steps{counter-reset:pm-step;}
+.pm-checklist{list-style:none;padding:0;margin:10px 0;}
+.pm-checklist li{padding:5px 0 5px 26px;font-size:13px;color:var(--gray-700);position:relative;border-bottom:1px solid var(--gray-100);}
+.pm-checklist li::before{content:"☐";position:absolute;left:4px;top:5px;font-size:14px;color:var(--primary);}
+.pm-checklist li:last-child{border-bottom:none;}
+.pm-naming{font-family:'SF Mono',Consolas,monospace;font-size:12px;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 14px;margin:8px 0;color:var(--gray-700);}
+
+body{padding:2rem;} .draftnote{background:#fff8e1;border:1px solid #f0c000;padding:1rem;border-radius:8px;margin-bottom:1.5rem;color:#000;}
+.section{display:none} .section.active{display:block} .layout{display:flex;gap:2rem;align-items:flex-start}
+.sidebar{min-width:280px;font-size:0.85rem} .sidebar a{display:block;padding:0.25rem 0;text-decoration:none;color:inherit} .content{flex:1;max-width:920px}
+</style></head><body>
+<div class="draftnote"><strong>DRAFT — not yet published.</strong> Generated from the live HubSpot Automation v4 API on 2026-06-21 to replace the stale Workflows tab in <code>public/sop-guide.html</code>. Review with Zach before merging. To integrate: swap the existing <code>wf-*</code> <code>.section</code> blocks and "Workflow Reference" sidebar nav for the equivalents here. Clone families are collapsed to one row each.</div>
+<script>function go(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));var t=document.getElementById(id);if(t){t.classList.add('active');window.scrollTo(0,0);}return false;}</script>
+<div class="layout"><div class="sidebar"><div class="sidebar-section" data-tab="ref"><div class="sidebar-section-title">Workflow Reference (DRAFT)</div><a href="#" onclick="go('wf-overview')" data-s="wf-overview"><span class="dot dot-teal"></span>Overview &amp; Counts</a><a href="#" onclick="go('wf-survey')" data-s="wf-survey"><span class="dot dot-purple"></span>01 · Site Survey Flow</a><a href="#" onclick="go('wf-qr')" data-s="wf-qr"><span class="dot dot-purple"></span>02 · Quality Flow (90-day stuck review)</a><a href="#" onclick="go('wf-da')" data-s="wf-da"><span class="dot dot-purple"></span>03 · DA Flow (Design Approval)</a><a href="#" onclick="go('wf-design')" data-s="wf-design"><span class="dot dot-purple"></span>04 · Design Flow</a><a href="#" onclick="go('wf-permit')" data-s="wf-permit"><span class="dot dot-purple"></span>05 · Permit Flow</a><a href="#" onclick="go('wf-ic')" data-s="wf-ic"><span class="dot dot-purple"></span>06 · Utility / Interconnection Flow</a><a href="#" onclick="go('wf-pto')" data-s="wf-pto"><span class="dot dot-purple"></span>07 · PTO Flow</a><a href="#" onclick="go('wf-insp')" data-s="wf-insp"><span class="dot dot-purple"></span>08 · Inspection Flow</a><a href="#" onclick="go('wf-con')" data-s="wf-con"><span class="dot dot-purple"></span>09 · Construction Flow</a><a href="#" onclick="go('wf-transition')" data-s="wf-transition"><span class="dot dot-purple"></span>10 · Stage Transition Flows</a><a href="#" onclick="go('wf-pe')" data-s="wf-pe"><span class="dot dot-purple"></span>Participate Energy (PE) Flow</a><a href="#" onclick="go('wf-sgip')" data-s="wf-sgip"><span class="dot dot-purple"></span>SGIP Flow (CA storage incentive)</a><a href="#" onclick="go('wf-incentive')" data-s="wf-incentive"><span class="dot dot-purple"></span>Incentive Flow</a><a href="#" onclick="go('wf-prodguar')" data-s="wf-prodguar"><span class="dot dot-purple"></span>Production Guarantee / Service Warranty</a><a href="#" onclick="go('wf-bot')" data-s="wf-bot"><span class="dot dot-purple"></span>Bot Hook | / Bot Comms | (automation bots)</a><a href="#" onclick="go('wf-datestamp')" data-s="wf-datestamp"><span class="dot dot-purple"></span>Date Stamp | (system date stamping)</a><a href="#" onclick="go('wf-tickets')" data-s="wf-tickets"><span class="dot dot-purple"></span>Service &amp; Tickets (pipeline 0-5)</a><a href="#" onclick="go('wf-contacts')" data-s="wf-contacts"><span class="dot dot-purple"></span>Contacts &amp; Marketing (0-1)</a></div></div><div class="content">
+<!-- ===== WORKFLOWS TAB: OVERVIEW (DRAFT REFRESH) ===== -->
+<div class="section active" id="wf-overview">
+<h1>HubSpot Workflow Reference</h1>
+<p class="subtitle">Live catalog generated 2026-06-21 from the HubSpot Automation v4 API. <strong>933 flows total — 736 ON, 197 OFF.</strong></p>
+<div class="summary">
+<strong>Reading the numbers:</strong> 933 raw flows is far larger than the ~150–200 <em>logical</em> processes PB actually runs. The inflation comes from:
+<ul>
+<li><strong>Clone fan-out (57 flows):</strong> HubSpot can't re-enroll an object that already passed through a workflow, so revision lanes are cloned and suffixed <code>(#1) (#2) (#3) (#4)</code>. Each clone is one logical step — this reference collapses them into a single row labeled "cloned ×N".</li>
+<li><strong>Date-stamp plumbing (59 flows):</strong> one tiny flow per "stamp &lt;property&gt; with today's date". Summarized as one family below.</li>
+<li><strong>Autosave noise (17 flows):</strong> <code>Unnamed workflow - &lt;timestamp&gt;</code> abandoned edits — cleanup candidates, not real automation.</li>
+</ul>
+</div>
+<h2>Naming Conventions</h2>
+<div class="card"><table>
+<tr><th>Pattern</th><th>Meaning</th><th>Example</th></tr>
+<tr><td><code>NN. &lt;Stage&gt; Flow - …</code></td><td>Current convention: numbered step within a stage chain</td><td><code>04. Design Flow - DA Approved</code></td></tr>
+<tr><td><code>(#1) (#2) (#3)</code> suffix</td><td>Clone of a re-entrant step (re-enrollment workaround)</td><td><code>11a. Design Flow - DA Revision In Progress (#2)</code></td></tr>
+<tr><td><code>NNx</code> lettered (10a/10b/10c)</td><td>Branch variants (DA / AHJ / Utility rejections)</td><td><code>10b. Design Flow - Design Rejected by AHJ</code></td></tr>
+<tr><td><code>05a–05d</code> suffixes</td><td>Follow-up cadence (14 / 30 / 45 / 60-day)</td><td><code>05c - 45 Day AHJ Follow Up</code></td></tr>
+<tr><td><code>Date Stamp |</code></td><td>System date-stamping plumbing</td><td><code>Date Stamp | PE M1 Submission</code></td></tr>
+<tr><td><code>ZRS | … |</code> / <code>… - WMS</code></td><td>Legacy origin tags (Zuper-sync / Westminster). Many superseded by the <code>NN.</code> family and switched OFF.</td><td><code>ZRS | Utility Flow | 01 - Ready</code></td></tr>
+</table></div>
+<h2>Workflow Families (live counts)</h2>
+<div class="card"><table>
+<tr><th>Family</th><th>Live flows</th><th>ON</th><th>OFF</th></tr>
+<tr><td><a href="#" onclick="go('wf-survey')">01 · Site Survey Flow</a></td><td>17</td><td>14</td><td>3</td></tr>
+<tr><td><a href="#" onclick="go('wf-qr')">02 · Quality Flow (90-day stuck review)</a></td><td>7</td><td>5</td><td>2</td></tr>
+<tr><td><a href="#" onclick="go('wf-da')">03 · DA Flow (Design Approval)</a></td><td>32</td><td>28</td><td>4</td></tr>
+<tr><td><a href="#" onclick="go('wf-design')">04 · Design Flow</a></td><td>79</td><td>67</td><td>12</td></tr>
+<tr><td><a href="#" onclick="go('wf-permit')">05 · Permit Flow</a></td><td>47</td><td>46</td><td>1</td></tr>
+<tr><td><a href="#" onclick="go('wf-ic')">06 · Utility / Interconnection Flow</a></td><td>90</td><td>74</td><td>16</td></tr>
+<tr><td><a href="#" onclick="go('wf-pto')">07 · PTO Flow</a></td><td>37</td><td>31</td><td>6</td></tr>
+<tr><td><a href="#" onclick="go('wf-insp')">08 · Inspection Flow</a></td><td>9</td><td>6</td><td>3</td></tr>
+<tr><td><a href="#" onclick="go('wf-con')">09 · Construction Flow</a></td><td>9</td><td>9</td><td>0</td></tr>
+<tr><td><a href="#" onclick="go('wf-transition')">10 · Stage Transition Flows</a></td><td>9</td><td>6</td><td>3</td></tr>
+<tr><td><a href="#" onclick="go('wf-pe')">Participate Energy (PE) Flow</a></td><td>50</td><td>41</td><td>9</td></tr>
+<tr><td><a href="#" onclick="go('wf-sgip')">SGIP Flow (CA storage incentive)</a></td><td>42</td><td>40</td><td>2</td></tr>
+<tr><td><a href="#" onclick="go('wf-incentive')">Incentive Flow</a></td><td>18</td><td>11</td><td>7</td></tr>
+<tr><td><a href="#" onclick="go('wf-prodguar')">Production Guarantee / Service Warranty</a></td><td>3</td><td>2</td><td>1</td></tr>
+<tr><td><a href="#" onclick="go('wf-bot')">Bot Hook | / Bot Comms | (automation bots)</a></td><td>14</td><td>10</td><td>4</td></tr>
+<tr><td><a href="#" onclick="go('wf-datestamp')">Date Stamp | (system date stamping)</a></td><td>42</td><td>35</td><td>7</td></tr>
+<tr><td><a href="#" onclick="go('wf-tickets')">Service &amp; Tickets (pipeline 0-5)</a></td><td>29</td><td>19</td><td>10</td></tr>
+<tr><td><a href="#" onclick="go('wf-contacts')">Contacts &amp; Marketing (0-1)</a></td><td>66</td><td>45</td><td>21</td></tr>
+<tr><td>Ungrouped (ad-hoc / legacy)</td><td>333</td><td>247</td><td>86</td></tr>
+<tr style="font-weight:700;"><td>Total</td><td>933</td><td>736</td><td>197</td></tr>
+</table></div></div>
+<!-- ===== 01 · Site Survey Flow ===== -->
+<div class="section" id="wf-survey">
+<h1>01 · Site Survey Flow</h1>
+<p class="subtitle">Drives a deal from sold to survey-complete. Status field: <code>Site Survey Status</code>. Integration: Zuper.</p>
+<div class="summary"><strong>17 logical workflows</strong> (17 live flows incl. clones) · 14 ON / 3 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>00. Site Survey Flow - Ready To Schedule</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. New Construction Flow - Site Survey Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Site Survey Flow - On Hold if Loan not Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. Site Survey Flow - Loan Approved or Cash</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. Site Survey Flow - On Hold Loan Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Site Survey Flow - DA Review Task</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Site Survey Flow - Survey Scheduled</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. Site Survey Flow - Survey Schedule Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. Site Survey Flow - Survey Revisit Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. Site Survey Flow - Day of Survey Upload</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. DA Flow - Survey Revisit Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. Site Survey Flow - Sales Change Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. Site Survey Flow - Sales C/O Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Create Site Survey Revisit Job</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - Survey Revisit Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PM Notification | Site Survey Completed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Site Survey Flow - Revisit Needed</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 02 · Quality Flow (90-day stuck review) ===== -->
+<div class="section" id="wf-qr">
+<h1>02 · Quality Flow (90-day stuck review)</h1>
+<p class="subtitle">Catches deals stalled ~90 days in a stage and routes a QA review (5-min delay before firing). Internal QA.</p>
+<div class="summary"><strong>7 logical workflows</strong> (7 live flows incl. clones) · 5 ON / 2 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>01. Quality Flow - Review Needed</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01b. Quality Flow - Review Needed (Site Survey)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01c. Quality Flow - Review Needed (Sales)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01d. Quality Flow - Review Needed (90 Days)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01e. Quality Flow - Review Needed (Survey Scheduling)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01e. Quality Flow - Review Needed (Survey Scheduling) (cloned)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. Quality Flow - Review Completed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 03 · DA Flow (Design Approval) ===== -->
+<div class="section" id="wf-da">
+<h1>03 · DA Flow (Design Approval)</h1>
+<p class="subtitle">Design Approval lifecycle. Status field: <code>Design Approval Status</code>. Integration: PandaDoc e-sign.</p>
+<div class="summary"><strong>30 logical workflows</strong> (32 live flows incl. clones) · 26 ON / 4 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>0. DA Flow - Ready to Review Site Survey</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>0. DA Flow - Review Layout for DA</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. DA Flow - DA Ready to Send</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. DA Flow - DA Sent for Approval</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. DA Flow - DA Follow Up Task</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. DA Flow - DA Approved &amp; Ready To Upload</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. DA Flow - DA Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. DA Flow - In Design For Revision</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. DA Flow - Revision Returned From Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. DA Flow - Design Change Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. DA Flow - Revised DA Sent</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>08. DA Flow - Sales Change Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. DA Flow - Design Revision Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. DA Flow - Sales Communication Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10. DA Flow - Ops/Survey Change Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11. DA Flow - Ops Communication Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Flow - Copy of DA Sent Date from Date Entered D&amp;E Stage</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Flow - Send DA Reminder</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Invoice Paid</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Last 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Not Last 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Revision Counter</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>DA Revision Counter Value Set</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Approval Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Approval Rejection Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Approval Sent Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Approval Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Lead - Design Approved - WMS</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>PandaDoc DA Sent</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 04 · Design Flow ===== -->
+<div class="section" id="wf-design">
+<h1>04 · Design Flow</h1>
+<p class="subtitle">Core design pipeline plus all revision lanes. Status field: <code>Design Status</code>. Integration: Vishtik, EagleView/TrueDesign.</p>
+<div class="summary"><strong>55 logical workflows</strong> (79 live flows incl. clones) · 45 ON / 10 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>(Turned Off) Design Flow - Design Revision Ready For Stamping</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>(Turned Off) Design Flow - Design Revision Returned From Designers</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>00. Design Flow - Ready for Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Design Flow - Design In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. Design Flow - Design Uploaded / Ready for Review</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. Design Flow - Initial Review Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Design Flow - DA Approved / Final Design Review</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. Design Flow - Final Review Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. Design Flow - Design Stamps in Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. Design Flow - Stamped Plans Uploaded / Design Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08a. Design Flow - New Construction Design Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08b. Design Flow - New Construction Design In Progress</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>08c. Design Flow - New Construction Design Uploaded</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>08d. Design Flow - New Construction Design Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09a. Design Flow - Xcel Design Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09b. Design Flow - Xcel Design Uploaded</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09c. Design Flow - Xcel Design Completed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10a. Design Flow - DA Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10b. Design Flow - Design Rejected by AHJ</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×2 for re-enrollment</td></tr>
+<tr><td><code>10bb. Design Flow - Design Rejected by AHJ 2nd Time</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>10c. Design Flow - Design Rejected by Utility</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10cc. Design Flow - 2nd Design Rejected by Utility</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>10e. Design Flow - Design Revision Needed (Miscellaneous)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>11a. Design Flow - DA Revision In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>11b. Design Flow - Permit Design Revision In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×5 for re-enrollment</td></tr>
+<tr><td><code>11bb. Design Flow - 2nd Permit Revision In Progress (AHJ)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11c. Design Flow - Design Revision In Progress (Util)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>11c. Design Flow - Utility Revision In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>11cc. Design Flow - 2nd Utility Design Revision In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11d. Design Flow - As-Built Design Revision In Progress</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>11d. Design Flow - As-Built Revision In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×5 for re-enrollment</td></tr>
+<tr><td><code>11e. Design Flow - Design Revision In Progress (Miscellaneous)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12a. Design Flow - DA Revision Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>12b. Design Flow - Design Revision Complete (AHJ)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12b. Design Flow - Permit Revision Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×4 for re-enrollment</td></tr>
+<tr><td><code>12bb. Design Flow - 2nd Permit Revision Complete (AHJ)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12c. Design Flow - Design Revision Complete (Utility)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12c. Design Flow - Utility Revision Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>12cc. Design Flow - 2nd Interconnection Revision Complete (Utility)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12d. Design Flow - As-Built Revision Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×5 for re-enrollment</td></tr>
+<tr><td><code>12e. Design Flow - Design Revision Complete (Miscellaneous)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - As-Built Revision Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - D&amp;R Design Review Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - D&amp;R/Service Design In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - D&amp;R/Service Design Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - D&amp;R/Service Design Uploaded</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - IDR Revision Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - IDR Revision In Progress</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - IDR Revision Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow - Project Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow: Download TrueDesign Files</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow: Eagleview Failed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow: Eagleview Ready for Review</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Flow: Eagleview Reviewed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>EagleView TrueDesign Auto-Order (Day Before Survey)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 05 · Permit Flow ===== -->
+<div class="section" id="wf-permit">
+<h1>05 · Permit Flow</h1>
+<p class="subtitle">Permitting submission, AHJ follow-up cadence (14/30/45/60-day), issuance. Integration: SolarApp+.</p>
+<div class="summary"><strong>42 logical workflows</strong> (47 live flows incl. clones) · 41 ON / 1 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>00. Permit Flow - SolarApp+ Selected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01a. Permit Flow - Ready for Permitting</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01b. Permit Flow - Ready for Permitting After Utility Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01c. Permit Flow - Ready to Submit Solar App</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02a. Permit Flow - Submitted To Customer</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02b. Permit Flow - Submitted SolarApp+</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. New Construction Flow - Permit Issued</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. Permit Flow - Signature Retrieved From Customer</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Permit Flow - Permit Submitted to AHJ</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05a. Permit Flow - 14 Day AHJ Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05b. Permit Flow - 30 Day AHJ Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05c. Permit Flow - 45 Day AHJ Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05d. Permit Flow - 60 Day AHJ Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06a. Permit Flow - Permit Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06b. Permit Flow - 2nd Permit Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07a. Permit Flow - In Design For Revision</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07b. Permit Flow - In Design For Revision 2nd Time</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07c. Permit Flow - As-Built In Design For Revision</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08a. Permit Flow - Revision Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08b. Permit Flow - 2nd Revision Returned From Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08c. Permit Flow - As-Built Revision Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09a. Permit Flow - Permit Resubmitted to AHJ</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×4 for re-enrollment</td></tr>
+<tr><td><code>09b. Permit Flow - Permit Resubmitted to AHJ 2nd Time</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09c. Permit Flow - As-Built Resubmitted to AHJ</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>09c. Permit Flow - Permit Resubmitted to AHJ (As-Built)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10a. Permit Flow - Permit Expiration in 30 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10b. Permit Flow - Permit Expiration in 14 days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12. Permit Flow - Project Canceled</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Associated AHJ is SolarApp+ or Symbium</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Design Compliance Letter Task - Arapahoe - WMS</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>EV ESA Permit Issued</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>New Construction - Not SolarApp</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Flow - Payment Complete</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Flow - Pending Payment</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Flow: Data Input</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Issued</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Issued Last 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Issued Last 90 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Issued Not Last 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Permit Issued Not Last 90 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PM Arapahoe Compliance Letter Task - WMS</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Precon Lead - Permit Issued - WMS</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 06 · Utility / Interconnection Flow ===== -->
+<div class="section" id="wf-ic">
+<h1>06 · Utility / Interconnection Flow</h1>
+<p class="subtitle">Interconnection application through approval. Status field: <code>Interconnection Status</code>. Integration: Xcel (CO).</p>
+<div class="summary"><strong>75 logical workflows</strong> (90 live flows incl. clones) · 59 ON / 16 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>00. Utility Flow - Deal Association</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Task to Install without Xcel Approval</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Utility Flow - Ready for Interconnection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Utility Flow - Ready for Interconnection (PG&amp;E &amp; SCE)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Utility Flow - Ready for Interconnection (SCE)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Utility Flow - Ready for Interconnection (Xcel)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. Task to Obtain Xcel Approval</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02a. Utility Flow - Submitted To Customer</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02b. Utility Flow - Submitted To Customer (Xcel)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. Utility Flow - Ready to Submit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03a. Utility Flow - Signature Retrieved From Customer</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03b. Utility Flow - Signature Retrieved From Customer &amp; Application Paid (Xcel)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03c. Utility Flow - Waiting on Information</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03d. Utility Flow - Information Collected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>03e. Utility Flow - Waiting on Utility Bill</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03f. Utility Flow - Utility Bill Uploaded</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>03g. Utility Flow - Design Ready To Submit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Transition | Design &amp; Engineering to Permitting &amp; Interconnection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04a. Utility Flow - Submitted to Utility</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04b. Utility Flow - Submitted To Utility (CORE)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04c. Utility Flow - Submitted To Utility (PG&amp;E)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04d. Utility Flow - Submitted To Utility (SCE)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. Transition | Permitting &amp; Interconnection to Ready To Build or RTB - Blocked</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05a. Utility Flow - 14 Day Utility Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05b. Utility Flow - 30 Day Utility Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05c. Utility Flow - 45 Day Utility Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05d. Utility Flow - 60 Day Utility Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05e. Utility Flow - Supplemental Review Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06a. Utility Flow - Application Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06b. Utility Flow - 2nd Application Rejected</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>07a. PTO Flow - Start Xcel Photos</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07a. Utility Flow - In Design For Revision</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07b. PTO Flow - Xcel Photos Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07b. Utility Flow - In Design For Revision 2nd Time</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>07c. PTO Flow - Xcel Photos Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07d. PTO Flow - Xcel Photos Uploaded</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×4 for re-enrollment</td></tr>
+<tr><td><code>07e. PTO Flow - Xcel Photos Resubmitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×4 for re-enrollment</td></tr>
+<tr><td><code>07f. PTO Flow - Xcel Photos Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08a. Utility Flow - Revision Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08b. Utility Flow - 2nd Revision Ready to Resubmit</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>09a. Utility Flow - Application Resubmitted to Utility</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×4 for re-enrollment</td></tr>
+<tr><td><code>09b. Utility Flow - 2nd Application Resubmitted to Utility</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>10a. Utility Flow - Pending Customer Signature (PG&amp;E)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10b. Utility Flow - Rejected Pending Signature (SCE)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>11. Utility Flow - Project Canceled</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12a. Utility Flow - Upload Transformer Upgrade Review</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>12b. Utility Flow - Review Transformer Upgrade Review</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Interconnection Approval Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Interconnection Ready To Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Interconnection Rejection Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Interconnection Resubmit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Interconnection Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Interconnection Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Xcel Design Completion Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Creation (Xcel)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection Approved Last 90 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection Approved Not Last 90 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection for New Construction</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection Not Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection Revision Counter</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Interconnection Revision Counter Value Set</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Is Xcel Battery Rebate?</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Interconnection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Rejection for Interconnection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Precon Lead - Xcel Photos Approved</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Precon Lead - Xcel Photos Rejected</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Submit Xcel PTO Photos at Inspection</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Utility Flow - Approved; Pending Signatures</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Utility Flow - As-Built Resubmitted to Utility</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Utility Flow - Signature Retrieved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×3 for re-enrollment</td></tr>
+<tr><td><code>Utility Flow - Waiting on PE</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Xcel Disco / Reco Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Xcel PTO Flow - Photos Follow Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Xcel SLD and Site Plan Complete.</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 07 · PTO Flow ===== -->
+<div class="section" id="wf-pto">
+<h1>07 · PTO Flow</h1>
+<p class="subtitle">Permission-to-Operate, incl. the Xcel photo path. Status field: <code>PTO Status</code>.</p>
+<div class="summary"><strong>37 logical workflows</strong> (37 live flows incl. clones) · 31 ON / 6 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>01. PTO Flow - Inspection Passed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. PBSR Flow - PTO Granted / Ready to Submit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. PTO Flow - Inspection Submitted to Utility</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02b. 3CE Battery Flow - PTO Granted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. PTO Flow - Ready for PTO After Utility Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04a. PTO Flow - 10 Day PTO Follow-Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04b. PTO Flow - 30 Day PTO Follow-Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04c. PTO Flow - 60 Day PTO Follow-Up</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05a. PTO Flow - Waiting on Information</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05b. PTO Flow - Information Collected by PM</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. PTO Flow - PTO Submission Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. SGIP Flow - PTO Granted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. PTO Flow - Ops Related Rejection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. PTO Flow - Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. Transition | Inspections to Permission To Operate</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10. PTO Flow - Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10. Transition | Permission To Operate to Closeout</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | PTO</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | PTO Granted Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | PTO Rejection Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | PTO Resubmission Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | PTO Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | PTO Submission Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - PTO Granted</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - PTO Received - Ready to Submit</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentives PTO Notification</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PM Email - Phase 6: Inspection to PTO</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>PM Email - Phase 7: PTO to Closeout</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>PRECON &amp; PM - PTO Pending Truck Roll</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Precon Lead - PTO Granted</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>PTO Fail 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PTO First Time Pass 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PTO Granted</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>PTO Invoice Paid</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PTO Last 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>PTO Not Last 365 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Service Flow: PTO Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 08 · Inspection Flow ===== -->
+<div class="section" id="wf-insp">
+<h1>08 · Inspection Flow</h1>
+<p class="subtitle">Final inspection scheduling and pass/fail routing (CA vs CO paths). Integration: Zuper.</p>
+<div class="summary"><strong>9 logical workflows</strong> (9 live flows incl. clones) · 6 ON / 3 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>06. Inspection Flow - Rejected</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. Inspection Flow - In Design For Revision</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. Inspection Flow - Permit Revision Issued</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. Inspection Flow - Revision Returned From Design</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. Inspection Flow - Inspection Failed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Arrivy Inspection Transition</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Inspection Flow - Fire Inspection Passed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Inspection Flow - Fire Inspection Scheduled</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Inspection Flow - Waiting on Permit Revisions</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 09 · Construction Flow ===== -->
+<div class="section" id="wf-con">
+<h1>09 · Construction Flow</h1>
+<p class="subtitle">Construction scheduling and completion. Status field: <code>Construction Status</code>.</p>
+<div class="summary"><strong>9 logical workflows</strong> (9 live flows incl. clones) · 9 ON / 0 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>02. New Construction Flow - Design Reviewed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Construction Flow - RTB 5 Days Ago</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. New Construction Flow - RTB Drone</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. Construction Flow - Construction Scheduled 5 Days Ago</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. Construction Flow - Design Rejected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. Construction Flow - In Design For Revision</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. Construction Flow - Revision Returned From Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09. Construction Flow - Loose Ends Remaining</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Construction Flow: Schedule Install</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== 10 · Stage Transition Flows ===== -->
+<div class="section" id="wf-transition">
+<h1>10 · Stage Transition Flows</h1>
+<p class="subtitle">Bookkeeping flows that advance deals between pipeline stages.</p>
+<div class="summary"><strong>8 logical workflows</strong> (9 live flows incl. clones) · 6 ON / 2 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>-01. Transition | Proposal Accepted to Closed Won</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Transition | Closed Won to Site Survey</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. Transition | Site Survey to Project Rejected</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. Transition | Site Survey to Design &amp; Engineering</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td>cloned ×2 for re-enrollment</td></tr>
+<tr><td><code>06. Transition | RTB - Blocked to Ready To Build</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. Transition | Ready To Build to Construction</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. Transition | Construction to Inspections</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11. Transition | Closeout to Completion</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== Participate Energy (PE) Flow ===== -->
+<div class="section" id="wf-pe">
+<h1>Participate Energy (PE) Flow</h1>
+<p class="subtitle"><strong>NEW since the last SOP snapshot.</strong> PE milestone (M1/M2) document + status automation, incl. the rejection-notes webhooks <code>1839840408</code> (M1) / <code>1839840409</code> (M2).</p>
+<div class="summary"><strong>50 logical workflows</strong> (50 live flows incl. clones) · 41 ON / 9 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>00. Participate Energy Flow - Waiting on Contract</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Participate Energy Flow - Ready for Onboarding</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02. Participate Energy Flow - Onboarding Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. Participate Energy Flow - Ready for M1 Submission</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04. Participate Energy Flow - M1 Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. Participate Energy Flow - Ready for M2 Submission</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06. Participate Energy Flow - M2 Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Is Participate Energy?</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Data Upload</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Energy Removed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow - Design Ready To Upload</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow - Project Cancellation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Accounting</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Compliance</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Ops</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Permitting</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Internal Rejection for Sales</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Ready to Resubmit #1</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Ready to Resubmit #2</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Ready to Resubmit #3</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection for Accounting</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection for Compliance</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection for Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection for Ops</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection for Permitting</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Rejection for Sales</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Resubmitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Resubmitted #1</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Resubmitted #2</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M1 Resubmitted #3</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Approved</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Ready to Resubmit #1</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Ready to Resubmit #2</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Ready to Resubmit #3</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Rejection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Resubmitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Resubmitted #1</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Resubmitted #2</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: M2 Resubmitted #3</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Onboarding Ready to Resubmit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Onboarding Rejection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Flow: Onboarding Resubmitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Participate Onboarding Sheet - Create Record</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Share Monitoring with Participate</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Trigger Participate Energy PandaDoc Contract Creation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== SGIP Flow (CA storage incentive) ===== -->
+<div class="section" id="wf-sgip">
+<h1>SGIP Flow (CA storage incentive)</h1>
+<p class="subtitle"><strong>NEW since the last SOP snapshot.</strong> California Self-Generation Incentive Program milestone pipeline.</p>
+<div class="summary"><strong>42 logical workflows</strong> (42 live flows incl. clones) · 40 ON / 2 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>01. SGIP Flow - Incentive Creation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02a. SGIP Flow - RRF Waiting on Information</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>02b. SGIP Flow - RRF Information Collected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04a. SGIP Flow - RRF Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04b. SGIP Flow - RRF Sent For Signature</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04c. SGIP Flow - RRF Signed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04d. SGIP Flow - RRF Submitted To Waitlist</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04e. SGIP Flow - RRF Resubmitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>04f. SGIP Flow - RRF Suspended</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>05. SGIP Flow - RRF Confirmed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06a. 3CE EV Flow - SGIP Rebate Paid</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>06b. 3CE Battery Flow - SGIP Rebate Paid</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>07. SGIP Flow - ICF Waiting on Information</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>08. SGIP Flow - ICF Information Collected by PM</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09a. SGIP Flow - ICF Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09b. SGIP Flow - ICF Sent For Signature</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09c. SGIP Flow - ICF Signed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09d. SGIP Flow - ICF Resubmitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09e. SGIP Flow - ICF Suspended</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>09f. SGIP Flow - ICF Inspection Requested</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>10. SGIP Flow - Rebate Canceled</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11. SGIP Flow - Project Canceled</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11a. SGIP Flow - Expires in 45 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>11b. SGIP Flow - Expires in 30 Days</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of Expiry Date 1</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of Expiry Date 2</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of Expiry Date 3</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of ICF Approval Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of ICF Paid Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of ICF Rejection Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of ICF Status</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of ICF Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of Incentive Amount</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of Reservation Expiry Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of RRF Status</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of RRF Submit Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of SGIP App Type</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of TSLA Received Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - Copy of TSLA Request Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - RRF Confirmed</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Flow - SGIP Extension Requested</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>SGIP Plan Match Confirmation | SLO</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== Incentive Flow ===== -->
+<div class="section" id="wf-incentive">
+<h1>Incentive Flow</h1>
+<p class="subtitle">Incentive creation / adjustment flows (mostly superseded — only 2 of 8 still ON).</p>
+<div class="summary"><strong>18 logical workflows</strong> (18 live flows incl. clones) · 11 ON / 7 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>01. 3CE EV &amp; Battery Flow - Incentive Creation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. CPA Flow - Incentive Creation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. Incentive Flow - Information Collected by PM or Deal Owner</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>01. PBSR Flow - Incentive Creation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03. PBSR Flow - Incentive Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03a. 3CE EV Flow - Incentive Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>03b. 3CE Battery Flow - Incentive Submitted</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>3CE Flow - Incentive Submitted</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Waiting on Incentive Information Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Creation</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Creation (Denver Cares)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Creation (Fort Collins)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - Construction Complete</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - Incentive Submit Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - Incentive Submitted</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - Incentive(s) Selected</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - Information Collected</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Incentive Flow - Waiting on Information</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== Production Guarantee / Service Warranty ===== -->
+<div class="section" id="wf-prodguar">
+<h1>Production Guarantee / Service Warranty</h1>
+<p class="subtitle">PB Advantage warranty checks: enroll on <code>tags = PB Advantage</code> + aged <code>pto_completion_date</code> → tag <code>Production Issue - 180 Days</code> / <code>- 1 Year</code> and open a Service ticket. 30-day variant is OFF.</p>
+<div class="summary"><strong>3 logical workflows</strong> (3 live flows incl. clones) · 2 ON / 1 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>1 Year Production Guarantee Check</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>180 Day Production Guarantee Check</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>30 Day Production Guarantee Check</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== Bot Hook | / Bot Comms | (automation bots) ===== -->
+<div class="section" id="wf-bot">
+<h1>Bot Hook | / Bot Comms | (automation bots)</h1>
+<p class="subtitle"><strong>NEW since the last SOP snapshot.</strong> Olivia (project-manager bot) + Tech-Ops bot integration hooks.</p>
+<div class="summary"><strong>14 logical workflows</strong> (14 live flows incl. clones) · 10 ON / 4 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>Bot Comms | Project Status Summary</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Comms | Stage Language for Permit Webhooks</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Comms | Stage Language for Webhooks</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Comms | Update Escalation Email</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Closeout</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Construction</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Design</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Inspection</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Inspection Weekly Update</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Permit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Permit Weekly Update</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | RTB Weekly Update</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Site Survey</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Bot Hook | Site Survey Scheduling (IN TEST)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== Date Stamp | (system date stamping) ===== -->
+<div class="section" id="wf-datestamp">
+<h1>Date Stamp | (system date stamping)</h1>
+<p class="subtitle">System plumbing — each stamps one date property with today's date when a status flips. Summarized as one family; not individually meaningful for process docs.</p>
+<div class="summary"><strong>42 logical workflows</strong> (42 live flows incl. clones) · 35 ON / 7 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>Date Stamp | 3CE Battery Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | 3CE EV Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Construction Booked Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Construction Complete Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Construction Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | CPA Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Current Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | DA Resent Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Date Sent to Engineering</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Deal Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Completion Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Draft Completion Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Rejection Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Design Revision Complete Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Final Inspection Fail Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Final Inspection Pass Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Final Inspection Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | ICF Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Inspection Booked Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Kickoff Complete Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | New Construction Design Completion Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | PBSR Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Permit Issue Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Permit Rejection Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Permit Resubmit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Permit Revision Complete Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Permit Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Permit Submit Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Project Complete Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Project Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Ready To Build Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | RRF Submit Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Second Permit Revision Complete Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Second Utility Revision Complete Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Site Survey Booked Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Site Survey Completion Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Site Survey Start Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Third Permit Revision Complete Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Third Utility Revision Complete Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Today&#x27;s Date</code></td><td><span class="dot dot-red"></span>OFF</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Utility Revision Complete Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+<tr><td><code>Date Stamp | Waiting on Information Date</code></td><td><span class="dot dot-teal"></span>ON</td><td>Deal</td><td></td></tr>
+</table></div></div>
+<!-- ===== Service & Tickets (pipeline 0-5) ===== -->
+<div class="section" id="wf-tickets">
+<h1>Service &amp; Tickets (pipeline 0-5)</h1>
+<p class="subtitle">Service / PB-Support / Tech-Ops ticket automation, incl. ticket→Zuper sync and production-issue intake.</p>
+<div class="summary"><strong>29 logical workflows</strong> (29 live flows incl. clones) · 19 ON / 10 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>(NEW) HS Ticket -&gt; Zuper [Creation, Updates]</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>[Monitoring] Troubleshoot ticket assignments</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>[PB Ops] Ticket Created → Property Sync</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>[PUSH] Webhook to Make Google Drive Folder for Tickets</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Auto IT Ticket - Ticket</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Automated Reply Email - Service Ticket Submission</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Custom Object | Customer Review | Ticket Email Notification</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Design In Progress (Ticket)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Design Needed (Ticket)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Design Ready for Review (Ticket)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Link Ticket to Zuper Job</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>PB Advantage Tag for Tickets</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>PB Support: Automatically change ticket status when a customer replies to an email.</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>PB Support: Automatically change ticket status when an email is sent to a customer.</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Pipeline is &quot;PB Support&quot;, Ticket status is &quot;Gathering Requirements&quot;</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Send Ticket to Make.com for Geocoding if Address known but Long/Lat Unknown</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Service - Post Site Visit Follow-Up Task Workflow</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Service Pipeline: Automatically change ticket status when a customer replies to an email.</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Service Pipeline: Automatically change ticket status when an email is sent to a customer.</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Service Ticket - Revisit Needed</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Stuck in Acknowledgement</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Technical Operations Pipeline: Automatically change ticket status when an email is sent to a customer.</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Ticket Acknowledgement</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Ticket Assignments - IT Support</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Ticket Assignments - Service</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Ticket Kickoff</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Ticket Owner for Zuper</code></td><td><span class="dot dot-teal"></span>ON</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Ticket to Zuper Job &amp; Project</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+<tr><td><code>Unnamed workflow - 2025-11-07 22:30:04 GMT+0000</code></td><td><span class="dot dot-red"></span>OFF</td><td>Ticket</td><td></td></tr>
+</table></div></div>
+<!-- ===== Contacts & Marketing (0-1) ===== -->
+<div class="section" id="wf-contacts">
+<h1>Contacts &amp; Marketing (0-1)</h1>
+<p class="subtitle">Contact-level routing, tagging, lead-source, and marketing-status automation.</p>
+<div class="summary"><strong>66 logical workflows</strong> (66 live flows incl. clones) · 45 ON / 21 OFF</div>
+<div class="card"><table>
+<tr><th style="width:55%">Workflow</th><th>Status</th><th>Obj</th><th>Notes</th></tr>
+<tr><td><code>[Dana] Stop AR Bot Communication</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>[PB Ops] Contact Address → Property Sync</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Acquisition Routing - Schedule Appointment Form</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Address Formatting (D&amp;R)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Address Formatting (manual)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>AI Bot Removal From Appointment Booking Campaign</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>AI Bot Routing</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Aircall Junk Capture</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Appt Type Automation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Automated Outside Sales Sequence</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Backup Power Form Submission Lead Source Change</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>CA: Newsletter Signup | Lead Source + Automated Email</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>CO: Newsletter Signup | Lead Source + Automated Email</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Comms Method on Form Submit</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Concatenate Notes for Sales with Dates</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Contact Recent Sentiment Copy to Deal</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Contact Us Lead Source Update</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Contact – Email/Phone Changed (for Primary Deal Sync)</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Convert Lifecycle Stage at Closed Won</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Create New Deal</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Create New Referral Button</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Create New Ticket</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Customer Name Push From Contact to Deal</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>D&amp;R Routing - Schedule Appointment Form</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Date Last Contacted Update on Deal</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Email for Tesla Direct Leads</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Employee email logging</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Estimator AI Agent</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Estimator Summary Copy to Deal</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Event Form Submission for Automated Email</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Form Submission / Task to Charlie</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>June 2026 Hail Text - NON PB Customers</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>June 2026 Hail Text - NON PB Customers (cloned)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>June 2026 Hail Text - PB Customers</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Marketing Contact Automation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>May 2026 Hail Text - NON PB Customers</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Missing Lead Source</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Negative Sentiment Notification (Contact)</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>PB Tech Ops - Property Sync Workflow</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Populate Contact Owner Email</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Populate Lead Source &amp; Lead Status for Estimator Tool Leads</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Process no same day response</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Property Creation and Associations</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Q2 Promo Text 2026 - Colorado</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Re-assign Consultation No-Show</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Referral Contact Formatting</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Self Booked Meeting Notification</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Self-Booked Consultation Follow Up Email</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Send a follow-up email after form submission</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Service Routing - Schedule Appt Form</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Service Ticket Creation</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Set Referral Title &amp; Properties</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Tag as Commercial Contact</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Tag as Residential Contact</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Tesla Direct Lead / Task to Launch Hatch</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Tesla Rebate Registration Reminder</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Unenroll Sequence</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Unnamed workflow - 2025-05-08 18:39:15 GMT+0000</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Unnamed workflow - 2026-02-28 23:28:50 GMT+0000</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Unnamed workflow - 2026-04-30 16:48:34 GMT+0000</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Unnamed workflow - 2026-06-18 15:34:50 GMT+0000</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Unsubscribe Contacts moved to Non-Marketing</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Webform Routing - Contact Us</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Webform Routing - Event Lead</code></td><td><span class="dot dot-red"></span>OFF</td><td>Contact</td><td></td></tr>
+<tr><td><code>Webform Routing - Referral</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+<tr><td><code>Webform Routing - Solar Calculator</code></td><td><span class="dot dot-teal"></span>ON</td><td>Contact</td><td></td></tr>
+</table></div></div></div></div>
+</body></html>

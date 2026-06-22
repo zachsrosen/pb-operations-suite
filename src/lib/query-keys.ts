@@ -279,6 +279,7 @@ export const queryKeys = {
     markers: (mode: string, types: string[]) =>
       [...queryKeys.map.root, "markers", mode, types.slice().sort().join(",")] as const,
   },
+  workflowMap: () => ["workflow-map"] as const,
 } as const;
 
 /**
