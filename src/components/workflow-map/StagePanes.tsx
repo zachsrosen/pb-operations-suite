@@ -2,6 +2,10 @@
 
 import type { FlowMapSnapshot } from "@/lib/flow-map/types";
 import FlowList from "./FlowList";
+import ProcessPane from "./ProcessPane";
+import DriftBadges from "./DriftBadges";
+import { flowsForStage } from "./flow-map-utils";
+import { useStageSop } from "./useStageSop";
 
 function PaneHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -22,14 +26,36 @@ export default function StagePanes({
   selectedFlowId?: string;
   onSelectFlow: (flowId: string) => void;
 }) {
+  // One SOP fetch for the stage, shared by the Process pane and the drift
+  // badges (the badges diff the same section HTML against live flows).
+  const { data, isLoading } = useStageSop(stageId);
+  const sections = data?.sections ?? [];
+  const projectOnly = data?.projectOnly ?? false;
+
+  // Raw flows enrolled at this stage (clone suffixes intact) — detectDrift
+  // does its own clone-collapse. Drift is only meaningful for mapped (Project)
+  // stages, so non-Project stages get an empty htmls list and render no badges.
+  const liveStageFlows = flowsForStage(stageId, snapshot).map((f) => ({
+    name: f.name,
+    isEnabled: f.isEnabled,
+  }));
+  const htmls = projectOnly ? sections.map((s) => s.content) : [];
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      {/* Process pane — wired to SOP content in Chunk 4. Stubbed for now. */}
+      {/* Process pane — live SOP content + drift badges. */}
       <section className="space-y-3">
-        <PaneHeading>Process</PaneHeading>
-        <div className="rounded-lg border border-dashed border-t-border bg-surface-2/40 p-4 text-sm text-muted">
-          SOP process — coming in the next step.
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PaneHeading>Process</PaneHeading>
+          {projectOnly && (
+            <DriftBadges htmls={htmls} liveStageFlows={liveStageFlows} />
+          )}
         </div>
+        <ProcessPane
+          sections={sections}
+          projectOnly={projectOnly}
+          isLoading={isLoading}
+        />
       </section>
 
       {/* Automation pane — the flows that run at this stage. */}
