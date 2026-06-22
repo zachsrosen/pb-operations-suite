@@ -17,6 +17,7 @@ import { getDealProperties, updateDealProperty } from "@/lib/hubspot";
 import { updateTicketProperties } from "@/lib/hubspot-tickets";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { geocodeFreeform } from "@/lib/geocode";
+import { resolveDriveFolderId } from "@/lib/eagleview-folder";
 import {
   resolveStampEnabled,
   EAGLEVIEW_STAMP_ENABLED_KEY,
@@ -65,9 +66,16 @@ async function fetchDealAddress(dealId: string): Promise<DealAddressFields | nul
     zip: props.postal_code ?? props.zip ?? "",
     latitude: num(props.latitude),
     longitude: num(props.longitude),
-    driveDesignDocumentsFolderId:
-      props.design_document_folder_id ?? props.design_documents ?? null,
-    driveAllDocumentsFolderId: props.all_document_parent_folder_id ?? null,
+    // These HubSpot fields may hold a bare folder ID OR a full Drive URL
+    // (recent deals store design_documents as a URL). Extract the ID before it
+    // reaches the Drive API, else folder creation fails (drive_folder_create_failed).
+    driveDesignDocumentsFolderId: resolveDriveFolderId(
+      props.design_document_folder_id,
+      props.design_documents,
+    ),
+    driveAllDocumentsFolderId: resolveDriveFolderId(
+      props.all_document_parent_folder_id,
+    ),
   };
 }
 
