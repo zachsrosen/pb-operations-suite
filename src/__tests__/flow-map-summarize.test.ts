@@ -18,6 +18,34 @@ test("PandaDoc DA Sent: event-based, sets layout_status", () => {
   expect(e.sets.some((s: any) => s.property === "layout_status")).toBe(true);
 });
 
+test("status/name mapping: '04. Design Flow' maps to Design & Engineering + creates the stamping task", () => {
+  // 451609218 enrolls via dealstage IS_NONE_OF [closed] (no positive inclusion),
+  // so the old inclusion-only mapping would NOT place it in any stage. The name
+  // (/design flow/i) + design_status/layout_status touch must now map it to 20461937.
+  const e = summarizeFlow(load("451609218"), labels, stageLookup);
+  expect(e.stageIds).toContain("20461937"); // Design & Engineering
+  expect(e.createsTasks).toContain("Complete Final Design Review For Stamping - ZRS");
+});
+
+test("status/name mapping: a Permit Flow maps to Permitting & Interconnection", () => {
+  // 452253474 = "01a. Permit Flow - Ready for Permitting" — name (/permit(ting)? flow/i)
+  // and/or permitting_status touch must map it to 20461938.
+  const e = summarizeFlow(load("452253474"), labels, stageLookup);
+  expect(e.stageIds).toContain("20461938"); // Permitting & Interconnection
+});
+
+test("dealstage 0-5 action renders the stage LABEL, not the raw id", () => {
+  // 1791042695 = "Transition from Construction back to RTB" — sets dealstage to
+  // 22580871 ("Ready To Build"). dealstage has no enum options, so the action text
+  // must resolve the id through stageLookup, not print the numeric stage id.
+  const e = summarizeFlow(load("1791042695"), labels, stageLookup);
+  const actions = e.actions.join(" | ");
+  expect(actions).toContain("Ready To Build");
+  expect(actions).not.toContain("22580871");
+  // raw value stays numeric for progression matching
+  expect(e.sets.some((s: any) => s.property === "dealstage" && s.value === "22580871")).toBe(true);
+});
+
 test("coverage: every fixture parses with a non-empty trigger and zero unhandled operators", () => {
   unhandledOperators.clear();
   const ids = fs.readdirSync("data/hubspot-flows/detail").filter(f => f.endsWith(".json")).map(f => f.replace(".json",""));

@@ -14,6 +14,8 @@ export type FlowEntry = {
   actionsTechnical: string[];
   sets: { property: string; label: string; value: string }[];
   reads: { property: string; label: string; value: string }[]; // non-stage status values
+  createsTasks: string[]; // subjects of 0-3 CREATE_TASK actions this flow runs
+  firesOnTasks: string[]; // task subjects this flow enrolls on completing
   cloneCount: number;
   revisionId: string;
   hubspotUrl: string;
@@ -21,7 +23,7 @@ export type FlowEntry = {
 
 export type Stage = { id: string; label: string; order: number };
 export type Pipeline = { id: string; label: string; objectTypeId: string; stages: Stage[] };
-export type ProgressionLink = { property: string; label: string; value: string; setBy: string[]; firesFlows: string[] };
+export type ProgressionLink = { kind: "status" | "task"; property: string; label: string; value: string; setBy: string[]; firesFlows: string[] };
 
 export type FlowMapSnapshot = {
   generatedAt: string;

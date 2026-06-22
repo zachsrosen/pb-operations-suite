@@ -31,6 +31,7 @@ type DisplayMode = "flowchart" | "list";
 
 const VIEW_STORAGE_KEY = "workflow-map-view";
 const VIEWMODE_STORAGE_KEY = "workflow-map-viewmode";
+const SHOW_DISABLED_STORAGE_KEY = "workflow-map-show-disabled";
 
 function isEmpty(data: ApiResponse | undefined): data is { empty: true } {
   return !!data && "empty" in data && data.empty === true;
@@ -56,6 +57,15 @@ function readStoredDisplayMode(): DisplayMode {
   }
 }
 
+function readStoredShowDisabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SHOW_DISABLED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export default function WorkflowMapClient({
   canEditSop,
 }: {
@@ -75,6 +85,9 @@ export default function WorkflowMapClient({
   const [displayMode, setDisplayMode] = useState<DisplayMode>(
     readStoredDisplayMode,
   );
+  const [showDisabled, setShowDisabled] = useState<boolean>(
+    readStoredShowDisabled,
+  );
   const [search, setSearch] = useState("");
 
   function changeView(next: ViewMode) {
@@ -90,6 +103,15 @@ export default function WorkflowMapClient({
     setDisplayMode(next);
     try {
       window.localStorage.setItem(VIEWMODE_STORAGE_KEY, next);
+    } catch {
+      // ignore persistence failures
+    }
+  }
+
+  function changeShowDisabled(next: boolean) {
+    setShowDisabled(next);
+    try {
+      window.localStorage.setItem(SHOW_DISABLED_STORAGE_KEY, String(next));
     } catch {
       // ignore persistence failures
     }
@@ -273,6 +295,17 @@ export default function WorkflowMapClient({
         </nav>
 
         <div className="flex items-center gap-3 ml-auto">
+          {/* Show-disabled toggle — hide turned-off flows by default. */}
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors">
+            <input
+              type="checkbox"
+              checked={showDisabled}
+              onChange={(e) => changeShowDisabled(e.target.checked)}
+              className="h-3.5 w-3.5 accent-cyan-500"
+            />
+            Show disabled
+          </label>
+
           {/* Flowchart / List segmented control */}
           <div className="inline-flex items-center rounded-full border border-t-border bg-surface-2 p-0.5">
             {(["flowchart", "list"] as const).map((mode) => (
@@ -345,6 +378,7 @@ export default function WorkflowMapClient({
             snapshot={snapshot}
             drill={drill}
             setDrill={setDrill}
+            showDisabled={showDisabled}
           />
           {flow && (
             <FlowDetail
@@ -387,6 +421,7 @@ export default function WorkflowMapClient({
                   setDrill({ ...drill, flowId })
                 }
                 canEditSop={canEditSop}
+                showDisabled={showDisabled}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-t-border bg-surface p-6 text-sm text-muted shadow-card">

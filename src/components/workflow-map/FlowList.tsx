@@ -9,16 +9,19 @@ export default function FlowList({
   stageId,
   selectedFlowId,
   onSelect,
+  showDisabled = false,
 }: {
   snapshot: FlowMapSnapshot;
   stageId: string;
   selectedFlowId?: string;
   /** Receives the representative flow id of the clicked group. */
   onSelect: (flowId: string) => void;
+  /** When false (default), disabled flow families are hidden. */
+  showDisabled?: boolean;
 }) {
-  const groups = groupFlowClones(flowsForStage(stageId, snapshot)).sort((a, b) =>
-    a.base.localeCompare(b.base),
-  );
+  const groups = groupFlowClones(flowsForStage(stageId, snapshot))
+    .filter((g) => showDisabled || g.on)
+    .sort((a, b) => a.base.localeCompare(b.base));
 
   if (groups.length === 0) {
     return (

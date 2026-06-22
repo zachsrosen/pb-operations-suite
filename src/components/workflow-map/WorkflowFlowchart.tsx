@@ -24,6 +24,7 @@ import {
   Controls,
   Handle,
   MiniMap,
+  Panel,
   Position,
   ReactFlow,
   type Edge,
@@ -40,6 +41,8 @@ import {
   flowsForPipeline,
   flowsForStage,
   groupFlowClones,
+  nonEmptyPipelines,
+  pipelineDisplayLabel,
 } from "./flow-map-utils";
 import {
   layeredDepths,
@@ -182,16 +185,21 @@ function buildLevel1(snapshot: FlowMapSnapshot): {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  const sales = snapshot.pipelines.find((p) =>
-    p.label.toLowerCase().includes("sales"),
-  );
-  const downstream = snapshot.pipelines
+  // Only pipelines that actually carry flows (drop Test Pipeline, Technical
+  // Operations, Company Initiatives, etc.).
+  const visible = nonEmptyPipelines(snapshot);
+  const sales = visible.find((p) => p.label.toLowerCase().includes("sales"));
+  const downstream = visible
     .filter((p) => p.id !== sales?.id)
     .sort((a, b) => downstreamRank(a) - downstreamRank(b));
 
   // Right-hand column: downstream pipelines + cross-cutting (if any).
   const rightItems: Array<{ id: string; label: string; hero: boolean }> =
-    downstream.map((p, i) => ({ id: p.id, label: p.label, hero: i === 0 }));
+    downstream.map((p, i) => ({
+      id: p.id,
+      label: pipelineDisplayLabel(p, snapshot),
+      hero: i === 0,
+    }));
   if (flowsForPipeline(CROSS_CUTTING_ID, snapshot).length > 0) {
     rightItems.push({
       id: CROSS_CUTTING_ID,
@@ -211,7 +219,7 @@ function buildLevel1(snapshot: FlowMapSnapshot): {
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
       data: {
-        label: sales.label,
+        label: pipelineDisplayLabel(sales, snapshot),
         sub: pipelineSub(sales.id, snapshot),
         hero: false,
       } satisfies PipelineNodeData,
@@ -300,31 +308,42 @@ function buildLevel2(
   return { nodes, edges };
 }
 
+// Truncate long task subjects so an edge label stays legible.
+function truncate(s: string, max = 32): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 function buildLevel3(
   snapshot: FlowMapSnapshot,
   stageId: string,
+  showDisabled: boolean,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  const groups = groupFlowClones(flowsForStage(stageId, snapshot));
+  let groups = groupFlowClones(flowsForStage(stageId, snapshot));
+  // Hide disabled clone-families unless the viewer opts in. `on` is the
+  // family-aggregate enabled state, so a group survives if ANY clone is live.
+  if (!showDisabled) groups = groups.filter((g) => g.on);
   if (groups.length === 0) return { nodes, edges };
 
   // Node id = clone-base name (stable, matches the names carried in links).
   const baseNames = new Set(groups.map((g) => g.base));
 
   // Hand-off edges: for each progression link, if a setter base name AND a firer
-  // base name are both present in this stage, draw setter → firer. Dedupe and
-  // capture a label.
+  // base name are both present in this stage, draw setter → firer. Status links
+  // are solid (status hand-off); task links are dashed (task completed). Dedupe
+  // on (source, target, kind) and capture a label.
   const handoffs: HandoffEdge[] = [];
   const seen = new Set<string>();
   for (const link of snapshot.links) {
+    const isTask = link.kind === "task";
     const setters = link.setBy.filter((n) => baseNames.has(n));
     const firers = link.firesFlows.filter((n) => baseNames.has(n));
     for (const src of setters) {
       for (const tgt of firers) {
         if (src === tgt) continue;
-        const key = `${src}→${tgt}`;
+        const key = `${src}→${tgt}→${link.kind}`;
         if (seen.has(key)) continue;
         seen.add(key);
         handoffs.push({ source: src, target: tgt });
@@ -332,8 +351,15 @@ function buildLevel3(
           id: `e-${key}`,
           source: src,
           target: tgt,
-          label: link.label,
-          animated: true,
+          label: isTask ? `✓ ${truncate(link.label)}` : link.label,
+          animated: !isTask,
+          style: isTask
+            ? { stroke: "var(--accent-purple, #a78bfa)", strokeDasharray: "5 4" }
+            : { stroke: "var(--accent-cyan, #22d3ee)" },
+          labelStyle: isTask
+            ? { fill: "var(--accent-purple, #a78bfa)", fontSize: 11 }
+            : { fontSize: 11 },
+          labelBgStyle: { fill: "var(--surface, #18181b)", fillOpacity: 0.85 },
         });
       }
     }
@@ -400,10 +426,13 @@ export default function WorkflowFlowchart({
   snapshot,
   drill,
   setDrill,
+  showDisabled = false,
 }: {
   snapshot: FlowMapSnapshot;
   drill: DrillState;
   setDrill: (next: DrillState) => void;
+  /** When false (default), L3 omits disabled flows. */
+  showDisabled?: boolean;
 }) {
   const { nodes, edges, level } = useMemo(() => {
     if (!drill.pipelineId) {
@@ -412,8 +441,11 @@ export default function WorkflowFlowchart({
     if (!drill.stageId) {
       return { ...buildLevel2(snapshot, drill.pipelineId), level: 2 as const };
     }
-    return { ...buildLevel3(snapshot, drill.stageId), level: 3 as const };
-  }, [snapshot, drill.pipelineId, drill.stageId]);
+    return {
+      ...buildLevel3(snapshot, drill.stageId, showDisabled),
+      level: 3 as const,
+    };
+  }, [snapshot, drill.pipelineId, drill.stageId, showDisabled]);
 
   // Selecting a flow node needs the group's representative id (an enabled clone
   // when one exists). Resolve lazily on click against the current stage.
@@ -432,13 +464,33 @@ export default function WorkflowFlowchart({
 
   const renderedNodes = useMemo(
     () =>
-      nodes.map((n) =>
-        n.id === selectedBase
-          ? { ...n, className: "ring-2 ring-cyan-500 rounded-lg" }
-          : n,
-      ),
-    [nodes, selectedBase],
+      nodes.map((n) => {
+        const classes: string[] = [];
+        if (n.id === selectedBase) classes.push("ring-2 ring-cyan-500 rounded-lg");
+        // De-emphasize disabled flow nodes when they're being shown.
+        if (
+          level === 3 &&
+          (n.data as FlowNodeData)?.on === false
+        ) {
+          classes.push("opacity-50");
+        }
+        return classes.length ? { ...n, className: classes.join(" ") } : n;
+      }),
+    [nodes, selectedBase, level],
   );
+
+  // Pop one drill level: flow → stage → pipeline → top.
+  function goBack() {
+    if (drill.flowId) {
+      setDrill({ pipelineId: drill.pipelineId, stageId: drill.stageId });
+    } else if (drill.stageId) {
+      setDrill({ pipelineId: drill.pipelineId });
+    } else if (drill.pipelineId) {
+      setDrill({});
+    }
+  }
+
+  const canGoBack = Boolean(drill.pipelineId);
 
   function onNodeClick(_e: React.MouseEvent, node: Node) {
     if (level === 1) {
@@ -483,7 +535,61 @@ export default function WorkflowFlowchart({
           >
             <Background />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable />
+            {/* Theme-adaptive minimap: every color resolves to a live theme token
+                (globals.css :root / .sunset / .dark), so it tracks light/dark/sunset
+                automatically instead of rendering as a fixed dark (or white) box.
+                Token names mirror globals.css exactly (--surface-2, --surface,
+                --border, --muted). The mask is color-mixed off --surface so the
+                out-of-view dim reads correctly in light and dark. */}
+            <MiniMap
+              pannable
+              zoomable
+              maskColor="color-mix(in srgb, var(--surface) 60%, transparent)"
+              maskStrokeColor="var(--border)"
+              bgColor="var(--surface-2)"
+              nodeColor="var(--muted)"
+              nodeStrokeColor="var(--border)"
+              style={{
+                backgroundColor: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+              }}
+            />
+
+            {/* Back affordance — pops one drill level (mirrors the breadcrumb). */}
+            {canGoBack && (
+              <Panel position="top-left">
+                <button
+                  type="button"
+                  onClick={goBack}
+                  className="rounded-lg border border-t-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-foreground shadow-card transition-colors hover:text-cyan-400"
+                >
+                  ← Back
+                </button>
+              </Panel>
+            )}
+
+            {/* Legend — only meaningful at the stage (edge) level. */}
+            {level === 3 && edges.length > 0 && (
+              <Panel position="bottom-left">
+                <div className="flex items-center gap-3 rounded-lg border border-t-border bg-surface-2/90 px-2.5 py-1.5 text-[11px] text-muted shadow-card">
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="inline-block h-0.5 w-5 rounded bg-cyan-400"
+                    />
+                    status hand-off
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="inline-block h-0 w-5 border-t-2 border-dashed border-purple-400"
+                    />
+                    task completed
+                  </span>
+                </div>
+              </Panel>
+            )}
           </ReactFlow>
         </div>
       )}

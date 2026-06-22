@@ -3,6 +3,7 @@ import type { ProgressionLink } from "@/lib/flow-map/types";
 
 const links: ProgressionLink[] = [
   {
+    kind: "status",
     property: "layout_status",
     value: "Sent to Customer",
     label: "Sent For Approval",
@@ -34,6 +35,7 @@ test("self is excluded and empty groups are dropped", () => {
   // sole downstream produces no triggers group.
   const selfOnly: ProgressionLink[] = [
     {
+      kind: "status",
       property: "p",
       value: "v",
       label: "L",
