@@ -17,6 +17,11 @@ import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 import { syncFlowMap } from "@/lib/flow-map/sync";
 
+// The first backfill is ~870 HubSpot calls / several minutes; mirror the cron
+// route's ceiling so a cold sync isn't killed at the default 10s/60s. The sync
+// itself persists progress incrementally, so even a timeout is recoverable.
+export const maxDuration = 300;
+
 const REFRESH_TS_KEY = "workflow_map_last_refresh";
 const MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
