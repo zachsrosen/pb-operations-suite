@@ -311,14 +311,19 @@ const BASE_LINKS: SuitePageCard[] = [
   },
 
   // ── Reference ──
-  {
-    href: "/dashboards/workflow-map",
-    title: "Workflow Map",
-    description: "Live map of HubSpot automation + SOPs.",
-    tag: "WORKFLOW",
-    icon: "🔀",
-    section: "Reference",
-  },
+  // Workflow Map is dark-launched: only shown when the UI flag is "true".
+  ...(process.env.NEXT_PUBLIC_UI_WORKFLOW_MAP_ENABLED === "true"
+    ? [
+        {
+          href: "/dashboards/workflow-map",
+          title: "Workflow Map",
+          description: "Live map of HubSpot automation + SOPs.",
+          tag: "WORKFLOW",
+          icon: "🔀",
+          section: "Reference",
+        } satisfies SuitePageCard,
+      ]
+    : []),
 ];
 
 // Roles entitled to access /dashboards/pe-photo-builder (mirrors roles.ts allowlist).

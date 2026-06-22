@@ -127,14 +127,19 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "🛰️",
     section: "Tools",
   },
-  {
-    href: "/dashboards/workflow-map",
-    title: "Workflow Map",
-    description: "Live map of HubSpot automation + SOPs.",
-    tag: "WORKFLOW",
-    icon: "🔀",
-    section: "Tools",
-  },
+  // Workflow Map is dark-launched: only shown when the UI flag is "true".
+  ...(process.env.NEXT_PUBLIC_UI_WORKFLOW_MAP_ENABLED === "true"
+    ? [
+        {
+          href: "/dashboards/workflow-map",
+          title: "Workflow Map",
+          description: "Live map of HubSpot automation + SOPs.",
+          tag: "WORKFLOW",
+          icon: "🔀",
+          section: "Tools",
+        } satisfies SuitePageCard,
+      ]
+    : []),
 ];
 
 const LINKS: SuitePageCard[] = [

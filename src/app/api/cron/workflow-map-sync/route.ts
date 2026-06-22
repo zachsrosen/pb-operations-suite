@@ -19,6 +19,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Dark-launch kill switch: no-op until the sync flag is flipped on. The admin
+  // manual refresh route (/api/workflow-map/refresh) stays available so
+  // reviewers can populate the snapshot on demand while the cron is off.
+  if (process.env.WORKFLOW_MAP_SYNC_ENABLED !== "true") {
+    return NextResponse.json({ status: "disabled" });
+  }
+
   try {
     const result = await syncFlowMap();
     return NextResponse.json({

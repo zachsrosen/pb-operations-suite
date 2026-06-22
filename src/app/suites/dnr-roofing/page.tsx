@@ -43,13 +43,18 @@ const LINKS: SuitePageCard[] = [
     tagColor: "blue",
     icon: "👥",
   },
-  {
-    href: "/dashboards/workflow-map",
-    title: "Workflow Map",
-    description: "Live map of HubSpot automation + SOPs.",
-    tag: "WORKFLOW",
-    icon: "🔀",
-  },
+  // Workflow Map is dark-launched: only shown when the UI flag is "true".
+  ...(process.env.NEXT_PUBLIC_UI_WORKFLOW_MAP_ENABLED === "true"
+    ? [
+        {
+          href: "/dashboards/workflow-map",
+          title: "Workflow Map",
+          description: "Live map of HubSpot automation + SOPs.",
+          tag: "WORKFLOW",
+          icon: "🔀",
+        } satisfies SuitePageCard,
+      ]
+    : []),
 ];
 
 export default async function DNRRoofingSuitePage() {

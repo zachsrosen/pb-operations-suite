@@ -19,6 +19,17 @@ export default async function WorkflowMapPage() {
   if (!session?.user) redirect("/");
 
   const roles = (session.user as { roles?: string[] } | undefined)?.roles ?? [];
+
+  // Dark-launch gate: while the UI flag is off, only ADMINs can review the page
+  // (so it can be vetted in prod before release). Everyone else is redirected.
+  // Once NEXT_PUBLIC_UI_WORKFLOW_MAP_ENABLED is "true", all allow-listed roles see it.
+  if (
+    process.env.NEXT_PUBLIC_UI_WORKFLOW_MAP_ENABLED !== "true" &&
+    !roles.includes("ADMIN")
+  ) {
+    redirect("/");
+  }
+
   const canEditSop = roles.includes("ADMIN");
 
   return (
