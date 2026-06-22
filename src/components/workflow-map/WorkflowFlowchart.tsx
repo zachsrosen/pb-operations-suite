@@ -535,16 +535,23 @@ export default function WorkflowFlowchart({
           >
             <Background />
             <Controls showInteractive={false} />
+            {/* Theme-adaptive minimap: every color resolves to a live theme token
+                (globals.css :root / .sunset / .dark), so it tracks light/dark/sunset
+                automatically instead of rendering as a fixed dark (or white) box.
+                Token names mirror globals.css exactly (--surface-2, --surface,
+                --border, --muted). The mask is color-mixed off --surface so the
+                out-of-view dim reads correctly in light and dark. */}
             <MiniMap
               pannable
               zoomable
-              maskColor="rgba(0,0,0,0.55)"
-              bgColor="var(--surface-2, #1c1c1f)"
-              nodeColor="var(--muted, #52525b)"
-              nodeStrokeColor="var(--t-border, #3f3f46)"
+              maskColor="color-mix(in srgb, var(--surface) 60%, transparent)"
+              maskStrokeColor="var(--border)"
+              bgColor="var(--surface-2)"
+              nodeColor="var(--muted)"
+              nodeStrokeColor="var(--border)"
               style={{
-                backgroundColor: "var(--surface-2, #1c1c1f)",
-                border: "1px solid var(--t-border, #3f3f46)",
+                backgroundColor: "var(--surface-2)",
+                border: "1px solid var(--border)",
                 borderRadius: 8,
               }}
             />

@@ -56,6 +56,9 @@ function makeCtx(propLabels: PropLabels, stageLookup: StageLookup) {
     return v ? v[2] : sid;
   };
   const inStageLookup = (v: any): boolean => String(v) in stageLookup;
+  // Shared human-readable value resolution: stage ids → stage label, else enum option label.
+  // Used by both the trigger filter renderer and the 0-5 action renderer so they stay consistent.
+  const displayValue = (p: string, v: string) => (String(v) in stageLookup ? stagelabel(String(v)) : voption(p, String(v)));
 
   // timePoint formatter (Python tp)
   const tp = (p: any): string => {
@@ -81,7 +84,7 @@ function makeCtx(propLabels: PropLabels, stageLookup: StageLookup) {
     if (!KNOWN_OPERATORS.has(o)) unhandledOperators.add(o);
     const L = plabel(prop);
     let vals: any[] = op.values || (op.value !== undefined && op.value !== null ? [op.value] : []);
-    vals = vals.map((v) => (String(v) in stageLookup ? stagelabel(String(v)) : voption(prop, String(v))));
+    vals = vals.map((v) => displayValue(prop, String(v)));
     let pretty = vals.map((v) => `“${v}”`).join(" or ");
     if (pretty.length > 40) pretty = pretty.slice(0, 38) + "…”";
     if (["IS_ANY_OF", "IS_EQUAL_TO", "IS_EXACTLY", "HAS_EVER_BEEN_ANY_OF", "HAS_EVER_BEEN_EQUAL_TO"].includes(o))
@@ -126,7 +129,7 @@ function makeCtx(propLabels: PropLabels, stageLookup: StageLookup) {
     return `${prop} ${o}${raw ? ` [${raw}]` : ""}`;
   }
 
-  return { plabel, voption, stagelabel, inStageLookup, tp, fmtFilter, fmtFilterTech };
+  return { plabel, voption, stagelabel, inStageLookup, displayValue, tp, fmtFilter, fmtFilterTech };
 }
 
 type Ctx = ReturnType<typeof makeCtx>;
@@ -260,7 +263,7 @@ function oneAction(a: any, ctx: Ctx, tech: boolean): string | null {
     }
     const L = ctx.plabel(prop);
     if (isTs || sv === undefined || sv === null || sv === "") return `stamp ${L} with today’s date`;
-    return `set ${L} to “${clip(ctx.voption(prop, String(sv)), 26)}”`;
+    return `set ${L} to “${clip(ctx.displayValue(prop, String(sv)), 26)}”`;
   }
   if (t === "0-3") return tech ? `[0-3] create task "${fields.subject || ""}"` : `create task “${clip(fields.subject || "", 38)}”`;
   if (t === "0-1") {

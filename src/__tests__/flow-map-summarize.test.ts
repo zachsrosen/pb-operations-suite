@@ -34,6 +34,18 @@ test("status/name mapping: a Permit Flow maps to Permitting & Interconnection", 
   expect(e.stageIds).toContain("20461938"); // Permitting & Interconnection
 });
 
+test("dealstage 0-5 action renders the stage LABEL, not the raw id", () => {
+  // 1791042695 = "Transition from Construction back to RTB" — sets dealstage to
+  // 22580871 ("Ready To Build"). dealstage has no enum options, so the action text
+  // must resolve the id through stageLookup, not print the numeric stage id.
+  const e = summarizeFlow(load("1791042695"), labels, stageLookup);
+  const actions = e.actions.join(" | ");
+  expect(actions).toContain("Ready To Build");
+  expect(actions).not.toContain("22580871");
+  // raw value stays numeric for progression matching
+  expect(e.sets.some((s: any) => s.property === "dealstage" && s.value === "22580871")).toBe(true);
+});
+
 test("coverage: every fixture parses with a non-empty trigger and zero unhandled operators", () => {
   unhandledOperators.clear();
   const ids = fs.readdirSync("data/hubspot-flows/detail").filter(f => f.endsWith(".json")).map(f => f.replace(".json",""));
