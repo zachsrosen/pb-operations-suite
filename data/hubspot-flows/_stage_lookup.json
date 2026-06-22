@@ -1,0 +1,568 @@
+{
+ "stage_lookup": {
+  "qualifiedtobuy": [
+   "Sales Pipeline",
+   "default",
+   "Qualified to buy",
+   0
+  ],
+  "decisionmakerboughtin": [
+   "Sales Pipeline",
+   "default",
+   "Proposal Submitted",
+   1
+  ],
+  "1241097777": [
+   "Sales Pipeline",
+   "default",
+   "Proposal Accepted",
+   2
+  ],
+  "contractsent": [
+   "Sales Pipeline",
+   "default",
+   "Finalizing Deal",
+   3
+  ],
+  "70699053": [
+   "Sales Pipeline",
+   "default",
+   "Sales Follow Up",
+   4
+  ],
+  "70695977": [
+   "Sales Pipeline",
+   "default",
+   "Nurture",
+   5
+  ],
+  "closedwon": [
+   "Sales Pipeline",
+   "default",
+   "Closed won",
+   6
+  ],
+  "closedlost": [
+   "Sales Pipeline",
+   "default",
+   "Closed lost",
+   7
+  ],
+  "20440344": [
+   "Project Pipeline",
+   "6900017",
+   "On-Hold",
+   0
+  ],
+  "20461935": [
+   "Project Pipeline",
+   "6900017",
+   "Project Rejected - Needs Review",
+   1
+  ],
+  "20461936": [
+   "Project Pipeline",
+   "6900017",
+   "Site Survey",
+   2
+  ],
+  "20461937": [
+   "Project Pipeline",
+   "6900017",
+   "Design & Engineering",
+   3
+  ],
+  "20461938": [
+   "Project Pipeline",
+   "6900017",
+   "Permitting & Interconnection",
+   4
+  ],
+  "71052436": [
+   "Project Pipeline",
+   "6900017",
+   "RTB - Blocked",
+   5
+  ],
+  "22580871": [
+   "Project Pipeline",
+   "6900017",
+   "Ready To Build",
+   6
+  ],
+  "20440342": [
+   "Project Pipeline",
+   "6900017",
+   "Construction",
+   7
+  ],
+  "22580872": [
+   "Project Pipeline",
+   "6900017",
+   "Inspection",
+   8
+  ],
+  "20461940": [
+   "Project Pipeline",
+   "6900017",
+   "Permission To Operate",
+   9
+  ],
+  "24743347": [
+   "Project Pipeline",
+   "6900017",
+   "Close Out",
+   10
+  ],
+  "20440343": [
+   "Project Pipeline",
+   "6900017",
+   "Project Complete",
+   11
+  ],
+  "68229433": [
+   "Project Pipeline",
+   "6900017",
+   "Cancelled",
+   12
+  ],
+  "52474739": [
+   "D&R Pipeline",
+   "21997330",
+   "Kickoff",
+   0
+  ],
+  "52474740": [
+   "D&R Pipeline",
+   "21997330",
+   "Site Survey",
+   1
+  ],
+  "52474741": [
+   "D&R Pipeline",
+   "21997330",
+   "Design",
+   2
+  ],
+  "52474742": [
+   "D&R Pipeline",
+   "21997330",
+   "Permit",
+   3
+  ],
+  "78437201": [
+   "D&R Pipeline",
+   "21997330",
+   "Ready for Detach",
+   4
+  ],
+  "52474743": [
+   "D&R Pipeline",
+   "21997330",
+   "Detach",
+   5
+  ],
+  "78453339": [
+   "D&R Pipeline",
+   "21997330",
+   "Detach Complete - Roofing In Progess",
+   6
+  ],
+  "78412639": [
+   "D&R Pipeline",
+   "21997330",
+   "Reset Blocked - Waiting on Payment",
+   7
+  ],
+  "78412640": [
+   "D&R Pipeline",
+   "21997330",
+   "Ready for Reset",
+   8
+  ],
+  "52474744": [
+   "D&R Pipeline",
+   "21997330",
+   "Reset",
+   9
+  ],
+  "55098156": [
+   "D&R Pipeline",
+   "21997330",
+   "Inspection",
+   10
+  ],
+  "52498440": [
+   "D&R Pipeline",
+   "21997330",
+   "Closeout",
+   11
+  ],
+  "68245827": [
+   "D&R Pipeline",
+   "21997330",
+   "Complete",
+   12
+  ],
+  "72700977": [
+   "D&R Pipeline",
+   "21997330",
+   "On-hold",
+   13
+  ],
+  "52474745": [
+   "D&R Pipeline",
+   "21997330",
+   "Cancelled",
+   14
+  ],
+  "1299090217": [
+   "Service Pipeline",
+   "23928924",
+   "New",
+   0
+  ],
+  "1058744644": [
+   "Service Pipeline",
+   "23928924",
+   "Project Preparation",
+   1
+  ],
+  "1058924076": [
+   "Service Pipeline",
+   "23928924",
+   "Install Visit Scheduled",
+   2
+  ],
+  "171758480": [
+   "Service Pipeline",
+   "23928924",
+   "Work In Progress",
+   3
+  ],
+  "1058924077": [
+   "Service Pipeline",
+   "23928924",
+   "Inspection",
+   4
+  ],
+  "1058924078": [
+   "Service Pipeline",
+   "23928924",
+   "Invoicing",
+   5
+  ],
+  "1299090222": [
+   "Service Pipeline",
+   "23928924",
+   "Close Out",
+   6
+  ],
+  "76979603": [
+   "Service Pipeline",
+   "23928924",
+   "Completed",
+   7
+  ],
+  "56217769": [
+   "Service Pipeline",
+   "23928924",
+   "Cancelled",
+   8
+  ],
+  "1067665586": [
+   "Test Pipeline",
+   "732990794",
+   "Appointment Scheduled",
+   0
+  ],
+  "1067665587": [
+   "Test Pipeline",
+   "732990794",
+   "Qualified To Buy",
+   1
+  ],
+  "1067665588": [
+   "Test Pipeline",
+   "732990794",
+   "Presentation Scheduled",
+   2
+  ],
+  "1067665589": [
+   "Test Pipeline",
+   "732990794",
+   "Decision Maker Bought-In",
+   3
+  ],
+  "1067665590": [
+   "Test Pipeline",
+   "732990794",
+   "Contract Sent",
+   4
+  ],
+  "1067665591": [
+   "Test Pipeline",
+   "732990794",
+   "Closed Won",
+   5
+  ],
+  "1067665592": [
+   "Test Pipeline",
+   "732990794",
+   "Closed Lost",
+   6
+  ],
+  "1289240606": [
+   "Roofing",
+   "765928545",
+   "Pre-Sale Inspection",
+   0
+  ],
+  "1117662746": [
+   "Roofing",
+   "765928545",
+   "Permitting",
+   1
+  ],
+  "1300158886": [
+   "Roofing",
+   "765928545",
+   "Deposit Invoice Collection",
+   2
+  ],
+  "1215078279": [
+   "Roofing",
+   "765928545",
+   "Material & Labor Order",
+   3
+  ],
+  "1215078281": [
+   "Roofing",
+   "765928545",
+   "Roof Build",
+   4
+  ],
+  "1215078283": [
+   "Roofing",
+   "765928545",
+   "Final Invoice Collection",
+   5
+  ],
+  "1320369181": [
+   "Roofing",
+   "765928545",
+   "Final Inspection",
+   6
+  ],
+  "1215078284": [
+   "Roofing",
+   "765928545",
+   "Close Out",
+   7
+  ],
+  "1215078285": [
+   "Roofing",
+   "765928545",
+   "Project Complete",
+   8
+  ],
+  "1117662745": [
+   "Roofing",
+   "765928545",
+   "On-Hold",
+   9
+  ],
+  "1310696342": [
+   "Roofing",
+   "765928545",
+   "Cancelled",
+   10
+  ],
+  "1": [
+   "Service Pipeline",
+   "0",
+   "New",
+   0
+  ],
+  "2": [
+   "Service Pipeline",
+   "0",
+   "Acknowledgement",
+   1
+  ],
+  "98002453": [
+   "Service Pipeline",
+   "0",
+   "Remote Troubleshooting",
+   2
+  ],
+  "52438628": [
+   "Service Pipeline",
+   "0",
+   "Site Visit Needed",
+   3
+  ],
+  "32235448": [
+   "Service Pipeline",
+   "0",
+   "Site Visit Scheduled",
+   4
+  ],
+  "32460662": [
+   "Service Pipeline",
+   "0",
+   "Site Visit In Progress",
+   5
+  ],
+  "32235449": [
+   "Service Pipeline",
+   "0",
+   "Waiting on Equipment Delivery",
+   6
+  ],
+  "32460664": [
+   "Service Pipeline",
+   "0",
+   "Revisit Needed",
+   7
+  ],
+  "78454313": [
+   "Service Pipeline",
+   "0",
+   "Revisit Scheduled",
+   8
+  ],
+  "32460665": [
+   "Service Pipeline",
+   "0",
+   "Revisit In Progress",
+   9
+  ],
+  "32235440": [
+   "Service Pipeline",
+   "0",
+   "Escalated",
+   10
+  ],
+  "1299090178": [
+   "Service Pipeline",
+   "0",
+   "Confirm Resolution",
+   11
+  ],
+  "32460666": [
+   "Service Pipeline",
+   "0",
+   "Resolved",
+   12
+  ],
+  "94731352": [
+   "Service Pipeline",
+   "0",
+   "Closed - No Action Needed",
+   13
+  ],
+  "21034523": [
+   "PB Support",
+   "7139354",
+   "New",
+   0
+  ],
+  "21034524": [
+   "PB Support",
+   "7139354",
+   "Gathering Requirements",
+   1
+  ],
+  "32905284": [
+   "PB Support",
+   "7139354",
+   "Waiting on Information",
+   2
+  ],
+  "21034525": [
+   "PB Support",
+   "7139354",
+   "Execution",
+   3
+  ],
+  "21039164": [
+   "PB Support",
+   "7139354",
+   "Waiting on Development",
+   4
+  ],
+  "21034526": [
+   "PB Support",
+   "7139354",
+   "Closed",
+   5
+  ],
+  "177874954": [
+   "PB Support",
+   "7139354",
+   "Scheduled",
+   6
+  ],
+  "205966456": [
+   "PB Support",
+   "7139354",
+   "On Hold",
+   7
+  ],
+  "1185884441": [
+   "Technical Operations Pipeline",
+   "806209801",
+   "New",
+   0
+  ],
+  "1185884444": [
+   "Technical Operations Pipeline",
+   "806209801",
+   "Resolved",
+   1
+  ],
+  "1017118775": [
+   "Company Initiatives",
+   "695576851",
+   "New",
+   0
+  ],
+  "1017108120": [
+   "Company Initiatives",
+   "695576851",
+   "Gathering Requirements",
+   1
+  ],
+  "1017108121": [
+   "Company Initiatives",
+   "695576851",
+   "Configuration",
+   2
+  ],
+  "1017108122": [
+   "Company Initiatives",
+   "695576851",
+   "UAT",
+   3
+  ],
+  "1017108123": [
+   "Company Initiatives",
+   "695576851",
+   "Deployment",
+   4
+  ],
+  "1017108124": [
+   "Company Initiatives",
+   "695576851",
+   "Defect Triage",
+   5
+  ],
+  "1017108125": [
+   "Company Initiatives",
+   "695576851",
+   "Completed",
+   6
+  ]
+ }
+}
