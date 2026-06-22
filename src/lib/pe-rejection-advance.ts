@@ -66,11 +66,80 @@ export interface AdvanceResult {
   advanced: { dealId: string; dealName: string; changes: Record<string, string> }[];
 }
 
+// --- Durable ledger ---------------------------------------------------------
+// HubSpot's own history is the system of record per deal, but Zach wants a
+// running tally of every status this poller auto-advances. We keep it in a
+// single SystemConfig row so the count survives Vercel's log retention and can
+// be read back at any time (cron returns `ledgerTotal`; read the row directly
+// for the full list).
+
+export const ADVANCE_LEDGER_KEY = "pe_rejection_advance_ledger";
+const LEDGER_CAP = 2000; // keep the most recent N entries; totalAdvanced is uncapped
+
+export interface AdvanceLedgerEntry {
+  dealId: string;
+  dealName: string;
+  changes: Record<string, string>;
+  at: string;
+}
+export interface AdvanceLedger {
+  totalAdvanced: number;
+  lastRunAt: string;
+  entries: AdvanceLedgerEntry[];
+}
+
+/**
+ * Fold a run's advancements into the prior ledger (pure). `totalAdvanced` is the
+ * lifetime count (never trimmed); `entries` keeps the most recent LEDGER_CAP.
+ */
+export function mergeAdvanceLedger(
+  prev: AdvanceLedger | null,
+  advanced: AdvanceResult["advanced"],
+  atIso: string,
+): AdvanceLedger {
+  const base: AdvanceLedger = prev ?? { totalAdvanced: 0, lastRunAt: atIso, entries: [] };
+  const fresh = advanced.map((a) => ({ ...a, at: atIso }));
+  return {
+    totalAdvanced: base.totalAdvanced + advanced.length,
+    lastRunAt: atIso,
+    entries: [...base.entries, ...fresh].slice(-LEDGER_CAP),
+  };
+}
+
+/** Read + append + persist the ledger. Returns the updated ledger. */
+export async function recordAdvanceLedger(
+  advanced: AdvanceResult["advanced"],
+  atIso: string,
+): Promise<AdvanceLedger> {
+  const { prisma } = await import("@/lib/db");
+  const row = await prisma.systemConfig.findUnique({ where: { key: ADVANCE_LEDGER_KEY } });
+  let prev: AdvanceLedger | null = null;
+  if (row) {
+    try {
+      prev = JSON.parse(row.value) as AdvanceLedger;
+    } catch {
+      prev = null; // corrupt row → start fresh rather than throw
+    }
+  }
+  const next = mergeAdvanceLedger(prev, advanced, atIso);
+  await prisma.systemConfig.upsert({
+    where: { key: ADVANCE_LEDGER_KEY },
+    create: { key: ADVANCE_LEDGER_KEY, value: JSON.stringify(next) },
+    update: { value: JSON.stringify(next) },
+  });
+  return next;
+}
+
 /**
  * Scan deals currently in pe_m1/m2_status = "Rejected" and advance any whose
  * rejection tasks are all completed. Returns the deals advanced.
+ *
+ * `dryRun` computes what WOULD advance without writing to HubSpot — used to
+ * preview the first-run backlog before the cron goes live.
  */
-export async function advancePeRejections(): Promise<AdvanceResult> {
+export async function advancePeRejections(
+  opts: { dryRun?: boolean } = {},
+): Promise<AdvanceResult> {
   // 1) deals with a Rejected milestone (union of M1 + M2)
   const deals = new Map<string, { id: string; name: string; m1: string; m2: string }>();
   for (const field of ["pe_m1_status", "pe_m2_status"]) {
@@ -114,7 +183,9 @@ export async function advancePeRejections(): Promise<AdvanceResult> {
     // 3) decide + update
     const changes = advanceDecision({ m1Status: d.m1, m2Status: d.m2, tasks });
     if (Object.keys(changes).length > 0) {
-      await hubspotClient.crm.deals.basicApi.update(d.id, { properties: changes });
+      if (!opts.dryRun) {
+        await hubspotClient.crm.deals.basicApi.update(d.id, { properties: changes });
+      }
       advanced.push({ dealId: d.id, dealName: d.name, changes });
     }
   }

@@ -3,6 +3,8 @@ import {
   isOpenTask,
   isCompletedTask,
   advanceDecision,
+  mergeAdvanceLedger,
+  type AdvanceLedger,
 } from "@/lib/pe-rejection-advance";
 
 describe("rejectionTaskMilestone", () => {
@@ -98,5 +100,48 @@ describe("advanceDecision", () => {
 
   it("returns empty when nothing qualifies", () => {
     expect(advanceDecision({ m1Status: "Approved", m2Status: "Paid", tasks: [] })).toEqual({});
+  });
+});
+
+describe("mergeAdvanceLedger", () => {
+  const adv = (id: string, m: "m1" | "m2" = "m1") => ({
+    dealId: id,
+    dealName: `PROJ-${id}`,
+    changes: { [`pe_${m}_status`]: "Ready to Resubmit" },
+  });
+
+  it("starts the lifetime total from a null ledger", () => {
+    const out = mergeAdvanceLedger(null, [adv("1"), adv("2")], "2026-06-22T03:00:00.000Z");
+    expect(out.totalAdvanced).toBe(2);
+    expect(out.lastRunAt).toBe("2026-06-22T03:00:00.000Z");
+    expect(out.entries).toHaveLength(2);
+    expect(out.entries[0]).toMatchObject({ dealId: "1", at: "2026-06-22T03:00:00.000Z" });
+  });
+
+  it("accumulates the lifetime total across runs", () => {
+    const r1 = mergeAdvanceLedger(null, [adv("1")], "2026-06-22T03:00:00.000Z");
+    const r2 = mergeAdvanceLedger(r1, [adv("2"), adv("3")], "2026-06-22T04:00:00.000Z");
+    expect(r2.totalAdvanced).toBe(3);
+    expect(r2.lastRunAt).toBe("2026-06-22T04:00:00.000Z");
+    expect(r2.entries.map((e) => e.dealId)).toEqual(["1", "2", "3"]);
+  });
+
+  it("a no-advance run keeps the total but refreshes lastRunAt", () => {
+    const r1 = mergeAdvanceLedger(null, [adv("1")], "2026-06-22T03:00:00.000Z");
+    const r2 = mergeAdvanceLedger(r1, [], "2026-06-22T05:00:00.000Z");
+    expect(r2.totalAdvanced).toBe(1);
+    expect(r2.lastRunAt).toBe("2026-06-22T05:00:00.000Z");
+    expect(r2.entries).toHaveLength(1);
+  });
+
+  it("caps stored entries but never the lifetime total", () => {
+    let ledger: AdvanceLedger | null = null;
+    for (let i = 0; i < 2100; i++) {
+      ledger = mergeAdvanceLedger(ledger, [adv(String(i))], "2026-06-22T03:00:00.000Z");
+    }
+    expect(ledger!.totalAdvanced).toBe(2100);
+    expect(ledger!.entries).toHaveLength(2000);
+    expect(ledger!.entries[ledger!.entries.length - 1].dealId).toBe("2099"); // newest retained
+    expect(ledger!.entries[0].dealId).toBe("100"); // oldest 100 trimmed
   });
 });
