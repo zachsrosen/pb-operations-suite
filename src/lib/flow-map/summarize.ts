@@ -52,6 +52,7 @@ function makeCtx(propLabels: PropLabels, stageLookup: StageLookup) {
     const v = stageLookup[sid];
     return v ? v[2] : sid;
   };
+  const inStageLookup = (v: any): boolean => String(v) in stageLookup;
 
   // timePoint formatter (Python tp)
   const tp = (p: any): string => {
@@ -122,7 +123,7 @@ function makeCtx(propLabels: PropLabels, stageLookup: StageLookup) {
     return `${prop} ${o}${raw ? ` [${raw}]` : ""}`;
   }
 
-  return { plabel, voption, stagelabel, tp, fmtFilter, fmtFilterTech };
+  return { plabel, voption, stagelabel, inStageLookup, tp, fmtFilter, fmtFilterTech };
 }
 
 type Ctx = ReturnType<typeof makeCtx>;
@@ -148,7 +149,7 @@ function eventTrigger(enr: any, ctx: Ctx, tech: boolean): string {
       if (tech) {
         phrases.push(`${propname} -> [${newvals.map(String).join(", ")}]`);
       } else {
-        const labs = newvals.map((v) => (v in stageLookupRef ? ctx.stagelabel(v) : ctx.voption(propname, v)));
+        const labs = newvals.map((v) => (ctx.inStageLookup(v) ? ctx.stagelabel(v) : ctx.voption(propname, v)));
         const shown = labs.slice(0, 3).join(" or ") + (labs.length > 3 ? ` (or ${labs.length - 3} more)` : "");
         phrases.push(shown ? `${ctx.plabel(propname)} changes to ${shown}` : `${ctx.plabel(propname)} changes`);
       }
@@ -179,9 +180,6 @@ function reenrollTrigger(enr: any, ctx: Ctx, tech: boolean): string {
   if (!conds.length) return "";
   return "On change: " + (tech ? conds : conds.slice(0, 3)).join(" + ");
 }
-
-// stageLookup is needed inside eventTrigger's membership test; thread it via a module ref
-let stageLookupRef: StageLookup = {};
 
 function triggerSummary(d: any, ctx: Ctx, tech: boolean): string {
   const enr = d.enrollmentCriteria || {};
@@ -218,7 +216,7 @@ function triggerSummary(d: any, ctx: Ctx, tech: boolean): string {
     }
     for (const [prop, op] of filts) {
       if (STAGE_PROPS.has(prop)) {
-        for (const v of op.values || []) if (v in stageLookupRef) stageLabelsSet.add(ctx.stagelabel(v));
+        for (const v of op.values || []) if (ctx.inStageLookup(v)) stageLabelsSet.add(ctx.stagelabel(v));
         continue;
       }
       if (["hs_object_id", "hs_object_source", "hs_task_subject", "hs_task_status"].includes(prop)) continue;
@@ -324,7 +322,6 @@ export function summarizeFlow(
   propLabels: { labels: Record<string, string>; options: Record<string, Record<string, string>> },
   stageLookup: Record<string, [string, string, string, number]>,
 ) {
-  stageLookupRef = stageLookup;
   const ctx = makeCtx(propLabels, stageLookup);
   const enr = detail.enrollmentCriteria || {};
   const enrollmentType = enr.type;
