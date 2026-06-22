@@ -1,6 +1,7 @@
 "use client";
 
 import type { FlowEntry, FlowMapSnapshot } from "@/lib/flow-map/types";
+import { groupFlowClones } from "./flow-map-utils";
 import { FlowStatusPill } from "./FlowStatusPill";
 
 function matchesQuery(flow: FlowEntry, q: string): boolean {
@@ -24,9 +25,11 @@ export default function SearchResults({
   onSelect: (flow: FlowEntry) => void;
 }) {
   const q = query.trim().toLowerCase();
-  const matches = Object.values(snapshot.flows)
-    .filter((flow) => matchesQuery(flow, q))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Collapse clones the same way the drill list does: one row per family, with
+  // a ×N badge. Clicking opens the representative flow.
+  const matches = groupFlowClones(
+    Object.values(snapshot.flows).filter((flow) => matchesQuery(flow, q)),
+  ).sort((a, b) => a.base.localeCompare(b.base));
 
   if (matches.length === 0) {
     return (
@@ -43,17 +46,22 @@ export default function SearchResults({
         {query}”
       </div>
       <ul className="space-y-1.5">
-        {matches.map((flow) => (
-          <li key={flow.id}>
+        {matches.map((group) => (
+          <li key={group.rep.id}>
             <button
               type="button"
-              onClick={() => onSelect(flow)}
+              onClick={() => onSelect(group.rep)}
               className="flex w-full items-center gap-2 rounded-lg border border-t-border bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-2/60"
             >
               <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                {flow.name}
+                {group.base}
               </span>
-              <FlowStatusPill on={flow.isEnabled} />
+              {group.count > 1 && (
+                <span className="shrink-0 rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted tabular-nums">
+                  ×{group.count}
+                </span>
+              )}
+              <FlowStatusPill on={group.on} />
             </button>
           </li>
         ))}

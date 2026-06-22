@@ -31,10 +31,17 @@ const ENROLLMENT_LABELS: Record<FlowEntry["enrollmentType"], string> = {
 
 export default function FlowDetail({
   flow,
+  on,
   view,
   canEdit,
 }: {
   flow: FlowEntry;
+  /**
+   * Family-aggregate enabled state for the header pill: true if any clone in
+   * this flow's family is enabled. The body still reflects the representative
+   * `flow`'s trigger/actions.
+   */
+  on: boolean;
   view: ViewMode;
   /** Threaded from the page; the SOP edit affordance (Chunk 6) reads this. */
   canEdit: boolean;
@@ -51,7 +58,7 @@ export default function FlowDetail({
           <h2 className="text-base font-semibold text-foreground">
             {flow.name}
           </h2>
-          <FlowStatusPill on={flow.isEnabled} />
+          <FlowStatusPill on={on} />
         </div>
         <div className="text-xs text-muted">
           {ENROLLMENT_LABELS[flow.enrollmentType] ?? flow.enrollmentType}{" "}

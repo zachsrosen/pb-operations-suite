@@ -9,7 +9,11 @@ import StageTrack from "./StageTrack";
 import StagePanes from "./StagePanes";
 import FlowDetail from "./FlowDetail";
 import SearchResults from "./SearchResults";
-import { CROSS_CUTTING_ID, CROSS_CUTTING_LABEL } from "./flow-map-utils";
+import {
+  CROSS_CUTTING_ID,
+  CROSS_CUTTING_LABEL,
+  cloneFamilyOn,
+} from "./flow-map-utils";
 
 type ApiResponse = FlowMapSnapshot | { empty: true };
 
@@ -49,10 +53,6 @@ export default function WorkflowMapClient({
 
   // Drill state — which pipeline / stage / flow is currently focused.
   const [drill, setDrill] = useState<DrillState>({});
-
-  // Edit gate threaded down from the server page; consumed by the
-  // edit-in-place chunk (3.x). Held in state so later UI can read it.
-  const [canEdit] = useState(canEditSop);
 
   // Plain vs Technical wording, persisted to localStorage. Lazy initializer
   // reads the stored preference once so there's no setState-in-effect churn.
@@ -99,6 +99,9 @@ export default function WorkflowMapClient({
 
   const snapshot = data;
   const searching = search.trim().length > 0;
+  const lastSynced = snapshot.generatedAt
+    ? new Date(snapshot.generatedAt).toLocaleString()
+    : null;
 
   // Breadcrumb labels derived from drill state. The cross-cutting group is
   // synthetic (not in snapshot.pipelines), so handle it explicitly.
@@ -232,6 +235,10 @@ export default function WorkflowMapClient({
         </div>
       </div>
 
+      {lastSynced && (
+        <div className="text-xs text-muted">Last synced: {lastSynced}</div>
+      )}
+
       {/* Search overrides the drill levels with a flat, filtered flow list. */}
       {searching ? (
         <SearchResults
@@ -277,7 +284,12 @@ export default function WorkflowMapClient({
             )}
 
             {flow && (
-              <FlowDetail flow={flow} view={view} canEdit={canEdit} />
+              <FlowDetail
+                flow={flow}
+                on={cloneFamilyOn(flow, snapshot)}
+                view={view}
+                canEdit={canEditSop}
+              />
             )}
           </div>
         </div>

@@ -51,7 +51,7 @@ export default function FlowList({
                   ×{group.count}
                 </span>
               )}
-              <FlowStatusPill on={group.rep.isEnabled} />
+              <FlowStatusPill on={group.on} />
             </button>
           </li>
         );

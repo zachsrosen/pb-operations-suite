@@ -56,33 +56,67 @@ export function flowsForStage(
 }
 
 export type FlowGroup = {
-  /** Representative flow used for drill-in and display. */
+  /**
+   * Representative flow used for drill-in and display of trigger/actions.
+   * Prefers an enabled member so drilling in lands on a live flow when one
+   * exists.
+   */
   rep: FlowEntry;
   base: string;
   /** Number of clones collapsed into this group. */
   count: number;
+  /** Aggregate enabled state: true if ANY member of the family is enabled. */
+  on: boolean;
 };
 
 /**
- * Collapse clones: group flows by clone-base name, returning one entry per base
- * with a count. The representative is the first flow seen for that base.
+ * Collapse clones for display.
+ *
+ * Contract: the snapshot stores EACH clone as its own `FlowEntry` (its `name`
+ * carries the ` (#N)` suffix), so this function groups them by clone-base name
+ * and returns one entry per base. `count` is the number of collapsed members
+ * (floored at the flow's own `cloneCount`, which is precomputed across all
+ * target flows, so a subset that happens to contain a single member still reads
+ * as "×N"). `on` is the family-aggregate enabled state, and `rep` prefers an
+ * enabled member so drill-in lands on a live flow when one exists.
  */
 export function groupFlowClones(flows: FlowEntry[]): FlowGroup[] {
-  const byBase = new Map<string, FlowGroup>();
+  const members = new Map<string, FlowEntry[]>();
+  const order: string[] = [];
   for (const flow of flows) {
     const base = cloneBaseName(flow.name);
-    const existing = byBase.get(base);
-    if (existing) {
-      existing.count += 1;
+    const list = members.get(base);
+    if (list) {
+      list.push(flow);
     } else {
-      byBase.set(base, { rep: flow, base, count: 1 });
+      members.set(base, [flow]);
+      order.push(base);
     }
   }
-  // A single flow with cloneCount>1 should still read as "×N".
-  for (const group of byBase.values()) {
-    if (group.count === 1 && group.rep.cloneCount > 1) {
-      group.count = group.rep.cloneCount;
-    }
-  }
-  return Array.from(byBase.values());
+
+  return order.map((base) => {
+    const list = members.get(base)!;
+    const rep = list.find((f) => f.isEnabled) ?? list[0];
+    return {
+      rep,
+      base,
+      count: Math.max(list.length, rep.cloneCount),
+      on: list.some((f) => f.isEnabled),
+    };
+  });
+}
+
+/**
+ * Aggregate enabled state for a flow's whole clone family across the snapshot:
+ * true if ANY clone sharing its base name is enabled. Used so a detail pill
+ * reflects the family, not just the representative member.
+ */
+export function cloneFamilyOn(
+  flow: FlowEntry,
+  snapshot: FlowMapSnapshot,
+): boolean {
+  const base = cloneBaseName(flow.name);
+  return Object.values(snapshot.flows).some(
+    (f) => cloneBaseName(f.name) === base && f.isEnabled,
+  );
 }
