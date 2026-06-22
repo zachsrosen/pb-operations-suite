@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
-import type { FlowMapSnapshot } from "@/lib/flow-map/types";
+import type { FlowEntry, FlowMapSnapshot } from "@/lib/flow-map/types";
+import PipelineCards from "./PipelineCards";
+import StageTrack from "./StageTrack";
+import StagePanes from "./StagePanes";
+import FlowDetail from "./FlowDetail";
+import SearchResults from "./SearchResults";
+import { CROSS_CUTTING_ID, CROSS_CUTTING_LABEL } from "./flow-map-utils";
 
 type ApiResponse = FlowMapSnapshot | { empty: true };
 
@@ -92,16 +98,45 @@ export default function WorkflowMapClient({
   }
 
   const snapshot = data;
+  const searching = search.trim().length > 0;
 
-  // Breadcrumb labels derived from drill state.
-  const pipeline = drill.pipelineId
-    ? snapshot.pipelines.find((p) => p.id === drill.pipelineId)
-    : undefined;
-  const stage =
-    pipeline && drill.stageId
-      ? pipeline.stages.find((s) => s.id === drill.stageId)
+  // Breadcrumb labels derived from drill state. The cross-cutting group is
+  // synthetic (not in snapshot.pipelines), so handle it explicitly.
+  const isCrossCutting = drill.pipelineId === CROSS_CUTTING_ID;
+  const pipeline =
+    drill.pipelineId && !isCrossCutting
+      ? snapshot.pipelines.find((p) => p.id === drill.pipelineId)
       : undefined;
+  const pipelineLabel = isCrossCutting ? CROSS_CUTTING_LABEL : pipeline?.label;
+  const stage =
+    drill.stageId && drill.stageId !== CROSS_CUTTING_ID
+      ? pipeline?.stages.find((s) => s.id === drill.stageId)
+      : undefined;
+  const stageLabel =
+    drill.stageId === CROSS_CUTTING_ID ? CROSS_CUTTING_LABEL : stage?.label;
   const flow = drill.flowId ? snapshot.flows[drill.flowId] : undefined;
+
+  // A search result sets the full drill path to that flow: pipeline + stage
+  // derived from its first stage, flow = its own id. Flows with no stage land
+  // in the cross-cutting group. Search clears so the drill view takes over.
+  function openFlow(target: FlowEntry) {
+    const firstStageId = target.stageIds[0];
+    const lookup = firstStageId ? snapshot.stageLookup[firstStageId] : undefined;
+    if (firstStageId && lookup) {
+      setDrill({
+        pipelineId: lookup.pipelineId,
+        stageId: firstStageId,
+        flowId: target.id,
+      });
+    } else {
+      setDrill({
+        pipelineId: CROSS_CUTTING_ID,
+        stageId: CROSS_CUTTING_ID,
+        flowId: target.id,
+      });
+    }
+    setSearch("");
+  }
 
   return (
     <div className="space-y-5">
@@ -120,29 +155,32 @@ export default function WorkflowMapClient({
           >
             Pipelines
           </button>
-          {pipeline && (
+          {drill.pipelineId && pipelineLabel && (
             <>
               <span className="text-muted/50">›</span>
               <button
                 type="button"
-                onClick={() => setDrill({ pipelineId: pipeline.id })}
+                onClick={() => setDrill({ pipelineId: drill.pipelineId })}
                 className={
                   drill.stageId
                     ? "text-muted hover:text-foreground transition-colors truncate"
                     : "text-foreground font-medium truncate"
                 }
               >
-                {pipeline.label}
+                {pipelineLabel}
               </button>
             </>
           )}
-          {stage && (
+          {drill.stageId && stageLabel && (
             <>
               <span className="text-muted/50">›</span>
               <button
                 type="button"
                 onClick={() =>
-                  setDrill({ pipelineId: pipeline!.id, stageId: stage.id })
+                  setDrill({
+                    pipelineId: drill.pipelineId,
+                    stageId: drill.stageId,
+                  })
                 }
                 className={
                   drill.flowId
@@ -150,7 +188,7 @@ export default function WorkflowMapClient({
                     : "text-foreground font-medium truncate"
                 }
               >
-                {stage.label}
+                {stageLabel}
               </button>
             </>
           )}
@@ -194,24 +232,56 @@ export default function WorkflowMapClient({
         </div>
       </div>
 
-      {/* Drill levels (PipelineCards / StageTrack / FlowDetail) land in 3.2–3.5 */}
-      <div className="bg-surface border border-t-border rounded-lg p-6 shadow-card">
-        <div className="text-sm text-muted">
-          Pipelines: {snapshot.pipelines.length} · Flows:{" "}
-          {Object.keys(snapshot.flows).length}
-          {canEdit && (
-            <span className="ml-2 text-cyan-400/70">· editing enabled</span>
-          )}
+      {/* Search overrides the drill levels with a flat, filtered flow list. */}
+      {searching ? (
+        <SearchResults
+          snapshot={snapshot}
+          query={search}
+          onSelect={openFlow}
+        />
+      ) : !drill.pipelineId ? (
+        // Level 1 — pipeline cards.
+        <PipelineCards
+          snapshot={snapshot}
+          onSelect={(pipelineId) => setDrill({ pipelineId })}
+        />
+      ) : (
+        // Levels 2–4 — stage track + (panes / flow detail).
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+          <div className="rounded-xl border border-t-border bg-surface p-3 shadow-card lg:self-start">
+            <StageTrack
+              snapshot={snapshot}
+              pipelineId={drill.pipelineId}
+              pipeline={pipeline}
+              selectedStageId={drill.stageId}
+              onSelect={(stageId) =>
+                setDrill({ pipelineId: drill.pipelineId, stageId })
+              }
+            />
+          </div>
+
+          <div className="space-y-5">
+            {drill.stageId ? (
+              <StagePanes
+                snapshot={snapshot}
+                stageId={drill.stageId}
+                selectedFlowId={drill.flowId}
+                onSelectFlow={(flowId) =>
+                  setDrill({ ...drill, flowId })
+                }
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-t-border bg-surface p-6 text-sm text-muted shadow-card">
+                Pick a stage to see its process and automations.
+              </div>
+            )}
+
+            {flow && (
+              <FlowDetail flow={flow} view={view} canEdit={canEdit} />
+            )}
+          </div>
         </div>
-        {/*
-          TODO(3.2–3.5): mount drill-level views here, keyed off `drill` state:
-            - no pipelineId           → <PipelineCards onSelect={(id) => setDrill({ pipelineId: id })} />
-            - pipelineId, no stageId  → <StageTrack pipeline=… onSelect={(id) => setDrill({ pipelineId, stageId: id })} />
-            - stageId, no flowId      → stage flow list → setDrill({ …, flowId })
-            - flowId                  → <FlowDetail flow=… />
-          All views read `view` (plain|technical), `search`, and `canEdit`.
-        */}
-      </div>
+      )}
     </div>
   );
 }
