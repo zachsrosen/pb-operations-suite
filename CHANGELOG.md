@@ -4,6 +4,72 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-09
+
+### Google Chat OOO Bot (Major)
+- New Google Chat bot that auto-replies to incoming DMs/messages when teammates are out
+- Workspace add-on envelope support, multi-source JWKS verification, and multi-audience JWT acceptance for Chat API auth
+- SOP integration so the bot can answer process questions directly
+- Posts replies to the main message timeline instead of starting a side thread
+- Base64-encoded service account key support for Vercel env var hygiene
+- Async post errors captured to DB with detailed Chat API error context
+- Admin OOO bot escalations review dashboard for surfacing handoffs that need human attention
+- Static `waitUntil` import + async diagnostics to stabilize edge runtime execution
+
+### PE Doc Change Digest (Major)
+- Daily digest restructured into 4 actionable sections (was a flat list)
+- Email mirrors the in-app digest with Drive folder deep links per deal
+- Slimmed email to a summary + tracker link (full details live in the app)
+- Replay endpoint for re-sending a missed batch with updated template (one-shot cron used + retired)
+- "Today's Changes" section dropped from the daily digest
+- Notes-only changes relabeled instead of showing as "Uploaded → Uploaded"
+- `UPLOADED` and `UNDER_REVIEW` merged into a single "In Review" status; convergence transitions no longer logged as changes
+- Middleware allowlist added for `/api/cron/pe-doc-digest`
+
+### PE Deals Dashboard (Major)
+- Split PE Deals card into Pre-Construction vs Construction+ buckets
+- Pipeline bar now splits into stage buckets (report link removed)
+- Awaiting PTO segment added; hero card split reverted
+- New "Customer Paid?" column after the customer payment amount column
+- Multi-column sort with smarter Cust Paid sort; default sort switched to PE Total
+- Cancelled deals excluded; "Other" auto-renamed to "On Hold"
+- Header count switched from x/y to submitted total with under-review badge
+
+### Shop Health Dashboard
+- New Service + D&R/Roofing sections on the Shop Health overview
+- Lightweight overview path: 1 Project fetch, no ticket fetch on the summary view
+- Cache for closed tickets to keep the overview route resilient
+- Fixed duplicate Project pipeline fetch and fail-open behavior for new Service/D&R fetches
+- Diagnostic surfacing for overview route errors
+
+### Scheduler
+- Weekend visibility toggle on the master scheduler
+- Fixed weekend toggle stealing Monday's column and shifting events to Saturday
+- Weekend cells now show events without disrupting the weekday layout
+
+### Monthly Activity Throughput
+- New dashboard showing monthly throughput across pipelines
+
+### Zuper Performance
+- Skip Zuper API sweep on DB-cache hits; cache `/jobs/by-category` responses
+- Explicit caller attribution on `[zuper-call]` logs
+- Reduced `useCalendarData` polling frequency
+
+### EOD / Daily Focus
+- Morning items resolved now tracks actual action items (was over-counting)
+- Daily focus saves the morning snapshot before sending emails (prevents lost state on failure)
+
+### PE Scraper Sync
+- Override `NOT_UPLOADED` → `UPLOADED` for unknown status when a submitted date is present (was leaving deals stuck)
+
+### Project Funnel
+- Show design approval status in the "Awaiting DA Send" column
+
+### Bug Fixes
+- Admin tickets table handles invalid `pageUrl` values without crashing the row render
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
