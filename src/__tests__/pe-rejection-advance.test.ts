@@ -1,5 +1,6 @@
 import {
   rejectionTaskMilestone,
+  classifyRejectionTask,
   isOpenTask,
   isCompletedTask,
   advanceDecision,
@@ -28,6 +29,26 @@ describe("rejectionTaskMilestone", () => {
     expect(rejectionTaskMilestone("Sales M1 Resubmit")).toBeNull(); // no rejection word
     expect(rejectionTaskMilestone("Sales Rejection")).toBeNull(); // no milestone token
     expect(rejectionTaskMilestone("M10 Rejection")).toBeNull(); // M1 not a standalone token
+  });
+});
+
+describe("classifyRejectionTask", () => {
+  it("classifies PE rejection tasks (milestone + pe flavor)", () => {
+    expect(classifyRejectionTask("M1 Rejected by Participate Energy #1 - ZRS")).toEqual({ milestone: "m1", flavor: "pe" });
+    expect(classifyRejectionTask("Sales M2 Rejection")).toEqual({ milestone: "m2", flavor: "pe" });
+  });
+  it("classifies onboarding tasks as onboarding/m1 (no M1 token needed)", () => {
+    expect(classifyRejectionTask("Onboarding Rejected by Participate Energy - ZRS")).toEqual({ milestone: "m1", flavor: "onboarding" });
+    expect(classifyRejectionTask("Onboarding Rejection")).toEqual({ milestone: "m1", flavor: "onboarding" });
+  });
+  it("classifies internal tasks by milestone (needs M1/M2 token)", () => {
+    expect(classifyRejectionTask("M1 Internally Rejected - ZRS")).toEqual({ milestone: "m1", flavor: "internal" });
+    expect(classifyRejectionTask("Sales M2 Internal Rejection")).toEqual({ milestone: "m2", flavor: "internal" });
+    expect(classifyRejectionTask("Internal Rejection")).toBeNull(); // no milestone token
+  });
+  it("returns null for non-rejection tasks", () => {
+    expect(classifyRejectionTask("M1 Ready to Resubmit")).toBeNull();
+    expect(classifyRejectionTask("Follow Up On Permit")).toBeNull();
   });
 });
 
@@ -96,6 +117,46 @@ describe("advanceDecision", () => {
       ],
     });
     expect(out).toEqual({ pe_m1_status: "Ready to Resubmit" });
+  });
+
+  it("advances 'Onboarding Rejected' → 'Onboarding Ready to Resubmit' when onboarding tasks done", () => {
+    const out = advanceDecision({
+      m1Status: "Onboarding Rejected",
+      m2Status: "",
+      tasks: [T("Onboarding Rejected by Participate Energy - ZRS", "COMPLETED")],
+    });
+    expect(out).toEqual({ pe_m1_status: "Onboarding Ready to Resubmit" });
+  });
+
+  it("advances 'Internally Rejected' → 'Ready to Submit' on M1 and M2 when internal tasks done", () => {
+    const out = advanceDecision({
+      m1Status: "Internally Rejected",
+      m2Status: "Internally Rejected",
+      tasks: [
+        T("M1 Internally Rejected - ZRS", "COMPLETED"),
+        T("M2 Internal Rejection", "COMPLETED"),
+      ],
+    });
+    expect(out).toEqual({ pe_m1_status: "Ready to Submit", pe_m2_status: "Ready to Submit" });
+  });
+
+  it("gates each flavor on its OWN tasks — a completed PE task can't advance an Onboarding-Rejected milestone", () => {
+    const out = advanceDecision({
+      m1Status: "Onboarding Rejected",
+      m2Status: "",
+      // only a PE-flavored task is complete; the onboarding milestone has no onboarding task
+      tasks: [T("M1 Rejected by Participate Energy - ZRS", "COMPLETED")],
+    });
+    expect(out).toEqual({}); // no onboarding task → don't flip
+  });
+
+  it("does not advance Internally Rejected while an internal task is still open", () => {
+    const out = advanceDecision({
+      m1Status: "Internally Rejected",
+      m2Status: "",
+      tasks: [T("M1 Internally Rejected - ZRS", "NOT_STARTED")],
+    });
+    expect(out).toEqual({});
   });
 
   it("ignores onboarding tasks when deciding M1 (they are not M1 rejection tasks)", () => {
