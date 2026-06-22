@@ -1,7 +1,8 @@
 "use client";
 
-import type { FlowEntry } from "@/lib/flow-map/types";
+import type { FlowEntry, ProgressionLink } from "@/lib/flow-map/types";
 import { FlowStatusPill } from "./FlowStatusPill";
+import ProgressionLinks from "./ProgressionLinks";
 
 type ViewMode = "plain" | "technical";
 
@@ -34,6 +35,8 @@ export default function FlowDetail({
   on,
   view,
   canEdit,
+  links,
+  onOpenFlowByName,
 }: {
   flow: FlowEntry;
   /**
@@ -45,6 +48,10 @@ export default function FlowDetail({
   view: ViewMode;
   /** Threaded from the page; the SOP edit affordance (Chunk 6) reads this. */
   canEdit: boolean;
+  /** All progression links from the snapshot; ProgressionLinks filters them. */
+  links: ProgressionLink[];
+  /** Opens another flow by its clone-base name (cross-flow navigation). */
+  onOpenFlowByName: (name: string) => void;
 }) {
   const technical = view === "technical";
   const trigger = technical ? flow.triggerTechnical : flow.trigger;
@@ -124,10 +131,12 @@ export default function FlowDetail({
         </Section>
       )}
 
-      {/*
-        TODO(Chunk 5): progression links — show which status values this flow
-        sets and which downstream flows those fire (snapshot.links).
-      */}
+      {/* Cross-flow progression links — status hand-offs in/out of this flow. */}
+      <ProgressionLinks
+        flow={flow}
+        links={links}
+        onOpenFlowByName={onOpenFlowByName}
+      />
 
       {/* TODO(Chunk 6): SOP edit affordance mounts here, gated on canEdit. */}
       {canEdit && (

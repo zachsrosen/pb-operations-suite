@@ -12,6 +12,7 @@ import SearchResults from "./SearchResults";
 import {
   CROSS_CUTTING_ID,
   CROSS_CUTTING_LABEL,
+  cloneBaseName,
   cloneFamilyOn,
 } from "./flow-map-utils";
 
@@ -139,6 +140,35 @@ export default function WorkflowMapClient({
       });
     }
     setSearch("");
+  }
+
+  // Cross-flow navigation: open a flow identified only by its clone-base name
+  // (as carried in progression links). Prefer an enabled member so we land on a
+  // live flow. If no live flow matches the base name, no-op gracefully.
+  function openFlowByName(name: string) {
+    const matches = Object.values(snapshot.flows).filter(
+      (f) => cloneBaseName(f.name) === name,
+    );
+    if (matches.length === 0) return;
+    const target = matches.find((f) => f.isEnabled) ?? matches[0];
+    const firstStageId = target.stageIds[0];
+    const lookup = firstStageId
+      ? snapshot.stageLookup[firstStageId]
+      : undefined;
+    if (firstStageId && lookup) {
+      setDrill({
+        pipelineId: lookup.pipelineId,
+        stageId: firstStageId,
+        flowId: target.id,
+      });
+    } else {
+      setDrill({
+        pipelineId: CROSS_CUTTING_ID,
+        stageId: CROSS_CUTTING_ID,
+        flowId: target.id,
+      });
+    }
+    if (search) setSearch("");
   }
 
   return (
@@ -289,6 +319,8 @@ export default function WorkflowMapClient({
                 on={cloneFamilyOn(flow, snapshot)}
                 view={view}
                 canEdit={canEditSop}
+                links={snapshot.links}
+                onOpenFlowByName={openFlowByName}
               />
             )}
           </div>
