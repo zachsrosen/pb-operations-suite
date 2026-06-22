@@ -325,7 +325,7 @@ export function summarizeFlow(
 ) {
   const ctx = makeCtx(propLabels, stageLookup);
   const enr = detail.enrollmentCriteria || {};
-  const enrollmentType = enr.type;
+  const enrollmentType = enr.type ?? "LIST_BASED";
 
   // stageIds: enrollment INCLUSION filter on a stage prop whose value is in stageLookup.
   const stageIds: string[] = [];

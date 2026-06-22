@@ -319,7 +319,6 @@ export default function WorkflowMapClient({
                 flow={flow}
                 on={cloneFamilyOn(flow, snapshot)}
                 view={view}
-                canEdit={canEditSop}
                 links={snapshot.links}
                 onOpenFlowByName={openFlowByName}
               />

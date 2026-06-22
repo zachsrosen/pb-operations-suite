@@ -3,6 +3,7 @@
 import type { FlowEntry, ProgressionLink } from "@/lib/flow-map/types";
 import { FlowStatusPill } from "./FlowStatusPill";
 import ProgressionLinks from "./ProgressionLinks";
+import { cloneBaseName } from "./flow-map-utils";
 
 type ViewMode = "plain" | "technical";
 
@@ -34,7 +35,6 @@ export default function FlowDetail({
   flow,
   on,
   view,
-  canEdit,
   links,
   onOpenFlowByName,
 }: {
@@ -46,8 +46,6 @@ export default function FlowDetail({
    */
   on: boolean;
   view: ViewMode;
-  /** Threaded from the page; the SOP edit affordance (Chunk 6) reads this. */
-  canEdit: boolean;
   /** All progression links from the snapshot; ProgressionLinks filters them. */
   links: ProgressionLink[];
   /** Opens another flow by its clone-base name (cross-flow navigation). */
@@ -63,7 +61,7 @@ export default function FlowDetail({
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-base font-semibold text-foreground">
-            {flow.name}
+            {cloneBaseName(flow.name)}
           </h2>
           <FlowStatusPill on={on} />
         </div>
@@ -137,13 +135,6 @@ export default function FlowDetail({
         links={links}
         onOpenFlowByName={onOpenFlowByName}
       />
-
-      {/* TODO(Chunk 6): SOP edit affordance mounts here, gated on canEdit. */}
-      {canEdit && (
-        <div className="border-t border-t-border pt-3 text-xs text-muted">
-          Editing tools coming soon.
-        </div>
-      )}
     </div>
   );
 }

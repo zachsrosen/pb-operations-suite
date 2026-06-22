@@ -158,7 +158,7 @@ From the snapshot's `sets`/`reads`: build `ProgressionLink[]` for each `(propert
 - `GET /api/workflow-map` → returns the `SystemConfig` snapshot (404/empty-state if never synced). **Read-only; available to every authenticated dashboard user.**
 - `POST /api/workflow-map/refresh` → triggers a sync. **Admin-gated** (rate-limited; returns job status).
 - `GET /api/cron/workflow-map-sync` → cron entry (existing cron auth).
-- SOP edit reuses the **existing** SOP section update endpoint `PUT /api/admin/sop/sections/[id]` + `SopRevision` flow (no new write path). That endpoint is gated **ADMIN || EXECUTIVE** (in-route check + `/api/admin` prefix). So **editing is ADMIN/EXECUTIVE-only**; viewing is everyone. (Broadening SOP-edit rights is a change to that existing endpoint — out of scope for this feature.)
+- SOP edit reuses the **existing** SOP section update endpoint `PUT /api/admin/sop/sections/[id]` + `SopRevision` flow (no new write path). The endpoint has an in-route ADMIN||EXECUTIVE check, but the `/api/admin` middleware prefix gate blocks every non-ADMIN role before that in-route check runs (a pre-existing platform constraint — the existing /sop editor has the same gate). So **editing is ADMIN-only** in practice; viewing is everyone. (Broadening SOP-edit rights is a change to that existing endpoint + middleware — out of scope for this feature.)
 
 **Access wiring (per project policy — new routes must be allow-listed or middleware 403s silently):**
 - The page `/dashboards/workflow-map` and `GET /api/workflow-map` are added to **every role's** `allowedRoutes` in `src/lib/roles.ts` (all authenticated dashboard users can view). `VIEWER` included.
@@ -167,7 +167,7 @@ From the snapshot's `sets`/`reads`: build `ProgressionLink[]` for each `(propert
 
 ## 12. UI
 
-`/dashboards/workflow-map`, wrapped in `DashboardShell`. Client component holds drill state + breadcrumb. Data via React Query against `GET /api/workflow-map`. The edit-in-place affordance only renders for **ADMIN/EXECUTIVE** (the gate the existing SOP write endpoint enforces, so the affordance never 403s); everyone else sees the map read-only.
+`/dashboards/workflow-map`, wrapped in `DashboardShell`. Client component holds drill state + breadcrumb. Data via React Query against `GET /api/workflow-map`. The edit-in-place affordance renders for **ADMIN only** — the `/api/admin` middleware prefix gate blocks EXECUTIVE before the SOP write route's in-route ADMIN||EXECUTIVE check runs, so showing the affordance to EXECUTIVE would mean a 403 on Save (a pre-existing platform constraint; the existing /sop editor has the same gate). Everyone else sees the map read-only.
 
 - **L1 Pipelines:** cards — Sales at top branching (arrow) to Project (hero) / D&R / Roofing / Service — each with ON/OFF flow counts.
 - **L2 Stages:** selected pipeline's stages in display order + a Cross-cutting bucket. Per-stage drift badges.
@@ -194,7 +194,7 @@ MVP = slices 1–5 (read-only map). Slice 6 last (lowest risk; reuses existing w
 - **Stage-mapping tests:** inclusion-only (a flow that only excludes "Cancelled" must NOT map to Cancelled).
 - **Progression tests:** `layout_status = "Sent For Approval"` links `PandaDoc DA Sent`/`02. DA Flow` → `03. DA Flow - DA Follow Up Task`.
 - **Sync tests:** incremental diff (unchanged `revisionId` → no detail fetch); 429 → keep last good snapshot.
-- **Route/role tests:** any authenticated role can `GET /api/workflow-map` (incl. VIEWER); unauthenticated → redirect; `POST /api/workflow-map/refresh` as non-admin → 403; edit-in-place affordance hidden for non-ADMIN/EXECUTIVE (matches the existing SOP write endpoint's gate).
+- **Route/role tests:** any authenticated role can `GET /api/workflow-map` (incl. VIEWER); unauthenticated → redirect; `POST /api/workflow-map/refresh` as non-admin → 403; edit-in-place affordance hidden for non-ADMIN (matches the effective ADMIN-only gate from the `/api/admin` middleware prefix).
 
 ## 15. Risks / open questions
 
