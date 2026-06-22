@@ -201,7 +201,8 @@
     { "path": "/api/cron/shovels-enrich", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/zuper-property-sync", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/zuper-job-backfill", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/vishtik-id-sync", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/vishtik-id-sync", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/workflow-map-sync", "schedule": "0 8 * * *" }
   ],
   "redirects": [
     {
