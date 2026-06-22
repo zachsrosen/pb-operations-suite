@@ -11,6 +11,7 @@ import StagePanes from "./StagePanes";
 import FlowDetail from "./FlowDetail";
 import SearchResults from "./SearchResults";
 import WorkflowFlowchart from "./WorkflowFlowchart";
+import ProcessView from "./ProcessView";
 import {
   CROSS_CUTTING_ID,
   CROSS_CUTTING_LABEL,
@@ -27,7 +28,7 @@ type DrillState = {
 };
 
 type ViewMode = "plain" | "technical";
-type DisplayMode = "flowchart" | "list";
+type DisplayMode = "process" | "flowchart" | "list";
 
 const VIEW_STORAGE_KEY = "workflow-map-view";
 const VIEWMODE_STORAGE_KEY = "workflow-map-viewmode";
@@ -48,12 +49,14 @@ function readStoredView(): ViewMode {
 }
 
 function readStoredDisplayMode(): DisplayMode {
-  if (typeof window === "undefined") return "flowchart";
+  if (typeof window === "undefined") return "process";
   try {
     const stored = window.localStorage.getItem(VIEWMODE_STORAGE_KEY);
-    return stored === "list" ? "list" : "flowchart";
+    if (stored === "flowchart" || stored === "list") return stored;
+    // Default (incl. legacy unset) → Process, the most approachable view.
+    return "process";
   } catch {
-    return "flowchart";
+    return "process";
   }
 }
 
@@ -308,9 +311,9 @@ export default function WorkflowMapClient({
             Show plumbing
           </label>
 
-          {/* Flowchart / List segmented control */}
+          {/* Process / Flowchart / List segmented control */}
           <div className="inline-flex items-center rounded-full border border-t-border bg-surface-2 p-0.5">
-            {(["flowchart", "list"] as const).map((mode) => (
+            {(["process", "flowchart", "list"] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -327,23 +330,26 @@ export default function WorkflowMapClient({
             ))}
           </div>
 
-          {/* Plain / Technical segmented control */}
-          <div className="inline-flex items-center rounded-full border border-t-border bg-surface-2 p-0.5">
-            {(["plain", "technical"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => changeView(mode)}
-                className={`text-xs px-3 py-1 rounded-full transition-colors capitalize ${
-                  view === mode
-                    ? "bg-cyan-500/20 text-cyan-400"
-                    : "text-muted hover:text-foreground"
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
+          {/* Plain / Technical segmented control — irrelevant in Process mode
+              (Process is plain-English only), so hide it there. */}
+          {displayMode !== "process" && (
+            <div className="inline-flex items-center rounded-full border border-t-border bg-surface-2 p-0.5">
+              {(["plain", "technical"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => changeView(mode)}
+                  className={`text-xs px-3 py-1 rounded-full transition-colors capitalize ${
+                    view === mode
+                      ? "bg-cyan-500/20 text-cyan-400"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Search */}
           <input
@@ -372,6 +378,10 @@ export default function WorkflowMapClient({
           query={search}
           onSelect={openFlow}
         />
+      ) : displayMode === "process" ? (
+        // Process mode — full-width plain-English pipeline walkthrough. Drill
+        // state and the FlowDetail panel aren't used here.
+        <ProcessView snapshot={snapshot} />
       ) : displayMode === "flowchart" ? (
         // Flowchart mode — zoomable canvas driven by the same drill state.
         // When a flow is selected, FlowDetail sits below the canvas.
