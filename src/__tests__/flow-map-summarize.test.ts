@@ -18,6 +18,22 @@ test("PandaDoc DA Sent: event-based, sets layout_status", () => {
   expect(e.sets.some((s: any) => s.property === "layout_status")).toBe(true);
 });
 
+test("status/name mapping: '04. Design Flow' maps to Design & Engineering + creates the stamping task", () => {
+  // 451609218 enrolls via dealstage IS_NONE_OF [closed] (no positive inclusion),
+  // so the old inclusion-only mapping would NOT place it in any stage. The name
+  // (/design flow/i) + design_status/layout_status touch must now map it to 20461937.
+  const e = summarizeFlow(load("451609218"), labels, stageLookup);
+  expect(e.stageIds).toContain("20461937"); // Design & Engineering
+  expect(e.createsTasks).toContain("Complete Final Design Review For Stamping - ZRS");
+});
+
+test("status/name mapping: a Permit Flow maps to Permitting & Interconnection", () => {
+  // 452253474 = "01a. Permit Flow - Ready for Permitting" — name (/permit(ting)? flow/i)
+  // and/or permitting_status touch must map it to 20461938.
+  const e = summarizeFlow(load("452253474"), labels, stageLookup);
+  expect(e.stageIds).toContain("20461938"); // Permitting & Interconnection
+});
+
 test("coverage: every fixture parses with a non-empty trigger and zero unhandled operators", () => {
   unhandledOperators.clear();
   const ids = fs.readdirSync("data/hubspot-flows/detail").filter(f => f.endsWith(".json")).map(f => f.replace(".json",""));

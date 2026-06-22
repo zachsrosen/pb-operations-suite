@@ -4,6 +4,8 @@
 // Plain output uses HubSpot property labels + enum option labels + stage labels and truncates
 // for readability; technical output uses raw internal names / operators / values, untruncated.
 
+import { STAGE_SIGNALS } from "./stage-signals";
+
 type Op = { operator?: string; values?: any[]; value?: any; propertyParser?: string;
   timePoint?: any; lowerBoundTimePoint?: any; upperBoundTimePoint?: any; [k: string]: any };
 type PropLabels = { labels: Record<string, string>; options: Record<string, Record<string, string>> };
@@ -327,15 +329,35 @@ export function summarizeFlow(
   const enr = detail.enrollmentCriteria || {};
   const enrollmentType = enr.type ?? "LIST_BASED";
 
+  // touchedProps: every property the flow references in enrollment (any operator)
+  // UNION every property_name it sets via a 0-5 action. Drives status-based stage
+  // mapping (STAGE_SIGNALS.statusProps).
+  const touchedProps = new Set<string>();
+
   // stageIds: enrollment INCLUSION filter on a stage prop whose value is in stageLookup.
   const stageIds: string[] = [];
   {
     const filts: [string, Op][] = []; collectFilters(enr, filts);
     for (const [prop, op] of filts) {
+      touchedProps.add(prop);
       if (STAGE_PROPS.has(prop) && INCLUDE_OPS.has(op.operator || "")) {
         for (const v of op.values || []) if (v in stageLookup && !stageIds.includes(v)) stageIds.push(v);
       }
     }
+    for (const a of detail.actions || []) {
+      if (a.actionTypeId !== "0-5") continue;
+      const prop = (a.fields || {}).property_name;
+      if (prop) touchedProps.add(prop);
+    }
+  }
+
+  // Union in name-match + status-touch stage signals so status-scoped flows
+  // (e.g. dealstage IS_NONE_OF [closed] + Design Status filters) still map to a stage.
+  for (const [stageId, sig] of Object.entries(STAGE_SIGNALS)) {
+    if (stageIds.includes(stageId)) continue;
+    const nameMatch = sig.namePatterns.some((re) => re.test(detail.name || ""));
+    const statusMatch = sig.statusProps.some((p) => touchedProps.has(p));
+    if (nameMatch || statusMatch) stageIds.push(stageId);
   }
 
   // reads: non-stage enrollment-inclusion (property,value) pairs (with label), EXCLUDING stage props.
@@ -366,6 +388,39 @@ export function summarizeFlow(
     sets.push({ property: prop, label: ctx.plabel(prop), value: raw });
   }
 
+  // createsTasks: subjects of every 0-3 CREATE_TASK action (dedup, trim).
+  const createsTasks: string[] = [];
+  for (const a of detail.actions || []) {
+    if (a.actionTypeId !== "0-3") continue;
+    const subj = String((a.fields || {}).subject ?? "").trim();
+    if (subj && !createsTasks.includes(subj)) createsTasks.push(subj);
+  }
+
+  // firesOnTasks: task subjects this flow enrolls on completing — the pattern is
+  // enrollment with hs_task_subject IS_ANY_OF/IS_EQUAL_TO [subjects] together with
+  // hs_task_status = COMPLETED. Mirror triggerSummary's per-branch evaluation.
+  const firesOnTasks: string[] = [];
+  {
+    const lfb = enr.listFilterBranch || {};
+    const branches = lfb.filterBranches || [lfb];
+    for (const br of branches) {
+      const filts: [string, Op][] = []; collectFilters(br, filts);
+      const bymap = new Map<string, Op>();
+      for (const [prop, op] of filts) bymap.set(prop, op); // keep LAST occurrence
+      const statusOp = bymap.get("hs_task_status");
+      const subjOp = bymap.get("hs_task_subject");
+      if (!statusOp || !subjOp) continue;
+      const statusVals = (statusOp.values || (statusOp.value !== undefined && statusOp.value !== null ? [statusOp.value] : [])).map(String);
+      if (!statusVals.includes("COMPLETED")) continue;
+      if (!["IS_ANY_OF", "IS_EQUAL_TO"].includes(subjOp.operator || "")) continue;
+      const subjVals = subjOp.values || (subjOp.value !== undefined && subjOp.value !== null ? [subjOp.value] : []);
+      for (const s of subjVals) {
+        const subj = String(s).trim();
+        if (subj && !firesOnTasks.includes(subj)) firesOnTasks.push(subj);
+      }
+    }
+  }
+
   return {
     enrollmentType,
     stageIds,
@@ -375,5 +430,7 @@ export function summarizeFlow(
     actionsTechnical: actionSteps(detail, ctx, true),
     sets,
     reads,
+    createsTasks,
+    firesOnTasks,
   };
 }

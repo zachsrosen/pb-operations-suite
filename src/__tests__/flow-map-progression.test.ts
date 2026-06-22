@@ -21,6 +21,19 @@ test("status hand-off: layout_status 'Sent to Customer' links PandaDoc + follow-
   expect(link!.firesFlows).toContain("03. DA Flow - DA Follow Up Task");
   expect(link!.label).toBe("Sent For Approval");
 });
+test("task hand-off: created task 'Send DA to Customer - ZRS' links creator + fired-on flow", () => {
+  const links = buildProgression(allFlows() as any, propLabels);
+  const link = links.find(l => l.kind === "task" && l.value === "Send DA to Customer - ZRS");
+  expect(link).toBeTruthy();
+  expect(link!.kind).toBe("task");
+  expect(link!.label).toBe("Send DA to Customer - ZRS"); // task label IS the subject
+  expect(link!.setBy).toContain("01. DA Flow - DA Ready to Send");
+  expect(link!.firesFlows).toContain("02. DA Flow - DA Sent for Approval");
+  // status links still carry kind === "status"
+  const statusLink = links.find(l => l.property === "layout_status" && l.value === "Sent to Customer");
+  expect(statusLink!.kind).toBe("status");
+});
+
 test("excludes non-status props (dealstage, dates, hs_*)", () => {
   const links = buildProgression(allFlows() as any, propLabels);
   expect(links.some(l => l.property === "dealstage")).toBe(false);
