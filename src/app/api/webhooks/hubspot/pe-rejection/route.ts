@@ -71,6 +71,7 @@ export async function POST(req: NextRequest) {
     composeRejectionNotes,
     composeAllRejectionComments,
     composeRejectedDocuments,
+    sameDocSelection,
     peInternalIdFromPortalUrl,
   } = await import("@/lib/pe-rejection-notes");
 
@@ -80,6 +81,8 @@ export async function POST(req: NextRequest) {
       "pe_m1_status",
       "pe_m2_status",
       "pe_portal_url",
+      "pe_m1_documents",
+      "pe_m2_documents",
     ]);
   } catch (err) {
     console.error("[pe-rejection] deal read failed:", dealId, err);
@@ -103,8 +106,15 @@ export async function POST(req: NextRequest) {
   try {
     detail = await getProjectDetail(internalId);
   } catch (err) {
+    // Return 200 (not 502) so HubSpot does NOT retry. A 5xx makes the workflow's
+    // "Send a webhook" action retry with backoff for hours; while the PE API is
+    // down (e.g. quota) every retry fails, and the moment it recovers the
+    // backlog of retries lands and re-stamps the document checkboxes, which
+    // re-fires the per-team task workflows and regenerates duplicate tasks. The
+    // deal stays Rejected, so the next genuine rejection event (or the nightly
+    // PE sync) picks it up — nothing is lost by acking and deferring.
     console.error("[pe-rejection] PE fetch failed for deal:", dealId, internalId, err);
-    return NextResponse.json({ error: "PE fetch failed" }, { status: 502 });
+    return NextResponse.json({ status: "deferred", reason: "PE fetch failed" });
   }
 
   // Phase 1 — the rejection notes (per-team + combined). These must land BEFORE
@@ -120,12 +130,25 @@ export async function POST(req: NextRequest) {
   // Phase 2 — the P.E. M{1,2} Documents checkboxes for the currently-rejected
   // docs, but only for the milestone that was actually rejected (a rejected M1
   // shouldn't touch pe_m2_documents even if PE has open M2 docs, and vice versa).
+  // Only stamp a checkbox value when it actually differs from what's already on
+  // the deal (compared as an unordered set). Re-writing an identical selection
+  // is what HubSpot sees as a "change" and what re-fires the per-team task
+  // workflows, so skipping the no-op write is the safety net that stops a stray
+  // webhook retry from regenerating duplicate tasks.
   const rejectedDocs = composeRejectedDocuments(detail.documents, detail.actionItems ?? []);
   const docProps: Record<string, string> = {};
-  if (props.pe_m1_status === "Rejected" && rejectedDocs.pe_m1_documents) {
+  if (
+    props.pe_m1_status === "Rejected" &&
+    rejectedDocs.pe_m1_documents &&
+    !sameDocSelection(props.pe_m1_documents, rejectedDocs.pe_m1_documents)
+  ) {
     docProps.pe_m1_documents = rejectedDocs.pe_m1_documents;
   }
-  if (props.pe_m2_status === "Rejected" && rejectedDocs.pe_m2_documents) {
+  if (
+    props.pe_m2_status === "Rejected" &&
+    rejectedDocs.pe_m2_documents &&
+    !sameDocSelection(props.pe_m2_documents, rejectedDocs.pe_m2_documents)
+  ) {
     docProps.pe_m2_documents = rejectedDocs.pe_m2_documents;
   }
 
