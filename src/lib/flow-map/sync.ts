@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- consumes loosely-typed HubSpot Automation v4 JSON; behavior is guarded by the 855-fixture test suite */
 // ---------------------------------------------------------------------------
 // Workflow Map incremental sync orchestrator
 //

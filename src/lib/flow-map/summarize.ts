@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- consumes loosely-typed HubSpot Automation v4 JSON; behavior is guarded by the 855-fixture test suite */
 // Ported faithfully from data/hubspot-flows/build_sop_tables.py (the verified oracle).
 // Produces the parse-able fields of a FlowEntry from one HubSpot Automation v4 flow detail.
 // Plain output uses HubSpot property labels + enum option labels + stage labels and truncates
