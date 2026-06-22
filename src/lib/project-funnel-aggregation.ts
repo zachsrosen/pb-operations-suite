@@ -196,12 +196,38 @@ export interface ProjectFunnelDrillDown {
   awaitingCloseOut: ProjectFunnelDrillDownDeal[];
 }
 
+/** One month's cohort for a milestone-progression bar: everyone who hit the
+ * milestone that month, split by whether they've since advanced to the next
+ * milestone, are still waiting, or have cancelled. Amounts drive bar height. */
+export interface MilestoneCohortMonth {
+  month: string;
+  total: number;
+  totalAmount: number;
+  advanced: number;
+  advancedAmount: number;
+  waiting: number;
+  waitingAmount: number;
+  cancelled: number;
+  cancelledAmount: number;
+}
+
+/** A milestone's full monthly cohort series, plus the label of the next
+ * milestone the highlighted ("advanced") segment represents progress toward. */
+export interface MilestoneCohort {
+  key: string;
+  label: string;
+  nextLabel: string;
+  months: MilestoneCohortMonth[];
+}
+
 export interface ProjectFunnelResponse {
   summary: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
   /** Same stage totals over the immediately-preceding equal-length window, for trend deltas. */
   previousSummary: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
   cohorts: ProjectFunnelCohort[];
   monthlyActivity: ProjectMonthlyActivity[];
+  /** Per-milestone monthly cohorts with advanced/waiting/cancelled splits. */
+  milestoneCohorts: MilestoneCohort[];
   stageDistribution: ProjectFunnelStageGroup[];
   drillDown: ProjectFunnelDrillDown;
   medianDays: ProjectFunnelMedianDays;
@@ -856,6 +882,86 @@ export function buildProjectFunnelData(
 
   const monthlyActivity = [...activityMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
+  // Milestone-progression cohorts: for each consecutive milestone pair, bin
+  // deals by the month they hit the first milestone, then split each cohort into
+  // those that have SINCE reached the next milestone (advanced), those still
+  // waiting, and those that cancelled. Advancement/cancellation are properties
+  // of the deal now (not windowed), mirroring the PE "submitted since" view.
+  const COHORT_CHAIN: Array<{
+    key: string;
+    field: keyof Project;
+    label: string;
+    nextField: keyof Project;
+    nextLabel: string;
+  }> = [
+    { key: "surveysCompleted", field: "siteSurveyCompletionDate", label: "Surveys Done", nextField: "designApprovalSentDate", nextLabel: "DA Sent" },
+    { key: "dasSent", field: "designApprovalSentDate", label: "DAs Sent", nextField: "designApprovalDate", nextLabel: "DA Approved" },
+    { key: "dasApproved", field: "designApprovalDate", label: "DAs Approved", nextField: "designCompletionDate", nextLabel: "Design Done" },
+    { key: "designsCompleted", field: "designCompletionDate", label: "Designs Done", nextField: "permitSubmitDate", nextLabel: "Permit Submitted" },
+    { key: "permitsSubmitted", field: "permitSubmitDate", label: "Permits Submitted", nextField: "permitIssueDate", nextLabel: "Permit Issued" },
+    { key: "permitsIssued", field: "permitIssueDate", label: "Permits Issued", nextField: "interconnectionSubmitDate", nextLabel: "IC Submitted" },
+    { key: "icSubmitted", field: "interconnectionSubmitDate", label: "IC Submitted", nextField: "interconnectionApprovalDate", nextLabel: "IC Approved" },
+    { key: "icApproved", field: "interconnectionApprovalDate", label: "IC Approved", nextField: "constructionScheduleDate", nextLabel: "Construction Scheduled" },
+    { key: "constructionsScheduled", field: "constructionScheduleDate", label: "Construction Scheduled", nextField: "constructionCompleteDate", nextLabel: "Construction Done" },
+    { key: "constructionsComplete", field: "constructionCompleteDate", label: "Construction Done", nextField: "inspectionPassDate", nextLabel: "Inspection Passed" },
+    { key: "inspectionsPassed", field: "inspectionPassDate", label: "Inspections Passed", nextField: "ptoGrantedDate", nextLabel: "PTO Granted" },
+  ];
+
+  const cohortMaps = COHORT_CHAIN.map(() => new Map<string, MilestoneCohortMonth>());
+  function ensureCohort(idx: number, mk: string): MilestoneCohortMonth {
+    const m = cohortMaps[idx];
+    if (!m.has(mk)) {
+      m.set(mk, {
+        month: mk,
+        total: 0,
+        totalAmount: 0,
+        advanced: 0,
+        advancedAmount: 0,
+        waiting: 0,
+        waitingAmount: 0,
+        cancelled: 0,
+        cancelledAmount: 0,
+      });
+    }
+    return m.get(mk)!;
+  }
+
+  for (const p of projects) {
+    if (!matchesLocation(p) || !matchesStaff(p)) continue;
+    if (activeScope && !isActiveDeal(p)) continue;
+    const amt = p.amount || 0;
+    const isCancelled = !!p.cancelledDate || p.stageId === CANCELLED_STAGE_ID;
+    for (let i = 0; i < COHORT_CHAIN.length; i++) {
+      const step = COHORT_CHAIN[i];
+      const dateVal = p[step.field] as string | null;
+      if (!dateVal) continue;
+      const d = new Date(dateVal + "T12:00:00");
+      if (!inWindow(d)) continue;
+      const row = ensureCohort(i, monthKey(dateVal));
+      row.total++;
+      row.totalAmount += amt;
+      // Advanced takes priority over cancelled: a deal that progressed counts as
+      // progress even if it later died.
+      if (p[step.nextField]) {
+        row.advanced++;
+        row.advancedAmount += amt;
+      } else if (isCancelled) {
+        row.cancelled++;
+        row.cancelledAmount += amt;
+      } else {
+        row.waiting++;
+        row.waitingAmount += amt;
+      }
+    }
+  }
+
+  const milestoneCohorts: MilestoneCohort[] = COHORT_CHAIN.map((step, i) => ({
+    key: step.key,
+    label: step.label,
+    nextLabel: step.nextLabel,
+    months: [...cohortMaps[i].values()].sort((a, b) => b.month.localeCompare(a.month)),
+  }));
+
   // Stage distribution — sorted by pipeline order (STAGE_PRIORITY_MAP), with a
   // per-stage breakdown + drill-down. RTB-Blocked and On Hold break down by their
   // reason (not a generic status), so the "why" is visible at a glance.
@@ -1180,6 +1286,7 @@ export function buildProjectFunnelData(
     previousSummary,
     cohorts,
     monthlyActivity,
+    milestoneCohorts,
     stageDistribution,
     drillDown,
     filterOptions,

@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/query-keys";
 import type {
   ProjectFunnelResponse,
   ProjectMonthlyActivity,
+  MilestoneCohort,
 } from "@/lib/project-funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
@@ -166,6 +167,8 @@ export function MonthlyActivityView({
       )}
 
       <ThroughputChart locations={locations} pms={pms} owners={owners} />
+
+      <MilestoneCohortChart locations={locations} pms={pms} owners={owners} />
 
       <MonthlyActivityTable activity={activity} totals={totals} />
     </>
@@ -367,6 +370,171 @@ function ThroughputChart({
                       className={`${barColor} rounded-t-md w-9 sm:w-11 transition-all duration-300 mt-auto opacity-90 group-hover:opacity-100`}
                       style={{ height: `${Math.max(heightPct, count > 0 ? 3 : 0)}%` }}
                     />
+                  </div>
+                  <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Milestone-progression cohorts. Each bar = everyone who hit the selected
+ * milestone that month; the bar's height encodes the cohort's revenue, split
+ * bottom-up into deals that have SINCE advanced to the next milestone
+ * (emerald), are still waiting (gray), or have cancelled (red). Inspired by the
+ * PE Analytics "Ready-to-Submit Cohorts" chart. Own milestone + timeframe.
+ */
+function MilestoneCohortChart({
+  locations,
+  pms,
+  owners,
+}: {
+  locations: string[];
+  pms: string[];
+  owners: string[];
+}) {
+  const [milestone, setMilestone] = useState<string>("surveysCompleted");
+  const [timeframe, setTimeframe] = useState<string>("this-year");
+
+  const months = resolveMonths(timeframe);
+  const { data, isLoading } = useQuery<ProjectFunnelResponse>({
+    queryKey: [...queryKeys.funnel.root, "cohort-progression", months, timeframe, locations, pms, owners],
+    queryFn: async () => {
+      const params = new URLSearchParams({ months: String(months) });
+      if (locations.length > 0) params.set("locations", locations.join(","));
+      if (pms.length > 0) params.set("pms", pms.join(","));
+      if (owners.length > 0) params.set("owners", owners.join(","));
+      const range = calendarMonthRange(timeframe);
+      if (range) {
+        const dates = monthRangeToDates(range);
+        params.set("start", dates.start);
+        params.set("end", dates.end);
+      }
+      const res = await fetch(`/api/deals/project-funnel?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch cohort progression data");
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const cohorts: MilestoneCohort[] = data?.milestoneCohorts ?? [];
+  const cohort = cohorts.find((c) => c.key === milestone) ?? cohorts[0];
+
+  const chronological = useMemo(() => {
+    const rows = cohort?.months ?? [];
+    const range = calendarMonthRange(timeframe);
+    const windowed = range ? rows.filter((r) => r.month >= range.start && r.month <= range.end) : rows;
+    return [...windowed].reverse();
+  }, [cohort, timeframe]);
+
+  const maxAmount = useMemo(
+    () => Math.max(1, ...chronological.map((c) => c.totalAmount)),
+    [chronological]
+  );
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+      <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground/80">Milestone Progression</h3>
+          <p className="text-[11px] text-muted">
+            Revenue (bar height) per month for each milestone — highlighted share has since reached the next step.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={cohort?.key ?? milestone}
+            onChange={(e) => setMilestone(e.target.value)}
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
+          >
+            {cohorts.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label} → {c.nextLabel}
+              </option>
+            ))}
+          </select>
+          <select
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value)}
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
+          >
+            {THROUGHPUT_TIMEFRAMES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-[11px] text-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+          Reached {cohort?.nextLabel ?? "next"}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-zinc-500" />
+          Still waiting
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-red-500/80" />
+          Cancelled
+        </span>
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-muted/60 italic">Loading…</p>
+      ) : chronological.length === 0 ? (
+        <p className="text-xs text-muted/60 italic">No activity in this window.</p>
+      ) : (
+        <div className="relative">
+          <div className="absolute inset-x-0 top-[46px] bottom-[18px] pointer-events-none">
+            {[0, 1, 2, 3].map((g) => (
+              <div key={g} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${g * 33.33}%` }} />
+            ))}
+          </div>
+          <div className="relative flex items-end justify-center gap-3 sm:gap-5">
+            {chronological.map((row) => {
+              const heightPct = (row.totalAmount / maxAmount) * 100;
+              const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
+              const rate = row.total > 0 ? Math.round((row.advanced / row.total) * 100) : 0;
+              return (
+                <div
+                  key={row.month}
+                  className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
+                  title={
+                    `${monthLabel(row.month)}: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
+                    `Reached ${cohort?.nextLabel}: ${row.advanced} (${rate}%)\n` +
+                    `Waiting: ${row.waiting} · Cancelled: ${row.cancelled}`
+                  }
+                >
+                  <div className="flex flex-col items-center leading-tight h-[40px] justify-end pb-0.5">
+                    <span className="text-sm text-foreground font-bold tabular-nums">
+                      {row.totalAmount > 0 ? formatCurrencyCompact(row.totalAmount) : ""}
+                    </span>
+                    {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
+                  </div>
+                  <div className="w-full flex justify-center border-b border-t-border" style={{ height: 130 }}>
+                    <div
+                      className="w-9 sm:w-11 mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 opacity-90 group-hover:opacity-100"
+                      style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 3 : 0)}%` }}
+                    >
+                      {row.cancelledAmount > 0 && (
+                        <div className="bg-red-500/80 w-full" style={{ height: `${segPct(row.cancelledAmount)}%` }} />
+                      )}
+                      {row.waitingAmount > 0 && (
+                        <div className="bg-zinc-500 w-full" style={{ height: `${segPct(row.waitingAmount)}%` }} />
+                      )}
+                      {row.advancedAmount > 0 && (
+                        <div className="bg-emerald-500 w-full" style={{ height: `${segPct(row.advancedAmount)}%` }} />
+                      )}
+                    </div>
                   </div>
                   <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
                 </div>
