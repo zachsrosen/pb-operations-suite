@@ -4,7 +4,7 @@
 **Status:** Draft for review
 **Author:** Zach Rosen (with Claude)
 **Related artifacts (validated prototypes this session):**
-- `data/hubspot-flows/build_sop_tables.py` — trigger/action summarizer (verified: all 19 operators, all 4 enrollment types, 0 unparsed across 855 flows)
+- `data/hubspot-flows/build_sop_tables.py` — trigger/action summarizer (verified: every operator HubSpot uses, all 4 enrollment types, 0 unparsed across 855 flows)
 - `data/hubspot-flows/build_progression.py` — cross-flow status hand-off graph
 - `data/hubspot-flows/build_worklist.py` — SOP↔automation drift detector
 - `docs/hubspot-sop-corrected-tables-2026-06-21.md`, `docs/hubspot-workflow-progression-map.md`, `docs/hubspot-stage-mismatch-worklist.md` — generated outputs proving the logic
@@ -111,7 +111,7 @@ type ProgressionLink = {
 - Task-completion pattern (`hs_task_subject` + `hs_task_status = COMPLETED`) collapses to `the task "<subject>" is completed`.
 - `EVENT_BASED`: `hs_name`/`hs_value` → "When <Property> changes to <values>"; custom event filters → rendered conditions; bare event → "a tracked HubSpot event fires".
 - `MANUAL` → "Manually enrolled"; `DATASET` → "Dataset-driven"; filter-less LIST_BASED → fall back to re-enrollment-trigger conditions.
-- **All 19 operators** handled (incl. `IS_UNKNOWN`→"is blank", `IS_BETWEEN`/`IS_NOT_BETWEEN` with `UPDATED_AT`→"hasn't changed in N days", `IS_BEFORE`→"more than N days ago", numerics, `CONTAINS`). Coverage is asserted in tests (§11).
+- **Every operator** handled (incl. `IS_UNKNOWN`→"is blank", `IS_BETWEEN`/`IS_NOT_BETWEEN` with `UPDATED_AT`→"hasn't changed in N days", `IS_BEFORE`→"more than N days ago", numerics, `CONTAINS`). Coverage is asserted in tests (§11).
 
 **Actions (plain English, execution order).** Walk the action graph from `startActionId` following `connection.nextActionId`; render `LIST_BRANCH`/`STATIC_BRANCH` as `if <condition> → <branch>; otherwise <continue>`. Action kinds by `actionTypeId`: `0-5` set/stamp property (enum values via option labels), `0-3` create task, `0-1` wait, `0-8` internal alert, `1-27489890` webhook, `0-4` email, `0-14` create record, `0-169425243` note, `0-11` assign owner, `0-63189541` association, `0-15` enroll-in-workflow.
 
@@ -190,7 +190,7 @@ MVP = slices 1–5 (read-only map). Slice 6 last (lowest risk; reuses existing w
 
 ## 14. Testing
 
-- **Summarizer unit tests** against the id-named fixtures in `data/hubspot-flows/detail/` (the canonical fixture dir; the few top-level `detail-<id>.json` files are early one-offs and are superseded by `detail/<id>.json`). Assert: all 19 operators render (no generic fallback), all 4 enrollment types produce non-empty triggers, execution-order action walk handles `LIST_BRANCH` (`detail/451599947.json` = `02. DA Flow - DA Sent for Approval`, the conditional fixture). Mirrors the coverage audit already passing in `build_sop_tables.py`.
+- **Summarizer unit tests** against the id-named fixtures in `data/hubspot-flows/detail/` (the canonical fixture dir; the few top-level `detail-<id>.json` files are early one-offs and are superseded by `detail/<id>.json`). Assert: every operator HubSpot uses render (no generic fallback), all 4 enrollment types produce non-empty triggers, execution-order action walk handles `LIST_BRANCH` (`detail/451599947.json` = `02. DA Flow - DA Sent for Approval`, the conditional fixture). Mirrors the coverage audit already passing in `build_sop_tables.py`.
 - **Stage-mapping tests:** inclusion-only (a flow that only excludes "Cancelled" must NOT map to Cancelled).
 - **Progression tests:** `layout_status = "Sent For Approval"` links `PandaDoc DA Sent`/`02. DA Flow` → `03. DA Flow - DA Follow Up Task`.
 - **Sync tests:** incremental diff (unchanged `revisionId` → no detail fetch); 429 → keep last good snapshot.

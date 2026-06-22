@@ -11,7 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-06-21-workflow-map-design.md`
 
 **Validated reference prototypes (port these, match their output):**
-- `data/hubspot-flows/build_sop_tables.py` — summarizer (all 19 operators, 4 enrollment types, execution-order action walk, plain rendering). Coverage audit passes (0 unparsed).
+- `data/hubspot-flows/build_sop_tables.py` — summarizer (every operator HubSpot uses, 4 enrollment types, execution-order action walk, plain rendering). Coverage audit passes (0 unparsed).
 - `data/hubspot-flows/build_progression.py` — status hand-off graph.
 - `data/hubspot-flows/build_worklist.py` — drift detector.
 - Fixtures: `data/hubspot-flows/detail/<id>.json` (855 flow details), `_stage_lookup.json`, `_prop_labels.json`, `all-flows.json`, `sop-sections.json`.
@@ -140,7 +140,7 @@ test("listFlows paginates via paging.next.after", async () => {
 - Reference: `data/hubspot-flows/build_sop_tables.py` (authoritative logic), fixtures in `data/hubspot-flows/detail/`.
 
 Port these functions exactly (behaviour must match the Python):
-- `fmt_filter(prop, op)` → `Condition` with plain + technical (all 19 operators: `IS_ANY_OF/IS_EQUAL_TO/IS_EXACTLY/HAS_EVER_BEEN_*` = "is X"; `IS_NONE_OF/IS_NOT_EQUAL_TO` = "is not"; `HAS_NEVER_BEEN_ANY_OF` = "has never been"; `IS_KNOWN` = "is filled in"; `IS_UNKNOWN` = "is blank"; numeric `>,<,≥,≤`; `CONTAINS/CONTAINS_EXACTLY/DOES_NOT_CONTAIN`; `IS_BEFORE/IS_AFTER` with TODAY-offset → "more than N days ago"/"within last N days"; `IS_BETWEEN/IS_NOT_BETWEEN` incl. `propertyParser=UPDATED_AT` → "hasn't changed in N days").
+- `fmt_filter(prop, op)` → `Condition` with plain + technical (every operator HubSpot uses: `IS_ANY_OF/IS_EQUAL_TO/IS_EXACTLY/HAS_EVER_BEEN_*` = "is X"; `IS_NONE_OF/IS_NOT_EQUAL_TO` = "is not"; `HAS_NEVER_BEEN_ANY_OF` = "has never been"; `IS_KNOWN` = "is filled in"; `IS_UNKNOWN` = "is blank"; numeric `>,<,≥,≤`; `CONTAINS/CONTAINS_EXACTLY/DOES_NOT_CONTAIN`; `IS_BEFORE/IS_AFTER` with TODAY-offset → "more than N days ago"/"within last N days"; `IS_BETWEEN/IS_NOT_BETWEEN` incl. `propertyParser=UPDATED_AT` → "hasn't changed in N days").
 - `triggerSummary(detail, labels, stageLookup)` → `{ plain, technical, stageIds, reads }`. Handle `LIST_BASED` (OR of AND branches; stage filters → context, non-stage → conditions; task-completion `hs_task_subject`+`hs_task_status=COMPLETED` → "the task '…' is completed"), `EVENT_BASED` (`hs_name`/`hs_value` → "X changes to Y"; custom event filters; bare event), `MANUAL`, `DATASET`, and re-enrollment fallback. Inclusion-only stage mapping (`IS_ANY_OF/IS_EQUAL_TO/HAS_EVER_BEEN_*` on `dealstage`/`hs_pipeline_stage`/`hs_value`).
 - `actionSummary(detail, labels)` → `{ plain[], technical[], sets[] }` by walking the graph from `startActionId` via `connection.nextActionId`, rendering `LIST_BRANCH`/`STATIC_BRANCH` as `if <cond> → <branch>; otherwise …`. Action kinds per `actionTypeId` map in the spec §7.
 
