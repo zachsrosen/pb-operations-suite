@@ -34,6 +34,16 @@ test("status/name mapping: a Permit Flow maps to Permitting & Interconnection", 
   expect(e.stageIds).toContain("20461938"); // Permitting & Interconnection
 });
 
+test("write-only status mapping: a flow that only READS a stage status does not map to that stage", () => {
+  // 1619463181 = "Design Lead - Design Approved - WMS" enrolls by READING
+  // layout_status (a Design & Engineering owning status) but never SETS any
+  // status and isn't name-matched to a Design family. The tightened write-only
+  // signal must NOT pull it into Design & Engineering (20461937).
+  const e = summarizeFlow(load("1619463181"), labels, stageLookup);
+  expect(e.stageIds).not.toContain("20461937"); // Design & Engineering
+  expect(e.reads.some((r) => r.property === "layout_status")).toBe(true); // it DOES read it
+});
+
 test("dealstage 0-5 action renders the stage LABEL, not the raw id", () => {
   // 1791042695 = "Transition from Construction back to RTB" — sets dealstage to
   // 22580871 ("Ready To Build"). dealstage has no enum options, so the action text

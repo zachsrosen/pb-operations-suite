@@ -333,16 +333,18 @@ export function summarizeFlow(
   const enrollmentType = enr.type ?? "LIST_BASED";
 
   // touchedProps: every property the flow references in enrollment (any operator)
-  // UNION every property_name it sets via a 0-5 action. Drives status-based stage
-  // mapping (STAGE_SIGNALS.statusProps).
-  const touchedProps = new Set<string>();
+  // writtenProps: every property_name the flow SETS via a 0-5 action. Drives the
+  // status-based stage mapping (STAGE_SIGNALS.statusProps). We deliberately use
+  // WRITES ONLY — not enrollment reads — so a flow that merely reads another
+  // stage's status (e.g. a cross-stage revision flow that filters on
+  // design_status to decide whether to act) does NOT get pulled into that stage.
+  const writtenProps = new Set<string>();
 
   // stageIds: enrollment INCLUSION filter on a stage prop whose value is in stageLookup.
   const stageIds: string[] = [];
   {
     const filts: [string, Op][] = []; collectFilters(enr, filts);
     for (const [prop, op] of filts) {
-      touchedProps.add(prop);
       if (STAGE_PROPS.has(prop) && INCLUDE_OPS.has(op.operator || "")) {
         for (const v of op.values || []) if (v in stageLookup && !stageIds.includes(v)) stageIds.push(v);
       }
@@ -350,17 +352,18 @@ export function summarizeFlow(
     for (const a of detail.actions || []) {
       if (a.actionTypeId !== "0-5") continue;
       const prop = (a.fields || {}).property_name;
-      if (prop) touchedProps.add(prop);
+      if (prop) writtenProps.add(prop);
     }
   }
 
-  // Union in name-match + status-touch stage signals so status-scoped flows
-  // (e.g. dealstage IS_NONE_OF [closed] + Design Status filters) still map to a stage.
+  // Union in name-match + status-WRITE stage signals so status-scoped flows
+  // (e.g. dealstage IS_NONE_OF [closed] + a 0-5 that sets Design Status) still
+  // map to a stage. A status read alone no longer maps — only a write does.
   for (const [stageId, sig] of Object.entries(STAGE_SIGNALS)) {
     if (stageIds.includes(stageId)) continue;
     const nameMatch = sig.namePatterns.some((re) => re.test(detail.name || ""));
-    const statusMatch = sig.statusProps.some((p) => touchedProps.has(p));
-    if (nameMatch || statusMatch) stageIds.push(stageId);
+    const statusWrite = sig.statusProps.some((p) => writtenProps.has(p));
+    if (nameMatch || statusWrite) stageIds.push(stageId);
   }
 
   // reads: non-stage enrollment-inclusion (property,value) pairs (with label), EXCLUDING stage props.
