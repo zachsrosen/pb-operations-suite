@@ -23,7 +23,6 @@ import {
   Background,
   Controls,
   Handle,
-  MiniMap,
   Panel,
   Position,
   ReactFlow,
@@ -45,8 +44,9 @@ import {
   pipelineDisplayLabel,
 } from "./flow-map-utils";
 import {
-  layeredDepths,
-  partitionConnected,
+  flowFamily,
+  flowSortKey,
+  orderFamilies,
   type HandoffEdge,
 } from "./flowchart-layout";
 
@@ -71,6 +71,13 @@ type FlowNodeData = {
   label: string;
   on: boolean;
   count: number;
+};
+type LaneLabelNodeData = {
+  label: string;
+};
+type LaneBandNodeData = {
+  width: number;
+  height: number;
 };
 
 // Card-style custom nodes using theme tokens (no hardcoded colors). React Flow
@@ -145,10 +152,34 @@ function FlowNode({ data }: NodeProps<Node<FlowNodeData>>) {
   );
 }
 
+// Faint full-width band that sits behind a lane's flow nodes so the swim-lanes
+// read as distinct horizontal regions. Non-interactive; theme-token styled.
+function LaneBandNode({ data }: NodeProps<Node<LaneBandNodeData>>) {
+  return (
+    <div
+      className="rounded-lg border border-t-border/60 bg-surface-2/30"
+      style={{ width: data.width, height: data.height }}
+    />
+  );
+}
+
+// Left-aligned lane label sitting at the start of each band.
+function LaneLabelNode({ data }: NodeProps<Node<LaneLabelNodeData>>) {
+  return (
+    <div className="text-left">
+      <span className="rounded-md border border-t-border bg-surface-2 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted shadow-card">
+        {data.label}
+      </span>
+    </div>
+  );
+}
+
 const nodeTypes = {
   pipeline: PipelineNode,
   stage: StageNode,
   flow: FlowNode,
+  laneBand: LaneBandNode,
+  laneLabel: LaneLabelNode,
 };
 
 // ── Layout constants ──────────────────────────────────────────────────────
@@ -156,8 +187,15 @@ const nodeTypes = {
 const L1_COL_GAP = 360;
 const L1_ROW_GAP = 110;
 const L2_COL_GAP = 230;
-const L3_COL_GAP = 280;
-const L3_ROW_GAP = 90;
+
+// Level-3 swim-lane geometry. Each family is a horizontal y-band; nodes flow
+// left→right within it. The label column reserves space on the left, then the
+// flow nodes step right by L3_NODE_GAP.
+const L3_LANE_HEIGHT = 96; // y-band height per family lane
+const L3_LANE_GAP = 28; // vertical gap between bands
+const L3_LABEL_W = 150; // reserved left column for the lane label
+const L3_NODE_GAP = 240; // horizontal step between flow nodes in a lane
+const L3_NODE_H = 64; // approx FlowNode height for vertical centering
 
 // Pipeline ordering mirrors PipelineCards: Project hero, then D&R, Roofing,
 // Service, rest.
@@ -316,15 +354,19 @@ function truncate(s: string, max = 32): string {
 function buildLevel3(
   snapshot: FlowMapSnapshot,
   stageId: string,
-  showDisabled: boolean,
+  showPlumbing: boolean,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
   let groups = groupFlowClones(flowsForStage(stageId, snapshot));
-  // Hide disabled clone-families unless the viewer opts in. `on` is the
+  // Hide disabled clone-families unless "Show plumbing" is on. `on` is the
   // family-aggregate enabled state, so a group survives if ANY clone is live.
-  if (!showDisabled) groups = groups.filter((g) => g.on);
+  if (!showPlumbing) groups = groups.filter((g) => g.on);
+  // Date Stamp is plumbing, not process — hide that lane unless opted in.
+  if (!showPlumbing) {
+    groups = groups.filter((g) => flowFamily(g.base) !== "Date Stamp");
+  }
   if (groups.length === 0) return { nodes, edges };
 
   // Node id = clone-base name (stable, matches the names carried in links).
@@ -333,7 +375,7 @@ function buildLevel3(
   // Hand-off edges: for each progression link, if a setter base name AND a firer
   // base name are both present in this stage, draw setter → firer. Status links
   // are solid (status hand-off); task links are dashed (task completed). Dedupe
-  // on (source, target, kind) and capture a label.
+  // on (source, target, kind) and capture a label. Edges route across lanes.
   const handoffs: HandoffEdge[] = [];
   const seen = new Set<string>();
   for (const link of snapshot.links) {
@@ -365,56 +407,78 @@ function buildLevel3(
     }
   }
 
-  const { connected, isolated } = partitionConnected(
-    groups.map((g) => g.base),
-    handoffs,
+  // Group flows by family → one horizontal swim-lane per family.
+  const byFamily = new Map<string, typeof groups>();
+  for (const g of groups) {
+    const fam = flowFamily(g.base);
+    const list = byFamily.get(fam);
+    if (list) list.push(g);
+    else byFamily.set(fam, [g]);
+  }
+
+  // Order lanes by fixed priority (primary process families first, Date Stamp
+  // last), then render only the families that have flows.
+  const lanes = orderFamilies(byFamily.keys());
+
+  // Widest lane drives the band width so the faint background spans every node.
+  const maxNodesInLane = Math.max(
+    1,
+    ...lanes.map((fam) => byFamily.get(fam)!.length),
   );
-  const depths = layeredDepths(connected, handoffs);
+  const bandWidth = L3_LABEL_W + maxNodesInLane * L3_NODE_GAP + 40;
+  const laneStep = L3_LANE_HEIGHT + L3_LANE_GAP;
 
-  // Group connected nodes by depth column, stack vertically within a column.
-  const byColumn = new Map<number, string[]>();
-  for (const base of connected) {
-    const col = depths[base] ?? 0;
-    const list = byColumn.get(col);
-    if (list) list.push(base);
-    else byColumn.set(col, [base]);
-  }
+  lanes.forEach((fam, laneIdx) => {
+    const laneTop = laneIdx * laneStep;
 
-  const repByBase = new Map(groups.map((g) => [g.base, g]));
-  const pushNode = (base: string, x: number, y: number) => {
-    const group = repByBase.get(base);
-    if (!group) return;
+    // Faint full-width band behind this lane's nodes.
     nodes.push({
-      id: base,
-      type: "flow",
-      position: { x, y },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-      data: {
-        label: group.base,
-        on: group.on,
-        count: group.count,
-      } satisfies FlowNodeData,
+      id: `lane-band-${fam}`,
+      type: "laneBand",
+      position: { x: -20, y: laneTop },
+      selectable: false,
+      draggable: false,
+      data: { width: bandWidth, height: L3_LANE_HEIGHT } satisfies LaneBandNodeData,
+      zIndex: 0,
     });
-  };
 
-  const maxCol = Math.max(0, ...Array.from(byColumn.keys()));
-  for (const [col, bases] of Array.from(byColumn.entries()).sort(
-    (a, b) => a[0] - b[0],
-  )) {
-    bases.forEach((base, row) => {
-      pushNode(base, col * L3_COL_GAP, row * L3_ROW_GAP);
+    // Lane label on the left of the band.
+    nodes.push({
+      id: `lane-label-${fam}`,
+      type: "laneLabel",
+      position: { x: 0, y: laneTop + L3_LANE_HEIGHT / 2 - 12 },
+      selectable: false,
+      draggable: false,
+      data: { label: fam } satisfies LaneLabelNodeData,
+      zIndex: 1,
     });
-  }
 
-  // Isolated flows (no hand-offs) go in a trailing grid after the connected
-  // columns, in a tidy 2-wide block so they stay readable.
-  const trailingStartCol = connected.length > 0 ? maxCol + 1 : 0;
-  const perRow = 2;
-  isolated.forEach((base, i) => {
-    const col = trailingStartCol + (i % perRow);
-    const row = Math.floor(i / perRow);
-    pushNode(base, col * L3_COL_GAP, row * L3_ROW_GAP);
+    // Nodes left→right by numbered prefix (fallback alpha), evenly spaced,
+    // vertically centered in the band.
+    const laneGroups = [...byFamily.get(fam)!].sort((a, b) => {
+      const ka = flowSortKey(a.base);
+      const kb = flowSortKey(b.base);
+      if (ka[0] !== kb[0]) return ka[0] - kb[0];
+      if (ka[1] !== kb[1]) return ka[1].localeCompare(kb[1]);
+      return ka[2].localeCompare(kb[2]);
+    });
+
+    const nodeY = laneTop + L3_LANE_HEIGHT / 2 - L3_NODE_H / 2;
+    laneGroups.forEach((group, i) => {
+      nodes.push({
+        id: group.base,
+        type: "flow",
+        position: { x: L3_LABEL_W + i * L3_NODE_GAP, y: nodeY },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+        data: {
+          label: group.base,
+          on: group.on,
+          count: group.count,
+        } satisfies FlowNodeData,
+        zIndex: 2,
+      });
+    });
   });
 
   return { nodes, edges };
@@ -426,13 +490,16 @@ export default function WorkflowFlowchart({
   snapshot,
   drill,
   setDrill,
-  showDisabled = false,
+  showPlumbing = false,
 }: {
   snapshot: FlowMapSnapshot;
   drill: DrillState;
   setDrill: (next: DrillState) => void;
-  /** When false (default), L3 omits disabled flows. */
-  showDisabled?: boolean;
+  /**
+   * When false (default), L3 omits disabled flows AND hides the Date Stamp
+   * plumbing lane. When true, both are revealed.
+   */
+  showPlumbing?: boolean;
 }) {
   const { nodes, edges, level } = useMemo(() => {
     if (!drill.pipelineId) {
@@ -442,10 +509,10 @@ export default function WorkflowFlowchart({
       return { ...buildLevel2(snapshot, drill.pipelineId), level: 2 as const };
     }
     return {
-      ...buildLevel3(snapshot, drill.stageId, showDisabled),
+      ...buildLevel3(snapshot, drill.stageId, showPlumbing),
       level: 3 as const,
     };
-  }, [snapshot, drill.pipelineId, drill.stageId, showDisabled]);
+  }, [snapshot, drill.pipelineId, drill.stageId, showPlumbing]);
 
   // Selecting a flow node needs the group's representative id (an enabled clone
   // when one exists). Resolve lazily on click against the current stage.
@@ -467,9 +534,11 @@ export default function WorkflowFlowchart({
       nodes.map((n) => {
         const classes: string[] = [];
         if (n.id === selectedBase) classes.push("ring-2 ring-cyan-500 rounded-lg");
-        // De-emphasize disabled flow nodes when they're being shown.
+        // De-emphasize disabled flow nodes when they're being shown (lane band /
+        // label nodes carry no `on`, so they're untouched).
         if (
           level === 3 &&
+          n.type === "flow" &&
           (n.data as FlowNodeData)?.on === false
         ) {
           classes.push("opacity-50");
@@ -535,26 +604,6 @@ export default function WorkflowFlowchart({
           >
             <Background />
             <Controls showInteractive={false} />
-            {/* Theme-adaptive minimap: every color resolves to a live theme token
-                (globals.css :root / .sunset / .dark), so it tracks light/dark/sunset
-                automatically instead of rendering as a fixed dark (or white) box.
-                Token names mirror globals.css exactly (--surface-2, --surface,
-                --border, --muted). The mask is color-mixed off --surface so the
-                out-of-view dim reads correctly in light and dark. */}
-            <MiniMap
-              pannable
-              zoomable
-              maskColor="color-mix(in srgb, var(--surface) 60%, transparent)"
-              maskStrokeColor="var(--border)"
-              bgColor="var(--surface-2)"
-              nodeColor="var(--muted)"
-              nodeStrokeColor="var(--border)"
-              style={{
-                backgroundColor: "var(--surface-2)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-              }}
-            />
 
             {/* Back affordance — pops one drill level (mirrors the breadcrumb). */}
             {canGoBack && (

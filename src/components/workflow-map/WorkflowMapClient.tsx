@@ -295,7 +295,9 @@ export default function WorkflowMapClient({
         </nav>
 
         <div className="flex items-center gap-3 ml-auto">
-          {/* Show-disabled toggle — hide turned-off flows by default. */}
+          {/* Show-plumbing toggle — by default hides turned-off flows AND the
+              Date Stamp lane (date-stamping is plumbing, not process). On
+              reveals both. */}
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors">
             <input
               type="checkbox"
@@ -303,7 +305,7 @@ export default function WorkflowMapClient({
               onChange={(e) => changeShowDisabled(e.target.checked)}
               className="h-3.5 w-3.5 accent-cyan-500"
             />
-            Show disabled
+            Show plumbing
           </label>
 
           {/* Flowchart / List segmented control */}
@@ -378,7 +380,7 @@ export default function WorkflowMapClient({
             snapshot={snapshot}
             drill={drill}
             setDrill={setDrill}
-            showDisabled={showDisabled}
+            showPlumbing={showDisabled}
           />
           {flow && (
             <FlowDetail
