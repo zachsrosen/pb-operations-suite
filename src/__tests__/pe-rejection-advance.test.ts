@@ -17,6 +17,18 @@ describe("rejectionTaskMilestone", () => {
     expect(rejectionTaskMilestone("M1 Ready to Resubmit - ZRS")).toBeNull();
     expect(rejectionTaskMilestone("Follow Up On Permit")).toBeNull();
   });
+  it("matches renamed subjects that keep a milestone + rejection word", () => {
+    // freely-renamed scheme: "<Team> M1/M2 Rejection"
+    expect(rejectionTaskMilestone("Sales M1 Rejection")).toBe("m1");
+    expect(rejectionTaskMilestone("Compliance M2 Rejection")).toBe("m2");
+    expect(rejectionTaskMilestone("Operations M1 Rejection")).toBe("m1");
+    expect(rejectionTaskMilestone("M1 Rejection")).toBe("m1");
+  });
+  it("still needs a rejection word AND a standalone milestone token", () => {
+    expect(rejectionTaskMilestone("Sales M1 Resubmit")).toBeNull(); // no rejection word
+    expect(rejectionTaskMilestone("Sales Rejection")).toBeNull(); // no milestone token
+    expect(rejectionTaskMilestone("M10 Rejection")).toBeNull(); // M1 not a standalone token
+  });
 });
 
 describe("open/completed", () => {

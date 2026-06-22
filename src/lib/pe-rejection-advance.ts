@@ -22,10 +22,21 @@ export interface RejectionTask {
   status: string;
 }
 
-/** Which milestone a "M1/M2 Rejected by Participate Energy" task belongs to, or null. */
+/**
+ * Which milestone a PE rejection task belongs to, or null.
+ *
+ * Matches on the two signals a rejection task must carry, so the task subjects
+ * stay freely renameable (e.g. "Sales M1 Rejection", "M1 Rejected by Participate
+ * Energy #1 - ZRS", "Compliance M2 Rejection") without code changes:
+ *   1. a rejection word — reject / rejected / rejection
+ *   2. a standalone milestone token — M1 or M2
+ * Onboarding-rejection tasks have no M1/M2 token, so they stay excluded; tasks
+ * with no rejection word (e.g. "M1 Ready to Resubmit") don't match either.
+ */
 export function rejectionTaskMilestone(subject: string): "m1" | "m2" | null {
-  if (/\bM1 Rejected by Participate Energy\b/i.test(subject)) return "m1";
-  if (/\bM2 Rejected by Participate Energy\b/i.test(subject)) return "m2";
+  if (!/reject(ed|ion)?/i.test(subject)) return null;
+  if (/\bM1\b/i.test(subject)) return "m1";
+  if (/\bM2\b/i.test(subject)) return "m2";
   return null;
 }
 
