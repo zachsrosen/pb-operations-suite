@@ -362,7 +362,7 @@ export function summarizeFlow(
     const prop = (a.fields || {}).property_name;
     if (!prop) continue;
     const raw = String(v.staticValue ?? "");
-    sets.push({ property: prop, label: ctx.plabel(prop), value: ctx.voption(prop, raw) });
+    sets.push({ property: prop, label: ctx.plabel(prop), value: raw });
   }
 
   return {
