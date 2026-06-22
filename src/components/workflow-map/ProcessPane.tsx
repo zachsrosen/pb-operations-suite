@@ -3,6 +3,7 @@
 import { sanitizeSopContent } from "@/lib/sop-sanitize";
 import "@/app/sop/sop-content.css";
 import type { SopSectionContent } from "./useStageSop";
+import SopEditInline from "./SopEditInline";
 
 /**
  * Process pane — renders the SOP sections that document a stage's automation.
@@ -17,10 +18,15 @@ export default function ProcessPane({
   sections,
   projectOnly,
   isLoading,
+  stageId,
+  canEditSop = false,
 }: {
   sections: SopSectionContent[];
   projectOnly: boolean;
   isLoading: boolean;
+  stageId: string;
+  /** ADMIN || EXECUTIVE — gates the inline edit affordance (SopEditInline). */
+  canEditSop?: boolean;
 }) {
   if (isLoading) {
     return (
@@ -48,16 +54,29 @@ export default function ProcessPane({
   }
 
   return (
-    <div className="max-h-[32rem] overflow-y-auto rounded-lg border border-t-border bg-surface p-4 shadow-card">
+    <div className="max-h-[32rem] space-y-3 overflow-y-auto rounded-lg border border-t-border bg-surface p-4 shadow-card">
       {sections.map((section) => (
-        <div
-          key={section.id}
-          className="sop-content"
-          // Sanitized via sanitizeSopContent (sanitize-html allowlist), same as /sop.
-          dangerouslySetInnerHTML={{
-            __html: sanitizeSopContent(section.content),
-          }}
-        />
+        <div key={section.id} className="space-y-2">
+          {canEditSop && (
+            <div className="flex justify-end">
+              <SopEditInline
+                sectionId={section.id}
+                title={section.title}
+                content={section.content}
+                version={section.version}
+                stageId={stageId}
+                canEdit={canEditSop}
+              />
+            </div>
+          )}
+          <div
+            className="sop-content"
+            // Sanitized via sanitizeSopContent (sanitize-html allowlist), same as /sop.
+            dangerouslySetInnerHTML={{
+              __html: sanitizeSopContent(section.content),
+            }}
+          />
+        </div>
       ))}
     </div>
   );

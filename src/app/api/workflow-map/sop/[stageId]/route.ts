@@ -30,16 +30,22 @@ export async function GET(
     return NextResponse.json({ sections: [], projectOnly: true });
   }
 
+  // Also select `version` (optimistic-lock counter) and `title` so the
+  // edit-in-place affordance can submit the version the editor opened against
+  // and label the editor — see SopEditInline.
   const rows = await prisma.sopSection.findMany({
     where: { id: { in: sectionIds } },
-    select: { id: true, content: true },
+    select: { id: true, title: true, content: true, version: true },
   });
 
   // Preserve STAGE_TO_SOP order; drop ids that have no row.
   const byId = new Map(rows.map((r) => [r.id, r]));
   const sections = sectionIds
     .map((id) => byId.get(id))
-    .filter((r): r is { id: string; content: string } => Boolean(r));
+    .filter(
+      (r): r is { id: string; title: string; content: string; version: number } =>
+        Boolean(r),
+    );
 
   return NextResponse.json({ sections, projectOnly: true });
 }

@@ -306,6 +306,7 @@ export default function WorkflowMapClient({
                 onSelectFlow={(flowId) =>
                   setDrill({ ...drill, flowId })
                 }
+                canEditSop={canEditSop}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-t-border bg-surface p-6 text-sm text-muted shadow-card">

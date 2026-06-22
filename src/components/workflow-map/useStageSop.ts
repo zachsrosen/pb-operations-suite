@@ -2,7 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-export type SopSectionContent = { id: string; content: string };
+export type SopSectionContent = {
+  id: string;
+  /** Section title, used to label the inline editor. */
+  title: string;
+  content: string;
+  /** Optimistic-lock counter; submitted on edit so the write endpoint can 409 on conflict. */
+  version: number;
+};
 
 export type StageSopResponse = {
   sections: SopSectionContent[];

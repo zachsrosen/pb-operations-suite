@@ -20,11 +20,14 @@ export default function StagePanes({
   stageId,
   selectedFlowId,
   onSelectFlow,
+  canEditSop = false,
 }: {
   snapshot: FlowMapSnapshot;
   stageId: string;
   selectedFlowId?: string;
   onSelectFlow: (flowId: string) => void;
+  /** ADMIN || EXECUTIVE — enables the Process pane's inline SOP edit affordance. */
+  canEditSop?: boolean;
 }) {
   // One SOP fetch for the stage, shared by the Process pane and the drift
   // badges (the badges diff the same section HTML against live flows).
@@ -55,6 +58,8 @@ export default function StagePanes({
           sections={sections}
           projectOnly={projectOnly}
           isLoading={isLoading}
+          stageId={stageId}
+          canEditSop={canEditSop}
         />
       </section>
 
