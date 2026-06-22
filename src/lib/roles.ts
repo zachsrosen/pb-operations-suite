@@ -1697,6 +1697,20 @@ export const ROLES: Record<UserRole, RoleDefinition> = {
 };
 
 /**
+ * The Workflow Map view (page + read API) is reachable by every authenticated
+ * role. Refresh is admin-gated separately via ADMIN_ONLY_ROUTES below.
+ * Post-process the ROLES table so we don't have to edit ~17 allowedRoutes lists
+ * by hand; "*" roles already have access and are skipped.
+ */
+const WORKFLOW_MAP_VIEW_ROUTES = ["/dashboards/workflow-map", "/api/workflow-map"];
+for (const def of Object.values(ROLES)) {
+  if (def.allowedRoutes.includes("*")) continue;
+  for (const route of WORKFLOW_MAP_VIEW_ROUTES) {
+    if (!def.allowedRoutes.includes(route)) def.allowedRoutes.push(route);
+  }
+}
+
+/**
  * Routes that require ADMIN role even if the role's allowedRoutes would otherwise
  * permit access. Non-admin roles can be granted exceptions via ADMIN_ONLY_EXCEPTIONS.
  */
@@ -1717,6 +1731,7 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/ai",
   "/api/chat",
   "/dashboards/eagleview-test",
+  "/api/workflow-map/refresh",
 ];
 
 /**

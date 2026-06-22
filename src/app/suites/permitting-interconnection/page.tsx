@@ -152,6 +152,14 @@ const LINKS: SuitePageCard[] = [
     icon: "📁",
     section: "Legacy Dashboards",
   },
+  {
+    href: "/dashboards/workflow-map",
+    title: "Workflow Map",
+    description: "Live map of HubSpot automation + SOPs.",
+    tag: "WORKFLOW",
+    icon: "🔀",
+    section: "Tools",
+  },
 ];
 
 export default async function PermittingInterconnectionSuitePage() {

@@ -127,6 +127,14 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "🛰️",
     section: "Tools",
   },
+  {
+    href: "/dashboards/workflow-map",
+    title: "Workflow Map",
+    description: "Live map of HubSpot automation + SOPs.",
+    tag: "WORKFLOW",
+    icon: "🔀",
+    section: "Tools",
+  },
 ];
 
 const LINKS: SuitePageCard[] = [

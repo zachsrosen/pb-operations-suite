@@ -140,6 +140,14 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
   {
+    href: "/dashboards/workflow-map",
+    title: "Workflow Map",
+    description: "Live map of HubSpot automation + SOPs.",
+    tag: "WORKFLOW",
+    icon: "🔀",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/design",
     title: "Design & Engineering (Legacy)",
     description: "Original design progress tracking, engineering approvals, and plan sets.",

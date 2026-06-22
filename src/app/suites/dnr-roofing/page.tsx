@@ -43,6 +43,13 @@ const LINKS: SuitePageCard[] = [
     tagColor: "blue",
     icon: "👥",
   },
+  {
+    href: "/dashboards/workflow-map",
+    title: "Workflow Map",
+    description: "Live map of HubSpot automation + SOPs.",
+    tag: "WORKFLOW",
+    icon: "🔀",
+  },
 ];
 
 export default async function DNRRoofingSuitePage() {

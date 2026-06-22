@@ -309,6 +309,16 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "📞",
     section: "On-Call",
   },
+
+  // ── Reference ──
+  {
+    href: "/dashboards/workflow-map",
+    title: "Workflow Map",
+    description: "Live map of HubSpot automation + SOPs.",
+    tag: "WORKFLOW",
+    icon: "🔀",
+    section: "Reference",
+  },
 ];
 
 // Roles entitled to access /dashboards/pe-photo-builder (mirrors roles.ts allowlist).
