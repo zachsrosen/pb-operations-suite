@@ -12,6 +12,7 @@ import {
   uploadDriveBinaryFile,
   createDriveFolder,
   listDriveSubfolders,
+  listDriveFiles,
 } from "@/lib/drive-plansets";
 import { getDealProperties, updateDealProperty } from "@/lib/hubspot";
 import { updateTicketProperties } from "@/lib/hubspot-tickets";
@@ -155,6 +156,10 @@ export function defaultPipelineDeps(): PipelineDeps {
     ensureDriveFolder,
     uploadToDrive: (parentId, filename, bytes, mimeType) =>
       uploadDriveBinaryFile(parentId, filename, bytes, mimeType),
+    listDriveFiles: (folderId) =>
+      listDriveFiles(folderId).then((files) =>
+        files.map((f) => ({ id: f.id, name: f.name })),
+      ),
     postDealNote: createDealNote,
     stampStatus,
   };

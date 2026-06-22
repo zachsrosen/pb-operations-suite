@@ -9,6 +9,12 @@
  *   - GET /v3/Report/GetReport — if Completed, call fetchAndStoreDeliverables
  *   - If still pending, leave alone for next tick
  *
+ * Backfill pass: EagleView often releases the ortho image / metadata after the
+ * shade bundle, so a delivery can land incomplete. We re-poll DELIVERED orders
+ * that are recent (within the backfill window) and still missing a core
+ * measurement file (image or shade); fetchAndStoreDeliverables tops them up
+ * idempotently without re-stamping. After the window we stop and accept partial.
+ *
  * Auth: Bearer CRON_SECRET (matches other crons).
  */
 import { NextRequest, NextResponse } from "next/server";
@@ -20,6 +26,9 @@ import { classifyTerminalStatus } from "@/lib/eagleview";
 export const maxDuration = 300;
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
+// How long after delivery we keep re-polling for late-arriving measurement
+// files (EagleView can release the ortho image hours after the shade bundle).
+const BACKFILL_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 interface PollResult {
   reportId: string;
@@ -44,7 +53,20 @@ export async function GET(request: NextRequest) {
     take: 50,
   });
 
-  if (candidates.length === 0) {
+  // Backfill: recently-delivered orders still missing a core measurement file.
+  const backfillCutoff = new Date(Date.now() - BACKFILL_WINDOW_MS);
+  const backfillCandidates = await prisma.eagleViewOrder.findMany({
+    where: {
+      status: "DELIVERED",
+      deliveredAt: { gt: backfillCutoff },
+      reportId: { not: { startsWith: "pending:" } },
+      OR: [{ imageDriveFileId: null }, { shadeJsonDriveFileId: null }],
+    },
+    orderBy: { deliveredAt: "asc" },
+    take: 25,
+  });
+
+  if (candidates.length === 0 && backfillCandidates.length === 0) {
     return NextResponse.json({ checked: 0, results: [] as PollResult[] });
   }
 
@@ -100,5 +122,26 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ checked: candidates.length, results });
+  // Backfill pass: these are already complete at EagleView, so skip getReport
+  // and re-run the deliverables fetch directly. It runs in idempotent backfill
+  // mode (downloads only missing files, no re-stamp).
+  for (const order of backfillCandidates) {
+    try {
+      const r = await fetchAndStoreDeliverables(deps, order.reportId);
+      results.push({
+        reportId: order.reportId,
+        outcome: `BACKFILL_${r.status}`,
+        reason: r.reason,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "unknown";
+      console.error("[eagleview-poll] backfill error", order.reportId, msg);
+      results.push({ reportId: order.reportId, outcome: "BACKFILL_ERROR", reason: msg });
+    }
+  }
+
+  return NextResponse.json({
+    checked: candidates.length + backfillCandidates.length,
+    results,
+  });
 }

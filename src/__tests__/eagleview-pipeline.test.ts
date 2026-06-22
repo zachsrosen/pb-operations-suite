@@ -160,6 +160,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     geocode: jest.Mock;
     ensureDriveFolder: jest.Mock;
     uploadToDrive: jest.Mock;
+    listDriveFiles: jest.Mock;
     postDealNote: jest.Mock;
     stampStatus: jest.Mock;
   };
@@ -188,6 +189,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
   const geocode = jest.fn(async () => ({ latitude: 39.0, longitude: -105.0 }));
   const ensureDriveFolder = jest.fn(async () => "drive_folder_123");
   const uploadToDrive = jest.fn(async (_: string, name: string) => ({ id: `f_${name}`, name }));
+  const listDriveFiles = jest.fn(async () => [] as { id: string; name: string }[]);
   const postDealNote = jest.fn(async () => undefined);
   const stampStatus = jest.fn(async () => undefined);
 
@@ -198,6 +200,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
     geocode,
     ensureDriveFolder,
     uploadToDrive,
+    listDriveFiles,
     postDealNote,
     stampStatus,
     spies: {
@@ -210,6 +213,7 @@ function mkDeps(prismaDouble: ReturnType<typeof makeFakePrisma>): PipelineDeps &
       geocode,
       ensureDriveFolder,
       uploadToDrive,
+      listDriveFiles,
       postDealNote,
       stampStatus,
     },
@@ -461,14 +465,99 @@ describe("fetchAndStoreDeliverables", () => {
     expect(row.deliveredAt).toBeInstanceOf(Date);
   });
 
-  it("skips when already DELIVERED", async () => {
+  it("saves the shade analysis as a .zip (not .json)", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    // EagleView's shade deliverable is a ZIP bundle, fileType "Shading".
+    deps.spies.getFileLinks.mockResolvedValueOnce({
+      links: [{ link: "https://signed.example.com/shade", expireTimestamp: "", fileType: "Shading" }],
+    });
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.uploadToDrive).toHaveBeenCalledWith(
+      "drive_folder_123",
+      "Shading.zip",
+      expect.anything(),
+      "application/zip",
+    );
+    expect(p.rows[0].shadeJsonDriveFileId).toBe("f_Shading.zip");
+  });
+
+  it("backfills missing files on a DELIVERED order without re-stamping", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    // Simulate a prior partial delivery: DELIVERED, folder set, but no files yet.
+    const firstDelivered = new Date("2026-06-22T20:00:00Z");
+    p.rows[0].status = "DELIVERED";
+    p.rows[0].driveFolderId = "drive_folder_123";
+    p.rows[0].deliveredAt = firstDelivered;
+    deps.spies.stampStatus.mockClear();
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+    expect(r.status).toBe("DELIVERED");
+    // Default getFileLinks returns image + report-pdf — both newly pulled.
+    expect(deps.spies.downloadFile).toHaveBeenCalledTimes(2);
+    expect(p.rows[0].imageDriveFileId).toContain("image");
+    expect(p.rows[0].reportPdfDriveFileId).toContain("report-pdf");
+    // Backfill must NOT re-stamp HubSpot, and must preserve the original date.
+    expect(deps.spies.stampStatus).not.toHaveBeenCalled();
+    expect(p.rows[0].deliveredAt).toEqual(firstDelivered);
+    // Reused the existing folder rather than creating a new one.
+    expect(deps.spies.ensureDriveFolder).not.toHaveBeenCalled();
+  });
+
+  it("backfill skips files already stored (by column) and only pulls the missing one", async () => {
     const p = makeFakePrisma();
     const deps = mkDeps(p);
     await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
     p.rows[0].status = "DELIVERED";
+    p.rows[0].driveFolderId = "drive_folder_123";
+    p.rows[0].deliveredAt = new Date();
+    p.rows[0].imageDriveFileId = "already_have_image"; // image present, pdf missing
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+    expect(r.status).toBe("DELIVERED");
+    expect(deps.spies.downloadFile).toHaveBeenCalledTimes(1); // only the pdf
+    expect(p.rows[0].imageDriveFileId).toBe("already_have_image"); // preserved
+    expect(p.rows[0].reportPdfDriveFileId).toContain("report-pdf");
+  });
+
+  it("backfill skips files already in the folder (by filename)", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    p.rows[0].status = "DELIVERED";
+    p.rows[0].driveFolderId = "drive_folder_123";
+    p.rows[0].deliveredAt = new Date();
+    // Folder already has both files (e.g. metadata-style dedup) — nothing new.
+    deps.spies.listDriveFiles.mockResolvedValueOnce([
+      { id: "x", name: "image.jpg" },
+      { id: "y", name: "report-pdf.pdf" },
+    ]);
+
     const r = await fetchAndStoreDeliverables(deps, "12345");
     expect(r.status).toBe("SKIPPED");
+    expect(r.reason).toBe("no_new_files");
     expect(deps.spies.downloadFile).not.toHaveBeenCalled();
+  });
+
+  it("backfill returns no_new_files without recording a failure when nothing is new", async () => {
+    const p = makeFakePrisma();
+    const deps = mkDeps(p);
+    await orderTrueDesign(deps, { dealId: "d1", triggeredBy: "test" });
+    p.rows[0].status = "DELIVERED";
+    p.rows[0].driveFolderId = "drive_folder_123";
+    p.rows[0].deliveredAt = new Date();
+    p.rows[0].imageDriveFileId = "have_image";
+    p.rows[0].reportPdfDriveFileId = "have_pdf"; // both default links already stored
+
+    const r = await fetchAndStoreDeliverables(deps, "12345");
+    expect(r.status).toBe("SKIPPED");
+    expect(r.reason).toBe("no_new_files");
+    expect(p.rows[0].failedAttempts).toBe(0); // no failure recorded
+    expect(p.rows[0].status).toBe("DELIVERED");
   });
 
   it("returns FAILED when no files yet", async () => {
@@ -615,12 +704,13 @@ describe("fetchAndStoreDeliverables — EagleView file-link type mapping", () =>
     // ExtendedOrthoImage → image column, .jpg extension (NOT .bin)
     expect(row.imageDriveFileId).not.toBeNull();
     expect(row.imageDriveFileId).toContain("ExtendedOrthoImage.jpg");
-    // Shading → shade column, .json extension (NOT .bin)
+    // Shading → shade column, .zip extension (the bundle is a ZIP, NOT JSON/.bin)
     expect(row.shadeJsonDriveFileId).not.toBeNull();
-    expect(row.shadeJsonDriveFileId).toContain("Shading.json");
+    expect(row.shadeJsonDriveFileId).toContain("Shading.zip");
     // Metadata must not be misfiled as an image (.jpg); it is JSON.
     const uploadedNames = deps.spies.uploadToDrive.mock.calls.map((c) => c[1]);
     expect(uploadedNames).toContain("ExtendedOrthoImageMetadata.json");
+    expect(uploadedNames).not.toContain("Shading.json");
     expect(uploadedNames).not.toContain("Shading.bin");
   });
 });

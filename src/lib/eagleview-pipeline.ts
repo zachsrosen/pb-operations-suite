@@ -96,6 +96,8 @@ export interface PipelineDeps {
     bytes: ArrayBuffer,
     mimeType: string,
   ) => Promise<{ id: string; name: string }>;
+  /** List files already in a Drive folder (id + name) for idempotent re-pulls. */
+  listDriveFiles: (folderId: string) => Promise<{ id: string; name: string }[]>;
   /** Post a note on the HubSpot deal timeline. Best-effort; log on failure. */
   postDealNote: (dealId: string, body: string) => Promise<void>;
   /**
@@ -362,9 +364,15 @@ export async function fetchAndStoreDeliverables(
   if (!order) {
     return { status: "FAILED", reason: "order_not_found" };
   }
-  if (order.status === "DELIVERED") {
-    return { status: "SKIPPED", reason: "already_delivered" };
-  }
+
+  // A DELIVERED order is re-processed in BACKFILL mode: EagleView often releases
+  // the ortho image / metadata after the shade bundle, so the first poll that
+  // delivered may have grabbed only a subset. Backfill tops up the missing files
+  // without re-creating the folder, re-downloading what we already have, or
+  // re-stamping HubSpot. On a fresh delivery (ORDERED) a download miss is a real
+  // failure; on backfill "nothing new yet" is normal and must not record a
+  // failure or flip status.
+  const isBackfill = order.status === "DELIVERED";
 
   // 1. Fetch signed file URLs
   let links: FileLinksResponse;
@@ -373,62 +381,85 @@ export async function fetchAndStoreDeliverables(
   } catch (err) {
     Sentry.captureException(err, {
       tags: { feature: "eagleview", phase: "getFileLinks" },
-      extra: { reportId: reportIdStr },
+      extra: { reportId: reportIdStr, isBackfill },
     });
+    if (isBackfill) return { status: "SKIPPED", reason: "backfill_get_file_links_failed" };
     await recordDeliveryFailure(deps.prisma, order.id, "get_file_links_failed");
     return { status: "FAILED", reason: "get_file_links_failed" };
   }
 
   if (!links.links || links.links.length === 0) {
+    if (isBackfill) return { status: "SKIPPED", reason: "no_new_files" };
     await recordDeliveryFailure(deps.prisma, order.id, "no_files_yet");
     return { status: "FAILED", reason: "no_files_yet" };
   }
 
-  // 2. Resolve Drive folder
-  const dealFields = await deps.fetchDealAddress(order.dealId);
-  const parentFolderId =
-    dealFields?.driveDesignDocumentsFolderId ??
-    dealFields?.driveAllDocumentsFolderId ??
-    null;
+  // 2. Resolve Drive folder — reuse the order's existing folder on backfill /
+  //    retry so we don't create duplicates or re-resolve from HubSpot.
+  let driveFolderId = order.driveFolderId ?? null;
+  if (!driveFolderId) {
+    const dealFields = await deps.fetchDealAddress(order.dealId);
+    const parentFolderId =
+      dealFields?.driveDesignDocumentsFolderId ??
+      dealFields?.driveAllDocumentsFolderId ??
+      null;
 
-  if (!parentFolderId) {
-    await recordDeliveryFailure(deps.prisma, order.id, "drive_folder_missing");
-    return { status: "FAILED", reason: "drive_folder_missing" };
+    if (!parentFolderId) {
+      if (isBackfill) return { status: "SKIPPED", reason: "drive_folder_missing" };
+      await recordDeliveryFailure(deps.prisma, order.id, "drive_folder_missing");
+      return { status: "FAILED", reason: "drive_folder_missing" };
+    }
+
+    try {
+      driveFolderId = await deps.ensureDriveFolder(
+        order.dealId,
+        parentFolderId,
+        `eagleview-${reportIdStr}`,
+      );
+    } catch (err) {
+      Sentry.captureException(err, {
+        tags: { feature: "eagleview", phase: "ensureDriveFolder" },
+        extra: { reportId: reportIdStr, dealId: order.dealId },
+      });
+      if (isBackfill) return { status: "SKIPPED", reason: "drive_folder_create_failed" };
+      await recordDeliveryFailure(deps.prisma, order.id, "drive_folder_create_failed");
+      return { status: "FAILED", reason: "drive_folder_create_failed" };
+    }
   }
 
-  let driveFolderId: string;
-  try {
-    driveFolderId = await deps.ensureDriveFolder(
-      order.dealId,
-      parentFolderId,
-      `eagleview-${reportIdStr}`,
-    );
-  } catch (err) {
-    Sentry.captureException(err, {
-      tags: { feature: "eagleview", phase: "ensureDriveFolder" },
-      extra: { reportId: reportIdStr, dealId: order.dealId },
-    });
-    await recordDeliveryFailure(deps.prisma, order.id, "drive_folder_create_failed");
-    return { status: "FAILED", reason: "drive_folder_create_failed" };
-  }
+  // 3. Skip files we already have. Two signals: a populated type column, OR a
+  //    file with the same target name already in the folder (covers metadata,
+  //    which has no column, and makes retries idempotent).
+  const existingNames = new Set(
+    (await deps.listDriveFiles(driveFolderId).catch(() => [])).map((f) => f.name),
+  );
+  const haveColumn: Record<string, boolean> = {
+    image: !!order.imageDriveFileId,
+    layout: !!order.layoutJsonDriveFileId,
+    shade: !!order.shadeJsonDriveFileId,
+    "report-pdf": !!order.reportPdfDriveFileId,
+    "report-xml": !!order.reportXmlDriveFileId,
+  };
 
-  // 3. Download + upload each file. Group by FileType so we can record specific
-  //    Drive file IDs on the order row.
+  // 4. Download + upload each NOT-yet-stored file. Group by FileType so we can
+  //    record specific Drive file IDs on the order row.
   const fileIdByType: Record<string, string> = {};
   const uploadedNames: string[] = [];
 
   for (const link of links.links) {
+    const normType = normalizeFileType(link.fileType);
+    const { mimeType, ext } = inferMimeAndExt(link);
+    const filename = sanitizeFilename(`${link.fileType}.${ext}`);
+    if (haveColumn[normType] || existingNames.has(filename)) continue; // already stored
     try {
       const bytes = await deps.client.downloadFile(link.link);
-      const { mimeType, ext } = inferMimeAndExt(link);
-      const filename = sanitizeFilename(`${link.fileType}.${ext}`);
       const uploaded = await deps.uploadToDrive(
         driveFolderId,
         filename,
         bytes,
         mimeType,
       );
-      fileIdByType[normalizeFileType(link.fileType)] = uploaded.id;
+      fileIdByType[normType] = uploaded.id;
       uploadedNames.push(uploaded.name);
     } catch (err) {
       Sentry.captureException(err, {
@@ -440,45 +471,57 @@ export async function fetchAndStoreDeliverables(
   }
 
   if (uploadedNames.length === 0) {
+    // Backfill found nothing new (or its downloads failed transiently) — leave
+    // the delivered order untouched; the next poll retries within the window.
+    if (isBackfill) return { status: "SKIPPED", reason: "no_new_files" };
     await recordDeliveryFailure(deps.prisma, order.id, "all_uploads_failed");
     return { status: "FAILED", reason: "all_uploads_failed" };
   }
 
-  // 4. Update order row
+  // 5. Update order row — MERGE new file IDs with existing columns so a backfill
+  //    pass never clobbers a previously-stored file. Preserve original
+  //    deliveredAt on backfill.
   await deps.prisma.eagleViewOrder.update({
     where: { id: order.id },
     data: {
       status: "DELIVERED",
-      deliveredAt: new Date(),
+      deliveredAt: order.deliveredAt ?? new Date(),
       errorMessage: null, // clear any failure recorded by earlier retry attempts
       driveFolderId,
-      imageDriveFileId: fileIdByType["image"] ?? null,
-      layoutJsonDriveFileId: fileIdByType["layout"] ?? null,
-      shadeJsonDriveFileId: fileIdByType["shade"] ?? null,
-      reportPdfDriveFileId: fileIdByType["report-pdf"] ?? null,
-      reportXmlDriveFileId: fileIdByType["report-xml"] ?? null,
+      imageDriveFileId: fileIdByType["image"] ?? order.imageDriveFileId,
+      layoutJsonDriveFileId: fileIdByType["layout"] ?? order.layoutJsonDriveFileId,
+      shadeJsonDriveFileId: fileIdByType["shade"] ?? order.shadeJsonDriveFileId,
+      reportPdfDriveFileId: fileIdByType["report-pdf"] ?? order.reportPdfDriveFileId,
+      reportXmlDriveFileId: fileIdByType["report-xml"] ?? order.reportXmlDriveFileId,
     },
   });
 
-  await deps
-    .stampStatus(
-      { dealId: order.dealId, ticketId: order.ticketId ?? null },
-      {
-        status: "Delivered",
-        reportId: reportIdStr,
-        driveFolderUrl: `https://drive.google.com/drive/folders/${driveFolderId}`,
-        deliveredDate: new Date(),
-      },
-    )
-    .catch((err) => console.warn("[eagleview-pipeline] stamp Delivered failed", err));
+  // 6. Stamp HubSpot only on the first delivery (status transition), not on
+  //    backfill — the deal is already stamped Delivered.
+  if (!isBackfill) {
+    await deps
+      .stampStatus(
+        { dealId: order.dealId, ticketId: order.ticketId ?? null },
+        {
+          status: "Delivered",
+          reportId: reportIdStr,
+          driveFolderUrl: `https://drive.google.com/drive/folders/${driveFolderId}`,
+          deliveredDate: new Date(),
+        },
+      )
+      .catch((err) => console.warn("[eagleview-pipeline] stamp Delivered failed", err));
+  }
 
-  // 5. Best-effort HubSpot note
+  // 7. Best-effort HubSpot note
+  const noteLead = isBackfill
+    ? "EagleView additional files added"
+    : "EagleView files delivered";
   await deps
     .postDealNote(
       order.dealId,
-      `<p>EagleView files delivered (${uploadedNames.length} files): ${uploadedNames
-        .map((n) => `<code>${escapeHtml(n)}</code>`)
-        .join(", ")}.</p>`,
+      `<p>${noteLead} (${uploadedNames.length} file${
+        uploadedNames.length === 1 ? "" : "s"
+      }): ${uploadedNames.map((n) => `<code>${escapeHtml(n)}</code>`).join(", ")}.</p>`,
     )
     .catch((err) => {
       console.warn("[eagleview-pipeline] delivered-note failed", err);
@@ -593,15 +636,17 @@ function inferMimeAndExt(link: ReportFileLink): { mimeType: string; ext: string 
   if (lower.includes("metadata")) return { mimeType: "application/json", ext: "json" };
   if (lower.includes("pdf") || lower.includes("report"))
     return { mimeType: "application/pdf", ext: "pdf" };
-  // "shad" matches both "shade" and EagleView's "Shading"; layout payloads are
-  // JSON too.
-  if (lower.includes("json") || lower.includes("layout") || lower.includes("shad"))
+  // Shade analysis ships as a ZIP bundle (EagleView "Shading" / "ShadeDataZIP"),
+  // NOT JSON. "shad" matches both "shade" and "Shading". This must come before
+  // the JSON branch so the bytes get the correct .zip name + mime.
+  if (lower.includes("shad") || lower.includes("zip"))
+    return { mimeType: "application/zip", ext: "zip" };
+  // Layout payloads are JSON.
+  if (lower.includes("json") || lower.includes("layout"))
     return { mimeType: "application/json", ext: "json" };
   if (lower.includes("png")) return { mimeType: "image/png", ext: "png" };
   if (lower.includes("jpg") || lower.includes("jpeg") || lower.includes("image"))
     return { mimeType: "image/jpeg", ext: "jpg" };
-  if (lower.includes("zip"))
-    return { mimeType: "application/zip", ext: "zip" };
   return { mimeType: "application/octet-stream", ext: "bin" };
 }
 
