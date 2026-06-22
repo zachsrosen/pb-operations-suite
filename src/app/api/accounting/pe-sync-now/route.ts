@@ -11,6 +11,22 @@ export const maxDuration = 300;
 const THROTTLE_MS = 4 * 60 * 1000;
 
 /**
+ * GET /api/accounting/pe-sync-now
+ * Lightweight last-sync probe (reads the run table only, no PE API call) so the
+ * UI can show "Last synced X ago" next to the button and discourage redundant
+ * clicks that burn the PE API daily quota.
+ */
+export async function GET() {
+  const session = await auth();
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const last = await getLatestSyncRun();
+  return NextResponse.json({
+    lastSyncedAt: last ? (last.completedAt ?? last.startedAt) : null,
+    running: last?.status === "running",
+  });
+}
+
+/**
  * POST /api/accounting/pe-sync-now
  * Body { scope?: "fast" | "full" } chooses the sync:
  *   - (no scope) auto on-visit: throttled incremental status-only sync.
