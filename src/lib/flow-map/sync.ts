@@ -10,9 +10,18 @@
 // revisionId + rendered FlowEntry) lets us skip getFlowDetail for any flow whose
 // current revisionId matches the cache — only changed/new flows are detail-fetched.
 //
-// Quota guard: all fetching + assembly completes BEFORE the snapshot is written.
-// If any HubSpot call throws after the client's retries are exhausted (e.g.
-// persistent 429), the error propagates and the last good snapshot stays intact.
+// Resumable: the per-flow detail cache is persisted INCREMENTALLY during the
+// backfill loop (every PERSIST_EVERY newly-fetched flows, and once more before
+// the snapshot is assembled). A first backfill is ~870 HubSpot calls / several
+// minutes; if the serverless function times out mid-fetch, the entries fetched
+// so far are already persisted (keyed by revisionId), so the next run reuses
+// them and only fetches the remaining flows.
+//
+// Quota guard: the SNAPSHOT is still written only at the very end, AFTER all
+// flows are gathered and progression is built. If any HubSpot call throws after
+// the client's retries are exhausted (e.g. persistent 429), the error
+// propagates: the partial detail cache is safe/idempotent, but no partial
+// snapshot is ever written, so the last good snapshot stays intact.
 // ---------------------------------------------------------------------------
 
 import { listFlows, getFlowDetail, getPipelines, getProperties } from "@/lib/flow-map/client";
@@ -23,6 +32,10 @@ import type { FlowEntry, FlowMapSnapshot, Pipeline, Stage } from "@/lib/flow-map
 
 const DEAL_OBJECT_TYPE = "0-3";
 const TICKET_OBJECT_TYPE = "0-5";
+
+// Flush the detail cache to the store every N newly-fetched flows so a timeout
+// mid-backfill leaves recoverable progress behind.
+const PERSIST_EVERY = 50;
 
 // Strip a trailing " (#N)" clone suffix from a flow name.
 const CLONE_RE = /\s*\(#\d+\)\s*$/;
@@ -112,10 +125,17 @@ export async function syncFlowMap(
     `https://app.hubspot.com/workflows/${portalId}/platform/flow/${id}/edit`;
 
   // 3. Detail cache: reuse unchanged, detail-fetch + summarize changed/new.
+  //
+  // `updatedCache` is the cache we'll persist. We seed it from the existing
+  // cache so that an incremental flush mid-backfill writes a COMPLETE,
+  // consistent cache (reused + already-fetched entries), never a partial one
+  // that could drop previously-good renders. Each loop iteration overwrites the
+  // flow's entry with the fresh render/metadata.
   const cache = await getDetailCache();
-  const updatedCache: FlowDetailCache = {};
+  const updatedCache: FlowDetailCache = { ...cache };
   const flows: Record<string, FlowEntry> = {};
   let changed = 0;
+  let fetchedSinceFlush = 0;
 
   for (const f of targets) {
     const id = String(f.id);
@@ -137,6 +157,9 @@ export async function syncFlowMap(
       };
     } else {
       changed += 1;
+      // A throw here propagates out of syncFlowMap: the already-flushed detail
+      // cache is kept (safe/idempotent — entries are keyed by revisionId), but
+      // no snapshot is written, so the quota guard holds.
       const detail = await getFlowDetail(id, token);
       const summary = summarizeFlow(detail, propLabels, summarizerStageLookup);
       entry = {
@@ -149,11 +172,26 @@ export async function syncFlowMap(
         cloneCount: cloneCounts.get(baseName(f.name)) ?? 1,
         hubspotUrl: hubspotUrl(id),
       };
+
+      flows[id] = entry;
+      updatedCache[id] = { revisionId, entry };
+
+      // Persist partial progress periodically so a timeout mid-backfill leaves
+      // the freshly-fetched renders cached for the next run to reuse.
+      if (++fetchedSinceFlush >= PERSIST_EVERY) {
+        await writeDetailCache(updatedCache);
+        fetchedSinceFlush = 0;
+      }
+      continue;
     }
 
     flows[id] = entry;
     updatedCache[id] = { revisionId, entry };
   }
+
+  // Final flush of the complete detail cache before snapshot assembly, so the
+  // cache reflects every fetched flow even if fewer than PERSIST_EVERY remained.
+  await writeDetailCache(updatedCache);
 
   // 7. Progression links.
   const links = buildProgression(Object.values(flows), propLabels);
@@ -168,8 +206,9 @@ export async function syncFlowMap(
     links,
   };
 
-  // 9. Persist detail cache, then the snapshot (snapshot last = quota guard).
-  await writeDetailCache(updatedCache);
+  // 9. Persist the snapshot LAST (= quota guard). The detail cache was already
+  // flushed incrementally above; the snapshot needs the complete flow set +
+  // progression, so it is only ever written once everything is assembled.
   await writeSnapshot(snapshot);
 
   return { flowCount: targets.length, changed, generatedAt: snapshot.generatedAt };

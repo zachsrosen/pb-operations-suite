@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import type { FlowEntry, FlowMapSnapshot } from "@/lib/flow-map/types";
+import RefreshButton from "./RefreshButton";
 import PipelineCards from "./PipelineCards";
 import StageTrack from "./StageTrack";
 import StagePanes from "./StagePanes";
@@ -91,9 +92,20 @@ export default function WorkflowMapClient({
         <h2 className="text-lg font-semibold text-foreground">
           The workflow map hasn&apos;t been synced yet.
         </h2>
-        <p className="mt-2 text-sm text-muted">
-          An admin can trigger a refresh to build the map from HubSpot.
-        </p>
+        {canEditSop ? (
+          <>
+            <p className="mt-2 text-sm text-muted">
+              Build the map from HubSpot to get started.
+            </p>
+            <div className="mt-4">
+              <RefreshButton variant="cta" />
+            </div>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-muted">
+            An admin can trigger a refresh to build the map from HubSpot.
+          </p>
+        )}
       </div>
     );
   }
@@ -265,8 +277,13 @@ export default function WorkflowMapClient({
         </div>
       </div>
 
-      {lastSynced && (
-        <div className="text-xs text-muted">Last synced: {lastSynced}</div>
+      {(lastSynced || canEditSop) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {lastSynced && (
+            <span className="text-xs text-muted">Last synced: {lastSynced}</span>
+          )}
+          {canEditSop && <RefreshButton variant="inline" />}
+        </div>
       )}
 
       {/* Search overrides the drill levels with a flat, filtered flow list. */}
