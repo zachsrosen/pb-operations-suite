@@ -3,6 +3,7 @@ import {
   composeAllRejectionComments,
   composeRejectedDocuments,
   peInternalIdFromPortalUrl,
+  sameDocSelection,
   PE_DOC_TO_TEAM_FIELD,
 } from "@/lib/pe-rejection-notes";
 import type { PeActionItem, PeDocumentInfo, PeDocuments } from "@/lib/pe-api";
@@ -224,8 +225,24 @@ describe("composeRejectedDocuments", () => {
         item("customer_agreement", "Customer Agreement (PPA/ESA)", "x"),
       ],
     );
-    expect(out.pe_m1_documents).toBe("Design Plan;Photos;Customer Agreement");
+    // Output is sorted so the same set always serializes identically — an
+    // unsorted re-write would look like a "change" to HubSpot and re-fire the
+    // per-team task workflows on every webhook retry.
+    expect(out.pe_m1_documents).toBe("Customer Agreement;Design Plan;Photos");
     expect(out.pe_m2_documents).toBeUndefined();
+  });
+
+  it("emits a deterministically-sorted set regardless of input doc order", () => {
+    const a = composeRejectedDocuments(
+      docs({ photos: "RESPONSE_NEEDED", designPlan: "RESPONSE_NEEDED", customerAgreement: "RESPONSE_NEEDED" }),
+      [],
+    );
+    const b = composeRejectedDocuments(
+      docs({ customerAgreement: "RESPONSE_NEEDED", photos: "RESPONSE_NEEDED", designPlan: "RESPONSE_NEEDED" }),
+      [],
+    );
+    expect(a.pe_m1_documents).toBe(b.pe_m1_documents);
+    expect(a.pe_m1_documents).toBe("Customer Agreement;Design Plan;Photos");
   });
 
   it("excludes APPROVED / under-review / not-uploaded docs", () => {
@@ -258,7 +275,7 @@ describe("composeRejectedDocuments", () => {
         "Page 14 — 30% discount language visible in the proposal\nPage 10 — offset exceeds 135%, requires Load Justification",
       ),
     ]);
-    expect(out.pe_m1_documents).toBe("Proposal;Load Justification Form");
+    expect(out.pe_m1_documents).toBe("Load Justification Form;Proposal");
   });
 
   it("Proposal rejected with no note defaults to 'Proposal'", () => {
@@ -276,7 +293,7 @@ describe("composeRejectedDocuments", () => {
       [],
     );
     expect(out.pe_m2_documents).toBe(
-      "Signed Interconnection Agreement;Permission to Operate;Conditional Waiver and Release",
+      "Conditional Waiver and Release;Permission to Operate;Signed Interconnection Agreement",
     );
     expect(out.pe_m1_documents).toBeUndefined();
   });
@@ -291,5 +308,28 @@ describe("composeRejectedDocuments", () => {
 
   it("returns {} when nothing is currently rejected", () => {
     expect(composeRejectedDocuments(docs({ designPlan: "APPROVED" }), [])).toEqual({});
+  });
+});
+
+describe("sameDocSelection", () => {
+  it("treats the same set in a different order as unchanged", () => {
+    expect(
+      sameDocSelection("Installation Order;Customer Agreement;Proposal", "Customer Agreement;Installation Order;Proposal"),
+    ).toBe(true);
+  });
+
+  it("treats an added or removed doc as changed", () => {
+    expect(sameDocSelection("Proposal", "Proposal;Customer Agreement")).toBe(false);
+    expect(sameDocSelection("Proposal;Customer Agreement", "Proposal")).toBe(false);
+  });
+
+  it("ignores whitespace and duplicate entries", () => {
+    expect(sameDocSelection("Proposal; Customer Agreement ", "Customer Agreement;Proposal;Proposal")).toBe(true);
+  });
+
+  it("treats empty/blank/undefined as the empty set (equal to each other)", () => {
+    expect(sameDocSelection("", undefined)).toBe(true);
+    expect(sameDocSelection(null, "")).toBe(true);
+    expect(sameDocSelection("", "Proposal")).toBe(false);
   });
 });

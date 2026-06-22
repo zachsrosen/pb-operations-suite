@@ -312,8 +312,32 @@ export function composeRejectedDocuments(
     }
   }
 
+  // Sort the values so the same set of rejected docs always serializes to the
+  // identical string. HubSpot treats a reordered multi-checkbox value as a
+  // change, which re-enrolls the per-team task workflows — so an unsorted
+  // re-stamp on a webhook retry would regenerate duplicate tasks (see
+  // sameDocSelection + the pe-rejection webhook's skip-when-unchanged guard).
   const out: { pe_m1_documents?: string; pe_m2_documents?: string } = {};
-  if (m1.length) out.pe_m1_documents = [...new Set(m1)].join(";");
-  if (m2.length) out.pe_m2_documents = [...new Set(m2)].join(";");
+  if (m1.length) out.pe_m1_documents = [...new Set(m1)].sort().join(";");
+  if (m2.length) out.pe_m2_documents = [...new Set(m2)].sort().join(";");
   return out;
+}
+
+/**
+ * Compare a freshly-composed `pe_m{1,2}_documents` checkbox value against what's
+ * already on the deal, as an UNORDERED set. HubSpot stores multi-checkbox values
+ * as a semicolon-joined string whose order is not significant, so this lets the
+ * webhook skip a redundant write — without it, every webhook retry re-stamps the
+ * (identical) selection, which HubSpot sees as a change and which re-fires the
+ * per-team task-creation workflows, regenerating duplicate tasks.
+ */
+export function sameDocSelection(
+  current: string | null | undefined,
+  next: string | null | undefined,
+): boolean {
+  const norm = (v: string | null | undefined) =>
+    [...new Set((v ?? "").split(";").map((s) => s.trim()).filter(Boolean))].sort();
+  const a = norm(current);
+  const b = norm(next);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
