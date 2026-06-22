@@ -22,7 +22,9 @@ import { useMemo } from "react";
 import {
   Background,
   Controls,
+  Handle,
   MiniMap,
+  Position,
   ReactFlow,
   type Edge,
   type Node,
@@ -81,6 +83,7 @@ function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
       }`}
       style={{ width: data.hero ? 220 : 190 }}
     >
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div
         className={`font-semibold text-foreground ${
           data.hero ? "text-base" : "text-sm"
@@ -89,6 +92,7 @@ function PipelineNode({ data }: NodeProps<Node<PipelineNodeData>>) {
         {data.label}
       </div>
       <div className="mt-1 text-xs text-muted tabular-nums">{data.sub}</div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -99,10 +103,12 @@ function StageNode({ data }: NodeProps<Node<StageNodeData>>) {
       className="rounded-lg border border-t-border bg-surface-2 px-3 py-2 shadow-card text-left"
       style={{ width: 170 }}
     >
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div className="text-sm font-medium text-foreground leading-snug">
         {data.label}
       </div>
       <div className="mt-1 text-xs text-muted tabular-nums">{data.sub}</div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -113,6 +119,7 @@ function FlowNode({ data }: NodeProps<Node<FlowNodeData>>) {
       className="rounded-lg border border-t-border bg-surface-2 px-3 py-2 shadow-card text-left"
       style={{ width: 190 }}
     >
+      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div className="flex items-start gap-2">
         <span
           aria-hidden
@@ -130,6 +137,7 @@ function FlowNode({ data }: NodeProps<Node<FlowNodeData>>) {
           </div>
         </div>
       </div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -200,6 +208,8 @@ function buildLevel1(snapshot: FlowMapSnapshot): {
       id: sales.id,
       type: "pipeline",
       position: { x: 0, y: centerY },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: sales.label,
         sub: pipelineSub(sales.id, snapshot),
@@ -213,6 +223,8 @@ function buildLevel1(snapshot: FlowMapSnapshot): {
       id: item.id,
       type: "pipeline",
       position: { x: L1_COL_GAP, y: i * L1_ROW_GAP },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: item.label,
         sub: pipelineSub(item.id, snapshot),
@@ -250,6 +262,8 @@ function buildLevel2(
       id: stage.id,
       type: "stage",
       position: { x: i * L2_COL_GAP, y: 0 },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: stage.label,
         sub: `${flows.length} ${flows.length === 1 ? "flow" : "flows"}`,
@@ -274,6 +288,8 @@ function buildLevel2(
       id: CROSS_CUTTING_ID,
       type: "stage",
       position: { x: 0, y: 0 },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: CROSS_CUTTING_LABEL,
         sub: `${flows.length} ${flows.length === 1 ? "flow" : "flows"}`,
@@ -346,6 +362,8 @@ function buildLevel3(
       id: base,
       type: "flow",
       position: { x, y },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       data: {
         label: group.base,
         on: group.on,
@@ -416,7 +434,7 @@ export default function WorkflowFlowchart({
     () =>
       nodes.map((n) =>
         n.id === selectedBase
-          ? { ...n, selected: true, className: "ring-2 ring-cyan-500 rounded-lg" }
+          ? { ...n, className: "ring-2 ring-cyan-500 rounded-lg" }
           : n,
       ),
     [nodes, selectedBase],

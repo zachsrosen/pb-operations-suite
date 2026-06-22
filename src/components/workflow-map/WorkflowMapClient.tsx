@@ -279,6 +279,7 @@ export default function WorkflowMapClient({
               <button
                 key={mode}
                 type="button"
+                aria-pressed={displayMode === mode}
                 onClick={() => changeDisplayMode(mode)}
                 className={`text-xs px-3 py-1 rounded-full transition-colors capitalize ${
                   displayMode === mode
