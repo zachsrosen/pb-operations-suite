@@ -1,8 +1,44 @@
-import type { FlowEntry, FlowMapSnapshot } from "@/lib/flow-map/types";
+import type { FlowEntry, FlowMapSnapshot, Pipeline } from "@/lib/flow-map/types";
 
 /** Synthetic pipeline id for flows with no stage associations. */
 export const CROSS_CUTTING_ID = "__cross_cutting__";
 export const CROSS_CUTTING_LABEL = "Cross-cutting";
+
+/** HubSpot object-type ids → short object-type suffix for disambiguation. */
+const OBJECT_TYPE_SUFFIX: Record<string, string> = {
+  "0-3": "deals",
+  "0-5": "tickets",
+};
+
+/**
+ * Display label for a pipeline. When two pipelines share the same raw label
+ * (e.g. the deal Service pipeline and the ticket Service pipeline), append the
+ * object-type so it's clear which is which: "Service (deals)" / "Service
+ * (tickets)". Labels that are unique across the snapshot are left untouched.
+ */
+export function pipelineDisplayLabel(
+  pipeline: Pipeline,
+  snapshot: FlowMapSnapshot,
+): string {
+  const collides = snapshot.pipelines.some(
+    (p) => p.id !== pipeline.id && p.label === pipeline.label,
+  );
+  const isService = pipeline.label.toLowerCase().includes("service");
+  if (!collides && !isService) return pipeline.label;
+  const suffix = OBJECT_TYPE_SUFFIX[pipeline.objectTypeId];
+  return suffix ? `${pipeline.label} (${suffix})` : pipeline.label;
+}
+
+/**
+ * Pipelines worth showing at Level 1 / on the cards: those with at least one
+ * flow. Empty pipelines (Test Pipeline, Technical Operations, Company
+ * Initiatives, etc.) are dropped so they don't clutter the map.
+ */
+export function nonEmptyPipelines(snapshot: FlowMapSnapshot): Pipeline[] {
+  return snapshot.pipelines.filter(
+    (p) => flowsForPipeline(p.id, snapshot).length > 0,
+  );
+}
 
 /**
  * Strip a trailing clone suffix like " (#2)" so clones collapse onto one base

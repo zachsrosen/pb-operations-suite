@@ -5,6 +5,8 @@ import {
   CROSS_CUTTING_ID,
   CROSS_CUTTING_LABEL,
   flowsForPipeline,
+  nonEmptyPipelines,
+  pipelineDisplayLabel,
 } from "./flow-map-utils";
 
 type CardModel = {
@@ -66,14 +68,15 @@ export default function PipelineCards({
   snapshot: FlowMapSnapshot;
   onSelect: (pipelineId: string) => void;
 }) {
-  const salesPipeline = snapshot.pipelines.find((p) =>
+  // Only pipelines that carry flows (drop Test Pipeline, Technical Operations,
+  // Company Initiatives, etc.).
+  const visible = nonEmptyPipelines(snapshot);
+  const salesPipeline = visible.find((p) =>
     p.label.toLowerCase().includes("sales"),
   );
 
   // Order downstream deal pipelines so Project (the hero) leads, then the rest.
-  const downstream = snapshot.pipelines.filter(
-    (p) => p.id !== salesPipeline?.id,
-  );
+  const downstream = visible.filter((p) => p.id !== salesPipeline?.id);
   const rank = (p: Pipeline) => {
     const l = p.label.toLowerCase();
     if (l.includes("project")) return 0;
@@ -97,7 +100,11 @@ export default function PipelineCards({
       {salesPipeline && (
         <div className="space-y-3">
           <PipelineCard
-            card={buildCard(salesPipeline.id, salesPipeline.label, snapshot)}
+            card={buildCard(
+              salesPipeline.id,
+              pipelineDisplayLabel(salesPipeline, snapshot),
+              snapshot,
+            )}
             onSelect={onSelect}
             hero
           />
@@ -114,7 +121,7 @@ export default function PipelineCards({
         {downstreamSorted.map((p, i) => (
           <PipelineCard
             key={p.id}
-            card={buildCard(p.id, p.label, snapshot)}
+            card={buildCard(p.id, pipelineDisplayLabel(p, snapshot), snapshot)}
             onSelect={onSelect}
             hero={i === 0}
           />
