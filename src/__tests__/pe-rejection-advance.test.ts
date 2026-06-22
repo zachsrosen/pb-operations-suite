@@ -21,7 +21,7 @@ describe("rejectionTaskMilestone", () => {
   it("matches renamed subjects that keep a milestone + rejection word", () => {
     // freely-renamed scheme: "<Team> M1/M2 Rejection"
     expect(rejectionTaskMilestone("Sales M1 Rejection")).toBe("m1");
-    expect(rejectionTaskMilestone("Compliance M2 Rejection")).toBe("m2");
+    expect(rejectionTaskMilestone("Interconnection M2 Rejection")).toBe("m2");
     expect(rejectionTaskMilestone("Operations M1 Rejection")).toBe("m1");
     expect(rejectionTaskMilestone("M1 Rejection")).toBe("m1");
   });
@@ -35,7 +35,7 @@ describe("rejectionTaskMilestone", () => {
 describe("classifyRejectionTask", () => {
   it("classifies PE rejection tasks (milestone + pe flavor)", () => {
     expect(classifyRejectionTask("M1 Rejected by Participate Energy #1 - ZRS")).toEqual({ milestone: "m1", flavor: "pe" });
-    expect(classifyRejectionTask("Sales M2 Rejection")).toEqual({ milestone: "m2", flavor: "pe" });
+    expect(classifyRejectionTask("Interconnection M2 Rejection")).toEqual({ milestone: "m2", flavor: "pe" });
   });
   it("classifies onboarding tasks as onboarding/m1 (no M1 token needed)", () => {
     expect(classifyRejectionTask("Onboarding Rejected by Participate Energy - ZRS")).toEqual({ milestone: "m1", flavor: "onboarding" });
@@ -43,7 +43,7 @@ describe("classifyRejectionTask", () => {
   });
   it("classifies internal tasks by milestone (needs M1/M2 token)", () => {
     expect(classifyRejectionTask("M1 Internally Rejected - ZRS")).toEqual({ milestone: "m1", flavor: "internal" });
-    expect(classifyRejectionTask("Sales M2 Internal Rejection")).toEqual({ milestone: "m2", flavor: "internal" });
+    expect(classifyRejectionTask("Accounting M2 Internal Rejection")).toEqual({ milestone: "m2", flavor: "internal" });
     expect(classifyRejectionTask("Internal Rejection")).toBeNull(); // no milestone token
   });
   it("returns null for non-rejection tasks", () => {
