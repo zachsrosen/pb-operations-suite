@@ -123,6 +123,10 @@ export interface PeDocuments {
   conditionalWaiverReleaseFinalPayment: PeDocumentInfo;
   accessToMonitoring: PeDocumentInfo;
   customerAgreement: PeDocumentInfo;
+  billOfMaterials: PeDocumentInfo; // split into its own upload by PE 2026-06 (was bundled in Photos)
+  // Other keys PE added in the same restructure (signedContract, changeOrders,
+  // issuedPermit) are reachable via the index signature but intentionally not
+  // tracked/required yet.
   [key: string]: PeDocumentInfo; // allow dynamic access
 }
 
@@ -496,6 +500,7 @@ export const PE_API_DOC_MAP: Record<string, string> = {
   signedInterconnectionAgreement: "Signed Interconnection Agreement",
   conditionalWaiverReleaseFinalPayment: "Conditional Waiver — Final Payment",
   permissionToOperate: "Permission to Operate (PTO)",
+  billOfMaterials: "Bill of Materials",
 };
 
 /**
@@ -519,4 +524,5 @@ export const PE_ACTION_DOC_MAP: Record<string, string> = {
   signed_interconnection_agreement: "Signed Interconnection Agreement",
   conditional_waiver_final_payment: "Conditional Waiver — Final Payment",
   permission_to_operate: "Permission to Operate (PTO)",
+  bill_of_materials: "Bill of Materials",
 };

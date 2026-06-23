@@ -80,6 +80,7 @@ const PE_DOCUMENTS: DocRequirement[] = [
   { name: "Signed Proposal", section: "ic", owner: "PB", team: "sales" },
   { name: "Design Plan", section: "ic", owner: "PB", team: "design", note: "Common blocker — ensure latest revision" },
   { name: "Photos per Policy", section: "ic", owner: "PB", team: "operations", note: "#1 rejection reason — follow PE photo guide" },
+  { name: "Bill of Materials", section: "ic", owner: "PB", team: "operations", note: "Now its own PE upload (was bundled in Photos)" },
   { name: "Signed Final Permit", section: "ic", owner: "PB", team: "permit" },
   { name: "Access to Monitoring", section: "ic", owner: "PB", team: "operations", note: "Monitoring platform credentials" },
   { name: "Certificate of Acceptance", section: "ic", owner: "PB", team: "compliance" },
