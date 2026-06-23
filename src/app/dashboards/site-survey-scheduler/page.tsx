@@ -303,6 +303,13 @@ function isNewConstructionSurvey(stage: string, tags: string[] | undefined): boo
   return isNewConstructionTag(tags) && PRE_CONSTRUCTION_STAGES.includes(stage);
 }
 
+// A revisit is only actionable while the project is still pre-construction.
+// Once it's past that (e.g. already at Inspection), a 'Needs Revisit' flag is
+// stale, so don't surface it on the scheduler.
+function isPreConstructionRevisit(stage: string, surveyStatus: string | null | undefined): boolean {
+  return isRevisitStatus(surveyStatus) && PRE_CONSTRUCTION_STAGES.includes(stage);
+}
+
 // A survey is "finished" (needs no further scheduling) only when it has been
 // completed AND is not flagged for a revisit. Revisits intentionally override
 // completion: the first visit is done, but the field needs another one.
@@ -321,7 +328,7 @@ function classifySurveyGroup(
   surveyStatus: string | null | undefined,
   tags: string[] | undefined
 ): SurveyGroup {
-  if (isRevisitStatus(surveyStatus)) return "revisit";
+  if (isPreConstructionRevisit(stage, surveyStatus)) return "revisit";
   if (isNewConstructionSurvey(stage, tags)) return "new-construction";
   return "ready";
 }
@@ -387,7 +394,7 @@ function transformProject(p: RawProject): SurveyProject | null {
   //   2. flagged "Needs Revisit" (a completed survey that must be redone), OR
   //   3. tagged "New Construction", still pre-construction, and no completed survey yet.
   const inSurveyStage = p.stage === "Site Survey";
-  const needsRevisit = isRevisitStatus(surveyStatus);
+  const needsRevisit = isPreConstructionRevisit(p.stage, surveyStatus);
   const newConstruction = isNewConstructionSurvey(p.stage, p.tags) && !finished;
   if (!inSurveyStage && !needsRevisit && !newConstruction) return null;
 
