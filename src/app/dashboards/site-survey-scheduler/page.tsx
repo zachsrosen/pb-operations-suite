@@ -288,6 +288,21 @@ function isNewConstructionTag(tags: string[] | undefined): boolean {
   return (tags || []).some((t) => String(t).toLowerCase().includes(NEW_CONSTRUCTION_TAG_VALUE));
 }
 
+// Pre-construction project stages. A New Construction deal only belongs on the
+// scheduler while it's still pre-construction (before Construction). Excludes
+// On Hold and everything Construction-and-later. Mirrors PRE_CONSTRUCTION_STAGES
+// in lib/hubspot.ts (kept local to avoid pulling server code into the client bundle).
+const PRE_CONSTRUCTION_STAGES = [
+  "Site Survey",
+  "Design & Engineering",
+  "Permitting & Interconnection",
+  "RTB - Blocked",
+  "Ready To Build",
+];
+function isNewConstructionSurvey(stage: string, tags: string[] | undefined): boolean {
+  return isNewConstructionTag(tags) && PRE_CONSTRUCTION_STAGES.includes(stage);
+}
+
 // A survey is "finished" (needs no further scheduling) only when it has been
 // completed AND is not flagged for a revisit. Revisits intentionally override
 // completion: the first visit is done, but the field needs another one.
@@ -302,11 +317,12 @@ function isSurveyFinished(
 // Precedence: Needs Revisit > New Construction > Ready to Schedule.
 type SurveyGroup = "ready" | "revisit" | "new-construction";
 function classifySurveyGroup(
+  stage: string,
   surveyStatus: string | null | undefined,
   tags: string[] | undefined
 ): SurveyGroup {
   if (isRevisitStatus(surveyStatus)) return "revisit";
-  if (isNewConstructionTag(tags)) return "new-construction";
+  if (isNewConstructionSurvey(stage, tags)) return "new-construction";
   return "ready";
 }
 
@@ -369,15 +385,15 @@ function transformProject(p: RawProject): SurveyProject | null {
   // Surface a project on the survey scheduler when it is:
   //   1. in the Site Survey stage (the original behavior), OR
   //   2. flagged "Needs Revisit" (a completed survey that must be redone), OR
-  //   3. tagged "New Construction" and has no completed survey yet.
+  //   3. tagged "New Construction", still pre-construction, and no completed survey yet.
   const inSurveyStage = p.stage === "Site Survey";
   const needsRevisit = isRevisitStatus(surveyStatus);
-  const newConstruction = isNewConstructionTag(p.tags) && !finished;
+  const newConstruction = isNewConstructionSurvey(p.stage, p.tags) && !finished;
   if (!inSurveyStage && !needsRevisit && !newConstruction) return null;
 
   return {
     id: String(p.id),
-    surveyGroup: classifySurveyGroup(surveyStatus, p.tags),
+    surveyGroup: classifySurveyGroup(p.stage, surveyStatus, p.tags),
     name: p.name || `Project ${p.id}`,
     address: [p.address, p.city, p.state].filter(Boolean).join(", ") || "Address TBD",
     city: p.city || "",

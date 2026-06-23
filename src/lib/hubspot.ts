@@ -292,6 +292,17 @@ export const STAGE_PRIORITY: Record<string, number> = {
 // Stages that are schedulable for construction
 export const SCHEDULABLE_STAGES = ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"];
 
+// Pre-construction stages (before the home/site is built & installed). A
+// New Construction deal only needs a survey while still in one of these.
+// Excludes On Hold and everything Construction-and-later.
+export const PRE_CONSTRUCTION_STAGES = [
+  "Site Survey",
+  "Design & Engineering",
+  "Permitting & Interconnection",
+  "RTB - Blocked",
+  "Ready To Build",
+];
+
 // Stages that are active (everything except completed and cancelled)
 export const ACTIVE_STAGES = [
   "Project Rejected - Needs Review",
@@ -3716,8 +3727,11 @@ export function filterProjectsForContext(
         p.isActive && !!p.siteSurveyStatus && p.siteSurveyStatus.toLowerCase().includes("revisit");
       // The HubSpot tag labelled "New Construction" stores the internal value
       // "Waiting on Site Construction"; the API returns the value, so match that.
+      // Only surface these while still pre-construction (excludes On Hold and
+      // Construction-and-later) and with no completed survey yet.
       const isNewConstructionNeedingSurvey = (p: Project) =>
         p.isActive &&
+        PRE_CONSTRUCTION_STAGES.includes(p.stage) &&
         p.tags.some((t) => t.toLowerCase().includes("waiting on site construction")) &&
         !p.siteSurveyCompletionDate &&
         !(p.siteSurveyStatus || "").toLowerCase().includes("complete");
