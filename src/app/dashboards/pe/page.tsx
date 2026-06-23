@@ -6,6 +6,7 @@ import DealsTab from "@/components/pe/DealsTab";
 import DocsTab from "@/components/pe/DocsTab";
 import AnalyticsTab from "@/components/pe/AnalyticsTab";
 import MilestonesTab from "@/components/pe/MilestonesTab";
+import SyncNowButton from "@/components/pe/SyncNowButton";
 
 const TABS = [
   { key: "deals", label: "Deals & Payments" },
@@ -38,6 +39,9 @@ function PeHub() {
           {t.label}
         </button>
       ))}
+      <div className="ml-auto">
+        <SyncNowButton />
+      </div>
     </div>
   );
 
