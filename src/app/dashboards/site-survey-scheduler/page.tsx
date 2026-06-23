@@ -456,7 +456,7 @@ export default function SiteSurveySchedulerPage() {
   const [cancellingTentative, setCancellingTentative] = useState(false);
 
   /* ---- pre-sale mode ---- */
-  const [surveyMode, setSurveyMode] = useState<"ops" | "pre-sale">("ops");
+  const [surveyMode, setSurveyMode] = useState<"ops" | "new-construction" | "pre-sale">("ops");
   const [preSaleSearch, setPreSaleSearch] = useState("");
   const [preSaleResults, setPreSaleResults] = useState<SurveyProject[]>([]);
   const [preSaleSearching, setPreSaleSearching] = useState(false);
@@ -981,6 +981,21 @@ export default function SiteSurveySchedulerPage() {
     }
     return groups.filter(g => g.items.length > 0);
   }, [unscheduledProjects]);
+
+  // New Construction lives in its own scheduler tab; the Ops Surveys panel shows
+  // only the remaining groups (Ready to Schedule + Needs Revisit).
+  const opsGroups = useMemo(
+    () => surveyGroups.filter(g => g.key !== "new-construction"),
+    [surveyGroups]
+  );
+  const opsCount = useMemo(
+    () => opsGroups.reduce((n, g) => n + g.items.length, 0),
+    [opsGroups]
+  );
+  const newConstructionProjects = useMemo(
+    () => surveyGroups.find(g => g.key === "new-construction")?.items ?? [],
+    [surveyGroups]
+  );
 
   const stats = useMemo(() => {
     const total = projects.length;
@@ -2019,6 +2034,58 @@ export default function SiteSurveySchedulerPage() {
   const todayStr = getTodayStr();
   const isTentativeOnly = !syncToZuper;
 
+  // Shared card for the schedulable-survey lists (Ops Surveys + New Construction tabs).
+  const renderSurveyCard = (project: SurveyProject) => (
+    <div
+      key={project.id}
+      draggable
+      onDragStart={() => handleDragStart(project.id)}
+      onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
+      className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
+        selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">
+            {getCustomerName(project.name)}
+          </p>
+          <p className="text-xs text-muted truncate">
+            {getProjectId(project.name)}
+          </p>
+          <p className="text-xs text-muted truncate mt-0.5">
+            {project.location}
+          </p>
+          {project.dealOwner && (
+            <p className="text-xs text-cyan-400/70 truncate mt-0.5">
+              {project.dealOwner}
+            </p>
+          )}
+        </div>
+        <span className="text-xs font-mono text-orange-400 ml-2">
+          {formatCurrency(project.amount)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        {isSurveyOverdue(project, manualSchedules[project.id]) && (
+          <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+            ⚠ Overdue
+          </span>
+        )}
+        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
+          {project.surveyStatus}
+        </span>
+        {project.systemSize > 0 && (
+          <span className="text-xs text-muted">
+            {project.systemSize.toFixed(1)}kW
+          </span>
+        )}
+        <span className="flex-1" />
+        {/* TEMPORARILY DISABLED - portal invite buttons */}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
@@ -2218,6 +2285,16 @@ export default function SiteSurveySchedulerPage() {
                     Ops Surveys
                   </button>
                   <button
+                    onClick={() => { setSurveyMode("new-construction"); setSelectedPreSaleDeal(null); setPreSaleSearch(""); setPreSaleResults([]); }}
+                    className={`flex-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+                      surveyMode === "new-construction"
+                        ? "bg-amber-600 text-white shadow-sm"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    New Construction
+                  </button>
+                  <button
                     onClick={() => { setSurveyMode("pre-sale"); setSelectedProject(null); }}
                     className={`flex-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
                       surveyMode === "pre-sale"
@@ -2231,7 +2308,16 @@ export default function SiteSurveySchedulerPage() {
                 {surveyMode === "ops" ? (
                   <>
                     <h2 className="text-sm font-semibold text-cyan-400">
-                      Needs Scheduling ({unscheduledProjects.length})
+                      Needs Scheduling ({opsCount})
+                    </h2>
+                    <p className="text-xs text-muted mt-1 hidden sm:block">
+                      Drag to calendar or click to select
+                    </p>
+                  </>
+                ) : surveyMode === "new-construction" ? (
+                  <>
+                    <h2 className="text-sm font-semibold text-amber-400">
+                      New Construction ({newConstructionProjects.length})
                     </h2>
                     <p className="text-xs text-muted mt-1 hidden sm:block">
                       Drag to calendar or click to select
@@ -2319,66 +2405,25 @@ export default function SiteSurveySchedulerPage() {
                       </p>
                     )}
                   </div>
-                ) : unscheduledProjects.length === 0 ? (
+                ) : surveyMode === "new-construction" ? (
+                  newConstructionProjects.length === 0 ? (
+                    <div className="p-4 text-center text-muted text-sm">
+                      No new construction surveys need scheduling
+                    </div>
+                  ) : (
+                    newConstructionProjects.map(renderSurveyCard)
+                  )
+                ) : opsCount === 0 ? (
                   <div className="p-4 text-center text-muted text-sm">
                     No projects need scheduling
                   </div>
                 ) : (
-                  surveyGroups.map((group) => (
+                  opsGroups.map((group) => (
                     <div key={group.key}>
                       <div className="px-3 py-1.5 bg-surface-2 border-b border-t-border text-xs font-semibold text-muted uppercase tracking-wide">
                         {group.label} ({group.items.length})
                       </div>
-                      {group.items.map((project) => (
-                        <div
-                          key={project.id}
-                          draggable
-                          onDragStart={() => handleDragStart(project.id)}
-                          onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
-                          className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
-                            selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
-                          }`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {getCustomerName(project.name)}
-                              </p>
-                              <p className="text-xs text-muted truncate">
-                                {getProjectId(project.name)}
-                              </p>
-                              <p className="text-xs text-muted truncate mt-0.5">
-                                {project.location}
-                              </p>
-                              {project.dealOwner && (
-                                <p className="text-xs text-cyan-400/70 truncate mt-0.5">
-                                  {project.dealOwner}
-                                </p>
-                              )}
-                            </div>
-                            <span className="text-xs font-mono text-orange-400 ml-2">
-                              {formatCurrency(project.amount)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            {isSurveyOverdue(project, manualSchedules[project.id]) && (
-                              <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
-                                ⚠ Overdue
-                              </span>
-                            )}
-                            <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
-                              {project.surveyStatus}
-                            </span>
-                            {project.systemSize > 0 && (
-                              <span className="text-xs text-muted">
-                                {project.systemSize.toFixed(1)}kW
-                              </span>
-                            )}
-                            <span className="flex-1" />
-                            {/* TEMPORARILY DISABLED - portal invite buttons */}
-                          </div>
-                        </div>
-                      ))}
+                      {group.items.map(renderSurveyCard)}
                     </div>
                   ))
                 )}
