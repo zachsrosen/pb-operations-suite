@@ -34,6 +34,7 @@ export const PE_DOC_HUBSPOT_MAP: PeDocPropertyMapping[] = [
   { docName: "Signed Proposal", statusProp: "pe_doc_signed_proposal", notesProp: "pe_doc_signed_proposal_notes", label: "PE: Signed Proposal" },
   { docName: "Design Plan", statusProp: "pe_doc_design_plan", notesProp: "pe_doc_design_plan_notes", label: "PE: Design Plan" },
   { docName: "Photos per Policy", statusProp: "pe_doc_photos_per_policy", notesProp: "pe_doc_photos_per_policy_notes", label: "PE: Photos per Policy" },
+  { docName: "Bill of Materials", statusProp: "pe_doc_bill_of_materials", notesProp: "pe_doc_bill_of_materials_notes", label: "PE: Bill of Materials" },
   { docName: "Signed Final Permit", statusProp: "pe_doc_signed_final_permit", notesProp: "pe_doc_signed_final_permit_notes", label: "PE: Signed Final Permit" },
   { docName: "Access to Monitoring", statusProp: "pe_doc_access_to_monitoring", notesProp: "pe_doc_access_to_monitoring_notes", label: "PE: Access to Monitoring" },
   { docName: "Certificate of Acceptance", statusProp: "pe_doc_certificate_of_acceptance", notesProp: "pe_doc_certificate_of_acceptance_notes", label: "PE: Certificate of Acceptance" },

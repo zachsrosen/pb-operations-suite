@@ -37,8 +37,8 @@ const { prisma } = require("@/lib/db");
 // ---------------------------------------------------------------------------
 
 describe("PE HubSpot sync mapping constants", () => {
-  test("PE_DOC_HUBSPOT_MAP has exactly 15 entries", () => {
-    expect(PE_DOC_HUBSPOT_MAP).toHaveLength(15);
+  test("PE_DOC_HUBSPOT_MAP has exactly 16 entries", () => {
+    expect(PE_DOC_HUBSPOT_MAP).toHaveLength(16);
   });
 
   test("every entry has all 4 fields populated", () => {
@@ -52,7 +52,7 @@ describe("PE HubSpot sync mapping constants", () => {
 
   test("statusProp names are unique", () => {
     const props = PE_DOC_HUBSPOT_MAP.map((e) => e.statusProp);
-    expect(new Set(props).size).toBe(15);
+    expect(new Set(props).size).toBe(16);
   });
 
   test("notesProp = statusProp + '_notes'", () => {
