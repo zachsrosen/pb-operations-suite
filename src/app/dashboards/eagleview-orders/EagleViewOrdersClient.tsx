@@ -211,6 +211,7 @@ export interface OrderListRow {
   dealName: string | null;
   address: string | null;
   pbLocation: string | null;
+  designLead: string | null;
   hubspotUrl: string | null;
 }
 
@@ -455,6 +456,11 @@ export default function EagleViewOrdersClient({
                       {o.pbLocation && (
                         <span className="rounded bg-surface-2 px-1.5 py-0.5 text-foreground">
                           {o.pbLocation}
+                        </span>
+                      )}
+                      {o.designLead && (
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-foreground">
+                          Design: {o.designLead}
                         </span>
                       )}
                       {o.address && <span className="truncate">{o.address}</span>}
