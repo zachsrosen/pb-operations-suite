@@ -124,7 +124,7 @@ export default function DesignPipelineFunnelPage() {
               color="orange"
             />
             <StatCard
-              label="Survey Done"
+              label="Survey Complete"
               value={s.surveyDone.count + s.surveyDone.cancelledCount}
               subtitle={`${formatCurrencyCompact(s.surveyDone.amount + s.surveyDone.cancelledAmount)} · ${surveyPct}% of closed${s.surveyDone.cancelledCount > 0 ? ` · ${s.surveyDone.cancelledCount} cancelled (${formatCurrencyCompact(s.surveyDone.cancelledAmount)})` : ""}`}
               color="blue"
@@ -392,7 +392,7 @@ function FunnelBars({
 }) {
   const stages = [
     { key: "salesClosed", label: "Sales Closed", color: "bg-orange-500", data: summary.salesClosed },
-    { key: "surveyDone", label: "Survey Done", color: "bg-blue-500", data: summary.surveyDone },
+    { key: "surveyDone", label: "Survey Complete", color: "bg-blue-500", data: summary.surveyDone },
     { key: "daSent", label: "DA Sent", color: "bg-purple-500", data: summary.daSent },
     { key: "daApproved", label: "DA Approved", color: "bg-green-500", data: summary.daApproved },
   ] as const;
@@ -514,7 +514,7 @@ function MonthlyFunnelChart({
 
   const STAGE_COLORS = [
     { key: "salesClosed", color: "bg-orange-500", label: "Sales Closed" },
-    { key: "surveyDone", color: "bg-blue-500", label: "Survey Done" },
+    { key: "surveyDone", color: "bg-blue-500", label: "Survey Complete" },
     { key: "daSent", color: "bg-purple-500", label: "DA Sent" },
     { key: "daApproved", color: "bg-green-500", label: "DA Approved" },
   ] as const;
@@ -562,7 +562,7 @@ function MonthlyFunnelChart({
 function CohortTable({ cohorts, monthlyActivity }: { cohorts: FunnelResponse["cohorts"]; monthlyActivity: MonthlyActivity[] }) {
   const STAGES = [
     { key: "salesClosed", label: "Sales Closed", textColor: "text-orange-400" },
-    { key: "surveyDone", label: "Survey Done", textColor: "text-blue-400" },
+    { key: "surveyDone", label: "Survey Complete", textColor: "text-blue-400" },
     { key: "daSent", label: "DA Sent", textColor: "text-purple-400" },
     { key: "daApproved", label: "DA Approved", textColor: "text-green-400" },
   ] as const;
