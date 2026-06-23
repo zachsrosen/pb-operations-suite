@@ -76,7 +76,7 @@ function ScaledBars({
 }: {
   data: BarDatum[];
   maxAmount: number;
-  selected: { bucket: string; seg: string | null } | null;
+  selected: { bucket: string | null; seg: string | null } | null;
   onSelect: (bucket: string, seg: string | null) => void;
   granularity: "week" | "month";
 }) {
@@ -551,11 +551,13 @@ function MilestoneCohortChart({
   const [milestone, setMilestone] = useState<string>("salesClosed");
   const [timeframe, setTimeframe] = useState<string>("this-year");
   const [granularity, setGranularity] = useState<"week" | "month">("week");
-  // Bucket (+ optional segment) the user clicked to drill into. null = none open.
-  const [selected, setSelected] = useState<{ bucket: string; seg: string | null } | null>(null);
+  // Drill selection: a bar/segment (bucket set) OR a summary card (card set).
+  const [selected, setSelected] = useState<{ bucket: string | null; seg: string | null; card: string | null } | null>(null);
   // Toggle drill selection: clicking the same bucket/segment again closes it.
   const pick = (bucket: string, seg: string | null) =>
-    setSelected((cur) => (cur && cur.bucket === bucket && cur.seg === seg ? null : { bucket, seg }));
+    setSelected((cur) => (cur && cur.bucket === bucket && cur.seg === seg && !cur.card ? null : { bucket, seg, card: null }));
+  const pickCard = (card: string) =>
+    setSelected((cur) => (cur && cur.card === card ? null : { bucket: null, seg: null, card }));
   // Drill-down table sort + copy feedback.
   const [sort, setSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "amount", dir: "desc" });
   const [copied, setCopied] = useState(false);
@@ -647,6 +649,7 @@ function MilestoneCohortChart({
     return {
       total,
       amount,
+      daApproved: pick("Design Approved", "Permit Submitted", "Permit Issued", "Construction Complete", "Inspection Passed", "PTO Granted"),
       installed: pick("Construction Complete", "Inspection Passed", "PTO Granted"),
       pto: pick("PTO Granted"),
       cancelled: pick("Cancelled"),
@@ -657,16 +660,17 @@ function MilestoneCohortChart({
   const summaryCards =
     view === "milestone"
       ? [
-          { label: cohort?.label ?? "Total", value: mTotals.amount, sub: `${mTotals.total} deals · ${pctOf(mTotals.advanced, mTotals.total)}% reached ${cohort?.nextLabel}` },
-          { label: `Reached ${cohort?.nextLabel}`, value: mTotals.advancedAmount, sub: `${mTotals.advanced} deals` },
-          { label: "Still waiting", value: mTotals.waitingAmount, sub: `${mTotals.waiting} deals` },
-          { label: "Off track", value: mTotals.onHoldAmount + mTotals.cancelledAmount, sub: `${mTotals.onHold} on hold · ${mTotals.cancelled} cancelled` },
+          { id: "total", label: cohort?.label ?? "Total", value: mTotals.amount, sub: `${mTotals.total} deals · ${pctOf(mTotals.advanced, mTotals.total)}% reached ${cohort?.nextLabel}` },
+          { id: "advanced", label: `Reached ${cohort?.nextLabel}`, value: mTotals.advancedAmount, sub: `${mTotals.advanced} deals` },
+          { id: "waiting", label: "Still waiting", value: mTotals.waitingAmount, sub: `${mTotals.waiting} deals` },
+          { id: "offtrack", label: "Off track", value: mTotals.onHoldAmount + mTotals.cancelledAmount, sub: `${mTotals.onHold} on hold · ${mTotals.cancelled} cancelled` },
         ]
       : [
-          { label: "Sold", value: lTotals.amount, sub: `${lTotals.total} deals` },
-          { label: "Installed +", value: lTotals.installed.amount, sub: `${lTotals.installed.count} deals · ${pctOf(lTotals.installed.count, lTotals.total)}% of sold` },
-          { label: "PTO granted", value: lTotals.pto.amount, sub: `${lTotals.pto.count} deals · ${pctOf(lTotals.pto.count, lTotals.total)}% of sold` },
-          { label: "Off track", value: lTotals.cancelled.amount + lTotals.onHold.amount, sub: `${lTotals.cancelled.count} cancelled · ${lTotals.onHold.count} on hold` },
+          { id: "sold", label: "Sold", value: lTotals.amount, sub: `${lTotals.total} deals` },
+          { id: "daapproved", label: "DA Approved +", value: lTotals.daApproved.amount, sub: `${lTotals.daApproved.count} deals · ${pctOf(lTotals.daApproved.count, lTotals.total)}% of sold` },
+          { id: "installed", label: "Installed +", value: lTotals.installed.amount, sub: `${lTotals.installed.count} deals · ${pctOf(lTotals.installed.count, lTotals.total)}% of sold` },
+          { id: "pto", label: "PTO granted", value: lTotals.pto.amount, sub: `${lTotals.pto.count} deals · ${pctOf(lTotals.pto.count, lTotals.total)}% of sold` },
+          { id: "offtrack", label: "Off track", value: lTotals.cancelled.amount + lTotals.onHold.amount, sub: `${lTotals.cancelled.count} cancelled · ${lTotals.onHold.count} on hold` },
         ];
 
   return (
@@ -730,14 +734,23 @@ function MilestoneCohortChart({
         </div>
       </div>
 
-      {/* Headline summary cards for the current view — PE-style. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      {/* Headline summary cards for the current view — PE-style, click to drill. */}
+      <div className={`grid grid-cols-2 gap-3 mb-4 ${summaryCards.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
         {summaryCards.map((c) => (
-          <div key={c.label} className="bg-surface-2 rounded-lg border border-t-border p-3 text-center">
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => pickCard(c.id)}
+            className={`rounded-lg border p-3 text-center transition-colors ${
+              selected?.card === c.id
+                ? "bg-surface-2 border-emerald-400/60 ring-1 ring-emerald-400/40"
+                : "bg-surface-2 border-t-border hover:border-emerald-500/40"
+            }`}
+          >
             <div className="text-lg font-bold text-foreground tabular-nums">{formatCurrencyCompact(c.value)}</div>
             <div className="text-xs font-medium text-foreground/80 mt-0.5">{c.label}</div>
             <div className="text-[10px] text-muted mt-0.5">{c.sub}</div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -917,14 +930,33 @@ function MilestoneCohortChart({
                   ? { tag: "On hold", tagClass: "bg-yellow-500/20 text-yellow-300" }
                   : { tag: `Not yet ${cohort?.nextLabel}`, tagClass: "bg-zinc-500/20 text-zinc-300" };
 
+          // Card drill = aggregate across the whole window; bar drill = one bucket.
+          const card = selected.card;
+          const LIFE_INSTALLED = ["Construction Complete", "Inspection Passed", "PTO Granted"];
+          const LIFE_DA_PLUS = ["Design Approved", "Permit Submitted", "Permit Issued", ...LIFE_INSTALLED];
           const rows: DrillRow[] =
             view === "milestone"
-              ? (mRow?.deals ?? [])
-                  .filter((d) => !selected.seg || d.seg === selected.seg)
-                  .map((d) => ({ ...base(d), ...segTag(d) }))
-              : (lcRow?.stages ?? [])
-                  .filter((s) => !selected.seg || s.stageName === selected.seg)
-                  .flatMap((s) => s.deals.map((d) => ({ ...base(d), tag: s.stageName, tagClass: "bg-surface-2 text-muted" })));
+              ? (card
+                  ? (cohort?.months.flatMap((m) => m.deals) ?? []).filter(
+                      (d) =>
+                        card === "total" ||
+                        (card === "advanced" && d.seg === "advanced") ||
+                        (card === "waiting" && d.seg === "waiting") ||
+                        (card === "offtrack" && (d.seg === "onHold" || d.seg === "cancelled"))
+                    )
+                  : (mRow?.deals ?? []).filter((d) => !selected.seg || d.seg === selected.seg)
+                ).map((d) => ({ ...base(d), ...segTag(d) }))
+              : (card
+                  ? (lifecycle.flatMap((m) => m.stages) ?? []).filter(
+                      (s) =>
+                        card === "sold" ||
+                        (card === "daapproved" && LIFE_DA_PLUS.includes(s.stageName)) ||
+                        (card === "installed" && LIFE_INSTALLED.includes(s.stageName)) ||
+                        (card === "pto" && s.stageName === "PTO Granted") ||
+                        (card === "offtrack" && (s.stageName === "Cancelled" || s.stageName === "On Hold"))
+                    )
+                  : (lcRow?.stages ?? []).filter((s) => !selected.seg || s.stageName === selected.seg)
+                ).flatMap((s) => s.deals.map((d) => ({ ...base(d), tag: s.stageName, tagClass: "bg-surface-2 text-muted" })));
           const DRILL_COLS: { key: keyof DrillRow; label: string; align: "left" | "right" }[] = [
             { key: "name", label: "Project", align: "left" },
             { key: "tag", label: view === "milestone" ? "Status" : "Milestone", align: "left" },
@@ -960,13 +992,24 @@ function MilestoneCohortChart({
           };
           const periodWord = granularity === "month" ? "Month" : "Week";
           const segLabel = selected.seg ? segChips.find((c) => c.key === selected.seg)?.label ?? selected.seg : null;
+          const cardLabel = card ? summaryCards.find((c) => c.id === card)?.label ?? card : null;
           return (
             <div className="mt-4 border-t border-t-border pt-3">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-xs font-semibold text-foreground/80">
-                  {periodWord} of {bucketLabel(selected.bucket, granularity)} · {sorted.length} {sorted.length === 1 ? "deal" : "deals"}
-                  {view === "milestone" ? ` — ${cohort?.label}` : " sold"}
-                  {segLabel && <span className="text-emerald-400"> · {segLabel}</span>}
+                  {card ? (
+                    <>
+                      <span className="text-emerald-400">{cardLabel}</span> · {sorted.length} {sorted.length === 1 ? "deal" : "deals"} · all{" "}
+                      {view === "lifecycle" ? "sold" : cohort?.label} in window
+                    </>
+                  ) : (
+                    <>
+                      {periodWord} of {selected.bucket ? bucketLabel(selected.bucket, granularity) : ""} · {sorted.length}{" "}
+                      {sorted.length === 1 ? "deal" : "deals"}
+                      {view === "milestone" ? ` — ${cohort?.label}` : " sold"}
+                      {segLabel && <span className="text-emerald-400"> · {segLabel}</span>}
+                    </>
+                  )}
                 </h4>
                 <div className="flex items-center gap-3">
                   <button
@@ -986,7 +1029,7 @@ function MilestoneCohortChart({
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   <button
                     type="button"
-                    onClick={() => setSelected({ bucket: selected.bucket, seg: null })}
+                    onClick={() => setSelected({ bucket: selected.bucket, seg: null, card: null })}
                     className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${!selected.seg ? "bg-emerald-500 border-emerald-500 text-white" : "bg-surface-2 border-t-border text-muted hover:text-foreground"}`}
                   >
                     All
@@ -995,7 +1038,7 @@ function MilestoneCohortChart({
                     <button
                       key={c.key}
                       type="button"
-                      onClick={() => setSelected({ bucket: selected.bucket, seg: c.key })}
+                      onClick={() => setSelected({ bucket: selected.bucket, seg: c.key, card: null })}
                       className={`px-2 py-0.5 rounded-full text-[10px] border flex items-center gap-1 transition-colors ${selected.seg === c.key ? "bg-emerald-500 border-emerald-500 text-white" : "bg-surface-2 border-t-border text-muted hover:text-foreground"}`}
                     >
                       <span className={`h-2 w-2 rounded-sm ${c.dot}`} />
