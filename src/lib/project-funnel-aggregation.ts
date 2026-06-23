@@ -196,10 +196,21 @@ export interface ProjectFunnelDrillDown {
   awaitingCloseOut: ProjectFunnelDrillDownDeal[];
 }
 
-/** One month's cohort for a milestone-progression bar: everyone who hit the
- * milestone that month, split by whether they've since advanced to the next
+/** A single deal in a cohort bucket, for drill-down tables. */
+export interface CohortDrillDeal {
+  id: string;
+  label: string;
+  amount: number;
+  url: string;
+  /** Milestone view: which segment of the bar this deal belongs to. */
+  seg?: "advanced" | "waiting" | "cancelled";
+}
+
+/** One week's cohort for a milestone-progression bar: everyone who hit the
+ * milestone that week, split by whether they've since advanced to the next
  * milestone, are still waiting, or have cancelled. Amounts drive bar height. */
 export interface MilestoneCohortMonth {
+  /** Week-start key, "YYYY-MM-DD" (Monday). */
   month: string;
   total: number;
   totalAmount: number;
@@ -209,6 +220,7 @@ export interface MilestoneCohortMonth {
   waitingAmount: number;
   cancelled: number;
   cancelledAmount: number;
+  deals: CohortDrillDeal[];
 }
 
 /** A milestone's full monthly cohort series, plus the label of the next
@@ -220,17 +232,19 @@ export interface MilestoneCohort {
   months: MilestoneCohortMonth[];
 }
 
-/** One current-stage slice of a sold-month lifecycle cohort. */
+/** One current-stage slice of a sold-week lifecycle cohort. */
 export interface LifecycleStageSlice {
   stageId: string;
   stageName: string;
   count: number;
   amount: number;
+  deals: CohortDrillDeal[];
 }
 
-/** Deals sold in a given month, broken down by where they sit in the pipeline
+/** Deals sold in a given week, broken down by where they sit in the pipeline
  * today (current stage). Inspired by the PE Analytics "Lifecycle" view. */
 export interface LifecycleMonth {
+  /** Week-start key, "YYYY-MM-DD" (Monday). */
   month: string;
   total: number;
   totalAmount: number;
@@ -432,6 +446,14 @@ function median(values: number[]): number | null {
 function monthKey(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Monday-of-week key as "YYYY-MM-DD", for weekly cohort bins (PE-style). */
+function weekKey(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const dow = (d.getDay() + 6) % 7; // 0 = Monday
+  d.setDate(d.getDate() - dow);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function addToStage(
@@ -942,10 +964,18 @@ export function buildProjectFunnelData(
         waitingAmount: 0,
         cancelled: 0,
         cancelledAmount: 0,
+        deals: [],
       });
     }
     return m.get(mk)!;
   }
+  const drillDeal = (p: Project, seg?: "advanced" | "waiting" | "cancelled"): CohortDrillDeal => ({
+    id: String(p.id),
+    label: p.projectNumber || p.name,
+    amount: p.amount || 0,
+    url: p.url,
+    seg,
+  });
 
   for (const p of projects) {
     if (!matchesLocation(p) || !matchesStaff(p)) continue;
@@ -958,21 +988,26 @@ export function buildProjectFunnelData(
       if (!dateVal) continue;
       const d = new Date(dateVal + "T12:00:00");
       if (!inWindow(d)) continue;
-      const row = ensureCohort(i, monthKey(dateVal));
+      const row = ensureCohort(i, weekKey(dateVal));
       row.total++;
       row.totalAmount += amt;
       // Advanced takes priority over cancelled: a deal that progressed counts as
       // progress even if it later died.
+      let seg: "advanced" | "waiting" | "cancelled";
       if (p[step.nextField]) {
+        seg = "advanced";
         row.advanced++;
         row.advancedAmount += amt;
       } else if (isCancelled) {
+        seg = "cancelled";
         row.cancelled++;
         row.cancelledAmount += amt;
       } else {
+        seg = "waiting";
         row.waiting++;
         row.waitingAmount += amt;
       }
+      row.deals.push(drillDeal(p, seg));
     }
   }
 
@@ -983,20 +1018,21 @@ export function buildProjectFunnelData(
     months: [...cohortMaps[i].values()].sort((a, b) => b.month.localeCompare(a.month)),
   }));
 
-  // Lifecycle: every deal sold in the window, grouped by sold-month and broken
+  // Lifecycle: every deal sold in the window, grouped by sold-week and broken
   // down by where it sits in the pipeline today. Includes completed and
-  // cancelled deals — the whole picture of "where did each month's sales go".
-  const lifecycleMap = new Map<string, Map<string, { count: number; amount: number }>>();
+  // cancelled deals — the whole picture of "where did each week's sales go".
+  const lifecycleMap = new Map<string, Map<string, { count: number; amount: number; deals: CohortDrillDeal[] }>>();
   for (const p of projects) {
     if (!p.closeDate || !matchesLocation(p) || !matchesStaff(p)) continue;
     if (!inWindow(new Date(p.closeDate + "T12:00:00"))) continue;
-    const mk = monthKey(p.closeDate);
-    if (!lifecycleMap.has(mk)) lifecycleMap.set(mk, new Map());
-    const stages = lifecycleMap.get(mk)!;
+    const wk = weekKey(p.closeDate);
+    if (!lifecycleMap.has(wk)) lifecycleMap.set(wk, new Map());
+    const stages = lifecycleMap.get(wk)!;
     const sid = p.stageId || "unknown";
-    const cur = stages.get(sid) ?? { count: 0, amount: 0 };
+    const cur = stages.get(sid) ?? { count: 0, amount: 0, deals: [] };
     cur.count++;
     cur.amount += p.amount || 0;
+    cur.deals.push(drillDeal(p));
     stages.set(sid, cur);
   }
   const lifecycle: LifecycleMonth[] = [...lifecycleMap.entries()]
@@ -1007,6 +1043,7 @@ export function buildProjectFunnelData(
           stageName: DEAL_STAGE_MAP[stageId] || stageId,
           count: v.count,
           amount: v.amount,
+          deals: v.deals,
         }))
         .sort((a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99));
       return {

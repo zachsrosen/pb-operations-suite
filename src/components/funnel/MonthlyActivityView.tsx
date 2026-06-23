@@ -29,9 +29,15 @@ const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
 };
 const stageColor = (name: string) => LIFECYCLE_STAGE_COLORS[name] || "bg-zinc-500";
 
-// Taller plot so small months stay legible, with a labeled $ Y-axis — matches
-// the PE Analytics cohort chart's readability.
-const BAR_AREA_H = 300;
+// Week-start "YYYY-MM-DD" → "Mon D" (e.g. "Jan 19"), matching the PE chart.
+function weekLabel(dateStr: string): string {
+  const [, m, d] = dateStr.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1]} ${d}`;
+}
+
+// Taller plot + dollar Y-axis + full-width weekly bars — matches the PE
+// Analytics cohort chart's density and readability.
+const BAR_AREA_H = 360;
 const BAR_LABEL_H = 40;
 
 interface BarSegment {
@@ -49,8 +55,21 @@ interface BarDatum {
   segments: BarSegment[];
 }
 
-/** Shared revenue-scaled stacked bar chart with a labeled dollar Y-axis. */
-function ScaledBars({ data, maxAmount }: { data: BarDatum[]; maxAmount: number }) {
+/** Shared revenue-scaled stacked bar chart: dollar Y-axis, weekly bars that
+ * fill the width, click-to-drill-down. */
+function ScaledBars({
+  data,
+  maxAmount,
+  selected,
+  onSelect,
+}: {
+  data: BarDatum[];
+  maxAmount: number;
+  selected: string | null;
+  onSelect: (bucket: string) => void;
+}) {
+  // Thin out x-axis labels when there are many weeks so they don't collide.
+  const labelStep = Math.max(1, Math.ceil(data.length / 26));
   return (
     <div className="flex gap-2">
       {/* Dollar Y-axis, aligned to the gridlines. */}
@@ -71,25 +90,25 @@ function ScaledBars({ data, maxAmount }: { data: BarDatum[]; maxAmount: number }
             <div key={f} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${f * 100}%` }} />
           ))}
         </div>
-        <div className="relative flex items-end justify-center gap-3 sm:gap-5">
-          {data.map((row) => {
+        <div className="relative flex items-end justify-between gap-0.5 sm:gap-1">
+          {data.map((row, i) => {
             const heightPct = (row.totalAmount / maxAmount) * 100;
             const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
+            const isSel = selected === row.month;
             return (
-              <div
+              <button
+                type="button"
                 key={row.month}
-                className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
+                onClick={() => onSelect(row.month)}
+                className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 group rounded-md px-0.5 transition-colors ${isSel ? "bg-surface-2" : "hover:bg-surface-2/40"}`}
                 title={row.title}
               >
                 <div className="flex flex-col items-center leading-tight justify-end pb-0.5" style={{ height: BAR_LABEL_H }}>
-                  <span className="text-sm text-foreground font-bold tabular-nums">
-                    {row.totalAmount > 0 ? formatCurrencyCompact(row.totalAmount) : ""}
-                  </span>
                   {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
                 </div>
                 <div className="w-full flex justify-center border-b border-t-border" style={{ height: BAR_AREA_H }}>
                   <div
-                    className="w-9 sm:w-11 mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 opacity-90 group-hover:opacity-100"
+                    className={`w-full max-w-[34px] mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 ${isSel ? "opacity-100 ring-1 ring-emerald-400/60" : "opacity-90 group-hover:opacity-100"}`}
                     style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 1.5 : 0)}%` }}
                   >
                     {row.segments.map((s) =>
@@ -99,8 +118,10 @@ function ScaledBars({ data, maxAmount }: { data: BarDatum[]; maxAmount: number }
                     )}
                   </div>
                 </div>
-                <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
-              </div>
+                <span className="text-[9px] text-muted truncate h-3">
+                  {i % labelStep === 0 ? weekLabel(row.month) : ""}
+                </span>
+              </button>
             );
           })}
         </div>
@@ -499,6 +520,8 @@ function MilestoneCohortChart({
   const [view, setView] = useState<"milestone" | "lifecycle">("milestone");
   const [milestone, setMilestone] = useState<string>("salesClosed");
   const [timeframe, setTimeframe] = useState<string>("this-year");
+  // Week bucket the user clicked to drill into (null = none open).
+  const [selected, setSelected] = useState<string | null>(null);
 
   const months = resolveMonths(timeframe);
   const { data, isLoading } = useQuery<ProjectFunnelResponse>({
@@ -524,25 +547,17 @@ function MilestoneCohortChart({
   const cohorts: MilestoneCohort[] = data?.milestoneCohorts ?? [];
   const cohort = cohorts.find((c) => c.key === milestone) ?? cohorts[0];
 
-  const chronological = useMemo(() => {
-    const rows = cohort?.months ?? [];
-    const range = calendarMonthRange(timeframe);
-    const windowed = range ? rows.filter((r) => r.month >= range.start && r.month <= range.end) : rows;
-    return [...windowed].reverse();
-  }, [cohort, timeframe]);
+  // Server already windows to the timeframe; keys are week-start dates, so just
+  // flip to chronological (oldest → newest) for the left-to-right axis.
+  const chronological = useMemo(() => [...(cohort?.months ?? [])].reverse(), [cohort]);
 
   const maxAmount = useMemo(
     () => Math.max(1, ...chronological.map((c) => c.totalAmount)),
     [chronological]
   );
 
-  // Lifecycle: deals grouped by sold-month, stacked by current stage.
-  const lifecycle = useMemo(() => {
-    const rows = data?.lifecycle ?? [];
-    const range = calendarMonthRange(timeframe);
-    const windowed = range ? rows.filter((r) => r.month >= range.start && r.month <= range.end) : rows;
-    return [...windowed].reverse();
-  }, [data, timeframe]);
+  // Lifecycle: deals grouped by sold-week, stacked by current stage.
+  const lifecycle = useMemo(() => [...(data?.lifecycle ?? [])].reverse(), [data]);
   const lifecycleMax = useMemo(
     () => Math.max(1, ...lifecycle.map((c) => c.totalAmount)),
     [lifecycle]
@@ -564,12 +579,12 @@ function MilestoneCohortChart({
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <div>
           <h3 className="text-sm font-semibold text-foreground/80">
-            {view === "milestone" ? "Milestone Progression" : "Sold-Month Lifecycle"}
+            {view === "milestone" ? "Milestone Progression" : "Sold-Week Lifecycle"}
           </h3>
           <p className="text-[11px] text-muted">
             {view === "milestone"
-              ? "Each bar is every deal that reached the selected milestone that month; the highlighted share has since reached the next one."
-              : "Each bar is every deal sold that month, stacked by where it sits in the pipeline today."}
+              ? "Each bar is every deal that reached the selected milestone that week; the highlighted share has since reached the next one. Click a bar for the deals."
+              : "Each bar is every deal sold that week, stacked by where it sits in the pipeline today. Click a bar for the deals."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -578,7 +593,10 @@ function MilestoneCohortChart({
               <button
                 key={v}
                 type="button"
-                onClick={() => setView(v)}
+                onClick={() => {
+                  setView(v);
+                  setSelected(null);
+                }}
                 className={`px-3 py-1.5 transition-colors ${view === v ? "bg-emerald-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
               >
                 {v === "milestone" ? "By Milestone" : "Lifecycle"}
@@ -587,7 +605,10 @@ function MilestoneCohortChart({
           </div>
           <select
             value={timeframe}
-            onChange={(e) => setTimeframe(e.target.value)}
+            onChange={(e) => {
+              setTimeframe(e.target.value);
+              setSelected(null);
+            }}
             className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
           >
             {THROUGHPUT_TIMEFRAMES.map((t) => (
@@ -609,7 +630,10 @@ function MilestoneCohortChart({
                 <button
                   key={c.key}
                   type="button"
-                  onClick={() => setMilestone(c.key)}
+                  onClick={() => {
+                    setMilestone(c.key);
+                    setSelected(null);
+                  }}
                   className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
                     active
                       ? "bg-emerald-500 border-emerald-500 text-white"
@@ -626,7 +650,7 @@ function MilestoneCohortChart({
           {cohort && (
             <p className="text-xs text-muted mb-3">
               Whole bar ={" "}
-              <span className="text-foreground font-semibold">{cohort.label}</span> that month · highlighted ={" "}
+              <span className="text-foreground font-semibold">{cohort.label}</span> that week · highlighted ={" "}
               <span className="text-emerald-400 font-semibold">also reached {cohort.nextLabel}</span>
             </p>
           )}
@@ -668,6 +692,8 @@ function MilestoneCohortChart({
         ) : (
           <ScaledBars
             maxAmount={maxAmount}
+            selected={selected}
+            onSelect={(b) => setSelected(selected === b ? null : b)}
             data={chronological.map((row) => {
               const rate = row.total > 0 ? Math.round((row.advanced / row.total) * 100) : 0;
               return {
@@ -675,7 +701,7 @@ function MilestoneCohortChart({
                 totalAmount: row.totalAmount,
                 total: row.total,
                 title:
-                  `${monthLabel(row.month)}: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
+                  `${weekLabel(row.month)}: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
                   `Reached ${cohort?.nextLabel}: ${row.advanced} (${rate}%)\n` +
                   `Waiting: ${row.waiting} · Cancelled: ${row.cancelled}`,
                 segments: [
@@ -692,12 +718,14 @@ function MilestoneCohortChart({
       ) : (
         <ScaledBars
           maxAmount={lifecycleMax}
+          selected={selected}
+          onSelect={(b) => setSelected(selected === b ? null : b)}
           data={lifecycle.map((row) => ({
             month: row.month,
             totalAmount: row.totalAmount,
             total: row.total,
             title:
-              `${monthLabel(row.month)} sold: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
+              `${weekLabel(row.month)} sold: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
               row.stages.map((s) => `${s.stageName}: ${s.count}`).join("\n"),
             segments: row.stages.map((s) => ({
               key: s.stageId,
@@ -708,6 +736,77 @@ function MilestoneCohortChart({
           }))}
         />
       )}
+
+      {selected &&
+        (() => {
+          // Build the drill rows for the open week from whichever view is active.
+          const rows: { id: string; label: string; amount: number; url: string; tag: string; tagClass: string }[] =
+            view === "milestone"
+              ? (cohort?.months.find((m) => m.month === selected)?.deals ?? []).map((d) => ({
+                  id: d.id,
+                  label: d.label,
+                  amount: d.amount,
+                  url: d.url,
+                  tag:
+                    d.seg === "advanced"
+                      ? `Reached ${cohort?.nextLabel}`
+                      : d.seg === "cancelled"
+                        ? "Cancelled"
+                        : `Not yet ${cohort?.nextLabel}`,
+                  tagClass:
+                    d.seg === "advanced" ? "bg-emerald-500/20 text-emerald-300" : d.seg === "cancelled" ? "bg-red-500/20 text-red-300" : "bg-zinc-500/20 text-zinc-300",
+                }))
+              : (lifecycle.find((m) => m.month === selected)?.stages ?? []).flatMap((s) =>
+                  s.deals.map((d) => ({
+                    id: d.id,
+                    label: d.label,
+                    amount: d.amount,
+                    url: d.url,
+                    tag: s.stageName,
+                    tagClass: "bg-surface-2 text-muted",
+                  }))
+                );
+          const sorted = [...rows].sort((a, b) => b.amount - a.amount);
+          return (
+            <div className="mt-4 border-t border-t-border pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold text-foreground/80">
+                  Week of {weekLabel(selected)} · {sorted.length} {sorted.length === 1 ? "deal" : "deals"}
+                  {view === "milestone" ? ` — ${cohort?.label}` : " sold"}
+                </h4>
+                <button type="button" onClick={() => setSelected(null)} className="text-[11px] text-muted hover:text-foreground">
+                  Close ✕
+                </button>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted border-b border-t-border">
+                      <th className="text-left font-medium py-1 pr-3">Project</th>
+                      <th className="text-right font-medium py-1 pr-3">Amount</th>
+                      <th className="text-left font-medium py-1">{view === "milestone" ? "Status" : "Current stage"}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted.map((r) => (
+                      <tr key={`${r.id}-${r.tag}`} className="border-b border-t-border/40 hover:bg-surface-2/40">
+                        <td className="py-1 pr-3 whitespace-nowrap">
+                          <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 font-medium hover:text-cyan-400">
+                            {r.label}
+                          </a>
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(r.amount)}</td>
+                        <td className="py-1">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${r.tagClass}`}>{r.tag}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 }
