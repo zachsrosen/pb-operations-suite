@@ -1724,7 +1724,7 @@ Ticket ID: ${params.reportId}
 const PIPELINE_LOCATION_DIRECTORS: Record<string, string[]> = {
   Westminster:        ["joe@photonbrothers.com"],
   Centennial:         ["drew@photonbrothers.com"],
-  "Colorado Springs": ["rolando@photonbrothers.com"],
+  "Colorado Springs": ["rolando@photonbrothers.com", "lenny@photonbrothers.com"], // Lenny covering field ops while Rolando is OOO
   "San Luis Obispo":  ["nick.scarpellino@photonbrothers.com"],
   Camarillo:          ["nick.scarpellino@photonbrothers.com"],
 };
