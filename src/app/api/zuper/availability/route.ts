@@ -202,7 +202,8 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Rolando",
+    // Lenny Uematsu took over all Colorado Springs surveys from Rolando Valle.
+    name: "Lenny Uematsu",
     location: "Colorado Springs",
     reportLocation: "Colorado Springs",
     schedule: [
