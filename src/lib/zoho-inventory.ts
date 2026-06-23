@@ -366,8 +366,11 @@ function canonicalSalesOrderNumber(value: string | undefined | null): string {
  * wrong product for a known-but-uncataloged item).
  */
 const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
-  // Powerwall 3 — wildcard model (1707000-XX-Y) → exact catalog SKU
-  { pattern: /\b1707000\b/i,                              sku: "1707000-21-K" },
+  // Powerwall 3 — wildcard model (1707000-XX-Y) → exact catalog SKU.
+  // Must match the live active SKU "1707000-21-M" (USA/domestic-content module).
+  // A wrong/stale SKU here returns null (no fuzzy fallback) and silently drops the
+  // base Powerwall 3 from the Sales Order — see zoho-bom-query-overrides.test.ts.
+  { pattern: /\b1707000\b/i,                              sku: "1707000-21-M" },
 
   // MCI-2 (all variants, standard or High Current) → always use High Current item
   { pattern: /\bmci-?2\b/i,                               sku: "1879359-15-B" },
@@ -765,7 +768,15 @@ export class ZohoInventoryClient {
         const skuQ = normalizeName(override.sku);
         const hit = items.find(i => i.sku && normalizeName(i.sku) === skuQ);
         // If override matches but SKU isn't in catalog, return null rather than
-        // falling through to fuzzy matching (avoids substituting wrong product)
+        // falling through to fuzzy matching (avoids substituting wrong product).
+        // Warn loudly: a stale override SKU silently drops the item from the SO.
+        if (!hit) {
+          console.warn(
+            `[zoho-inventory] BOM override matched "${query}" → SKU "${override.sku}", ` +
+            `but that SKU is not in the active catalog. Item will be DROPPED from the SO. ` +
+            `Check BOM_QUERY_OVERRIDES for a stale SKU.`,
+          );
+        }
         return hit
           ? {
               item_id: hit.item_id,
