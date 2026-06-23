@@ -313,12 +313,15 @@ function isPreConstructionRevisit(stage: string, surveyStatus: string | null | u
 }
 
 // A survey is "finished" (needs no further scheduling) only when it has been
-// completed AND is not flagged for a revisit. Revisits intentionally override
-// completion: the first visit is done, but the field needs another one.
+// completed AND the status doesn't say a new one is pending. Both "Needs Revisit"
+// and "Ready to Schedule" mean a survey still needs scheduling, so they override
+// a stale completion date left over from a prior survey (e.g. a revisit whose
+// status has since flipped to "Ready to Schedule").
 function isSurveyFinished(
   project: Pick<SurveyProject, "surveyStatus" | "completionDate">
 ): boolean {
   if (isRevisitStatus(project.surveyStatus)) return false;
+  if (isReadyToScheduleStatus(project.surveyStatus)) return false;
   return !!project.completionDate || project.surveyStatus.toLowerCase().includes("complete");
 }
 
@@ -393,12 +396,16 @@ function transformProject(p: RawProject): SurveyProject | null {
 
   // Surface a project on the survey scheduler when it is:
   //   1. in the Site Survey stage (the original behavior), OR
-  //   2. flagged "Needs Revisit" (a completed survey that must be redone), OR
-  //   3. tagged "New Construction", still pre-construction, and no completed survey yet.
+  //   2. at a survey-eligible stage with a survey that still needs scheduling —
+  //      "Needs Revisit" OR "Ready to Schedule" (e.g. a revisit whose status has
+  //      flipped to Ready to Schedule once its new job was created), OR
+  //   3. tagged "New Construction", still survey-eligible, and no completed survey yet.
   const inSurveyStage = p.stage === "Site Survey";
-  const needsRevisit = isPreConstructionRevisit(p.stage, surveyStatus);
+  const eligibleStage = SURVEY_ELIGIBLE_STAGES.includes(p.stage);
+  const needsScheduling =
+    eligibleStage && (isRevisitStatus(surveyStatus) || isReadyToScheduleStatus(surveyStatus));
   const newConstruction = isNewConstructionSurvey(p.stage, p.tags) && !finished;
-  if (!inSurveyStage && !needsRevisit && !newConstruction) return null;
+  if (!inSurveyStage && !needsScheduling && !newConstruction) return null;
 
   return {
     id: String(p.id),
