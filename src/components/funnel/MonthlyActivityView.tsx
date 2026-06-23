@@ -9,23 +9,17 @@ import type {
   ProjectFunnelResponse,
   ProjectMonthlyActivity,
   MilestoneCohort,
+  CohortDrillDeal,
 } from "@/lib/project-funnel-aggregation";
 
-// Current-stage palette for the Lifecycle view — same hues the funnel uses
-// elsewhere so the two read alike. Keyed by DEAL_STAGE_MAP stage names.
+// Major-milestone palette for the Lifecycle view, ordered base → furthest.
+// Keys double as the pipeline order for the legend + stack.
 const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
-  "Site Survey": "bg-amber-500",
-  "Design & Engineering": "bg-blue-500",
-  "Permitting & Interconnection": "bg-purple-500",
-  "RTB - Blocked": "bg-red-500",
-  "Ready To Build": "bg-cyan-500",
-  Construction: "bg-green-500",
-  Inspection: "bg-emerald-500",
-  "Permission To Operate": "bg-teal-500",
-  "Close Out": "bg-sky-500",
-  "Project Complete": "bg-green-600",
-  Cancelled: "bg-zinc-600",
-  "On Hold": "bg-yellow-500",
+  Sold: "bg-zinc-500",
+  "Design Approved": "bg-blue-500",
+  "Construction Complete": "bg-green-500",
+  "Inspection Passed": "bg-emerald-500",
+  "PTO Granted": "bg-teal-500",
 };
 const stageColor = (name: string) => LIFECYCLE_STAGE_COLORS[name] || "bg-zinc-500";
 
@@ -162,7 +156,7 @@ const ACTIVITY_COLUMNS: Array<{
 }> = [
   { key: "salesClosed", label: "Sales Closed", color: "text-orange-400", bar: "bg-orange-500", amountKey: "salesClosedAmount" },
   { key: "surveysScheduled", label: "Surveys Scheduled", color: "text-amber-400", bar: "bg-amber-500", amountKey: "surveysScheduledAmount" },
-  { key: "surveysCompleted", label: "Surveys Done", color: "text-yellow-400", bar: "bg-yellow-500", amountKey: "surveysCompletedAmount" },
+  { key: "surveysCompleted", label: "Surveys Complete", color: "text-yellow-400", bar: "bg-yellow-500", amountKey: "surveysCompletedAmount" },
   { key: "dasSent", label: "DAs Sent", color: "text-lime-400", bar: "bg-lime-500", amountKey: "dasSentAmount" },
   { key: "dasApproved", label: "DAs Approved", color: "text-blue-400", bar: "bg-blue-500", amountKey: "dasApprovedAmount" },
   { key: "designsCompleted", label: "Designs Done", color: "text-indigo-400", bar: "bg-indigo-500", amountKey: "designsCompletedAmount" },
@@ -171,7 +165,7 @@ const ACTIVITY_COLUMNS: Array<{
   { key: "icSubmitted", label: "IC Submitted", color: "text-fuchsia-400", bar: "bg-fuchsia-500", amountKey: "icSubmittedAmount" },
   { key: "icApproved", label: "IC Approved", color: "text-pink-400", bar: "bg-pink-500", amountKey: "icApprovedAmount" },
   { key: "constructionsScheduled", label: "Construction Scheduled", color: "text-cyan-400", bar: "bg-cyan-500", amountKey: "constructionsScheduledAmount" },
-  { key: "constructionsComplete", label: "Construction Done", color: "text-green-400", bar: "bg-green-500", amountKey: "constructionsCompleteAmount" },
+  { key: "constructionsComplete", label: "Construction Complete", color: "text-green-400", bar: "bg-green-500", amountKey: "constructionsCompleteAmount" },
   { key: "inspectionsPassed", label: "Inspections", color: "text-emerald-400", bar: "bg-emerald-500", amountKey: "inspectionsPassedAmount" },
   { key: "ptosGranted", label: "PTOs", color: "text-teal-400", bar: "bg-teal-500", amountKey: "ptosGrantedAmount" },
   { key: "closedOut", label: "Closed Out", color: "text-sky-400", bar: "bg-sky-500", amountKey: "closedOutAmount" },
@@ -181,11 +175,11 @@ const ACTIVITY_COLUMNS: Array<{
 /** Hero cards — the milestones teams most often track output against. */
 const HERO_KEYS: Array<{ key: keyof ProjectMonthlyActivity; label: string; color: string; amountKey?: keyof ProjectMonthlyActivity }> = [
   { key: "salesClosed", label: "Sales Closed", color: "orange", amountKey: "salesClosedAmount" },
-  { key: "surveysCompleted", label: "Surveys Done", color: "yellow", amountKey: "surveysCompletedAmount" },
+  { key: "surveysCompleted", label: "Surveys Complete", color: "yellow", amountKey: "surveysCompletedAmount" },
   { key: "dasApproved", label: "DAs Approved", color: "blue", amountKey: "dasApprovedAmount" },
   { key: "designsCompleted", label: "Designs Done", color: "indigo", amountKey: "designsCompletedAmount" },
   { key: "permitsIssued", label: "Permits Issued", color: "purple", amountKey: "permitsIssuedAmount" },
-  { key: "constructionsComplete", label: "Construction Done", color: "green", amountKey: "constructionsCompleteAmount" },
+  { key: "constructionsComplete", label: "Construction Complete", color: "green", amountKey: "constructionsCompleteAmount" },
   { key: "inspectionsPassed", label: "Inspections", color: "emerald", amountKey: "inspectionsPassedAmount" },
   { key: "ptosGranted", label: "PTOs Granted", color: "teal", amountKey: "ptosGrantedAmount" },
 ];
@@ -584,7 +578,7 @@ function MilestoneCohortChart({
           <p className="text-[11px] text-muted">
             {view === "milestone"
               ? "Each bar is every deal that reached the selected milestone that week; the highlighted share has since reached the next one. Click a bar for the deals."
-              : "Each bar is every deal sold that week, stacked by where it sits in the pipeline today. Click a bar for the deals."}
+              : "Each bar is every deal sold that week, stacked by the furthest major milestone it's reached. Click a bar for the deals."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -666,6 +660,10 @@ function MilestoneCohortChart({
               {cohort ? `${cohort.label}, not yet ${cohort.nextLabel}` : "Still waiting"}
             </span>
             <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-yellow-500" />
+              On hold
+            </span>
+            <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-red-500/80" />
               Cancelled
             </span>
@@ -703,9 +701,10 @@ function MilestoneCohortChart({
                 title:
                   `${weekLabel(row.month)}: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
                   `Reached ${cohort?.nextLabel}: ${row.advanced} (${rate}%)\n` +
-                  `Waiting: ${row.waiting} · Cancelled: ${row.cancelled}`,
+                  `Waiting: ${row.waiting} · On hold: ${row.onHold} · Cancelled: ${row.cancelled}`,
                 segments: [
                   { key: "cancelled", className: "bg-red-500/80", amount: row.cancelledAmount, title: `Cancelled: ${row.cancelled}` },
+                  { key: "onHold", className: "bg-yellow-500", amount: row.onHoldAmount, title: `On hold: ${row.onHold}` },
                   { key: "waiting", className: "bg-zinc-500", amount: row.waitingAmount, title: `${cohort?.label}, not yet ${cohort?.nextLabel}: ${row.waiting}` },
                   { key: "advanced", className: "bg-emerald-500", amount: row.advancedAmount, title: `Reached ${cohort?.nextLabel}: ${row.advanced}` },
                 ],
@@ -740,31 +739,51 @@ function MilestoneCohortChart({
       {selected &&
         (() => {
           // Build the drill rows for the open week from whichever view is active.
-          const rows: { id: string; label: string; amount: number; url: string; tag: string; tagClass: string }[] =
+          type DrillRow = {
+            id: string;
+            name: string;
+            projectNumber: string;
+            amount: number;
+            url: string;
+            stage: string;
+            location: string;
+            pm: string;
+            tag: string;
+            tagClass: string;
+          };
+          const base = (d: CohortDrillDeal) => ({
+            id: d.id,
+            name: d.name,
+            projectNumber: d.projectNumber,
+            amount: d.amount,
+            url: d.url,
+            stage: d.stage,
+            location: d.location,
+            pm: d.pm,
+          });
+          const rows: DrillRow[] =
             view === "milestone"
               ? (cohort?.months.find((m) => m.month === selected)?.deals ?? []).map((d) => ({
-                  id: d.id,
-                  label: d.label,
-                  amount: d.amount,
-                  url: d.url,
+                  ...base(d),
                   tag:
                     d.seg === "advanced"
                       ? `Reached ${cohort?.nextLabel}`
                       : d.seg === "cancelled"
                         ? "Cancelled"
-                        : `Not yet ${cohort?.nextLabel}`,
+                        : d.seg === "onHold"
+                          ? "On hold"
+                          : `Not yet ${cohort?.nextLabel}`,
                   tagClass:
-                    d.seg === "advanced" ? "bg-emerald-500/20 text-emerald-300" : d.seg === "cancelled" ? "bg-red-500/20 text-red-300" : "bg-zinc-500/20 text-zinc-300",
+                    d.seg === "advanced"
+                      ? "bg-emerald-500/20 text-emerald-300"
+                      : d.seg === "cancelled"
+                        ? "bg-red-500/20 text-red-300"
+                        : d.seg === "onHold"
+                          ? "bg-yellow-500/20 text-yellow-300"
+                          : "bg-zinc-500/20 text-zinc-300",
                 }))
               : (lifecycle.find((m) => m.month === selected)?.stages ?? []).flatMap((s) =>
-                  s.deals.map((d) => ({
-                    id: d.id,
-                    label: d.label,
-                    amount: d.amount,
-                    url: d.url,
-                    tag: s.stageName,
-                    tagClass: "bg-surface-2 text-muted",
-                  }))
+                  s.deals.map((d) => ({ ...base(d), tag: s.stageName, tagClass: "bg-surface-2 text-muted" }))
                 );
           const sorted = [...rows].sort((a, b) => b.amount - a.amount);
           return (
@@ -778,27 +797,39 @@ function MilestoneCohortChart({
                   Close ✕
                 </button>
               </div>
-              <div className="max-h-72 overflow-y-auto">
+              <div className="max-h-80 overflow-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-muted border-b border-t-border">
                       <th className="text-left font-medium py-1 pr-3">Project</th>
-                      <th className="text-right font-medium py-1 pr-3">Amount</th>
-                      <th className="text-left font-medium py-1">{view === "milestone" ? "Status" : "Current stage"}</th>
+                      <th className="text-left font-medium py-1 pr-3">{view === "milestone" ? "Status" : "Stage"}</th>
+                      {view === "milestone" && <th className="text-left font-medium py-1 pr-3">Current stage</th>}
+                      <th className="text-left font-medium py-1 pr-3">Location</th>
+                      <th className="text-left font-medium py-1 pr-3">PM</th>
+                      <th className="text-right font-medium py-1">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.map((r) => (
                       <tr key={`${r.id}-${r.tag}`} className="border-b border-t-border/40 hover:bg-surface-2/40">
-                        <td className="py-1 pr-3 whitespace-nowrap">
-                          <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 font-medium hover:text-cyan-400">
-                            {r.label}
+                        <td className="py-1 pr-3 max-w-[22rem]">
+                          <a
+                            href={r.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={r.name}
+                            className="text-foreground/90 font-medium hover:text-cyan-400 truncate block"
+                          >
+                            {r.name}
                           </a>
                         </td>
-                        <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(r.amount)}</td>
-                        <td className="py-1">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${r.tagClass}`}>{r.tag}</span>
+                        <td className="py-1 pr-3">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap ${r.tagClass}`}>{r.tag}</span>
                         </td>
+                        {view === "milestone" && <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.stage}</td>}
+                        <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.location}</td>
+                        <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.pm}</td>
+                        <td className="py-1 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(r.amount)}</td>
                       </tr>
                     ))}
                   </tbody>

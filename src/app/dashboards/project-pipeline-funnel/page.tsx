@@ -61,7 +61,7 @@ const STAGE_CONFIG: StageConfig[] = [
   // Pre-construction
   { key: "salesClosed", label: "Sales Closed", color: "bg-orange-500", textColor: "text-orange-400" },
   { key: "surveyScheduled", label: "Survey Scheduled", color: "bg-amber-500", textColor: "text-amber-400" },
-  { key: "surveyDone", label: "Survey Done", color: "bg-yellow-500", textColor: "text-yellow-400" },
+  { key: "surveyDone", label: "Survey Complete", color: "bg-yellow-500", textColor: "text-yellow-400" },
   { key: "daSent", label: "DA Sent", color: "bg-lime-500", textColor: "text-lime-400" },
   // Design & permitting
   { key: "daApproved", label: "DA Approved", color: "bg-blue-500", textColor: "text-blue-400" },

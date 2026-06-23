@@ -199,16 +199,23 @@ export interface ProjectFunnelDrillDown {
 /** A single deal in a cohort bucket, for drill-down tables. */
 export interface CohortDrillDeal {
   id: string;
-  label: string;
+  /** Full HubSpot deal name (customer + address). */
+  name: string;
+  projectNumber: string;
   amount: number;
   url: string;
+  /** Current pipeline stage. */
+  stage: string;
+  location: string;
+  pm: string;
   /** Milestone view: which segment of the bar this deal belongs to. */
-  seg?: "advanced" | "waiting" | "cancelled";
+  seg?: "advanced" | "waiting" | "onHold" | "cancelled";
 }
 
 /** One week's cohort for a milestone-progression bar: everyone who hit the
  * milestone that week, split by whether they've since advanced to the next
- * milestone, are still waiting, or have cancelled. Amounts drive bar height. */
+ * milestone, are still waiting, are on hold, or have cancelled. Amounts drive
+ * bar height. */
 export interface MilestoneCohortMonth {
   /** Week-start key, "YYYY-MM-DD" (Monday). */
   month: string;
@@ -218,6 +225,8 @@ export interface MilestoneCohortMonth {
   advancedAmount: number;
   waiting: number;
   waitingAmount: number;
+  onHold: number;
+  onHoldAmount: number;
   cancelled: number;
   cancelledAmount: number;
   deals: CohortDrillDeal[];
@@ -937,15 +946,15 @@ export function buildProjectFunnelData(
     nextLabel: string;
   }> = [
     { key: "salesClosed", field: "closeDate", label: "Sales Closed", nextField: "siteSurveyScheduleDate", nextLabel: "Survey Scheduled" },
-    { key: "surveysScheduled", field: "siteSurveyScheduleDate", label: "Survey Scheduled", nextField: "siteSurveyCompletionDate", nextLabel: "Survey Done" },
-    { key: "surveysCompleted", field: "siteSurveyCompletionDate", label: "Surveys Done", nextField: "designApprovalSentDate", nextLabel: "DA Sent" },
+    { key: "surveysScheduled", field: "siteSurveyScheduleDate", label: "Survey Scheduled", nextField: "siteSurveyCompletionDate", nextLabel: "Survey Complete" },
+    { key: "surveysCompleted", field: "siteSurveyCompletionDate", label: "Surveys Complete", nextField: "designApprovalSentDate", nextLabel: "DA Sent" },
     { key: "dasSent", field: "designApprovalSentDate", label: "DAs Sent", nextField: "designApprovalDate", nextLabel: "DA Approved" },
     { key: "dasApproved", field: "designApprovalDate", label: "DAs Approved", nextField: "designCompletionDate", nextLabel: "Design Done" },
     { key: "designsCompleted", field: "designCompletionDate", label: "Designs Done", nextField: "permitSubmitDate", nextLabel: "Permit Submitted" },
     { key: "permitsSubmitted", field: "permitSubmitDate", label: "Permits Submitted", nextField: "permitIssueDate", nextLabel: "Permit Issued" },
     { key: "permitsIssued", field: "permitIssueDate", label: "Permits Issued", nextField: "constructionScheduleDate", nextLabel: "Construction Scheduled" },
-    { key: "constructionsScheduled", field: "constructionScheduleDate", label: "Construction Scheduled", nextField: "constructionCompleteDate", nextLabel: "Construction Done" },
-    { key: "constructionsComplete", field: "constructionCompleteDate", label: "Construction Done", nextField: "inspectionPassDate", nextLabel: "Inspection Passed" },
+    { key: "constructionsScheduled", field: "constructionScheduleDate", label: "Construction Scheduled", nextField: "constructionCompleteDate", nextLabel: "Construction Complete" },
+    { key: "constructionsComplete", field: "constructionCompleteDate", label: "Construction Complete", nextField: "inspectionPassDate", nextLabel: "Inspection Passed" },
     { key: "inspectionsPassed", field: "inspectionPassDate", label: "Inspections Passed", nextField: "ptoGrantedDate", nextLabel: "PTO Granted" },
     { key: "ptosGranted", field: "ptoGrantedDate", label: "PTO Granted", nextField: "projectCompleteDate", nextLabel: "Closed Out" },
   ];
@@ -962,6 +971,8 @@ export function buildProjectFunnelData(
         advancedAmount: 0,
         waiting: 0,
         waitingAmount: 0,
+        onHold: 0,
+        onHoldAmount: 0,
         cancelled: 0,
         cancelledAmount: 0,
         deals: [],
@@ -969,11 +980,15 @@ export function buildProjectFunnelData(
     }
     return m.get(mk)!;
   }
-  const drillDeal = (p: Project, seg?: "advanced" | "waiting" | "cancelled"): CohortDrillDeal => ({
+  const drillDeal = (p: Project, seg?: "advanced" | "waiting" | "onHold" | "cancelled"): CohortDrillDeal => ({
     id: String(p.id),
-    label: p.projectNumber || p.name,
+    name: p.name || p.projectNumber || "—",
+    projectNumber: p.projectNumber || "",
     amount: p.amount || 0,
     url: p.url,
+    stage: p.stage || DEAL_STAGE_MAP[p.stageId ?? ""] || "—",
+    location: normalizeLocation(p.pbLocation) || p.pbLocation || "—",
+    pm: p.projectManager || p.dealOwner || "—",
     seg,
   });
 
@@ -991,9 +1006,10 @@ export function buildProjectFunnelData(
       const row = ensureCohort(i, weekKey(dateVal));
       row.total++;
       row.totalAmount += amt;
-      // Advanced takes priority over cancelled: a deal that progressed counts as
-      // progress even if it later died.
-      let seg: "advanced" | "waiting" | "cancelled";
+      // Advanced takes priority: a deal that progressed counts as progress even
+      // if it later went on hold or died. Then cancelled, then on-hold, else
+      // still waiting.
+      let seg: "advanced" | "waiting" | "onHold" | "cancelled";
       if (p[step.nextField]) {
         seg = "advanced";
         row.advanced++;
@@ -1002,6 +1018,10 @@ export function buildProjectFunnelData(
         seg = "cancelled";
         row.cancelled++;
         row.cancelledAmount += amt;
+      } else if (p.stageId === ON_HOLD_STAGE_ID) {
+        seg = "onHold";
+        row.onHold++;
+        row.onHoldAmount += amt;
       } else {
         seg = "waiting";
         row.waiting++;
@@ -1019,33 +1039,44 @@ export function buildProjectFunnelData(
   }));
 
   // Lifecycle: every deal sold in the window, grouped by sold-week and broken
-  // down by where it sits in the pipeline today. Includes completed and
-  // cancelled deals — the whole picture of "where did each week's sales go".
-  const lifecycleMap = new Map<string, Map<string, { count: number; amount: number; deals: CohortDrillDeal[] }>>();
+  // down by the furthest MAJOR milestone it has reached (base = just sold).
+  // "Where did each week's sales get to?"
+  const LIFECYCLE_MILESTONES: Array<{ field: keyof Project; label: string; order: number }> = [
+    { field: "ptoGrantedDate", label: "PTO Granted", order: 4 },
+    { field: "inspectionPassDate", label: "Inspection Passed", order: 3 },
+    { field: "constructionCompleteDate", label: "Construction Complete", order: 2 },
+    { field: "designApprovalDate", label: "Design Approved", order: 1 },
+  ];
+  const lifecycleBucket = (p: Project): { label: string; order: number } => {
+    for (const m of LIFECYCLE_MILESTONES) if (p[m.field]) return { label: m.label, order: m.order };
+    return { label: "Sold", order: 0 };
+  };
+
+  const lifecycleMap = new Map<string, Map<string, { count: number; amount: number; order: number; deals: CohortDrillDeal[] }>>();
   for (const p of projects) {
     if (!p.closeDate || !matchesLocation(p) || !matchesStaff(p)) continue;
     if (!inWindow(new Date(p.closeDate + "T12:00:00"))) continue;
     const wk = weekKey(p.closeDate);
     if (!lifecycleMap.has(wk)) lifecycleMap.set(wk, new Map());
-    const stages = lifecycleMap.get(wk)!;
-    const sid = p.stageId || "unknown";
-    const cur = stages.get(sid) ?? { count: 0, amount: 0, deals: [] };
+    const buckets = lifecycleMap.get(wk)!;
+    const b = lifecycleBucket(p);
+    const cur = buckets.get(b.label) ?? { count: 0, amount: 0, order: b.order, deals: [] };
     cur.count++;
     cur.amount += p.amount || 0;
     cur.deals.push(drillDeal(p));
-    stages.set(sid, cur);
+    buckets.set(b.label, cur);
   }
   const lifecycle: LifecycleMonth[] = [...lifecycleMap.entries()]
-    .map(([month, stages]) => {
-      const slices: LifecycleStageSlice[] = [...stages.entries()]
-        .map(([stageId, v]) => ({
-          stageId,
-          stageName: DEAL_STAGE_MAP[stageId] || stageId,
+    .map(([month, buckets]) => {
+      const slices: LifecycleStageSlice[] = [...buckets.entries()]
+        .map(([label, v]) => ({
+          stageId: label,
+          stageName: label,
           count: v.count,
           amount: v.amount,
           deals: v.deals,
         }))
-        .sort((a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99));
+        .sort((a, b) => (buckets.get(a.stageId)!.order) - (buckets.get(b.stageId)!.order));
       return {
         month,
         total: slices.reduce((s, x) => s + x.count, 0),
@@ -1436,7 +1467,7 @@ const MILESTONE_DATE_FIELD: Record<ProjectFunnelStageKey, keyof Project> = {
 export const FUNNEL_STAGE_LABELS: Record<ProjectFunnelStageKey, string> = {
   salesClosed: "Sales Closed",
   surveyScheduled: "Survey Scheduled",
-  surveyDone: "Survey Done",
+  surveyDone: "Survey Complete",
   daSent: "DA Sent",
   daApproved: "DA Approved",
   designCompleted: "Design Complete",
