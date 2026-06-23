@@ -341,6 +341,7 @@ export const PE_M1_DOC_NAMES = [
   "Signed Proposal",
   "Design Plan",
   "Photos per Policy",
+  "Bill of Materials", // split into its own PE upload 2026-06 (was bundled in Photos)
   "Signed Final Permit",
   "Access to Monitoring",
   "Certificate of Acceptance",
@@ -360,7 +361,7 @@ export interface DocStats {
   uploadedDocs: number; // any status except NOT_UPLOADED
   /**
    * Expected-but-missing docs, scoped by deal stage: PTO-stage deals owe the
-   * 12 M1 docs, Close Out deals owe all 15. Other stages don't count.
+   * 13 M1 docs, Close Out deals owe all 16. Other stages don't count.
    */
   missingExpected: DocStatusStat;
   scopedDeals: number; // tracked deals in PTO or Close Out
