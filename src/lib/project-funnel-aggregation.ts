@@ -1048,6 +1048,9 @@ export function buildProjectFunnelData(
     { field: "designApprovalDate", label: "Design Approved", order: 1 },
   ];
   const lifecycleBucket = (p: Project): { label: string; order: number } => {
+    // Off-track states win over milestone progress so they stay visible.
+    if (!!p.cancelledDate || p.stageId === CANCELLED_STAGE_ID) return { label: "Cancelled", order: -2 };
+    if (p.stageId === ON_HOLD_STAGE_ID) return { label: "On Hold", order: -1 };
     for (const m of LIFECYCLE_MILESTONES) if (p[m.field]) return { label: m.label, order: m.order };
     return { label: "Sold", order: 0 };
   };

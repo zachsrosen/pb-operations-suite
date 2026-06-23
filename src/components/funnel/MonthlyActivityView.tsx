@@ -12,9 +12,11 @@ import type {
   CohortDrillDeal,
 } from "@/lib/project-funnel-aggregation";
 
-// Major-milestone palette for the Lifecycle view, ordered base → furthest.
+// Major-milestone palette for the Lifecycle view, ordered off-track → furthest.
 // Keys double as the pipeline order for the legend + stack.
 const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
+  Cancelled: "bg-red-500/80",
+  "On Hold": "bg-yellow-500",
   Sold: "bg-zinc-500",
   "Design Approved": "bg-blue-500",
   "Construction Complete": "bg-green-500",
