@@ -17,12 +17,21 @@ import type {
 const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
   Cancelled: "bg-red-500/80",
   "On Hold": "bg-yellow-500",
-  Sold: "bg-zinc-500",
+  "Awaiting Survey Completion": "bg-zinc-500",
+  "DA Sent": "bg-lime-500",
   "Design Approved": "bg-blue-500",
+  "Permit Submitted": "bg-purple-500",
+  "Permit Issued": "bg-violet-500",
   "Construction Complete": "bg-green-500",
   "Inspection Passed": "bg-emerald-500",
   "PTO Granted": "bg-teal-500",
 };
+
+// "YYYY-MM-DD" → "Mon D, 'YY" for the drill-down milestone-date column.
+function shortDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1]} ${d}, '${String(y).slice(2)}`;
+}
 const stageColor = (name: string) => LIFECYCLE_STAGE_COLORS[name] || "bg-zinc-500";
 
 // Week-start "YYYY-MM-DD" → "Mon D" (e.g. "Jan 19"), matching the PE chart.
@@ -750,6 +759,8 @@ function MilestoneCohortChart({
             stage: string;
             location: string;
             pm: string;
+            milestoneDate: string | null;
+            days: number | null;
             tag: string;
             tagClass: string;
           };
@@ -762,6 +773,8 @@ function MilestoneCohortChart({
             stage: d.stage,
             location: d.location,
             pm: d.pm,
+            milestoneDate: d.milestoneDate,
+            days: d.days,
           });
           const rows: DrillRow[] =
             view === "milestone"
@@ -804,8 +817,15 @@ function MilestoneCohortChart({
                   <thead>
                     <tr className="text-muted border-b border-t-border">
                       <th className="text-left font-medium py-1 pr-3">Project</th>
-                      <th className="text-left font-medium py-1 pr-3">{view === "milestone" ? "Status" : "Stage"}</th>
-                      {view === "milestone" && <th className="text-left font-medium py-1 pr-3">Current stage</th>}
+                      <th className="text-left font-medium py-1 pr-3">{view === "milestone" ? "Status" : "Milestone"}</th>
+                      <th className="text-left font-medium py-1 pr-3">Deal stage</th>
+                      <th className="text-left font-medium py-1 pr-3">Hit on</th>
+                      <th
+                        className="text-right font-medium py-1 pr-3"
+                        title="Days from this milestone to the next one reached, or to today if still waiting"
+                      >
+                        Days
+                      </th>
                       <th className="text-left font-medium py-1 pr-3">Location</th>
                       <th className="text-left font-medium py-1 pr-3">PM</th>
                       <th className="text-right font-medium py-1">Amount</th>
@@ -828,7 +848,9 @@ function MilestoneCohortChart({
                         <td className="py-1 pr-3">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap ${r.tagClass}`}>{r.tag}</span>
                         </td>
-                        {view === "milestone" && <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.stage}</td>}
+                        <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.stage}</td>
+                        <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.milestoneDate ? shortDate(r.milestoneDate) : "—"}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{r.days != null ? `${r.days}d` : "—"}</td>
                         <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.location}</td>
                         <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.pm}</td>
                         <td className="py-1 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(r.amount)}</td>
