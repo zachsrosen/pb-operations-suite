@@ -277,10 +277,13 @@ function isRevisitStatus(status: string | null | undefined): boolean {
   return String(status || "").toLowerCase().includes("revisit");
 }
 
-// Deals carrying a "New Construction" tag need a survey even outside the
-// Site Survey stage (until one is completed).
+// Deals carrying the "New Construction" tag need a survey even outside the
+// Site Survey stage (until one is completed). NOTE: the HubSpot tag whose
+// display *label* is "New Construction" stores the internal *value*
+// "Waiting on Site Construction" — the API returns the value, so match that.
+const NEW_CONSTRUCTION_TAG_VALUE = "waiting on site construction";
 function isNewConstructionTag(tags: string[] | undefined): boolean {
-  return (tags || []).some((t) => String(t).toLowerCase().includes("new construction"));
+  return (tags || []).some((t) => String(t).toLowerCase().includes(NEW_CONSTRUCTION_TAG_VALUE));
 }
 
 // A survey is "finished" (needs no further scheduling) only when it has been

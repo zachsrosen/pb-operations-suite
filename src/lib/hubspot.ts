@@ -3714,9 +3714,11 @@ export function filterProjectsForContext(
       // (re)book them — otherwise they're invisible there.
       const needsSurveyRevisit = (p: Project) =>
         p.isActive && !!p.siteSurveyStatus && p.siteSurveyStatus.toLowerCase().includes("revisit");
+      // The HubSpot tag labelled "New Construction" stores the internal value
+      // "Waiting on Site Construction"; the API returns the value, so match that.
       const isNewConstructionNeedingSurvey = (p: Project) =>
         p.isActive &&
-        p.tags.some((t) => t.toLowerCase().includes("new construction")) &&
+        p.tags.some((t) => t.toLowerCase().includes("waiting on site construction")) &&
         !p.siteSurveyCompletionDate &&
         !(p.siteSurveyStatus || "").toLowerCase().includes("complete");
       return projects.filter(
