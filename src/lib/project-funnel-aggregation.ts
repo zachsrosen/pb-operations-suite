@@ -208,6 +208,10 @@ export interface CohortDrillDeal {
   stage: string;
   location: string;
   pm: string;
+  /** Date the deal reached its current milestone ("YYYY-MM-DD"). */
+  milestoneDate: string | null;
+  /** Days from that milestone to the next one reached, or to today if still waiting. */
+  days: number | null;
   /** Milestone view: which segment of the bar this deal belongs to. */
   seg?: "advanced" | "waiting" | "onHold" | "cancelled";
 }
@@ -662,7 +666,7 @@ export function buildProjectFunnelData(
    * when any milestone happened — a snapshot of the live pipeline. Default
    * "cohort" windows deals by close date as before.
    */
-  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean }
+  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean; cohortGranularity?: "week" | "month" }
 ): ProjectFunnelResponse {
   // Global deal-set filters applied up front so they flow through every section
   // (summary, backlog, capacity, forecast, …): Participate-Energy and on-hold.
@@ -959,6 +963,9 @@ export function buildProjectFunnelData(
     { key: "ptosGranted", field: "ptoGrantedDate", label: "PTO Granted", nextField: "projectCompleteDate", nextLabel: "Closed Out" },
   ];
 
+  // Bucket key: week-start date (default) or month, driven by the chart toggle.
+  const bucketKeyFn = options?.cohortGranularity === "month" ? monthKey : weekKey;
+
   const cohortMaps = COHORT_CHAIN.map(() => new Map<string, MilestoneCohortMonth>());
   function ensureCohort(idx: number, mk: string): MilestoneCohortMonth {
     const m = cohortMaps[idx];
@@ -980,17 +987,27 @@ export function buildProjectFunnelData(
     }
     return m.get(mk)!;
   }
-  const drillDeal = (p: Project, seg?: "advanced" | "waiting" | "onHold" | "cancelled"): CohortDrillDeal => ({
-    id: String(p.id),
-    name: p.name || p.projectNumber || "—",
-    projectNumber: p.projectNumber || "",
-    amount: p.amount || 0,
-    url: p.url,
-    stage: p.stage || DEAL_STAGE_MAP[p.stageId ?? ""] || "—",
-    location: normalizeLocation(p.pbLocation) || p.pbLocation || "—",
-    pm: p.projectManager || p.dealOwner || "—",
-    seg,
-  });
+  const drillToday = todayStr();
+  const drillDeal = (
+    p: Project,
+    opts: { seg?: "advanced" | "waiting" | "onHold" | "cancelled"; milestoneDate?: string | null; nextDate?: string | null } = {}
+  ): CohortDrillDeal => {
+    const milestoneDate = opts.milestoneDate ?? null;
+    const days = milestoneDate ? daysBetween(milestoneDate, opts.nextDate || drillToday) : null;
+    return {
+      id: String(p.id),
+      name: p.name || p.projectNumber || "—",
+      projectNumber: p.projectNumber || "",
+      amount: p.amount || 0,
+      url: p.url,
+      stage: p.stage || DEAL_STAGE_MAP[p.stageId ?? ""] || "—",
+      location: normalizeLocation(p.pbLocation) || p.pbLocation || "—",
+      pm: p.projectManager || p.dealOwner || "—",
+      milestoneDate,
+      days,
+      seg: opts.seg,
+    };
+  };
 
   for (const p of projects) {
     if (!matchesLocation(p) || !matchesStaff(p)) continue;
@@ -1003,14 +1020,15 @@ export function buildProjectFunnelData(
       if (!dateVal) continue;
       const d = new Date(dateVal + "T12:00:00");
       if (!inWindow(d)) continue;
-      const row = ensureCohort(i, weekKey(dateVal));
+      const row = ensureCohort(i, bucketKeyFn(dateVal));
       row.total++;
       row.totalAmount += amt;
       // Advanced takes priority: a deal that progressed counts as progress even
       // if it later went on hold or died. Then cancelled, then on-hold, else
       // still waiting.
+      const nextDate = p[step.nextField] as string | null;
       let seg: "advanced" | "waiting" | "onHold" | "cancelled";
-      if (p[step.nextField]) {
+      if (nextDate) {
         seg = "advanced";
         row.advanced++;
         row.advancedAmount += amt;
@@ -1027,7 +1045,7 @@ export function buildProjectFunnelData(
         row.waiting++;
         row.waitingAmount += amt;
       }
-      row.deals.push(drillDeal(p, seg));
+      row.deals.push(drillDeal(p, { seg, milestoneDate: dateVal, nextDate }));
     }
   }
 
@@ -1041,32 +1059,40 @@ export function buildProjectFunnelData(
   // Lifecycle: every deal sold in the window, grouped by sold-week and broken
   // down by the furthest MAJOR milestone it has reached (base = just sold).
   // "Where did each week's sales get to?"
+  // Furthest-first: a deal lands in the furthest major milestone it has reached.
   const LIFECYCLE_MILESTONES: Array<{ field: keyof Project; label: string; order: number }> = [
-    { field: "ptoGrantedDate", label: "PTO Granted", order: 4 },
-    { field: "inspectionPassDate", label: "Inspection Passed", order: 3 },
-    { field: "constructionCompleteDate", label: "Construction Complete", order: 2 },
-    { field: "designApprovalDate", label: "Design Approved", order: 1 },
+    { field: "ptoGrantedDate", label: "PTO Granted", order: 7 },
+    { field: "inspectionPassDate", label: "Inspection Passed", order: 6 },
+    { field: "constructionCompleteDate", label: "Construction Complete", order: 5 },
+    { field: "permitIssueDate", label: "Permit Issued", order: 4 },
+    { field: "permitSubmitDate", label: "Permit Submitted", order: 3 },
+    { field: "designApprovalDate", label: "Design Approved", order: 2 },
+    { field: "designApprovalSentDate", label: "DA Sent", order: 1 },
   ];
-  const lifecycleBucket = (p: Project): { label: string; order: number } => {
+  const lifecycleBucket = (p: Project): { label: string; order: number; date: string | null } => {
     // Off-track states win over milestone progress so they stay visible.
-    if (!!p.cancelledDate || p.stageId === CANCELLED_STAGE_ID) return { label: "Cancelled", order: -2 };
-    if (p.stageId === ON_HOLD_STAGE_ID) return { label: "On Hold", order: -1 };
-    for (const m of LIFECYCLE_MILESTONES) if (p[m.field]) return { label: m.label, order: m.order };
-    return { label: "Sold", order: 0 };
+    if (!!p.cancelledDate || p.stageId === CANCELLED_STAGE_ID)
+      return { label: "Cancelled", order: -2, date: p.cancelledDate || p.closeDate };
+    if (p.stageId === ON_HOLD_STAGE_ID) return { label: "On Hold", order: -1, date: p.closeDate };
+    for (const m of LIFECYCLE_MILESTONES) {
+      const d = p[m.field] as string | null;
+      if (d) return { label: m.label, order: m.order, date: d };
+    }
+    return { label: "Awaiting Survey Completion", order: 0, date: p.closeDate };
   };
 
   const lifecycleMap = new Map<string, Map<string, { count: number; amount: number; order: number; deals: CohortDrillDeal[] }>>();
   for (const p of projects) {
     if (!p.closeDate || !matchesLocation(p) || !matchesStaff(p)) continue;
     if (!inWindow(new Date(p.closeDate + "T12:00:00"))) continue;
-    const wk = weekKey(p.closeDate);
+    const wk = bucketKeyFn(p.closeDate);
     if (!lifecycleMap.has(wk)) lifecycleMap.set(wk, new Map());
     const buckets = lifecycleMap.get(wk)!;
     const b = lifecycleBucket(p);
     const cur = buckets.get(b.label) ?? { count: 0, amount: 0, order: b.order, deals: [] };
     cur.count++;
     cur.amount += p.amount || 0;
-    cur.deals.push(drillDeal(p));
+    cur.deals.push(drillDeal(p, { milestoneDate: b.date }));
     buckets.set(b.label, cur);
   }
   const lifecycle: LifecycleMonth[] = [...lifecycleMap.entries()]

@@ -17,18 +17,32 @@ import type {
 const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
   Cancelled: "bg-red-500/80",
   "On Hold": "bg-yellow-500",
-  Sold: "bg-zinc-500",
+  "Awaiting Survey Completion": "bg-zinc-500",
+  "DA Sent": "bg-lime-500",
   "Design Approved": "bg-blue-500",
+  "Permit Submitted": "bg-purple-500",
+  "Permit Issued": "bg-violet-500",
   "Construction Complete": "bg-green-500",
   "Inspection Passed": "bg-emerald-500",
   "PTO Granted": "bg-teal-500",
 };
+
+// "YYYY-MM-DD" → "Mon D, 'YY" for the drill-down milestone-date column.
+function shortDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${MONTH_NAMES[m - 1]} ${d}, '${String(y).slice(2)}`;
+}
 const stageColor = (name: string) => LIFECYCLE_STAGE_COLORS[name] || "bg-zinc-500";
 
 // Week-start "YYYY-MM-DD" → "Mon D" (e.g. "Jan 19"), matching the PE chart.
 function weekLabel(dateStr: string): string {
   const [, m, d] = dateStr.split("-").map(Number);
   return `${MONTH_NAMES[m - 1]} ${d}`;
+}
+
+// Bucket key → axis label, depending on the week/month toggle.
+function bucketLabel(key: string, granularity: "week" | "month"): string {
+  return granularity === "month" ? monthLabel(key, false) : weekLabel(key);
 }
 
 // Taller plot + dollar Y-axis + full-width weekly bars — matches the PE
@@ -58,13 +72,15 @@ function ScaledBars({
   maxAmount,
   selected,
   onSelect,
+  granularity,
 }: {
   data: BarDatum[];
   maxAmount: number;
-  selected: string | null;
-  onSelect: (bucket: string) => void;
+  selected: { bucket: string; seg: string | null } | null;
+  onSelect: (bucket: string, seg: string | null) => void;
+  granularity: "week" | "month";
 }) {
-  // Thin out x-axis labels when there are many weeks so they don't collide.
+  // Thin out x-axis labels when there are many buckets so they don't collide.
   const labelStep = Math.max(1, Math.ceil(data.length / 26));
   return (
     <div className="flex gap-2">
@@ -90,34 +106,52 @@ function ScaledBars({
           {data.map((row, i) => {
             const heightPct = (row.totalAmount / maxAmount) * 100;
             const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
-            const isSel = selected === row.month;
+            const selHere = selected?.bucket === row.month;
             return (
-              <button
-                type="button"
+              <div
                 key={row.month}
-                onClick={() => onSelect(row.month)}
-                className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 group rounded-md px-0.5 transition-colors ${isSel ? "bg-surface-2" : "hover:bg-surface-2/40"}`}
-                title={row.title}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelect(row.month, null)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onSelect(row.month, null);
+                }}
+                className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 group rounded-md px-0.5 cursor-pointer transition-colors ${selHere && !selected?.seg ? "bg-surface-2" : "hover:bg-surface-2/40"}`}
+                title={`${row.title}\n(click a colored section to drill into just that group)`}
               >
-                <div className="flex flex-col items-center leading-tight justify-end pb-0.5" style={{ height: BAR_LABEL_H }}>
-                  {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
+                <div className="flex flex-col items-center leading-tight justify-end pb-0.5 w-full" style={{ height: BAR_LABEL_H }}>
+                  {row.totalAmount > 0 && (
+                    <span className="text-[10px] text-foreground font-bold tabular-nums leading-none truncate max-w-full">
+                      {formatCurrencyCompact(row.totalAmount)}
+                    </span>
+                  )}
+                  {row.total > 0 && <span className="text-[9px] text-muted tabular-nums leading-tight">{row.total}</span>}
                 </div>
                 <div className="w-full flex justify-center border-b border-t-border" style={{ height: BAR_AREA_H }}>
                   <div
-                    className={`w-full max-w-[34px] mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 ${isSel ? "opacity-100 ring-1 ring-emerald-400/60" : "opacity-90 group-hover:opacity-100"}`}
+                    className={`w-full max-w-[34px] mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 ${selHere ? "opacity-100 ring-1 ring-emerald-400/60" : "opacity-90 group-hover:opacity-100"}`}
                     style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 1.5 : 0)}%` }}
                   >
                     {row.segments.map((s) =>
                       s.amount > 0 ? (
-                        <div key={s.key} className={`${s.className} w-full`} style={{ height: `${segPct(s.amount)}%` }} title={s.title} />
+                        <div
+                          key={s.key}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect(row.month, s.key);
+                          }}
+                          className={`${s.className} w-full cursor-pointer ${selected?.bucket === row.month && selected?.seg === s.key ? "ring-1 ring-inset ring-white/80" : ""}`}
+                          style={{ height: `${segPct(s.amount)}%` }}
+                          title={s.title}
+                        />
                       ) : null
                     )}
                   </div>
                 </div>
                 <span className="text-[9px] text-muted truncate h-3">
-                  {i % labelStep === 0 ? weekLabel(row.month) : ""}
+                  {i % labelStep === 0 ? bucketLabel(row.month, granularity) : ""}
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -516,17 +550,27 @@ function MilestoneCohortChart({
   const [view, setView] = useState<"milestone" | "lifecycle">("milestone");
   const [milestone, setMilestone] = useState<string>("salesClosed");
   const [timeframe, setTimeframe] = useState<string>("this-year");
-  // Week bucket the user clicked to drill into (null = none open).
-  const [selected, setSelected] = useState<string | null>(null);
+  const [granularity, setGranularity] = useState<"week" | "month">("week");
+  // Bucket (+ optional segment) the user clicked to drill into. null = none open.
+  const [selected, setSelected] = useState<{ bucket: string; seg: string | null } | null>(null);
+  // Toggle drill selection: clicking the same bucket/segment again closes it.
+  const pick = (bucket: string, seg: string | null) =>
+    setSelected((cur) => (cur && cur.bucket === bucket && cur.seg === seg ? null : { bucket, seg }));
+  // Drill-down table sort + copy feedback.
+  const [sort, setSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "amount", dir: "desc" });
+  const [copied, setCopied] = useState(false);
+  const sortBy = (col: string) =>
+    setSort((cur) => (cur.col === col ? { col, dir: cur.dir === "asc" ? "desc" : "asc" } : { col, dir: col === "name" || col === "stage" || col === "location" || col === "pm" || col === "tag" ? "asc" : "desc" }));
 
   const months = resolveMonths(timeframe);
   const { data, isLoading } = useQuery<ProjectFunnelResponse>({
-    queryKey: [...queryKeys.funnel.root, "cohort-progression", months, timeframe, locations, pms, owners],
+    queryKey: [...queryKeys.funnel.root, "cohort-progression", months, timeframe, locations, pms, owners, granularity],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
       if (pms.length > 0) params.set("pms", pms.join(","));
       if (owners.length > 0) params.set("owners", owners.join(","));
+      if (granularity === "month") params.set("granularity", "month");
       const range = calendarMonthRange(timeframe);
       if (range) {
         const dates = monthRangeToDates(range);
@@ -575,12 +619,12 @@ function MilestoneCohortChart({
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <div>
           <h3 className="text-sm font-semibold text-foreground/80">
-            {view === "milestone" ? "Milestone Progression" : "Sold-Week Lifecycle"}
+            {view === "milestone" ? "Milestone Progression" : granularity === "month" ? "Sold-Month Lifecycle" : "Sold-Week Lifecycle"}
           </h3>
           <p className="text-[11px] text-muted">
             {view === "milestone"
-              ? "Each bar is every deal that reached the selected milestone that week; the highlighted share has since reached the next one. Click a bar for the deals."
-              : "Each bar is every deal sold that week, stacked by the furthest major milestone it's reached. Click a bar for the deals."}
+              ? `Each bar is every deal that reached the selected milestone that ${granularity}; the highlighted share has since reached the next one. Click a bar — or a colored section — for the deals.`
+              : `Each bar is every deal sold that ${granularity}, stacked by the furthest major milestone it's reached. Click a bar — or a colored section — for the deals.`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -596,6 +640,21 @@ function MilestoneCohortChart({
                 className={`px-3 py-1.5 transition-colors ${view === v ? "bg-emerald-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
               >
                 {v === "milestone" ? "By Milestone" : "Lifecycle"}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-lg border border-t-border overflow-hidden text-xs">
+            {(["week", "month"] as const).map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => {
+                  setGranularity(g);
+                  setSelected(null);
+                }}
+                className={`px-3 py-1.5 transition-colors ${granularity === g ? "bg-emerald-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+              >
+                {g === "week" ? "Weekly" : "Monthly"}
               </button>
             ))}
           </div>
@@ -693,7 +752,8 @@ function MilestoneCohortChart({
           <ScaledBars
             maxAmount={maxAmount}
             selected={selected}
-            onSelect={(b) => setSelected(selected === b ? null : b)}
+            onSelect={pick}
+            granularity={granularity}
             data={chronological.map((row) => {
               const rate = row.total > 0 ? Math.round((row.advanced / row.total) * 100) : 0;
               return {
@@ -720,7 +780,8 @@ function MilestoneCohortChart({
         <ScaledBars
           maxAmount={lifecycleMax}
           selected={selected}
-          onSelect={(b) => setSelected(selected === b ? null : b)}
+          onSelect={pick}
+          granularity={granularity}
           data={lifecycle.map((row) => ({
             month: row.month,
             totalAmount: row.totalAmount,
@@ -750,6 +811,8 @@ function MilestoneCohortChart({
             stage: string;
             location: string;
             pm: string;
+            milestoneDate: string | null;
+            days: number | null;
             tag: string;
             tagClass: string;
           };
@@ -762,53 +825,139 @@ function MilestoneCohortChart({
             stage: d.stage,
             location: d.location,
             pm: d.pm,
+            milestoneDate: d.milestoneDate,
+            days: d.days,
           });
+          const mRow = view === "milestone" ? cohort?.months.find((m) => m.month === selected.bucket) : undefined;
+          const lcRow = view === "lifecycle" ? lifecycle.find((m) => m.month === selected.bucket) : undefined;
+
+          // Segments present in this bucket, for the filter chips.
+          const segChips: { key: string; label: string; count: number; dot: string }[] =
+            view === "milestone"
+              ? [
+                  { key: "advanced", label: `Reached ${cohort?.nextLabel}`, count: mRow?.advanced ?? 0, dot: "bg-emerald-500" },
+                  { key: "waiting", label: `Not yet ${cohort?.nextLabel}`, count: mRow?.waiting ?? 0, dot: "bg-zinc-500" },
+                  { key: "onHold", label: "On hold", count: mRow?.onHold ?? 0, dot: "bg-yellow-500" },
+                  { key: "cancelled", label: "Cancelled", count: mRow?.cancelled ?? 0, dot: "bg-red-500/80" },
+                ].filter((c) => c.count > 0)
+              : (lcRow?.stages ?? []).map((s) => ({ key: s.stageName, label: s.stageName, count: s.count, dot: stageColor(s.stageName) }));
+
+          const segTag = (d: CohortDrillDeal) =>
+            d.seg === "advanced"
+              ? { tag: `Reached ${cohort?.nextLabel}`, tagClass: "bg-emerald-500/20 text-emerald-300" }
+              : d.seg === "cancelled"
+                ? { tag: "Cancelled", tagClass: "bg-red-500/20 text-red-300" }
+                : d.seg === "onHold"
+                  ? { tag: "On hold", tagClass: "bg-yellow-500/20 text-yellow-300" }
+                  : { tag: `Not yet ${cohort?.nextLabel}`, tagClass: "bg-zinc-500/20 text-zinc-300" };
+
           const rows: DrillRow[] =
             view === "milestone"
-              ? (cohort?.months.find((m) => m.month === selected)?.deals ?? []).map((d) => ({
-                  ...base(d),
-                  tag:
-                    d.seg === "advanced"
-                      ? `Reached ${cohort?.nextLabel}`
-                      : d.seg === "cancelled"
-                        ? "Cancelled"
-                        : d.seg === "onHold"
-                          ? "On hold"
-                          : `Not yet ${cohort?.nextLabel}`,
-                  tagClass:
-                    d.seg === "advanced"
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : d.seg === "cancelled"
-                        ? "bg-red-500/20 text-red-300"
-                        : d.seg === "onHold"
-                          ? "bg-yellow-500/20 text-yellow-300"
-                          : "bg-zinc-500/20 text-zinc-300",
-                }))
-              : (lifecycle.find((m) => m.month === selected)?.stages ?? []).flatMap((s) =>
-                  s.deals.map((d) => ({ ...base(d), tag: s.stageName, tagClass: "bg-surface-2 text-muted" }))
-                );
-          const sorted = [...rows].sort((a, b) => b.amount - a.amount);
+              ? (mRow?.deals ?? [])
+                  .filter((d) => !selected.seg || d.seg === selected.seg)
+                  .map((d) => ({ ...base(d), ...segTag(d) }))
+              : (lcRow?.stages ?? [])
+                  .filter((s) => !selected.seg || s.stageName === selected.seg)
+                  .flatMap((s) => s.deals.map((d) => ({ ...base(d), tag: s.stageName, tagClass: "bg-surface-2 text-muted" })));
+          const DRILL_COLS: { key: keyof DrillRow; label: string; align: "left" | "right" }[] = [
+            { key: "name", label: "Project", align: "left" },
+            { key: "tag", label: view === "milestone" ? "Status" : "Milestone", align: "left" },
+            { key: "stage", label: "Deal stage", align: "left" },
+            { key: "milestoneDate", label: "Hit on", align: "left" },
+            { key: "days", label: "Days", align: "right" },
+            { key: "location", label: "Location", align: "left" },
+            { key: "pm", label: "PM", align: "left" },
+            { key: "amount", label: "Amount", align: "right" },
+          ];
+          const cmp = (a: DrillRow, b: DrillRow) => {
+            const dir = sort.dir === "asc" ? 1 : -1;
+            const va = a[sort.col as keyof DrillRow];
+            const vb = b[sort.col as keyof DrillRow];
+            if (typeof va === "number" || typeof vb === "number") {
+              return (((va as number) ?? -Infinity) - ((vb as number) ?? -Infinity)) * dir;
+            }
+            return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
+          };
+          const sorted = [...rows].sort(cmp);
+          const copyList = () => {
+            const head = ["Project", view === "milestone" ? "Status" : "Milestone", "Deal stage", "Hit on", "Days", "Location", "PM", "Amount"];
+            const lines = sorted.map((r) =>
+              [r.name, r.tag, r.stage, r.milestoneDate ?? "", r.days ?? "", r.location, r.pm, r.amount].join("\t")
+            );
+            navigator.clipboard
+              .writeText([head.join("\t"), ...lines].join("\n"))
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              })
+              .catch(() => {});
+          };
+          const periodWord = granularity === "month" ? "Month" : "Week";
+          const segLabel = selected.seg ? segChips.find((c) => c.key === selected.seg)?.label ?? selected.seg : null;
           return (
             <div className="mt-4 border-t border-t-border pt-3">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-xs font-semibold text-foreground/80">
-                  Week of {weekLabel(selected)} · {sorted.length} {sorted.length === 1 ? "deal" : "deals"}
+                  {periodWord} of {bucketLabel(selected.bucket, granularity)} · {sorted.length} {sorted.length === 1 ? "deal" : "deals"}
                   {view === "milestone" ? ` — ${cohort?.label}` : " sold"}
+                  {segLabel && <span className="text-emerald-400"> · {segLabel}</span>}
                 </h4>
-                <button type="button" onClick={() => setSelected(null)} className="text-[11px] text-muted hover:text-foreground">
-                  Close ✕
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={copyList}
+                    className="text-[11px] text-muted hover:text-foreground inline-flex items-center gap-1"
+                    title="Copy this list (tab-separated, paste into a spreadsheet)"
+                  >
+                    {copied ? "Copied ✓" : "Copy"}
+                  </button>
+                  <button type="button" onClick={() => setSelected(null)} className="text-[11px] text-muted hover:text-foreground">
+                    Close ✕
+                  </button>
+                </div>
               </div>
+              {segChips.length > 1 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelected({ bucket: selected.bucket, seg: null })}
+                    className={`px-2 py-0.5 rounded-full text-[10px] border transition-colors ${!selected.seg ? "bg-emerald-500 border-emerald-500 text-white" : "bg-surface-2 border-t-border text-muted hover:text-foreground"}`}
+                  >
+                    All
+                  </button>
+                  {segChips.map((c) => (
+                    <button
+                      key={c.key}
+                      type="button"
+                      onClick={() => setSelected({ bucket: selected.bucket, seg: c.key })}
+                      className={`px-2 py-0.5 rounded-full text-[10px] border flex items-center gap-1 transition-colors ${selected.seg === c.key ? "bg-emerald-500 border-emerald-500 text-white" : "bg-surface-2 border-t-border text-muted hover:text-foreground"}`}
+                    >
+                      <span className={`h-2 w-2 rounded-sm ${c.dot}`} />
+                      {c.label} ({c.count})
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="max-h-80 overflow-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-muted border-b border-t-border">
-                      <th className="text-left font-medium py-1 pr-3">Project</th>
-                      <th className="text-left font-medium py-1 pr-3">{view === "milestone" ? "Status" : "Stage"}</th>
-                      {view === "milestone" && <th className="text-left font-medium py-1 pr-3">Current stage</th>}
-                      <th className="text-left font-medium py-1 pr-3">Location</th>
-                      <th className="text-left font-medium py-1 pr-3">PM</th>
-                      <th className="text-right font-medium py-1">Amount</th>
+                      {DRILL_COLS.map((col, ci) => (
+                        <th
+                          key={col.key}
+                          className={`${col.align === "right" ? "text-right" : "text-left"} font-medium py-1 ${ci < DRILL_COLS.length - 1 ? "pr-3" : ""}`}
+                          title={col.key === "days" ? "Days from this milestone to the next one reached, or to today if still waiting" : undefined}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => sortBy(col.key)}
+                            className={`inline-flex items-center gap-1 hover:text-foreground ${sort.col === col.key ? "text-foreground" : ""}`}
+                          >
+                            {col.label}
+                            {sort.col === col.key && <span className="text-[8px]">{sort.dir === "asc" ? "▲" : "▼"}</span>}
+                          </button>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -828,7 +977,9 @@ function MilestoneCohortChart({
                         <td className="py-1 pr-3">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap ${r.tagClass}`}>{r.tag}</span>
                         </td>
-                        {view === "milestone" && <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.stage}</td>}
+                        <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.stage}</td>
+                        <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.milestoneDate ? shortDate(r.milestoneDate) : "—"}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{r.days != null ? `${r.days}d` : "—"}</td>
                         <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.location}</td>
                         <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.pm}</td>
                         <td className="py-1 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(r.amount)}</td>

@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
     const pe = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
     // onhold=0 hides on-hold deals; default includes them.
     const includeOnHold = searchParams.get("onhold") !== "0";
+    // granularity=month bins the cohort/lifecycle charts by month; default week.
+    const cohortGranularity = searchParams.get("granularity") === "month" ? "month" : "week";
 
     // Cache only the expensive, filter-independent project fetch (~6,500 deals)
     // under the shared PROJECTS_ALL key that other metrics routes already warm.
@@ -65,7 +67,7 @@ export async function GET(request: NextRequest) {
       locations.length > 0 ? locations : undefined,
       range,
       filters,
-      { scope, pe, includeOnHold }
+      { scope, pe, includeOnHold, cohortGranularity }
     );
 
     return NextResponse.json({
