@@ -312,6 +312,23 @@ function isPreConstructionRevisit(stage: string, surveyStatus: string | null | u
   return isRevisitStatus(surveyStatus) && SURVEY_ELIGIBLE_STAGES.includes(stage);
 }
 
+// A re-survey: a prior site survey already completed (completion date set) but the
+// status is back to "Ready to Schedule", i.e. a SECOND survey job is pending. This
+// is the deal-level equivalent of "there's a second Site Survey job" — HubSpot flips
+// "Needs Revisit" → "Ready to Schedule" once the new job is created, so we detect it
+// via the leftover completion date and still group it under Needs Revisit.
+function isResurvey(
+  stage: string,
+  surveyStatus: string | null | undefined,
+  completionDate: string | null
+): boolean {
+  return (
+    isReadyToScheduleStatus(surveyStatus) &&
+    !!completionDate &&
+    SURVEY_ELIGIBLE_STAGES.includes(stage)
+  );
+}
+
 // A survey is "finished" (needs no further scheduling) only when it has been
 // completed AND the status doesn't say a new one is pending. Both "Needs Revisit"
 // and "Ready to Schedule" mean a survey still needs scheduling, so they override
@@ -331,9 +348,10 @@ type SurveyGroup = "ready" | "revisit" | "new-construction";
 function classifySurveyGroup(
   stage: string,
   surveyStatus: string | null | undefined,
+  completionDate: string | null,
   tags: string[] | undefined
 ): SurveyGroup {
-  if (isPreConstructionRevisit(stage, surveyStatus)) return "revisit";
+  if (isPreConstructionRevisit(stage, surveyStatus) || isResurvey(stage, surveyStatus, completionDate)) return "revisit";
   if (isNewConstructionSurvey(stage, tags)) return "new-construction";
   return "ready";
 }
@@ -409,7 +427,7 @@ function transformProject(p: RawProject): SurveyProject | null {
 
   return {
     id: String(p.id),
-    surveyGroup: classifySurveyGroup(p.stage, surveyStatus, p.tags),
+    surveyGroup: classifySurveyGroup(p.stage, surveyStatus, completionDate, p.tags),
     name: p.name || `Project ${p.id}`,
     address: [p.address, p.city, p.state].filter(Boolean).join(", ") || "Address TBD",
     city: p.city || "",
