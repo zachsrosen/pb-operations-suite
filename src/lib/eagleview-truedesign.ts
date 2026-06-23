@@ -25,11 +25,11 @@ import {
   TD_AUTH_BASE,
   TD_API_BASE,
   TD_SCOPE,
-  tdClientId,
   tdBasicAuthHeader,
   buildExportEndpoint,
   type TrueDesignFormat,
 } from "@/lib/eagleview-truedesign-core";
+import { getRuntimeConfig } from "@/lib/runtime-config-db";
 
 export {
   generateCodeVerifier,
@@ -41,6 +41,32 @@ export {
 } from "@/lib/eagleview-truedesign-core";
 
 const REFRESH_TOKEN_KEY = "eagleview_truedesign_refresh_token";
+
+/** SystemConfig row key for the TrueDesign OAuth client id (alternative to env). */
+const TD_CLIENT_ID_KEY = "eagleview_td_client_id";
+
+/**
+ * Resolve the TrueDesign OAuth client id from env (`EAGLEVIEW_TD_CLIENT_ID`, then
+ * legacy `EAGLEVIEW_CLIENT_ID`) or the `eagleview_td_client_id` SystemConfig row.
+ * The new public app's id is stored in SystemConfig to avoid Vercel's env cap.
+ */
+export function resolveTdClientId(): Promise<string | undefined> {
+  return getRuntimeConfig(TD_CLIENT_ID_KEY, [
+    "EAGLEVIEW_TD_CLIENT_ID",
+    "EAGLEVIEW_CLIENT_ID",
+  ]);
+}
+
+/** Token-endpoint headers; only send Basic client auth for confidential clients. */
+function tokenHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json",
+  };
+  const basic = tdBasicAuthHeader();
+  if (basic) headers.Authorization = basic;
+  return headers;
+}
 
 interface TokenResponse {
   access_token?: string;
@@ -61,15 +87,11 @@ export async function exchangeCodeForTokens(
     code,
     redirect_uri: redirectUri,
     code_verifier: codeVerifier,
-    client_id: tdClientId() ?? "",
+    client_id: (await resolveTdClientId()) ?? "",
   });
   const res = await fetch(`${TD_AUTH_BASE}/oauth2/v1/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: tdBasicAuthHeader(),
-      Accept: "application/json",
-    },
+    headers: tokenHeaders(),
     body: body.toString(),
   });
   const data = (await res.json().catch(() => ({}))) as TokenResponse;
@@ -104,15 +126,11 @@ export async function getAccessToken(): Promise<string> {
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     scope: TD_SCOPE,
-    client_id: tdClientId() ?? "",
+    client_id: (await resolveTdClientId()) ?? "",
   });
   const res = await fetch(`${TD_AUTH_BASE}/oauth2/v1/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: tdBasicAuthHeader(),
-      Accept: "application/json",
-    },
+    headers: tokenHeaders(),
     body: body.toString(),
   });
   const data = (await res.json().catch(() => ({}))) as TokenResponse;

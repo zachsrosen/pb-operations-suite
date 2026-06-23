@@ -19,8 +19,18 @@ export function tdClientId(): string | undefined {
 export function tdClientSecret(): string | undefined {
   return process.env.EAGLEVIEW_TD_CLIENT_SECRET ?? process.env.EAGLEVIEW_CLIENT_SECRET;
 }
-export function tdBasicAuthHeader(): string {
-  return "Basic " + Buffer.from(`${tdClientId()}:${tdClientSecret()}`).toString("base64");
+/**
+ * HTTP Basic client-authentication header for the token endpoint, or `undefined`
+ * for a PUBLIC (PKCE, no-secret) client. The PB TrueDesign app is a public SPA
+ * client, so no secret exists — sending `Basic <clientId>:` with an empty secret
+ * makes the token endpoint reject the request, so we omit the header entirely and
+ * rely on `client_id` + PKCE in the body. Confidential clients (secret set) still
+ * get the header.
+ */
+export function tdBasicAuthHeader(): string | undefined {
+  const secret = tdClientSecret();
+  if (!secret) return undefined;
+  return "Basic " + Buffer.from(`${tdClientId()}:${secret}`).toString("base64");
 }
 
 function base64url(buf: Buffer): string {
@@ -54,17 +64,21 @@ export function buildExportEndpoint(
   return `${TD_API_BASE}/api/v1/truedesign/export/${format}/${encodeURIComponent(reportId)}/${encodeURIComponent(versionId)}`;
 }
 
-/** Build the OAuth Authorization Code + PKCE authorize URL. */
+/**
+ * Build the OAuth Authorization Code + PKCE authorize URL. The `clientId` is
+ * passed in (not read from env here) so the caller can resolve it from env OR a
+ * SystemConfig row — see `resolveTdClientId` in eagleview-truedesign.ts.
+ */
 export function buildAuthorizeUrl(
   redirectUri: string,
   codeChallenge: string,
   state: string,
+  clientId: string | undefined,
 ): string {
-  const id = tdClientId();
-  if (!id) throw new Error("EagleView TrueDesign client id not configured");
+  if (!clientId) throw new Error("EagleView TrueDesign client id not configured");
   const u = new URL(`${TD_AUTH_BASE}/oauth2/v1/authorize`);
   u.searchParams.set("response_type", "code");
-  u.searchParams.set("client_id", id);
+  u.searchParams.set("client_id", clientId);
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("scope", TD_SCOPE);
   u.searchParams.set("code_challenge", codeChallenge);
