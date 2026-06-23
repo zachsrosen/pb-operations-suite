@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
 import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
+import { FIELD_CREW } from "@/lib/field-crew";
 
 /**
  * Hardcoded crew schedules to seed into the database.
@@ -10,7 +11,7 @@ import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activ
  */
 const SEED_SCHEDULES = [
   {
-    name: "Drew Perry",
+    name: FIELD_CREW.drew.name,
     location: "DTC",
     reportLocation: "DTC",
     schedule: [
@@ -20,7 +21,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Joe Lynch",
+    name: FIELD_CREW.joe.name,
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
@@ -30,7 +31,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Ryszard Szymanski",
+    name: FIELD_CREW.ryszard.name,
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
@@ -41,7 +42,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Lenny Uematsu",
+    name: FIELD_CREW.lenny.name,
     location: "Colorado Springs",
     reportLocation: "Colorado Springs",
     schedule: [
@@ -55,7 +56,7 @@ const SEED_SCHEDULES = [
   },
   // Lucas Scarpellino — California (PT)
   {
-    name: "Lucas Scarpellino",
+    name: FIELD_CREW.lucas.name,
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
@@ -66,7 +67,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Lucas Scarpellino",
+    name: FIELD_CREW.lucas.name,
     location: "Camarillo",
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
@@ -77,7 +78,7 @@ const SEED_SCHEDULES = [
   },
   // Nick Scarpellino — California (PT)
   {
-    name: "Nick Scarpellino",
+    name: FIELD_CREW.nick.name,
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
@@ -88,7 +89,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Nick Scarpellino",
+    name: FIELD_CREW.nick.name,
     location: "Camarillo",
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
@@ -98,7 +99,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Daniel Kelly",
+    name: FIELD_CREW.danielKelly.name,
     location: "DTC",
     reportLocation: "DTC",
     schedule: [

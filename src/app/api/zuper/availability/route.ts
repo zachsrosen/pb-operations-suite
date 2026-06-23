@@ -6,6 +6,7 @@ import { getCrewSchedulesFromDB, getAvailabilityOverrides, prisma } from "@/lib/
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
 import { applyOfficeDailyCap, OFFICE_DAILY_SURVEY_CAPS } from "@/lib/scheduling-policy";
+import { FIELD_CREW } from "@/lib/field-crew";
 
 /**
  * GET /api/zuper/availability
@@ -165,7 +166,7 @@ const TEAM_LOCATION_NAMES: Record<string, string> = {
 const CREW_SCHEDULES: CrewSchedule[] = [
   // Site Surveyors — userUid and teamUid are resolved dynamically from Zuper API
   {
-    name: "Drew Perry",
+    name: FIELD_CREW.drew.name,
     location: "DTC",
     reportLocation: "DTC",
     schedule: [
@@ -178,7 +179,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Joe Lynch",
+    name: FIELD_CREW.joe.name,
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
@@ -191,7 +192,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Ryszard Szymanski",
+    name: FIELD_CREW.ryszard.name,
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
@@ -203,7 +204,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
   },
   {
     // Lenny Uematsu took over all Colorado Springs surveys from Rolando Valle.
-    name: "Lenny Uematsu",
+    name: FIELD_CREW.lenny.name,
     location: "Colorado Springs",
     reportLocation: "Colorado Springs",
     schedule: [
@@ -222,7 +223,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
   // Shared Mondays: cross-office block applied below hides the other-office slots
   // once a same-person booking appears on the day.
   {
-    name: "Lucas Scarpellino",
+    name: FIELD_CREW.lucas.name,
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
@@ -233,7 +234,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Lucas Scarpellino",
+    name: FIELD_CREW.lucas.name,
     location: "Camarillo",
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
@@ -247,7 +248,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
   // SLO Tue/Thu 1-3 → slots 1-2, 2-3
   // Camarillo Wed 9-12 → slots 9-10, 10-11, 11-12
   {
-    name: "Nick Scarpellino",
+    name: FIELD_CREW.nick.name,
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
@@ -258,7 +259,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Nick Scarpellino",
+    name: FIELD_CREW.nick.name,
     location: "Camarillo",
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
@@ -269,7 +270,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
   },
   // One-off: Nick covering SLO on Wed 2026-05-20 for Babcock pre-sale (Jemma request)
   {
-    name: "Nick Scarpellino",
+    name: FIELD_CREW.nick.name,
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
@@ -282,7 +283,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
 
   // Samuel Paro — mirrors former DPO slots
   {
-    name: "Samuel Paro",
+    name: FIELD_CREW.samuel.name,
     location: "DTC",
     reportLocation: "DTC",
     schedule: [
@@ -291,7 +292,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Samuel Paro",
+    name: FIELD_CREW.samuel.name,
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
@@ -300,7 +301,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    name: "Samuel Paro",
+    name: FIELD_CREW.samuel.name,
     location: "DTC",
     reportLocation: "DTC",
     schedule: [
@@ -332,7 +333,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
   // INSPECTION CREWS
   // ============================================
   {
-    name: "Daniel Kelly",
+    name: FIELD_CREW.danielKelly.name,
     location: "DTC",
     reportLocation: "DTC",
     schedule: [

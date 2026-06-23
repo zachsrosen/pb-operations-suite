@@ -20,6 +20,7 @@ import {
 } from "@/lib/db";
 import { logAdminActivity } from "@/lib/audit/admin-activity";
 import { zuper } from "@/lib/zuper";
+import { FIELD_CREW } from "@/lib/field-crew";
 
 // Zuper Team UIDs by location
 const ZUPER_TEAM_UIDS: Record<string, string> = {
@@ -44,52 +45,54 @@ function generateCrewEmail(name: string): string {
   return `${parts[0].toLowerCase()}@photonbrothers.com`;
 }
 
-// Initial seed data (migrate from hardcoded values)
+// Initial seed data. Crew identity (name / email / Zuper user UID) is sourced
+// from the single source of truth in @/lib/field-crew; role / team / locations
+// are roster-specific and stay here.
 const SEED_DATA = [
   {
-    name: "Drew Perry",
-    email: "drew@photonbrothers.com",
-    zuperUserUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353",
+    name: FIELD_CREW.drew.name,
+    email: FIELD_CREW.drew.email,
+    zuperUserUid: FIELD_CREW.drew.userUid,
     zuperTeamUid: ZUPER_TEAM_UIDS.Centennial,
     role: "surveyor",
     locations: ["DTC", "Centennial"],
   },
   {
-    name: "Joe Lynch",
-    email: "joe@photonbrothers.com",
-    zuperUserUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217",
+    name: FIELD_CREW.joe.name,
+    email: FIELD_CREW.joe.email,
+    zuperUserUid: FIELD_CREW.joe.userUid,
     zuperTeamUid: ZUPER_TEAM_UIDS.Westminster,
     role: "surveyor",
     locations: ["Westminster"],
   },
   {
-    name: "Ryszard Szymanski",
-    email: "richard@photonbrothers.com",
-    zuperUserUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00",
+    name: FIELD_CREW.ryszard.name,
+    email: FIELD_CREW.ryszard.email,
+    zuperUserUid: FIELD_CREW.ryszard.userUid,
     zuperTeamUid: ZUPER_TEAM_UIDS.Westminster,
     role: "surveyor",
     locations: ["Westminster"],
   },
   {
-    name: "Nick Scarpellino",
-    email: "nick.scarpellino@photonbrothers.com",
-    zuperUserUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95",
+    name: FIELD_CREW.nick.name,
+    email: FIELD_CREW.nick.email,
+    zuperUserUid: FIELD_CREW.nick.userUid,
     zuperTeamUid: ZUPER_TEAM_UIDS["San Luis Obispo"],
     role: "surveyor",
     locations: ["San Luis Obispo", "Camarillo"],
   },
   {
-    name: "Lenny Uematsu",
-    email: "lenny@photonbrothers.com",
-    zuperUserUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77",
+    name: FIELD_CREW.lenny.name,
+    email: FIELD_CREW.lenny.email,
+    zuperUserUid: FIELD_CREW.lenny.userUid,
     zuperTeamUid: ZUPER_TEAM_UIDS["Colorado Springs"],
     role: "technician",
     locations: ["Colorado Springs"],
   },
   {
-    name: "Daniel Kelly",
-    email: "dan@photonbrothers.com",
-    zuperUserUid: "f0a5aca8-0137-478c-a910-1380b9a31a79",
+    name: FIELD_CREW.danielKelly.name,
+    email: FIELD_CREW.danielKelly.email,
+    zuperUserUid: FIELD_CREW.danielKelly.userUid,
     zuperTeamUid: ZUPER_TEAM_UIDS.DTC,
     role: "inspector",
     locations: ["DTC"],

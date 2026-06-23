@@ -10,6 +10,7 @@ import { ProductUpdate } from "@/emails/ProductUpdate";
 import { BugReport } from "@/emails/BugReport";
 import { getHubSpotDealUrl, getZuperJobUrl, getZohoSalesOrderUrl } from "@/lib/external-links";
 import type { ComplianceDigest } from "@/lib/compliance-digest";
+import { FIELD_CREW } from "@/lib/field-crew";
 import * as React from "react";
 
 type SendResult = { success: boolean; error?: string };
@@ -1721,12 +1722,17 @@ Ticket ID: ${params.reportId}
 // ==========================================================================
 
 /** Location director who receives pipeline emails for their region */
+// Regional-director EMAIL recipients per location. This is the director-email
+// role and is intentionally SEPARATE from field-work assignment (see
+// @/lib/field-crew LOCATION_FIELD_CREW): CO Springs keeps BOTH Rolando (regional
+// director, currently OOO) and Lenny (covering field ops). Email strings are
+// sourced from FIELD_CREW so a crew email change propagates here too.
 const PIPELINE_LOCATION_DIRECTORS: Record<string, string[]> = {
-  Westminster:        ["joe@photonbrothers.com"],
-  Centennial:         ["drew@photonbrothers.com"],
-  "Colorado Springs": ["rolando@photonbrothers.com", "lenny@photonbrothers.com"], // Lenny covering field ops while Rolando is OOO
-  "San Luis Obispo":  ["nick.scarpellino@photonbrothers.com"],
-  Camarillo:          ["nick.scarpellino@photonbrothers.com"],
+  Westminster:        [FIELD_CREW.joe.email!],
+  Centennial:         [FIELD_CREW.drew.email!],
+  "Colorado Springs": [FIELD_CREW.rolando.email!, FIELD_CREW.lenny.email!],
+  "San Luis Obispo":  [FIELD_CREW.nick.email!],
+  Camarillo:          [FIELD_CREW.nick.email!],
 };
 
 /** Additional coordinators CC'd by region */
