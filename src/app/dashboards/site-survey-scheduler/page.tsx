@@ -242,7 +242,16 @@ function slotMatchesSelectedLocations(slotLocation: string | undefined, selected
   if (!selectedLocations || selectedLocations.length === 0) return true;
   if (!slotLocation) return false;
   const slotKey = locationKey(slotLocation);
-  return selectedLocations.some(loc => locationKey(loc) === slotKey);
+  return selectedLocations.some(loc => {
+    const locKey = locationKey(loc);
+    if (locKey === slotKey) return true;
+    // Expand DTC↔Centennial: the filter button label is the canonical
+    // "Centennial", but availability slots carry the raw Zuper "DTC" label.
+    // Same alias map as slotMatchesProjectLocation; deliberately excludes
+    // Camarillo↔SLO since their survey schedules differ per-location.
+    const allowed = PROJECT_LOCATION_MATCHES[locKey];
+    return !!allowed && allowed.includes(slotKey);
+  });
 }
 
 // Check if a survey is overdue: scheduled in the past but not completed
