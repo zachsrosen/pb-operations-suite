@@ -17,12 +17,37 @@ export type ProcessStep = { id: string; label: string };
 /** A horizontal lane of steps. `name` omitted = the stage is single-track. */
 export type ProcessTrack = { name?: string; steps: ProcessStep[] };
 
+/**
+ * An AND-join gate: both upstream tracks must complete before the mainline
+ * proceeds. Rendered as a distinct chip below the parallel lanes.
+ */
+export type ProcessGate = { label: string };
+
+/**
+ * A fork in the mainline. Each path is a labeled mini-row of steps (a path may
+ * be empty — a pass-through). All paths re-converge at `converge`.
+ */
+export type ProcessBranch = {
+  prompt: string;
+  paths: { label: string; steps: ProcessStep[] }[];
+  converge: ProcessStep;
+};
+
 export type ProcessStage = {
   key: string;
   label: string;
   tracks: ProcessTrack[];
   /** True when the multiple tracks run independently in parallel (no cross-links). */
   parallel?: boolean;
+  /**
+   * Rich Design-style structure (optional). When present, the stage renders as:
+   * parallel `tracks` → `gate` (AND-join) → `mainline` → `branch` → exit.
+   */
+  entryNote?: string;
+  gate?: ProcessGate;
+  mainline?: ProcessStep[];
+  branch?: ProcessBranch;
+  exitNote?: string;
 };
 
 /** A connector arrow between two steps (step id → step id), drawn as an overlay. */
@@ -50,27 +75,48 @@ export const PROCESS_STAGES: ProcessStage[] = [
   {
     key: "design",
     label: "Design & Engineering",
+    entryNote:
+      "On entry, two tracks start in parallel: Design → Ready for design, DA → Ready for review.",
     tracks: [
       {
         name: "Design",
         steps: [
           { id: "d-ready", label: "Ready for design" },
-          { id: "d-inprog", label: "Design in progress" },
-          { id: "d-uploaded", label: "Design uploaded for review" },
-          { id: "d-initrev", label: "Initial review complete" },
-          { id: "d-finalrev", label: "Final design review" },
-          { id: "d-stamped", label: "Plans stamped" },
-          { id: "d-complete", label: "Design complete" },
+          { id: "d-inprog", label: "In progress" },
+          { id: "d-review", label: "Ready for review" },
+          { id: "d-draft", label: "Draft complete (waiting on approvals)" },
         ],
       },
       {
         name: "Design Approval",
         steps: [
-          { id: "da-sent", label: "DA sent to customer" },
-          { id: "da-approved", label: "Customer approves DA" },
+          { id: "da-review", label: "Ready for review" },
+          { id: "da-draft", label: "Draft complete" },
+          { id: "da-sent", label: "Sent for approval" },
+          { id: "da-approved", label: "Approved" },
         ],
       },
     ],
+    gate: { label: "Initial review complete AND DA approved" },
+    mainline: [
+      { id: "d-da-approved", label: "DA Approved" },
+      { id: "d-finalrev", label: "Final design review" },
+    ],
+    branch: {
+      prompt: "Engineering stamps needed?",
+      paths: [
+        { label: "No — straight through", steps: [] },
+        {
+          label: "Yes — stamps",
+          steps: [
+            { id: "d-stamps-sent", label: "Sent for engineering stamps" },
+            { id: "d-stamped", label: "Stamped" },
+          ],
+        },
+      ],
+      converge: { id: "d-complete", label: "Design complete" },
+    },
+    exitNote: "→ Permitting & Interconnection",
   },
   {
     key: "permitting",
@@ -151,15 +197,11 @@ export const PROCESS_STAGES: ProcessStage[] = [
 ];
 
 /**
- * Design's two tracks INTERTWINE: after the initial design review the DA goes
- * out to the customer; once the customer approves, the final design review
- * proceeds. These two arrows are drawn as cross-lane connectors in the Design
- * stage.
+ * Cross-lane connectors drawn as an overlay. Design no longer uses these: its
+ * parallel-tracks → AND-gate → mainline → stamps-branch shape is expressed
+ * structurally via `gate`/`mainline`/`branch` on the stage instead.
  */
-export const CROSS_LINKS: CrossLink[] = [
-  { from: "d-initrev", to: "da-sent", label: "send DA" },
-  { from: "da-approved", to: "d-finalrev", label: "approved" },
-];
+export const CROSS_LINKS: CrossLink[] = [];
 
 /**
  * Maps a process-stage `key` to the Project-pipeline stageId it corresponds to,
@@ -175,12 +217,22 @@ export const STAGE_KEY_TO_STAGE_ID: Record<string, string> = {
   pto: "20461940",
 };
 
-/** Flatten every step across all stages/tracks — handy for tests + lookups. */
+/**
+ * Flatten every step across all stages — tracks, plus the Design-style
+ * mainline/branch/converge steps — handy for tests + lookups.
+ */
 export function allStepIds(): Set<string> {
   const ids = new Set<string>();
   for (const stage of PROCESS_STAGES) {
     for (const track of stage.tracks) {
       for (const step of track.steps) ids.add(step.id);
+    }
+    for (const step of stage.mainline ?? []) ids.add(step.id);
+    if (stage.branch) {
+      for (const path of stage.branch.paths) {
+        for (const step of path.steps) ids.add(step.id);
+      }
+      ids.add(stage.branch.converge.id);
     }
   }
   return ids;

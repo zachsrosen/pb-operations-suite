@@ -49,11 +49,74 @@ describe("PROCESS_STAGES", () => {
 describe("CROSS_LINKS", () => {
   it("references only real step ids", () => {
     const ids = allStepIds();
-    expect(CROSS_LINKS.length).toBeGreaterThan(0);
     for (const link of CROSS_LINKS) {
       expect(ids.has(link.from)).toBe(true);
       expect(ids.has(link.to)).toBe(true);
     }
+  });
+});
+
+describe("Design stage (parallel → gate → mainline → branch → converge)", () => {
+  const design = PROCESS_STAGES.find((s) => s.key === "design");
+
+  it("exists with an entry note and exit note", () => {
+    expect(design).toBeTruthy();
+    expect(design!.entryNote).toBeTruthy();
+    expect(design!.exitNote).toBeTruthy();
+  });
+
+  it("starts two named parallel tracks (Design + Design Approval)", () => {
+    expect(design!.tracks).toHaveLength(2);
+    const names = design!.tracks.map((t) => t.name);
+    expect(names).toEqual(["Design", "Design Approval"]);
+    for (const track of design!.tracks) {
+      expect(track.steps.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has an AND-join gate", () => {
+    expect(design!.gate).toBeTruthy();
+    expect(design!.gate!.label).toMatch(/AND/);
+  });
+
+  it("has a mainline flowing out of the gate", () => {
+    expect(design!.mainline).toBeTruthy();
+    expect(design!.mainline!.length).toBeGreaterThan(0);
+    for (const step of design!.mainline!) {
+      expect(step.id).toBeTruthy();
+      expect(step.label).toBeTruthy();
+    }
+  });
+
+  it("has a well-formed stamps branch that re-converges", () => {
+    const branch = design!.branch;
+    expect(branch).toBeTruthy();
+    expect(branch!.prompt).toBeTruthy();
+    // Two paths: one empty pass-through, one with stamp steps.
+    expect(branch!.paths).toHaveLength(2);
+    const stampPath = branch!.paths.find((p) => p.steps.length > 0);
+    const passThrough = branch!.paths.find((p) => p.steps.length === 0);
+    expect(stampPath).toBeTruthy();
+    expect(passThrough).toBeTruthy();
+    for (const path of branch!.paths) {
+      expect(path.label).toBeTruthy();
+    }
+    // Converge node is the Design-complete exit.
+    expect(branch!.converge.id).toBeTruthy();
+    expect(branch!.converge.label).toBeTruthy();
+  });
+
+  it("includes gate/mainline/branch/converge step ids in allStepIds()", () => {
+    const ids = allStepIds();
+    for (const step of design!.mainline!) {
+      expect(ids.has(step.id)).toBe(true);
+    }
+    for (const path of design!.branch!.paths) {
+      for (const step of path.steps) {
+        expect(ids.has(step.id)).toBe(true);
+      }
+    }
+    expect(ids.has(design!.branch!.converge.id)).toBe(true);
   });
 });
 

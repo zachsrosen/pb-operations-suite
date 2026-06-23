@@ -1,10 +1,8 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
 import type { FlowMapSnapshot } from "@/lib/flow-map/types";
 import {
   PROCESS_STAGES,
-  CROSS_LINKS,
   STAGE_KEY_TO_STAGE_ID,
   type ProcessStage,
   type ProcessStep,
@@ -12,7 +10,7 @@ import {
 
 /**
  * Process view — the legible, new-hire-friendly walkthrough of the whole
- * Project pipeline, rendered as a top-to-bottom stack of VERTICAL SWIMLANES.
+ * Project pipeline, rendered as a top-to-bottom stack of stages.
  *
  * The shape (stages, tracks, steps) comes entirely from the curated
  * `process-spec` — this is the confirmed business process, NOT auto-derived
@@ -24,9 +22,12 @@ import {
  *  - Each stage is a section; a centered ↓ connector joins one stage to the next.
  *  - Single-track stages render their steps as a row of pills joined by →.
  *  - Multi-track stages render each track as a labeled horizontal lane.
- *  - Design's two lanes INTERTWINE: cross-lane arrows (drawn as an SVG overlay)
- *    show the DA leaving after initial review and the final review resuming
- *    once the customer approves.
+ *  - The Design stage is special: two tracks START IN PARALLEL, then meet at an
+ *    AND-gate ("initial review complete AND DA approved"); a single mainline
+ *    flows out of the gate (DA Approved → Final design review), forks on
+ *    "engineering stamps needed?", and both paths re-converge at "Design
+ *    complete". This richer shape is driven by the optional gate/mainline/branch
+ *    fields on the stage and rendered by <RichStage>.
  *  - Permitting's two lanes run as independent PARALLEL rows (no cross-links).
  *
  * The optional snapshot only powers a muted "N workflows automate this" caption
@@ -41,9 +42,9 @@ export default function ProcessView({
     <div className="mx-auto max-w-3xl">
       <p className="mb-8 text-sm leading-relaxed text-muted">
         How a sold project moves through the pipeline, milestone by milestone.
-        Read it top to bottom: each stage flows left to right, and stages with
-        two parallel tracks (Design &amp; Engineering, Permitting &amp;
-        Interconnection) show both lanes side by side.
+        Read it top to bottom: each stage flows left to right. Design &amp;
+        Engineering runs two tracks in parallel that meet at an approval gate;
+        Permitting &amp; Interconnection runs two independent lanes side by side.
       </p>
 
       <ol className="space-y-2">
@@ -89,8 +90,8 @@ function StageSection({
 }) {
   const count = workflowCountForStage(stage, snapshot);
   const multiTrack = stage.tracks.length > 1;
-  // The Design stage is the only one with intertwining cross-links.
-  const intertwined = !stage.parallel && multiTrack && CROSS_LINKS.length > 0;
+  // The Design stage carries the richer parallel → gate → branch structure.
+  const rich = Boolean(stage.gate);
 
   return (
     <section className="rounded-xl border border-t-border bg-surface px-5 py-4 shadow-card">
@@ -104,10 +105,10 @@ function StageSection({
         )}
       </header>
 
-      {!multiTrack ? (
+      {rich ? (
+        <RichStage stage={stage} />
+      ) : !multiTrack ? (
         <StepRow steps={stage.tracks[0].steps} />
-      ) : intertwined ? (
-        <IntertwinedTracks stage={stage} />
       ) : (
         <ParallelTracks stage={stage} />
       )}
@@ -115,17 +116,17 @@ function StageSection({
   );
 }
 
-/** A horizontal row of step pills joined by → arrows. */
+/**
+ * A horizontal flow of step pills joined by → arrows. Wraps cleanly: pills are
+ * compact, each wrapped row is left-aligned, and arrows sit only between
+ * adjacent pills (no leading "→" on a wrapped row).
+ */
 function StepRow({ steps }: { steps: ProcessStep[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5">
       {steps.map((step, i) => (
         <div key={step.id} className="flex items-center gap-1">
-          {i > 0 && (
-            <span aria-hidden className="px-0.5 text-muted/50">
-              →
-            </span>
-          )}
+          {i > 0 && <StepArrow />}
           <StepPill step={step} />
         </div>
       ))}
@@ -133,19 +134,31 @@ function StepRow({ steps }: { steps: ProcessStep[] }) {
   );
 }
 
+/** The → joiner between two adjacent pills. */
+function StepArrow() {
+  return (
+    <span aria-hidden className="shrink-0 px-0.5 text-[11px] text-muted/50">
+      →
+    </span>
+  );
+}
+
 /** A single clean step pill. */
 function StepPill({
   step,
-  innerRef,
+  tone = "default",
 }: {
   step: ProcessStep;
-  innerRef?: (el: HTMLDivElement | null) => void;
+  tone?: "default" | "accent";
 }) {
+  const toneCls =
+    tone === "accent"
+      ? "border-cyan-400/40 bg-cyan-400/10 text-foreground"
+      : "border-t-border bg-surface-2 text-foreground";
   return (
     <div
-      ref={innerRef}
       data-step-id={step.id}
-      className="rounded-full border border-t-border bg-surface-2 px-3 py-1.5 text-xs text-foreground"
+      className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] leading-tight ${toneCls}`}
     >
       {step.label}
     </div>
@@ -155,7 +168,7 @@ function StepPill({
 /** Left-hand track label for a labeled lane. */
 function TrackLabel({ name }: { name: string }) {
   return (
-    <div className="w-28 shrink-0 pr-2 pt-1.5 text-xs font-medium text-muted">
+    <div className="w-24 shrink-0 pr-2 pt-1 text-xs font-medium text-muted">
       {name}
     </div>
   );
@@ -182,171 +195,120 @@ function ParallelTracks({ stage }: { stage: ProcessStage }) {
 }
 
 /**
- * The Design stage. The "Design" lane sits on top; the "Design Approval" lane
- * sits below, positioned so its two steps fall under the gap between "Initial
- * review complete" and "Final design review". Two cross-lane arrows are drawn
- * as an SVG overlay:
- *   d-initrev → da-sent   (down into the DA lane: "send DA")
- *   da-approved → d-finalrev  (back up: "approved")
+ * The Design & Engineering stage, rendered top → bottom:
+ *   1. entryNote — both tracks start together.
+ *   2. Two parallel lanes (Design, DA) under a shared "both start here" marker.
+ *   3. The AND-gate chip the two lanes converge into.
+ *   4. The mainline row flowing out of the gate.
+ *   5. The "engineering stamps?" fork — two labeled mini-rows that re-converge.
+ *   6. The converge pill (Design complete) + exitNote.
  *
- * Arrows are measured from the rendered DOM after layout, so they stay correct
- * across theme/zoom/wrap. If measurement isn't ready yet (first paint) the
- * overlay simply renders nothing — the lanes remain fully legible on their own.
+ * No SVG measurement is needed: the structure reads top-to-bottom with simple
+ * arrows and accent chips marking the join and merge points.
  */
-function IntertwinedTracks({ stage }: { stage: ProcessStage }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const stepEls = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [paths, setPaths] = useState<CrossLinkPath[]>([]);
-
-  const setStepEl = (id: string) => (el: HTMLDivElement | null) => {
-    if (el) stepEls.current.set(id, el);
-    else stepEls.current.delete(id);
-  };
-
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    function measure() {
-      const c = containerRef.current;
-      if (!c) return;
-      const cb = c.getBoundingClientRect();
-      const next: CrossLinkPath[] = [];
-      for (const link of CROSS_LINKS) {
-        const fromEl = stepEls.current.get(link.from);
-        const toEl = stepEls.current.get(link.to);
-        if (!fromEl || !toEl) continue;
-        const fb = fromEl.getBoundingClientRect();
-        const tb = toEl.getBoundingClientRect();
-        // Connect the vertical centers, on the side facing the other lane.
-        const fromBelow = fb.top < tb.top; // from-step is in the upper lane
-        const x1 = fb.left + fb.width / 2 - cb.left;
-        const y1 = (fromBelow ? fb.bottom : fb.top) - cb.top;
-        const x2 = tb.left + tb.width / 2 - cb.left;
-        const y2 = (fromBelow ? tb.top : tb.bottom) - cb.top;
-        next.push({ key: `${link.from}-${link.to}`, x1, y1, x2, y2, label: link.label });
-      }
-      setPaths(next);
-    }
-
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(container);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
-
-  const designLane = stage.tracks.find((t) => t.name === "Design");
-  const daLane = stage.tracks.find((t) => t.name === "Design Approval");
+function RichStage({ stage }: { stage: ProcessStage }) {
+  const { entryNote, gate, mainline, branch, exitNote } = stage;
 
   return (
-    <div ref={containerRef} className="relative">
-      {/* SVG overlay for the two cross-lane arrows. */}
-      <svg
-        className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-        aria-hidden
-      >
-        <defs>
-          <marker
-            id="process-arrow"
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" className="fill-cyan-400/70" />
-          </marker>
-        </defs>
-        {paths.map((p) => {
-          const midY = (p.y1 + p.y2) / 2;
-          const d = `M ${p.x1} ${p.y1} C ${p.x1} ${midY}, ${p.x2} ${midY}, ${p.x2} ${p.y2}`;
-          return (
-            <g key={p.key}>
-              <path
-                d={d}
-                fill="none"
-                className="stroke-cyan-400/60"
-                strokeWidth={1.5}
-                markerEnd="url(#process-arrow)"
-              />
-              {p.label && (
-                <text
-                  x={(p.x1 + p.x2) / 2}
-                  y={midY - 3}
-                  textAnchor="middle"
-                  className="fill-muted text-[10px]"
-                >
-                  {p.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+    <div className="space-y-4">
+      {entryNote && (
+        <p className="text-xs leading-relaxed text-muted/80">{entryNote}</p>
+      )}
 
-      <div className="space-y-6">
-        {/* Design lane (top). */}
-        {designLane && (
-          <div className="flex items-start">
-            <TrackLabel name={designLane.name!} />
-            <div className="min-w-0 flex-1">
-              <StepRow2 steps={designLane.steps} setStepEl={setStepEl} />
+      {/* Two parallel lanes, sharing a left rail that marks "both start here". */}
+      <div className="flex">
+        <div
+          className="mr-3 w-px shrink-0 self-stretch bg-cyan-400/30"
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1 space-y-3">
+          {stage.tracks.map((track, i) => (
+            <div key={track.name ?? i} className="flex items-start">
+              {track.name && <TrackLabel name={track.name} />}
+              <div className="min-w-0 flex-1">
+                <StepRow steps={track.steps} />
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Design Approval lane (below), indented so its steps sit roughly
-            under the Initial-review → Final-review gap. */}
-        {daLane && (
-          <div className="flex items-start">
-            <TrackLabel name={daLane.name!} />
-            {/* Indent ~ width of the first three Design steps so the DA lane
-                falls under the intertwine point. */}
-            <div className="hidden shrink-0 sm:block sm:w-[18rem]" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <StepRow2 steps={daLane.steps} setStepEl={setStepEl} />
-            </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
+
+      {/* AND-gate: both lanes must complete before the mainline proceeds. */}
+      {gate && (
+        <div className="flex flex-col items-center gap-1">
+          <DownArrow />
+          <div className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-medium text-foreground">
+            <span className="text-cyan-400">✓</span>
+            <span>{gate.label}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Mainline: a single centered flow out of the gate. */}
+      {mainline && mainline.length > 0 && (
+        <div className="flex flex-col items-center gap-1">
+          <DownArrow />
+          <StepRowCentered steps={mainline} />
+        </div>
+      )}
+
+      {/* Branch: the engineering-stamps fork; both paths re-converge. */}
+      {branch && (
+        <div className="flex flex-col items-center gap-2">
+          <DownArrow />
+          <div className="text-[11px] font-medium text-muted">
+            {branch.prompt}
+          </div>
+          <div className="flex w-full flex-wrap items-start justify-center gap-x-6 gap-y-3">
+            {branch.paths.map((path) => (
+              <div
+                key={path.label}
+                className="flex flex-col items-center gap-1.5"
+              >
+                <div className="text-[10px] uppercase tracking-wide text-muted/70">
+                  {path.label}
+                </div>
+                {path.steps.length > 0 ? (
+                  <StepRow steps={path.steps} />
+                ) : (
+                  <div className="text-[11px] italic text-muted/60">
+                    (pass through)
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <DownArrow />
+          <StepPill step={branch.converge} tone="accent" />
+        </div>
+      )}
+
+      {exitNote && (
+        <p className="text-center text-xs text-muted/80">{exitNote}</p>
+      )}
     </div>
   );
 }
 
-/** StepRow variant that registers each pill element for arrow measurement. */
-function StepRow2({
-  steps,
-  setStepEl,
-}: {
-  steps: ProcessStep[];
-  setStepEl: (id: string) => (el: HTMLDivElement | null) => void;
-}) {
+/** Centered step row (for the mainline out of the gate). */
+function StepRowCentered({ steps }: { steps: ProcessStep[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-2">
+    <div className="flex flex-wrap items-center justify-center gap-x-1 gap-y-1.5">
       {steps.map((step, i) => (
         <div key={step.id} className="flex items-center gap-1">
-          {i > 0 && (
-            <span aria-hidden className="px-0.5 text-muted/50">
-              →
-            </span>
-          )}
-          <StepPill step={step} innerRef={setStepEl(step.id)} />
+          {i > 0 && <StepArrow />}
+          <StepPill step={step} />
         </div>
       ))}
     </div>
   );
 }
 
-type CrossLinkPath = {
-  key: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  label?: string;
-};
+/** A small centered ↓ used inside the rich Design stage. */
+function DownArrow() {
+  return (
+    <span aria-hidden className="text-sm leading-none text-cyan-400/50">
+      ↓
+    </span>
+  );
+}
