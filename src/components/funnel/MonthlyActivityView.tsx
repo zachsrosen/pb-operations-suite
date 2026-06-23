@@ -614,6 +614,61 @@ function MilestoneCohortChart({
     });
   }, [lifecycle]);
 
+  // Headline rollups across the whole window, for the summary cards.
+  const mTotals = useMemo(() => {
+    const t = { total: 0, amount: 0, advanced: 0, advancedAmount: 0, waiting: 0, waitingAmount: 0, onHold: 0, onHoldAmount: 0, cancelled: 0, cancelledAmount: 0 };
+    for (const r of chronological) {
+      t.total += r.total; t.amount += r.totalAmount;
+      t.advanced += r.advanced; t.advancedAmount += r.advancedAmount;
+      t.waiting += r.waiting; t.waitingAmount += r.waitingAmount;
+      t.onHold += r.onHold; t.onHoldAmount += r.onHoldAmount;
+      t.cancelled += r.cancelled; t.cancelledAmount += r.cancelledAmount;
+    }
+    return t;
+  }, [chronological]);
+  const lTotals = useMemo(() => {
+    const byLabel: Record<string, { count: number; amount: number }> = {};
+    let total = 0;
+    let amount = 0;
+    for (const m of lifecycle)
+      for (const s of m.stages) {
+        total += s.count;
+        amount += s.amount;
+        const e = byLabel[s.stageName] ?? { count: 0, amount: 0 };
+        e.count += s.count;
+        e.amount += s.amount;
+        byLabel[s.stageName] = e;
+      }
+    const pick = (...labels: string[]) =>
+      labels.reduce(
+        (acc, l) => ({ count: acc.count + (byLabel[l]?.count ?? 0), amount: acc.amount + (byLabel[l]?.amount ?? 0) }),
+        { count: 0, amount: 0 }
+      );
+    return {
+      total,
+      amount,
+      installed: pick("Construction Complete", "Inspection Passed", "PTO Granted"),
+      pto: pick("PTO Granted"),
+      cancelled: pick("Cancelled"),
+      onHold: pick("On Hold"),
+    };
+  }, [lifecycle]);
+  const pctOf = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+  const summaryCards =
+    view === "milestone"
+      ? [
+          { label: cohort?.label ?? "Total", value: mTotals.amount, sub: `${mTotals.total} deals · ${pctOf(mTotals.advanced, mTotals.total)}% reached ${cohort?.nextLabel}` },
+          { label: `Reached ${cohort?.nextLabel}`, value: mTotals.advancedAmount, sub: `${mTotals.advanced} deals` },
+          { label: "Still waiting", value: mTotals.waitingAmount, sub: `${mTotals.waiting} deals` },
+          { label: "Off track", value: mTotals.onHoldAmount + mTotals.cancelledAmount, sub: `${mTotals.onHold} on hold · ${mTotals.cancelled} cancelled` },
+        ]
+      : [
+          { label: "Sold", value: lTotals.amount, sub: `${lTotals.total} deals` },
+          { label: "Installed +", value: lTotals.installed.amount, sub: `${lTotals.installed.count} deals · ${pctOf(lTotals.installed.count, lTotals.total)}% of sold` },
+          { label: "PTO granted", value: lTotals.pto.amount, sub: `${lTotals.pto.count} deals · ${pctOf(lTotals.pto.count, lTotals.total)}% of sold` },
+          { label: "Off track", value: lTotals.cancelled.amount + lTotals.onHold.amount, sub: `${lTotals.cancelled.count} cancelled · ${lTotals.onHold.count} on hold` },
+        ];
+
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
@@ -673,6 +728,17 @@ function MilestoneCohortChart({
             ))}
           </select>
         </div>
+      </div>
+
+      {/* Headline summary cards for the current view — PE-style. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        {summaryCards.map((c) => (
+          <div key={c.label} className="bg-surface-2 rounded-lg border border-t-border p-3 text-center">
+            <div className="text-lg font-bold text-foreground tabular-nums">{formatCurrencyCompact(c.value)}</div>
+            <div className="text-xs font-medium text-foreground/80 mt-0.5">{c.label}</div>
+            <div className="text-[10px] text-muted mt-0.5">{c.sub}</div>
+          </div>
+        ))}
       </div>
 
       {view === "milestone" && (
