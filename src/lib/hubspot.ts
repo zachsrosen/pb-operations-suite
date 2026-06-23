@@ -292,6 +292,19 @@ export const STAGE_PRIORITY: Record<string, number> = {
 // Stages that are schedulable for construction
 export const SCHEDULABLE_STAGES = ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"];
 
+// Stages where a site survey / revisit is still relevant — pre-construction
+// through Construction (install underway still counts). Excludes On Hold and
+// everything strictly POST-construction (Inspection, PTO, Close Out, etc.).
+// Used to scope the survey scheduler's Needs Revisit + New Construction groups.
+export const SURVEY_ELIGIBLE_STAGES = [
+  "Site Survey",
+  "Design & Engineering",
+  "Permitting & Interconnection",
+  "RTB - Blocked",
+  "Ready To Build",
+  "Construction",
+];
+
 // Stages that are active (everything except completed and cancelled)
 export const ACTIVE_STAGES = [
   "Project Rejected - Needs Review",
@@ -3712,12 +3725,20 @@ export function filterProjectsForContext(
       // Survey revisits and new-construction deals may sit at stages outside the
       // schedulable set, so surface them explicitly so the survey scheduler can
       // (re)book them — otherwise they're invisible there.
+      // Only surface revisits while the survey is still relevant — a 'Needs
+      // Revisit' flag on a deal already POST-construction (e.g. Inspection) is stale.
       const needsSurveyRevisit = (p: Project) =>
-        p.isActive && !!p.siteSurveyStatus && p.siteSurveyStatus.toLowerCase().includes("revisit");
+        p.isActive &&
+        SURVEY_ELIGIBLE_STAGES.includes(p.stage) &&
+        !!p.siteSurveyStatus &&
+        p.siteSurveyStatus.toLowerCase().includes("revisit");
       // The HubSpot tag labelled "New Construction" stores the internal value
       // "Waiting on Site Construction"; the API returns the value, so match that.
+      // Only surface these while the survey is still relevant (excludes On Hold and
+      // strictly post-construction) and with no completed survey yet.
       const isNewConstructionNeedingSurvey = (p: Project) =>
         p.isActive &&
+        SURVEY_ELIGIBLE_STAGES.includes(p.stage) &&
         p.tags.some((t) => t.toLowerCase().includes("waiting on site construction")) &&
         !p.siteSurveyCompletionDate &&
         !(p.siteSurveyStatus || "").toLowerCase().includes("complete");

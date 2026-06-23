@@ -288,6 +288,30 @@ function isNewConstructionTag(tags: string[] | undefined): boolean {
   return (tags || []).some((t) => String(t).toLowerCase().includes(NEW_CONSTRUCTION_TAG_VALUE));
 }
 
+// Stages where a site survey / revisit is still relevant — pre-construction
+// through Construction (install underway still counts). Excludes On Hold and
+// everything strictly post-construction (Inspection, PTO, Close Out, etc.).
+// Mirrors SURVEY_ELIGIBLE_STAGES in lib/hubspot.ts (kept local to avoid pulling
+// server code into the client bundle).
+const SURVEY_ELIGIBLE_STAGES = [
+  "Site Survey",
+  "Design & Engineering",
+  "Permitting & Interconnection",
+  "RTB - Blocked",
+  "Ready To Build",
+  "Construction",
+];
+function isNewConstructionSurvey(stage: string, tags: string[] | undefined): boolean {
+  return isNewConstructionTag(tags) && SURVEY_ELIGIBLE_STAGES.includes(stage);
+}
+
+// A revisit is only actionable while the survey is still relevant. Once the deal
+// is past that (e.g. already at Inspection), a 'Needs Revisit' flag is stale, so
+// don't surface it on the scheduler.
+function isPreConstructionRevisit(stage: string, surveyStatus: string | null | undefined): boolean {
+  return isRevisitStatus(surveyStatus) && SURVEY_ELIGIBLE_STAGES.includes(stage);
+}
+
 // A survey is "finished" (needs no further scheduling) only when it has been
 // completed AND is not flagged for a revisit. Revisits intentionally override
 // completion: the first visit is done, but the field needs another one.
@@ -302,11 +326,12 @@ function isSurveyFinished(
 // Precedence: Needs Revisit > New Construction > Ready to Schedule.
 type SurveyGroup = "ready" | "revisit" | "new-construction";
 function classifySurveyGroup(
+  stage: string,
   surveyStatus: string | null | undefined,
   tags: string[] | undefined
 ): SurveyGroup {
-  if (isRevisitStatus(surveyStatus)) return "revisit";
-  if (isNewConstructionTag(tags)) return "new-construction";
+  if (isPreConstructionRevisit(stage, surveyStatus)) return "revisit";
+  if (isNewConstructionSurvey(stage, tags)) return "new-construction";
   return "ready";
 }
 
@@ -369,15 +394,15 @@ function transformProject(p: RawProject): SurveyProject | null {
   // Surface a project on the survey scheduler when it is:
   //   1. in the Site Survey stage (the original behavior), OR
   //   2. flagged "Needs Revisit" (a completed survey that must be redone), OR
-  //   3. tagged "New Construction" and has no completed survey yet.
+  //   3. tagged "New Construction", still pre-construction, and no completed survey yet.
   const inSurveyStage = p.stage === "Site Survey";
-  const needsRevisit = isRevisitStatus(surveyStatus);
-  const newConstruction = isNewConstructionTag(p.tags) && !finished;
+  const needsRevisit = isPreConstructionRevisit(p.stage, surveyStatus);
+  const newConstruction = isNewConstructionSurvey(p.stage, p.tags) && !finished;
   if (!inSurveyStage && !needsRevisit && !newConstruction) return null;
 
   return {
     id: String(p.id),
-    surveyGroup: classifySurveyGroup(surveyStatus, p.tags),
+    surveyGroup: classifySurveyGroup(p.stage, surveyStatus, p.tags),
     name: p.name || `Project ${p.id}`,
     address: [p.address, p.city, p.state].filter(Boolean).join(", ") || "Address TBD",
     city: p.city || "",
@@ -456,7 +481,7 @@ export default function SiteSurveySchedulerPage() {
   const [cancellingTentative, setCancellingTentative] = useState(false);
 
   /* ---- pre-sale mode ---- */
-  const [surveyMode, setSurveyMode] = useState<"ops" | "pre-sale">("ops");
+  const [surveyMode, setSurveyMode] = useState<"ops" | "new-construction" | "pre-sale">("ops");
   const [preSaleSearch, setPreSaleSearch] = useState("");
   const [preSaleResults, setPreSaleResults] = useState<SurveyProject[]>([]);
   const [preSaleSearching, setPreSaleSearching] = useState(false);
@@ -981,6 +1006,21 @@ export default function SiteSurveySchedulerPage() {
     }
     return groups.filter(g => g.items.length > 0);
   }, [unscheduledProjects]);
+
+  // New Construction lives in its own scheduler tab; the Ops Surveys panel shows
+  // only the remaining groups (Ready to Schedule + Needs Revisit).
+  const opsGroups = useMemo(
+    () => surveyGroups.filter(g => g.key !== "new-construction"),
+    [surveyGroups]
+  );
+  const opsCount = useMemo(
+    () => opsGroups.reduce((n, g) => n + g.items.length, 0),
+    [opsGroups]
+  );
+  const newConstructionProjects = useMemo(
+    () => surveyGroups.find(g => g.key === "new-construction")?.items ?? [],
+    [surveyGroups]
+  );
 
   const stats = useMemo(() => {
     const total = projects.length;
@@ -2019,6 +2059,58 @@ export default function SiteSurveySchedulerPage() {
   const todayStr = getTodayStr();
   const isTentativeOnly = !syncToZuper;
 
+  // Shared card for the schedulable-survey lists (Ops Surveys + New Construction tabs).
+  const renderSurveyCard = (project: SurveyProject) => (
+    <div
+      key={project.id}
+      draggable
+      onDragStart={() => handleDragStart(project.id)}
+      onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
+      className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
+        selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate">
+            {getCustomerName(project.name)}
+          </p>
+          <p className="text-xs text-muted truncate">
+            {getProjectId(project.name)}
+          </p>
+          <p className="text-xs text-muted truncate mt-0.5">
+            {project.location}
+          </p>
+          {project.dealOwner && (
+            <p className="text-xs text-cyan-400/70 truncate mt-0.5">
+              {project.dealOwner}
+            </p>
+          )}
+        </div>
+        <span className="text-xs font-mono text-orange-400 ml-2">
+          {formatCurrency(project.amount)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        {isSurveyOverdue(project, manualSchedules[project.id]) && (
+          <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+            ⚠ Overdue
+          </span>
+        )}
+        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
+          {project.surveyStatus}
+        </span>
+        {project.systemSize > 0 && (
+          <span className="text-xs text-muted">
+            {project.systemSize.toFixed(1)}kW
+          </span>
+        )}
+        <span className="flex-1" />
+        {/* TEMPORARILY DISABLED - portal invite buttons */}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
@@ -2218,6 +2310,16 @@ export default function SiteSurveySchedulerPage() {
                     Ops Surveys
                   </button>
                   <button
+                    onClick={() => { setSurveyMode("new-construction"); setSelectedPreSaleDeal(null); setPreSaleSearch(""); setPreSaleResults([]); }}
+                    className={`flex-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
+                      surveyMode === "new-construction"
+                        ? "bg-amber-600 text-white shadow-sm"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    New Construction
+                  </button>
+                  <button
                     onClick={() => { setSurveyMode("pre-sale"); setSelectedProject(null); }}
                     className={`flex-1 text-xs font-medium px-2 py-1 rounded-md transition-colors ${
                       surveyMode === "pre-sale"
@@ -2231,7 +2333,16 @@ export default function SiteSurveySchedulerPage() {
                 {surveyMode === "ops" ? (
                   <>
                     <h2 className="text-sm font-semibold text-cyan-400">
-                      Needs Scheduling ({unscheduledProjects.length})
+                      Needs Scheduling ({opsCount})
+                    </h2>
+                    <p className="text-xs text-muted mt-1 hidden sm:block">
+                      Drag to calendar or click to select
+                    </p>
+                  </>
+                ) : surveyMode === "new-construction" ? (
+                  <>
+                    <h2 className="text-sm font-semibold text-amber-400">
+                      New Construction ({newConstructionProjects.length})
                     </h2>
                     <p className="text-xs text-muted mt-1 hidden sm:block">
                       Drag to calendar or click to select
@@ -2319,66 +2430,25 @@ export default function SiteSurveySchedulerPage() {
                       </p>
                     )}
                   </div>
-                ) : unscheduledProjects.length === 0 ? (
+                ) : surveyMode === "new-construction" ? (
+                  newConstructionProjects.length === 0 ? (
+                    <div className="p-4 text-center text-muted text-sm">
+                      No new construction surveys need scheduling
+                    </div>
+                  ) : (
+                    newConstructionProjects.map(renderSurveyCard)
+                  )
+                ) : opsCount === 0 ? (
                   <div className="p-4 text-center text-muted text-sm">
                     No projects need scheduling
                   </div>
                 ) : (
-                  surveyGroups.map((group) => (
+                  opsGroups.map((group) => (
                     <div key={group.key}>
                       <div className="px-3 py-1.5 bg-surface-2 border-b border-t-border text-xs font-semibold text-muted uppercase tracking-wide">
                         {group.label} ({group.items.length})
                       </div>
-                      {group.items.map((project) => (
-                        <div
-                          key={project.id}
-                          draggable
-                          onDragStart={() => handleDragStart(project.id)}
-                          onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
-                          className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
-                            selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
-                          }`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {getCustomerName(project.name)}
-                              </p>
-                              <p className="text-xs text-muted truncate">
-                                {getProjectId(project.name)}
-                              </p>
-                              <p className="text-xs text-muted truncate mt-0.5">
-                                {project.location}
-                              </p>
-                              {project.dealOwner && (
-                                <p className="text-xs text-cyan-400/70 truncate mt-0.5">
-                                  {project.dealOwner}
-                                </p>
-                              )}
-                            </div>
-                            <span className="text-xs font-mono text-orange-400 ml-2">
-                              {formatCurrency(project.amount)}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            {isSurveyOverdue(project, manualSchedules[project.id]) && (
-                              <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
-                                ⚠ Overdue
-                              </span>
-                            )}
-                            <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
-                              {project.surveyStatus}
-                            </span>
-                            {project.systemSize > 0 && (
-                              <span className="text-xs text-muted">
-                                {project.systemSize.toFixed(1)}kW
-                              </span>
-                            )}
-                            <span className="flex-1" />
-                            {/* TEMPORARILY DISABLED - portal invite buttons */}
-                          </div>
-                        </div>
-                      ))}
+                      {group.items.map(renderSurveyCard)}
                     </div>
                   ))
                 )}
