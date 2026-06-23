@@ -529,16 +529,16 @@ export async function syncFromPeApi(options?: {
           continue;
         }
 
-        // Conditional docs (e.g. Bill of Materials) are only owed when PE
-        // includes the slot. When the API omits the doc entirely, do NOT write a
-        // NOT_UPLOADED row — otherwise it reads as missing on every project PE
-        // isn't requesting it for. (Always-required docs still get a row.)
-        if (!docInfo && PE_CONDITIONAL_DOC_NAMES.has(canonicalName)) continue;
-
         let status: PeDocStatus;
         if (!docInfo) {
-          // Absent from the API response ⇒ not uploaded.
-          status = PeDocStatus.NOT_UPLOADED;
+          // Absent from the API response. Conditional docs (e.g. Bill of
+          // Materials) are only owed when PE includes the slot, so when PE omits
+          // them we record NOT_REQUIRED (counts complete, never missing) rather
+          // than NOT_UPLOADED — which would read as missing on every project PE
+          // isn't requesting it for. Always-required docs stay NOT_UPLOADED.
+          status = PE_CONDITIONAL_DOC_NAMES.has(canonicalName)
+            ? PeDocStatus.NOT_REQUIRED
+            : PeDocStatus.NOT_UPLOADED;
         } else {
           // Prefer the API's native status (added 2026-06-12); fall back to
           // action-item inference when it's absent.

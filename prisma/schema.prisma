@@ -4685,6 +4685,7 @@ enum PeDocStatus {
   ACTION_REQUIRED
   REJECTED
   APPROVED
+  NOT_REQUIRED // PE didn't include this doc's slot — for conditionally-required docs (e.g. Bill of Materials) the project isn't asked for. Counts as complete, never missing.
 }
 
 model PeDocumentReview {

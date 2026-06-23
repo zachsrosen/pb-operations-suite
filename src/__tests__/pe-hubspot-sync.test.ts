@@ -61,7 +61,7 @@ describe("PE HubSpot sync mapping constants", () => {
     }
   });
 
-  test("PE_STATUS_TO_HUBSPOT covers all 6 PeDocStatus values", () => {
+  test("PE_STATUS_TO_HUBSPOT covers all 7 PeDocStatus values", () => {
     const expected = [
       "NOT_UPLOADED",
       "UPLOADED",
@@ -69,11 +69,12 @@ describe("PE HubSpot sync mapping constants", () => {
       "ACTION_REQUIRED",
       "REJECTED",
       "APPROVED",
+      "NOT_REQUIRED",
     ];
     for (const status of expected) {
       expect(PE_STATUS_TO_HUBSPOT).toHaveProperty(status);
     }
-    expect(Object.keys(PE_STATUS_TO_HUBSPOT)).toHaveLength(6);
+    expect(Object.keys(PE_STATUS_TO_HUBSPOT)).toHaveLength(7);
   });
 
   test("HUBSPOT_TO_PE_STATUS is inverse of PE_STATUS_TO_HUBSPOT", () => {
