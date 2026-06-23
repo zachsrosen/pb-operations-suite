@@ -921,12 +921,11 @@ export function buildProjectFunnelData(
     { key: "dasApproved", field: "designApprovalDate", label: "DAs Approved", nextField: "designCompletionDate", nextLabel: "Design Done" },
     { key: "designsCompleted", field: "designCompletionDate", label: "Designs Done", nextField: "permitSubmitDate", nextLabel: "Permit Submitted" },
     { key: "permitsSubmitted", field: "permitSubmitDate", label: "Permits Submitted", nextField: "permitIssueDate", nextLabel: "Permit Issued" },
-    { key: "permitsIssued", field: "permitIssueDate", label: "Permits Issued", nextField: "interconnectionSubmitDate", nextLabel: "IC Submitted" },
-    { key: "icSubmitted", field: "interconnectionSubmitDate", label: "IC Submitted", nextField: "interconnectionApprovalDate", nextLabel: "IC Approved" },
-    { key: "icApproved", field: "interconnectionApprovalDate", label: "IC Approved", nextField: "constructionScheduleDate", nextLabel: "Construction Scheduled" },
+    { key: "permitsIssued", field: "permitIssueDate", label: "Permits Issued", nextField: "constructionScheduleDate", nextLabel: "Construction Scheduled" },
     { key: "constructionsScheduled", field: "constructionScheduleDate", label: "Construction Scheduled", nextField: "constructionCompleteDate", nextLabel: "Construction Done" },
     { key: "constructionsComplete", field: "constructionCompleteDate", label: "Construction Done", nextField: "inspectionPassDate", nextLabel: "Inspection Passed" },
     { key: "inspectionsPassed", field: "inspectionPassDate", label: "Inspections Passed", nextField: "ptoGrantedDate", nextLabel: "PTO Granted" },
+    { key: "ptosGranted", field: "ptoGrantedDate", label: "PTO Granted", nextField: "projectCompleteDate", nextLabel: "Closed Out" },
   ];
 
   const cohortMaps = COHORT_CHAIN.map(() => new Map<string, MilestoneCohortMonth>());

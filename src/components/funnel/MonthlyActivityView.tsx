@@ -28,6 +28,86 @@ const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
   "On Hold": "bg-yellow-500",
 };
 const stageColor = (name: string) => LIFECYCLE_STAGE_COLORS[name] || "bg-zinc-500";
+
+// Taller plot so small months stay legible, with a labeled $ Y-axis — matches
+// the PE Analytics cohort chart's readability.
+const BAR_AREA_H = 300;
+const BAR_LABEL_H = 40;
+
+interface BarSegment {
+  key: string;
+  className: string;
+  amount: number;
+  title?: string;
+}
+interface BarDatum {
+  month: string;
+  totalAmount: number;
+  total: number;
+  title: string;
+  /** Stacked top → bottom. */
+  segments: BarSegment[];
+}
+
+/** Shared revenue-scaled stacked bar chart with a labeled dollar Y-axis. */
+function ScaledBars({ data, maxAmount }: { data: BarDatum[]; maxAmount: number }) {
+  return (
+    <div className="flex gap-2">
+      {/* Dollar Y-axis, aligned to the gridlines. */}
+      <div className="relative w-11 shrink-0" style={{ marginTop: BAR_LABEL_H, height: BAR_AREA_H }}>
+        {[1, 0.75, 0.5, 0.25, 0].map((f) => (
+          <span
+            key={f}
+            className="absolute right-1 -translate-y-1/2 text-[9px] text-muted/70 tabular-nums"
+            style={{ top: `${(1 - f) * 100}%` }}
+          >
+            {f === 0 ? "$0" : formatCurrencyCompact(maxAmount * f)}
+          </span>
+        ))}
+      </div>
+      <div className="relative flex-1 min-w-0">
+        <div className="absolute inset-x-0 pointer-events-none" style={{ top: BAR_LABEL_H, height: BAR_AREA_H }}>
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <div key={f} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${f * 100}%` }} />
+          ))}
+        </div>
+        <div className="relative flex items-end justify-center gap-3 sm:gap-5">
+          {data.map((row) => {
+            const heightPct = (row.totalAmount / maxAmount) * 100;
+            const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
+            return (
+              <div
+                key={row.month}
+                className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
+                title={row.title}
+              >
+                <div className="flex flex-col items-center leading-tight justify-end pb-0.5" style={{ height: BAR_LABEL_H }}>
+                  <span className="text-sm text-foreground font-bold tabular-nums">
+                    {row.totalAmount > 0 ? formatCurrencyCompact(row.totalAmount) : ""}
+                  </span>
+                  {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
+                </div>
+                <div className="w-full flex justify-center border-b border-t-border" style={{ height: BAR_AREA_H }}>
+                  <div
+                    className="w-9 sm:w-11 mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 opacity-90 group-hover:opacity-100"
+                    style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 1.5 : 0)}%` }}
+                  >
+                    {row.segments.map((s) =>
+                      s.amount > 0 ? (
+                        <div key={s.key} className={`${s.className} w-full`} style={{ height: `${segPct(s.amount)}%` }} title={s.title} />
+                      ) : null
+                    )}
+                  </div>
+                </div>
+                <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 
@@ -586,105 +666,47 @@ function MilestoneCohortChart({
         chronological.length === 0 ? (
           <p className="text-xs text-muted/60 italic">No activity in this window.</p>
         ) : (
-        <div className="relative">
-          <div className="absolute inset-x-0 top-[46px] bottom-[18px] pointer-events-none">
-            {[0, 1, 2, 3].map((g) => (
-              <div key={g} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${g * 33.33}%` }} />
-            ))}
-          </div>
-          <div className="relative flex items-end justify-center gap-3 sm:gap-5">
-            {chronological.map((row) => {
-              const heightPct = (row.totalAmount / maxAmount) * 100;
-              const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
+          <ScaledBars
+            maxAmount={maxAmount}
+            data={chronological.map((row) => {
               const rate = row.total > 0 ? Math.round((row.advanced / row.total) * 100) : 0;
-              return (
-                <div
-                  key={row.month}
-                  className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
-                  title={
-                    `${monthLabel(row.month)}: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
-                    `Reached ${cohort?.nextLabel}: ${row.advanced} (${rate}%)\n` +
-                    `Waiting: ${row.waiting} · Cancelled: ${row.cancelled}`
-                  }
-                >
-                  <div className="flex flex-col items-center leading-tight h-[40px] justify-end pb-0.5">
-                    <span className="text-sm text-foreground font-bold tabular-nums">
-                      {row.totalAmount > 0 ? formatCurrencyCompact(row.totalAmount) : ""}
-                    </span>
-                    {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
-                  </div>
-                  <div className="w-full flex justify-center border-b border-t-border" style={{ height: 130 }}>
-                    <div
-                      className="w-9 sm:w-11 mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 opacity-90 group-hover:opacity-100"
-                      style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 3 : 0)}%` }}
-                    >
-                      {row.cancelledAmount > 0 && (
-                        <div className="bg-red-500/80 w-full" style={{ height: `${segPct(row.cancelledAmount)}%` }} />
-                      )}
-                      {row.waitingAmount > 0 && (
-                        <div className="bg-zinc-500 w-full" style={{ height: `${segPct(row.waitingAmount)}%` }} />
-                      )}
-                      {row.advancedAmount > 0 && (
-                        <div className="bg-emerald-500 w-full" style={{ height: `${segPct(row.advancedAmount)}%` }} />
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
-                </div>
-              );
+              return {
+                month: row.month,
+                totalAmount: row.totalAmount,
+                total: row.total,
+                title:
+                  `${monthLabel(row.month)}: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
+                  `Reached ${cohort?.nextLabel}: ${row.advanced} (${rate}%)\n` +
+                  `Waiting: ${row.waiting} · Cancelled: ${row.cancelled}`,
+                segments: [
+                  { key: "cancelled", className: "bg-red-500/80", amount: row.cancelledAmount, title: `Cancelled: ${row.cancelled}` },
+                  { key: "waiting", className: "bg-zinc-500", amount: row.waitingAmount, title: `${cohort?.label}, not yet ${cohort?.nextLabel}: ${row.waiting}` },
+                  { key: "advanced", className: "bg-emerald-500", amount: row.advancedAmount, title: `Reached ${cohort?.nextLabel}: ${row.advanced}` },
+                ],
+              };
             })}
-          </div>
-        </div>
+          />
         )
       ) : lifecycle.length === 0 ? (
         <p className="text-xs text-muted/60 italic">No deals sold in this window.</p>
       ) : (
-        <div className="relative">
-          <div className="absolute inset-x-0 top-[46px] bottom-[18px] pointer-events-none">
-            {[0, 1, 2, 3].map((g) => (
-              <div key={g} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${g * 33.33}%` }} />
-            ))}
-          </div>
-          <div className="relative flex items-end justify-center gap-3 sm:gap-5">
-            {lifecycle.map((row) => {
-              const heightPct = (row.totalAmount / lifecycleMax) * 100;
-              const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
-              return (
-                <div
-                  key={row.month}
-                  className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
-                  title={
-                    `${monthLabel(row.month)} sold: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
-                    row.stages.map((s) => `${s.stageName}: ${s.count}`).join("\n")
-                  }
-                >
-                  <div className="flex flex-col items-center leading-tight h-[40px] justify-end pb-0.5">
-                    <span className="text-sm text-foreground font-bold tabular-nums">
-                      {row.totalAmount > 0 ? formatCurrencyCompact(row.totalAmount) : ""}
-                    </span>
-                    {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
-                  </div>
-                  <div className="w-full flex justify-center border-b border-t-border" style={{ height: 130 }}>
-                    <div
-                      className="w-9 sm:w-11 mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 opacity-90 group-hover:opacity-100"
-                      style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 3 : 0)}%` }}
-                    >
-                      {row.stages.map((s) => (
-                        <div
-                          key={s.stageId}
-                          className={`${stageColor(s.stageName)} w-full`}
-                          style={{ height: `${segPct(s.amount)}%` }}
-                          title={`${s.stageName}: ${s.count} · ${formatCurrencyCompact(s.amount)}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <ScaledBars
+          maxAmount={lifecycleMax}
+          data={lifecycle.map((row) => ({
+            month: row.month,
+            totalAmount: row.totalAmount,
+            total: row.total,
+            title:
+              `${monthLabel(row.month)} sold: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
+              row.stages.map((s) => `${s.stageName}: ${s.count}`).join("\n"),
+            segments: row.stages.map((s) => ({
+              key: s.stageId,
+              className: stageColor(s.stageName),
+              amount: s.amount,
+              title: `${s.stageName}: ${s.count} · ${formatCurrencyCompact(s.amount)}`,
+            })),
+          }))}
+        />
       )}
     </div>
   );
