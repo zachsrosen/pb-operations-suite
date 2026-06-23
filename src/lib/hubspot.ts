@@ -3705,18 +3705,31 @@ export function filterProjectsForContext(
   context: "scheduling" | "equipment" | "pe" | "executive" | "at-risk" | "all"
 ): Project[] {
   switch (context) {
-    case "scheduling":
+    case "scheduling": {
       // Projects that need to be scheduled or are in construction/inspection stages
       // Also include projects that already completed construction (moved to PTO/Close Out)
-      // so they still appear on the calendar at their scheduled date
+      // so they still appear on the calendar at their scheduled date.
+      // Survey revisits and new-construction deals may sit at stages outside the
+      // schedulable set, so surface them explicitly so the survey scheduler can
+      // (re)book them — otherwise they're invisible there.
+      const needsSurveyRevisit = (p: Project) =>
+        p.isActive && !!p.siteSurveyStatus && p.siteSurveyStatus.toLowerCase().includes("revisit");
+      const isNewConstructionNeedingSurvey = (p: Project) =>
+        p.isActive &&
+        p.tags.some((t) => t.toLowerCase().includes("new construction")) &&
+        !p.siteSurveyCompletionDate &&
+        !(p.siteSurveyStatus || "").toLowerCase().includes("complete");
       return projects.filter(
         (p) =>
           p.isSchedulable ||
           p.stage === "Construction" ||
           p.stage === "Inspection" ||
           (p.constructionScheduleDate && p.constructionCompleteDate) ||
-          (p.inspectionScheduleDate && p.inspectionPassDate)
+          (p.inspectionScheduleDate && p.inspectionPassDate) ||
+          needsSurveyRevisit(p) ||
+          isNewConstructionNeedingSurvey(p)
       );
+    }
 
     case "equipment":
       // All active projects with any equipment data (solar, battery, or EV)

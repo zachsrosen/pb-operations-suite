@@ -33,6 +33,7 @@ interface RawProject {
   closeDate?: string;
   dealOwner?: string;
   siteSurveyor?: string;
+  tags?: string[];
   equipment?: {
     systemSizeKwdc?: number;
     modules?: { count?: number };
@@ -80,6 +81,8 @@ interface SurveyProject {
   scheduledBy?: string;
   scheduledByEmail?: string;
   isPreSale?: boolean; // true for Sales Pipeline deals (pre-sale surveys)
+  // Which scheduler group this project belongs to (ready / revisit / new construction)
+  surveyGroup?: SurveyGroup;
 }
 
 interface PendingSchedule {
@@ -259,14 +262,47 @@ function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): b
   const schedDate = manualScheduleDate || project.scheduleDate;
   if (!schedDate) return false;
   if (isReadyToScheduleStatus(project.surveyStatus)) return false;
-  if (project.completionDate) return false;
-  if (project.surveyStatus.toLowerCase().includes("complete")) return false;
+  if (isSurveyFinished(project)) return false;
   return isPastDate(schedDate);
 }
 
 function isReadyToScheduleStatus(status: string | null | undefined): boolean {
   const s = String(status || "").toLowerCase();
   return s.includes("ready to schedule") || s === "ready";
+}
+
+// A site_survey_status of "Needs Revisit" means a completed survey must be
+// redone. This signal overrides completion everywhere below.
+function isRevisitStatus(status: string | null | undefined): boolean {
+  return String(status || "").toLowerCase().includes("revisit");
+}
+
+// Deals carrying a "New Construction" tag need a survey even outside the
+// Site Survey stage (until one is completed).
+function isNewConstructionTag(tags: string[] | undefined): boolean {
+  return (tags || []).some((t) => String(t).toLowerCase().includes("new construction"));
+}
+
+// A survey is "finished" (needs no further scheduling) only when it has been
+// completed AND is not flagged for a revisit. Revisits intentionally override
+// completion: the first visit is done, but the field needs another one.
+function isSurveyFinished(
+  project: Pick<SurveyProject, "surveyStatus" | "completionDate">
+): boolean {
+  if (isRevisitStatus(project.surveyStatus)) return false;
+  return !!project.completionDate || project.surveyStatus.toLowerCase().includes("complete");
+}
+
+// Classify a schedulable survey into one of the three scheduler groups.
+// Precedence: Needs Revisit > New Construction > Ready to Schedule.
+type SurveyGroup = "ready" | "revisit" | "new-construction";
+function classifySurveyGroup(
+  surveyStatus: string | null | undefined,
+  tags: string[] | undefined
+): SurveyGroup {
+  if (isRevisitStatus(surveyStatus)) return "revisit";
+  if (isNewConstructionTag(tags)) return "new-construction";
+  return "ready";
 }
 
 function isTentativeProject(project: Pick<SurveyProject, "surveyStatus" | "tentativeRecordId" | "zuperHasSchedule"> | null | undefined): boolean {
@@ -296,7 +332,9 @@ function hasActiveSchedule(
   manualScheduleDate?: string,
   tentativeScheduleDate?: string
 ): boolean {
-  if (project.completionDate) return false;
+  // A revisit carries the first survey's completionDate but still needs work,
+  // so completion only short-circuits when it isn't a revisit.
+  if (project.completionDate && !isRevisitStatus(project.surveyStatus)) return false;
   const schedDate = getEffectiveScheduleDate(project, manualScheduleDate, tentativeScheduleDate);
   if (project.tentativeRecordId) return !!schedDate;
   if (project.zuperHasSchedule && schedDate) return true;
@@ -312,11 +350,22 @@ function hasActiveSchedule(
 /* ------------------------------------------------------------------ */
 
 function transformProject(p: RawProject): SurveyProject | null {
-  // Only include projects in Site Survey stage
-  if (p.stage !== "Site Survey") return null;
+  const surveyStatus = p.siteSurveyStatus || "Ready to Schedule";
+  const completionDate = p.siteSurveyCompletionDate || null;
+  const finished = isSurveyFinished({ surveyStatus, completionDate });
+
+  // Surface a project on the survey scheduler when it is:
+  //   1. in the Site Survey stage (the original behavior), OR
+  //   2. flagged "Needs Revisit" (a completed survey that must be redone), OR
+  //   3. tagged "New Construction" and has no completed survey yet.
+  const inSurveyStage = p.stage === "Site Survey";
+  const needsRevisit = isRevisitStatus(surveyStatus);
+  const newConstruction = isNewConstructionTag(p.tags) && !finished;
+  if (!inSurveyStage && !needsRevisit && !newConstruction) return null;
 
   return {
     id: String(p.id),
+    surveyGroup: classifySurveyGroup(surveyStatus, p.tags),
     name: p.name || `Project ${p.id}`,
     address: [p.address, p.city, p.state].filter(Boolean).join(", ") || "Address TBD",
     city: p.city || "",
@@ -328,8 +377,8 @@ function transformProject(p: RawProject): SurveyProject | null {
     batteries: p.equipment?.battery?.count || 0,
     evCount: p.equipment?.evCount || 0,
     scheduleDate: p.siteSurveyScheduleDate || null,
-    surveyStatus: p.siteSurveyStatus || "Ready to Schedule",
-    completionDate: p.siteSurveyCompletionDate || null,
+    surveyStatus,
+    completionDate,
     closeDate: p.closeDate || null,
     hubspotUrl: p.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
     dealOwner: p.dealOwner || "",
@@ -533,7 +582,7 @@ export default function SiteSurveySchedulerPage() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,siteSurveyScheduleDate,siteSurveyStatus,siteSurveyCompletionDate,closeDate,equipment,projectNumber,dealOwner,siteSurveyor");
+      const response = await fetch("/api/projects?context=scheduling&fields=id,name,address,city,state,pbLocation,amount,projectType,stage,url,siteSurveyScheduleDate,siteSurveyStatus,siteSurveyCompletionDate,closeDate,equipment,projectNumber,dealOwner,siteSurveyor,tags");
       if (!response.ok) throw new Error("Failed to fetch projects");
       const data = await response.json();
       const transformed = data.projects
@@ -903,20 +952,33 @@ export default function SiteSurveySchedulerPage() {
   const unscheduledProjects = useMemo(() => {
     return filteredProjects.filter(p =>
       !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) &&
-      !p.completionDate &&
-      !p.surveyStatus.toLowerCase().includes("complete")
+      !isSurveyFinished(p)
     );
   }, [filteredProjects, manualSchedules, tentativeScheduleDates]);
+
+  // Split the unscheduled list into the three scheduler groups, in display order.
+  const surveyGroups = useMemo(() => {
+    const groups: { key: SurveyGroup; label: string; items: SurveyProject[] }[] = [
+      { key: "ready", label: "Ready to Schedule", items: [] },
+      { key: "revisit", label: "Needs Revisit", items: [] },
+      { key: "new-construction", label: "New Construction", items: [] },
+    ];
+    for (const p of unscheduledProjects) {
+      const group = groups.find(g => g.key === (p.surveyGroup || "ready")) || groups[0];
+      group.items.push(p);
+    }
+    return groups.filter(g => g.items.length > 0);
+  }, [unscheduledProjects]);
 
   const stats = useMemo(() => {
     const total = projects.length;
     const needsScheduling = projects.filter(p =>
-      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !p.completionDate
+      !hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !isSurveyFinished(p)
     ).length;
     const scheduled = projects.filter(p =>
-      hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !p.completionDate
+      hasActiveSchedule(p, manualSchedules[p.id], tentativeScheduleDates[p.id]) && !isSurveyFinished(p)
     ).length;
-    const completed = projects.filter(p => p.completionDate).length;
+    const completed = projects.filter(p => p.completionDate && !isRevisitStatus(p.surveyStatus)).length;
     const overdue = projects.filter(p => isSurveyOverdue(p, manualSchedules[p.id])).length;
     const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
 
@@ -2157,7 +2219,7 @@ export default function SiteSurveySchedulerPage() {
                 {surveyMode === "ops" ? (
                   <>
                     <h2 className="text-sm font-semibold text-cyan-400">
-                      Ready to Schedule ({unscheduledProjects.length})
+                      Needs Scheduling ({unscheduledProjects.length})
                     </h2>
                     <p className="text-xs text-muted mt-1 hidden sm:block">
                       Drag to calendar or click to select
@@ -2250,54 +2312,61 @@ export default function SiteSurveySchedulerPage() {
                     No projects need scheduling
                   </div>
                 ) : (
-                  unscheduledProjects.map((project) => (
-                    <div
-                      key={project.id}
-                      draggable
-                      onDragStart={() => handleDragStart(project.id)}
-                      onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
-                      className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
-                        selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {getCustomerName(project.name)}
-                          </p>
-                          <p className="text-xs text-muted truncate">
-                            {getProjectId(project.name)}
-                          </p>
-                          <p className="text-xs text-muted truncate mt-0.5">
-                            {project.location}
-                          </p>
-                          {project.dealOwner && (
-                            <p className="text-xs text-cyan-400/70 truncate mt-0.5">
-                              {project.dealOwner}
-                            </p>
-                          )}
+                  surveyGroups.map((group) => (
+                    <div key={group.key}>
+                      <div className="px-3 py-1.5 bg-surface-2 border-b border-t-border text-xs font-semibold text-muted uppercase tracking-wide">
+                        {group.label} ({group.items.length})
+                      </div>
+                      {group.items.map((project) => (
+                        <div
+                          key={project.id}
+                          draggable
+                          onDragStart={() => handleDragStart(project.id)}
+                          onClick={() => setSelectedProject(selectedProject?.id === project.id ? null : project)}
+                          className={`p-3 border-b border-t-border cursor-pointer hover:bg-skeleton transition-colors ${
+                            selectedProject?.id === project.id ? "bg-cyan-900/20 border-l-2 border-l-cyan-500" : ""
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {getCustomerName(project.name)}
+                              </p>
+                              <p className="text-xs text-muted truncate">
+                                {getProjectId(project.name)}
+                              </p>
+                              <p className="text-xs text-muted truncate mt-0.5">
+                                {project.location}
+                              </p>
+                              {project.dealOwner && (
+                                <p className="text-xs text-cyan-400/70 truncate mt-0.5">
+                                  {project.dealOwner}
+                                </p>
+                              )}
+                            </div>
+                            <span className="text-xs font-mono text-orange-400 ml-2">
+                              {formatCurrency(project.amount)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            {isSurveyOverdue(project, manualSchedules[project.id]) && (
+                              <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                                ⚠ Overdue
+                              </span>
+                            )}
+                            <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
+                              {project.surveyStatus}
+                            </span>
+                            {project.systemSize > 0 && (
+                              <span className="text-xs text-muted">
+                                {project.systemSize.toFixed(1)}kW
+                              </span>
+                            )}
+                            <span className="flex-1" />
+                            {/* TEMPORARILY DISABLED - portal invite buttons */}
+                          </div>
                         </div>
-                        <span className="text-xs font-mono text-orange-400 ml-2">
-                          {formatCurrency(project.amount)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        {isSurveyOverdue(project, manualSchedules[project.id]) && (
-                          <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
-                            ⚠ Overdue
-                          </span>
-                        )}
-                        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
-                          {project.surveyStatus}
-                        </span>
-                        {project.systemSize > 0 && (
-                          <span className="text-xs text-muted">
-                            {project.systemSize.toFixed(1)}kW
-                          </span>
-                        )}
-                        <span className="flex-1" />
-                        {/* TEMPORARILY DISABLED - portal invite buttons */}
-                      </div>
+                      ))}
                     </div>
                   ))
                 )}
