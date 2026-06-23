@@ -80,6 +80,7 @@ export const PE_STATUS_TO_HUBSPOT: Record<PeDocStatus, string> = {
   [PeDocStatus.ACTION_REQUIRED]: "action_required",
   [PeDocStatus.REJECTED]: "rejected",
   [PeDocStatus.APPROVED]: "approved",
+  [PeDocStatus.NOT_REQUIRED]: "not_required",
 };
 
 export const HUBSPOT_TO_PE_STATUS: Record<string, PeDocStatus> = {
@@ -89,6 +90,7 @@ export const HUBSPOT_TO_PE_STATUS: Record<string, PeDocStatus> = {
   action_required: PeDocStatus.ACTION_REQUIRED,
   rejected: PeDocStatus.REJECTED,
   approved: PeDocStatus.APPROVED,
+  not_required: PeDocStatus.NOT_REQUIRED,
 };
 
 // ---------------------------------------------------------------------------

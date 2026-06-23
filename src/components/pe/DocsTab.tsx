@@ -57,7 +57,8 @@ type PeDocStatusValue =
   | "UNDER_REVIEW"
   | "ACTION_REQUIRED"
   | "REJECTED"
-  | "APPROVED";
+  | "APPROVED"
+  | "NOT_REQUIRED";
 
 // ---------------------------------------------------------------------------
 // PE document requirements (same as pe-report)
@@ -202,6 +203,9 @@ const DOC_STATUS_COLORS: Record<PeDocStatusValue, string> = {
   ACTION_REQUIRED: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   REJECTED: "bg-red-500/20 text-red-400 border-red-500/30",
   APPROVED: "bg-green-500/20 text-green-400 border-green-500/30",
+  // Not requested by PE on this project (e.g. BOM bundled in Photos) — neutral,
+  // counts as complete.
+  NOT_REQUIRED: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
 const DOC_STATUS_LABELS: Record<PeDocStatusValue, string> = {
@@ -211,6 +215,7 @@ const DOC_STATUS_LABELS: Record<PeDocStatusValue, string> = {
   ACTION_REQUIRED: "Action Required",
   REJECTED: "Rejected",
   APPROVED: "Approved",
+  NOT_REQUIRED: "Not Required",
 };
 
 // Synthetic doc name for CSV-imported overall status
@@ -229,6 +234,7 @@ interface DealDocSummary {
   underReview: number;
   notUploaded: number;
   waived: number; // not-uploaded but moot — PE already approved/paid that milestone
+  notRequired: number; // PE didn't include the slot (conditional doc) — counts complete
   noData: number;
   category: ActionCategory;
   csvOnly: boolean;
@@ -261,7 +267,7 @@ function computeDealDocSummary(
   const sections = milestoneDocSections(milestone);
   const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section) && dealOwesDoc(d, deal.dealId, docMap));
 
-  let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, waived = 0, noData = 0;
+  let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, waived = 0, notRequired = 0, noData = 0;
   for (const doc of docs) {
     const review = docMap.get(`${deal.dealId}:${doc.name}`);
     if (!review) { noData++; continue; }
@@ -272,6 +278,7 @@ function computeDealDocSummary(
       case "UNDER_REVIEW": underReview++; break;
       case "NOT_UPLOADED": if (isDocWaived(doc, deal)) waived++; else notUploaded++; break;
       case "UPLOADED": underReview++; break;
+      case "NOT_REQUIRED": notRequired++; break; // PE didn't ask for it here — counts complete
     }
   }
 
@@ -291,7 +298,7 @@ function computeDealDocSummary(
     category = "action-required";
   } else if (notUploaded > 0) {
     category = "needs-upload";
-  } else if (approved + waived === docs.length) {
+  } else if (approved + waived + notRequired === docs.length) {
     category = "approved";
   } else {
     category = "waiting-on-pe";
@@ -300,7 +307,7 @@ function computeDealDocSummary(
   return {
     deal, milestone, sections,
     totalDocs: docs.length,
-    approved, rejected, actionRequired, underReview, notUploaded, waived, noData,
+    approved, rejected, actionRequired, underReview, notUploaded, waived, notRequired, noData,
     category,
     csvOnly,
     csvStatus: csvRow?.status ?? null,
@@ -1314,7 +1321,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           const review = docMap.get(`${s.deal.dealId}:${doc.name}`);
           const status = review?.status;
           const waived = status === "NOT_UPLOADED" && isDocWaived(doc, s.deal);
-          if (status && status !== "APPROVED" && status !== "UNDER_REVIEW" && status !== "UPLOADED" && !waived) {
+          if (status && status !== "APPROVED" && status !== "UNDER_REVIEW" && status !== "UPLOADED" && status !== "NOT_REQUIRED" && !waived) {
             teamActionCount++;
           }
           docsWithReviews.push({ doc, review });
