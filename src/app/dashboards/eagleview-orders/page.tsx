@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
 import DashboardShell from "@/components/DashboardShell";
 import { prisma } from "@/lib/db";
-import { batchReadDealsWithRetry } from "@/lib/hubspot";
+import { batchReadDealsWithRetry, getDealPropertyDefinition } from "@/lib/hubspot";
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import EagleViewOrdersClient, { type OrderListRow } from "./EagleViewOrdersClient";
 
@@ -17,6 +17,7 @@ const DEAL_NAME_PROPS = [
   "postal_code",
   "zip",
   "pb_location",
+  "design", // "Design Lead" — enumeration of HubSpot user IDs; resolved to a name below
 ];
 
 export default async function EagleViewOrdersPage() {
@@ -33,9 +34,26 @@ export default async function EagleViewOrdersPage() {
   const dealIds = Array.from(
     new Set(orders.map((o) => o.dealId).filter((d) => d && !d.startsWith("ticket:"))),
   );
+  // The `design` ("Design Lead") property stores a HubSpot user ID; resolve it to
+  // a display name via the property's option labels (id → name). Best-effort.
+  const designLeadById = new Map<string, string>();
+  try {
+    const def = await getDealPropertyDefinition("design");
+    for (const opt of def?.options ?? []) {
+      if (opt?.value) designLeadById.set(String(opt.value), opt.label ?? String(opt.value));
+    }
+  } catch (err) {
+    console.error("[eagleview-orders] design-lead options fetch failed", err);
+  }
+
   const byDeal = new Map<
     string,
-    { dealName: string | null; address: string | null; pbLocation: string | null }
+    {
+      dealName: string | null;
+      address: string | null;
+      pbLocation: string | null;
+      designLead: string | null;
+    }
   >();
   try {
     for (let i = 0; i < dealIds.length; i += 100) {
@@ -47,10 +65,12 @@ export default async function EagleViewOrdersPage() {
           [p.address_line_1 ?? p.address, p.city, p.state, p.postal_code ?? p.zip]
             .filter(Boolean)
             .join(", ") || null;
+        const designId = p.design ? String(p.design) : null;
         byDeal.set(d.id, {
           dealName: p.dealname ?? null,
           address: addr,
           pbLocation: p.pb_location ?? null,
+          designLead: designId ? designLeadById.get(designId) ?? null : null,
         });
       }
     }
@@ -75,6 +95,7 @@ export default async function EagleViewOrdersPage() {
       dealName: d?.dealName ?? null,
       address: d?.address ?? null,
       pbLocation: d?.pbLocation ?? null,
+      designLead: d?.designLead ?? null,
       hubspotUrl: o.dealId && !o.dealId.startsWith("ticket:") ? getHubSpotDealUrl(o.dealId) : null,
     };
   });
