@@ -257,9 +257,11 @@ function slotMatchesSelectedLocations(slotLocation: string | undefined, selected
   });
 }
 
-// Check if a survey is overdue: scheduled in the past but not completed
+// Check if a survey is overdue: scheduled in the past but not completed.
+// Uses getEffectiveScheduleDate so a revisit's stale original booking date
+// doesn't get flagged as a missed appointment before it's re-booked.
 function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): boolean {
-  const schedDate = manualScheduleDate || project.scheduleDate;
+  const schedDate = getEffectiveScheduleDate(project, manualScheduleDate);
   if (!schedDate) return false;
   if (isReadyToScheduleStatus(project.surveyStatus)) return false;
   if (isSurveyFinished(project)) return false;
@@ -327,6 +329,13 @@ function getEffectiveScheduleDate(
   manualScheduleDate?: string,
   tentativeScheduleDate?: string
 ): string | null {
+  // For a revisit, the persisted site_survey_schedule_date is the ORIGINAL
+  // (now-stale) survey booking — it must NOT count as the revisit's schedule.
+  // Only a fresh manual/tentative re-booking does; otherwise the revisit would
+  // render as "scheduled" on the calendar instead of in the Needs Revisit group.
+  if (isRevisitStatus(project.surveyStatus)) {
+    return manualScheduleDate || tentativeScheduleDate || null;
+  }
   return manualScheduleDate || tentativeScheduleDate || project.scheduleDate || null;
 }
 
