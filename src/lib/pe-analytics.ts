@@ -349,6 +349,17 @@ export const PE_M1_DOC_NAMES = [
   "Conditional Progress Lien Waiver",
 ] as const;
 
+/**
+ * Docs PE only requires on *some* projects. Unlike the always-required docs, a
+ * conditional doc is "owed" by a deal only when PE actually includes its slot —
+ * i.e. when a synced doc row exists for it. PE adds the Bill of Materials slot
+ * only to the projects it wants one for (it's absent from the documents object
+ * on the rest), so we must not show it as missing everywhere. The sync skips
+ * writing a NOT_UPLOADED row for these when the API omits the slot, and the
+ * tracker/analytics only count them as owed when a row exists.
+ */
+export const PE_CONDITIONAL_DOC_NAMES = new Set<string>(["Bill of Materials"]);
+
 export interface DocStatusStat {
   docs: number;
   deals: number;

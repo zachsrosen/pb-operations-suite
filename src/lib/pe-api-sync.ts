@@ -38,6 +38,7 @@ import {
   type PeProjectListItem,
   type PeProjectDetail,
 } from "@/lib/pe-api";
+import { PE_CONDITIONAL_DOC_NAMES } from "@/lib/pe-analytics";
 
 /** SystemConfig key holding the ISO timestamp until which PE is daily-quota blocked. */
 const QUOTA_BLOCK_KEY = "pe_api_quota_blocked_until";
@@ -527,6 +528,12 @@ export async function syncFromPeApi(options?: {
           skippedProtected++;
           continue;
         }
+
+        // Conditional docs (e.g. Bill of Materials) are only owed when PE
+        // includes the slot. When the API omits the doc entirely, do NOT write a
+        // NOT_UPLOADED row — otherwise it reads as missing on every project PE
+        // isn't requesting it for. (Always-required docs still get a row.)
+        if (!docInfo && PE_CONDITIONAL_DOC_NAMES.has(canonicalName)) continue;
 
         let status: PeDocStatus;
         if (!docInfo) {

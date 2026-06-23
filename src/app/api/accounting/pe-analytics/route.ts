@@ -29,6 +29,7 @@ import {
   buildDocTypeByUploader,
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
+  PE_CONDITIONAL_DOC_NAMES,
   UNKNOWN_UPLOADER,
   type UploaderDoc,
   type UploaderOutcomeDocs,
@@ -738,7 +739,10 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .filter((r) => r.status || r.readyOn)
     .map((r) => {
       const docMap = docStatusByDeal.get(r.deal.dealId);
-      const names = r.milestone === "M1" ? [...PE_M1_DOC_NAMES] : M2_DOC_NAMES;
+      // Conditional docs (BOM) are owed only when PE includes the slot (a row
+      // exists) — don't default them to NOT_UPLOADED on deals PE didn't ask.
+      const names = (r.milestone === "M1" ? [...PE_M1_DOC_NAMES] : M2_DOC_NAMES)
+        .filter((n) => !PE_CONDITIONAL_DOC_NAMES.has(n) || !!docMap?.get(n));
       const missingDocs = docMap
         ? names.filter((n) => (docMap.get(n) ?? "NOT_UPLOADED") === "NOT_UPLOADED")
         : [];
