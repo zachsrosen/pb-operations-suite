@@ -3725,13 +3725,15 @@ export function filterProjectsForContext(
       // Survey revisits and new-construction deals may sit at stages outside the
       // schedulable set, so surface them explicitly so the survey scheduler can
       // (re)book them — otherwise they're invisible there.
-      // Only surface revisits while the survey is still relevant — a 'Needs
-      // Revisit' flag on a deal already POST-construction (e.g. Inspection) is stale.
-      const needsSurveyRevisit = (p: Project) =>
-        p.isActive &&
-        SURVEY_ELIGIBLE_STAGES.includes(p.stage) &&
-        !!p.siteSurveyStatus &&
-        p.siteSurveyStatus.toLowerCase().includes("revisit");
+      // Surface surveys that still need scheduling at a survey-eligible stage —
+      // either "Needs Revisit" or "Ready to Schedule" (a revisit's status flips to
+      // Ready to Schedule once its new job is created). A flag on a deal already
+      // POST-construction (e.g. Inspection) is stale and excluded by the stage gate.
+      const needsSurveyScheduling = (p: Project) => {
+        if (!p.isActive || !SURVEY_ELIGIBLE_STAGES.includes(p.stage)) return false;
+        const s = (p.siteSurveyStatus || "").toLowerCase();
+        return s.includes("revisit") || s.includes("ready to schedule");
+      };
       // The HubSpot tag labelled "New Construction" stores the internal value
       // "Waiting on Site Construction"; the API returns the value, so match that.
       // Only surface these while the survey is still relevant (excludes On Hold and
@@ -3749,7 +3751,7 @@ export function filterProjectsForContext(
           p.stage === "Inspection" ||
           (p.constructionScheduleDate && p.constructionCompleteDate) ||
           (p.inspectionScheduleDate && p.inspectionPassDate) ||
-          needsSurveyRevisit(p) ||
+          needsSurveyScheduling(p) ||
           isNewConstructionNeedingSurvey(p)
       );
     }

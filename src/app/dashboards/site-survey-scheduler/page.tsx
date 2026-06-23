@@ -312,13 +312,33 @@ function isPreConstructionRevisit(stage: string, surveyStatus: string | null | u
   return isRevisitStatus(surveyStatus) && SURVEY_ELIGIBLE_STAGES.includes(stage);
 }
 
+// A re-survey: a prior site survey already completed (completion date set) but the
+// status is back to "Ready to Schedule", i.e. a SECOND survey job is pending. This
+// is the deal-level equivalent of "there's a second Site Survey job" — HubSpot flips
+// "Needs Revisit" → "Ready to Schedule" once the new job is created, so we detect it
+// via the leftover completion date and still group it under Needs Revisit.
+function isResurvey(
+  stage: string,
+  surveyStatus: string | null | undefined,
+  completionDate: string | null
+): boolean {
+  return (
+    isReadyToScheduleStatus(surveyStatus) &&
+    !!completionDate &&
+    SURVEY_ELIGIBLE_STAGES.includes(stage)
+  );
+}
+
 // A survey is "finished" (needs no further scheduling) only when it has been
-// completed AND is not flagged for a revisit. Revisits intentionally override
-// completion: the first visit is done, but the field needs another one.
+// completed AND the status doesn't say a new one is pending. Both "Needs Revisit"
+// and "Ready to Schedule" mean a survey still needs scheduling, so they override
+// a stale completion date left over from a prior survey (e.g. a revisit whose
+// status has since flipped to "Ready to Schedule").
 function isSurveyFinished(
   project: Pick<SurveyProject, "surveyStatus" | "completionDate">
 ): boolean {
   if (isRevisitStatus(project.surveyStatus)) return false;
+  if (isReadyToScheduleStatus(project.surveyStatus)) return false;
   return !!project.completionDate || project.surveyStatus.toLowerCase().includes("complete");
 }
 
@@ -328,9 +348,10 @@ type SurveyGroup = "ready" | "revisit" | "new-construction";
 function classifySurveyGroup(
   stage: string,
   surveyStatus: string | null | undefined,
+  completionDate: string | null,
   tags: string[] | undefined
 ): SurveyGroup {
-  if (isPreConstructionRevisit(stage, surveyStatus)) return "revisit";
+  if (isPreConstructionRevisit(stage, surveyStatus) || isResurvey(stage, surveyStatus, completionDate)) return "revisit";
   if (isNewConstructionSurvey(stage, tags)) return "new-construction";
   return "ready";
 }
@@ -393,16 +414,20 @@ function transformProject(p: RawProject): SurveyProject | null {
 
   // Surface a project on the survey scheduler when it is:
   //   1. in the Site Survey stage (the original behavior), OR
-  //   2. flagged "Needs Revisit" (a completed survey that must be redone), OR
-  //   3. tagged "New Construction", still pre-construction, and no completed survey yet.
+  //   2. at a survey-eligible stage with a survey that still needs scheduling —
+  //      "Needs Revisit" OR "Ready to Schedule" (e.g. a revisit whose status has
+  //      flipped to Ready to Schedule once its new job was created), OR
+  //   3. tagged "New Construction", still survey-eligible, and no completed survey yet.
   const inSurveyStage = p.stage === "Site Survey";
-  const needsRevisit = isPreConstructionRevisit(p.stage, surveyStatus);
+  const eligibleStage = SURVEY_ELIGIBLE_STAGES.includes(p.stage);
+  const needsScheduling =
+    eligibleStage && (isRevisitStatus(surveyStatus) || isReadyToScheduleStatus(surveyStatus));
   const newConstruction = isNewConstructionSurvey(p.stage, p.tags) && !finished;
-  if (!inSurveyStage && !needsRevisit && !newConstruction) return null;
+  if (!inSurveyStage && !needsScheduling && !newConstruction) return null;
 
   return {
     id: String(p.id),
-    surveyGroup: classifySurveyGroup(p.stage, surveyStatus, p.tags),
+    surveyGroup: classifySurveyGroup(p.stage, surveyStatus, completionDate, p.tags),
     name: p.name || `Project ${p.id}`,
     address: [p.address, p.city, p.state].filter(Boolean).join(", ") || "Address TBD",
     city: p.city || "",
