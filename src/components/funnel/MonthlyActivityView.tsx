@@ -119,18 +119,21 @@ function ScaledBars({
                 className={`flex flex-col items-center gap-1.5 flex-1 min-w-0 group rounded-md px-0.5 cursor-pointer transition-colors ${selHere && !selected?.seg ? "bg-surface-2" : "hover:bg-surface-2/40"}`}
                 title={`${row.title}\n(click a colored section to drill into just that group)`}
               >
-                <div className="flex flex-col items-center leading-tight justify-end pb-0.5 w-full" style={{ height: BAR_LABEL_H }}>
-                  {row.totalAmount > 0 && (
-                    <span className="text-[10px] text-foreground font-bold tabular-nums leading-none truncate max-w-full">
-                      {formatCurrencyCompact(row.totalAmount)}
-                    </span>
-                  )}
-                  {row.total > 0 && <span className="text-[9px] text-muted tabular-nums leading-tight">{row.total}</span>}
-                </div>
-                <div className="w-full flex justify-center border-b border-t-border" style={{ height: BAR_AREA_H }}>
+                <div
+                  className="w-full flex flex-col items-center justify-end border-b border-t-border"
+                  style={{ height: BAR_AREA_H + BAR_LABEL_H }}
+                >
+                  <div className="flex flex-col items-center leading-tight pb-0.5 w-full">
+                    {row.totalAmount > 0 && (
+                      <span className="text-[10px] text-foreground font-bold tabular-nums leading-none truncate max-w-full">
+                        {formatCurrencyCompact(row.totalAmount)}
+                      </span>
+                    )}
+                    {row.total > 0 && <span className="text-[9px] text-muted tabular-nums leading-tight">{row.total}</span>}
+                  </div>
                   <div
-                    className={`w-full max-w-[34px] mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 ${selHere ? "opacity-100 ring-1 ring-emerald-400/60" : "opacity-90 group-hover:opacity-100"}`}
-                    style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 1.5 : 0)}%` }}
+                    className={`w-full max-w-[34px] flex flex-col rounded-t-md overflow-hidden transition-all duration-300 ${selHere ? "opacity-100 ring-1 ring-emerald-400/60" : "opacity-90 group-hover:opacity-100"}`}
+                    style={{ height: `${Math.max((heightPct / 100) * BAR_AREA_H, row.totalAmount > 0 ? 4 : 0)}px` }}
                   >
                     {row.segments.map((s) =>
                       s.amount > 0 ? (
