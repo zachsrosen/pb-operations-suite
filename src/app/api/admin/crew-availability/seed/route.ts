@@ -41,7 +41,7 @@ const SEED_SCHEDULES = [
     jobTypes: ["survey"],
   },
   {
-    name: "Rolando",
+    name: "Lenny Uematsu",
     location: "Colorado Springs",
     reportLocation: "Colorado Springs",
     schedule: [
