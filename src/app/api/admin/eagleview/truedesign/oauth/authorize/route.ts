@@ -11,6 +11,7 @@
  */
 import { NextResponse } from "next/server";
 import { buildAuthorizeUrl, generateCodeVerifier, codeChallengeS256 } from "@/lib/eagleview-truedesign-core";
+import { resolveTdClientId } from "@/lib/eagleview-truedesign";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,8 @@ export async function GET() {
 
   let authUrl: string;
   try {
-    authUrl = buildAuthorizeUrl(redirectUri, challenge, state);
+    const clientId = await resolveTdClientId();
+    authUrl = buildAuthorizeUrl(redirectUri, challenge, state, clientId);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "authorize_url_failed" },

@@ -43,10 +43,9 @@ describe("TrueDesign export endpoint", () => {
 });
 
 describe("TrueDesign authorize URL", () => {
-  it("includes PKCE + offline_access params", () => {
-    process.env.EAGLEVIEW_TD_CLIENT_ID = "test-client";
+  it("includes PKCE + offline_access params with the passed client id", () => {
     const u = new URL(
-      buildAuthorizeUrl("https://pbtechops.com/cb", "challenge123", "state123"),
+      buildAuthorizeUrl("https://pbtechops.com/cb", "challenge123", "state123", "test-client"),
     );
     expect(u.searchParams.get("response_type")).toBe("code");
     expect(u.searchParams.get("client_id")).toBe("test-client");
@@ -54,6 +53,11 @@ describe("TrueDesign authorize URL", () => {
     expect(u.searchParams.get("code_challenge")).toBe("challenge123");
     expect(u.searchParams.get("code_challenge_method")).toBe("S256");
     expect(u.searchParams.get("scope")).toContain("offline_access");
-    delete process.env.EAGLEVIEW_TD_CLIENT_ID;
+  });
+
+  it("throws when no client id is configured", () => {
+    expect(() =>
+      buildAuthorizeUrl("https://pbtechops.com/cb", "c", "s", undefined),
+    ).toThrow(/client id not configured/);
   });
 });
