@@ -666,7 +666,7 @@ export function buildProjectFunnelData(
    * when any milestone happened — a snapshot of the live pipeline. Default
    * "cohort" windows deals by close date as before.
    */
-  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean }
+  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean; cohortGranularity?: "week" | "month" }
 ): ProjectFunnelResponse {
   // Global deal-set filters applied up front so they flow through every section
   // (summary, backlog, capacity, forecast, …): Participate-Energy and on-hold.
@@ -963,6 +963,9 @@ export function buildProjectFunnelData(
     { key: "ptosGranted", field: "ptoGrantedDate", label: "PTO Granted", nextField: "projectCompleteDate", nextLabel: "Closed Out" },
   ];
 
+  // Bucket key: week-start date (default) or month, driven by the chart toggle.
+  const bucketKeyFn = options?.cohortGranularity === "month" ? monthKey : weekKey;
+
   const cohortMaps = COHORT_CHAIN.map(() => new Map<string, MilestoneCohortMonth>());
   function ensureCohort(idx: number, mk: string): MilestoneCohortMonth {
     const m = cohortMaps[idx];
@@ -1017,7 +1020,7 @@ export function buildProjectFunnelData(
       if (!dateVal) continue;
       const d = new Date(dateVal + "T12:00:00");
       if (!inWindow(d)) continue;
-      const row = ensureCohort(i, weekKey(dateVal));
+      const row = ensureCohort(i, bucketKeyFn(dateVal));
       row.total++;
       row.totalAmount += amt;
       // Advanced takes priority: a deal that progressed counts as progress even
@@ -1082,7 +1085,7 @@ export function buildProjectFunnelData(
   for (const p of projects) {
     if (!p.closeDate || !matchesLocation(p) || !matchesStaff(p)) continue;
     if (!inWindow(new Date(p.closeDate + "T12:00:00"))) continue;
-    const wk = weekKey(p.closeDate);
+    const wk = bucketKeyFn(p.closeDate);
     if (!lifecycleMap.has(wk)) lifecycleMap.set(wk, new Map());
     const buckets = lifecycleMap.get(wk)!;
     const b = lifecycleBucket(p);
