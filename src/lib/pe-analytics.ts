@@ -528,6 +528,54 @@ export function buildPaymentOwnershipFractional(
   return owned;
 }
 
+/**
+ * "Last submitter" variant of buildPaymentOwnership: credit each milestone's
+ * WHOLE payment to whoever uploaded its most-recently-uploaded qualifying doc —
+ * the person who effectively pushed the milestone over the line to PE. Winner-
+ * take-all like the majority view, but the winner is the *last* uploader rather
+ * than the one who did the most. Ties broken by doc name for determinism.
+ * Same return shape as buildPaymentOwnership.
+ */
+export function buildPaymentOwnershipLast(
+  milestones: MilestonePayment[],
+  statusByDoc: Map<string, string>, // `${dealId}|${docName}` → status
+  latestUploaderByDoc: Map<string, string | null>, // `${dealId}|${docName}` → uploader (override-adjusted)
+  latestUploadAtByDoc: Map<string, number>, // `${dealId}|${docName}` → ms timestamp of latest upload
+): Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }> {
+  const owned = new Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>();
+  const ensure = (who: string) => {
+    let e = owned.get(who);
+    if (!e) { e = { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
+    return e;
+  };
+  const credit = (m: MilestonePayment, qualifyingStatuses: Set<string>, pending: boolean) => {
+    const docs = m.docNames.filter((n) => qualifyingStatuses.has(statusByDoc.get(`${m.dealId}|${n}`) ?? ""));
+    if (docs.length === 0) return;
+    // The qualifying doc uploaded most recently wins (ties → doc name).
+    let lastDoc: string | null = null;
+    let lastAt = -Infinity;
+    for (const n of docs) {
+      const at = latestUploadAtByDoc.get(`${m.dealId}|${n}`) ?? -Infinity;
+      if (at > lastAt || (at === lastAt && lastDoc !== null && n < lastDoc)) { lastAt = at; lastDoc = n; }
+    }
+    const by = (lastDoc ? latestUploaderByDoc.get(`${m.dealId}|${lastDoc}`)?.trim() : null) || UNKNOWN_UPLOADER;
+    const e = ensure(by);
+    if (pending) { e.pendingAmount += m.amount; e.pendingCount += 1; }
+    else {
+      e.amount += m.amount; e.count += 1;
+      if (m.isPaid) { e.paidAmount += m.amount; e.paidCount += 1; }
+    }
+  };
+  const APPROVED = new Set(["APPROVED"]);
+  const IN_REVIEW = new Set(["UNDER_REVIEW", "UPLOADED"]);
+  for (const m of milestones) {
+    if (m.amount <= 0) continue;
+    if (m.isApprovedPayment) credit(m, APPROVED, false);
+    else if (m.isPendingPayment) credit(m, IN_REVIEW, true);
+  }
+  return owned;
+}
+
 /** Per-period upload counts segmented by uploader, for the stacked bars. */
 export interface DailyUpload {
   day: string; // period key: YYYY-MM-DD (day/week-start) or YYYY-MM (month)
@@ -938,6 +986,8 @@ export interface PeAnalyticsPayload {
   uploaderStats: UploaderStat[];
   /** Same stats under shared (fractional) ownership — docs split across tracked contributors; overrides pin the whole doc. Powers the Owner⇄Shared toggle. */
   uploaderStatsShared: UploaderStat[];
+  /** Same base stats but payment $ credited to the LAST submitter — whoever uploaded each milestone's most-recent qualifying doc. Powers the payment table's "Last" mode. */
+  uploaderStatsLast: UploaderStat[];
   /** Per-uploader owned docs split by outcome (approved / inReview / rejected) — powers the drill-downs. Keyed by uploader (UNKNOWN_UPLOADER for null). */
   uploaderDocs: Record<string, UploaderOutcomeDocs>;
   /** Shared-mode drills — a multi-contributor doc appears under each person with its fractional `weight`. */

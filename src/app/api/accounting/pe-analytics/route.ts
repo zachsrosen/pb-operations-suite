@@ -25,6 +25,7 @@ import {
   computeSharedOwners,
   buildPaymentOwnership,
   buildPaymentOwnershipFractional,
+  buildPaymentOwnershipLast,
   buildUploadsByPeriod,
   buildDocTypeByUploader,
   PIPELINE_GROUP_ORDER,
@@ -989,6 +990,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // Latest-version uploader per (deal, doc), then credit each approved/paid
   // milestone's payment to whoever owns the most of its approved docs.
   const latestUploaderByDoc = new Map<string, string | null>();
+  const latestUploadAtByDoc = new Map<string, number>(); // latest version's upload time (ms) — for "last submitter"
   const maxVerByKey = new Map<string, number>();
   for (const v of uploaderVersionRows) {
     if (!v.dealId) continue;
@@ -996,6 +998,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     if (!maxVerByKey.has(k) || v.version > maxVerByKey.get(k)!) {
       maxVerByKey.set(k, v.version);
       latestUploaderByDoc.set(k, v.uploadedBy);
+      latestUploadAtByDoc.set(k, new Date(v.uploadedAt).getTime());
     }
   }
   // Admin owner-overrides: pin the credited uploader for a (deal, doc), winning
@@ -1040,6 +1043,23 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
     const pay = paymentOwnershipFractional.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
+  });
+
+  // "Last submitter" payment ownership: whole milestone $ to whoever uploaded
+  // its most-recent qualifying doc. Same base (owner) stats — only the payment
+  // columns differ — so the payment table can toggle Owner / Fractional / Last.
+  const paymentOwnershipLast = buildPaymentOwnershipLast(milestonePayments, currentDocStatus, latestUploaderByDoc, latestUploadAtByDoc);
+  const uploaderStatsLast = withPaymentOwnership.map((s) => {
+    const pay = paymentOwnershipLast.get(s.uploader);
+    return {
+      ...s,
+      paymentsOwned: pay?.amount ?? 0,
+      milestonesOwned: pay?.count ?? 0,
+      paidPaymentsOwned: pay?.paidAmount ?? 0,
+      paidMilestonesOwned: pay?.paidCount ?? 0,
+      pendingPaymentsOwned: pay?.pendingAmount ?? 0,
+      pendingMilestonesOwned: pay?.pendingCount ?? 0,
+    };
   });
 
   // Per-uploader owned docs split by current outcome (latest version owns the
@@ -1176,6 +1196,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     // ownership ($ of approved milestone payments each person drove).
     uploaderStats: withPaymentOwnership,
     uploaderStatsShared,
+    uploaderStatsLast,
     uploaderDocs,
     uploaderDocsShared,
     // Per-period uploads segmented by person — powers the By Day/Week/Month
