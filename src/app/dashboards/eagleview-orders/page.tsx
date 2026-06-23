@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
 import DashboardShell from "@/components/DashboardShell";
 import { prisma } from "@/lib/db";
-import { batchReadDealsWithRetry, getDealPropertyDefinition } from "@/lib/hubspot";
+import { batchReadDealsWithRetry } from "@/lib/hubspot";
+import { fetchOwnerMap } from "@/lib/deal-sync";
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import EagleViewOrdersClient, { type OrderListRow } from "./EagleViewOrdersClient";
 
@@ -34,16 +35,15 @@ export default async function EagleViewOrdersPage() {
   const dealIds = Array.from(
     new Set(orders.map((o) => o.dealId).filter((d) => d && !d.startsWith("ticket:"))),
   );
-  // The `design` ("Design Lead") property stores a HubSpot user ID; resolve it to
-  // a display name via the property's option labels (id → name). Best-effort.
-  const designLeadById = new Map<string, string>();
+  // The `design` ("Design Lead") property stores a HubSpot owner/user ID. It's a
+  // user-reference enumeration, so the property options aren't inlined — resolve
+  // the id to a name via the owner map (same source deal-sync uses for this
+  // field). Best-effort: on failure the column just stays blank.
+  let ownerMap: Record<string, string> = {};
   try {
-    const def = await getDealPropertyDefinition("design");
-    for (const opt of def?.options ?? []) {
-      if (opt?.value) designLeadById.set(String(opt.value), opt.label ?? String(opt.value));
-    }
+    ownerMap = await fetchOwnerMap();
   } catch (err) {
-    console.error("[eagleview-orders] design-lead options fetch failed", err);
+    console.error("[eagleview-orders] owner map fetch failed", err);
   }
 
   const byDeal = new Map<
@@ -70,7 +70,7 @@ export default async function EagleViewOrdersPage() {
           dealName: p.dealname ?? null,
           address: addr,
           pbLocation: p.pb_location ?? null,
-          designLead: designId ? designLeadById.get(designId) ?? null : null,
+          designLead: designId ? ownerMap[designId] ?? null : null,
         });
       }
     }
