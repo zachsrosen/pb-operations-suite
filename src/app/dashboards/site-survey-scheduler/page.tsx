@@ -288,26 +288,28 @@ function isNewConstructionTag(tags: string[] | undefined): boolean {
   return (tags || []).some((t) => String(t).toLowerCase().includes(NEW_CONSTRUCTION_TAG_VALUE));
 }
 
-// Pre-construction project stages. A New Construction deal only belongs on the
-// scheduler while it's still pre-construction (before Construction). Excludes
-// On Hold and everything Construction-and-later. Mirrors PRE_CONSTRUCTION_STAGES
-// in lib/hubspot.ts (kept local to avoid pulling server code into the client bundle).
-const PRE_CONSTRUCTION_STAGES = [
+// Stages where a site survey / revisit is still relevant — pre-construction
+// through Construction (install underway still counts). Excludes On Hold and
+// everything strictly post-construction (Inspection, PTO, Close Out, etc.).
+// Mirrors SURVEY_ELIGIBLE_STAGES in lib/hubspot.ts (kept local to avoid pulling
+// server code into the client bundle).
+const SURVEY_ELIGIBLE_STAGES = [
   "Site Survey",
   "Design & Engineering",
   "Permitting & Interconnection",
   "RTB - Blocked",
   "Ready To Build",
+  "Construction",
 ];
 function isNewConstructionSurvey(stage: string, tags: string[] | undefined): boolean {
-  return isNewConstructionTag(tags) && PRE_CONSTRUCTION_STAGES.includes(stage);
+  return isNewConstructionTag(tags) && SURVEY_ELIGIBLE_STAGES.includes(stage);
 }
 
-// A revisit is only actionable while the project is still pre-construction.
-// Once it's past that (e.g. already at Inspection), a 'Needs Revisit' flag is
-// stale, so don't surface it on the scheduler.
+// A revisit is only actionable while the survey is still relevant. Once the deal
+// is past that (e.g. already at Inspection), a 'Needs Revisit' flag is stale, so
+// don't surface it on the scheduler.
 function isPreConstructionRevisit(stage: string, surveyStatus: string | null | undefined): boolean {
-  return isRevisitStatus(surveyStatus) && PRE_CONSTRUCTION_STAGES.includes(stage);
+  return isRevisitStatus(surveyStatus) && SURVEY_ELIGIBLE_STAGES.includes(stage);
 }
 
 // A survey is "finished" (needs no further scheduling) only when it has been
