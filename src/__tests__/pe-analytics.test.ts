@@ -13,6 +13,7 @@ import {
   computeSharedOwners,
   buildPaymentOwnership,
   buildPaymentOwnershipFractional,
+  buildPaymentOwnershipLast,
   buildPeriodUploads,
   buildDocTypeByUploader,
   UNKNOWN_UPLOADER,
@@ -357,6 +358,53 @@ describe("buildPaymentOwnership", () => {
     );
     // Paid milestone counts in BOTH the approved total and the paid subset.
     expect(owned.get("a@pb.com")).toEqual({ amount: 6000, count: 1, paidAmount: 6000, paidCount: 1, pendingAmount: 0, pendingCount: 0 });
+  });
+});
+
+describe("buildPaymentOwnershipLast", () => {
+  it("credits the milestone to whoever uploaded its most-recent qualifying doc (not the one who uploaded the most)", () => {
+    const status = new Map([
+      ["d1|Design Plan", "APPROVED"],
+      ["d1|Photos per Policy", "APPROVED"],
+      ["d1|Utility Bill", "APPROVED"],
+    ]);
+    const latest = new Map<string, string | null>([
+      ["d1|Design Plan", "a@pb.com"],   // a uploaded 2 docs (would win "majority")
+      ["d1|Utility Bill", "a@pb.com"],
+      ["d1|Photos per Policy", "b@pb.com"], // b uploaded last
+    ]);
+    const at = new Map<string, number>([
+      ["d1|Design Plan", 100],
+      ["d1|Utility Bill", 200],
+      ["d1|Photos per Policy", 300], // most recent qualifying upload → b wins the whole $
+    ]);
+    const owned = buildPaymentOwnershipLast(
+      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
+      status, latest, at,
+    );
+    expect(owned.get("b@pb.com")).toEqual({ amount: 9000, count: 1, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 });
+    expect(owned.get("a@pb.com")).toBeUndefined();
+  });
+
+  it("ignores a more-recent NON-qualifying doc — only qualifying docs count", () => {
+    const status = new Map([
+      ["d1|Design Plan", "APPROVED"],
+      ["d1|Utility Bill", "UNDER_REVIEW"], // not approved → not qualifying for an approved milestone
+    ]);
+    const latest = new Map<string, string | null>([
+      ["d1|Design Plan", "a@pb.com"],
+      ["d1|Utility Bill", "b@pb.com"],
+    ]);
+    const at = new Map<string, number>([
+      ["d1|Design Plan", 100],
+      ["d1|Utility Bill", 999], // newer, but not approved → excluded
+    ]);
+    const owned = buildPaymentOwnershipLast(
+      [{ dealId: "d1", docNames: ["Design Plan", "Utility Bill"], amount: 5000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
+      status, latest, at,
+    );
+    expect(owned.get("a@pb.com")).toEqual({ amount: 5000, count: 1, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 });
+    expect(owned.get("b@pb.com")).toBeUndefined();
   });
 });
 

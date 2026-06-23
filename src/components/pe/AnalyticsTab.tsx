@@ -1469,12 +1469,13 @@ function fmtMoney(n: number): string {
 }
 
 /** Approved-payment ownership leaderboard — bar length = $ owned. */
-function PaymentPanel({ stats, statsShared }: { stats: UploaderStat[]; statsShared: UploaderStat[] }) {
+function PaymentPanel({ stats, statsShared, statsLast }: { stats: UploaderStat[]; statsShared: UploaderStat[]; statsLast: UploaderStat[] }) {
   const unk = useContext(UnknownLabelCtx);
   // Owner = whole milestone $ to its top uploader (winner-take-all).
   // Fractional = milestone $ split across its approved-doc uploaders by share.
-  const [mode, setMode] = useState<"owner" | "fractional">("owner");
-  const active = mode === "fractional" ? statsShared : stats;
+  // Last = whole milestone $ to whoever uploaded its most-recent qualifying doc.
+  const [mode, setMode] = useState<"owner" | "fractional" | "last">("owner");
+  const active = mode === "fractional" ? statsShared : mode === "last" ? statsLast : stats;
   const fmtCt = (n: number) => (mode === "fractional" ? n.toFixed(1) : String(n));
   const attributed = active
     .filter((s) => s.uploader !== UNKNOWN_UPLOADER && (s.paymentsOwned > 0 || s.pendingPaymentsOwned > 0))
@@ -1512,11 +1513,11 @@ function PaymentPanel({ stats, statsShared }: { stats: UploaderStat[]; statsShar
   return (
     <div>
       <div className="flex justify-end mb-2">
-        <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]" title="Owner: whole milestone $ to its top uploader. Fractional: split across its approved-doc uploaders by share.">
-          {(["owner", "fractional"] as const).map((m) => (
+        <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]" title="Owner: whole milestone $ to its top uploader. Fractional: split across its approved-doc uploaders by share. Last: whole $ to whoever uploaded its most-recent qualifying doc.">
+          {(["owner", "fractional", "last"] as const).map((m) => (
             <button key={m} onClick={() => setMode(m)}
               className={`px-2.5 py-1 transition-colors ${mode === m ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"}`}>
-              {m === "owner" ? "Owner" : "Fractional"}
+              {m === "owner" ? "Owner" : m === "fractional" ? "Fractional" : "Last"}
             </button>
           ))}
         </div>
@@ -1542,6 +1543,8 @@ function PaymentPanel({ stats, statsShared }: { stats: UploaderStat[]; statsShar
       )}
       <p className="mt-3 text-[11px] text-muted">{mode === "fractional"
         ? "Fractional: each milestone's payment is split across its approved-doc uploaders by their share of those docs (counts shown to 1 decimal)."
+        : mode === "last"
+        ? "Last: each milestone's payment goes to whoever uploaded its most-recently-uploaded qualifying doc — the person who pushed it over the line to PE (approved docs for approved milestones, in-review for ones still awaiting PE)."
         : "Owner: each milestone's payment goes to whoever uploaded the most of its docs — approved docs for approved milestones, in-review for ones still awaiting PE. Top known uploader wins."}</p>
     </div>
   );
@@ -1601,7 +1604,7 @@ function ExplorerDrill({ rows, dealLinks, onClear, scopeLabel, onClearScope }: {
   );
 }
 
-function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsShared, attributionStart, uploaderRows, dealLinks }: { stats: UploaderStat[]; statsShared: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null; uploaderRows: UploaderRow[]; dealLinks: Record<string, DealLink> }) {
+function UploadersSection({ stats, statsShared, statsLast, periods, docTypes, docs, docsShared, attributionStart, uploaderRows, dealLinks }: { stats: UploaderStat[]; statsShared: UploaderStat[]; statsLast: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null; uploaderRows: UploaderRow[]; dealLinks: Record<string, DealLink> }) {
   const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
   const [grain, setGrain] = useState<UploadGranularity>("week");
   const [docFilter, setDocFilter] = useState<string[]>([]);
@@ -1653,6 +1656,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
   // Payments: uploader filter only (array filter); doc filter never applies.
   const payStats = uploaderFilter.length === 0 ? stats : stats.filter((s) => uploaderFilter.includes(s.uploader));
   const payStatsShared = uploaderFilter.length === 0 ? statsShared : statsShared.filter((s) => uploaderFilter.includes(s.uploader));
+  const payStatsLast = uploaderFilter.length === 0 ? statsLast : statsLast.filter((s) => uploaderFilter.includes(s.uploader));
 
   return (
     <UnknownLabelCtx.Provider value={unk}>
@@ -1713,7 +1717,7 @@ function UploadersSection({ stats, statsShared, periods, docTypes, docs, docsSha
             onSegmentClick={(uploader, key) => setSegSel((p) => (p && p.uploader === uploader && p.key === key ? null : { uploader, key, grain }))}
             selected={segSel && segSel.grain === grain ? { uploader: segSel.uploader, key: segSel.key } : null} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
-            : <PaymentPanel stats={payStats} statsShared={payStatsShared} />}
+            : <PaymentPanel stats={payStats} statsShared={payStatsShared} statsLast={payStatsLast} />}
       {showDrill && <ExplorerDrill rows={drillRows} dealLinks={dealLinks}
         scopeLabel={segSel ? `${segSel.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(segSel.uploader)} · ${periodLabel(segSel.grain, segSel.key)}` : undefined}
         onClearScope={segSel ? () => setSegSel(null) : undefined}
@@ -2339,7 +2343,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} uploaderRows={data.uploaderRows ?? []} dealLinks={data.dealLinks ?? {}} />
+          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} statsLast={data.uploaderStatsLast ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} uploaderRows={data.uploaderRows ?? []} dealLinks={data.dealLinks ?? {}} />
 
           {/* 2. Expected revenue pipeline */}
           <Section
