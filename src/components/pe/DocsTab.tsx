@@ -9,6 +9,7 @@ import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
 import { usePeAutoSync } from "@/hooks/usePeAutoSync";
 import { rowsToCsv, rowsToText, cleanPeNote, parseDealName, type PeExportRow } from "@/lib/pe-doc-export";
+import { PE_CONDITIONAL_DOC_NAMES } from "@/lib/pe-analytics";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors pe-report API shape)
@@ -245,13 +246,20 @@ function isDocWaived(doc: DocRequirement, deal: PeDeal): boolean {
   return PE_MILESTONE_DONE.has(status.toLowerCase());
 }
 
+// A conditional doc (e.g. Bill of Materials) is only owed by a deal when PE
+// includes its slot — i.e. a synced doc row exists. PE adds the BOM slot only
+// to projects it wants one for, so it must not read as missing on the rest.
+function dealOwesDoc(doc: DocRequirement, dealId: string, docMap: Map<string, DocReview>): boolean {
+  return !PE_CONDITIONAL_DOC_NAMES.has(doc.name) || docMap.has(`${dealId}:${doc.name}`);
+}
+
 function computeDealDocSummary(
   deal: PeDeal,
   docMap: Map<string, DocReview>,
 ): DealDocSummary {
   const milestone = dealStageToPeMilestone(deal.dealStageLabel);
   const sections = milestoneDocSections(milestone);
-  const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section));
+  const docs = PE_DOCUMENTS.filter((d) => sections.includes(d.section) && dealOwesDoc(d, deal.dealId, docMap));
 
   let approved = 0, rejected = 0, actionRequired = 0, underReview = 0, notUploaded = 0, waived = 0, noData = 0;
   for (const doc of docs) {
@@ -319,7 +327,7 @@ function getDealActionLists(
   s: DealDocSummary,
   docMap: Map<string, DocReview>,
 ): { blocking: DocWithReview[]; missing: DocWithReview[]; issues: DocWithReview[] } {
-  const docs = PE_DOCUMENTS.filter((d) => s.sections.includes(d.section));
+  const docs = PE_DOCUMENTS.filter((d) => s.sections.includes(d.section) && dealOwesDoc(d, s.deal.dealId, docMap));
   const withReviews: DocWithReview[] = docs.map((doc) => ({
     doc,
     review: docMap.get(`${s.deal.dealId}:${doc.name}`),
@@ -787,7 +795,7 @@ function DealCard({ summary, docMap, expanded, onToggle }: {
             </div>
           )}
           {!csvOnly && sections.map((sec) => {
-            const docs = PE_DOCUMENTS.filter((d) => d.section === sec);
+            const docs = PE_DOCUMENTS.filter((d) => d.section === sec && dealOwesDoc(d, deal.dealId, docMap));
             const sectionApproved = docs.filter((d) => docMap.get(`${deal.dealId}:${d.name}`)?.status === "APPROVED").length;
             return (
               <div key={sec} className="mt-3">
@@ -1277,6 +1285,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
     for (const s of filtered) {
       for (const doc of PE_DOCUMENTS) {
         if (!s.sections.includes(doc.section)) continue; // deal doesn't owe this doc yet
+        if (!dealOwesDoc(doc, s.deal.dealId, docMap)) continue; // conditional doc PE didn't include
         const status = docMap.get(`${s.deal.dealId}:${doc.name}`)?.status ?? "NOT_UPLOADED";
         const e = map.get(doc.name)!;
         if (status === "NOT_UPLOADED") { if (!isDocWaived(doc, s.deal)) e.missing.push(s.deal); }
@@ -1295,7 +1304,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
       const dealsWithIssues: { summary: DealDocSummary; teamActionCount: number; teamDocs: { doc: DocRequirement; review: DocReview | undefined }[] }[] = [];
 
       for (const s of sorted) {
-        const relevantDocs = teamDocs.filter((d) => s.sections.includes(d.section));
+        const relevantDocs = teamDocs.filter((d) => s.sections.includes(d.section) && dealOwesDoc(d, s.deal.dealId, docMap));
         if (relevantDocs.length === 0) continue;
 
         let teamActionCount = 0;
