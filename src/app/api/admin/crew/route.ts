@@ -79,9 +79,9 @@ const SEED_DATA = [
     locations: ["San Luis Obispo", "Camarillo"],
   },
   {
-    name: "Rolando",
-    email: "rolando@photonbrothers.com",
-    zuperUserUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b",
+    name: "Lenny Uematsu",
+    email: "lenny@photonbrothers.com",
+    zuperUserUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77",
     zuperTeamUid: ZUPER_TEAM_UIDS["Colorado Springs"],
     role: "technician",
     locations: ["Colorado Springs"],

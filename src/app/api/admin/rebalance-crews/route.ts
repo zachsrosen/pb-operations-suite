@@ -41,7 +41,8 @@ for (const [loc, crews] of Object.entries(CREWS)) {
 const DIRECTOR_TO_LOCATION: Record<string, string> = {
   "Joe Lynch": "Westminster",
   "Drew Perry": "Centennial",
-  "Rolando": "Colorado Springs",
+  "Lenny Uematsu": "Colorado Springs",
+  "Rolando": "Colorado Springs", // kept so historical records assigned to Rolando still map
 };
 
 interface ScheduleRec {

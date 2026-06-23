@@ -319,7 +319,7 @@ const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, ZuperAssignee> = {
   Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
   Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  "Colorado Springs": { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  "Colorado Springs": { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
   Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" }, // Camarillo shares SLO install crew
 };
@@ -338,7 +338,7 @@ const ZUPER_SURVEY_USERS: Record<string, { name: string; userUid: string; teamUi
     { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   ],
   "Colorado Springs": [
-    { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+    { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   ],
   "San Luis Obispo": [
     { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
@@ -362,7 +362,7 @@ const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; te
     { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   ],
   "Colorado Springs": [
-    { name: "Rolando", userUid: "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+    { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
     { name: "Alexander Swope", userUid: "", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   ],
   "San Luis Obispo": [

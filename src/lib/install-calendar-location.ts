@@ -6,7 +6,8 @@ type InstallBucket = "dtc" | "westy" | "cosp" | "california" | "camarillo";
 const NAME_FALLBACKS: Array<{ matcher: RegExp; location: string }> = [
   { matcher: /\bdrew perry\b/i, location: "Centennial" },
   { matcher: /\bjoe lynch\b/i, location: "Westminster" },
-  { matcher: /\brolando\b/i, location: "Colorado Springs" },
+  { matcher: /\blenny\b/i, location: "Colorado Springs" },
+  { matcher: /\brolando\b/i, location: "Colorado Springs" }, // legacy: older records assigned to Rolando
   // Legacy master-scheduler crew labels (stored in older schedule records)
   { matcher: /\bdtc\b.*\balpha\b|\balpha\b.*\bdtc\b/i, location: "Centennial" },
   { matcher: /\bwesty\b.*\balpha\b|\balpha\b.*\bwesty\b/i, location: "Westminster" },
