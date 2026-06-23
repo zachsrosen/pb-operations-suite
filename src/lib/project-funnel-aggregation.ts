@@ -220,6 +220,24 @@ export interface MilestoneCohort {
   months: MilestoneCohortMonth[];
 }
 
+/** One current-stage slice of a sold-month lifecycle cohort. */
+export interface LifecycleStageSlice {
+  stageId: string;
+  stageName: string;
+  count: number;
+  amount: number;
+}
+
+/** Deals sold in a given month, broken down by where they sit in the pipeline
+ * today (current stage). Inspired by the PE Analytics "Lifecycle" view. */
+export interface LifecycleMonth {
+  month: string;
+  total: number;
+  totalAmount: number;
+  /** Stages ordered by pipeline progression (early → late). */
+  stages: LifecycleStageSlice[];
+}
+
 export interface ProjectFunnelResponse {
   summary: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
   /** Same stage totals over the immediately-preceding equal-length window, for trend deltas. */
@@ -228,6 +246,8 @@ export interface ProjectFunnelResponse {
   monthlyActivity: ProjectMonthlyActivity[];
   /** Per-milestone monthly cohorts with advanced/waiting/cancelled splits. */
   milestoneCohorts: MilestoneCohort[];
+  /** Deals grouped by sold-month, broken down by current pipeline stage. */
+  lifecycle: LifecycleMonth[];
   stageDistribution: ProjectFunnelStageGroup[];
   drillDown: ProjectFunnelDrillDown;
   medianDays: ProjectFunnelMedianDays;
@@ -894,6 +914,8 @@ export function buildProjectFunnelData(
     nextField: keyof Project;
     nextLabel: string;
   }> = [
+    { key: "salesClosed", field: "closeDate", label: "Sales Closed", nextField: "siteSurveyScheduleDate", nextLabel: "Survey Scheduled" },
+    { key: "surveysScheduled", field: "siteSurveyScheduleDate", label: "Survey Scheduled", nextField: "siteSurveyCompletionDate", nextLabel: "Survey Done" },
     { key: "surveysCompleted", field: "siteSurveyCompletionDate", label: "Surveys Done", nextField: "designApprovalSentDate", nextLabel: "DA Sent" },
     { key: "dasSent", field: "designApprovalSentDate", label: "DAs Sent", nextField: "designApprovalDate", nextLabel: "DA Approved" },
     { key: "dasApproved", field: "designApprovalDate", label: "DAs Approved", nextField: "designCompletionDate", nextLabel: "Design Done" },
@@ -961,6 +983,41 @@ export function buildProjectFunnelData(
     nextLabel: step.nextLabel,
     months: [...cohortMaps[i].values()].sort((a, b) => b.month.localeCompare(a.month)),
   }));
+
+  // Lifecycle: every deal sold in the window, grouped by sold-month and broken
+  // down by where it sits in the pipeline today. Includes completed and
+  // cancelled deals — the whole picture of "where did each month's sales go".
+  const lifecycleMap = new Map<string, Map<string, { count: number; amount: number }>>();
+  for (const p of projects) {
+    if (!p.closeDate || !matchesLocation(p) || !matchesStaff(p)) continue;
+    if (!inWindow(new Date(p.closeDate + "T12:00:00"))) continue;
+    const mk = monthKey(p.closeDate);
+    if (!lifecycleMap.has(mk)) lifecycleMap.set(mk, new Map());
+    const stages = lifecycleMap.get(mk)!;
+    const sid = p.stageId || "unknown";
+    const cur = stages.get(sid) ?? { count: 0, amount: 0 };
+    cur.count++;
+    cur.amount += p.amount || 0;
+    stages.set(sid, cur);
+  }
+  const lifecycle: LifecycleMonth[] = [...lifecycleMap.entries()]
+    .map(([month, stages]) => {
+      const slices: LifecycleStageSlice[] = [...stages.entries()]
+        .map(([stageId, v]) => ({
+          stageId,
+          stageName: DEAL_STAGE_MAP[stageId] || stageId,
+          count: v.count,
+          amount: v.amount,
+        }))
+        .sort((a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99));
+      return {
+        month,
+        total: slices.reduce((s, x) => s + x.count, 0),
+        totalAmount: slices.reduce((s, x) => s + x.amount, 0),
+        stages: slices,
+      };
+    })
+    .sort((a, b) => b.month.localeCompare(a.month));
 
   // Stage distribution — sorted by pipeline order (STAGE_PRIORITY_MAP), with a
   // per-stage breakdown + drill-down. RTB-Blocked and On Hold break down by their
@@ -1287,6 +1344,7 @@ export function buildProjectFunnelData(
     cohorts,
     monthlyActivity,
     milestoneCohorts,
+    lifecycle,
     stageDistribution,
     drillDown,
     filterOptions,

@@ -10,6 +10,24 @@ import type {
   ProjectMonthlyActivity,
   MilestoneCohort,
 } from "@/lib/project-funnel-aggregation";
+
+// Current-stage palette for the Lifecycle view — same hues the funnel uses
+// elsewhere so the two read alike. Keyed by DEAL_STAGE_MAP stage names.
+const LIFECYCLE_STAGE_COLORS: Record<string, string> = {
+  "Site Survey": "bg-amber-500",
+  "Design & Engineering": "bg-blue-500",
+  "Permitting & Interconnection": "bg-purple-500",
+  "RTB - Blocked": "bg-red-500",
+  "Ready To Build": "bg-cyan-500",
+  Construction: "bg-green-500",
+  Inspection: "bg-emerald-500",
+  "Permission To Operate": "bg-teal-500",
+  "Close Out": "bg-sky-500",
+  "Project Complete": "bg-green-600",
+  Cancelled: "bg-zinc-600",
+  "On Hold": "bg-yellow-500",
+};
+const stageColor = (name: string) => LIFECYCLE_STAGE_COLORS[name] || "bg-zinc-500";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 
@@ -398,7 +416,8 @@ function MilestoneCohortChart({
   pms: string[];
   owners: string[];
 }) {
-  const [milestone, setMilestone] = useState<string>("surveysCompleted");
+  const [view, setView] = useState<"milestone" | "lifecycle">("milestone");
+  const [milestone, setMilestone] = useState<string>("salesClosed");
   const [timeframe, setTimeframe] = useState<string>("this-year");
 
   const months = resolveMonths(timeframe);
@@ -437,27 +456,55 @@ function MilestoneCohortChart({
     [chronological]
   );
 
+  // Lifecycle: deals grouped by sold-month, stacked by current stage.
+  const lifecycle = useMemo(() => {
+    const rows = data?.lifecycle ?? [];
+    const range = calendarMonthRange(timeframe);
+    const windowed = range ? rows.filter((r) => r.month >= range.start && r.month <= range.end) : rows;
+    return [...windowed].reverse();
+  }, [data, timeframe]);
+  const lifecycleMax = useMemo(
+    () => Math.max(1, ...lifecycle.map((c) => c.totalAmount)),
+    [lifecycle]
+  );
+  // Stages actually present, ordered by pipeline progression, for the legend.
+  const lifecycleStages = useMemo(() => {
+    const order = Object.keys(LIFECYCLE_STAGE_COLORS);
+    const seen = new Set<string>();
+    for (const m of lifecycle) for (const s of m.stages) seen.add(s.stageName);
+    return [...seen].sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+  }, [lifecycle]);
+
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
-      <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <div>
-          <h3 className="text-sm font-semibold text-foreground/80">Milestone Progression</h3>
+          <h3 className="text-sm font-semibold text-foreground/80">
+            {view === "milestone" ? "Milestone Progression" : "Sold-Month Lifecycle"}
+          </h3>
           <p className="text-[11px] text-muted">
-            Revenue (bar height) per month for each milestone — highlighted share has since reached the next step.
+            {view === "milestone"
+              ? "Each bar is every deal that reached the selected milestone that month; the highlighted share has since reached the next one."
+              : "Each bar is every deal sold that month, stacked by where it sits in the pipeline today."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={cohort?.key ?? milestone}
-            onChange={(e) => setMilestone(e.target.value)}
-            className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-xs text-foreground"
-          >
-            {cohorts.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.label} → {c.nextLabel}
-              </option>
+          <div className="flex rounded-lg border border-t-border overflow-hidden text-xs">
+            {(["milestone", "lifecycle"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={`px-3 py-1.5 transition-colors ${view === v ? "bg-emerald-500 text-white" : "bg-surface text-muted hover:text-foreground"}`}
+              >
+                {v === "milestone" ? "By Milestone" : "Lifecycle"}
+              </button>
             ))}
-          </select>
+          </div>
           <select
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value)}
@@ -472,27 +519,73 @@ function MilestoneCohortChart({
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-[11px] text-muted">
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
-          Reached {cohort?.nextLabel ?? "next"}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-zinc-500" />
-          Still waiting
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-red-500/80" />
-          Cancelled
-        </span>
-      </div>
+      {view === "milestone" && (
+        <>
+          {/* Milestone selector — PE-style pills, one per step in the chain. */}
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {cohorts.map((c) => {
+              const active = (cohort?.key ?? milestone) === c.key;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setMilestone(c.key)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                    active
+                      ? "bg-emerald-500 border-emerald-500 text-white"
+                      : "bg-surface-2 border-t-border text-muted hover:text-foreground hover:border-emerald-500/40"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Explicit "what the bar means" callout, driven by the selected milestone. */}
+          {cohort && (
+            <p className="text-xs text-muted mb-3">
+              Whole bar ={" "}
+              <span className="text-foreground font-semibold">{cohort.label}</span> that month · highlighted ={" "}
+              <span className="text-emerald-400 font-semibold">also reached {cohort.nextLabel}</span>
+            </p>
+          )}
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-[11px] text-muted">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
+              Reached {cohort?.nextLabel ?? "next"}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-zinc-500" />
+              {cohort ? `${cohort.label}, not yet ${cohort.nextLabel}` : "Still waiting"}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-red-500/80" />
+              Cancelled
+            </span>
+          </div>
+        </>
+      )}
+
+      {view === "lifecycle" && lifecycleStages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-[11px] text-muted">
+          {lifecycleStages.map((name) => (
+            <span key={name} className="flex items-center gap-1.5">
+              <span className={`h-2.5 w-2.5 rounded-sm ${stageColor(name)}`} />
+              {name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <p className="text-xs text-muted/60 italic">Loading…</p>
-      ) : chronological.length === 0 ? (
-        <p className="text-xs text-muted/60 italic">No activity in this window.</p>
-      ) : (
+      ) : view === "milestone" ? (
+        chronological.length === 0 ? (
+          <p className="text-xs text-muted/60 italic">No activity in this window.</p>
+        ) : (
         <div className="relative">
           <div className="absolute inset-x-0 top-[46px] bottom-[18px] pointer-events-none">
             {[0, 1, 2, 3].map((g) => (
@@ -534,6 +627,56 @@ function MilestoneCohortChart({
                       {row.advancedAmount > 0 && (
                         <div className="bg-emerald-500 w-full" style={{ height: `${segPct(row.advancedAmount)}%` }} />
                       )}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        )
+      ) : lifecycle.length === 0 ? (
+        <p className="text-xs text-muted/60 italic">No deals sold in this window.</p>
+      ) : (
+        <div className="relative">
+          <div className="absolute inset-x-0 top-[46px] bottom-[18px] pointer-events-none">
+            {[0, 1, 2, 3].map((g) => (
+              <div key={g} className="absolute inset-x-0 border-t border-t-border/40" style={{ top: `${g * 33.33}%` }} />
+            ))}
+          </div>
+          <div className="relative flex items-end justify-center gap-3 sm:gap-5">
+            {lifecycle.map((row) => {
+              const heightPct = (row.totalAmount / lifecycleMax) * 100;
+              const segPct = (amount: number) => (row.totalAmount > 0 ? (amount / row.totalAmount) * 100 : 0);
+              return (
+                <div
+                  key={row.month}
+                  className="flex flex-col items-center gap-1.5 flex-1 min-w-0 max-w-[88px] group"
+                  title={
+                    `${monthLabel(row.month)} sold: ${formatCurrencyCompact(row.totalAmount)} · ${row.total} deals\n` +
+                    row.stages.map((s) => `${s.stageName}: ${s.count}`).join("\n")
+                  }
+                >
+                  <div className="flex flex-col items-center leading-tight h-[40px] justify-end pb-0.5">
+                    <span className="text-sm text-foreground font-bold tabular-nums">
+                      {row.totalAmount > 0 ? formatCurrencyCompact(row.totalAmount) : ""}
+                    </span>
+                    {row.total > 0 && <span className="text-[10px] text-muted tabular-nums">{row.total}</span>}
+                  </div>
+                  <div className="w-full flex justify-center border-b border-t-border" style={{ height: 130 }}>
+                    <div
+                      className="w-9 sm:w-11 mt-auto flex flex-col rounded-t-md overflow-hidden transition-all duration-300 opacity-90 group-hover:opacity-100"
+                      style={{ height: `${Math.max(heightPct, row.totalAmount > 0 ? 3 : 0)}%` }}
+                    >
+                      {row.stages.map((s) => (
+                        <div
+                          key={s.stageId}
+                          className={`${stageColor(s.stageName)} w-full`}
+                          style={{ height: `${segPct(s.amount)}%` }}
+                          title={`${s.stageName}: ${s.count} · ${formatCurrencyCompact(s.amount)}`}
+                        />
+                      ))}
                     </div>
                   </div>
                   <span className="text-[10px] text-muted truncate">{monthLabel(row.month, false)}</span>
