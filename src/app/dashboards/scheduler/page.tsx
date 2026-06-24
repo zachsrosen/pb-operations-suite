@@ -25,6 +25,11 @@ import {
   toDateStr,
 } from "@/lib/scheduling-utils";
 import { normalizeLocation as normalizeLocationAlias } from "@/lib/locations";
+import {
+  CONSTRUCTION_DIRECTORS_BY_LOCATION,
+  INSPECTION_USERS_BY_LOCATION,
+  SURVEY_USERS_BY_LOCATION,
+} from "@/lib/field-crew";
 import { getInternalDealUrl } from "@/lib/external-links";
 import { isPbHoliday, pbHolidayName } from "@/lib/on-call-holidays";
 
@@ -314,61 +319,18 @@ const EXCLUDE_OTHER_CATEGORY_UIDS = [
 ].join(",");
 
 /* ---- Zuper default assignees per location (for auto-assignment when scheduling) ---- */
+// Sourced from the single source of truth in @/lib/field-crew. To change who
+// covers a location, edit LOCATION_FIELD_CREW there — not here.
 // Construction default assignee per location (same defaults as construction scheduler).
-const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, ZuperAssignee> = {
-  Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-  Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  "Colorado Springs": { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
-  "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
-  Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" }, // Camarillo shares SLO install crew
-};
+const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, ZuperAssignee> = CONSTRUCTION_DIRECTORS_BY_LOCATION;
 
-// Survey: available surveyors per location (first entry is the default)
-// userUid can be empty string — the schedule API will resolve by name at runtime
-const ZUPER_SURVEY_USERS: Record<string, { name: string; userUid: string; teamUid: string }[]> = {
-  Westminster: [
-    { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-    { name: "Ryszard Szymanski", userUid: "e043bf1d-006b-4033-a46e-3b5d06ed3d00", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-  ],
-  Centennial: [
-    { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  ],
-  DTC: [
-    { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  ],
-  "Colorado Springs": [
-    { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
-  ],
-  "San Luis Obispo": [
-    { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
-  ],
-  Camarillo: [
-    { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" }, // shares SLO crew
-  ],
-};
+// Survey: available surveyors per location (first entry is the default).
+// userUid can be empty string — the schedule API will resolve by name at runtime.
+const ZUPER_SURVEY_USERS: Record<string, ZuperAssignee[]> = SURVEY_USERS_BY_LOCATION;
 
-// Inspection: available inspectors per location (first entry is the default)
-// userUid can be empty string — the schedule API will resolve by name at runtime
-const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; teamUid: string }[]> = {
-  Westminster: [
-    { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-    { name: "Chad Schollman", userUid: "", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-  ],
-  Centennial: [
-    { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  ],
-  DTC: [
-    { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  ],
-  "Colorado Springs": [
-    { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
-    { name: "Alexander Swope", userUid: "", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
-  ],
-  "San Luis Obispo": [
-    { name: "Anthony Villanueva", userUid: "", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
-  ],
-};
+// Inspection: available inspectors per location (first entry is the default).
+// userUid can be empty string — the schedule API will resolve by name at runtime.
+const ZUPER_INSPECTION_USERS: Record<string, ZuperAssignee[]> = INSPECTION_USERS_BY_LOCATION;
 
 // Construction assignee choices in the master scheduler modal.
 // Starts with each location's construction director, then adds known survey/inspection users.

@@ -17,6 +17,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
+import { FIELD_CREW } from "@/lib/field-crew";
 
 // Crew definitions per location (must match CREWS in scheduler/page.tsx)
 const CREWS: Record<string, string[]> = {
@@ -39,10 +40,10 @@ for (const [loc, crews] of Object.entries(CREWS)) {
 // Only include directors who manage a single location to avoid misclassification.
 // Nick Scarpellino is omitted: he directs both SLO and Camarillo.
 const DIRECTOR_TO_LOCATION: Record<string, string> = {
-  "Joe Lynch": "Westminster",
-  "Drew Perry": "Centennial",
-  "Lenny Uematsu": "Colorado Springs",
-  "Rolando": "Colorado Springs", // kept so historical records assigned to Rolando still map
+  [FIELD_CREW.joe.name]: "Westminster",
+  [FIELD_CREW.drew.name]: "Centennial",
+  [FIELD_CREW.lenny.name]: "Colorado Springs",
+  "Rolando": "Colorado Springs", // legacy bare first name; kept so historical records assigned to Rolando still map
 };
 
 interface ScheduleRec {

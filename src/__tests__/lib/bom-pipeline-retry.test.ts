@@ -400,11 +400,14 @@ describe("getPipelineLocationRecipients", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("returns director + coordinator for Colorado Springs", () => {
+  it("returns directors + coordinator for Colorado Springs", () => {
     const result = getPipelineLocationRecipients("Colorado Springs");
+    // CO Springs keeps BOTH regional directors: Rolando (OOO) and Lenny
+    // (covering field ops), plus the coordinator (#1204/#1213).
     expect(result).toContain("rolando@photonbrothers.com");
+    expect(result).toContain("lenny@photonbrothers.com");
     expect(result).toContain("brittany.miller@photonbrothers.com");
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
   });
 
   it("returns nick + kat for San Luis Obispo", () => {

@@ -18,6 +18,7 @@ import { SubJobBreakdown } from "@/components/scheduler/SubJobBreakdown";
 import { SubJobScheduleModal, type PerSubJobSchedule } from "@/components/scheduler/SubJobScheduleModal";
 import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import { getInternalDealUrl } from "@/lib/external-links";
+import { CONSTRUCTION_DIRECTORS_BY_LOCATION } from "@/lib/field-crew";
 import {
   DEFAULT_LOCATION_CAPACITY,
   generateOptimizedSchedule,
@@ -38,14 +39,10 @@ import {
 /*  Construction Director Assignments                                   */
 /* ------------------------------------------------------------------ */
 
-const CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; teamUid: string }> = {
-  Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
-  Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  "Colorado Springs": { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
-  "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
-  Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" }, // Camarillo shares SLO install crew
-};
+// Sourced from the single source of truth in @/lib/field-crew. To change who
+// directs a location's construction, edit LOCATION_FIELD_CREW there — not here.
+const CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; teamUid: string }> =
+  CONSTRUCTION_DIRECTORS_BY_LOCATION;
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
