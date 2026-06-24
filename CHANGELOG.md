@@ -4,6 +4,61 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-24
+
+### Workflow Map (Major)
+- New Workflow Map dashboard — live HubSpot automation + SOP reference, built from synced workflow/stage/task data
+- Zoomable flowchart view rolling up pipelines → stages → workflows with name+status stage mapping and task edges
+- Process view: plain-English, expandable end-to-end pipeline walkthrough per stage
+- Curated vertical-swimlane layout — Design tracks intertwine, Permitting runs parallel, AND-gate before Stamps branch
+- Family-lane stage layout with write-only status mapping; date-stamp plumbing hidden, minimap removed
+- Resumable backfill with `maxDuration=300` and admin Build/Re-sync button on the dashboard
+
+### Funnel & Cohort Charts (Major)
+- New Milestone Progression cohort chart on the project pipeline funnel
+- Pill selector with Sales Closed start, Lifecycle view, chain extended through Closed Out (IC dropped)
+- Weekly bins with PE-style sizing and click-to-drill-down on every bar
+- Lifecycle surfaces Cancelled and On Hold as their own segments alongside active stages
+- Funnel cohorts: on-hold segment, milestone lifecycle, richer drill-downs, renamed labels
+- Cohort charts polish: headline summary cards above the chart, drill-down from summary cards, lifecycle DA metric, week/month toggle, segment drill, sort + copy, revenue/count labels placed directly above each bar
+
+### Participate Energy (Major)
+- New HubSpot Deal card surfacing live Participate Energy status
+- Bill of Materials tracked as its own M1 document — synced to HubSpot, conditionally required (only where PE asks), with "Not Required" as a real status for skipped docs
+- Sync button now shared across all PE tabs in the tab bar; "Last synced X ago" reflects the last *successful* PE pull
+- "Last submitter" payment-ownership mode on the Doc Uploaders table
+- Auto-advance Rejected → Ready to Resubmit when rejection tasks are done; also covers onboarding and internal rejections
+- Loosened rejection-task matcher so task names can be renamed freely
+- Reviewer notes (`pe_doc_*_notes`) now populated from real `PeActionItem` reviewer comments
+- Stopped webhook retry storm that was regenerating duplicate rejection tasks
+- Stopped exhausting the PE daily API quota
+
+### PE Reviewer-Notes Reliability (Bug Fixes)
+- Doc statuses now push to HubSpot *after* action items are written — the real cause of blank Notes
+- Guaranteed reviewer notes on NEW rejections via must-pull-first + retry; status is never held back
+- Rejection notes pulled only for new/changed docs, so fresh rejections never sync note-less
+
+### Master Scheduler
+- New Construction surveys promoted to their own tab between Ops Surveys and Pre-Sale
+- Needs Revisit + New Construction surveys now shown in three groups
+- Needs Revisit group no longer empty — stale schedule dates were hiding revisits
+- Revisits stay in Ops Surveys after status flips to Ready to Schedule
+- DTC office filter no longer hides all survey availability
+- Rolando → Lenny Uematsu swap for all Colorado Springs field work
+
+### EagleView Orders
+- Design Lead surfaced on each order (was always blank — resolved via owner map)
+- Shade files saved as `.zip` with backfill for late-arriving measurement files
+- Drive folder ID extracted from URL before delivery upload
+
+### Atlas Map
+- Atlas map card surfaced in Operations, PM, and Service suites
+
+### Infrastructure
+- `SystemConfig`-backed runtime config wired to the TrueDesign public client (no redeploy needed for config changes)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
