@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { syncFromPeApi, getLatestSyncRun } from "@/lib/pe-api-sync";
+import { syncFromPeApi, getLatestSyncRun, getLastSuccessfulSyncRun } from "@/lib/pe-api-sync";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +19,13 @@ const THROTTLE_MS = 4 * 60 * 1000;
 export async function GET() {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const last = await getLatestSyncRun();
+  // lastSyncedAt = the last run that actually pulled from PE (completed); the
+  // latest run (any status) only drives the live "syncing…" flag. This keeps the
+  // label honest — a skipped/failed run never bumps "Synced X ago".
+  const [lastOk, latest] = await Promise.all([getLastSuccessfulSyncRun(), getLatestSyncRun()]);
   return NextResponse.json({
-    lastSyncedAt: last ? (last.completedAt ?? last.startedAt) : null,
-    running: last?.status === "running",
+    lastSyncedAt: lastOk?.completedAt ?? lastOk?.startedAt ?? null,
+    running: latest?.status === "running",
   });
 }
 
