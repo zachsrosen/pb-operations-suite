@@ -1053,6 +1053,19 @@ export async function getLatestSyncRun() {
 }
 
 /**
+ * The last run that actually pulled data from PE — `completed` or
+ * `completed_with_errors`. Excludes `running` / `skipped` (throttled or
+ * quota-blocked) / `failed` runs, so "Synced X ago" reflects a real successful
+ * pull, not a no-op run that still wrote a row.
+ */
+export async function getLastSuccessfulSyncRun() {
+  return prisma.peApiSyncRun.findFirst({
+    where: { status: { in: ["completed", "completed_with_errors"] } },
+    orderBy: { startedAt: "desc" },
+  });
+}
+
+/**
  * Get action items for a specific deal, ordered by date descending.
  */
 export async function getActionItemsForDeal(dealId: string) {
