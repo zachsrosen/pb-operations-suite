@@ -422,14 +422,49 @@ export async function syncFromPeApi(options?: {
         const prev = capturedAtByProject.get(r.peProjectId);
         if (prev == null || t > prev) capturedAtByProject.set(r.peProjectId, t);
       }
-      const idsNeedingDetail = selectDetailFetchIds(responseNeeded, capturedAtByProject);
+      // The email-critical set: RESPONSE_NEEDED projects we have NO captured note
+      // for yet (a fresh rejection). The LIST status flip alone fires the
+      // "Rejected by PE" email, so if we don't pull their DETAIL (reviewer note)
+      // this same run, the email goes out blank. These are few (~the day's new
+      // rejections), so we fetch them FIRST — no deadline cap, a tight time budget
+      // or a transient slow/429 blip can't starve them — and RETRY any that fail,
+      // all before the HubSpot push. Pull, never hold.
+      const mustPullIds = responseNeeded
+        .filter((p) => capturedAtByProject.get(p.projectId) == null)
+        .map((p) => p.id);
+      const mustPullSet = new Set(mustPullIds);
+      // Best-effort refresh: rejections we already have a note for but PE touched
+      // (updatedAt) since. Not email-critical — the note already exists — so these
+      // run under the normal time budget after the must-pull set.
+      const refreshIds = selectDetailFetchIds(responseNeeded, capturedAtByProject).filter(
+        (id) => !mustPullSet.has(id),
+      );
 
       console.warn(
-        `[pe-api-sync] Fetching details for ${idsNeedingDetail.length}/${responseNeeded.length} ` +
-          `RESPONSE_NEEDED projects (new/changed only; ` +
-          `${responseNeeded.length - idsNeedingDetail.length} already captured, concurrency=${concurrency})...`,
+        `[pe-api-sync] Detail: ${mustPullIds.length} must-pull (new rejections) + ` +
+          `${refreshIds.length} refresh (changed); ${responseNeeded.length} RESPONSE_NEEDED total`,
       );
-      detailMap = await getProjectDetails(idsNeedingDetail, concurrency, deadlineMs);
+
+      // 1) Must-pull first, no deadline cap.
+      detailMap = await getProjectDetails(mustPullIds, concurrency);
+      // 2) Retry any must-pull that transiently failed (the 0-detail failure mode
+      //    that dropped notes on 2026-06-24's 04:55 run).
+      const missed = mustPullIds.filter((id) => !detailMap.has(id));
+      if (missed.length > 0) {
+        console.warn(`[pe-api-sync] Retrying ${missed.length} must-pull detail fetches that failed`);
+        const retried = await getProjectDetails(missed, concurrency);
+        for (const [k, v] of retried) detailMap.set(k, v);
+      }
+      const stillMissed = mustPullIds.filter((id) => !detailMap.has(id));
+      if (stillMissed.length > 0) {
+        result.errors.push(
+          `Could not fetch notes for ${stillMissed.length} new rejection(s) after retry: ${stillMissed.slice(0, 10).join(", ")}`,
+        );
+      }
+
+      // 3) Best-effort refresh under the remaining time budget.
+      const refreshMap = await getProjectDetails(refreshIds, concurrency, deadlineMs);
+      for (const [k, v] of refreshMap) detailMap.set(k, v);
       console.warn(`[pe-api-sync] Fetched details for ${detailMap.size} projects`);
     }
 
