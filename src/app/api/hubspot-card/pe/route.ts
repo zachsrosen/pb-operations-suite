@@ -11,7 +11,7 @@ import { Signature } from "@hubspot/api-client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
-import { PE_M1_DOC_NAMES, PE_CONDITIONAL_DOC_NAMES } from "@/lib/pe-analytics";
+import { PE_M1_DOC_NAMES } from "@/lib/pe-analytics";
 import { getLastSuccessfulSyncRun } from "@/lib/pe-api-sync";
 
 export const dynamic = "force-dynamic";
@@ -104,15 +104,21 @@ export async function POST(request: Request) {
   ]);
   const statusByDoc = new Map(docRows.map((r) => [r.docName, r.status]));
 
+  // Numerator = docs actually submitted to PE (uploaded). NOT_REQUIRED docs (e.g.
+  // BOM bundled in Photos) drop out of the denominator entirely, so the count
+  // never reads one-short and needs no caveat note.
   const tally = (names: readonly string[]) => {
-    let approved = 0, satisfied = 0, blocked = 0;
+    let required = 0, submitted = 0, approved = 0, underReview = 0, actionRequired = 0;
     for (const n of names) {
       const s = statusByDoc.get(n) ?? "NOT_UPLOADED";
-      if (s === "APPROVED") { approved++; satisfied++; }
-      else if (s === "NOT_REQUIRED") satisfied++; // covered (e.g. BOM bundled in Photos)
-      else if (s === "ACTION_REQUIRED" || s === "REJECTED") blocked++;
+      if (s === "NOT_REQUIRED") continue; // not separately submitted; excluded from the total
+      required++;
+      if (s === "APPROVED") { submitted++; approved++; }
+      else if (s === "UNDER_REVIEW" || s === "UPLOADED") { submitted++; underReview++; }
+      else if (s === "ACTION_REQUIRED" || s === "REJECTED") { submitted++; actionRequired++; }
+      // NOT_UPLOADED: counts toward required, not submitted
     }
-    return { total: names.length, approved, satisfied, blocked };
+    return { required, submitted, approved, underReview, actionRequired };
   };
 
   const num = (v: string | null | undefined) => (v ? Math.round(parseFloat(v)) : null);
@@ -135,7 +141,6 @@ export async function POST(request: Request) {
       pc: { status: props.pe_m2_status ?? null, amount: num(props.pe_payment_pc), approvedOn: props.pe_m2_approval_date ?? null, paidOn: props.pe_m2_paid_date ?? null },
     },
     docs: { m1: tally(PE_M1_DOC_NAMES), m2: tally(M2_DOC_NAMES) },
-    conditionalNote: PE_CONDITIONAL_DOC_NAMES.size > 0,
     blockers,
   });
 }
