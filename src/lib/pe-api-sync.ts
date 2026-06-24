@@ -856,23 +856,37 @@ export async function syncFromPeApi(options?: {
         }
       }
 
-      // Auto-resolve action items whose document is now APPROVED.
-      // When PE approves a doc after the installer fixes issues, the prior
-      // action items become historical — they no longer need attention.
-      const approvedDocs = docOps.filter((op) => op.status === PeDocStatus.APPROVED);
-      if (approvedDocs.length > 0) {
+      // Auto-resolve action items once their document leaves ACTION_REQUIRED.
+      // Prior action items become historical and no longer need our attention:
+      //   - APPROVED      → PE accepted the fix
+      //   - UNDER_REVIEW  → we resubmitted; the ball is back in PE's court
+      //   - UPLOADED      → legacy "submitted" state (merged into UNDER_REVIEW)
+      // PE action items are immutable activity entries — they never disappear
+      // from the API and PE never marks them resolved, so we clear our own local
+      // `resolvedAt` flag here. Previously this only fired on APPROVED, which
+      // left every resubmitted rejection "open" forever and inflated the
+      // active-rejection count (a doc could be UNDER_REVIEW with stale open items).
+      const RESOLVED_DOC_STATUSES = new Set<PeDocStatus>([
+        PeDocStatus.APPROVED,
+        PeDocStatus.UNDER_REVIEW,
+        PeDocStatus.UPLOADED,
+      ]);
+      const clearedDocs = docOps.filter((op) =>
+        RESOLVED_DOC_STATUSES.has(op.status),
+      );
+      if (clearedDocs.length > 0) {
         try {
-          // Build map: dealId → set of approved doc names
-          const approvedByDeal = new Map<string, Set<string>>();
-          for (const op of approvedDocs) {
-            const set = approvedByDeal.get(op.dealId) ?? new Set();
+          // Build map: dealId → set of doc names that left ACTION_REQUIRED
+          const clearedByDeal = new Map<string, Set<string>>();
+          for (const op of clearedDocs) {
+            const set = clearedByDeal.get(op.dealId) ?? new Set();
             set.add(op.docName);
-            approvedByDeal.set(op.dealId, set);
+            clearedByDeal.set(op.dealId, set);
           }
 
-          // Resolve open action items for approved docs
+          // Resolve open action items for those docs
           let totalAutoResolved = 0;
-          for (const [dealId, docNames] of approvedByDeal) {
+          for (const [dealId, docNames] of clearedByDeal) {
             const { count } = await prisma.peActionItem.updateMany({
               where: {
                 dealId,
@@ -886,12 +900,12 @@ export async function syncFromPeApi(options?: {
 
           if (totalAutoResolved > 0) {
             console.warn(
-              `[pe-api-sync] Auto-resolved ${totalAutoResolved} action items for approved docs`,
+              `[pe-api-sync] Auto-resolved ${totalAutoResolved} action items for docs that left ACTION_REQUIRED (approved or resubmitted)`,
             );
           }
         } catch (err) {
           result.errors.push(
-            `Failed to auto-resolve approved doc items: ${err instanceof Error ? err.message : String(err)}`,
+            `Failed to auto-resolve cleared doc items: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }
