@@ -78,6 +78,8 @@ const DEAL_PROPERTIES = [
   "pe_payment_pc",
   "pe_m1_submission_date",
   "pe_m2_submission_date",
+  "pe_m1_ready_to_submit_date",
+  "pe_m2_ready_to_submit_date",
   "pe_m1_approval_date",
   "pe_m2_approval_date",
   "pe_m1_paid_date",
@@ -111,6 +113,8 @@ interface PeDealRow {
   m2RejectionDate: string | null;
   inspectionPassDate: string | null; // M1 operational ready
   ptoGrantedDate: string | null; // M2 operational ready
+  m1ReadyToSubmitDate: string | null; // stamped when M1 hits "Ready to Submit"
+  m2ReadyToSubmitDate: string | null; // stamped when M2 hits "Ready to Submit"
   pePortalUrl: string | null; // direct PE portal project link
   driveFolderId: string | null; // GDrive document parent folder id
 }
@@ -224,6 +228,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2RejectionDate: p.pe_m2_rejection_date ? String(p.pe_m2_rejection_date) : null,
         inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
         ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
+        m1ReadyToSubmitDate: p.pe_m1_ready_to_submit_date ? String(p.pe_m1_ready_to_submit_date) : null,
+        m2ReadyToSubmitDate: p.pe_m2_ready_to_submit_date ? String(p.pe_m2_ready_to_submit_date) : null,
         pePortalUrl: p.pe_portal_url ? String(p.pe_portal_url) : null,
         driveFolderId: p.all_document_parent_folder_id ? String(p.all_document_parent_folder_id) : null,
       });
@@ -314,8 +320,12 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         approvedOn: resolveApprovedOn(deal.m1ApprovalDate),
         paidOn: resolvePaidOn(deal.m1PaidDate),
         rejectedOn: resolveRejectedOn(deal.m1RejectionDate),
-        // readyOn keeps its history fallback — readiness, not an event stamp.
-        readyOn: deal.inspectionPassDate ?? m1Timing.firstReadyToSubmit ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
+        // readyOn = the date it hit "Ready to Submit" (stamped property, workflow-
+        // set + backfilled), else inspection-passed. The status-history fallback was
+        // dropped: a manual/regressed status move (e.g. set then reverted to
+        // Onboarding) used to leave a phantom "ready since X". The property is
+        // correctable; a regressed deal that was never backfilled resolves to null.
+        readyOn: deal.m1ReadyToSubmitDate ?? deal.inspectionPassDate ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
@@ -323,7 +333,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         approvedOn: resolveApprovedOn(deal.m2ApprovalDate),
         paidOn: resolvePaidOn(deal.m2PaidDate),
         rejectedOn: resolveRejectedOn(deal.m2RejectionDate),
-        readyOn: deal.ptoGrantedDate ?? m2Timing.firstReadyToSubmit ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
+        readyOn: deal.m2ReadyToSubmitDate ?? deal.ptoGrantedDate ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
       },
     );
   }
