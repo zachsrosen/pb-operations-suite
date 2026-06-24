@@ -749,26 +749,11 @@ export async function syncFromPeApi(options?: {
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Step 4b: Push doc statuses to HubSpot deal properties (best-effort)
-    //
-    // This was previously the retired scraper's job. The API sync now owns the
-    // DB→HubSpot mirror so the per-doc HubSpot status properties stay current.
-    // Set PE_HUBSPOT_DOC_SYNC_ENABLED=false to disable.
-    // -----------------------------------------------------------------------
-    if (process.env.PE_HUBSPOT_DOC_SYNC_ENABLED !== "false") {
-      const pushDealIds = [...new Set(docOps.map((op) => op.dealId))];
-      if (pushDealIds.length > 0) {
-        try {
-          await syncPeDocStatusesToHubSpot(pushDealIds);
-          console.warn(`[pe-api-sync] Pushed doc statuses to HubSpot for ${pushDealIds.length} deals`);
-        } catch (err) {
-          result.errors.push(
-            `HubSpot doc-status push failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
-    }
+    // NOTE: the HubSpot doc-status push (former Step 4b) moved DOWN to Step 5b,
+    // after the action-item upsert. Running it here — before this run's action
+    // items are in the DB — pushed a fresh ACTION_REQUIRED status (which fires the
+    // "Rejected by PE" email) with the pe_doc_*_notes property still EMPTY, because
+    // syncPeDocStatusesToHubSpot reads the reviewer note from PeActionItem.
 
     // -----------------------------------------------------------------------
     // Step 4c: Stamp pe_portal_url + pe_project_id on newly-matched deals
@@ -952,6 +937,32 @@ export async function syncFromPeApi(options?: {
         } catch (err) {
           result.errors.push(
             `Failed to auto-resolve approved doc items: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 5b: Push doc statuses + notes to HubSpot (best-effort)
+    //
+    // MUST run AFTER the action-item upsert/resolve above. syncPeDocStatusesToHubSpot
+    // writes pe_doc_*_status AND pe_doc_*_notes together, reading the reviewer note
+    // from PeActionItem. If this runs before this run's action items are in the DB
+    // (where it used to live, as Step 4b), a doc flipping to ACTION_REQUIRED gets its
+    // status pushed — firing the "Rejected by PE" email — with the notes property
+    // still empty (the note lands milliseconds later, on the next run's push). That
+    // was the real cause of the blank-Notes rejection emails.
+    // Set PE_HUBSPOT_DOC_SYNC_ENABLED=false to disable.
+    // -----------------------------------------------------------------------
+    if (process.env.PE_HUBSPOT_DOC_SYNC_ENABLED !== "false") {
+      const pushDealIds = [...new Set(docOps.map((op) => op.dealId))];
+      if (pushDealIds.length > 0) {
+        try {
+          await syncPeDocStatusesToHubSpot(pushDealIds);
+          console.warn(`[pe-api-sync] Pushed doc statuses to HubSpot for ${pushDealIds.length} deals`);
+        } catch (err) {
+          result.errors.push(
+            `HubSpot doc-status push failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
           );
         }
       }
