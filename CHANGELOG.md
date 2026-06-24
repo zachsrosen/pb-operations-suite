@@ -4,6 +4,77 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-21
+
+### P.E. (Participate Energy) Workflow (Major)
+- Auto-advance Rejected → Ready to Resubmit when all rejection tasks are completed; covers onboarding and internal rejections too
+- Loosened rejection-task matcher so task names can be freely renamed without breaking the auto-advance flow
+- Stopped webhook retry storm that was regenerating duplicate rejection tasks
+- Live-pull per-team M1 rejection notes from reviewer input on rejection (PR #685)
+- Populated `pe_doc_*_notes` deal properties from real reviewer comments via `PeActionItem`
+- Per-team QC rejection notes captured from reviewer input on internal rejection
+- Cleaner grouped rejection notes with LJF-only Design mirror
+- Mark P.E. M1/M2 Documents checkboxes automatically on rejection
+- Accept `?token=` query param on the rejection webhook (in addition to header)
+- PE doc sync now runs full (not incremental) every 30 minutes
+- Skip PE doc sync overnight (10pm–6am MT) and added quota guards to stop exhausting the PE daily API quota
+
+### EagleView TrueDesign Integration (Major)
+- TrueDesign CAD/DXF pull foundation — OAuth flow + reviewed webhook (feature-flagged off)
+- TrueDesign and full-order URL properties stamped onto deals/tickets
+- Orders list page: default orders list with PB location filter, status filters, and deal links
+- Order details drawer with Report # linking directly into EagleView TrueDesign
+- "View in TrueDesign" link surfaced on the EagleView panel
+- Stamp order status onto HubSpot deal/ticket on webhook receipt
+- DB-backed toggle for HubSpot stamping (env-or-SystemConfig)
+- TrueDesign delivery failures are now visible and self-healing
+- Order TrueDesign by geocoded address rather than stale stored coordinates
+- Reviewed webhook validates HubSpot v3 signature auth
+
+### Atlas Map Integration
+- Embedded Atlas as a top-level destination
+- Surfaced Atlas map card in Operations, PM, and Service suites
+
+### Caching & Rate-Limit Resilience
+- Cross-instance shared cache plus single-flight for projects/deals to absorb traffic spikes
+- Paused 3 HubSpot-heavy crons to relieve rate-limit outage
+
+### Operations / Bot / Chat
+- Morning sweep — proactive daily task & ticket digest for ops
+- `get_project_status` chat tool now returns project type + PE IC/PC payment amounts
+- Scope each status dimension to its stage in exec summaries
+- IDR meeting: ability to remove a project from the queue
+- Paused team-room daily digests
+- File process-request tickets under a non-agent requester
+- Moved feedback + chat launchers into the header chrome
+
+### Service & Production
+- Added a Service view to Production Issues (tickets + completed-project deals)
+- Freshservice tickets now created via API instead of email (with email fallback)
+
+### Integrations
+- Vishtik: sync `vishtik_project_id` + `vishtik_project_url` onto deals
+- PowerHub: clear stale alerts on sites that drop out of the poll
+
+### D&E and Project Funnel
+- D&E funnel: PE (All / PE / Non-PE) and On-Hold (show/hide) filters
+- Project funnel: short-lived Data Quality panel for missing reasons (added then removed)
+
+### Scheduler
+- Completed surveys & passed inspections no longer show as overdue
+- Zuper reschedule lookup sorts jobs newest-first (supersedes #928)
+
+### Tools & Admin
+- TSRF calculator: estimate annual clipping hours
+- Admin endpoint to bulk-set deal reason properties
+- One-off script to set RTB blocked reason on interconnection-blocked deals
+
+### Tests
+- `filter_deals_by_stage` chat-tool assertions updated to `total` (not stale `count`)
+- Realistic M2 teams used in PE rejection-task examples
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
