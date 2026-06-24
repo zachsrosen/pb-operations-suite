@@ -42,10 +42,11 @@ interface Milestone {
 }
 
 interface DocTally {
-  total: number;
+  required: number;
+  submitted: number;
   approved: number;
-  satisfied: number;
-  blocked: number;
+  underReview: number;
+  actionRequired: number;
 }
 
 interface Blocker {
@@ -64,7 +65,6 @@ interface CardData {
   lastSyncedAt: string | null;
   milestones: { ic: Milestone; pc: Milestone };
   docs: { m1: DocTally; m2: DocTally };
-  conditionalNote: boolean;
   blockers: Blocker[];
 }
 
@@ -203,24 +203,9 @@ function PeCard({ context }: { context: any }) {
       <Box>
         <Heading variant="h5">Documents</Heading>
         <Flex direction="row" gap="md" wrap="wrap">
-          <Tile compact>
-            <Text format={{ fontWeight: "bold" }}>
-              {data.docs.m1.satisfied}/{data.docs.m1.total}
-            </Text>
-            <Text variant="microcopy">M1 complete{data.docs.m1.blocked > 0 ? ` · ${data.docs.m1.blocked} flagged` : ""}</Text>
-          </Tile>
-          <Tile compact>
-            <Text format={{ fontWeight: "bold" }}>
-              {data.docs.m2.satisfied}/{data.docs.m2.total}
-            </Text>
-            <Text variant="microcopy">M2 complete{data.docs.m2.blocked > 0 ? ` · ${data.docs.m2.blocked} flagged` : ""}</Text>
-          </Tile>
+          <DocTile label="M1" t={data.docs.m1} />
+          <DocTile label="M2" t={data.docs.m2} />
         </Flex>
-        {data.conditionalNote && (
-          <Text variant="microcopy" format={{ italic: true }}>
-            Bill of Materials counts as complete when bundled in Photos (Not Required).
-          </Text>
-        )}
       </Box>
 
       <Divider />
@@ -250,6 +235,24 @@ function MilestoneTile({ label, m }: { label: string; m: Milestone }) {
       <Text variant="microcopy">
         {m.amount != null ? formatUsd(m.amount) : "—"}
         {m.paidOn ? ` · paid ${m.paidOn}` : m.approvedOn ? ` · approved ${m.approvedOn}` : ""}
+      </Text>
+    </Tile>
+  );
+}
+
+function DocTile({ label, t }: { label: string; t: DocTally }) {
+  const parts: string[] = [];
+  if (t.approved > 0) parts.push(`${t.approved} approved`);
+  if (t.underReview > 0) parts.push(`${t.underReview} under review`);
+  if (t.actionRequired > 0) parts.push(`${t.actionRequired} action required`);
+  return (
+    <Tile compact>
+      <Text format={{ fontWeight: "bold" }}>
+        {t.submitted}/{t.required} submitted
+      </Text>
+      <Text variant="microcopy">
+        {label}
+        {parts.length > 0 ? ` · ${parts.join(" · ")}` : ""}
       </Text>
     </Tile>
   );
