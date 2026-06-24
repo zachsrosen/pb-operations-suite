@@ -1,3 +1,7 @@
+// the module imports @/lib/db (Prisma/Neon, uses import.meta) — mock it so these
+// pure-helper tests don't pull the real client.
+jest.mock("@/lib/db", () => ({ prisma: {} }));
+
 import { decidePaidFromInvoice, latestPaidTimestamp, type InvoiceLite } from "@/lib/pe-invoice-paid-sync";
 
 const inv = (over: Partial<InvoiceLite>): InvoiceLite => ({

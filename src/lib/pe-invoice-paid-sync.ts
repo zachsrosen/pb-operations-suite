@@ -11,10 +11,15 @@
  * history timestamp — immune to the bulk last-modified edits and to revert/re-pay
  * (an invoice that went paid → open → paid keeps the latest transition).
  *
- * Kill switch: PE_INVOICE_PAID_SYNC_ENABLED=false short-circuits.
+ * Feature flag (SystemConfig, not env — toggle live without a redeploy, and avoids
+ * the Vercel env-var cap): writes only when the `pe_invoice_paid_sync_enabled` row
+ * is "true". A dry run computes regardless.
  */
 
+import { prisma } from "@/lib/db";
+
 const HS = "https://api.hubapi.com";
+const FLAG_KEY = "pe_invoice_paid_sync_enabled";
 const PE_TAG = "Participate Energy";
 const AMOUNT_TOL = 5; // dollars; IC/PC vs invoice billed amount
 
@@ -147,9 +152,18 @@ async function fetchInvoices(token: string, invoiceIds: string[]): Promise<Map<s
 export async function syncMilestonePaidFromInvoices(opts?: { dryRun?: boolean }): Promise<InvoicePaidSyncResult> {
   const dryRun = !!opts?.dryRun;
   const result: InvoicePaidSyncResult = { enabled: true, dryRun, candidates: 0, updates: [], errors: [] };
-  // Default OFF: only writes live when PE_INVOICE_PAID_SYNC_ENABLED=true. A dry run
+  // Default OFF: only writes live when the SystemConfig flag is "true". A dry run
   // always computes (so the rollout preview works before the flag is flipped).
-  if (!dryRun && process.env.PE_INVOICE_PAID_SYNC_ENABLED !== "true") return { ...result, enabled: false };
+  if (!dryRun) {
+    let on = false;
+    try {
+      const row = await prisma.systemConfig.findUnique({ where: { key: FLAG_KEY } });
+      on = row?.value === "true";
+    } catch (e) {
+      result.errors.push(`flag read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (!on) return { ...result, enabled: false };
+  }
 
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) {
