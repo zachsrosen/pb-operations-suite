@@ -1,0 +1,10 @@
+{
+  "uid": "pe-card",
+  "type": "card",
+  "config": {
+    "name": "Participate Energy",
+    "location": "crm.record.tab",
+    "entrypoint": "/app/cards/PeCard.tsx",
+    "objectTypes": ["DEAL"]
+  }
+}
