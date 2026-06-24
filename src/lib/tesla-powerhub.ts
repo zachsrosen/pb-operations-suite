@@ -304,14 +304,28 @@ export function createPowerHubClient(): PowerHubClient {
       const token = await getToken();
       const url = `${proxyUrl}/v2${path}`;
 
-      const res = await fetch(url, {
-        ...options,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          ...options?.headers,
-        },
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          ...options,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            ...options?.headers,
+          },
+        });
+      } catch (err) {
+        // Network-level failure (proxy connection reset / timeout, e.g. when the
+        // Fly proxy or Tesla API is contended). Retry with backoff like a 5xx
+        // rather than letting the whole sync throw.
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < MAX_RETRIES) {
+          const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+          continue;
+        }
+        throw lastError;
+      }
 
       if (res.ok) {
         const envelope = (await res.json()) as PowerHubEnvelope<T>;
