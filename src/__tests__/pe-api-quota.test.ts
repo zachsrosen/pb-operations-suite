@@ -3,6 +3,7 @@ import {
   parseQuotaResetAt,
   fetchWithRetry,
   projectNeedsActionItemDetail,
+  selectDetailFetchIds,
   quotaBlockActive,
 } from "@/lib/pe-api";
 
@@ -108,5 +109,49 @@ describe("quotaBlockActive", () => {
     expect(quotaBlockActive(null, now)).toBe(false);
     expect(quotaBlockActive(undefined, now)).toBe(false);
     expect(quotaBlockActive("nonsense", now)).toBe(false);
+  });
+});
+
+describe("selectDetailFetchIds", () => {
+  const proj = (id: string, projectId: string, updatedAt?: string | null) => ({
+    id,
+    projectId,
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
+  });
+
+  it("pulls detail for a fresh rejection with no captured note", () => {
+    const ids = selectDetailFetchIds([proj("int-1", "CO-1", "2026-06-24T05:00:00Z")], new Map());
+    expect(ids).toEqual(["int-1"]);
+  });
+
+  it("skips a rejection already captured and unchanged since", () => {
+    const captured = new Map([["CO-1", Date.parse("2026-06-24T05:00:00Z")]]);
+    const ids = selectDetailFetchIds([proj("int-1", "CO-1", "2026-06-24T04:00:00Z")], captured);
+    expect(ids).toEqual([]);
+  });
+
+  it("re-pulls a captured rejection PE changed (updatedAt after capture)", () => {
+    const captured = new Map([["CO-1", Date.parse("2026-06-24T04:00:00Z")]]);
+    const ids = selectDetailFetchIds([proj("int-1", "CO-1", "2026-06-24T06:30:00Z")], captured);
+    expect(ids).toEqual(["int-1"]);
+  });
+
+  it("skips a captured rejection with no updatedAt (cannot prove a change)", () => {
+    const captured = new Map([["CO-1", Date.parse("2026-06-24T04:00:00Z")]]);
+    const ids = selectDetailFetchIds([proj("int-1", "CO-1", null)], captured);
+    expect(ids).toEqual([]);
+  });
+
+  it("handles a mixed batch: fresh + changed pulled, captured-stable skipped", () => {
+    const captured = new Map([
+      ["CO-A", Date.parse("2026-06-24T04:00:00Z")], // stable
+      ["CO-B", Date.parse("2026-06-24T04:00:00Z")], // will be changed
+    ]);
+    const batch = [
+      proj("int-A", "CO-A", "2026-06-24T03:00:00Z"), // unchanged → skip
+      proj("int-B", "CO-B", "2026-06-24T07:00:00Z"), // changed → pull
+      proj("int-C", "CO-C", "2026-06-24T07:00:00Z"), // never captured → pull
+    ];
+    expect(selectDetailFetchIds(batch, captured).sort()).toEqual(["int-B", "int-C"]);
   });
 });

@@ -321,6 +321,42 @@ export function projectNeedsActionItemDetail(p: {
   return Object.values(p.documents || {}).some((d) => d?.status === "RESPONSE_NEEDED");
 }
 
+/**
+ * Choose which RESPONSE_NEEDED projects actually need a (quota-costly) DETAIL
+ * fetch this run. The DETAIL endpoint's only addition over the cheap LIST is
+ * `actionItems` (reviewer notes), so we spend a call only when there's a note we
+ * haven't captured yet:
+ *   - no open captured action item for the project  → a fresh rejection, pull it;
+ *   - PE touched the project (`updatedAt`) after our latest captured note → refresh.
+ * Already-captured, unchanged rejections are skipped. Re-pulling all ~70 standing
+ * rejections every run is what drained the PE daily quota and starved the detail
+ * phase to zero — dropping notes on brand-new rejections (so their "Rejected"
+ * email fired blank). Narrowing to new/changed keeps quota healthy so every fresh
+ * rejection's note lands with its status, no holding required.
+ *
+ * @param responseNeeded  list projects with at least one RESPONSE_NEEDED doc
+ * @param capturedAtByProject  peProjectId → latest captured (open) action-item time (ms)
+ * @returns internal ids to DETAIL-fetch
+ */
+export function selectDetailFetchIds(
+  responseNeeded: { id: string; projectId: string; updatedAt?: string | null }[],
+  capturedAtByProject: Map<string, number>,
+): string[] {
+  const ids: string[] = [];
+  for (const p of responseNeeded) {
+    const capturedAt = capturedAtByProject.get(p.projectId);
+    if (capturedAt == null) {
+      ids.push(p.id); // never captured a note for this open rejection → must pull
+      continue;
+    }
+    const updated = p.updatedAt ? Date.parse(p.updatedAt) : NaN;
+    if (!Number.isNaN(updated) && updated > capturedAt) {
+      ids.push(p.id); // PE changed the project since we captured → refresh notes
+    }
+  }
+  return ids;
+}
+
 /** True if a stored quota-block timestamp is still in the future (sync should skip). */
 export function quotaBlockActive(
   blockedUntilIso: string | null | undefined,

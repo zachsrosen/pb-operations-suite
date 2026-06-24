@@ -30,6 +30,7 @@ import {
   listAllProjects,
   getProjectDetails,
   projectNeedsActionItemDetail,
+  selectDetailFetchIds,
   quotaBlockActive,
   isDailyQuotaError,
   parseQuotaResetAt,
@@ -396,19 +397,37 @@ export async function syncFromPeApi(options?: {
     let detailMap = new Map<string, PeProjectDetail>();
 
     if (!skipActionItems) {
-      // Only fetch DETAIL for projects with a RESPONSE_NEEDED doc. The DETAIL
-      // endpoint's sole addition over the (cheap, already-fetched) LIST is
-      // `actionItems` — reviewer notes that only exist for RESPONSE_NEEDED docs.
-      // Doc status + version history come from the LIST for every project, so
-      // narrowing here cuts ~391 per-project calls/run down to the handful with
-      // an open rejection — the fix for blowing the PE daily quota.
-      const idsNeedingDetail = projects
-        .filter((p) => projectNeedsActionItemDetail(p))
-        .map((p) => p.id);
+      // The DETAIL endpoint's sole addition over the (cheap, already-fetched)
+      // LIST is `actionItems` — reviewer notes that only exist for RESPONSE_NEEDED
+      // docs. Doc status + version history come from the LIST for every project.
+      const responseNeeded = projects.filter((p) => projectNeedsActionItemDetail(p));
+
+      // Quota-aware narrowing: spend a DETAIL call only on projects whose note we
+      // haven't captured yet (a fresh rejection) or that PE changed since we did.
+      // Re-pulling every standing rejection each run drained the PE daily quota and
+      // starved the detail phase to zero, dropping notes on brand-new rejections so
+      // their "Rejected" email fired blank. See selectDetailFetchIds.
+      const capturedRows = responseNeeded.length
+        ? await prisma.peActionItem.findMany({
+            where: {
+              peProjectId: { in: responseNeeded.map((p) => p.projectId) },
+              resolvedAt: null,
+            },
+            select: { peProjectId: true, actionDate: true },
+          })
+        : [];
+      const capturedAtByProject = new Map<string, number>();
+      for (const r of capturedRows) {
+        const t = r.actionDate.getTime();
+        const prev = capturedAtByProject.get(r.peProjectId);
+        if (prev == null || t > prev) capturedAtByProject.set(r.peProjectId, t);
+      }
+      const idsNeedingDetail = selectDetailFetchIds(responseNeeded, capturedAtByProject);
 
       console.warn(
-        `[pe-api-sync] Fetching details for ${idsNeedingDetail.length}/${projects.length} ` +
-          `projects with a RESPONSE_NEEDED doc (concurrency=${concurrency})...`,
+        `[pe-api-sync] Fetching details for ${idsNeedingDetail.length}/${responseNeeded.length} ` +
+          `RESPONSE_NEEDED projects (new/changed only; ` +
+          `${responseNeeded.length - idsNeedingDetail.length} already captured, concurrency=${concurrency})...`,
       );
       detailMap = await getProjectDetails(idsNeedingDetail, concurrency, deadlineMs);
       console.warn(`[pe-api-sync] Fetched details for ${detailMap.size} projects`);
@@ -856,9 +875,15 @@ export async function syncFromPeApi(options?: {
         }
       }
 
-      // Auto-resolve action items whose document is now APPROVED.
-      // When PE approves a doc after the installer fixes issues, the prior
-      // action items become historical — they no longer need attention.
+    }
+
+    // Auto-resolve action items whose document is now APPROVED. Driven by LIST
+    // status (docOps), so it must run every sync — independent of whether we
+    // fetched any DETAIL this run. With quota-aware narrowing, detailMap is empty
+    // on runs with no new/changed rejections, so this can't live inside the detail
+    // guard. When PE approves a doc after the installer fixes issues, the prior
+    // action items become historical — they no longer need attention.
+    if (!skipActionItems) {
       const approvedDocs = docOps.filter((op) => op.status === PeDocStatus.APPROVED);
       if (approvedDocs.length > 0) {
         try {
