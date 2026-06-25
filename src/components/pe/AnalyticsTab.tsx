@@ -2426,7 +2426,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 : WEEKLY_MODES[weeklyMode].subtitle
             }
             actions={
-              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+              <div className="flex items-center gap-2 flex-shrink-0 justify-end">
                 {/* Group toggle: Milestones (next-step cohorts) vs Lifecycle (full outcome). */}
                 <div className="inline-flex rounded-full border border-t-border overflow-hidden text-xs">
                   {(["milestones", "lifecycle"] as const).map((g) => (
@@ -2448,19 +2448,6 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                     </button>
                   ))}
                 </div>
-                {chartGroup === "milestones" && (
-                  <div className="flex items-center gap-1.5">
-                    {MILESTONE_MODE_ORDER.map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => { setWeeklyMode(mode); setDrill(null); }}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
-                      >
-                        {WEEKLY_MODES[mode].label}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             }
           >
@@ -2515,9 +2502,22 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones · ${funnelTotals.deals.paid} deals`} />
               </button>
             </div>
-            {/* Shared chart controls: granularity for every view; date-basis for Lifecycle. */}
-            <div className="flex items-center justify-end gap-2 mb-2">
-              {weeklyMode === "lifecycle" && (
+            {/* Chart controls row: secondary selector (milestone pills OR lifecycle
+                date-basis) on the left, granularity on the right. */}
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              {chartGroup === "milestones" ? (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {MILESTONE_MODE_ORDER.map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => { setWeeklyMode(mode); setDrill(null); }}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+                    >
+                      {WEEKLY_MODES[mode].label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
                 <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]">
                   {(["ready", "submitted", "rejected"] as const).map((b) => (
                     <button
