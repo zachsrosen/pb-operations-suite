@@ -974,13 +974,15 @@ export interface PeAnalyticsPayload {
     rejectionRatePct: number | null; // % of submitted milestones rejected at least once
   };
   docStats: DocStats;
-  weekly: WeeklyPayments[];
-  weeklyApprovals: WeeklyPayments[];
-  weeklySubmissions: WeeklyPayments[];
-  weeklyLifecycle: WeeklyLifecycle[];
-  dailyLifecycle: WeeklyLifecycle[]; // same buckets, keyed by day (UI toggle)
-  weeklyReadiness: WeeklySplitCohort[];
-  weeklyRejections: WeeklySplitCohort[];
+  // All weekly charts are emitted at DAY granularity; the client rolls them up
+  // to week/month on demand (summing daily buckets is exact).
+  dailyPaid: WeeklyPayments[];
+  dailyApprovals: WeeklyPayments[];
+  dailySubmissions: WeeklyPayments[];
+  dailyLifecycle: WeeklyLifecycle[]; // lifecycle dated by READY day
+  dailyLifecycleSubmitted: WeeklyLifecycle[]; // lifecycle dated by SUBMITTED day
+  dailyReadiness: WeeklySplitCohort[];
+  dailyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];
   docRejectionEvents: DocRejectionEvent[];
   docSubmissionEvents: DocRejectionEvent[];
