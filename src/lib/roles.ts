@@ -1711,6 +1711,23 @@ for (const def of Object.values(ROLES)) {
 }
 
 /**
+ * The Project Pipeline Funnel (page + its read APIs) is company-wide: reachable
+ * by every authenticated role. Post-process the ROLES table so we don't edit
+ * each allowedRoutes list by hand; "*" roles already have access and are skipped.
+ */
+const FUNNEL_VIEW_ROUTES = [
+  "/dashboards/project-pipeline-funnel",
+  "/api/deals/project-funnel",
+  "/api/deals/funnel-metrics-snapshot",
+];
+for (const def of Object.values(ROLES)) {
+  if (def.allowedRoutes.includes("*")) continue;
+  for (const route of FUNNEL_VIEW_ROUTES) {
+    if (!def.allowedRoutes.includes(route)) def.allowedRoutes.push(route);
+  }
+}
+
+/**
  * Routes that require ADMIN role even if the role's allowedRoutes would otherwise
  * permit access. Non-admin roles can be granted exceptions via ADMIN_ONLY_EXCEPTIONS.
  */
