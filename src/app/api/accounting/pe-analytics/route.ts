@@ -443,6 +443,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // series excludes not-yet-submitted milestones (they have no submission day).
   const lifecycleDayMap = new Map<string, WeeklyLifecycle>();
   const lifecycleSubmittedDayMap = new Map<string, WeeklyLifecycle>();
+  const lifecycleRejectedDayMap = new Map<string, WeeklyLifecycle>();
   const emptyLifecycle = (start: string): WeeklyLifecycle => ({
     weekStart: start, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0,
     inReviewCount: 0, inReviewAmount: 0, resubmittedCount: 0, resubmittedAmount: 0,
@@ -489,9 +490,18 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       apply(ws);
       lifecycleSubmittedDayMap.set(sday, ws);
     }
+    // Rejected-basis: milestones that were rejected at least once — full outcome
+    // today, dated by their rejection day (recovery view: where did they land).
+    if (r.rejectedOn) {
+      const rday = dayKey(r.rejectedOn);
+      const wr = lifecycleRejectedDayMap.get(rday) || emptyLifecycle(rday);
+      apply(wr);
+      lifecycleRejectedDayMap.set(rday, wr);
+    }
   }
   const dailyLifecycle = [...lifecycleDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   const dailyLifecycleSubmitted = [...lifecycleSubmittedDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const dailyLifecycleRejected = [...lifecycleRejectedDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
   markDone(dailyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(
@@ -1219,6 +1229,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     dailySubmissions,
     dailyLifecycle,
     dailyLifecycleSubmitted,
+    dailyLifecycleRejected,
     dailyReadiness,
     dailyRejections,
     milestones,

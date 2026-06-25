@@ -981,6 +981,7 @@ export interface PeAnalyticsPayload {
   dailySubmissions: WeeklyPayments[];
   dailyLifecycle: WeeklyLifecycle[]; // lifecycle dated by READY day
   dailyLifecycleSubmitted: WeeklyLifecycle[]; // lifecycle dated by SUBMITTED day
+  dailyLifecycleRejected: WeeklyLifecycle[]; // lifecycle dated by REJECTION day
   dailyReadiness: WeeklySplitCohort[];
   dailyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];
