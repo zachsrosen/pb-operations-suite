@@ -191,6 +191,7 @@ export interface ProjectFunnelDrillDown {
   awaitingDesignComplete: ProjectFunnelDrillDownDeal[];
   awaitingPermitSubmit: ProjectFunnelDrillDownDeal[];
   awaitingPermitIssue: ProjectFunnelDrillDownDeal[];
+  awaitingInterconnection: ProjectFunnelDrillDownDeal[];
   awaitingReadyToBuild: ProjectFunnelDrillDownDeal[];
   awaitingConstructionSchedule: ProjectFunnelDrillDownDeal[];
   awaitingConstructionComplete: ProjectFunnelDrillDownDeal[];
@@ -611,8 +612,10 @@ export function resolveMilestones(p: Project) {
   const hasInspectionPassed = hasPtoGranted || stageInspectionPassed || !!p.inspectionPassDate;
   const hasConstructionComplete = hasInspectionPassed || stageConstructionComplete || !!p.constructionCompleteDate;
   const hasConstructionScheduled = hasConstructionComplete || stageConstructionScheduled || !!p.constructionScheduleDate;
-  // Ready to build: has a ready-to-build date, or is at/past the RTB stage.
-  const hasReadyToBuild = hasConstructionScheduled || stageReadyToBuild || !!p.readyToBuildDate;
+  // Ready to build is driven by CURRENT stage (at/past Ready-To-Build), NOT the
+  // ready_to_build_date — that date is sticky and survives a deal being pushed
+  // back into RTB-Blocked / On Hold, which would otherwise over-count the bench.
+  const hasReadyToBuild = hasConstructionScheduled || stageReadyToBuild;
   const hasPermitIssued = hasReadyToBuild || stagePermitIssued || !!p.permitIssueDate;
   const hasPermitSubmit = hasPermitIssued || stagePermitSubmit || !!p.permitSubmitDate;
   const hasDesignComplete = hasPermitSubmit || stageDesignComplete || !!p.designCompletionDate;
@@ -1248,6 +1251,7 @@ export function buildProjectFunnelData(
     awaitingDesignComplete: [],
     awaitingPermitSubmit: [],
     awaitingPermitIssue: [],
+    awaitingInterconnection: [],
     awaitingReadyToBuild: [],
     awaitingConstructionSchedule: [],
     awaitingConstructionComplete: [],
@@ -1298,9 +1302,13 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasReadyToBuild) {
-      // Permit issued but not yet shovel-ready (e.g. RTB-Blocked on interconnection).
+      // Permit issued but not yet at the Ready-To-Build stage. Split by whether
+      // interconnection is approved (its completion date is set): if not, it's
+      // waiting on the utility; if it is, the block is something else (roof,
+      // MSP, new construction, …).
       const waitSince = p.permitIssueDate || p.closeDate!;
-      drillDown.awaitingReadyToBuild.push(
+      const bucket = p.interconnectionApprovalDate ? drillDown.awaitingReadyToBuild : drillDown.awaitingInterconnection;
+      bucket.push(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasConstructionScheduled) {
@@ -1351,6 +1359,7 @@ export function buildProjectFunnelData(
   drillDown.awaitingDesignComplete.sort(byWaitDesc);
   drillDown.awaitingPermitSubmit.sort(byWaitDesc);
   drillDown.awaitingPermitIssue.sort(byWaitDesc);
+  drillDown.awaitingInterconnection.sort(byWaitDesc);
   drillDown.awaitingReadyToBuild.sort(byWaitDesc);
   drillDown.awaitingConstructionSchedule.sort(byWaitDesc);
   drillDown.awaitingConstructionComplete.sort(byWaitDesc);

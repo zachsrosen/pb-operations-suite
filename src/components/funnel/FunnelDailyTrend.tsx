@@ -36,6 +36,7 @@ const BUCKET_COLS: { key: string; label: string }[] = [
   { key: "awaitingDesignComplete", label: "Design" },
   { key: "awaitingPermitSubmit", label: "Permit Sub" },
   { key: "awaitingPermitIssue", label: "Permit Iss" },
+  { key: "awaitingInterconnection", label: "Interconn" },
   { key: "awaitingReadyToBuild", label: "Ready to Build" },
   { key: "awaitingConstructionSchedule", label: "Const Sched" },
   { key: "awaitingConstructionComplete", label: "Const Done" },
