@@ -1302,15 +1302,22 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasReadyToBuild) {
-      // Permit issued but not yet at the Ready-To-Build stage. Split by whether
-      // interconnection is approved (its completion date is set): if not, it's
-      // waiting on the utility; if it is, the block is something else (roof,
-      // MSP, new construction, …).
-      const waitSince = p.permitIssueDate || p.closeDate!;
-      const bucket = p.interconnectionApprovalDate ? drillDown.awaitingReadyToBuild : drillDown.awaitingInterconnection;
-      bucket.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
-      );
+      // Permit issued but not yet at the Ready-To-Build stage. Sequenced:
+      // permit issued → interconnection approved → ready to build. Each bucket
+      // counts from its own prior milestone:
+      //  - not approved → waiting on the utility (from permit issued)
+      //  - approved but still not RTB → blocked on something else (from approval)
+      if (p.interconnectionApprovalDate) {
+        const waitSince = p.interconnectionApprovalDate || p.permitIssueDate || p.closeDate!;
+        drillDown.awaitingReadyToBuild.push(
+          toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+        );
+      } else {
+        const waitSince = p.permitIssueDate || p.closeDate!;
+        drillDown.awaitingInterconnection.push(
+          toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+        );
+      }
     } else if (!m.hasConstructionScheduled) {
       // Shovel-ready bench — anchor on the ready-to-build date ("time in RTB").
       const waitSince = p.readyToBuildDate || p.permitIssueDate || p.closeDate!;
