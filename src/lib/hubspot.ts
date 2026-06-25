@@ -1367,7 +1367,17 @@ export async function fetchAllProjects(options?: {
 
   console.log(`[HubSpot] Phase 1 complete: ${allDealIds.length} IDs collected in ${pageCount} pages (HubSpot total: ${searchTotal})`);
 
-  if (allDealIds.length === 0) return [];
+  if (allDealIds.length === 0) {
+    // Search reported deals but we collected none → a transient HubSpot failure,
+    // not a genuinely empty pipeline. Throw so callers/cache keep their last-good
+    // value instead of treating it as "0 deals" (which blanked the pipeline page).
+    if (searchTotal > 0) {
+      throw new Error(
+        `fetchAllProjects: HubSpot search reported ${searchTotal} deals but returned 0 IDs — treating as transient failure`
+      );
+    }
+    return [];
+  }
 
   // ── Phase 2: Batch-read full properties ──
   // The batch API reliably returns all requested properties without truncation.
