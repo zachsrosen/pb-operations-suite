@@ -144,6 +144,14 @@ export class CacheStore {
     // Start new fetch
     const promise = fetcher()
       .then((data) => {
+        // Guard against a transient empty result (e.g. a HubSpot hiccup
+        // returning 0 deals) overwriting good cached data — that's what made the
+        // pipeline page "randomly clear" to 0 jobs. Keep the prior non-empty
+        // value and leave it stale so the next access re-fetches.
+        const prev = this.cache.get(key)?.data;
+        if (Array.isArray(data) && data.length === 0 && Array.isArray(prev) && prev.length > 0) {
+          return prev as T;
+        }
         this.set(key, data, opts);
         return data;
       })
@@ -164,6 +172,12 @@ export class CacheStore {
 
     const promise = fetcher()
       .then((data) => {
+        // Same guard as coalescedFetch: don't poison good data with a transient
+        // empty refresh result.
+        const prev = this.cache.get(key)?.data;
+        if (Array.isArray(data) && data.length === 0 && Array.isArray(prev) && prev.length > 0) {
+          return;
+        }
         this.set(key, data);
       })
       .catch((err) => {
