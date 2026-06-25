@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
     composeAllRejectionComments,
     composeRejectedDocuments,
     sameDocSelection,
+    withClearedTeamFields,
     peInternalIdFromPortalUrl,
   } = await import("@/lib/pe-rejection-notes");
 
@@ -120,12 +121,20 @@ export async function POST(req: NextRequest) {
   // Phase 1 — the rejection notes (per-team + combined). These must land BEFORE
   // the document checkboxes, because ticking pe_m{1,2}_documents is what triggers
   // the per-team task workflows, and those tasks read these note fields.
-  const noteProps: Record<string, string> = composeRejectionNotes(
+  //
+  // withClearedTeamFields ensures EVERY team field is written — empty for any team
+  // with no current rejection — so a stale note (from a prior round or typed by
+  // hand) is cleared. Otherwise the team's task workflow, which fires on
+  // status→Rejected with a "note is non-empty" branch, regenerates that team's
+  // task on the next rejection even when none of its docs were rejected. Same for
+  // the combined comments field, always written so it clears when nothing's open.
+  const noteProps: Record<string, string> = withClearedTeamFields(
+    composeRejectionNotes(detail.documents, detail.actionItems ?? []),
+  );
+  noteProps.pe_rejection_comments = composeAllRejectionComments(
     detail.documents,
     detail.actionItems ?? [],
   );
-  const allComments = composeAllRejectionComments(detail.documents, detail.actionItems ?? []);
-  if (allComments) noteProps.pe_rejection_comments = allComments;
 
   // Phase 2 — the P.E. M{1,2} Documents checkboxes for the currently-rejected
   // docs, but only for the milestone that was actually rejected (a rejected M1

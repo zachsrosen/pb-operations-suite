@@ -62,6 +62,28 @@ export const PE_REJECTION_TEAM_FIELDS = [
   ...new Set(Object.values(PE_DOC_TO_TEAM_FIELD)),
 ];
 
+/**
+ * Expand composed notes so EVERY team field is present — empty for any team with
+ * no current rejection. The webhook writes the result, so a team that isn't
+ * rejected this round gets its `pe_rejection_notes_for_*` CLEARED.
+ *
+ * Without this, `composeRejectionNotes` only returns the teams that have a
+ * rejection, leaving a prior round's (or a manually-typed) note in place. The
+ * per-team task workflows fire on `pe_m{1,2}_status → Rejected` with a
+ * "my note field is non-empty" branch, so a stale note makes a team's task
+ * regenerate on the next rejection even when none of that team's docs were
+ * rejected (the Garman utility-bill false task).
+ */
+export function withClearedTeamFields(
+  notes: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of PE_REJECTION_TEAM_FIELDS) out[field] = notes[field] ?? "";
+  // Preserve any non-team keys the caller added (none expected today).
+  for (const [k, v] of Object.entries(notes)) if (!(k in out)) out[k] = v;
+  return out;
+}
+
 const DESIGN_FIELD = "pe_rejection_notes_for_design";
 
 /**
