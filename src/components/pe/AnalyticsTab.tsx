@@ -2161,6 +2161,12 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           return data.milestones.filter((r) => !!r.readyOn && !r.submittedOn && (!r.status || PRE_SUB.has(r.status)));
         case "waitApproval":
           return data.milestones.filter((r) => !!r.submittedOn && !isApprovedAgg(r));
+        case "awaitingRejected":
+          return data.milestones.filter((r) => !!r.submittedOn && !isApprovedAgg(r) && groupForStatus(r.status) === "Rejected — pending fix");
+        case "awaitingResubmitted":
+          return data.milestones.filter((r) => !!r.submittedOn && !isApprovedAgg(r) && groupForStatus(r.status) !== "Rejected — pending fix" && r.status === "Resubmitted");
+        case "awaitingSubmitted":
+          return data.milestones.filter((r) => !!r.submittedOn && !isApprovedAgg(r) && groupForStatus(r.status) !== "Rejected — pending fix" && r.status !== "Resubmitted");
         case "waitPayment":
           return data.milestones.filter((r) => isApprovedAgg(r) && !isPaidAgg(r));
         case "paidAll":
@@ -2232,6 +2238,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
   const AGGREGATE_LABELS: Record<string, string> = {
     waitSubmission: "All waiting on submission",
     waitApproval: "All submitted, awaiting PE approval",
+    awaitingSubmitted: "Submitted, awaiting PE approval (first time)",
+    awaitingResubmitted: "Resubmitted, awaiting PE approval",
+    awaitingRejected: "Rejected — pending fix (our court)",
     waitPayment: "All approved, awaiting payment",
     paidAll: "All paid",
   };
@@ -2479,7 +2488,21 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                     <>
                       {funnelTotals.submitted.count} milestones · {funnelTotals.deals.submitted} deals
                       <span className="block mt-0.5">
-                        awaiting PE: {fmtUsdK(funnelTotals.awaitingApproval.submittedAmount)} submitted · <span className="text-violet-400">{fmtUsdK(funnelTotals.awaitingApproval.resubmittedAmount)} resubmitted</span> · <span className="text-orange-400">{fmtUsdK(funnelTotals.awaitingApproval.rejectedAmount)} rejected</span>
+                        awaiting PE:{" "}
+                        <span role="button" tabIndex={0} className="cursor-pointer hover:underline" title="Click: submitted, awaiting PE approval"
+                          onClick={(e) => { e.stopPropagation(); openAggregate("awaitingSubmitted"); }}>
+                          {fmtUsdK(funnelTotals.awaitingApproval.submittedAmount)} submitted
+                        </span>
+                        {" · "}
+                        <span role="button" tabIndex={0} className="text-violet-400 cursor-pointer hover:underline" title="Click: resubmitted, awaiting PE approval"
+                          onClick={(e) => { e.stopPropagation(); openAggregate("awaitingResubmitted"); }}>
+                          {fmtUsdK(funnelTotals.awaitingApproval.resubmittedAmount)} resubmitted
+                        </span>
+                        {" · "}
+                        <span role="button" tabIndex={0} className="text-orange-400 cursor-pointer hover:underline" title="Click: rejected, pending fix"
+                          onClick={(e) => { e.stopPropagation(); openAggregate("awaitingRejected"); }}>
+                          {fmtUsdK(funnelTotals.awaitingApproval.rejectedAmount)} rejected
+                        </span>
                       </span>
                     </>
                   }
