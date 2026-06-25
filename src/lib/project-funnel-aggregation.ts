@@ -60,6 +60,8 @@ export interface ProjectFunnelMedianDays {
   designCompleteToPermitSubmit: number | null;
   permitSubmitToIssued: number | null;
   permitIssuedToConstructionScheduled: number | null;
+  permitIssuedToReadyToBuild: number | null;
+  readyToBuildToConstructionScheduled: number | null;
   constructionScheduledToComplete: number | null;
   constructionCompleteToInspection: number | null;
   inspectionToPto: number | null;
@@ -189,6 +191,7 @@ export interface ProjectFunnelDrillDown {
   awaitingDesignComplete: ProjectFunnelDrillDownDeal[];
   awaitingPermitSubmit: ProjectFunnelDrillDownDeal[];
   awaitingPermitIssue: ProjectFunnelDrillDownDeal[];
+  awaitingReadyToBuild: ProjectFunnelDrillDownDeal[];
   awaitingConstructionSchedule: ProjectFunnelDrillDownDeal[];
   awaitingConstructionComplete: ProjectFunnelDrillDownDeal[];
   awaitingInspection: ProjectFunnelDrillDownDeal[];
@@ -332,6 +335,7 @@ export interface ProjectFunnelCapacity {
 const CANCELLED_STAGE_ID = "68229433";
 const ON_HOLD_STAGE_ID = "20440344";
 const RTB_BLOCKED_STAGE_ID = "71052436";
+const PROJECT_REJECTED_STAGE_ID = "20461935";
 const PROJECT_COMPLETE_STAGE_ID = "20440343";
 
 /** Active = still in flight: not cancelled and not project-complete. */
@@ -427,6 +431,13 @@ function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
     // block reason, so they're intentionally excluded.)
     const reason = p.rtbBlockedReason || p.katsNotes || null;
     return { label: "RTB blocked", tone: "red", reason, note: null, parked: false };
+  }
+  if (p.stageId === PROJECT_REJECTED_STAGE_ID) {
+    // No dedicated reject-reason field; the "why" is usually the sales
+    // communication note (corrections needed), with the catch-all rationale as
+    // fallback. (Install notes are excluded — they're install-prep, not the reason.)
+    const reason = p.salesCommunicationReason || p.pbShitShowReason || p.katsNotes || null;
+    return { label: "Project rejected", tone: "red", reason, note: null, parked: false };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
     // The dedicated field is often blank; the change is usually recorded in the
@@ -586,6 +597,8 @@ export function resolveMilestones(p: Project) {
   // RTB-Blocked (4) does NOT imply permits — jump to 5
   const stagePermitSubmit = sp >= 5;
   const stagePermitIssued = sp >= 5;
+  // Ready To Build stage (5) ⇒ shovel-ready; RTB-Blocked (4) is NOT.
+  const stageReadyToBuild = sp >= 5;
   const stageConstructionScheduled = sp >= 6;
   const stageConstructionComplete = sp >= 7;
   const stageInspectionPassed = sp >= 8;
@@ -596,7 +609,9 @@ export function resolveMilestones(p: Project) {
   const hasInspectionPassed = hasPtoGranted || stageInspectionPassed || !!p.inspectionPassDate;
   const hasConstructionComplete = hasInspectionPassed || stageConstructionComplete || !!p.constructionCompleteDate;
   const hasConstructionScheduled = hasConstructionComplete || stageConstructionScheduled || !!p.constructionScheduleDate;
-  const hasPermitIssued = hasConstructionScheduled || stagePermitIssued || !!p.permitIssueDate;
+  // Ready to build: has a ready-to-build date, or is at/past the RTB stage.
+  const hasReadyToBuild = hasConstructionScheduled || stageReadyToBuild || !!p.readyToBuildDate;
+  const hasPermitIssued = hasReadyToBuild || stagePermitIssued || !!p.permitIssueDate;
   const hasPermitSubmit = hasPermitIssued || stagePermitSubmit || !!p.permitSubmitDate;
   const hasDesignComplete = hasPermitSubmit || stageDesignComplete || !!p.designCompletionDate;
   const hasDaApproved = hasDesignComplete || stageDaApproved || !!p.designApprovalDate;
@@ -612,6 +627,7 @@ export function resolveMilestones(p: Project) {
     hasDesignComplete,
     hasPermitSubmit,
     hasPermitIssued,
+    hasReadyToBuild,
     hasConstructionScheduled,
     hasConstructionComplete,
     hasInspectionPassed,
@@ -770,6 +786,8 @@ export function buildProjectFunnelData(
   const dDesignCompleteToPermitSubmit: number[] = [];
   const dPermitSubmitToIssued: number[] = [];
   const dPermitIssuedToConstructionScheduled: number[] = [];
+  const dPermitIssuedToReadyToBuild: number[] = [];
+  const dReadyToBuildToConstructionScheduled: number[] = [];
   const dConstructionScheduledToComplete: number[] = [];
   const dConstructionCompleteToInspection: number[] = [];
   const dInspectionToPto: number[] = [];
@@ -830,11 +848,15 @@ export function buildProjectFunnelData(
       if (!cancelled && p.permitSubmitDate && p.permitIssueDate)
         dPermitSubmitToIssued.push(daysBetween(p.permitSubmitDate, p.permitIssueDate));
     }
+    if (m.hasReadyToBuild && !cancelled && p.permitIssueDate && p.readyToBuildDate)
+      dPermitIssuedToReadyToBuild.push(daysBetween(p.permitIssueDate, p.readyToBuildDate));
     if (m.hasConstructionScheduled) {
       addToStage(summary.constructionScheduled, amt, cancelled, onHold);
       addToStage(cohort.constructionScheduled, amt, cancelled, onHold);
       if (!cancelled && p.permitIssueDate && p.constructionScheduleDate)
         dPermitIssuedToConstructionScheduled.push(daysBetween(p.permitIssueDate, p.constructionScheduleDate));
+      if (!cancelled && p.readyToBuildDate && p.constructionScheduleDate)
+        dReadyToBuildToConstructionScheduled.push(daysBetween(p.readyToBuildDate, p.constructionScheduleDate));
     }
     if (m.hasConstructionComplete) {
       addToStage(summary.constructionComplete, amt, cancelled, onHold);
@@ -1187,6 +1209,7 @@ export function buildProjectFunnelData(
     awaitingDesignComplete: [],
     awaitingPermitSubmit: [],
     awaitingPermitIssue: [],
+    awaitingReadyToBuild: [],
     awaitingConstructionSchedule: [],
     awaitingConstructionComplete: [],
     awaitingInspection: [],
@@ -1235,8 +1258,15 @@ export function buildProjectFunnelData(
       drillDown.awaitingPermitIssue.push(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
-    } else if (!m.hasConstructionScheduled) {
+    } else if (!m.hasReadyToBuild) {
+      // Permit issued but not yet shovel-ready (e.g. RTB-Blocked on interconnection).
       const waitSince = p.permitIssueDate || p.closeDate!;
+      drillDown.awaitingReadyToBuild.push(
+        toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+      );
+    } else if (!m.hasConstructionScheduled) {
+      // Shovel-ready bench — anchor on the ready-to-build date ("time in RTB").
+      const waitSince = p.readyToBuildDate || p.permitIssueDate || p.closeDate!;
       drillDown.awaitingConstructionSchedule.push(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
       );
@@ -1282,6 +1312,7 @@ export function buildProjectFunnelData(
   drillDown.awaitingDesignComplete.sort(byWaitDesc);
   drillDown.awaitingPermitSubmit.sort(byWaitDesc);
   drillDown.awaitingPermitIssue.sort(byWaitDesc);
+  drillDown.awaitingReadyToBuild.sort(byWaitDesc);
   drillDown.awaitingConstructionSchedule.sort(byWaitDesc);
   drillDown.awaitingConstructionComplete.sort(byWaitDesc);
   drillDown.awaitingInspection.sort(byWaitDesc);
@@ -1458,6 +1489,8 @@ export function buildProjectFunnelData(
       designCompleteToPermitSubmit: median(dDesignCompleteToPermitSubmit),
       permitSubmitToIssued: median(dPermitSubmitToIssued),
       permitIssuedToConstructionScheduled: median(dPermitIssuedToConstructionScheduled),
+      permitIssuedToReadyToBuild: median(dPermitIssuedToReadyToBuild),
+      readyToBuildToConstructionScheduled: median(dReadyToBuildToConstructionScheduled),
       constructionScheduledToComplete: median(dConstructionScheduledToComplete),
       constructionCompleteToInspection: median(dConstructionCompleteToInspection),
       inspectionToPto: median(dInspectionToPto),
