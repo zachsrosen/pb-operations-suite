@@ -4,6 +4,104 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-25
+
+### Participate Energy Integration (Major)
+- HubSpot Deal card for Participate Energy status showing submitted/required counts with approved · under review · action required breakdown
+- Sync button shared in the tab bar across all PE tabs; "Last synced X ago" indicator next to the button, reflecting the last successful pull
+- Bill of Materials tracked as its own M1 document — conditionally required, syncs status to HubSpot, "Not Required" available as a real status for conditional docs
+- "Last submitter" payment-ownership mode on the Doc Uploaders table
+- Approved milestones now advance to Paid from the invoice paid-in-full date (gated by a SystemConfig flag for live toggling without redeploy)
+- Auto-advance onboarding and internal rejections; loosened rejection-task matcher so task names are freely renameable
+
+### Workflow Map (Major)
+- New Workflow Map dashboard surfacing live HubSpot automation and SOP reference in one view
+- Zoomable flowchart view (pipelines → stages → workflows) with name+status stage mapping and task edges
+- Family-lane stage layout with write-only status mapping; date-stamp plumbing hidden for clarity
+- Curated vertical-swimlane Process view (Design intertwines, Permitting parallel)
+- Accurate Design process view: parallel tracks → AND-gate → stamps branch, with tighter pill wrapping
+- Plain-English end-to-end pipeline walkthrough, expandable per stage
+- Resumable backfill with maxDuration=300 and admin Build/Re-sync button
+
+### Cohort Charts & Funnel Analytics
+- Milestone Progression cohort chart added to the project pipeline funnel with pill selector, Sales Closed start, Lifecycle view, extended chain to Closed Out, weekly bins, PE-style sizing, and click-to-drill-down
+- Funnel cohorts: on-hold segment, milestone lifecycle, richer drill-downs, label rename
+- Cancelled and On Hold surfaced as their own segments
+- Headline summary cards above the chart with drill-down on summary cards plus lifecycle DA metric
+- Finer lifecycle, drill-down detail, week/month toggle, segment drill, sort + copy
+- Revenue/count label placed directly above each bar
+
+### Scheduler
+- "New Construction" as its own tab between Ops Surveys and Pre-Sale
+- "Needs Revisit" + "New Construction" surveys shown in three groups; revisits stay in Ops Surveys after status flips to Ready to Schedule
+- Lenny Uematsu replaces Rolando for Colorado Springs surveys and all CO Springs field work
+- DTC office filter no longer hides all survey availability
+- Fixed empty "Needs Revisit" group caused by stale schedule date
+
+### EagleView Orders
+- Design Lead column on each order, resolved via owner map (was always blank)
+
+### Configuration
+- SystemConfig-backed runtime config wired through TrueDesign public-client
+
+---
+
+## 2026-06-05
+
+### Participate Energy Doc Tracking
+- UPLOADED and UNDER_REVIEW merged into a single "In Review" status
+- Notes-only PE doc changes relabeled instead of showing "Uploaded → Uploaded"
+- UPLOADED→UNDER_REVIEW convergence no longer logged as a change
+- PE doc change digest improved with actionable sections + Drive links; mirror digest email follows the same structure
+- Added replay endpoint for PE doc change batches (one-shot cron used and then removed)
+- Daily digest restructured into 4 actionable sections; "Today's Changes" dropped; slim summary + tracker link variant added
+
+### Monthly Activity Throughput
+- New Monthly Activity throughput dashboard
+
+### Google Chat OOO Bot (Major)
+- New Google Chat OOO bot with SOP integration
+- Multiple JWKS sources for Google Chat JWT auth; accepts multiple JWT audiences and logs claims
+- Google Workspace add-on envelope format supported
+- Static `waitUntil` import + async diagnostics; async post errors captured to DB with detailed Chat API errors
+- Base64-encoded service account key handled in Chat API
+- Replies post to main timeline instead of a thread
+- Middleware allowlist added for `/api/cron/pe-doc-digest`
+
+### Scheduler
+- Weekend visibility toggle
+- Weekend toggle no longer shifts events to Saturday; events render on weekend cells without stealing Monday
+
+### Shop Health
+- New Service + D&R/Roofing sections
+- Lightweight overview path (1 Project fetch, no tickets); duplicate Project pipeline fetch removed
+- Closed tickets cached; overview route made resilient with fail-open behavior on new Service/D&R fetches
+- Surface shop-health overview errors for diagnosis
+
+### PE Deals Dashboard
+- Split into Pre-Construction vs Construction+ cards
+- Pipeline bar split into stage buckets; report link removed
+- "Awaiting PTO" segment added (hero card split reverted)
+- "Customer Paid?" column added after the customer payment amount
+- Multi-column sort, smarter "Cust Paid" sort, default sort by PE Total
+- Cancelled deals excluded; Other → On Hold auto-rename
+- x/y count switched to submitted total + under-review badge
+
+### Project Funnel
+- Design approval status now shown in the "Awaiting DA Send" column
+
+### Performance
+- Zuper: skip API sweep on DB-cache hits + cache `/jobs/by-category`; explicit caller attribution for `[zuper-call]` log; reduced `useCalendarData` polling
+- Roofing scheduler: inlined `JOB_CATEGORY` UIDs to drop client→server import
+
+### Bug Fixes
+- PE scraper sync overrides `NOT_UPLOADED → UPLOADED` for unknown statuses with a submitted date
+- Admin tickets: invalid `pageUrl` handled in ticket table render
+- Daily focus: morning snapshot saved before sending emails
+- EOD summary: "morning items resolved" now tracks actual action items
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
