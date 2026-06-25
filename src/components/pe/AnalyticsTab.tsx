@@ -83,13 +83,13 @@ function drillToCsv(rows: DrillExportRow[]): string {
   return [head.join(","), ...lines].join("\r\n");
 }
 
-function DrillCopyButtons({ title, rows, filename }: { title: string; rows: DrillExportRow[]; filename: string }) {
+// Low-level Copy (text → clipboard) + CSV (download) buttons over pre-built strings.
+function CopyCsvButtons({ text, csv, filename }: { text: string; csv: string; filename: string }) {
   const [done, setDone] = useState<null | "copy" | "csv">(null);
-  if (rows.length === 0) return null;
   const flash = (w: "copy" | "csv") => { setDone(w); setTimeout(() => setDone((c) => (c === w ? null : c)), 1500); };
-  const copy = () => { navigator.clipboard.writeText(drillToText(title, rows)).then(() => flash("copy")).catch(() => {}); };
-  const csv = () => {
-    const blob = new Blob([drillToCsv(rows)], { type: "text/csv;charset=utf-8" });
+  const copy = () => { navigator.clipboard.writeText(text).then(() => flash("copy")).catch(() => {}); };
+  const downloadCsv = () => {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -103,11 +103,45 @@ function DrillCopyButtons({ title, rows, filename }: { title: string; rows: Dril
       <button onClick={copy} className="text-[10px] px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors" title="Copy this list as text">
         {done === "copy" ? "Copied ✓" : "Copy"}
       </button>
-      <button onClick={csv} className="text-[10px] px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors" title="Download this list as CSV">
+      <button onClick={downloadCsv} className="text-[10px] px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors" title="Download this list as CSV">
         {done === "csv" ? "Saved ✓" : "CSV"}
       </button>
     </div>
   );
+}
+
+function DrillCopyButtons({ title, rows, filename }: { title: string; rows: DrillExportRow[]; filename: string }) {
+  if (rows.length === 0) return null;
+  return <CopyCsvButtons text={drillToText(title, rows)} csv={drillToCsv(rows)} filename={filename} />;
+}
+
+// Milestone drill (chart bars + aggregate cards) → readable text + CSV with the
+// financial columns ops actually want (amount, status, the milestone dates).
+function milestoneDrillToText(title: string, rows: MilestoneDrillRow[]): string {
+  const sorted = [...rows].sort((a, b) => b.amount - a.amount);
+  const total = sorted.reduce((s, r) => s + r.amount, 0);
+  const lines = [`${title} — ${sorted.length} milestones · ${fmtUsd(total)}`];
+  for (const r of sorted) {
+    const deal = r.dealName.split("|").slice(0, 2).join(" | ").trim();
+    const dts = [
+      r.readyOn && `ready ${r.readyOn}`,
+      r.submittedOn && `submitted ${r.submittedOn}`,
+      r.approvedOn && `approved ${r.approvedOn}`,
+      r.paidOn && `paid ${r.paidOn}`,
+    ].filter(Boolean).join(", ");
+    lines.push(`- ${deal} · ${r.milestone} · ${fmtUsd(r.amount)} · ${r.status ?? "—"}${dts ? ` (${dts})` : ""}`);
+    if (r.hubspotUrl) lines.push(`    HubSpot: ${r.hubspotUrl}${r.pePortalUrl ? `  |  PE: ${r.pePortalUrl}` : ""}`);
+  }
+  return lines.join("\n");
+}
+function milestoneDrillToCsv(rows: MilestoneDrillRow[]): string {
+  const head = ["Deal", "Milestone", "Amount", "Status", "Ready", "Submitted", "Approved", "Paid", "Rejected", "HubSpot", "PE Portal"];
+  const lines = [...rows].sort((a, b) => b.amount - a.amount).map((r) =>
+    [r.dealName, r.milestone, String(r.amount), r.status ?? "", r.readyOn ?? "", r.submittedOn ?? "", r.approvedOn ?? "", r.paidOn ?? "", r.rejectedOn ?? "", r.hubspotUrl ?? "", r.pePortalUrl ?? ""]
+      .map((x) => drillCsvCell(x))
+      .join(","),
+  );
+  return [head.join(","), ...lines].join("\r\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -1896,15 +1930,27 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
   onClose: () => void;
 }) {
   const total = rows.reduce((s, r) => s + r.amount, 0);
+  const label = weekStart
+    ? `${weekPrefix} ${granNoun(gran)} of ${granLabel(weekStart, gran)}${segmentLabel ? ` — ${segmentLabel}` : ""}`
+    : (segmentLabel ?? "Milestones");
   return (
     <div className="mt-4 rounded-lg border border-t-border bg-surface-2 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs font-medium text-foreground">
-          {weekStart ? `${weekPrefix} ${granNoun(gran)} of ${granLabel(weekStart, gran)}${segmentLabel ? ` — ${segmentLabel}` : ""}` : segmentLabel} — {rows.length} milestones · {fmtUsd(total)}
+          {label} — {rows.length} milestones · {fmtUsd(total)}
         </div>
-        <button onClick={onClose} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
-          Close
-        </button>
+        <div className="flex items-center gap-1">
+          {rows.length > 0 && (
+            <CopyCsvButtons
+              text={milestoneDrillToText(label, rows)}
+              csv={milestoneDrillToCsv(rows)}
+              filename={`${slug(label)}.csv`}
+            />
+          )}
+          <button onClick={onClose} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
+            Close
+          </button>
+        </div>
       </div>
       {rows.length === 0 ? (
         <div className="text-xs text-muted py-3">No milestones in this {granNoun(gran)}.</div>
