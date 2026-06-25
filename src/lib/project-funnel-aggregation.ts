@@ -1308,14 +1308,16 @@ export function buildProjectFunnelData(
       //  - not approved → waiting on the utility (from permit issued)
       //  - approved but still not RTB → blocked on something else (from approval)
       if (p.interconnectionApprovalDate) {
+        // IC approved — the remaining blocker is construction-side, so show its status.
         const waitSince = p.interconnectionApprovalDate || p.permitIssueDate || p.closeDate!;
         drillDown.awaitingReadyToBuild.push(
-          toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+          toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
         );
       } else {
+        // Waiting on the utility — show the interconnection status.
         const waitSince = p.permitIssueDate || p.closeDate!;
         drillDown.awaitingInterconnection.push(
-          toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+          toDrillDown(p, daysBetween(waitSince, today), statusLabel("interconnection_status", p.interconnectionStatus))
         );
       }
     } else if (!m.hasConstructionScheduled) {
