@@ -26,6 +26,7 @@ import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 import { MonthlyActivityView } from "@/components/funnel/MonthlyActivityView";
+import FunnelDailyTrend from "@/components/funnel/FunnelDailyTrend";
 import { AnalysisOverview } from "@/components/funnel/AnalysisOverview";
 
 const TIMEFRAMES = [
@@ -336,7 +337,10 @@ function ProjectPipelineFunnelInner() {
       ) : isLoading || !data || !s ? (
         <LoadingSpinner />
       ) : tab === "activity" ? (
-        <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
+        <>
+          <FunnelDailyTrend />
+          <MonthlyActivityView data={data} timeframe={timeframe} locations={locations} pms={pms} owners={owners} />
+        </>
       ) : tab === "incoming" ? (
         <>
           {data.capacity && <CapacityRow capacity={data.capacity} />}
