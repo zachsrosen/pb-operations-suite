@@ -240,6 +240,8 @@ export interface WeeklyLifecycle {
   approvedAmount: number;
   inReviewCount: number; // submitted, in PE review
   inReviewAmount: number;
+  resubmittedCount: number; // resubmitted after a rejection, back in PE review
+  resubmittedAmount: number;
   rejectedCount: number; // currently rejected / pending fix
   rejectedAmount: number;
   waitingCount: number; // ready but not yet submitted
@@ -976,6 +978,7 @@ export interface PeAnalyticsPayload {
   weeklyApprovals: WeeklyPayments[];
   weeklySubmissions: WeeklyPayments[];
   weeklyLifecycle: WeeklyLifecycle[];
+  dailyLifecycle: WeeklyLifecycle[]; // same buckets, keyed by day (UI toggle)
   weeklyReadiness: WeeklySplitCohort[];
   weeklyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];

@@ -328,22 +328,24 @@ function WeeklyPaymentsChart({
 
 const EMPTY_LIFECYCLE_WEEK = (weekStart: string): WeeklyLifecycle => ({
   weekStart, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0,
-  rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0,
+  resubmittedCount: 0, resubmittedAmount: 0, rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0,
 });
 
-function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string, segment?: string) => void }) {
+function WeeklyLifecycleChart({ weekly, onBarClick, granularity = "week" }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string, segment?: string) => void; granularity?: "week" | "day" }) {
+  const isDay = granularity === "day";
   const series = useMemo(() => {
     if (weekly.length === 0) return [];
     const out: WeeklyLifecycle[] = [];
     const start = new Date(weekly[0].weekStart + "T00:00:00Z");
     const end = new Date(weekly[weekly.length - 1].weekStart + "T00:00:00Z");
     const byWeek = new Map(weekly.map((w) => [w.weekStart, w]));
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
+    const stepDays = isDay ? 1 : 7;
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + stepDays)) {
       const key = d.toISOString().split("T")[0];
       out.push(byWeek.get(key) || EMPTY_LIFECYCLE_WEEK(key));
     }
     return out;
-  }, [weekly]);
+  }, [weekly, isDay]);
 
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -359,7 +361,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
   const chartW = W - PAD_L - 8;
   const chartH = H - PAD_T - PAD_B;
   const total = (w: WeeklyLifecycle) =>
-    w.paidAmount + w.approvedAmount + w.inReviewAmount + (w.rejectedAmount ?? 0) + (w.waitingAmount ?? 0);
+    w.paidAmount + w.approvedAmount + w.inReviewAmount + (w.resubmittedAmount ?? 0) + (w.rejectedAmount ?? 0) + (w.waitingAmount ?? 0);
   const maxTotal = Math.max(...series.map(total), 1);
   const barW = Math.min(48, (chartW / series.length) * 0.7);
   const step = chartW / series.length;
@@ -383,12 +385,13 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
         })}
         {series.map((w, i) => {
           const x = PAD_L + step * i + (step - barW) / 2;
-          const count = w.paidCount + w.approvedCount + w.inReviewCount + (w.rejectedCount ?? 0) + (w.waitingCount ?? 0);
+          const count = w.paidCount + w.approvedCount + w.inReviewCount + (w.resubmittedCount ?? 0) + (w.rejectedCount ?? 0) + (w.waitingCount ?? 0);
           const dim = hovered === null || hovered === i ? 1 : 0.45;
           const segments = [
             { seg: "paid", amount: w.paidAmount, cls: "fill-emerald-500", op: 1 },
             { seg: "approved", amount: w.approvedAmount, cls: "fill-cyan-500", op: 1 },
             { seg: "inReview", amount: w.inReviewAmount, cls: "fill-zinc-400", op: 0.7 },
+            { seg: "resubmitted", amount: w.resubmittedAmount ?? 0, cls: "fill-violet-500", op: 0.8 },
             { seg: "rejected", amount: w.rejectedAmount ?? 0, cls: "fill-orange-500", op: 0.85 },
             { seg: "waiting", amount: w.waitingAmount ?? 0, cls: "fill-none stroke-zinc-500 [stroke-dasharray:3_2]", op: 0.9 },
           ];
@@ -410,7 +413,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
               className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {rects}
-              {count > 0 && (
+              {count > 0 && !isDay && (
                 <>
                   <text x={x + barW / 2} y={yTop - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
                     {fmtUsdK(total(w))}
@@ -420,19 +423,24 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
                   </text>
                 </>
               )}
-              <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
-                {weekLabel(w.weekStart)}
-              </text>
+              {(!isDay || i % 7 === 0) && (
+                <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
+                  {weekLabel(w.weekStart)}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
       {hovered !== null && series[hovered] && (
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-          <div className="font-semibold text-foreground mb-1">Ready week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="font-semibold text-foreground mb-1">Ready {isDay ? "day" : "week"} of {weekLabel(series[hovered].weekStart)}</div>
           <div className="text-emerald-400">Paid: {series[hovered].paidCount} · {fmtUsd(series[hovered].paidAmount)}</div>
           <div className="text-cyan-400">Approved, awaiting payment: {series[hovered].approvedCount} · {fmtUsd(series[hovered].approvedAmount)}</div>
           <div className="text-muted">In PE review: {series[hovered].inReviewCount} · {fmtUsd(series[hovered].inReviewAmount)}</div>
+          {(series[hovered].resubmittedCount ?? 0) > 0 && (
+            <div className="text-violet-400">Resubmitted (back in review): {series[hovered].resubmittedCount} · {fmtUsd(series[hovered].resubmittedAmount ?? 0)}</div>
+          )}
           {(series[hovered].rejectedCount ?? 0) > 0 && (
             <div className="text-orange-400">Rejected — pending fix: {series[hovered].rejectedCount} · {fmtUsd(series[hovered].rejectedAmount ?? 0)}</div>
           )}
@@ -448,6 +456,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Paid</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-cyan-500" /> Approved, awaiting payment</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/70" /> In PE review</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-violet-500/80" /> Resubmitted</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> Rejected — pending fix</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm border border-dashed border-zinc-500" /> Not yet submitted</span>
       </div>
@@ -2005,6 +2014,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
+  const [lifecycleGran, setLifecycleGran] = useState<"week" | "day">("week");
   const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected">("submitted");
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
@@ -2065,11 +2075,13 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           const paid = isPaid(r);
           const approved = isApprovedPlus(r) && !paid;
           const rejPending = !paid && !approved && (r.status === "Rejected" || r.status === "Ready to Resubmit");
-          const waiting = !r.submittedOn && !paid && !approved && !rejPending;
-          const inReview = !paid && !approved && !rejPending && !waiting;
+          const resubmitted = !paid && !approved && !rejPending && r.status === "Resubmitted";
+          const waiting = !r.submittedOn && !paid && !approved && !rejPending && !resubmitted;
+          const inReview = !paid && !approved && !rejPending && !resubmitted && !waiting;
           switch (drill.segment) {
             case "paid": return paid;
             case "approved": return approved;
+            case "resubmitted": return resubmitted;
             case "rejected": return rejPending;
             case "waiting": return waiting;
             default: return inReview;
@@ -2081,9 +2093,15 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     };
     return data.milestones.filter((r) => {
       const d = dateOf(r);
-      return d ? weekStartUTC(new Date(d + "T00:00:00Z")) === drill.week && segOk(r) : false;
+      if (!d) return false;
+      // Day-granularity lifecycle bars are keyed by exact day; everything else by week-start.
+      const bucketKey =
+        weeklyMode === "lifecycle" && lifecycleGran === "day"
+          ? d.slice(0, 10)
+          : weekStartUTC(new Date(d + "T00:00:00Z"));
+      return bucketKey === drill.week && segOk(r);
     });
-  }, [drill, weeklyMode, data]);
+  }, [drill, weeklyMode, lifecycleGran, data]);
 
   const AGGREGATE_LABELS: Record<string, string> = {
     waitSubmission: "All waiting on submission",
@@ -2097,7 +2115,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     rejections: { done: "Resolved since", pending: "Still pending fix" },
     submitted: { paidSeg: "Paid", done: "Approved, awaiting payment", rejected: "Rejected — pending fix", remainder: "In PE review" },
     approved: { done: "Paid since", remainder: "Awaiting payment" },
-    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
+    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", resubmitted: "Resubmitted (back in review)", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
   };
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
@@ -2288,7 +2306,27 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               </button>
             </div>
             {weeklyMode === "lifecycle" ? (
-              <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={openDrill} />
+              <>
+                <div className="flex justify-end mb-2">
+                  <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]">
+                    {(["week", "day"] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setLifecycleGran(g)}
+                        className={`px-3 py-1 transition-colors ${lifecycleGran === g ? "bg-surface-2 text-foreground font-medium" : "text-muted hover:text-foreground"}`}
+                      >
+                        {g === "week" ? "Weekly" : "Daily"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <WeeklyLifecycleChart
+                  weekly={(lifecycleGran === "day" ? data.dailyLifecycle : data.weeklyLifecycle) ?? []}
+                  granularity={lifecycleGran}
+                  onBarClick={openDrill}
+                />
+              </>
             ) : weeklyMode === "ready" ? (
               <SplitCohortChart
                 weekly={data.weeklyReadiness ?? []}
