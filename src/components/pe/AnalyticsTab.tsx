@@ -2025,7 +2025,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
 // Weekly chart modes
 // ---------------------------------------------------------------------------
 
-type WeeklyMode = "ready" | "submitted" | "approved" | "paid" | "lifecycle" | "rejections";
+type WeeklyMode = "ready" | "submitted" | "approved" | "remittance" | "paid" | "rejections" | "expectedPaid" | "lifecycle";
 
 const WEEKLY_MODES: Record<
   WeeklyMode,
@@ -2071,6 +2071,32 @@ const WEEKLY_MODES: Record<
     empty: "No payments recorded yet.",
     weekPrefix: "Paid",
   },
+  remittance: {
+    label: "Remittance",
+    title: "Remittance per Week",
+    subtitle: "Bars dated by week PE REMITTED payment. Green = received on our end since; gray = sent, not yet in the bank.",
+    empty: "No remittances recorded yet.",
+    weekPrefix: "Remitted",
+    split: {
+      doneLegend: "Received since",
+      remainderLegend: "Sent, not yet received",
+      doneWord: "received",
+      remainderLabel: "Not yet received",
+    },
+  },
+  expectedPaid: {
+    label: "Expected Paid",
+    title: "Expected Payments per Week",
+    subtitle: "Bars dated by EXPECTED paid date (approval + ~14 days). Green = actually paid since; gray = expected, not yet paid.",
+    empty: "No expected payments yet.",
+    weekPrefix: "Expected",
+    split: {
+      doneLegend: "Paid since",
+      remainderLegend: "Not yet paid",
+      doneWord: "paid",
+      remainderLabel: "Not yet paid",
+    },
+  },
   rejections: {
     label: "Rejections",
     title: "Rejection Cohorts",
@@ -2088,7 +2114,7 @@ const WEEKLY_MODES: Record<
 };
 
 // Lifecycle is reached via the Milestones/Lifecycle group toggle, not a pill.
-const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "paid", "rejections"];
+const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "remittance", "paid", "rejections", "expectedPaid"];
 
 // ---------------------------------------------------------------------------
 // Page
@@ -2149,6 +2175,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
         : weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "rejections" ? r.rejectedOn
         : weeklyMode === "approved" ? r.approvedOn
+          : weeklyMode === "remittance" ? r.remittanceOn
+          : weeklyMode === "expectedPaid" ? r.expectedPaidOn
           : weeklyMode === "paid" ? r.paidOn
             : r.submittedOn; // submitted
     const isPaid = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
@@ -2170,6 +2198,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           return !isApprovedPlus(r) && !rejPending;
         }
         case "approved":
+        case "remittance":
+        case "expectedPaid":
           return drill.segment === "done" ? isPaid(r) : !isPaid(r);
         case "lifecycle": {
           const paid = isPaid(r);
@@ -2211,6 +2241,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     rejections: { done: "Resolved since", pending: "Still pending fix" },
     submitted: { paidSeg: "Paid", done: "Approved, awaiting payment", rejected: "Rejected — pending fix", remainder: "In PE review" },
     approved: { done: "Paid since", remainder: "Awaiting payment" },
+    remittance: { done: "Received since", remainder: "Sent, not yet received" },
+    expectedPaid: { done: "Paid since", remainder: "Not yet paid" },
     lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", resubmitted: "Resubmitted (back in review)", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
   };
   const locations = useMemo(
@@ -2526,7 +2558,11 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                     ? data.dailyPaid ?? []
                     : weeklyMode === "approved"
                       ? data.dailyApprovals ?? []
-                      : data.dailySubmissions ?? []
+                      : weeklyMode === "remittance"
+                        ? data.dailyRemittance ?? []
+                        : weeklyMode === "expectedPaid"
+                          ? data.dailyExpectedPaid ?? []
+                          : data.dailySubmissions ?? []
                 }
                 granularity={gran}
                 emptyMessage={WEEKLY_MODES[weeklyMode].empty}

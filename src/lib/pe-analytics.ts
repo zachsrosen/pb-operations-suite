@@ -930,6 +930,8 @@ export interface MilestoneDrillRow {
   submittedOn: string | null;
   approvedOn: string | null;
   paidOn: string | null;
+  remittanceOn: string | null;
+  expectedPaidOn: string | null;
   /** Milestone-relevant docs not yet uploaded (empty when fully uploaded or untracked). */
   missingDocs: string[];
   /** Milestone-relevant docs currently flagged ACTION_REQUIRED/REJECTED by PE. */
@@ -979,6 +981,8 @@ export interface PeAnalyticsPayload {
   dailyPaid: WeeklyPayments[];
   dailyApprovals: WeeklyPayments[];
   dailySubmissions: WeeklyPayments[];
+  dailyRemittance: WeeklyPayments[]; // dated by PE remittance day, done = received
+  dailyExpectedPaid: WeeklyPayments[]; // dated by expected-paid day, done = received
   dailyLifecycle: WeeklyLifecycle[]; // lifecycle dated by READY day
   dailyLifecycleSubmitted: WeeklyLifecycle[]; // lifecycle dated by SUBMITTED day
   dailyLifecycleRejected: WeeklyLifecycle[]; // lifecycle dated by REJECTION day
