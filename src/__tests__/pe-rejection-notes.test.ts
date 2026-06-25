@@ -4,7 +4,9 @@ import {
   composeRejectedDocuments,
   peInternalIdFromPortalUrl,
   sameDocSelection,
+  withClearedTeamFields,
   PE_DOC_TO_TEAM_FIELD,
+  PE_REJECTION_TEAM_FIELDS,
 } from "@/lib/pe-rejection-notes";
 import type { PeActionItem, PeDocumentInfo, PeDocuments } from "@/lib/pe-api";
 
@@ -331,5 +333,32 @@ describe("sameDocSelection", () => {
     expect(sameDocSelection("", undefined)).toBe(true);
     expect(sameDocSelection(null, "")).toBe(true);
     expect(sameDocSelection("", "Proposal")).toBe(false);
+  });
+});
+
+describe("withClearedTeamFields", () => {
+  it("includes every team field, keeping populated ones and clearing the rest", () => {
+    const out = withClearedTeamFields({
+      pe_rejection_notes_for_compliance: "Attestation:\n• bad date",
+    });
+    expect(out.pe_rejection_notes_for_compliance).toBe("Attestation:\n• bad date");
+    // the rejected team kept; every other team explicitly cleared
+    expect(out.pe_rejection_notes_for_sales).toBe(""); // the Garman bug: stale sales note cleared
+    expect(out.pe_rejection_notes_for_design).toBe("");
+    expect(out.pe_rejection_notes_for_permitting).toBe("");
+    expect(out.pe_rejection_notes_for_accounting).toBe("");
+    expect(Object.keys(out).sort()).toEqual([...PE_REJECTION_TEAM_FIELDS].sort());
+  });
+
+  it("clears all team fields when nothing is rejected", () => {
+    const out = withClearedTeamFields({});
+    expect(Object.keys(out)).toHaveLength(PE_REJECTION_TEAM_FIELDS.length);
+    expect(Object.values(out).every((v) => v === "")).toBe(true);
+  });
+
+  it("preserves any non-team key the caller added", () => {
+    const out = withClearedTeamFields({ pe_rejection_comments: "combined" });
+    expect(out.pe_rejection_comments).toBe("combined");
+    expect(out.pe_rejection_notes_for_sales).toBe("");
   });
 });
