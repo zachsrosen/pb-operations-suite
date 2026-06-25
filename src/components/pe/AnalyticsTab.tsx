@@ -2207,7 +2207,10 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     const sumAmt = (rows: typeof ms) => rows.reduce((s, r) => s + (r.amount || 0), 0);
     const awaiting = ms.filter((r) => !!r.submittedOn && !isApprovedM(r));
     const awaitingRejected = awaiting.filter((r) => groupForStatus(r.status) === "Rejected — pending fix");
-    const awaitingReview = awaiting.filter((r) => groupForStatus(r.status) !== "Rejected — pending fix");
+    // In-review (not rejected) splits into first-time submitted vs resubmitted
+    // (back in review after a prior rejection — shakier money).
+    const awaitingResubmitted = awaiting.filter((r) => groupForStatus(r.status) !== "Rejected — pending fix" && r.status === "Resubmitted");
+    const awaitingSubmitted = awaiting.filter((r) => groupForStatus(r.status) !== "Rejected — pending fix" && r.status !== "Resubmitted");
     return {
       ready,
       deals,
@@ -2215,8 +2218,10 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
       approved: sum(data?.dailyApprovals),
       paid: sum(data?.dailyPaid),
       awaitingApproval: {
-        reviewCount: awaitingReview.length,
-        reviewAmount: sumAmt(awaitingReview),
+        submittedCount: awaitingSubmitted.length,
+        submittedAmount: sumAmt(awaitingSubmitted),
+        resubmittedCount: awaitingResubmitted.length,
+        resubmittedAmount: sumAmt(awaitingResubmitted),
         rejectedCount: awaitingRejected.length,
         rejectedAmount: sumAmt(awaitingRejected),
       },
@@ -2366,7 +2371,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                     <>
                       {funnelTotals.submitted.count} milestones · {funnelTotals.deals.submitted} deals
                       <span className="block mt-0.5">
-                        awaiting PE: {fmtUsdK(funnelTotals.awaitingApproval.reviewAmount)} in review · <span className="text-orange-400">{fmtUsdK(funnelTotals.awaitingApproval.rejectedAmount)} rejected</span>
+                        awaiting PE: {fmtUsdK(funnelTotals.awaitingApproval.submittedAmount)} submitted · <span className="text-violet-400">{fmtUsdK(funnelTotals.awaitingApproval.resubmittedAmount)} resubmitted</span> · <span className="text-orange-400">{fmtUsdK(funnelTotals.awaitingApproval.rejectedAmount)} rejected</span>
                       </span>
                     </>
                   }
