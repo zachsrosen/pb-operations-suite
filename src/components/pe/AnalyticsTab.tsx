@@ -2025,7 +2025,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
 // Weekly chart modes
 // ---------------------------------------------------------------------------
 
-type WeeklyMode = "ready" | "submitted" | "approved" | "paid" | "lifecycle" | "rejections";
+type WeeklyMode = "ready" | "submitted" | "approved" | "remittance" | "paid" | "rejections" | "expectedPaid" | "lifecycle";
 
 const WEEKLY_MODES: Record<
   WeeklyMode,
@@ -2041,16 +2041,14 @@ const WEEKLY_MODES: Record<
   submitted: {
     label: "Submissions",
     title: "Submissions per Week",
-    subtitle: "Bars dated by week of SUBMISSION. Green = paid; amber = approved awaiting payment; orange = currently rejected (our court); gray = in PE review.",
+    subtitle: "Bars dated by week of SUBMISSION. Green = approved since; gray = not yet approved. (Full outcome breakdown lives in Lifecycle.)",
     empty: "No submissions recorded yet.",
     weekPrefix: "Submitted",
     split: {
-      doneLegend: "Approved, awaiting payment",
-      remainderLegend: "In PE review",
+      doneLegend: "Approved since",
+      remainderLegend: "Not yet approved",
       doneWord: "approved",
       remainderLabel: "Not yet approved",
-      rejectedLegend: "Rejected — pending fix",
-      paidLegend: "Paid",
     },
   },
   approved: {
@@ -2073,6 +2071,32 @@ const WEEKLY_MODES: Record<
     empty: "No payments recorded yet.",
     weekPrefix: "Paid",
   },
+  remittance: {
+    label: "Remittance",
+    title: "Remittance per Week",
+    subtitle: "Bars dated by week PE REMITTED payment. Green = received on our end since; gray = sent, not yet in the bank.",
+    empty: "No remittances recorded yet.",
+    weekPrefix: "Remitted",
+    split: {
+      doneLegend: "Received since",
+      remainderLegend: "Sent, not yet received",
+      doneWord: "received",
+      remainderLabel: "Not yet received",
+    },
+  },
+  expectedPaid: {
+    label: "Expected Paid",
+    title: "Expected Payments per Week",
+    subtitle: "Bars dated by EXPECTED paid date (approval + ~14 days). Green = actually paid since; gray = expected, not yet paid.",
+    empty: "No expected payments yet.",
+    weekPrefix: "Expected",
+    split: {
+      doneLegend: "Paid since",
+      remainderLegend: "Not yet paid",
+      doneWord: "paid",
+      remainderLabel: "Not yet paid",
+    },
+  },
   rejections: {
     label: "Rejections",
     title: "Rejection Cohorts",
@@ -2089,7 +2113,8 @@ const WEEKLY_MODES: Record<
   },
 };
 
-const WEEKLY_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "paid", "lifecycle", "rejections"];
+// Lifecycle is reached via the Milestones/Lifecycle group toggle, not a pill.
+const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "remittance", "paid", "rejections", "expectedPaid"];
 
 // ---------------------------------------------------------------------------
 // Page
@@ -2111,8 +2136,10 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
+  const prevMilestoneMode = useRef<WeeklyMode>("paid"); // restore on Lifecycle → Milestones
+  const chartGroup: "milestones" | "lifecycle" = weeklyMode === "lifecycle" ? "lifecycle" : "milestones";
   const [gran, setGran] = useState<Gran>("week");
-  const [lifecycleBasis, setLifecycleBasis] = useState<"ready" | "submitted">("ready");
+  const [lifecycleBasis, setLifecycleBasis] = useState<"ready" | "submitted" | "rejected">("ready");
   const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected">("submitted");
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
@@ -2144,10 +2171,12 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     }
     const dateOf = (r: MilestoneDrillRow) =>
       weeklyMode === "lifecycle"
-        ? lifecycleBasis === "submitted" ? r.submittedOn : r.readyOn ?? r.submittedOn
+        ? lifecycleBasis === "submitted" ? r.submittedOn : lifecycleBasis === "rejected" ? r.rejectedOn : r.readyOn ?? r.submittedOn
         : weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "rejections" ? r.rejectedOn
         : weeklyMode === "approved" ? r.approvedOn
+          : weeklyMode === "remittance" ? r.remittanceOn
+          : weeklyMode === "expectedPaid" ? r.expectedPaidOn
           : weeklyMode === "paid" ? r.paidOn
             : r.submittedOn; // submitted
     const isPaid = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
@@ -2169,6 +2198,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           return !isApprovedPlus(r) && !rejPending;
         }
         case "approved":
+        case "remittance":
+        case "expectedPaid":
           return drill.segment === "done" ? isPaid(r) : !isPaid(r);
         case "lifecycle": {
           const paid = isPaid(r);
@@ -2210,6 +2241,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     rejections: { done: "Resolved since", pending: "Still pending fix" },
     submitted: { paidSeg: "Paid", done: "Approved, awaiting payment", rejected: "Rejected — pending fix", remainder: "In PE review" },
     approved: { done: "Paid since", remainder: "Awaiting payment" },
+    remittance: { done: "Received since", remainder: "Sent, not yet received" },
+    expectedPaid: { done: "Paid since", remainder: "Not yet paid" },
     lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", resubmitted: "Resubmitted (back in review)", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
   };
   const locations = useMemo(
@@ -2377,19 +2410,48 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
         <div className="space-y-6">
           {/* 1. Submissions / approvals / payments per week */}
           <Section
-            title={WEEKLY_MODES[weeklyMode].title}
-            subtitle={WEEKLY_MODES[weeklyMode].subtitle}
+            title={weeklyMode === "lifecycle" ? "Cohorts by Outcome" : WEEKLY_MODES[weeklyMode].title}
+            subtitle={
+              weeklyMode === "lifecycle"
+                ? `Bars dated by ${lifecycleBasis === "submitted" ? "week of SUBMISSION" : lifecycleBasis === "rejected" ? "week of REJECTION" : "week each milestone became READY"}, colored by where each stands today (paid / approved / resubmitted / in PE review / rejected).`
+                : WEEKLY_MODES[weeklyMode].subtitle
+            }
             actions={
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {WEEKLY_MODE_ORDER.map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => { setWeeklyMode(mode); setDrill(null); }}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
-                  >
-                    {WEEKLY_MODES[mode].label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                {/* Group toggle: Milestones (next-step cohorts) vs Lifecycle (full outcome). */}
+                <div className="inline-flex rounded-full border border-t-border overflow-hidden text-xs">
+                  {(["milestones", "lifecycle"] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => {
+                        if (g === "lifecycle") {
+                          if (weeklyMode !== "lifecycle") prevMilestoneMode.current = weeklyMode;
+                          setWeeklyMode("lifecycle");
+                        } else {
+                          setWeeklyMode(prevMilestoneMode.current);
+                        }
+                        setDrill(null);
+                      }}
+                      className={`px-3 py-1 transition-colors ${chartGroup === g ? "bg-emerald-500/20 text-emerald-400 font-medium" : "text-muted hover:text-foreground"}`}
+                    >
+                      {g === "milestones" ? "Milestones" : "Lifecycle"}
+                    </button>
+                  ))}
+                </div>
+                {chartGroup === "milestones" && (
+                  <div className="flex items-center gap-1.5">
+                    {MILESTONE_MODE_ORDER.map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => { setWeeklyMode(mode); setDrill(null); }}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${weeklyMode === mode ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+                      >
+                        {WEEKLY_MODES[mode].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             }
           >
@@ -2434,14 +2496,14 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             <div className="flex items-center justify-end gap-2 mb-2">
               {weeklyMode === "lifecycle" && (
                 <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]">
-                  {(["ready", "submitted"] as const).map((b) => (
+                  {(["ready", "submitted", "rejected"] as const).map((b) => (
                     <button
                       key={b}
                       type="button"
                       onClick={() => setLifecycleBasis(b)}
                       className={`px-3 py-1 transition-colors ${lifecycleBasis === b ? "bg-surface-2 text-foreground font-medium" : "text-muted hover:text-foreground"}`}
                     >
-                      {b === "ready" ? "By ready date" : "By submitted date"}
+                      {b === "ready" ? "By ready date" : b === "submitted" ? "By submitted date" : "By rejected date"}
                     </button>
                   ))}
                 </div>
@@ -2461,9 +2523,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             </div>
             {weeklyMode === "lifecycle" ? (
               <WeeklyLifecycleChart
-                weekly={(lifecycleBasis === "submitted" ? data.dailyLifecycleSubmitted : data.dailyLifecycle) ?? []}
+                weekly={(lifecycleBasis === "submitted" ? data.dailyLifecycleSubmitted : lifecycleBasis === "rejected" ? data.dailyLifecycleRejected : data.dailyLifecycle) ?? []}
                 granularity={gran}
-                basisLabel={lifecycleBasis === "submitted" ? "Submitted" : "Ready"}
+                basisLabel={lifecycleBasis === "submitted" ? "Submitted" : lifecycleBasis === "rejected" ? "Rejected" : "Ready"}
                 onBarClick={openDrill}
               />
             ) : weeklyMode === "ready" ? (
@@ -2496,7 +2558,11 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                     ? data.dailyPaid ?? []
                     : weeklyMode === "approved"
                       ? data.dailyApprovals ?? []
-                      : data.dailySubmissions ?? []
+                      : weeklyMode === "remittance"
+                        ? data.dailyRemittance ?? []
+                        : weeklyMode === "expectedPaid"
+                          ? data.dailyExpectedPaid ?? []
+                          : data.dailySubmissions ?? []
                 }
                 granularity={gran}
                 emptyMessage={WEEKLY_MODES[weeklyMode].empty}

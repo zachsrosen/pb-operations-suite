@@ -85,6 +85,10 @@ const DEAL_PROPERTIES = [
   "pe_m2_paid_date",
   "pe_m1_rejection_date",
   "pe_m2_rejection_date",
+  "pe_m1_remittance_date",
+  "pe_m2_remittance_date",
+  "pe_m1_expected_paid_by_date",
+  "pe_m2_expected_paid_by_date",
   "inspections_completion_date",
   "pto_completion_date",
   "pe_portal_url",
@@ -110,6 +114,10 @@ interface PeDealRow {
   m2PaidDate: string | null;
   m1RejectionDate: string | null;
   m2RejectionDate: string | null;
+  m1RemittanceDate: string | null; // date PE remitted M1 (precedes our receipt)
+  m2RemittanceDate: string | null;
+  m1ExpectedPaidDate: string | null; // forecast: approval + ~14d (calculated prop)
+  m2ExpectedPaidDate: string | null;
   inspectionPassDate: string | null; // M1 operational ready
   ptoGrantedDate: string | null; // M2 operational ready
   m1ReadyToSubmitDate: string | null; // stamped when M1 hits "Ready to Submit"
@@ -225,6 +233,10 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2PaidDate: p.pe_m2_paid_date ? String(p.pe_m2_paid_date) : null,
         m1RejectionDate: p.pe_m1_rejection_date ? String(p.pe_m1_rejection_date) : null,
         m2RejectionDate: p.pe_m2_rejection_date ? String(p.pe_m2_rejection_date) : null,
+        m1RemittanceDate: p.pe_m1_remittance_date ? String(p.pe_m1_remittance_date) : null,
+        m2RemittanceDate: p.pe_m2_remittance_date ? String(p.pe_m2_remittance_date) : null,
+        m1ExpectedPaidDate: p.pe_m1_expected_paid_by_date ? String(p.pe_m1_expected_paid_by_date) : null,
+        m2ExpectedPaidDate: p.pe_m2_expected_paid_by_date ? String(p.pe_m2_expected_paid_by_date) : null,
         inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
         ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
         m1ReadyToSubmitDate: p.pe_m1_ready_to_submit_date ? String(p.pe_m1_ready_to_submit_date) : null,
@@ -304,6 +316,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     paidOn: string | null;
     rejectedOn: string | null;
     readyOn: string | null;
+    remittanceOn: string | null;
+    expectedPaidOn: string | null;
   }
   const records: MilestoneRecord[] = [];
   for (const deal of deals) {
@@ -325,6 +339,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         // Onboarding) used to leave a phantom "ready since X". The property is
         // correctable; a regressed deal that was never backfilled resolves to null.
         readyOn: deal.m1ReadyToSubmitDate ?? deal.inspectionPassDate ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
+        remittanceOn: deal.m1RemittanceDate,
+        expectedPaidOn: deal.m1ExpectedPaidDate,
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
@@ -333,6 +349,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         paidOn: resolvePaidOn(deal.m2PaidDate),
         rejectedOn: resolveRejectedOn(deal.m2RejectionDate),
         readyOn: deal.m2ReadyToSubmitDate ?? deal.ptoGrantedDate ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
+        remittanceOn: deal.m2RemittanceDate,
+        expectedPaidOn: deal.m2ExpectedPaidDate,
       },
     );
   }
@@ -363,6 +381,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const dailyPaid = bucketByDay((r) => r.paidOn);
   const dailyApprovals = bucketByDay((r) => r.approvedOn);
   const dailySubmissions = bucketByDay((r) => r.submittedOn);
+  const dailyRemittance = bucketByDay((r) => r.remittanceOn);
+  const dailyExpectedPaid = bucketByDay((r) => r.expectedPaidOn);
 
   // Mark the subset that has progressed past each stage (rendered faded in
   // the UI — the vivid remainder is what's still outstanding).
@@ -443,6 +463,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // series excludes not-yet-submitted milestones (they have no submission day).
   const lifecycleDayMap = new Map<string, WeeklyLifecycle>();
   const lifecycleSubmittedDayMap = new Map<string, WeeklyLifecycle>();
+  const lifecycleRejectedDayMap = new Map<string, WeeklyLifecycle>();
   const emptyLifecycle = (start: string): WeeklyLifecycle => ({
     weekStart: start, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0,
     inReviewCount: 0, inReviewAmount: 0, resubmittedCount: 0, resubmittedAmount: 0,
@@ -489,11 +510,23 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       apply(ws);
       lifecycleSubmittedDayMap.set(sday, ws);
     }
+    // Rejected-basis: milestones that were rejected at least once — full outcome
+    // today, dated by their rejection day (recovery view: where did they land).
+    if (r.rejectedOn) {
+      const rday = dayKey(r.rejectedOn);
+      const wr = lifecycleRejectedDayMap.get(rday) || emptyLifecycle(rday);
+      apply(wr);
+      lifecycleRejectedDayMap.set(rday, wr);
+    }
   }
   const dailyLifecycle = [...lifecycleDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   const dailyLifecycleSubmitted = [...lifecycleSubmittedDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const dailyLifecycleRejected = [...lifecycleRejectedDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
   markDone(dailyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.paidOn);
+  // Remittance + Expected-Paid cohorts: green "done" = actually received (paid).
+  markDone(dailyRemittance, (r) => r.remittanceOn, (r) => r.status === "Paid" || !!r.paidOn);
+  markDone(dailyExpectedPaid, (r) => r.expectedPaidOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(
     dailySubmissions,
     (r) => r.submittedOn,
@@ -810,6 +843,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         submittedOn: r.submittedOn?.slice(0, 10) ?? null,
         approvedOn: r.approvedOn?.slice(0, 10) ?? null,
         paidOn: r.paidOn?.slice(0, 10) ?? null,
+        remittanceOn: r.remittanceOn?.slice(0, 10) ?? null,
+        expectedPaidOn: r.expectedPaidOn?.slice(0, 10) ?? null,
         missingDocs,
         actionRequiredDocs,
         latestRejectionNote,
@@ -1217,8 +1252,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     dailyPaid,
     dailyApprovals,
     dailySubmissions,
+    dailyRemittance,
+    dailyExpectedPaid,
     dailyLifecycle,
     dailyLifecycleSubmitted,
+    dailyLifecycleRejected,
     dailyReadiness,
     dailyRejections,
     milestones,
