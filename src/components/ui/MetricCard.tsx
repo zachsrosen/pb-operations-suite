@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import Link from "next/link";
 
 // ---- Accent StatCard (large, gradient background) ----
@@ -74,7 +74,7 @@ export const StatCard = memo(function StatCard({
 interface MiniStatProps {
   label: string;
   value: string | number | null;
-  subtitle?: string | null;
+  subtitle?: ReactNode;
   alert?: boolean;
 }
 

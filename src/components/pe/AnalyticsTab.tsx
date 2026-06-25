@@ -14,6 +14,7 @@ import { queryKeys } from "@/lib/query-keys";
 import {
   PIPELINE_GROUP_ORDER,
   weekStartUTC,
+  groupForStatus,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
@@ -2199,12 +2200,31 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
       approved: distinct(ms.filter((r) => !!r.approvedOn)),
       paid: distinct(ms.filter((r) => !!r.paidOn || r.status === "Paid")),
     };
+    // Of the submitted-but-not-yet-approved pipeline (same set as the "awaiting
+    // PE approval" aggregate), split PE-review vs our-court rejected — pending fix.
+    const isPaidM = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
+    const isApprovedM = (r: MilestoneDrillRow) => !!r.approvedOn || r.status === "Approved" || isPaidM(r);
+    const sumAmt = (rows: typeof ms) => rows.reduce((s, r) => s + (r.amount || 0), 0);
+    const awaiting = ms.filter((r) => !!r.submittedOn && !isApprovedM(r));
+    const awaitingRejected = awaiting.filter((r) => groupForStatus(r.status) === "Rejected — pending fix");
+    // In-review (not rejected) splits into first-time submitted vs resubmitted
+    // (back in review after a prior rejection — shakier money).
+    const awaitingResubmitted = awaiting.filter((r) => groupForStatus(r.status) !== "Rejected — pending fix" && r.status === "Resubmitted");
+    const awaitingSubmitted = awaiting.filter((r) => groupForStatus(r.status) !== "Rejected — pending fix" && r.status !== "Resubmitted");
     return {
       ready,
       deals,
       submitted: sum(data?.dailySubmissions),
       approved: sum(data?.dailyApprovals),
       paid: sum(data?.dailyPaid),
+      awaitingApproval: {
+        submittedCount: awaitingSubmitted.length,
+        submittedAmount: sumAmt(awaitingSubmitted),
+        resubmittedCount: awaitingResubmitted.length,
+        resubmittedAmount: sumAmt(awaitingResubmitted),
+        rejectedCount: awaitingRejected.length,
+        rejectedAmount: sumAmt(awaitingRejected),
+      },
     };
   }, [data]);
 
@@ -2344,7 +2364,18 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 </button>
               )}
               <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitApproval")} title="Click: all awaiting PE approval">
-                <MiniStat label="Total Submitted" value={fmtUsd(funnelTotals.submitted.amount)} subtitle={`${funnelTotals.submitted.count} milestones · ${funnelTotals.deals.submitted} deals`} />
+                <MiniStat
+                  label="Total Submitted"
+                  value={fmtUsd(funnelTotals.submitted.amount)}
+                  subtitle={
+                    <>
+                      {funnelTotals.submitted.count} milestones · {funnelTotals.deals.submitted} deals
+                      <span className="block mt-0.5">
+                        awaiting PE: {fmtUsdK(funnelTotals.awaitingApproval.submittedAmount)} submitted · <span className="text-violet-400">{fmtUsdK(funnelTotals.awaitingApproval.resubmittedAmount)} resubmitted</span> · <span className="text-orange-400">{fmtUsdK(funnelTotals.awaitingApproval.rejectedAmount)} rejected</span>
+                      </span>
+                    </>
+                  }
+                />
               </button>
               <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitPayment")} title="Click: all awaiting payment">
                 <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones · ${funnelTotals.deals.approved} deals`} />
