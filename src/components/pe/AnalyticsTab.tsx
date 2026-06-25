@@ -123,6 +123,74 @@ function weekLabel(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+function monthLabel(iso: string): string {
+  const d = new Date(iso + "T00:00:00Z");
+  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
+}
+
+// Granularity for the weekly charts. The server emits day buckets; the client
+// rolls them up to week/month on demand.
+type Gran = "day" | "week" | "month";
+
+const GRAN_OPTIONS: { value: Gran; label: string }[] = [
+  { value: "day", label: "Daily" },
+  { value: "week", label: "Weekly" },
+  { value: "month", label: "Monthly" },
+];
+
+/** Period-bucket key for a YYYY-MM-DD date at a given granularity. */
+function periodKey(iso: string, gran: Gran): string {
+  if (gran === "day") return iso.slice(0, 10);
+  if (gran === "month") return iso.slice(0, 7) + "-01";
+  return weekStartUTC(new Date(iso.slice(0, 10) + "T00:00:00Z"));
+}
+
+function granNoun(gran: Gran): string {
+  return gran === "day" ? "day" : gran === "month" ? "month" : "week";
+}
+function granLabel(iso: string, gran: Gran): string {
+  return gran === "month" ? monthLabel(iso) : weekLabel(iso);
+}
+/** Thin x-axis labels in day mode (every 7th); show all in week/month mode. */
+function showAxisLabel(i: number, gran: Gran): boolean {
+  return gran !== "day" || i % 7 === 0;
+}
+
+/**
+ * Roll daily buckets up to the chosen granularity by summing every numeric
+ * field (weekStart is the period key), then gap-fill empty periods so time gaps
+ * render as gaps rather than collapsing. Works for any flat numeric bucket type.
+ */
+function bucketize<T extends { weekStart: string }>(daily: T[], gran: Gran, empty: (key: string) => T): T[] {
+  if (daily.length === 0) return [];
+  const map = new Map<string, T>();
+  for (const row of daily) {
+    const key = periodKey(row.weekStart, gran);
+    let agg = map.get(key);
+    if (!agg) {
+      agg = empty(key);
+      map.set(key, agg);
+    }
+    const target = agg as unknown as Record<string, unknown>;
+    for (const [k, v] of Object.entries(row)) {
+      if (k === "weekStart") continue;
+      if (typeof v === "number") target[k] = ((target[k] as number) ?? 0) + v;
+    }
+  }
+  const rolled = [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const out: T[] = [];
+  const byKey = new Map(rolled.map((r) => [r.weekStart, r]));
+  const cursor = new Date(rolled[0].weekStart + "T00:00:00Z");
+  const end = new Date(rolled[rolled.length - 1].weekStart + "T00:00:00Z");
+  while (cursor <= end) {
+    const key = periodKey(cursor.toISOString(), gran);
+    out.push(byKey.get(key) || empty(key));
+    if (gran === "month") cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    else cursor.setUTCDate(cursor.getUTCDate() + (gran === "week" ? 7 : 1));
+  }
+  return out;
+}
+
 // "Unknown" uploader = no recorded uploader. After dropping phantom action-
 // resolutions server-side, these are almost all uploads from before PE began
 // attributing them (attributionStart). Shared via context so every sub-panel
@@ -156,26 +224,20 @@ function WeeklyPaymentsChart({
   doneSplit,
   weekPrefix,
   onBarClick,
+  granularity = "week",
 }: {
   weekly: WeeklyPayments[];
   emptyMessage?: string;
   doneSplit?: DoneSplit;
   weekPrefix: string; // tooltip header: "Approved week of Jun 8"
   onBarClick?: (weekStart: string, segment?: string) => void;
+  granularity?: Gran;
 }) {
-  // Fill gaps so empty weeks render as gaps in time, not skipped
-  const series = useMemo(() => {
-    if (weekly.length === 0) return [];
-    const out: WeeklyPayments[] = [];
-    const start = new Date(weekly[0].weekStart + "T00:00:00Z");
-    const end = new Date(weekly[weekly.length - 1].weekStart + "T00:00:00Z");
-    const byWeek = new Map(weekly.map((w) => [w.weekStart, w]));
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-      const key = d.toISOString().split("T")[0];
-      out.push(byWeek.get(key) || { weekStart: key, m1Count: 0, m2Count: 0, m1Amount: 0, m2Amount: 0 });
-    }
-    return out;
-  }, [weekly]);
+  const isDay = granularity === "day";
+  const series = useMemo(
+    () => bucketize(weekly, granularity, (key): WeeklyPayments => ({ weekStart: key, m1Count: 0, m2Count: 0, m1Amount: 0, m2Amount: 0 })),
+    [weekly, granularity],
+  );
 
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -252,7 +314,7 @@ function WeeklyPaymentsChart({
               className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {rects}
-              {count > 0 && (
+              {count > 0 && !isDay && (
                 <>
                   <text x={x + barW / 2} y={yTop - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
                     {fmtUsdK(w.m1Amount + w.m2Amount)}
@@ -262,16 +324,18 @@ function WeeklyPaymentsChart({
                   </text>
                 </>
               )}
-              <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
-                {weekLabel(w.weekStart)}
-              </text>
+              {showAxisLabel(i, granularity) && (
+                <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
+                  {granLabel(w.weekStart, granularity)}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
       {hovered !== null && series[hovered] && (
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-          <div className="font-semibold text-foreground mb-1">{weekPrefix} week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="font-semibold text-foreground mb-1">{weekPrefix} {granNoun(granularity)} of {granLabel(series[hovered].weekStart, granularity)}</div>
           <div className="text-foreground">
             M1: {series[hovered].m1Count} · {fmtUsd(series[hovered].m1Amount)}
             {doneSplit && (series[hovered].m1DoneCount ?? 0) > 0 && (
@@ -328,22 +392,12 @@ function WeeklyPaymentsChart({
 
 const EMPTY_LIFECYCLE_WEEK = (weekStart: string): WeeklyLifecycle => ({
   weekStart, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0,
-  rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0,
+  resubmittedCount: 0, resubmittedAmount: 0, rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0,
 });
 
-function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string, segment?: string) => void }) {
-  const series = useMemo(() => {
-    if (weekly.length === 0) return [];
-    const out: WeeklyLifecycle[] = [];
-    const start = new Date(weekly[0].weekStart + "T00:00:00Z");
-    const end = new Date(weekly[weekly.length - 1].weekStart + "T00:00:00Z");
-    const byWeek = new Map(weekly.map((w) => [w.weekStart, w]));
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-      const key = d.toISOString().split("T")[0];
-      out.push(byWeek.get(key) || EMPTY_LIFECYCLE_WEEK(key));
-    }
-    return out;
-  }, [weekly]);
+function WeeklyLifecycleChart({ weekly, onBarClick, granularity = "week", basisLabel = "Ready" }: { weekly: WeeklyLifecycle[]; onBarClick?: (weekStart: string, segment?: string) => void; granularity?: Gran; basisLabel?: string }) {
+  const isDay = granularity === "day";
+  const series = useMemo(() => bucketize(weekly, granularity, EMPTY_LIFECYCLE_WEEK), [weekly, granularity]);
 
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -359,7 +413,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
   const chartW = W - PAD_L - 8;
   const chartH = H - PAD_T - PAD_B;
   const total = (w: WeeklyLifecycle) =>
-    w.paidAmount + w.approvedAmount + w.inReviewAmount + (w.rejectedAmount ?? 0) + (w.waitingAmount ?? 0);
+    w.paidAmount + w.approvedAmount + w.inReviewAmount + (w.resubmittedAmount ?? 0) + (w.rejectedAmount ?? 0) + (w.waitingAmount ?? 0);
   const maxTotal = Math.max(...series.map(total), 1);
   const barW = Math.min(48, (chartW / series.length) * 0.7);
   const step = chartW / series.length;
@@ -383,12 +437,13 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
         })}
         {series.map((w, i) => {
           const x = PAD_L + step * i + (step - barW) / 2;
-          const count = w.paidCount + w.approvedCount + w.inReviewCount + (w.rejectedCount ?? 0) + (w.waitingCount ?? 0);
+          const count = w.paidCount + w.approvedCount + w.inReviewCount + (w.resubmittedCount ?? 0) + (w.rejectedCount ?? 0) + (w.waitingCount ?? 0);
           const dim = hovered === null || hovered === i ? 1 : 0.45;
           const segments = [
             { seg: "paid", amount: w.paidAmount, cls: "fill-emerald-500", op: 1 },
             { seg: "approved", amount: w.approvedAmount, cls: "fill-cyan-500", op: 1 },
             { seg: "inReview", amount: w.inReviewAmount, cls: "fill-zinc-400", op: 0.7 },
+            { seg: "resubmitted", amount: w.resubmittedAmount ?? 0, cls: "fill-violet-500", op: 0.8 },
             { seg: "rejected", amount: w.rejectedAmount ?? 0, cls: "fill-orange-500", op: 0.85 },
             { seg: "waiting", amount: w.waitingAmount ?? 0, cls: "fill-none stroke-zinc-500 [stroke-dasharray:3_2]", op: 0.9 },
           ];
@@ -410,7 +465,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
               className={onBarClick ? "cursor-pointer" : undefined}>
               <rect x={PAD_L + step * i} y={PAD_T} width={step} height={chartH} fill="transparent" />
               {rects}
-              {count > 0 && (
+              {count > 0 && !isDay && (
                 <>
                   <text x={x + barW / 2} y={yTop - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
                     {fmtUsdK(total(w))}
@@ -420,19 +475,24 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
                   </text>
                 </>
               )}
-              <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
-                {weekLabel(w.weekStart)}
-              </text>
+              {showAxisLabel(i, granularity) && (
+                <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
+                  {granLabel(w.weekStart, granularity)}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
       {hovered !== null && series[hovered] && (
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-          <div className="font-semibold text-foreground mb-1">Ready week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="font-semibold text-foreground mb-1">{basisLabel} {granNoun(granularity)} of {granLabel(series[hovered].weekStart, granularity)}</div>
           <div className="text-emerald-400">Paid: {series[hovered].paidCount} · {fmtUsd(series[hovered].paidAmount)}</div>
           <div className="text-cyan-400">Approved, awaiting payment: {series[hovered].approvedCount} · {fmtUsd(series[hovered].approvedAmount)}</div>
           <div className="text-muted">In PE review: {series[hovered].inReviewCount} · {fmtUsd(series[hovered].inReviewAmount)}</div>
+          {(series[hovered].resubmittedCount ?? 0) > 0 && (
+            <div className="text-violet-400">Resubmitted (back in review): {series[hovered].resubmittedCount} · {fmtUsd(series[hovered].resubmittedAmount ?? 0)}</div>
+          )}
           {(series[hovered].rejectedCount ?? 0) > 0 && (
             <div className="text-orange-400">Rejected — pending fix: {series[hovered].rejectedCount} · {fmtUsd(series[hovered].rejectedAmount ?? 0)}</div>
           )}
@@ -448,6 +508,7 @@ function WeeklyLifecycleChart({ weekly, onBarClick }: { weekly: WeeklyLifecycle[
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> Paid</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-cyan-500" /> Approved, awaiting payment</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-zinc-400/70" /> In PE review</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-violet-500/80" /> Resubmitted</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-orange-500/85" /> Rejected — pending fix</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm border border-dashed border-zinc-500" /> Not yet submitted</span>
       </div>
@@ -470,6 +531,7 @@ function SplitCohortChart({
   pendingOpacity = 0.7,
   pendingSwatch = "bg-zinc-400/70",
   emptyMessage,
+  granularity = "week",
 }: {
   weekly: WeeklySplitCohort[];
   onBarClick?: (weekStart: string, segment?: string) => void;
@@ -480,19 +542,13 @@ function SplitCohortChart({
   pendingOpacity?: number;
   pendingSwatch?: string;
   emptyMessage: string;
+  granularity?: Gran;
 }) {
-  const series = useMemo(() => {
-    if (weekly.length === 0) return [];
-    const out: WeeklySplitCohort[] = [];
-    const start = new Date(weekly[0].weekStart + "T00:00:00Z");
-    const end = new Date(weekly[weekly.length - 1].weekStart + "T00:00:00Z");
-    const byWeek = new Map(weekly.map((w) => [w.weekStart, w]));
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-      const key = d.toISOString().split("T")[0];
-      out.push(byWeek.get(key) || { weekStart: key, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 });
-    }
-    return out;
-  }, [weekly]);
+  const isDay = granularity === "day";
+  const series = useMemo(
+    () => bucketize(weekly, granularity, (key) => ({ weekStart: key, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 })),
+    [weekly, granularity],
+  );
 
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -552,7 +608,7 @@ function SplitCohortChart({
                 <rect x={x} y={yWait} width={barW} height={waitH} rx={2} className={pendingClass} opacity={pendingOpacity * dim}
                   onClick={(e) => { e.stopPropagation(); onBarClick?.(w.weekStart, "pending"); }} />
               )}
-              {count > 0 && (
+              {count > 0 && !isDay && (
                 <>
                   <text x={x + barW / 2} y={yWait - 18} textAnchor="middle" className="fill-foreground text-[10px] font-semibold">
                     {fmtUsdK(total(w))}
@@ -562,16 +618,18 @@ function SplitCohortChart({
                   </text>
                 </>
               )}
-              <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
-                {weekLabel(w.weekStart)}
-              </text>
+              {showAxisLabel(i, granularity) && (
+                <text x={x + barW / 2} y={H - 10} textAnchor="middle" className="fill-muted text-[10px]">
+                  {granLabel(w.weekStart, granularity)}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
       {hovered !== null && series[hovered] && (
         <div className="absolute top-0 right-0 rounded-lg bg-surface-elevated border border-t-border shadow-card px-3 py-2 text-xs">
-          <div className="font-semibold text-foreground mb-1">{weekPrefix} week of {weekLabel(series[hovered].weekStart)}</div>
+          <div className="font-semibold text-foreground mb-1">{weekPrefix} {granNoun(granularity)} of {granLabel(series[hovered].weekStart, granularity)}</div>
           <div className="text-emerald-400">{doneLabel}: {series[hovered].doneCount} · {fmtUsd(series[hovered].doneAmount)}</div>
           <div className="text-muted">{pendingLabel}: {series[hovered].pendingCount} · {fmtUsd(series[hovered].pendingAmount)}</div>
           <div className="text-foreground mt-1 border-t border-t-border pt-1">
@@ -1829,11 +1887,12 @@ const DOC_SHORT: Record<string, string> = {
   "Permission to Operate (PTO)": "PTO",
 };
 
-function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, onClose }: {
+function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", onClose }: {
   rows: MilestoneDrillRow[];
   weekStart: string | null;
   weekPrefix: string;
   segmentLabel?: string;
+  gran?: Gran;
   onClose: () => void;
 }) {
   const total = rows.reduce((s, r) => s + r.amount, 0);
@@ -1841,14 +1900,14 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, onClose }: {
     <div className="mt-4 rounded-lg border border-t-border bg-surface-2 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs font-medium text-foreground">
-          {weekStart ? `${weekPrefix} week of ${weekLabel(weekStart)}${segmentLabel ? ` — ${segmentLabel}` : ""}` : segmentLabel} — {rows.length} milestones · {fmtUsd(total)}
+          {weekStart ? `${weekPrefix} ${granNoun(gran)} of ${granLabel(weekStart, gran)}${segmentLabel ? ` — ${segmentLabel}` : ""}` : segmentLabel} — {rows.length} milestones · {fmtUsd(total)}
         </div>
         <button onClick={onClose} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">
           Close
         </button>
       </div>
       {rows.length === 0 ? (
-        <div className="text-xs text-muted py-3">No milestones in this week.</div>
+        <div className="text-xs text-muted py-3">No milestones in this {granNoun(gran)}.</div>
       ) : (
         <div className="overflow-x-auto max-h-96 overflow-y-auto">
           <table className="text-xs w-full">
@@ -2005,6 +2064,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
 
   const [locFilter, setLocFilter] = useState<string | null>(null);
   const [weeklyMode, setWeeklyMode] = useState<WeeklyMode>("paid");
+  const [gran, setGran] = useState<Gran>("week");
+  const [lifecycleBasis, setLifecycleBasis] = useState<"ready" | "submitted">("ready");
   const [docMode, setDocMode] = useState<"submitted" | "approved" | "rejected">("submitted");
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
@@ -2035,8 +2096,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
       }
     }
     const dateOf = (r: MilestoneDrillRow) =>
-      weeklyMode === "ready" || weeklyMode === "lifecycle"
-        ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
+      weeklyMode === "lifecycle"
+        ? lifecycleBasis === "submitted" ? r.submittedOn : r.readyOn ?? r.submittedOn
+        : weeklyMode === "ready" ? r.readyOn ?? r.submittedOn // submission implies readiness (matches route bucketing)
         : weeklyMode === "rejections" ? r.rejectedOn
         : weeklyMode === "approved" ? r.approvedOn
           : weeklyMode === "paid" ? r.paidOn
@@ -2065,11 +2127,13 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           const paid = isPaid(r);
           const approved = isApprovedPlus(r) && !paid;
           const rejPending = !paid && !approved && (r.status === "Rejected" || r.status === "Ready to Resubmit");
-          const waiting = !r.submittedOn && !paid && !approved && !rejPending;
-          const inReview = !paid && !approved && !rejPending && !waiting;
+          const resubmitted = !paid && !approved && !rejPending && r.status === "Resubmitted";
+          const waiting = !r.submittedOn && !paid && !approved && !rejPending && !resubmitted;
+          const inReview = !paid && !approved && !rejPending && !resubmitted && !waiting;
           switch (drill.segment) {
             case "paid": return paid;
             case "approved": return approved;
+            case "resubmitted": return resubmitted;
             case "rejected": return rejPending;
             case "waiting": return waiting;
             default: return inReview;
@@ -2081,9 +2145,11 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     };
     return data.milestones.filter((r) => {
       const d = dateOf(r);
-      return d ? weekStartUTC(new Date(d + "T00:00:00Z")) === drill.week && segOk(r) : false;
+      if (!d) return false;
+      // Match the clicked bar's bucket at the active granularity (day/week/month).
+      return periodKey(d, gran) === drill.week && segOk(r);
     });
-  }, [drill, weeklyMode, data]);
+  }, [drill, weeklyMode, lifecycleBasis, gran, data]);
 
   const AGGREGATE_LABELS: Record<string, string> = {
     waitSubmission: "All waiting on submission",
@@ -2097,7 +2163,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     rejections: { done: "Resolved since", pending: "Still pending fix" },
     submitted: { paidSeg: "Paid", done: "Approved, awaiting payment", rejected: "Rejected — pending fix", remainder: "In PE review" },
     approved: { done: "Paid since", remainder: "Awaiting payment" },
-    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
+    lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", resubmitted: "Resubmitted (back in review)", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
   };
   const locations = useMemo(
     () => [...new Set((data?.funnelDeals ?? []).map((d) => d.location).filter((l) => l && l !== "Unknown"))].sort(),
@@ -2109,7 +2175,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     const sum = (arr?: WeeklyPayments[]) =>
       (arr ?? []).reduce((s, w) => ({ count: s.count + w.m1Count + w.m2Count, amount: s.amount + w.m1Amount + w.m2Amount }), { count: 0, amount: 0 });
     // Cumulative ever-ready, plus the slice still waiting on submission.
-    const ready = (data?.weeklyReadiness ?? []).reduce(
+    const ready = (data?.dailyReadiness ?? []).reduce(
       (s, w) => ({
         count: s.count + w.doneCount + w.pendingCount,
         amount: s.amount + w.doneAmount + w.pendingAmount,
@@ -2136,9 +2202,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     return {
       ready,
       deals,
-      submitted: sum(data?.weeklySubmissions),
-      approved: sum(data?.weeklyApprovals),
-      paid: sum(data?.weekly),
+      submitted: sum(data?.dailySubmissions),
+      approved: sum(data?.dailyApprovals),
+      paid: sum(data?.dailyPaid),
     };
   }, [data]);
 
@@ -2287,11 +2353,46 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                 <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones · ${funnelTotals.deals.paid} deals`} />
               </button>
             </div>
+            {/* Shared chart controls: granularity for every view; date-basis for Lifecycle. */}
+            <div className="flex items-center justify-end gap-2 mb-2">
+              {weeklyMode === "lifecycle" && (
+                <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]">
+                  {(["ready", "submitted"] as const).map((b) => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => setLifecycleBasis(b)}
+                      className={`px-3 py-1 transition-colors ${lifecycleBasis === b ? "bg-surface-2 text-foreground font-medium" : "text-muted hover:text-foreground"}`}
+                    >
+                      {b === "ready" ? "By ready date" : "By submitted date"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]">
+                {GRAN_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setGran(o.value)}
+                    className={`px-3 py-1 transition-colors ${gran === o.value ? "bg-surface-2 text-foreground font-medium" : "text-muted hover:text-foreground"}`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {weeklyMode === "lifecycle" ? (
-              <WeeklyLifecycleChart weekly={data.weeklyLifecycle ?? []} onBarClick={openDrill} />
+              <WeeklyLifecycleChart
+                weekly={(lifecycleBasis === "submitted" ? data.dailyLifecycleSubmitted : data.dailyLifecycle) ?? []}
+                granularity={gran}
+                basisLabel={lifecycleBasis === "submitted" ? "Submitted" : "Ready"}
+                onBarClick={openDrill}
+              />
             ) : weeklyMode === "ready" ? (
               <SplitCohortChart
-                weekly={data.weeklyReadiness ?? []}
+                weekly={data.dailyReadiness ?? []}
+                granularity={gran}
                 onBarClick={openDrill}
                 weekPrefix="Ready"
                 doneLabel="Submitted"
@@ -2300,7 +2401,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               />
             ) : weeklyMode === "rejections" ? (
               <SplitCohortChart
-                weekly={data.weeklyRejections ?? []}
+                weekly={data.dailyRejections ?? []}
+                granularity={gran}
                 onBarClick={openDrill}
                 weekPrefix="Rejected"
                 doneLabel="Resolved since"
@@ -2314,11 +2416,12 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               <WeeklyPaymentsChart
                 weekly={
                   weeklyMode === "paid"
-                    ? data.weekly
+                    ? data.dailyPaid ?? []
                     : weeklyMode === "approved"
-                      ? data.weeklyApprovals ?? []
-                      : data.weeklySubmissions ?? []
+                      ? data.dailyApprovals ?? []
+                      : data.dailySubmissions ?? []
                 }
+                granularity={gran}
                 emptyMessage={WEEKLY_MODES[weeklyMode].empty}
                 doneSplit={WEEKLY_MODES[weeklyMode].split}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
@@ -2329,6 +2432,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               <DrillPanel
                 rows={drillRows}
                 weekStart={drill.week}
+                gran={gran}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
                 segmentLabel={
                   drill.week === null

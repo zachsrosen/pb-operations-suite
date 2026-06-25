@@ -240,6 +240,8 @@ export interface WeeklyLifecycle {
   approvedAmount: number;
   inReviewCount: number; // submitted, in PE review
   inReviewAmount: number;
+  resubmittedCount: number; // resubmitted after a rejection, back in PE review
+  resubmittedAmount: number;
   rejectedCount: number; // currently rejected / pending fix
   rejectedAmount: number;
   waitingCount: number; // ready but not yet submitted
@@ -972,12 +974,15 @@ export interface PeAnalyticsPayload {
     rejectionRatePct: number | null; // % of submitted milestones rejected at least once
   };
   docStats: DocStats;
-  weekly: WeeklyPayments[];
-  weeklyApprovals: WeeklyPayments[];
-  weeklySubmissions: WeeklyPayments[];
-  weeklyLifecycle: WeeklyLifecycle[];
-  weeklyReadiness: WeeklySplitCohort[];
-  weeklyRejections: WeeklySplitCohort[];
+  // All weekly charts are emitted at DAY granularity; the client rolls them up
+  // to week/month on demand (summing daily buckets is exact).
+  dailyPaid: WeeklyPayments[];
+  dailyApprovals: WeeklyPayments[];
+  dailySubmissions: WeeklyPayments[];
+  dailyLifecycle: WeeklyLifecycle[]; // lifecycle dated by READY day
+  dailyLifecycleSubmitted: WeeklyLifecycle[]; // lifecycle dated by SUBMITTED day
+  dailyReadiness: WeeklySplitCohort[];
+  dailyRejections: WeeklySplitCohort[];
   milestones: MilestoneDrillRow[];
   docRejectionEvents: DocRejectionEvent[];
   docSubmissionEvents: DocRejectionEvent[];

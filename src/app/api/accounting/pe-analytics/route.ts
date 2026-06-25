@@ -11,7 +11,6 @@ import { getUploaderOverridesRaw } from "@/lib/pe-uploader-overrides";
 import { getPaymentAdjustments } from "@/lib/pe-payment-adjustments";
 import { prisma } from "@/lib/db";
 import {
-  weekStartUTC,
   groupForStatus,
   resolveSubmittedOn,
   resolveApprovedOn,
@@ -338,13 +337,17 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     );
   }
 
-  // --- Report 1: payments + approvals per week --------------------------------
-  const bucketByWeek = (dateOf: (r: MilestoneRecord) => string | null): WeeklyPayments[] => {
+  // --- Report 1: payments + approvals per DAY ---------------------------------
+  // All weekly charts are bucketed by day here; the client rolls these up to
+  // week or month on demand (summing daily buckets is exact), so a single
+  // granularity toggle drives every chart without a refetch.
+  const dayKey = (date: string) => new Date(date).toISOString().slice(0, 10);
+  const bucketByDay = (dateOf: (r: MilestoneRecord) => string | null): WeeklyPayments[] => {
     const map = new Map<string, WeeklyPayments>();
     for (const r of records) {
       const date = dateOf(r);
       if (!date) continue;
-      const wk = weekStartUTC(new Date(date));
+      const wk = dayKey(date);
       const w = map.get(wk) || { weekStart: wk, m1Count: 0, m2Count: 0, m1Amount: 0, m2Amount: 0 };
       if (r.milestone === "M1") {
         w.m1Count++;
@@ -357,9 +360,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
     return [...map.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   };
-  const weekly = bucketByWeek((r) => r.paidOn);
-  const weeklyApprovals = bucketByWeek((r) => r.approvedOn);
-  const weeklySubmissions = bucketByWeek((r) => r.submittedOn);
+  const dailyPaid = bucketByDay((r) => r.paidOn);
+  const dailyApprovals = bucketByDay((r) => r.approvedOn);
+  const dailySubmissions = bucketByDay((r) => r.submittedOn);
 
   // Mark the subset that has progressed past each stage (rendered faded in
   // the UI — the vivid remainder is what's still outstanding).
@@ -368,11 +371,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     dateOf: (r: MilestoneRecord) => string | null,
     isDone: (r: MilestoneRecord) => boolean,
   ) => {
-    const byWeek = new Map(arr.map((w) => [w.weekStart, w]));
+    const byDay = new Map(arr.map((w) => [w.weekStart, w]));
     for (const r of records) {
       const date = dateOf(r);
       if (!date || !isDone(r)) continue;
-      const w = byWeek.get(weekStartUTC(new Date(date)));
+      const w = byDay.get(dayKey(date));
       if (!w) continue;
       if (r.milestone === "M1") {
         w.m1DoneCount = (w.m1DoneCount ?? 0) + 1;
@@ -400,7 +403,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       !submittedSince &&
       (!r.status || groupForStatus(r.status) === "Onboarding" || groupForStatus(r.status) === "Ready to Submit");
     if (!submittedSince && !waiting) continue;
-    const wk = weekStartUTC(new Date(readyDate));
+    const wk = dayKey(readyDate);
     const w = readinessMap.get(wk) || { weekStart: wk, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 };
     const amt = r.amount || 0;
     if (submittedSince) {
@@ -412,14 +415,14 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
     readinessMap.set(wk, w);
   }
-  const weeklyReadiness = [...readinessMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const dailyReadiness = [...readinessMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
   // Rejections view: first-rejection-week cohorts — fixed since (resubmitted/
   // approved/paid) vs still pending fix.
   const rejectionsMap = new Map<string, WeeklySplitCohort>();
   for (const r of records) {
     if (!r.rejectedOn) continue;
-    const wk = weekStartUTC(new Date(r.rejectedOn));
+    const wk = dayKey(r.rejectedOn);
     const w = rejectionsMap.get(wk) || { weekStart: wk, doneCount: 0, doneAmount: 0, pendingCount: 0, pendingAmount: 0 };
     const amt = r.amount || 0;
     if (groupForStatus(r.status) === "Rejected — pending fix") {
@@ -431,11 +434,20 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     }
     rejectionsMap.set(wk, w);
   }
-  const weeklyRejections = [...rejectionsMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const dailyRejections = [...rejectionsMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
-  // Lifecycle view: ready-to-submit-week cohorts (same inclusion rules as the
-  // readiness view), colored by where each milestone stands today.
-  const lifecycleMap = new Map<string, WeeklyLifecycle>();
+  // Lifecycle view: cohorts colored by where each milestone stands today,
+  // bucketed by DAY (client rolls up to week/month). Two date bases: by the
+  // day each milestone became READY (inspection passed / PTO granted), and by
+  // the day it was SUBMITTED — the UI toggles between them. The submitted-basis
+  // series excludes not-yet-submitted milestones (they have no submission day).
+  const lifecycleDayMap = new Map<string, WeeklyLifecycle>();
+  const lifecycleSubmittedDayMap = new Map<string, WeeklyLifecycle>();
+  const emptyLifecycle = (start: string): WeeklyLifecycle => ({
+    weekStart: start, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0,
+    inReviewCount: 0, inReviewAmount: 0, resubmittedCount: 0, resubmittedAmount: 0,
+    rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0,
+  });
   for (const r of records) {
     const readyDate = r.readyOn;
     if (!readyDate) continue;
@@ -443,44 +455,57 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       !r.submittedOn &&
       (!r.status || groupForStatus(r.status) === "Onboarding" || groupForStatus(r.status) === "Ready to Submit");
     if (!r.submittedOn && !waiting) continue; // status anomalies excluded (matches readiness)
-    const wk = weekStartUTC(new Date(readyDate));
-    const w =
-      lifecycleMap.get(wk) ||
-      { weekStart: wk, paidCount: 0, paidAmount: 0, approvedCount: 0, approvedAmount: 0, inReviewCount: 0, inReviewAmount: 0, rejectedCount: 0, rejectedAmount: 0, waitingCount: 0, waitingAmount: 0 };
     const amt = r.amount || 0;
-    if (waiting) {
-      w.waitingCount++;
-      w.waitingAmount += amt;
-    } else if (r.status === "Paid" || r.paidOn) {
-      w.paidCount++;
-      w.paidAmount += amt;
-    } else if (r.status === "Approved" || r.approvedOn) {
-      w.approvedCount++;
-      w.approvedAmount += amt;
-    } else if (groupForStatus(r.status) === "Rejected — pending fix") {
-      w.rejectedCount++;
-      w.rejectedAmount += amt;
-    } else {
-      w.inReviewCount++;
-      w.inReviewAmount += amt;
+    // Classify once, then fold the same outcome into each bucket it belongs to.
+    const apply = (w: WeeklyLifecycle) => {
+      if (waiting) {
+        w.waitingCount++;
+        w.waitingAmount += amt;
+      } else if (r.status === "Paid" || r.paidOn) {
+        w.paidCount++;
+        w.paidAmount += amt;
+      } else if (r.status === "Approved" || r.approvedOn) {
+        w.approvedCount++;
+        w.approvedAmount += amt;
+      } else if (r.status === "Resubmitted") {
+        w.resubmittedCount++;
+        w.resubmittedAmount += amt;
+      } else if (groupForStatus(r.status) === "Rejected — pending fix") {
+        w.rejectedCount++;
+        w.rejectedAmount += amt;
+      } else {
+        w.inReviewCount++;
+        w.inReviewAmount += amt;
+      }
+    };
+    const day = dayKey(readyDate);
+    const wd = lifecycleDayMap.get(day) || emptyLifecycle(day);
+    apply(wd);
+    lifecycleDayMap.set(day, wd);
+    // Submitted-basis: only milestones that were actually submitted.
+    if (r.submittedOn) {
+      const sday = dayKey(r.submittedOn);
+      const ws = lifecycleSubmittedDayMap.get(sday) || emptyLifecycle(sday);
+      apply(ws);
+      lifecycleSubmittedDayMap.set(sday, ws);
     }
-    lifecycleMap.set(wk, w);
   }
-  const weeklyLifecycle = [...lifecycleMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const dailyLifecycle = [...lifecycleDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const dailyLifecycleSubmitted = [...lifecycleSubmittedDayMap.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
-  markDone(weeklyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.paidOn);
+  markDone(dailyApprovals, (r) => r.approvedOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(
-    weeklySubmissions,
+    dailySubmissions,
     (r) => r.submittedOn,
     (r) => !!r.approvedOn || r.status === "Approved" || r.status === "Paid",
   );
   // Submissions view also splits out the currently-rejected slice (our court)
   // and the already-paid slice (so paid is distinguishable from approved).
   {
-    const byWeek = new Map(weeklySubmissions.map((w) => [w.weekStart, w]));
+    const byDay = new Map(dailySubmissions.map((w) => [w.weekStart, w]));
     for (const r of records) {
       if (!r.submittedOn) continue;
-      const w = byWeek.get(weekStartUTC(new Date(r.submittedOn)));
+      const w = byDay.get(dayKey(r.submittedOn));
       if (!w) continue;
       if (groupForStatus(r.status) === "Rejected — pending fix") {
         if (r.milestone === "M1") {
@@ -1189,12 +1214,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         : null,
     },
     docStats,
-    weekly,
-    weeklyApprovals,
-    weeklySubmissions,
-    weeklyLifecycle,
-    weeklyReadiness,
-    weeklyRejections,
+    dailyPaid,
+    dailyApprovals,
+    dailySubmissions,
+    dailyLifecycle,
+    dailyLifecycleSubmitted,
+    dailyReadiness,
+    dailyRejections,
     milestones,
     docRejectionEvents,
     docSubmissionEvents,
