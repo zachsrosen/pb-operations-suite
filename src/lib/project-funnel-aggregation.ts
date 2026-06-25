@@ -274,6 +274,8 @@ export interface ProjectFunnelResponse {
   previousSummary: Record<ProjectFunnelStageKey, ProjectFunnelStageData>;
   cohorts: ProjectFunnelCohort[];
   monthlyActivity: ProjectMonthlyActivity[];
+  /** Trailing-90-day daily milestone throughput (independent of the timeframe). */
+  dailyActivity: ProjectMonthlyActivity[];
   /** Per-milestone monthly cohorts with advanced/waiting/cancelled splits. */
   milestoneCohorts: MilestoneCohort[];
   /** Deals grouped by sold-month, broken down by current pipeline stage. */
@@ -959,6 +961,43 @@ export function buildProjectFunnelData(
 
   const monthlyActivity = [...activityMap.values()].sort((a, b) => b.month.localeCompare(a.month));
 
+  // Daily milestone throughput for the trailing 90 days — independent of the
+  // selected timeframe, for the daily-trend panel. Each milestone counted by the
+  // day it actually happened.
+  const dailyCutoff = new Date(now);
+  dailyCutoff.setDate(dailyCutoff.getDate() - 90);
+  const dailyMap = new Map<string, ProjectMonthlyActivity>();
+  const ensureDaily = (dk: string) => {
+    if (!dailyMap.has(dk)) dailyMap.set(dk, emptyActivity(dk));
+    return dailyMap.get(dk)!;
+  };
+  const inDaily = (dateStr: string) => {
+    const d = new Date(dateStr + "T12:00:00");
+    return d >= dailyCutoff && d <= now;
+  };
+  for (const p of projects) {
+    if (!matchesLocation(p) || !matchesStaff(p)) continue;
+    for (const { field, activityKey, amountKey } of dateMilestones) {
+      const dateVal = p[field] as string | null;
+      if (dateVal && inDaily(dateVal)) {
+        const act = ensureDaily(dateVal.slice(0, 10));
+        (act[activityKey] as number)++;
+        if (amountKey) (act[amountKey] as number) += p.amount || 0;
+      }
+    }
+    if (p.projectCompleteDate && inDaily(p.projectCompleteDate)) {
+      const act = ensureDaily(p.projectCompleteDate.slice(0, 10));
+      act.closedOut++;
+      act.closedOutAmount += p.amount || 0;
+    }
+    if (p.cancelledDate && inDaily(p.cancelledDate)) {
+      const act = ensureDaily(p.cancelledDate.slice(0, 10));
+      act.cancelled++;
+      act.cancelledAmount += p.amount || 0;
+    }
+  }
+  const dailyActivity = [...dailyMap.values()].sort((a, b) => b.month.localeCompare(a.month));
+
   // Milestone-progression cohorts: for each consecutive milestone pair, bin
   // deals by the month they hit the first milestone, then split each cohort into
   // those that have SINCE reached the next milestone (advanced), those still
@@ -1470,6 +1509,7 @@ export function buildProjectFunnelData(
     previousSummary,
     cohorts,
     monthlyActivity,
+    dailyActivity,
     milestoneCohorts,
     lifecycle,
     stageDistribution,
