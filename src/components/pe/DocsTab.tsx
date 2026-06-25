@@ -377,6 +377,22 @@ const CATEGORY_PRIORITY: Record<ActionCategory, number> = {
 // Export — turn outstanding docs into shareable CSV / text
 // ---------------------------------------------------------------------------
 
+// Map a doc's review status to the same category dimension the screen filter
+// uses, so exports can honor an active category filter at the doc level.
+function docStatusCategory(status: string | undefined): ActionCategory {
+  switch (status) {
+    case "ACTION_REQUIRED": return "action-required";
+    case "REJECTED": return "rejected";
+    case "UNDER_REVIEW":
+    case "UPLOADED": return "waiting-on-pe";
+    case "APPROVED": return "approved";
+    default: return "needs-upload"; // NOT_UPLOADED or no review
+  }
+}
+function docPassesCategoryFilter(status: string | undefined, categoryFilter: string[]): boolean {
+  return categoryFilter.length === 0 || categoryFilter.includes(docStatusCategory(status));
+}
+
 function docsToExportRows(s: DealDocSummary, docs: DocWithReview[]): PeExportRow[] {
   return docs.map(({ doc, review }) => ({
     proj: parseDealName(s.deal.dealName).proj,
@@ -394,13 +410,15 @@ function docsToExportRows(s: DealDocSummary, docs: DocWithReview[]): PeExportRow
 }
 
 // All still-outstanding docs for a deal (used by the List view export).
-function dealOutstandingRows(s: DealDocSummary, docMap: Map<string, DocReview>): PeExportRow[] {
+// Honors the active category filter so the export matches what's on screen.
+function dealOutstandingRows(s: DealDocSummary, docMap: Map<string, DocReview>, categoryFilter: string[] = []): PeExportRow[] {
   const { blocking, issues } = getDealActionLists(s, docMap);
   const seen = new Set<string>();
   const merged: DocWithReview[] = [];
   for (const d of [...issues, ...blocking]) {
     if (seen.has(d.doc.name)) continue;
     seen.add(d.doc.name);
+    if (!docPassesCategoryFilter(d.review?.status, categoryFilter)) continue;
     merged.push(d);
   }
   return docsToExportRows(s, merged);
@@ -1625,7 +1643,7 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs text-muted">{sorted.length} deal{sorted.length === 1 ? "" : "s"}</span>
             <ExportButtons
-              rows={sorted.flatMap((s) => dealOutstandingRows(s, docMap))}
+              rows={sorted.flatMap((s) => dealOutstandingRows(s, docMap, categoryFilter))}
               title="PE — Document Worklist"
               filename="pe-worklist.csv"
             />
@@ -1714,7 +1732,8 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                       docsToExportRows(
                         summary,
                         teamDocs.filter(({ review }) =>
-                          !!review && review.status !== "APPROVED" && review.status !== "UNDER_REVIEW" && review.status !== "UPLOADED",
+                          !!review && review.status !== "APPROVED" && review.status !== "UNDER_REVIEW" && review.status !== "UPLOADED"
+                          && docPassesCategoryFilter(review.status, categoryFilter),
                         ),
                       ),
                     )}
