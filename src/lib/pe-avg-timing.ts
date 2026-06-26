@@ -1,52 +1,63 @@
 import { hubspotClient } from "@/lib/hubspot";
 
 /**
- * Maintains the fleet-wide "avg submission → payment (days)" number on every PE
- * deal, so a HubSpot calc property can forecast an expected payment date that
- * self-updates: add_time(pe_m{1,2}_submission_date, pe_m{1,2}_avg_submission_to_payment_days, "day").
+ * Maintains fleet-wide forecast-lag numbers on every PE deal so HubSpot calc
+ * properties can forecast an expected payment date that self-updates:
+ *   - submission leg: add_time(pe_m{1,2}_submission_date, pe_m{1,2}_avg_submission_to_payment_days, "day")
+ *   - approval leg:   add_time(pe_m{1,2}_approval_date,   pe_m{1,2}_avg_approval_to_payment_days,   "day")
  *
  * HubSpot can't reference a cross-deal average inside a per-record formula, so
- * we compute it here and write the same value onto all PE deals. Only deals
+ * we compute it here and write the same value onto all PE deals. Each leg uses
+ * (mean + median) / 2 — a balanced central estimate that keeps the median's
+ * resistance to slow-payer outliers while letting the mean nudge it. Only deals
  * whose stored value differs get written, so steady-state runs are near no-ops.
  */
 
+const SUB_M1 = "pe_m1_avg_submission_to_payment_days";
+const SUB_M2 = "pe_m2_avg_submission_to_payment_days";
+const APP_M1 = "pe_m1_avg_approval_to_payment_days";
+const APP_M2 = "pe_m2_avg_approval_to_payment_days";
+
 const FETCH_PROPS = [
   "pe_m1_submission_date",
-  "pe_m1_paid_date",
   "pe_m2_submission_date",
+  "pe_m1_approval_date",
+  "pe_m2_approval_date",
+  "pe_m1_paid_date",
   "pe_m2_paid_date",
-  "pe_m1_avg_submission_to_payment_days",
-  "pe_m2_avg_submission_to_payment_days",
+  SUB_M1, SUB_M2, APP_M1, APP_M2,
 ];
 
-const M1_PROP = "pe_m1_avg_submission_to_payment_days";
-const M2_PROP = "pe_m2_avg_submission_to_payment_days";
-
 /** Whole-day gap between two HubSpot date values, or null if unusable/negative. */
-function dayGap(sub: string | null | undefined, paid: string | null | undefined): number | null {
-  if (!sub || !paid) return null;
-  const s = Date.parse(String(sub).length <= 10 ? `${sub}T00:00:00Z` : String(sub));
-  const p = Date.parse(String(paid).length <= 10 ? `${paid}T00:00:00Z` : String(paid));
-  if (Number.isNaN(s) || Number.isNaN(p)) return null;
-  const g = Math.round((p - s) / 86_400_000);
+function dayGap(from: string | null | undefined, to: string | null | undefined): number | null {
+  if (!from || !to) return null;
+  const a = Date.parse(String(from).length <= 10 ? `${from}T00:00:00Z` : String(from));
+  const b = Date.parse(String(to).length <= 10 ? `${to}T00:00:00Z` : String(to));
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  const g = Math.round((b - a) / 86_400_000);
   return g >= 0 ? g : null;
 }
 
-function mean(a: number[]): number | null {
-  return a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null;
+/** Balanced central estimate: the average of the mean and the median, rounded. */
+function blend(a: number[]): number | null {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const mean = s.reduce((x, y) => x + y, 0) / s.length;
+  const median = s[Math.floor(s.length / 2)];
+  return Math.round((mean + median) / 2);
 }
 
 export interface AvgTimingResult {
-  m1Avg: number | null;
-  m1Count: number;
-  m2Avg: number | null;
-  m2Count: number;
+  subM1: number | null; subM1Count: number;
+  subM2: number | null; subM2Count: number;
+  appM1: number | null; appM1Count: number;
+  appM2: number | null; appM2Count: number;
   examined: number;
   updated: number;
 }
 
 export async function syncPeAvgTiming(opts: { dryRun?: boolean } = {}): Promise<AvgTimingResult> {
-  // 1. All PE deals + their submission/paid dates and current stored averages.
+  // 1. All PE deals + their dates and current stored averages.
   const deals: { id: string; p: Record<string, string | null | undefined> }[] = [];
   let after: string | undefined;
   do {
@@ -60,19 +71,26 @@ export async function syncPeAvgTiming(opts: { dryRun?: boolean } = {}): Promise<
     after = res.paging?.next?.after;
   } while (after);
 
-  // 2. Fleet averages, measured straight from submission → paid (authoritative,
-  //    independent of the per-deal calc props backfilling).
-  const m1Gaps = deals.map((d) => dayGap(d.p.pe_m1_submission_date, d.p.pe_m1_paid_date)).filter((v): v is number => v !== null);
-  const m2Gaps = deals.map((d) => dayGap(d.p.pe_m2_submission_date, d.p.pe_m2_paid_date)).filter((v): v is number => v !== null);
-  const m1Avg = mean(m1Gaps);
-  const m2Avg = mean(m2Gaps);
+  // 2. Fleet (mean+median)/2 per leg, measured straight from the dates
+  //    (authoritative, independent of the per-deal calc props backfilling).
+  const subM1Gaps = deals.map((d) => dayGap(d.p.pe_m1_submission_date, d.p.pe_m1_paid_date)).filter((v): v is number => v !== null);
+  const subM2Gaps = deals.map((d) => dayGap(d.p.pe_m2_submission_date, d.p.pe_m2_paid_date)).filter((v): v is number => v !== null);
+  const appM1Gaps = deals.map((d) => dayGap(d.p.pe_m1_approval_date, d.p.pe_m1_paid_date)).filter((v): v is number => v !== null);
+  const appM2Gaps = deals.map((d) => dayGap(d.p.pe_m2_approval_date, d.p.pe_m2_paid_date)).filter((v): v is number => v !== null);
+  const subM1 = blend(subM1Gaps), subM2 = blend(subM2Gaps);
+  const appM1 = blend(appM1Gaps), appM2 = blend(appM2Gaps);
 
   // 3. Write to every PE deal whose stored value differs (skip no-ops).
+  const set = (props: Record<string, string>, key: string, val: number | null, cur: string | null | undefined) => {
+    if (val !== null && String(cur ?? "") !== String(val)) props[key] = String(val);
+  };
   const inputs: { id: string; properties: Record<string, string> }[] = [];
   for (const d of deals) {
     const props: Record<string, string> = {};
-    if (m1Avg !== null && String(d.p[M1_PROP] ?? "") !== String(m1Avg)) props[M1_PROP] = String(m1Avg);
-    if (m2Avg !== null && String(d.p[M2_PROP] ?? "") !== String(m2Avg)) props[M2_PROP] = String(m2Avg);
+    set(props, SUB_M1, subM1, d.p[SUB_M1]);
+    set(props, SUB_M2, subM2, d.p[SUB_M2]);
+    set(props, APP_M1, appM1, d.p[APP_M1]);
+    set(props, APP_M2, appM2, d.p[APP_M2]);
     if (Object.keys(props).length) inputs.push({ id: d.id, properties: props });
   }
 
@@ -84,5 +102,9 @@ export async function syncPeAvgTiming(opts: { dryRun?: boolean } = {}): Promise<
     }
   }
 
-  return { m1Avg, m1Count: m1Gaps.length, m2Avg, m2Count: m2Gaps.length, examined: deals.length, updated: opts.dryRun ? 0 : updated };
+  return {
+    subM1, subM1Count: subM1Gaps.length, subM2, subM2Count: subM2Gaps.length,
+    appM1, appM1Count: appM1Gaps.length, appM2, appM2Count: appM2Gaps.length,
+    examined: deals.length, updated: opts.dryRun ? 0 : updated,
+  };
 }

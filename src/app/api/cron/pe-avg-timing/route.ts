@@ -7,11 +7,12 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/cron/pe-avg-timing
  *
- * Nightly poller (schedule in vercel.json). Computes the fleet-wide average
- * days from submission → payment for M1 and M2, then writes those numbers onto
- * every PE deal so a HubSpot calc property can forecast an expected payment date
- * that self-updates:
+ * Nightly poller (schedule in vercel.json). Computes the fleet-wide forecast lag
+ * (mean+median)/2 for both legs — submission → payment and approval → payment,
+ * M1 and M2 — then writes those numbers onto every PE deal so HubSpot calc
+ * properties can forecast an expected payment date that self-updates:
  *   add_time(pe_m1_submission_date, pe_m1_avg_submission_to_payment_days, "day")
+ *   add_time(pe_m1_approval_date,   pe_m1_avg_approval_to_payment_days,   "day")
  *
  * HubSpot can't average across deals inside a per-record formula, so we maintain
  * the number here. Only deals whose stored value drifted get written, so a
@@ -30,8 +31,9 @@ export async function GET(request: NextRequest) {
     const result = await syncPeAvgTiming({ dryRun });
     if (result.updated > 0) {
       console.warn(
-        `[pe-avg-timing] M1 avg ${result.m1Avg}d (n=${result.m1Count}), ` +
-          `M2 avg ${result.m2Avg}d (n=${result.m2Count}); wrote ${result.updated}/${result.examined} deals`,
+        `[pe-avg-timing] submit→pay M1 ${result.subM1}d (n=${result.subM1Count}) M2 ${result.subM2}d (n=${result.subM2Count}); ` +
+          `approve→pay M1 ${result.appM1}d (n=${result.appM1Count}) M2 ${result.appM2}d (n=${result.appM2Count}); ` +
+          `wrote ${result.updated}/${result.examined} deals`,
       );
     }
     return NextResponse.json({ ok: true, dryRun, ...result });
