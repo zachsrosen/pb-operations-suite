@@ -996,6 +996,10 @@ export interface MilestoneDrillRow {
   lastUploadOn: string | null;
   /** PE can review this now (M1, or M2 whose M1 is approved). Drives overdue flagging. */
   peReviewable: boolean;
+  /** This deal's M1 approval date (YYYY-MM-DD). For a submitted M2, PE can't begin
+   *  review until M1 is approved, so M2's review clock starts at the later of this
+   *  and the M2 docs landing. Null until M1 is approved. */
+  m1ApprovedOn: string | null;
   /** Milestone-relevant docs not yet uploaded (empty when fully uploaded or untracked). */
   missingDocs: string[];
   /** Milestone-relevant docs currently flagged ACTION_REQUIRED/REJECTED by PE. */
