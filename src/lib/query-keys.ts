@@ -280,6 +280,11 @@ export const queryKeys = {
       [...queryKeys.map.root, "markers", mode, types.slice().sort().join(",")] as const,
   },
   workflowMap: () => ["workflow-map"] as const,
+  schedulerV2: {
+    root: ["schedulerV2"] as const,
+    board: (from: string, to: string, filters?: Record<string, unknown>) =>
+      [...queryKeys.schedulerV2.root, "board", from, to, filters] as const,
+  },
 } as const;
 
 /**
