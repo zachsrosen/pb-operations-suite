@@ -275,6 +275,8 @@ export interface TimingSummary {
   nRemitToPay: number;
   avgFullCycle: number | null; // M1: inspection→pay, M2: PTO→pay
   nFullCycle: number;
+  avgSubmitToPay: number | null;
+  nSubmitToPay: number;
 }
 
 export interface MonthlyTiming {

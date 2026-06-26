@@ -99,6 +99,8 @@ const DEAL_PROPERTIES = [
   "pe_m2_time_from_remittance_to_payment",
   "pe_m1_time_from_inspection_pass_to_payment",
   "pe_m2_time_from_pto_to_payment",
+  "pe_m1_time_from_submission_to_payment",
+  "pe_m2_time_from_submission_to_payment",
   "inspections_completion_date",
   "pto_completion_date",
   "pe_portal_url",
@@ -144,6 +146,8 @@ interface PeDealRow {
   m2RemitToPayDays: number | null;
   m1FullCycleDays: number | null; // inspection pass -> M1 payment
   m2FullCycleDays: number | null; // PTO granted -> M2 payment
+  m1SubmitToPayDays: number | null;
+  m2SubmitToPayDays: number | null;
   inspectionPassDate: string | null; // M1 operational ready
   ptoGrantedDate: string | null; // M2 operational ready
   m1ReadyToSubmitDate: string | null; // stamped when M1 hits "Ready to Submit"
@@ -271,6 +275,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2RemitToPayDays: msToDays(p.pe_m2_time_from_remittance_to_payment),
         m1FullCycleDays: msToDays(p.pe_m1_time_from_inspection_pass_to_payment),
         m2FullCycleDays: msToDays(p.pe_m2_time_from_pto_to_payment),
+        m1SubmitToPayDays: msToDays(p.pe_m1_time_from_submission_to_payment),
+        m2SubmitToPayDays: msToDays(p.pe_m2_time_from_submission_to_payment),
         inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
         ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
         m1ReadyToSubmitDate: p.pe_m1_ready_to_submit_date ? String(p.pe_m1_ready_to_submit_date) : null,
@@ -628,6 +634,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const pA2P = prop((d) => (m === "M1" ? d.m1ApproveToPayDays : d.m2ApproveToPayDays));
     const pR2P = prop((d) => (m === "M1" ? d.m1RemitToPayDays : d.m2RemitToPayDays));
     const pFC = prop((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays));
+    const pS2P = prop((d) => (m === "M1" ? d.m1SubmitToPayDays : d.m2SubmitToPayDays));
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -648,6 +655,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       nRemitToPay: pR2P.length,
       avgFullCycle: meanDays(pFC),
       nFullCycle: pFC.length,
+      avgSubmitToPay: meanDays(pS2P),
+      nSubmitToPay: pS2P.length,
     };
   });
 
