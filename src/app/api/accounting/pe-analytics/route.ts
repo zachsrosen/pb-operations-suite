@@ -1187,13 +1187,30 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       resubmittedOverrideKeys.add(k);
     }
   }
+  // Pre-tracking PAYMENT credit: nameless docs uploaded before PE began recording
+  // an uploader (attributionStart, ~2026-04-30) are credited to Layla — she did
+  // the pre-tracking PE uploads. This is a payment-ownership-only map; the count
+  // views (Submissions / By Time / By Doc Type) keep the original Unknown, since
+  // we don't actually know who physically uploaded each pre-tracking doc.
+  const PRE_TRACKING_PAYMENT_OWNER = "layla@photonbrothers.com";
+  const attributionStartMs = attributionStart ? new Date(attributionStart).getTime() : null;
+  const latestUploaderByDocForPay = new Map(latestUploaderByDoc);
+  if (attributionStartMs !== null) {
+    for (const [k, by] of latestUploaderByDoc) {
+      if ((by == null || by.trim() === "") && !overrideKeys.has(k)) {
+        const at = latestUploadAtByDoc.get(k);
+        if (at != null && at < attributionStartMs) latestUploaderByDocForPay.set(k, PRE_TRACKING_PAYMENT_OWNER);
+      }
+    }
+  }
+
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
   const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
   const milestonePayments = deals.flatMap((d) => [
     { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPaid: d.m1Status === "Paid", isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
     { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPaid: d.m2Status === "Paid", isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
   ]);
-  const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDoc);
+  const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
   const withPaymentOwnership = buildUploaderStats(
     uploaderVersionRows,
     currentDocStatus,
@@ -1212,7 +1229,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     Object.entries(uploaderOverridesRaw).map(([k, ov]) => [k, ov.uploader ? ov.uploader : null]),
   );
   const sharedOwners = computeSharedOwners(uploaderVersionRows, overrideByDoc);
-  const paymentOwnershipFractional = buildPaymentOwnershipFractional(milestonePayments, currentDocStatus, latestUploaderByDoc);
+  const paymentOwnershipFractional = buildPaymentOwnershipFractional(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
   const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
     const pay = paymentOwnershipFractional.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
@@ -1221,7 +1238,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // "Last submitter" payment ownership: whole milestone $ to whoever uploaded
   // its most-recent qualifying doc. Same base (owner) stats — only the payment
   // columns differ — so the payment table can toggle Owner / Fractional / Last.
-  const paymentOwnershipLast = buildPaymentOwnershipLast(milestonePayments, currentDocStatus, latestUploaderByDoc, latestUploadAtByDoc);
+  const paymentOwnershipLast = buildPaymentOwnershipLast(milestonePayments, currentDocStatus, latestUploaderByDocForPay, latestUploadAtByDoc);
   const uploaderStatsLast = withPaymentOwnership.map((s) => {
     const pay = paymentOwnershipLast.get(s.uploader);
     return {
