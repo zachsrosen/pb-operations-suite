@@ -2053,7 +2053,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
 // Weekly chart modes
 // ---------------------------------------------------------------------------
 
-type WeeklyMode = "ready" | "submitted" | "approved" | "remittance" | "paid" | "rejections" | "expectedPaid" | "lifecycle";
+type WeeklyMode = "ready" | "submitted" | "approved" | "remittance" | "paid" | "rejections" | "expectedPaid" | "expectedPaidSub" | "lifecycle";
 
 const WEEKLY_MODES: Record<
   WeeklyMode,
@@ -2125,6 +2125,19 @@ const WEEKLY_MODES: Record<
       remainderLabel: "Not yet paid",
     },
   },
+  expectedPaidSub: {
+    label: "Expected (Submission)",
+    title: "Expected Payments per Week — from Submission",
+    subtitle: "Bars dated by EXPECTED paid date (submission + avg submission→payment: M1 31d / M2 36d). Reaches milestones still in PE review that the approval-based forecast can't see yet. Green = actually paid since; gray = expected, not yet paid.",
+    empty: "No expected payments yet.",
+    weekPrefix: "Expected",
+    split: {
+      doneLegend: "Paid since",
+      remainderLegend: "Not yet paid",
+      doneWord: "paid",
+      remainderLabel: "Not yet paid",
+    },
+  },
   rejections: {
     label: "Rejections",
     title: "Rejection Cohorts",
@@ -2142,7 +2155,7 @@ const WEEKLY_MODES: Record<
 };
 
 // Lifecycle is reached via the Milestones/Lifecycle group toggle, not a pill.
-const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "remittance", "paid", "rejections", "expectedPaid"];
+const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "remittance", "paid", "rejections", "expectedPaid", "expectedPaidSub"];
 
 // ---------------------------------------------------------------------------
 // Page
@@ -2215,6 +2228,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
         : weeklyMode === "approved" ? r.approvedOn
           : weeklyMode === "remittance" ? r.remittanceOn
           : weeklyMode === "expectedPaid" ? r.expectedPaidOn
+          : weeklyMode === "expectedPaidSub" ? r.expectedPaidBySubOn
           : weeklyMode === "paid" ? r.paidOn
             : r.submittedOn; // submitted
     const isPaid = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
@@ -2234,6 +2248,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
         case "approved":
         case "remittance":
         case "expectedPaid":
+        case "expectedPaidSub":
           return drill.segment === "done" ? isPaid(r) : !isPaid(r);
         case "lifecycle": {
           const paid = isPaid(r);
@@ -2285,6 +2300,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     approved: { done: "Paid since", remainder: "Awaiting payment" },
     remittance: { done: "Received since", remainder: "Sent, not yet received" },
     expectedPaid: { done: "Paid since", remainder: "Not yet paid" },
+    expectedPaidSub: { done: "Paid since", remainder: "Not yet paid" },
     lifecycle: { paid: "Paid", approved: "Approved, awaiting payment", inReview: "In PE review", resubmitted: "Resubmitted (back in review)", rejected: "Rejected — pending fix", waiting: "Not yet submitted" },
   };
   const locations = useMemo(
@@ -2389,6 +2405,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
       case "approved": return payCards(data.dailyApprovals, "Total Approved", "Paid since", "Awaiting payment");
       case "remittance": return payCards(data.dailyRemittance, "Total Remitted", "Received", "In-flight (not yet received)");
       case "expectedPaid": return payCards(data.dailyExpectedPaid, "Total Expected", "Paid since", "Not yet paid");
+      case "expectedPaidSub": return payCards(data.dailyExpectedPaidBySub, "Total Expected", "Paid since", "Not yet paid");
       case "paid": {
         const s = sumPay(data.dailyPaid);
         return [{ label: "Total Paid", amount: s.amt, count: s.cnt, segment: null }];
@@ -2688,7 +2705,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
                         ? data.dailyRemittance ?? []
                         : weeklyMode === "expectedPaid"
                           ? data.dailyExpectedPaid ?? []
-                          : data.dailySubmissions ?? []
+                          : weeklyMode === "expectedPaidSub"
+                            ? data.dailyExpectedPaidBySub ?? []
+                            : data.dailySubmissions ?? []
                 }
                 granularity={gran}
                 emptyMessage={WEEKLY_MODES[weeklyMode].empty}

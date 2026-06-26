@@ -89,6 +89,11 @@ const DEAL_PROPERTIES = [
   "pe_m2_remittance_date",
   "pe_m1_expected_paid_by_date",
   "pe_m2_expected_paid_by_date",
+  // Submission-based forecast: submission + avg submission→payment (datetime calc
+  // prop). Reaches milestones that are submitted-but-not-yet-approved, which the
+  // approval-based forecast can't see.
+  "expected_m1_payment_date_based_on_averages",
+  "expected_m2_payment_date_based_on_averages",
   // HubSpot-calculated timing legs (stored in MILLISECONDS) — the dashboard
   // summarizes these per-deal day-counts instead of deriving from the doc log.
   "pe_m1_time_from_submission_to_approval",
@@ -114,6 +119,20 @@ const msToDays = (v: unknown): number | null => {
   return Number.isFinite(n) ? Math.round((n / 86_400_000) * 10) / 10 : null;
 };
 
+// Date calc props can come back as ISO ("2026-07-02T00:00:00Z") or, when the
+// property is typed "date" rather than "datetime", as a raw epoch-millis string
+// ("1782950400000"). Normalize both to an ISO string.
+const toIsoDate = (v: unknown): string | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const s = String(v);
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    return Number.isFinite(n) ? new Date(n).toISOString() : null;
+  }
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+};
+
 interface PeDealRow {
   dealId: string;
   dealName: string;
@@ -137,6 +156,8 @@ interface PeDealRow {
   m2RemittanceDate: string | null;
   m1ExpectedPaidDate: string | null; // forecast: approval + ~14d (calculated prop)
   m2ExpectedPaidDate: string | null;
+  m1ExpectedPaidBySubDate: string | null; // forecast: submission + avg (calc prop, ms)
+  m2ExpectedPaidBySubDate: string | null;
   // Calculated timing legs, converted ms -> DAYS at mapping (null if not set).
   m1SubmitToApproveDays: number | null;
   m2SubmitToApproveDays: number | null;
@@ -267,6 +288,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2RemittanceDate: p.pe_m2_remittance_date ? String(p.pe_m2_remittance_date) : null,
         m1ExpectedPaidDate: p.pe_m1_expected_paid_by_date ? String(p.pe_m1_expected_paid_by_date) : null,
         m2ExpectedPaidDate: p.pe_m2_expected_paid_by_date ? String(p.pe_m2_expected_paid_by_date) : null,
+        m1ExpectedPaidBySubDate: toIsoDate(p.expected_m1_payment_date_based_on_averages),
+        m2ExpectedPaidBySubDate: toIsoDate(p.expected_m2_payment_date_based_on_averages),
         m1SubmitToApproveDays: msToDays(p.pe_m1_time_from_submission_to_approval),
         m2SubmitToApproveDays: msToDays(p.pe_m2_time_from_submission_to_approval),
         m1ApproveToPayDays: msToDays(p.pe_m1_time_from_approval_to_payment),
@@ -358,6 +381,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     readyOn: string | null;
     remittanceOn: string | null;
     expectedPaidOn: string | null;
+    expectedPaidBySubOn: string | null;
   }
   const records: MilestoneRecord[] = [];
   for (const deal of deals) {
@@ -381,6 +405,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         readyOn: deal.m1ReadyToSubmitDate ?? deal.inspectionPassDate ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
         remittanceOn: deal.m1RemittanceDate,
         expectedPaidOn: deal.m1ExpectedPaidDate,
+        expectedPaidBySubOn: deal.m1ExpectedPaidBySubDate,
       },
       {
         deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
@@ -391,6 +416,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         readyOn: deal.m2ReadyToSubmitDate ?? deal.ptoGrantedDate ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
         remittanceOn: deal.m2RemittanceDate,
         expectedPaidOn: deal.m2ExpectedPaidDate,
+        expectedPaidBySubOn: deal.m2ExpectedPaidBySubDate,
       },
     );
   }
@@ -423,6 +449,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const dailySubmissions = bucketByDay((r) => r.submittedOn);
   const dailyRemittance = bucketByDay((r) => r.remittanceOn);
   const dailyExpectedPaid = bucketByDay((r) => r.expectedPaidOn);
+  const dailyExpectedPaidBySub = bucketByDay((r) => r.expectedPaidBySubOn);
 
   // Mark the subset that has progressed past each stage (rendered faded in
   // the UI — the vivid remainder is what's still outstanding).
@@ -567,6 +594,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // Remittance + Expected-Paid cohorts: green "done" = actually received (paid).
   markDone(dailyRemittance, (r) => r.remittanceOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(dailyExpectedPaid, (r) => r.expectedPaidOn, (r) => r.status === "Paid" || !!r.paidOn);
+  markDone(dailyExpectedPaidBySub, (r) => r.expectedPaidBySubOn, (r) => r.status === "Paid" || !!r.paidOn);
   markDone(
     dailySubmissions,
     (r) => r.submittedOn,
@@ -916,6 +944,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         paidOn: r.paidOn?.slice(0, 10) ?? null,
         remittanceOn: r.remittanceOn?.slice(0, 10) ?? null,
         expectedPaidOn: r.expectedPaidOn?.slice(0, 10) ?? null,
+        expectedPaidBySubOn: r.expectedPaidBySubOn?.slice(0, 10) ?? null,
         lastUploadOn: lastUploadByMile.get(`${r.deal.dealId}::${r.milestone}`)?.toISOString().slice(0, 10) ?? null,
         // Reviewable by PE now? M1 always; M2 only once M1 is approved (M1 gates M2).
         peReviewable: r.milestone === "M1" || (m1ApprovedByDeal.get(r.deal.dealId) ?? false),
@@ -1328,6 +1357,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     dailySubmissions,
     dailyRemittance,
     dailyExpectedPaid,
+    dailyExpectedPaidBySub,
     dailyLifecycle,
     dailyLifecycleSubmitted,
     dailyLifecycleRejected,
