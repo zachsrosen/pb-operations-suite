@@ -277,6 +277,10 @@ export interface TimingSummary {
   nFullCycle: number;
   avgSubmitToPay: number | null;
   nSubmitToPay: number;
+  // Construction Complete → payment (what Matt tracks). Median + mean from dates.
+  medianCcToPaid: number | null;
+  avgCcToPaid: number | null;
+  ccToPaidCount: number;
 }
 
 export interface MonthlyTiming {
