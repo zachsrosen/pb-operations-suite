@@ -1099,7 +1099,13 @@ export function buildProjectFunnelData(
     if (!matchesLocation(p) || !matchesStaff(p)) continue;
     if (activeScope && !isActiveDeal(p)) continue;
     const amt = p.amount || 0;
-    const isCancelled = !!p.cancelledDate || p.stageId === CANCELLED_STAGE_ID;
+    // Use the CURRENT stage, not cancelledDate. cancelledDate mirrors
+    // hs_v2_date_entered_68229433 (date the deal entered the Cancelled stage),
+    // which HubSpot never clears when a deal is reopened — so a `!!cancelledDate`
+    // test paints reactivated, still-progressing deals red forever. Keying off
+    // the live stage leaves genuinely-cancelled deals red and reclassifies
+    // reopened deals by their actual state.
+    const isCancelled = p.stageId === CANCELLED_STAGE_ID;
     for (let i = 0; i < COHORT_CHAIN.length; i++) {
       const step = COHORT_CHAIN[i];
       const dateVal = p[step.field] as string | null;
@@ -1156,8 +1162,12 @@ export function buildProjectFunnelData(
     { field: "designApprovalSentDate", label: "DA Sent", order: 1 },
   ];
   const lifecycleBucket = (p: Project): { label: string; order: number; date: string | null } => {
-    // Off-track states win over milestone progress so they stay visible.
-    if (!!p.cancelledDate || p.stageId === CANCELLED_STAGE_ID)
+    // Off-track states win over milestone progress so they stay visible. Use the
+    // CURRENT stage, not cancelledDate — that field is the sticky "entered
+    // Cancelled stage" timestamp HubSpot never clears on reopen, which would
+    // mislabel reactivated, still-progressing deals as Cancelled (see the cohort
+    // builder above for the same fix).
+    if (p.stageId === CANCELLED_STAGE_ID)
       return { label: "Cancelled", order: -2, date: p.cancelledDate || p.closeDate };
     if (p.stageId === ON_HOLD_STAGE_ID) return { label: "On Hold", order: -1, date: p.closeDate };
     for (const m of LIFECYCLE_MILESTONES) {
