@@ -89,11 +89,11 @@ const DEAL_PROPERTIES = [
   "pe_m2_remittance_date",
   "pe_m1_expected_paid_by_date",
   "pe_m2_expected_paid_by_date",
-  // Submission-based forecast: submission + avg submission→payment (date calc prop).
-  // Reaches milestones that are submitted-but-not-yet-approved, which the
-  // approval-based forecast can't see. (Trailing underscore: recreated property.)
-  "expected_m1_payment_date_based_on_averages_",
-  "expected_m2_payment_date_based_on_averages_",
+  // Submission-based forecast: submission + avg submission→payment (datetime calc
+  // prop). Reaches milestones that are submitted-but-not-yet-approved, which the
+  // approval-based forecast can't see.
+  "expected_m1_payment_date_based_on_averages",
+  "expected_m2_payment_date_based_on_averages",
   // HubSpot-calculated timing legs (stored in MILLISECONDS) — the dashboard
   // summarizes these per-deal day-counts instead of deriving from the doc log.
   "pe_m1_time_from_submission_to_approval",
@@ -117,6 +117,20 @@ const msToDays = (v: unknown): number | null => {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? Math.round((n / 86_400_000) * 10) / 10 : null;
+};
+
+// Date calc props can come back as ISO ("2026-07-02T00:00:00Z") or, when the
+// property is typed "date" rather than "datetime", as a raw epoch-millis string
+// ("1782950400000"). Normalize both to an ISO string.
+const toIsoDate = (v: unknown): string | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const s = String(v);
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    return Number.isFinite(n) ? new Date(n).toISOString() : null;
+  }
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
 };
 
 interface PeDealRow {
@@ -274,8 +288,8 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2RemittanceDate: p.pe_m2_remittance_date ? String(p.pe_m2_remittance_date) : null,
         m1ExpectedPaidDate: p.pe_m1_expected_paid_by_date ? String(p.pe_m1_expected_paid_by_date) : null,
         m2ExpectedPaidDate: p.pe_m2_expected_paid_by_date ? String(p.pe_m2_expected_paid_by_date) : null,
-        m1ExpectedPaidBySubDate: p.expected_m1_payment_date_based_on_averages_ ? String(p.expected_m1_payment_date_based_on_averages_) : null,
-        m2ExpectedPaidBySubDate: p.expected_m2_payment_date_based_on_averages_ ? String(p.expected_m2_payment_date_based_on_averages_) : null,
+        m1ExpectedPaidBySubDate: toIsoDate(p.expected_m1_payment_date_based_on_averages),
+        m2ExpectedPaidBySubDate: toIsoDate(p.expected_m2_payment_date_based_on_averages),
         m1SubmitToApproveDays: msToDays(p.pe_m1_time_from_submission_to_approval),
         m2SubmitToApproveDays: msToDays(p.pe_m2_time_from_submission_to_approval),
         m1ApproveToPayDays: msToDays(p.pe_m1_time_from_approval_to_payment),
