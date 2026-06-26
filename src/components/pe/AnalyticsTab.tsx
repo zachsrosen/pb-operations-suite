@@ -2144,6 +2144,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
   const [drill, setDrill] = useState<{ week: string | null; segment: string | null } | null>(null);
   const openDrill = (week: string, segment?: string) => setDrill({ week, segment: segment ?? null });
   const openAggregate = (key: string) => setDrill({ week: null, segment: key });
+  // Drill into a whole mode segment across ALL weeks (clicked from a stat card).
+  const openModeSegment = (segment: string | null) => setDrill({ week: "ALL", segment });
 
   // Rows behind the clicked bar/segment — date field + segment predicate
   // depend on the active view; predicates mirror the route's bucketing.
@@ -2196,13 +2198,9 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           const pending = r.status === "Rejected" || r.status === "Ready to Resubmit";
           return drill.segment === "pending" ? pending : !pending;
         }
-        case "submitted": {
-          const rejPending = r.status === "Rejected" || r.status === "Ready to Resubmit";
-          if (drill.segment === "paidSeg") return isPaid(r);
-          if (drill.segment === "done") return isApprovedPlus(r) && !isPaid(r);
-          if (drill.segment === "rejected") return rejPending;
-          return !isApprovedPlus(r) && !rejPending;
-        }
+        case "submitted":
+          // 2-color since #1237: green = approved-or-paid, remainder = in review.
+          return drill.segment === "done" ? isApprovedPlus(r) : !isApprovedPlus(r);
         case "approved":
         case "remittance":
         case "expectedPaid":
@@ -2227,6 +2225,10 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           return true;
       }
     };
+    // Stat-card drill: the whole mode segment across ALL weeks (no week filter).
+    if (drill.week === "ALL") {
+      return data.milestones.filter((r) => !!dateOf(r) && segOk(r));
+    }
     return data.milestones.filter((r) => {
       const d = dateOf(r);
       if (!d) return false;
@@ -2315,6 +2317,95 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
       },
     };
   }, [data]);
+
+  // Stat cards for the active chart — summed from the SAME daily series the
+  // chart renders, so the cards always equal what's on screen. Each card's
+  // `segment` drills into that slice across all weeks (null = the whole cohort).
+  const modeCards = useMemo<{ label: string; amount: number; count: number; segment: string | null; subtitle?: React.ReactNode }[]>(() => {
+    if (!data) return [];
+    const sumPay = (arr?: WeeklyPayments[]) =>
+      (arr ?? []).reduce(
+        (s, w) => ({
+          amt: s.amt + w.m1Amount + w.m2Amount, cnt: s.cnt + w.m1Count + w.m2Count,
+          doneAmt: s.doneAmt + (w.m1DoneAmount ?? 0) + (w.m2DoneAmount ?? 0), doneCnt: s.doneCnt + (w.m1DoneCount ?? 0) + (w.m2DoneCount ?? 0),
+        }),
+        { amt: 0, cnt: 0, doneAmt: 0, doneCnt: 0 },
+      );
+    const sumSplit = (arr?: WeeklySplitCohort[]) =>
+      (arr ?? []).reduce(
+        (s, w) => ({ doneAmt: s.doneAmt + w.doneAmount, doneCnt: s.doneCnt + w.doneCount, pendAmt: s.pendAmt + w.pendingAmount, pendCnt: s.pendCnt + w.pendingCount }),
+        { doneAmt: 0, doneCnt: 0, pendAmt: 0, pendCnt: 0 },
+      );
+    const payCards = (arr: WeeklyPayments[] | undefined, totalLabel: string, doneLabel: string, remLabel: string, totalSubtitle?: React.ReactNode) => {
+      const s = sumPay(arr);
+      return [
+        { label: totalLabel, amount: s.amt, count: s.cnt, segment: null, subtitle: totalSubtitle },
+        { label: doneLabel, amount: s.doneAmt, count: s.doneCnt, segment: "done" },
+        { label: remLabel, amount: s.amt - s.doneAmt, count: s.cnt - s.doneCnt, segment: "remainder" },
+      ];
+    };
+    const splitCards = (arr: WeeklySplitCohort[] | undefined, totalLabel: string, doneLabel: string, pendLabel: string) => {
+      const s = sumSplit(arr);
+      return [
+        { label: totalLabel, amount: s.doneAmt + s.pendAmt, count: s.doneCnt + s.pendCnt, segment: null },
+        { label: doneLabel, amount: s.doneAmt, count: s.doneCnt, segment: "done" },
+        { label: pendLabel, amount: s.pendAmt, count: s.pendCnt, segment: "pending" },
+      ];
+    };
+    switch (weeklyMode) {
+      case "ready": return splitCards(data.dailyReadiness, "Total Ready", "Submitted", "Waiting on submission");
+      case "rejections": return splitCards(data.dailyRejections, "Total Rejected", "Resolved since", "Still pending fix");
+      case "approved": return payCards(data.dailyApprovals, "Total Approved", "Paid since", "Awaiting payment");
+      case "remittance": return payCards(data.dailyRemittance, "Total Remitted", "Received", "In-flight (not yet received)");
+      case "expectedPaid": return payCards(data.dailyExpectedPaid, "Total Expected", "Paid since", "Not yet paid");
+      case "paid": {
+        const s = sumPay(data.dailyPaid);
+        return [{ label: "Total Paid", amount: s.amt, count: s.cnt, segment: null }];
+      }
+      case "submitted": {
+        const aw = funnelTotals.awaitingApproval;
+        const subtitle = (
+          <>
+            awaiting PE:{" "}
+            <span role="button" tabIndex={0} className="cursor-pointer hover:underline" title="Click: submitted, awaiting PE approval"
+              onClick={(e) => { e.stopPropagation(); openAggregate("awaitingSubmitted"); }}>{fmtUsdK(aw.submittedAmount)} submitted</span>
+            {" · "}
+            <span role="button" tabIndex={0} className="text-violet-400 cursor-pointer hover:underline" title="Click: resubmitted, awaiting PE approval"
+              onClick={(e) => { e.stopPropagation(); openAggregate("awaitingResubmitted"); }}>{fmtUsdK(aw.resubmittedAmount)} resubmitted</span>
+            {" · "}
+            <span role="button" tabIndex={0} className="text-orange-400 cursor-pointer hover:underline" title="Click: rejected, pending fix"
+              onClick={(e) => { e.stopPropagation(); openAggregate("awaitingRejected"); }}>{fmtUsdK(aw.rejectedAmount)} rejected</span>
+          </>
+        );
+        return payCards(data.dailySubmissions, "Total Submitted", "Approved since", "In review", subtitle);
+      }
+      case "lifecycle": {
+        const arr = lifecycleBasis === "submitted" ? data.dailyLifecycleSubmitted : lifecycleBasis === "rejected" ? data.dailyLifecycleRejected : data.dailyLifecycle;
+        const s = (arr ?? []).reduce(
+          (a, w) => ({
+            paidA: a.paidA + w.paidAmount, paidC: a.paidC + w.paidCount, apprA: a.apprA + w.approvedAmount, apprC: a.apprC + w.approvedCount,
+            revA: a.revA + w.inReviewAmount, revC: a.revC + w.inReviewCount, resubA: a.resubA + w.resubmittedAmount, resubC: a.resubC + w.resubmittedCount,
+            rejA: a.rejA + w.rejectedAmount, rejC: a.rejC + w.rejectedCount, waitA: a.waitA + w.waitingAmount, waitC: a.waitC + w.waitingCount,
+          }),
+          { paidA: 0, paidC: 0, apprA: 0, apprC: 0, revA: 0, revC: 0, resubA: 0, resubC: 0, rejA: 0, rejC: 0, waitA: 0, waitC: 0 },
+        );
+        const totalA = s.paidA + s.apprA + s.revA + s.resubA + s.rejA + s.waitA;
+        const totalC = s.paidC + s.apprC + s.revC + s.resubC + s.rejC + s.waitC;
+        const cards: { label: string; amount: number; count: number; segment: string | null }[] = [
+          { label: "Total", amount: totalA, count: totalC, segment: null },
+          { label: "Paid", amount: s.paidA, count: s.paidC, segment: "paid" },
+          { label: "Approved", amount: s.apprA, count: s.apprC, segment: "approved" },
+          { label: "In review", amount: s.revA, count: s.revC, segment: "inReview" },
+          { label: "Resubmitted", amount: s.resubA, count: s.resubC, segment: "resubmitted" },
+          { label: "Rejected", amount: s.rejA, count: s.rejC, segment: "rejected" },
+          { label: "Not yet submitted", amount: s.waitA, count: s.waitC, segment: "waiting" },
+        ];
+        // Hide zero-value outcome cards (keep Total even if 0).
+        return cards.filter((c) => c.segment === null || c.count > 0);
+      }
+      default: return [];
+    }
+  }, [weeklyMode, lifecycleBasis, data, funnelTotals]);
 
   // Doc-level review timing: join each PE response to the doc's latest prior
   // submission; in-review age = days since latest submission for pending docs.
@@ -2451,56 +2542,20 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               </div>
             }
           >
-            {/* Ready stat (and its waiting backlog) only on the internal Ready view —
-                screenshots of the other views stay safe to share externally. */}
-            <div className={`grid grid-cols-2 gap-2 mb-4 ${weeklyMode === "ready" || weeklyMode === "lifecycle" ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
-              {(weeklyMode === "ready" || weeklyMode === "lifecycle") && (
-                <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitSubmission")} title="Click: all waiting on submission">
-                <MiniStat
-                  label="Total Ready to Submit"
-                  value={fmtUsd(funnelTotals.ready.amount)}
-                  subtitle={`${funnelTotals.ready.count} milestones · ${funnelTotals.deals.ready} deals — ${
-                    funnelTotals.ready.amount > 0
-                      ? Math.round(((funnelTotals.ready.amount - funnelTotals.ready.waitingAmount) / funnelTotals.ready.amount) * 100)
-                      : 0
-                  }% already submitted — ${funnelTotals.ready.waitingCount} milestones (${funnelTotals.deals.waiting} deals · ${fmtUsdK(funnelTotals.ready.waitingAmount)}) waiting`}
-                />
+            {/* Stat cards reflect ONLY the active chart — each summed from the same
+                daily series the chart renders; click a card to drill that slice. */}
+            <div className={`grid grid-cols-2 gap-2 mb-4 ${["md:grid-cols-1", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6"][Math.min(modeCards.length, 6)]}`}>
+              {modeCards.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  className="text-left cursor-pointer transition-opacity hover:opacity-75"
+                  onClick={() => openModeSegment(c.segment)}
+                  title={`Click: ${c.label}`}
+                >
+                  <MiniStat label={c.label} value={fmtUsd(c.amount)} subtitle={c.subtitle ?? `${c.count} milestones`} />
                 </button>
-              )}
-              <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitApproval")} title="Click: all awaiting PE approval">
-                <MiniStat
-                  label="Total Submitted"
-                  value={fmtUsd(funnelTotals.submitted.amount)}
-                  subtitle={
-                    <>
-                      {funnelTotals.submitted.count} milestones · {funnelTotals.deals.submitted} deals
-                      <span className="block mt-0.5">
-                        awaiting PE:{" "}
-                        <span role="button" tabIndex={0} className="cursor-pointer hover:underline" title="Click: submitted, awaiting PE approval"
-                          onClick={(e) => { e.stopPropagation(); openAggregate("awaitingSubmitted"); }}>
-                          {fmtUsdK(funnelTotals.awaitingApproval.submittedAmount)} submitted
-                        </span>
-                        {" · "}
-                        <span role="button" tabIndex={0} className="text-violet-400 cursor-pointer hover:underline" title="Click: resubmitted, awaiting PE approval"
-                          onClick={(e) => { e.stopPropagation(); openAggregate("awaitingResubmitted"); }}>
-                          {fmtUsdK(funnelTotals.awaitingApproval.resubmittedAmount)} resubmitted
-                        </span>
-                        {" · "}
-                        <span role="button" tabIndex={0} className="text-orange-400 cursor-pointer hover:underline" title="Click: rejected, pending fix"
-                          onClick={(e) => { e.stopPropagation(); openAggregate("awaitingRejected"); }}>
-                          {fmtUsdK(funnelTotals.awaitingApproval.rejectedAmount)} rejected
-                        </span>
-                      </span>
-                    </>
-                  }
-                />
-              </button>
-              <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("waitPayment")} title="Click: all awaiting payment">
-                <MiniStat label="Total Approved" value={fmtUsd(funnelTotals.approved.amount)} subtitle={`${funnelTotals.approved.count} milestones · ${funnelTotals.deals.approved} deals`} />
-              </button>
-              <button type="button" className="text-left cursor-pointer transition-opacity hover:opacity-75" onClick={() => openAggregate("paidAll")} title="Click: all paid">
-                <MiniStat label="Total Paid" value={fmtUsd(funnelTotals.paid.amount)} subtitle={`${funnelTotals.paid.count} milestones · ${funnelTotals.deals.paid} deals`} />
-              </button>
+              ))}
             </div>
             {/* Chart controls row: secondary selector (milestone pills OR lifecycle
                 date-basis) on the left, granularity on the right. */}
@@ -2597,15 +2652,17 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             {drill && (
               <DrillPanel
                 rows={drillRows}
-                weekStart={drill.week}
+                weekStart={drill.week === "ALL" ? null : drill.week}
                 gran={gran}
                 weekPrefix={WEEKLY_MODES[weeklyMode].weekPrefix}
                 segmentLabel={
                   drill.week === null
                     ? AGGREGATE_LABELS[drill.segment ?? ""]
-                    : drill.segment
-                      ? SEGMENT_LABELS[weeklyMode]?.[drill.segment]
-                      : undefined
+                    : drill.week === "ALL"
+                      ? `${WEEKLY_MODES[weeklyMode].label}${drill.segment ? ` — ${SEGMENT_LABELS[weeklyMode]?.[drill.segment] ?? drill.segment}` : ""}`
+                      : drill.segment
+                        ? SEGMENT_LABELS[weeklyMode]?.[drill.segment]
+                        : undefined
                 }
                 onClose={() => setDrill(null)}
               />
