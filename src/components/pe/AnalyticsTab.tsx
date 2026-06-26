@@ -24,6 +24,7 @@ import {
   type UploaderStat,
   type UploaderOutcomeDocs,
   type UploaderDoc,
+  type UploaderPaymentLine,
   type RejectionByDoc,
   type MissingByDoc,
   type RejectionDrillDeal,
@@ -1580,14 +1581,24 @@ function fmtMoney(n: number): string {
 }
 
 /** Approved-payment ownership leaderboard — bar length = $ owned. */
-function PaymentPanel({ stats, statsShared, statsLast }: { stats: UploaderStat[]; statsShared: UploaderStat[]; statsLast: UploaderStat[] }) {
+function PaymentPanel({ stats, statsShared, statsLast, payments, paymentsShared, paymentsLast }: { stats: UploaderStat[]; statsShared: UploaderStat[]; statsLast: UploaderStat[]; payments: Record<string, UploaderPaymentLine[]>; paymentsShared: Record<string, UploaderPaymentLine[]>; paymentsLast: Record<string, UploaderPaymentLine[]> }) {
   const unk = useContext(UnknownLabelCtx);
   // Owner = whole milestone $ to its top uploader (winner-take-all).
   // Fractional = milestone $ split across its approved-doc uploaders by share.
   // Last = whole milestone $ to whoever uploaded its most-recent qualifying doc.
   const [mode, setMode] = useState<"owner" | "fractional" | "last">("owner");
   const active = mode === "fractional" ? statsShared : mode === "last" ? statsLast : stats;
+  const activePay = mode === "fractional" ? paymentsShared : mode === "last" ? paymentsLast : payments;
   const fmtCt = (n: number) => (mode === "fractional" ? n.toFixed(1) : String(n));
+  // Drill: click a person's $ figure to list the milestones behind that bucket.
+  type PayBucket = "paid" | "approved" | "inreview";
+  const [drill, setDrill] = useState<{ uploader: string; bucket: PayBucket } | null>(null);
+  const isOn = (u: string, b: PayBucket) => drill?.uploader === u && drill.bucket === b;
+  const toggle = (u: string, b: PayBucket) => setDrill(isOn(u, b) ? null : { uploader: u, bucket: b });
+  const moneyBtn = (uploader: string, val: number, bucket: PayBucket, cls: string, titleStr: string) =>
+    val > 0
+      ? <button onClick={() => toggle(uploader, bucket)} className={`${cls} hover:underline cursor-pointer ${isOn(uploader, bucket) ? "font-semibold underline" : ""}`} title={`${titleStr} — click to view milestones`}>{fmtMoney(val)}</button>
+      : <span className={cls} title={titleStr}>—</span>;
   const attributed = active
     .filter((s) => s.uploader !== UNKNOWN_UPLOADER && (s.paymentsOwned > 0 || s.pendingPaymentsOwned > 0))
     .sort((a, b) => (b.paymentsOwned + b.pendingPaymentsOwned) - (a.paymentsOwned + a.pendingPaymentsOwned));
@@ -1615,9 +1626,9 @@ function PaymentPanel({ stats, statsShared, statsLast }: { stats: UploaderStat[]
         <div className="h-full bg-cyan-500/70" style={{ width: `${Math.min(100, (approvedUnpaid / maxPay) * 100)}%` }} title={`Approved, awaiting payment: ${fmtMoney(approvedUnpaid)}`} />
         <div className="h-full bg-amber-500/50" style={{ width: `${Math.min(100, (s.pendingPaymentsOwned / maxPay) * 100)}%` }} title={`In review: ${fmtMoney(s.pendingPaymentsOwned)}`} />
       </div>
-      <span className="text-sm font-semibold text-emerald-400 text-right tabular-nums" title={`${fmtCt(s.paidMilestonesOwned)} paid milestone(s)`}>{s.paidPaymentsOwned > 0 ? fmtMoney(s.paidPaymentsOwned) : "—"}</span>
-      <span className="text-xs text-cyan-400 text-right tabular-nums" title={`${fmtCt(s.milestonesOwned - s.paidMilestonesOwned)} approved milestone(s) awaiting payment`}>{approvedUnpaid > 0 ? fmtMoney(approvedUnpaid) : "—"}</span>
-      <span className="text-xs text-amber-400 text-right tabular-nums" title={`${fmtCt(s.pendingMilestonesOwned)} milestone(s) submitted, awaiting approval`}>{s.pendingPaymentsOwned > 0 ? fmtMoney(s.pendingPaymentsOwned) : "—"}</span>
+      <span className="text-sm font-semibold text-emerald-400 text-right tabular-nums" title={`${fmtCt(s.paidMilestonesOwned)} paid milestone(s)`}>{moneyBtn(s.uploader, s.paidPaymentsOwned, "paid", "", "Paid")}</span>
+      <span className="text-xs text-cyan-400 text-right tabular-nums" title={`${fmtCt(s.milestonesOwned - s.paidMilestonesOwned)} approved milestone(s) awaiting payment`}>{moneyBtn(s.uploader, approvedUnpaid, "approved", "", "Approved, awaiting payment")}</span>
+      <span className="text-xs text-amber-400 text-right tabular-nums" title={`${fmtCt(s.pendingMilestonesOwned)} milestone(s) submitted, awaiting approval`}>{moneyBtn(s.uploader, s.pendingPaymentsOwned, "inreview", "", "In review")}</span>
     </div>
     );
   };
@@ -1626,7 +1637,7 @@ function PaymentPanel({ stats, statsShared, statsLast }: { stats: UploaderStat[]
       <div className="flex justify-end mb-2">
         <div className="inline-flex rounded-lg border border-t-border overflow-hidden text-[11px]" title="Owner: whole milestone $ to its top uploader. Fractional: split across its approved-doc uploaders by share. Last: whole $ to whoever uploaded its most-recent qualifying doc.">
           {(["owner", "fractional", "last"] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)}
+            <button key={m} onClick={() => { setMode(m); setDrill(null); }}
               className={`px-2.5 py-1 transition-colors ${mode === m ? "bg-emerald-500/20 text-emerald-400" : "text-muted hover:text-foreground"}`}>
               {m === "owner" ? "Owner" : m === "fractional" ? "Fractional" : "Last"}
             </button>
@@ -1642,9 +1653,9 @@ function PaymentPanel({ stats, statsShared, statsLast }: { stats: UploaderStat[]
       <div className={`${COLS} pb-1.5 mb-1 border-b border-t-border text-[10px] uppercase tracking-wide text-muted`}>
         <span>Person</span>
         <span>Payments owned — bar = $ (<span className="text-emerald-400/80">paid</span> + <span className="text-cyan-400/80">approved</span> + <span className="text-amber-400/80">in review</span>)</span>
-        <span className="text-right text-emerald-400/80">$ Paid</span>
-        <span className="text-right text-cyan-400/80">$ Appr.</span>
-        <span className="text-right text-amber-400/80">$ In Rev.</span>
+        <span className="text-right text-emerald-400/80" title="Click a figure to list its milestones">$ Paid ⌕</span>
+        <span className="text-right text-cyan-400/80" title="Click a figure to list its milestones">$ Appr. ⌕</span>
+        <span className="text-right text-amber-400/80" title="Click a figure to list its milestones">$ In Rev. ⌕</span>
       </div>
       <div className="space-y-2">
         {attributed.map((s) => <div key={s.uploader}>{row(s, false)}</div>)}
@@ -1652,6 +1663,35 @@ function PaymentPanel({ stats, statsShared, statsLast }: { stats: UploaderStat[]
       {hasUnknown && (
         <div className="mt-2 pt-2 border-t border-t-border">{row(unknown!, true)}</div>
       )}
+      {/* Payment drill: the milestones behind the clicked $ figure. */}
+      {drill && (() => {
+        const list = (activePay[drill.uploader] ?? []).filter((l) => l.bucket === drill.bucket).sort((a, b) => b.amount - a.amount);
+        if (list.length === 0) return null;
+        const bLabel = drill.bucket === "paid" ? "paid" : drill.bucket === "approved" ? "approved, awaiting payment" : "in review";
+        const accent = drill.bucket === "paid" ? "border-emerald-500/30 bg-emerald-500/5" : drill.bucket === "approved" ? "border-cyan-500/30 bg-cyan-500/5" : "border-amber-500/30 bg-amber-500/5";
+        const total = list.reduce((sum, l) => sum + l.amount, 0);
+        const who = drill.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(drill.uploader);
+        return (
+          <div className={`mt-3 rounded-lg border ${accent} p-3`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-medium text-foreground">{who} — {list.length} {bLabel} milestone{list.length === 1 ? "" : "s"} · {fmtMoney(total)}</div>
+              <button onClick={() => setDrill(null)} className="text-xs px-2 py-0.5 rounded border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
+            </div>
+            <div className="space-y-1">
+              {list.map((l, i) => (
+                <div key={`${l.dealId}-${l.milestone}-${i}`} className="flex items-center gap-2 text-xs py-0.5 border-t border-t-border/40 first:border-t-0">
+                  <span className="font-mono text-[10px] px-1 py-0.5 rounded border border-t-border text-muted" title={l.milestone === "IC" ? "Installation Complete (M1)" : "Project Complete (M2)"}>{l.milestone}</span>
+                  <span className="text-foreground truncate flex-1" title={l.dealName}>{l.dealName}</span>
+                  <span className="tabular-nums text-foreground">{fmtMoney(l.amount)}</span>
+                  <a href={l.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:underline">HS</a>
+                  {l.pePortalUrl && <a href={l.pePortalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">PE</a>}
+                  {l.driveUrl && <a href={l.driveUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Drive</a>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <p className="mt-3 text-[11px] text-muted">{mode === "fractional"
         ? "Fractional: each milestone's payment is split across its approved-doc uploaders by their share of those docs (counts shown to 1 decimal)."
         : mode === "last"
@@ -1715,7 +1755,7 @@ function ExplorerDrill({ rows, dealLinks, onClear, scopeLabel, onClearScope }: {
   );
 }
 
-function UploadersSection({ stats, statsShared, statsLast, periods, docTypes, docs, docsShared, attributionStart, uploaderRows, dealLinks }: { stats: UploaderStat[]; statsShared: UploaderStat[]; statsLast: UploaderStat[]; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null; uploaderRows: UploaderRow[]; dealLinks: Record<string, DealLink> }) {
+function UploadersSection({ stats, statsShared, statsLast, payments, paymentsShared, paymentsLast, periods, docTypes, docs, docsShared, attributionStart, uploaderRows, dealLinks }: { stats: UploaderStat[]; statsShared: UploaderStat[]; statsLast: UploaderStat[]; payments: Record<string, UploaderPaymentLine[]>; paymentsShared: Record<string, UploaderPaymentLine[]>; paymentsLast: Record<string, UploaderPaymentLine[]>; periods: UploadsByPeriod; docTypes: UploaderDocTypes[]; docs: Record<string, UploaderOutcomeDocs>; docsShared: Record<string, UploaderOutcomeDocs>; attributionStart: string | null; uploaderRows: UploaderRow[]; dealLinks: Record<string, DealLink> }) {
   const [tab, setTab] = useState<"submissions" | "timeline" | "doctype" | "payments">("submissions");
   const [grain, setGrain] = useState<UploadGranularity>("week");
   const [docFilter, setDocFilter] = useState<string[]>([]);
@@ -1828,7 +1868,7 @@ function UploadersSection({ stats, statsShared, statsLast, periods, docTypes, do
             onSegmentClick={(uploader, key) => setSegSel((p) => (p && p.uploader === uploader && p.key === key ? null : { uploader, key, grain }))}
             selected={segSel && segSel.grain === grain ? { uploader: segSel.uploader, key: segSel.key } : null} />
           : tab === "doctype" ? <DocTypeByUploaderPanel rows={docTypes} />
-            : <PaymentPanel stats={payStats} statsShared={payStatsShared} statsLast={payStatsLast} />}
+            : <PaymentPanel stats={payStats} statsShared={payStatsShared} statsLast={payStatsLast} payments={payments} paymentsShared={paymentsShared} paymentsLast={paymentsLast} />}
       {showDrill && <ExplorerDrill rows={drillRows} dealLinks={dealLinks}
         scopeLabel={segSel ? `${segSel.uploader === UNKNOWN_UPLOADER ? "Unknown" : prettyUploader(segSel.uploader)} · ${periodLabel(segSel.grain, segSel.key)}` : undefined}
         onClearScope={segSel ? () => setSegSel(null) : undefined}
@@ -2737,7 +2777,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           </Section>
 
           {/* 1.5 Uploaders — own card: By Person leaderboard + By Day stacked bars */}
-          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} statsLast={data.uploaderStatsLast ?? []} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} uploaderRows={data.uploaderRows ?? []} dealLinks={data.dealLinks ?? {}} />
+          <UploadersSection stats={data.uploaderStats ?? []} statsShared={data.uploaderStatsShared ?? []} statsLast={data.uploaderStatsLast ?? []} payments={data.uploaderPayments ?? {}} paymentsShared={data.uploaderPaymentsShared ?? {}} paymentsLast={data.uploaderPaymentsLast ?? {}} periods={data.uploadsByPeriod ?? { day: [], week: [], month: [] }} docTypes={data.docTypeByUploader ?? []} docs={data.uploaderDocs ?? {}} docsShared={data.uploaderDocsShared ?? {}} attributionStart={data.attributionStart ?? null} uploaderRows={data.uploaderRows ?? []} dealLinks={data.dealLinks ?? {}} />
 
           {/* 2. Expected revenue pipeline */}
           <Section

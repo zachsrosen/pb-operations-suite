@@ -312,8 +312,8 @@ describe("buildPaymentOwnership", () => {
       ["d1|Design Plan", "a@pb.com"],
       ["d1|Photos per Policy", null], // Unknown
     ]);
-    const owned = buildPaymentOwnership(
-      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
+    const { owned } = buildPaymentOwnership(
+      [{ dealId: "d1", milestone: "M1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
       status,
       latest,
     );
@@ -325,10 +325,10 @@ describe("buildPaymentOwnership", () => {
   it("falls to Unknown only when no approved doc has a known uploader; skips unapproved milestones", () => {
     const status = new Map([["d1|Design Plan", "APPROVED"], ["d2|Design Plan", "APPROVED"]]);
     const latest = new Map<string, string | null>([["d1|Design Plan", null], ["d2|Design Plan", "z@pb.com"]]);
-    const owned = buildPaymentOwnership(
+    const { owned } = buildPaymentOwnership(
       [
-        { dealId: "d1", docNames: ["Design Plan"], amount: 5000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }, // all-unknown
-        { dealId: "d2", docNames: ["Design Plan"], amount: 7000, isApprovedPayment: false, isPaid: false, isPendingPayment: false }, // not approved → skip
+        { dealId: "d1", milestone: "M1", docNames: ["Design Plan"], amount: 5000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }, // all-unknown
+        { dealId: "d2", milestone: "M1", docNames: ["Design Plan"], amount: 7000, isApprovedPayment: false, isPaid: false, isPendingPayment: false }, // not approved → skip
       ],
       status,
       latest,
@@ -340,8 +340,8 @@ describe("buildPaymentOwnership", () => {
   it("credits a submitted-but-unapproved milestone's $ to the top uploader of its in-review docs", () => {
     const status = new Map([["d1|Design Plan", "UNDER_REVIEW"], ["d1|Photos per Policy", "UPLOADED"]]);
     const latest = new Map<string, string | null>([["d1|Design Plan", "p@pb.com"], ["d1|Photos per Policy", "p@pb.com"]]);
-    const owned = buildPaymentOwnership(
-      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy"], amount: 8000, isApprovedPayment: false, isPaid: false, isPendingPayment: true }],
+    const { owned } = buildPaymentOwnership(
+      [{ dealId: "d1", milestone: "M1", docNames: ["Design Plan", "Photos per Policy"], amount: 8000, isApprovedPayment: false, isPaid: false, isPendingPayment: true }],
       status,
       latest,
     );
@@ -351,8 +351,8 @@ describe("buildPaymentOwnership", () => {
   it("breaks out the paid subset of an approved milestone into paidAmount/paidCount", () => {
     const status = new Map([["d1|Design Plan", "APPROVED"]]);
     const latest = new Map<string, string | null>([["d1|Design Plan", "a@pb.com"]]);
-    const owned = buildPaymentOwnership(
-      [{ dealId: "d1", docNames: ["Design Plan"], amount: 6000, isApprovedPayment: true, isPaid: true, isPendingPayment: false }],
+    const { owned } = buildPaymentOwnership(
+      [{ dealId: "d1", milestone: "M1", docNames: ["Design Plan"], amount: 6000, isApprovedPayment: true, isPaid: true, isPendingPayment: false }],
       status,
       latest,
     );
@@ -378,8 +378,8 @@ describe("buildPaymentOwnershipLast", () => {
       ["d1|Utility Bill", 200],
       ["d1|Photos per Policy", 300], // most recent qualifying upload → b wins the whole $
     ]);
-    const owned = buildPaymentOwnershipLast(
-      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
+    const { owned } = buildPaymentOwnershipLast(
+      [{ dealId: "d1", milestone: "M1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
       status, latest, at,
     );
     expect(owned.get("b@pb.com")).toEqual({ amount: 9000, count: 1, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 });
@@ -399,8 +399,8 @@ describe("buildPaymentOwnershipLast", () => {
       ["d1|Design Plan", 100],
       ["d1|Utility Bill", 999], // newer, but not approved → excluded
     ]);
-    const owned = buildPaymentOwnershipLast(
-      [{ dealId: "d1", docNames: ["Design Plan", "Utility Bill"], amount: 5000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
+    const { owned } = buildPaymentOwnershipLast(
+      [{ dealId: "d1", milestone: "M1", docNames: ["Design Plan", "Utility Bill"], amount: 5000, isApprovedPayment: true, isPaid: false, isPendingPayment: false }],
       status, latest, at,
     );
     expect(owned.get("a@pb.com")).toEqual({ amount: 5000, count: 1, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 });
@@ -420,8 +420,8 @@ describe("buildPaymentOwnershipFractional", () => {
       ["d1|Photos per Policy", "a@pb.com"],
       ["d1|Utility Bill", "b@pb.com"],
     ]);
-    const owned = buildPaymentOwnershipFractional(
-      [{ dealId: "d1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: true, isPendingPayment: false }],
+    const { owned } = buildPaymentOwnershipFractional(
+      [{ dealId: "d1", milestone: "M1", docNames: ["Design Plan", "Photos per Policy", "Utility Bill"], amount: 9000, isApprovedPayment: true, isPaid: true, isPendingPayment: false }],
       status,
       latest,
     );

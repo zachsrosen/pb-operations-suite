@@ -438,11 +438,38 @@ export interface UploaderStat {
 /** One approved/paid milestone with its payment amount and doc set. */
 export interface MilestonePayment {
   dealId: string;
+  milestone: "M1" | "M2"; // IC (M1) or PC (M2) — carried through to the drill list
   docNames: string[]; // the milestone's canonical doc set (M1 = 12, M2 = 3)
   amount: number;
   isApprovedPayment: boolean; // milestone status is Approved or Paid
   isPaid: boolean; // milestone status is specifically Paid (subset of approved)
   isPendingPayment: boolean; // milestone submitted to PE, awaiting approval (not yet approved/paid)
+}
+
+/** One milestone payment credited to an uploader — the drill behind a $ figure. */
+export interface PaymentLine {
+  dealId: string;
+  milestone: "M1" | "M2";
+  amount: number; // whole milestone $ (owner/last) or this person's share (fractional)
+  bucket: "paid" | "approved" | "inreview";
+}
+
+/** One milestone payment behind a person's $ figure, enriched with deal links for the drill. */
+export interface UploaderPaymentLine {
+  dealId: string;
+  dealName: string;
+  milestone: "IC" | "PC";
+  amount: number;
+  bucket: "paid" | "approved" | "inreview";
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+  driveUrl: string | null;
+}
+
+/** Payment ownership aggregates + the per-uploader milestone list behind them. */
+export interface PaymentOwnershipResult {
+  owned: Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>;
+  lines: Map<string, PaymentLine[]>;
 }
 
 /**
@@ -457,12 +484,16 @@ export function buildPaymentOwnership(
   milestones: MilestonePayment[],
   statusByDoc: Map<string, string>, // `${dealId}|${docName}` → status
   latestUploaderByDoc: Map<string, string | null>, // `${dealId}|${docName}` → uploader
-): Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }> {
+): PaymentOwnershipResult {
   const owned = new Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>();
+  const lines = new Map<string, PaymentLine[]>();
   const ensure = (who: string) => {
     let e = owned.get(who);
     if (!e) { e = { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
     return e;
+  };
+  const pushLine = (who: string, line: PaymentLine) => {
+    const arr = lines.get(who); if (arr) arr.push(line); else lines.set(who, [line]);
   };
   // Credit a milestone's $ to the top KNOWN uploader of its `qualifying` docs
   // (approved docs for approved milestones; in-review docs for pending ones).
@@ -477,12 +508,14 @@ export function buildPaymentOwnership(
     const knownTop = [...tally.entries()]
       .filter(([w]) => w !== UNKNOWN_UPLOADER)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-    const e = ensure(knownTop ? knownTop[0] : UNKNOWN_UPLOADER);
+    const who = knownTop ? knownTop[0] : UNKNOWN_UPLOADER;
+    const e = ensure(who);
     if (pending) { e.pendingAmount += m.amount; e.pendingCount += 1; }
     else {
       e.amount += m.amount; e.count += 1;
       if (m.isPaid) { e.paidAmount += m.amount; e.paidCount += 1; }
     }
+    pushLine(who, { dealId: m.dealId, milestone: m.milestone, amount: m.amount, bucket: pending ? "inreview" : m.isPaid ? "paid" : "approved" });
   };
   const APPROVED = new Set(["APPROVED"]);
   const IN_REVIEW = new Set(["UNDER_REVIEW", "UPLOADED"]);
@@ -491,7 +524,7 @@ export function buildPaymentOwnership(
     if (m.isApprovedPayment) credit(m, APPROVED, false);
     else if (m.isPendingPayment) credit(m, IN_REVIEW, true);
   }
-  return owned;
+  return { owned, lines };
 }
 
 /**
@@ -505,12 +538,16 @@ export function buildPaymentOwnershipFractional(
   milestones: MilestonePayment[],
   statusByDoc: Map<string, string>,
   latestUploaderByDoc: Map<string, string | null>,
-): Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }> {
+): PaymentOwnershipResult {
   const owned = new Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>();
+  const lines = new Map<string, PaymentLine[]>();
   const ensure = (who: string) => {
     let e = owned.get(who);
     if (!e) { e = { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
     return e;
+  };
+  const pushLine = (who: string, line: PaymentLine) => {
+    const arr = lines.get(who); if (arr) arr.push(line); else lines.set(who, [line]);
   };
   const credit = (m: MilestonePayment, qualifyingStatuses: Set<string>, pending: boolean) => {
     const docs = m.docNames.filter((n) => qualifyingStatuses.has(statusByDoc.get(`${m.dealId}|${n}`) ?? ""));
@@ -529,6 +566,7 @@ export function buildPaymentOwnershipFractional(
         e.amount += m.amount * share; e.count += share;
         if (m.isPaid) { e.paidAmount += m.amount * share; e.paidCount += share; }
       }
+      pushLine(who, { dealId: m.dealId, milestone: m.milestone, amount: m.amount * share, bucket: pending ? "inreview" : m.isPaid ? "paid" : "approved" });
     }
   };
   const APPROVED = new Set(["APPROVED"]);
@@ -538,7 +576,7 @@ export function buildPaymentOwnershipFractional(
     if (m.isApprovedPayment) credit(m, APPROVED, false);
     else if (m.isPendingPayment) credit(m, IN_REVIEW, true);
   }
-  return owned;
+  return { owned, lines };
 }
 
 /**
@@ -554,12 +592,16 @@ export function buildPaymentOwnershipLast(
   statusByDoc: Map<string, string>, // `${dealId}|${docName}` → status
   latestUploaderByDoc: Map<string, string | null>, // `${dealId}|${docName}` → uploader (override-adjusted)
   latestUploadAtByDoc: Map<string, number>, // `${dealId}|${docName}` → ms timestamp of latest upload
-): Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }> {
+): PaymentOwnershipResult {
   const owned = new Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>();
+  const lines = new Map<string, PaymentLine[]>();
   const ensure = (who: string) => {
     let e = owned.get(who);
     if (!e) { e = { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 }; owned.set(who, e); }
     return e;
+  };
+  const pushLine = (who: string, line: PaymentLine) => {
+    const arr = lines.get(who); if (arr) arr.push(line); else lines.set(who, [line]);
   };
   const credit = (m: MilestonePayment, qualifyingStatuses: Set<string>, pending: boolean) => {
     const docs = m.docNames.filter((n) => qualifyingStatuses.has(statusByDoc.get(`${m.dealId}|${n}`) ?? ""));
@@ -578,6 +620,7 @@ export function buildPaymentOwnershipLast(
       e.amount += m.amount; e.count += 1;
       if (m.isPaid) { e.paidAmount += m.amount; e.paidCount += 1; }
     }
+    pushLine(by, { dealId: m.dealId, milestone: m.milestone, amount: m.amount, bucket: pending ? "inreview" : m.isPaid ? "paid" : "approved" });
   };
   const APPROVED = new Set(["APPROVED"]);
   const IN_REVIEW = new Set(["UNDER_REVIEW", "UPLOADED"]);
@@ -586,7 +629,7 @@ export function buildPaymentOwnershipLast(
     if (m.isApprovedPayment) credit(m, APPROVED, false);
     else if (m.isPendingPayment) credit(m, IN_REVIEW, true);
   }
-  return owned;
+  return { owned, lines };
 }
 
 /** Per-period upload counts segmented by uploader, for the stacked bars. */
@@ -1020,6 +1063,10 @@ export interface PeAnalyticsPayload {
   uploaderDocs: Record<string, UploaderOutcomeDocs>;
   /** Shared-mode drills — a multi-contributor doc appears under each person with its fractional `weight`. */
   uploaderDocsShared: Record<string, UploaderOutcomeDocs>;
+  /** Per-uploader milestone payments behind the $ figures — the drill for the Approved $ view. One map per ownership mode (owner / fractional / last). Keyed by uploader. */
+  uploaderPayments: Record<string, UploaderPaymentLine[]>;
+  uploaderPaymentsShared: Record<string, UploaderPaymentLine[]>;
+  uploaderPaymentsLast: Record<string, UploaderPaymentLine[]>;
   uploadsByPeriod: UploadsByPeriod;
   docTypeByUploader: UploaderDocTypes[];
   pipeline: PipelineGroupRow[];
