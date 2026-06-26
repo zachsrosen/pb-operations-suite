@@ -623,6 +623,11 @@ export function resolveMilestones(p: Project) {
   // back into RTB-Blocked / On Hold, which would otherwise over-count the bench.
   const hasReadyToBuild = hasConstructionScheduled || stageReadyToBuild;
   const hasPermitIssued = hasReadyToBuild || stagePermitIssued || !!p.permitIssueDate;
+  // Interconnection is a parallel track, so for a monotonic funnel count a deal
+  // counts as "interconnection cleared" if it has an approval date OR has
+  // already moved past it (reached Ready-To-Build). Gated on permit issued so
+  // the count stays ⊆ Permits Issued and ⊇ Ready to Build.
+  const hasInterconnectionApproved = hasReadyToBuild || (hasPermitIssued && !!p.interconnectionApprovalDate);
   const hasPermitSubmit = hasPermitIssued || stagePermitSubmit || !!p.permitSubmitDate;
   const hasDesignComplete = hasPermitSubmit || stageDesignComplete || !!p.designCompletionDate;
   const hasDaApproved = hasDesignComplete || stageDaApproved || !!p.designApprovalDate;
@@ -639,6 +644,7 @@ export function resolveMilestones(p: Project) {
     hasPermitSubmit,
     hasPermitIssued,
     hasReadyToBuild,
+    hasInterconnectionApproved,
     hasConstructionScheduled,
     hasConstructionComplete,
     hasInspectionPassed,
@@ -666,7 +672,7 @@ function tallyStageSummary(deals: Project[]): Record<ProjectFunnelStageKey, Proj
     if (m.hasDesignComplete) addToStage(summary.designCompleted, amt, cancelled, onHold);
     if (m.hasPermitSubmit) addToStage(summary.permitsSubmitted, amt, cancelled, onHold);
     if (m.hasPermitIssued) addToStage(summary.permitsIssued, amt, cancelled, onHold);
-    if (p.interconnectionApprovalDate) addToStage(summary.interconnectionApproved, amt, cancelled, onHold);
+    if (m.hasInterconnectionApproved) addToStage(summary.interconnectionApproved, amt, cancelled, onHold);
     if (m.hasReadyToBuild) addToStage(summary.readyToBuild, amt, cancelled, onHold);
     if (m.hasConstructionScheduled) addToStage(summary.constructionScheduled, amt, cancelled, onHold);
     if (m.hasConstructionComplete) addToStage(summary.constructionComplete, amt, cancelled, onHold);
@@ -861,7 +867,7 @@ export function buildProjectFunnelData(
       if (!cancelled && p.permitSubmitDate && p.permitIssueDate)
         dPermitSubmitToIssued.push(daysBetween(p.permitSubmitDate, p.permitIssueDate));
     }
-    if (p.interconnectionApprovalDate) {
+    if (m.hasInterconnectionApproved) {
       addToStage(summary.interconnectionApproved, amt, cancelled, onHold);
       addToStage(cohort.interconnectionApproved, amt, cancelled, onHold);
     }
