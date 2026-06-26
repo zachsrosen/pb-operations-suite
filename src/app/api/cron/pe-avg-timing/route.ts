@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       console.warn(
         `[pe-avg-timing] submit→pay M1 ${result.subM1}d (n=${result.subM1Count}) M2 ${result.subM2}d (n=${result.subM2Count}); ` +
           `approve→pay M1 ${result.appM1}d (n=${result.appM1Count}) M2 ${result.appM2}d (n=${result.appM2Count}); ` +
+          `cc→pay M1 ${result.ccM1}d (n=${result.ccM1Count}) M2 ${result.ccM2}d (n=${result.ccM2Count}); ` +
           `wrote ${result.updated}/${result.examined} deals`,
       );
     }
