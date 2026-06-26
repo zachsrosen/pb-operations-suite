@@ -33,6 +33,9 @@ import {
   UNKNOWN_UPLOADER,
   type UploaderDoc,
   type UploaderOutcomeDocs,
+  type MilestonePayment,
+  type PaymentLine,
+  type UploaderPaymentLine,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
@@ -1203,11 +1206,11 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
 
   const APPROVED_PAY = new Set(["Approved", "Paid"]);
   const PENDING_PAY = new Set(["Submitted", "Resubmitted"]); // submitted to PE, awaiting approval
-  const milestonePayments = deals.flatMap((d) => [
-    { dealId: d.dealId, docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPaid: d.m1Status === "Paid", isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
-    { dealId: d.dealId, docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPaid: d.m2Status === "Paid", isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
+  const milestonePayments: MilestonePayment[] = deals.flatMap((d) => [
+    { dealId: d.dealId, milestone: "M1", docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPaid: d.m1Status === "Paid", isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
+    { dealId: d.dealId, milestone: "M2", docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPaid: d.m2Status === "Paid", isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
   ]);
-  const paymentOwnership = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
+  const { owned: paymentOwnership, lines: paymentLines } = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
   const withPaymentOwnership = buildUploaderStats(
     uploaderVersionRows,
     currentDocStatus,
@@ -1226,7 +1229,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     Object.entries(uploaderOverridesRaw).map(([k, ov]) => [k, ov.uploader ? ov.uploader : null]),
   );
   const sharedOwners = computeSharedOwners(uploaderVersionRows, overrideByDoc);
-  const paymentOwnershipFractional = buildPaymentOwnershipFractional(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
+  const { owned: paymentOwnershipFractional, lines: paymentLinesFractional } = buildPaymentOwnershipFractional(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
   const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
     const pay = paymentOwnershipFractional.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
@@ -1235,7 +1238,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // "Last submitter" payment ownership: whole milestone $ to whoever uploaded
   // its most-recent qualifying doc. Same base (owner) stats — only the payment
   // columns differ — so the payment table can toggle Owner / Fractional / Last.
-  const paymentOwnershipLast = buildPaymentOwnershipLast(milestonePayments, currentDocStatus, latestUploaderByDocForPay, latestUploadAtByDoc);
+  const { owned: paymentOwnershipLast, lines: paymentLinesLast } = buildPaymentOwnershipLast(milestonePayments, currentDocStatus, latestUploaderByDocForPay, latestUploadAtByDoc);
   const uploaderStatsLast = withPaymentOwnership.map((s) => {
     const pay = paymentOwnershipLast.get(s.uploader);
     return {
@@ -1248,6 +1251,33 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       pendingMilestonesOwned: pay?.pendingCount ?? 0,
     };
   });
+
+  // Enrich each ownership mode's per-uploader milestone lines with deal name +
+  // links — the drill behind every $ figure in the Approved $ view.
+  const enrichPaymentLines = (lm: Map<string, PaymentLine[]>): Record<string, UploaderPaymentLine[]> => {
+    const out: Record<string, UploaderPaymentLine[]> = {};
+    for (const [who, arr] of lm) {
+      out[who] = arr
+        .map((l) => {
+          const meta = dealMetaById.get(l.dealId);
+          return {
+            dealId: l.dealId,
+            dealName: meta?.name ?? l.dealId,
+            milestone: (l.milestone === "M1" ? "IC" : "PC") as "IC" | "PC",
+            amount: l.amount,
+            bucket: l.bucket,
+            hubspotUrl: rejectionHsUrl(l.dealId),
+            pePortalUrl: meta?.portal ?? null,
+            driveUrl: meta?.drive ?? null,
+          };
+        })
+        .sort((a, b) => b.amount - a.amount);
+    }
+    return out;
+  };
+  const uploaderPayments = enrichPaymentLines(paymentLines);
+  const uploaderPaymentsShared = enrichPaymentLines(paymentLinesFractional);
+  const uploaderPaymentsLast = enrichPaymentLines(paymentLinesLast);
 
   // Per-uploader owned docs split by current outcome (latest version owns the
   // status) — powers the approved / in-review / rejected drill-downs.
@@ -1391,6 +1421,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     uploaderStatsLast,
     uploaderDocs,
     uploaderDocsShared,
+    uploaderPayments,
+    uploaderPaymentsShared,
+    uploaderPaymentsLast,
     // Per-period uploads segmented by person — powers the By Day/Week/Month
     // stacked bars; doc-type breakdown powers the "By Doc Type" view.
     uploadsByPeriod: buildUploadsByPeriod(
