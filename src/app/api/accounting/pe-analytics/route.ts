@@ -1210,7 +1210,29 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     { dealId: d.dealId, milestone: "M1", docNames: [...PE_M1_DOC_NAMES], amount: d.paymentIC ?? 0, isApprovedPayment: !!d.m1Status && APPROVED_PAY.has(d.m1Status), isPaid: d.m1Status === "Paid", isPendingPayment: !!d.m1Status && PENDING_PAY.has(d.m1Status) },
     { dealId: d.dealId, milestone: "M2", docNames: M2_DOC_NAMES, amount: d.paymentPC ?? 0, isApprovedPayment: !!d.m2Status && APPROVED_PAY.has(d.m2Status), isPaid: d.m2Status === "Paid", isPendingPayment: !!d.m2Status && PENDING_PAY.has(d.m2Status) },
   ]);
+  // Any payment that still lands in Unknown — e.g. a qualifying doc with a PE
+  // status but no recorded upload version, which the per-doc remap above can't
+  // reach — is unattributed, so fold it into Layla too. Keeps the Unknown $
+  // bucket empty across the aggregates and the drill lines, for every mode.
+  const foldUnknownPay = (
+    owned: Map<string, { amount: number; count: number; paidAmount: number; paidCount: number; pendingAmount: number; pendingCount: number }>,
+    lines: Map<string, PaymentLine[]>,
+  ) => {
+    const u = owned.get(UNKNOWN_UPLOADER);
+    if (u) {
+      const l = owned.get(UNATTRIBUTED_PAYMENT_OWNER) ?? { amount: 0, count: 0, paidAmount: 0, paidCount: 0, pendingAmount: 0, pendingCount: 0 };
+      l.amount += u.amount; l.count += u.count; l.paidAmount += u.paidAmount; l.paidCount += u.paidCount; l.pendingAmount += u.pendingAmount; l.pendingCount += u.pendingCount;
+      owned.set(UNATTRIBUTED_PAYMENT_OWNER, l);
+      owned.delete(UNKNOWN_UPLOADER);
+    }
+    const ul = lines.get(UNKNOWN_UPLOADER);
+    if (ul) {
+      lines.set(UNATTRIBUTED_PAYMENT_OWNER, [...(lines.get(UNATTRIBUTED_PAYMENT_OWNER) ?? []), ...ul]);
+      lines.delete(UNKNOWN_UPLOADER);
+    }
+  };
   const { owned: paymentOwnership, lines: paymentLines } = buildPaymentOwnership(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
+  foldUnknownPay(paymentOwnership, paymentLines);
   const withPaymentOwnership = buildUploaderStats(
     uploaderVersionRows,
     currentDocStatus,
@@ -1230,6 +1252,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   );
   const sharedOwners = computeSharedOwners(uploaderVersionRows, overrideByDoc);
   const { owned: paymentOwnershipFractional, lines: paymentLinesFractional } = buildPaymentOwnershipFractional(milestonePayments, currentDocStatus, latestUploaderByDocForPay);
+  foldUnknownPay(paymentOwnershipFractional, paymentLinesFractional);
   const uploaderStatsShared = buildSharedUploaderStats(uploaderVersionRows, currentDocStatus, sharedOwners).map((s) => {
     const pay = paymentOwnershipFractional.get(s.uploader);
     return pay ? { ...s, paymentsOwned: pay.amount, milestonesOwned: pay.count, paidPaymentsOwned: pay.paidAmount, paidMilestonesOwned: pay.paidCount, pendingPaymentsOwned: pay.pendingAmount, pendingMilestonesOwned: pay.pendingCount } : s;
@@ -1239,6 +1262,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   // its most-recent qualifying doc. Same base (owner) stats — only the payment
   // columns differ — so the payment table can toggle Owner / Fractional / Last.
   const { owned: paymentOwnershipLast, lines: paymentLinesLast } = buildPaymentOwnershipLast(milestonePayments, currentDocStatus, latestUploaderByDocForPay, latestUploadAtByDoc);
+  foldUnknownPay(paymentOwnershipLast, paymentLinesLast);
   const uploaderStatsLast = withPaymentOwnership.map((s) => {
     const pay = paymentOwnershipLast.get(s.uploader);
     return {
