@@ -111,6 +111,7 @@ const DEAL_PROPERTIES = [
   "pe_m2_time_from_submission_to_payment",
   "inspections_completion_date",
   "pto_completion_date",
+  "construction_complete_date",
   "pe_portal_url",
   "all_document_parent_folder_id",
 ];
@@ -174,6 +175,7 @@ interface PeDealRow {
   m2SubmitToPayDays: number | null;
   inspectionPassDate: string | null; // M1 operational ready
   ptoGrantedDate: string | null; // M2 operational ready
+  constructionCompleteDate: string | null; // install/construction done — what Matt measures from
   m1ReadyToSubmitDate: string | null; // stamped when M1 hits "Ready to Submit"
   m2ReadyToSubmitDate: string | null; // stamped when M2 hits "Ready to Submit"
   pePortalUrl: string | null; // direct PE portal project link
@@ -305,6 +307,7 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2SubmitToPayDays: msToDays(p.pe_m2_time_from_submission_to_payment),
         inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
         ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
+        constructionCompleteDate: p.construction_complete_date ? String(p.construction_complete_date) : null,
         m1ReadyToSubmitDate: p.pe_m1_ready_to_submit_date ? String(p.pe_m1_ready_to_submit_date) : null,
         m2ReadyToSubmitDate: p.pe_m2_ready_to_submit_date ? String(p.pe_m2_ready_to_submit_date) : null,
         pePortalUrl: p.pe_portal_url ? String(p.pe_portal_url) : null,
@@ -666,6 +669,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const pR2P = prop((d) => (m === "M1" ? d.m1RemitToPayDays : d.m2RemitToPayDays));
     const pFC = prop((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays));
     const pS2P = prop((d) => (m === "M1" ? d.m1SubmitToPayDays : d.m2SubmitToPayDays));
+    // Construction Complete → payment, measured straight from the dates.
+    const cc2p = rs
+      .map((r) => {
+        const cc = r.deal.constructionCompleteDate;
+        const paid = m === "M1" ? r.deal.m1PaidDate : r.deal.m2PaidDate;
+        if (!cc || !paid) return null;
+        const a = Date.parse(cc.length <= 10 ? `${cc}T00:00:00Z` : cc);
+        const b = Date.parse(paid.length <= 10 ? `${paid}T00:00:00Z` : paid);
+        if (Number.isNaN(a) || Number.isNaN(b)) return null;
+        const g = Math.round((b - a) / 86_400_000);
+        return g >= 0 ? g : null;
+      })
+      .filter((v): v is number => v !== null);
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -688,6 +704,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       nFullCycle: pFC.length,
       avgSubmitToPay: meanDays(pS2P),
       nSubmitToPay: pS2P.length,
+      medianCcToPaid: median(cc2p),
+      avgCcToPaid: cc2p.length ? Math.round(cc2p.reduce((a, b) => a + b, 0) / cc2p.length) : null,
+      ccToPaidCount: cc2p.length,
     };
   });
 
