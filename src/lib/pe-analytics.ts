@@ -281,6 +281,11 @@ export interface TimingSummary {
   medianCcToPaid: number | null;
   avgCcToPaid: number | null;
   ccToPaidCount: number;
+  // Operational-ready → submission (M1: inspection pass, M2: PTO granted) — the
+  // internal lag from finishing to getting the package in to PE.
+  medianOpToSub: number | null;
+  avgOpToSub: number | null;
+  opToSubCount: number;
 }
 
 export interface MonthlyTiming {

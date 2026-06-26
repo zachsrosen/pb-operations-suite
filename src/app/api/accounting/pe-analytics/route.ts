@@ -682,6 +682,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         return g >= 0 ? g : null;
       })
       .filter((v): v is number => v !== null);
+    // Operational-ready → submission: M1 inspection pass / M2 PTO granted → submission.
+    const op2sub = rs
+      .map((r) => {
+        const start = m === "M1" ? r.deal.inspectionPassDate : r.deal.ptoGrantedDate;
+        const sub = m === "M1" ? r.deal.m1SubmissionDate : r.deal.m2SubmissionDate;
+        if (!start || !sub) return null;
+        const a = Date.parse(start.length <= 10 ? `${start}T00:00:00Z` : start);
+        const b = Date.parse(sub.length <= 10 ? `${sub}T00:00:00Z` : sub);
+        if (Number.isNaN(a) || Number.isNaN(b)) return null;
+        const g = Math.round((b - a) / 86_400_000);
+        return g >= 0 ? g : null;
+      })
+      .filter((v): v is number => v !== null);
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -707,6 +720,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       medianCcToPaid: median(cc2p),
       avgCcToPaid: cc2p.length ? Math.round(cc2p.reduce((a, b) => a + b, 0) / cc2p.length) : null,
       ccToPaidCount: cc2p.length,
+      medianOpToSub: median(op2sub),
+      avgOpToSub: op2sub.length ? Math.round(op2sub.reduce((a, b) => a + b, 0) / op2sub.length) : null,
+      opToSubCount: op2sub.length,
     };
   });
 

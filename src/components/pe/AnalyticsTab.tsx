@@ -2827,14 +2827,16 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             title="PE Timing"
             subtitle="Average days per leg, from the deal timing properties — submission → approval → payment, plus the full cycle (construction complete / inspection / PTO → payment)."
           >
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4">
               <MiniStat label="M1 CC → Pay" value={fmtDays(m1Timing?.avgCcToPaid ?? null)} subtitle={`avg · median ${fmtDays(m1Timing?.medianCcToPaid ?? null)} · n=${m1Timing?.ccToPaidCount ?? 0}`} />
               <MiniStat label="M1 Inspection → Pay" value={fmtDays(m1Timing?.avgFullCycle ?? null)} subtitle={`avg full cycle · n=${m1Timing?.nFullCycle ?? 0}`} />
+              <MiniStat label="M1 Inspection → Submit" value={fmtDays(m1Timing?.avgOpToSub ?? null)} subtitle={`avg · median ${fmtDays(m1Timing?.medianOpToSub ?? null)} · n=${m1Timing?.opToSubCount ?? 0}`} />
               <MiniStat label="M1 Submit → Pay" value={fmtDays(m1Timing?.avgSubmitToPay ?? null)} subtitle={`avg · n=${m1Timing?.nSubmitToPay ?? 0}`} />
               <MiniStat label="M1 Submit → Approve" value={fmtDays(m1Timing?.avgSubmitToApprove ?? null)} subtitle={`avg · n=${m1Timing?.nSubmitToApprove ?? 0}`} />
               <MiniStat label="M1 Approve → Pay" value={fmtDays(m1Timing?.avgApproveToPay ?? null)} subtitle={`avg · n=${m1Timing?.nApproveToPay ?? 0}`} />
               <MiniStat label="M2 CC → Pay" value={fmtDays(m2Timing?.avgCcToPaid ?? null)} subtitle={`avg · median ${fmtDays(m2Timing?.medianCcToPaid ?? null)} · n=${m2Timing?.ccToPaidCount ?? 0}`} />
               <MiniStat label="M2 PTO → Pay" value={fmtDays(m2Timing?.avgFullCycle ?? null)} subtitle={`avg full cycle · n=${m2Timing?.nFullCycle ?? 0}`} />
+              <MiniStat label="M2 PTO → Submit" value={fmtDays(m2Timing?.avgOpToSub ?? null)} subtitle={`avg · median ${fmtDays(m2Timing?.medianOpToSub ?? null)} · n=${m2Timing?.opToSubCount ?? 0}`} />
               <MiniStat label="M2 Submit → Pay" value={fmtDays(m2Timing?.avgSubmitToPay ?? null)} subtitle={`avg · n=${m2Timing?.nSubmitToPay ?? 0}`} />
               <MiniStat label="M2 Submit → Approve" value={fmtDays(m2Timing?.avgSubmitToApprove ?? null)} subtitle={`avg · n=${m2Timing?.nSubmitToApprove ?? 0}`} />
               <MiniStat label="M2 Approve → Pay" value={fmtDays(m2Timing?.avgApproveToPay ?? null)} subtitle={`avg · n=${m2Timing?.nApproveToPay ?? 0}`} />
