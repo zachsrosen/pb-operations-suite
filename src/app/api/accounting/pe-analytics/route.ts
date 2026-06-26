@@ -1187,20 +1187,17 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       resubmittedOverrideKeys.add(k);
     }
   }
-  // Pre-tracking PAYMENT credit: nameless docs uploaded before PE began recording
-  // an uploader (attributionStart, ~2026-04-30) are credited to Layla — she did
-  // the pre-tracking PE uploads. This is a payment-ownership-only map; the count
-  // views (Submissions / By Time / By Doc Type) keep the original Unknown, since
-  // we don't actually know who physically uploaded each pre-tracking doc.
-  const PRE_TRACKING_PAYMENT_OWNER = "layla@photonbrothers.com";
-  const attributionStartMs = attributionStart ? new Date(attributionStart).getTime() : null;
+  // Unattributed PAYMENT credit: any nameless doc (no recorded uploader, any
+  // date) is credited to Layla — she does the PE uploads, so unattributed
+  // milestone $ is hers. This is a payment-ownership-only map; the count views
+  // (Submissions / By Time / By Doc Type) keep the original Unknown, since we
+  // don't actually know who physically uploaded each nameless doc. Respects
+  // admin overrides (an explicit pin wins over this fallback).
+  const UNATTRIBUTED_PAYMENT_OWNER = "layla@photonbrothers.com";
   const latestUploaderByDocForPay = new Map(latestUploaderByDoc);
-  if (attributionStartMs !== null) {
-    for (const [k, by] of latestUploaderByDoc) {
-      if ((by == null || by.trim() === "") && !overrideKeys.has(k)) {
-        const at = latestUploadAtByDoc.get(k);
-        if (at != null && at < attributionStartMs) latestUploaderByDocForPay.set(k, PRE_TRACKING_PAYMENT_OWNER);
-      }
+  for (const [k, by] of latestUploaderByDoc) {
+    if ((by == null || by.trim() === "") && !overrideKeys.has(k)) {
+      latestUploaderByDocForPay.set(k, UNATTRIBUTED_PAYMENT_OWNER);
     }
   }
 
