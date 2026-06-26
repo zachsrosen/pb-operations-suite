@@ -2122,9 +2122,17 @@ export default function SiteSurveySchedulerPage() {
             ⚠ Overdue
           </span>
         )}
-        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.surveyStatus)}`}>
-          {project.surveyStatus}
-        </span>
+        {/* Badge follows the group: a re-survey grouped under Needs Revisit can
+            carry a raw status of "Ready to Schedule" (its status flips once the
+            new job is created) — show "Needs Revisit" so the badge matches the group. */}
+        {(() => {
+          const statusLabel = project.surveyGroup === "revisit" ? "Needs Revisit" : project.surveyStatus;
+          return (
+            <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(statusLabel)}`}>
+              {statusLabel}
+            </span>
+          );
+        })()}
         {project.systemSize > 0 && (
           <span className="text-xs text-muted">
             {project.systemSize.toFixed(1)}kW
