@@ -198,6 +198,9 @@ function daysSince(iso: string | null): number | null {
 function isPeOverdue(m: MilestoneDrillRow): boolean {
   if (m.status !== "Submitted" && m.status !== "Resubmitted") return false;
   if (!m.peReviewable) return false;
+  // Truly with PE only if nothing's pending on our side: every doc uploaded
+  // (no missing) and nothing flagged (no action-required/rejected).
+  if (m.missingDocs.length > 0 || m.actionRequiredDocs.length > 0) return false;
   const d = daysSince(m.lastUploadOn);
   return d != null && d > 12;
 }
