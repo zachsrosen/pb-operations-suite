@@ -136,9 +136,9 @@ function milestoneDrillToText(title: string, rows: MilestoneDrillRow[]): string 
   return lines.join("\n");
 }
 function milestoneDrillToCsv(rows: MilestoneDrillRow[]): string {
-  const head = ["Deal", "Milestone", "Amount", "Status", "Ready", "Submitted", "Approved", "Paid", "Rejected", "HubSpot", "PE Portal"];
+  const head = ["Deal", "Milestone", "Amount", "Status", "Last Upload", "PE age (days)", "Ready", "Submitted", "Approved", "Paid", "Rejected", "HubSpot", "PE Portal"];
   const lines = [...rows].sort((a, b) => b.amount - a.amount).map((r) =>
-    [r.dealName, r.milestone, String(r.amount), r.status ?? "", r.readyOn ?? "", r.submittedOn ?? "", r.approvedOn ?? "", r.paidOn ?? "", r.rejectedOn ?? "", r.hubspotUrl ?? "", r.pePortalUrl ?? ""]
+    [r.dealName, r.milestone, String(r.amount), r.status ?? "", r.lastUploadOn ?? "", daysSince(r.lastUploadOn)?.toString() ?? "", r.readyOn ?? "", r.submittedOn ?? "", r.approvedOn ?? "", r.paidOn ?? "", r.rejectedOn ?? "", r.hubspotUrl ?? "", r.pePortalUrl ?? ""]
       .map((x) => drillCsvCell(x))
       .join(","),
   );
@@ -185,6 +185,21 @@ function granNoun(gran: Gran): string {
 }
 function granLabel(iso: string, gran: Gran): string {
   return gran === "month" ? monthLabel(iso) : weekLabel(iso);
+}
+
+// PE review aging — measured from the LAST document upload (the real review
+// clock), not the submission-date prop (which is overwritten on each resubmit).
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso + "T00:00:00Z").getTime()) / 86400000);
+}
+// Overdue with PE: in PE review, reviewable now (M1, or M2 with M1 approved),
+// and the current version has sat >12 days (past the p75 review window).
+function isPeOverdue(m: MilestoneDrillRow): boolean {
+  if (m.status !== "Submitted" && m.status !== "Resubmitted") return false;
+  if (!m.peReviewable) return false;
+  const d = daysSince(m.lastUploadOn);
+  return d != null && d > 12;
 }
 /** Thin x-axis labels in day mode (every 7th); show all in week/month mode. */
 function showAxisLabel(i: number, gran: Gran): boolean {
@@ -1964,6 +1979,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
                 <th className="py-1 pr-3 font-normal">MS</th>
                 <th className="py-1 pr-3 font-normal text-right">Amount</th>
                 <th className="py-1 pr-3 font-normal">Status</th>
+                <th className="py-1 pr-3 font-normal" title="Days since the last document upload — PE's real review clock">PE age</th>
                 <th className="py-1 pr-3 font-normal">Ready</th>
                 <th className="py-1 pr-3 font-normal">Submitted</th>
                 <th className="py-1 pr-3 font-normal">Approved</th>
@@ -2000,6 +2016,15 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
                   <td className="py-1.5 pr-3 text-muted">{r.milestone}</td>
                   <td className="py-1.5 pr-3 text-right text-foreground">{fmtUsd(r.amount)}</td>
                   <td className="py-1.5 pr-3 text-foreground">{r.status ?? "—"}</td>
+                  <td className="py-1.5 pr-3">
+                    {(() => {
+                      const d = daysSince(r.lastUploadOn);
+                      if (d == null) return <span className="text-muted">—</span>;
+                      const live = (r.status === "Submitted" || r.status === "Resubmitted") && r.peReviewable;
+                      const cls = live && d > 22 ? "text-red-400 font-medium" : live && d > 12 ? "text-orange-400" : "text-muted";
+                      return <span className={cls} title={`Last upload ${r.lastUploadOn}`}>{d}d</span>;
+                    })()}
+                  </td>
                   <td className="py-1.5 pr-3 text-muted">{r.readyOn ?? "—"}</td>
                   <td className="py-1.5 pr-3 text-muted">{r.submittedOn ?? "—"}</td>
                   <td className="py-1.5 pr-3 text-muted">{r.approvedOn ?? "—"}</td>
@@ -2173,6 +2198,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
           return data.milestones.filter((r) => isApprovedAgg(r) && !isPaidAgg(r));
         case "paidAll":
           return data.milestones.filter(isPaidAgg);
+        case "peOverdueAll":
+          return data.milestones.filter(isPeOverdue);
         default:
           return [];
       }
@@ -2245,6 +2272,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     awaitingRejected: "Rejected — pending fix (our court)",
     waitPayment: "All approved, awaiting payment",
     paidAll: "All paid",
+    peOverdueAll: "Overdue with PE — 12+ days since last upload, reviewable now",
   };
 
   const SEGMENT_LABELS: Record<string, Record<string, string>> = {
@@ -2542,6 +2570,23 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
               </div>
             }
           >
+            {/* Overdue-with-PE banner — measured from last document upload + the
+                M1-gate, so it's the real escalation list (auto-updating). */}
+            {(() => {
+              const od = (data.milestones ?? []).filter(isPeOverdue);
+              if (od.length === 0) return null;
+              const amt = od.reduce((s, m) => s + (m.amount || 0), 0);
+              return (
+                <button
+                  type="button"
+                  onClick={() => openAggregate("peOverdueAll")}
+                  className="w-full text-left mb-3 rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-300 hover:bg-orange-500/15 transition-colors"
+                  title="Click: list the milestones PE is overdue on"
+                >
+                  ⚠ <span className="font-semibold">{od.length} milestones · {fmtUsd(amt)}</span> overdue with PE — no upload activity in 12+ days and reviewable now (M1, or M2 with M1 approved). Click to view the escalation list.
+                </button>
+              );
+            })()}
             {/* Stat cards reflect ONLY the active chart — each summed from the same
                 daily series the chart renders; click a card to drill that slice. */}
             <div className={`grid grid-cols-2 gap-2 mb-4 ${["md:grid-cols-1", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6"][Math.min(modeCards.length, 6)]}`}>

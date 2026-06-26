@@ -932,6 +932,10 @@ export interface MilestoneDrillRow {
   paidOn: string | null;
   remittanceOn: string | null;
   expectedPaidOn: string | null;
+  /** Latest document upload for this milestone (YYYY-MM-DD) — the real PE review clock. */
+  lastUploadOn: string | null;
+  /** PE can review this now (M1, or M2 whose M1 is approved). Drives overdue flagging. */
+  peReviewable: boolean;
   /** Milestone-relevant docs not yet uploaded (empty when fully uploaded or untracked). */
   missingDocs: string[];
   /** Milestone-relevant docs currently flagged ACTION_REQUIRED/REJECTED by PE. */

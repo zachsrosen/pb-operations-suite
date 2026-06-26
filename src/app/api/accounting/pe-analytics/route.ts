@@ -804,6 +804,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     (docStatusByDeal.get(r.dealId) || docStatusByDeal.set(r.dealId, new Map()).get(r.dealId)!).set(r.docName, r.status);
   }
   const portalId = (process.env.HUBSPOT_PORTAL_ID ?? "").trim();
+  // Last document upload per (deal, milestone) — the real PE review clock
+  // (submission-date props get overwritten on resubmit and overstate the wait).
+  // M1/M2 split mirrors the doc-name buckets above.
+  const lastUploadByMile = new Map<string, Date>();
+  for (const v of versionRows) {
+    if (!v.dealId) continue;
+    const key = `${v.dealId}::${M2_DOC_NAMES.includes(v.docName) ? "M2" : "M1"}`;
+    const cur = lastUploadByMile.get(key);
+    if (!cur || v.uploadedAt > cur) lastUploadByMile.set(key, v.uploadedAt);
+  }
+  // M1 approved gates M2 review: PE won't review M2 until M1 is approved.
+  const m1ApprovedByDeal = new Map<string, boolean>();
+  for (const d of deals) m1ApprovedByDeal.set(d.dealId, d.m1Status === "Approved" || d.m1Status === "Paid" || !!d.m1ApprovalDate || !!d.m1PaidDate);
   const milestones: MilestoneDrillRow[] = records
     .filter((r) => r.status || r.readyOn)
     .map((r) => {
@@ -845,6 +858,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         paidOn: r.paidOn?.slice(0, 10) ?? null,
         remittanceOn: r.remittanceOn?.slice(0, 10) ?? null,
         expectedPaidOn: r.expectedPaidOn?.slice(0, 10) ?? null,
+        lastUploadOn: lastUploadByMile.get(`${r.deal.dealId}::${r.milestone}`)?.toISOString().slice(0, 10) ?? null,
+        // Reviewable by PE now? M1 always; M2 only once M1 is approved (M1 gates M2).
+        peReviewable: r.milestone === "M1" || (m1ApprovedByDeal.get(r.deal.dealId) ?? false),
         missingDocs,
         actionRequiredDocs,
         latestRejectionNote,
