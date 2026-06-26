@@ -76,7 +76,6 @@ const STAGE_CONFIG: StageConfig[] = [
   { key: "constructionComplete", label: "Construction Complete", color: "bg-green-500", textColor: "text-green-400" },
   { key: "inspectionPassed", label: "Inspection Passed", color: "bg-emerald-500", textColor: "text-emerald-400" },
   { key: "ptoGranted", label: "PTO Granted", color: "bg-teal-500", textColor: "text-teal-400" },
-  { key: "closedOut", label: "Closed Out", color: "bg-sky-500", textColor: "text-sky-400" },
 ];
 
 function ProjectPipelineFunnelInner() {
@@ -369,10 +368,10 @@ function ProjectPipelineFunnelInner() {
               <div className="flex justify-end mb-2">
                 <ConversionLegend hideCancelled={tab === "funnel"} />
               </div>
-              {/* Sales Closed → Permits Issued (8) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 8)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
-              {/* Interconnection Approved → Closed Out (7) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(8)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
+              {/* Sales Closed → Permits Issued (7) */}
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 7)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
+              {/* Interconnection Approved → PTO Granted (7) */}
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(7)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
             </>
           )}
 
@@ -572,7 +571,6 @@ const STAGE_TO_BACKLOG: Partial<Record<ProjectFunnelStageKey, string>> = {
   constructionComplete: "awaitingConstructionComplete",
   inspectionPassed: "awaitingInspection",
   ptoGranted: "awaitingPto",
-  closedOut: "awaitingCloseOut",
 };
 
 /**
