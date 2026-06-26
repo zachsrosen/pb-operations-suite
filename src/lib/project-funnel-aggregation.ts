@@ -33,6 +33,7 @@ export const PROJECT_FUNNEL_STAGES = [
   "constructionComplete",
   "inspectionPassed",
   "ptoGranted",
+  "closedOut",
 ] as const;
 
 export type ProjectFunnelStageKey = (typeof PROJECT_FUNNEL_STAGES)[number];
@@ -53,6 +54,7 @@ export interface ProjectFunnelCohort {
   constructionComplete: ProjectFunnelStageData;
   inspectionPassed: ProjectFunnelStageData;
   ptoGranted: ProjectFunnelStageData;
+  closedOut: ProjectFunnelStageData;
 }
 
 export interface ProjectFunnelMedianDays {
@@ -524,6 +526,7 @@ function emptySummary(): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
     constructionComplete: emptyStage(),
     inspectionPassed: emptyStage(),
     ptoGranted: emptyStage(),
+    closedOut: emptyStage(),
   };
 }
 
@@ -614,7 +617,9 @@ export function resolveMilestones(p: Project) {
   const stagePtoGranted = sp >= 9;
 
   // Date-based + implied progression chain (later dates cascade to earlier)
-  const hasPtoGranted = stagePtoGranted || !!p.ptoGrantedDate;
+  // Closed Out = Project Complete (fully paid); cascades into PTO granted.
+  const hasClosedOut = sp >= 10 || !!p.projectCompleteDate;
+  const hasPtoGranted = hasClosedOut || stagePtoGranted || !!p.ptoGrantedDate;
   const hasInspectionPassed = hasPtoGranted || stageInspectionPassed || !!p.inspectionPassDate;
   const hasConstructionComplete = hasInspectionPassed || stageConstructionComplete || !!p.constructionCompleteDate;
   const hasConstructionScheduled = hasConstructionComplete || stageConstructionScheduled || !!p.constructionScheduleDate;
@@ -649,6 +654,7 @@ export function resolveMilestones(p: Project) {
     hasConstructionComplete,
     hasInspectionPassed,
     hasPtoGranted,
+    hasClosedOut,
   };
 }
 
@@ -678,6 +684,7 @@ function tallyStageSummary(deals: Project[]): Record<ProjectFunnelStageKey, Proj
     if (m.hasConstructionComplete) addToStage(summary.constructionComplete, amt, cancelled, onHold);
     if (m.hasInspectionPassed) addToStage(summary.inspectionPassed, amt, cancelled, onHold);
     if (m.hasPtoGranted) addToStage(summary.ptoGranted, amt, cancelled, onHold);
+    if (m.hasClosedOut) addToStage(summary.closedOut, amt, cancelled, onHold);
   }
   return summary;
 }
@@ -902,6 +909,10 @@ export function buildProjectFunnelData(
       addToStage(cohort.ptoGranted, amt, cancelled, onHold);
       if (!cancelled && p.inspectionPassDate && p.ptoGrantedDate)
         dInspectionToPto.push(daysBetween(p.inspectionPassDate, p.ptoGrantedDate));
+    }
+    if (m.hasClosedOut) {
+      addToStage(summary.closedOut, amt, cancelled, onHold);
+      addToStage(cohort.closedOut, amt, cancelled, onHold);
     }
   }
 
@@ -1605,6 +1616,7 @@ const MILESTONE_DATE_FIELD: Record<ProjectFunnelStageKey, keyof Project> = {
   constructionComplete: "constructionCompleteDate",
   inspectionPassed: "inspectionPassDate",
   ptoGranted: "ptoGrantedDate",
+  closedOut: "projectCompleteDate",
 };
 
 /** Display labels for the 12 funnel milestones (shared with the UI). */
@@ -1623,6 +1635,7 @@ export const FUNNEL_STAGE_LABELS: Record<ProjectFunnelStageKey, string> = {
   constructionComplete: "Construction Complete",
   inspectionPassed: "Inspection Passed",
   ptoGranted: "PTO Granted",
+  closedOut: "Closed Out",
 };
 
 export interface MilestoneCohortBucket {
