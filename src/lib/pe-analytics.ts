@@ -943,6 +943,8 @@ export interface MilestoneDrillRow {
   paidOn: string | null;
   remittanceOn: string | null;
   expectedPaidOn: string | null;
+  /** Forecast paid date from submission + avg submission→payment (YYYY-MM-DD). */
+  expectedPaidBySubOn: string | null;
   /** Latest document upload for this milestone (YYYY-MM-DD) — the real PE review clock. */
   lastUploadOn: string | null;
   /** PE can review this now (M1, or M2 whose M1 is approved). Drives overdue flagging. */
@@ -998,6 +1000,7 @@ export interface PeAnalyticsPayload {
   dailySubmissions: WeeklyPayments[];
   dailyRemittance: WeeklyPayments[]; // dated by PE remittance day, done = received
   dailyExpectedPaid: WeeklyPayments[]; // dated by expected-paid day, done = received
+  dailyExpectedPaidBySub: WeeklyPayments[]; // dated by submission+avg forecast day, done = paid
   dailyLifecycle: WeeklyLifecycle[]; // lifecycle dated by READY day
   dailyLifecycleSubmitted: WeeklyLifecycle[]; // lifecycle dated by SUBMITTED day
   dailyLifecycleRejected: WeeklyLifecycle[]; // lifecycle dated by REJECTION day
