@@ -6,6 +6,7 @@ import { getCrewSchedulesFromDB, getAvailabilityOverrides, prisma } from "@/lib/
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
 import { applyOfficeDailyCap, OFFICE_DAILY_SURVEY_CAPS } from "@/lib/scheduling-policy";
+import { isPbHoliday } from "@/lib/on-call-holidays";
 
 /**
  * GET /api/zuper/availability
@@ -598,6 +599,10 @@ export async function GET(request: NextRequest) {
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
       const dateStr = d.toISOString().split("T")[0];
+
+      // No survey availability on PB-observed holidays (the office is closed).
+      // The date cell still renders with its holiday badge — it just has no slots.
+      if (isPbHoliday(dateStr)) continue;
 
       // Skip if this crew is restricted to specific dates and today isn't one
       if (crew.onlyDates && !crew.onlyDates.includes(dateStr)) continue;
