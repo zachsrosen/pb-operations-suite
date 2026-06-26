@@ -12,7 +12,7 @@
  */
 import { computeCapacityCells } from "@/lib/scheduler-v2/capacity";
 import { capacityColor } from "@/lib/scheduler-v2/colors";
-import type { Assignment, Resource, CapacityCell } from "@/lib/scheduler-v2/types";
+import type { Assignment, Resource } from "@/lib/scheduler-v2/types";
 
 /* ------------------------------------------------------------------ */
 /*  Fixtures                                                           */
@@ -23,18 +23,16 @@ function makeAssignment(overrides: Partial<Assignment> & { location: string; dat
     id: `a-${Math.random()}`,
     source: "schedule_record",
     resourceName: "Joe Lynch",
-    date: overrides.date,
     startTime: null,
     endTime: null,
     workType: "install",
-    location: overrides.location,
     workItemId: "wi-1",
     projectId: "p-1",
     projectName: "Test Project",
     value: null,
     status: "scheduled",
     ...overrides,
-  };
+  } as Assignment;
 }
 
 function makeResource(overrides: Partial<Resource> & { primaryLocation: string }): Resource {
@@ -42,13 +40,12 @@ function makeResource(overrides: Partial<Resource> & { primaryLocation: string }
     id: `r-${Math.random()}`,
     name: "Crew Member",
     kind: "crew",
-    locations: [overrides.primaryLocation],
-    primaryLocation: overrides.primaryLocation,
     color: "#3b82f6",
     capacityPerDay: 1,
     assignable: true,
+    locations: [overrides.primaryLocation],
     ...overrides,
-  };
+  } as Resource;
 }
 
 /* ------------------------------------------------------------------ */

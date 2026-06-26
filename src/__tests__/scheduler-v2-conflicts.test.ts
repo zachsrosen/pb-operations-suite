@@ -23,7 +23,6 @@ function makeAssignment(overrides: Partial<Assignment> & { date: string }): Assi
     id: `a-${Math.random()}`,
     source: "schedule_record",
     resourceName: "Joe Lynch",
-    date: overrides.date,
     startTime: null,
     endTime: null,
     workType: "install",
@@ -34,13 +33,11 @@ function makeAssignment(overrides: Partial<Assignment> & { date: string }): Assi
     value: null,
     status: "scheduled",
     ...overrides,
-  };
+  } as Assignment;
 }
 
 function makeCapacityCell(overrides: Partial<CapacityCell> & { location: string; date: string }): CapacityCell {
   return {
-    location: overrides.location,
-    date: overrides.date,
     loadDays: 0,
     capacityDays: 2,
     ...overrides,
