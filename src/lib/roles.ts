@@ -267,6 +267,9 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/api/properties",
     "/dashboards/shop-health",
     "/api/shop-health",
+    // Scheduler v2 (flag-gated beta)
+    "/dashboards/scheduler-v2",
+    "/api/scheduler-v2",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -476,6 +479,9 @@ const PROJECT_MANAGER: RoleDefinition = {
     // PE Photo Builder
     "/dashboards/pe-photo-builder",
     "/api/pe/photo-package",
+    // Scheduler v2 (flag-gated beta)
+    "/dashboards/scheduler-v2",
+    "/api/scheduler-v2",
   ],
   landingCards: [
     { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flags assigned to you — open, acknowledged, and resolved.", tag: "PM FLAGS", tagColor: "orange" },
@@ -597,6 +603,9 @@ const OPERATIONS: RoleDefinition = {
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
+    // Scheduler v2 (flag-gated beta)
+    "/dashboards/scheduler-v2",
+    "/api/scheduler-v2",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -847,6 +856,9 @@ const TECH_OPS: RoleDefinition = {
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
+    // Scheduler v2 (flag-gated beta)
+    "/dashboards/scheduler-v2",
+    "/api/scheduler-v2",
   ],
   landingCards: [
     { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },
