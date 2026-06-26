@@ -266,6 +266,15 @@ export interface TimingSummary {
   medianApproveToPaid: number | null;
   p75ApproveToPaid: number | null;
   avgRejections: number;
+  // Averages (days) from the HubSpot-calculated timing props, with sample size.
+  avgSubmitToApprove: number | null;
+  nSubmitToApprove: number;
+  avgApproveToPay: number | null;
+  nApproveToPay: number;
+  avgRemitToPay: number | null;
+  nRemitToPay: number;
+  avgFullCycle: number | null; // M1: inspection→pay, M2: PTO→pay
+  nFullCycle: number;
 }
 
 export interface MonthlyTiming {
