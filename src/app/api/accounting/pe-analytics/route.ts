@@ -89,11 +89,28 @@ const DEAL_PROPERTIES = [
   "pe_m2_remittance_date",
   "pe_m1_expected_paid_by_date",
   "pe_m2_expected_paid_by_date",
+  // HubSpot-calculated timing legs (stored in MILLISECONDS) — the dashboard
+  // summarizes these per-deal day-counts instead of deriving from the doc log.
+  "pe_m1_time_from_submission_to_approval",
+  "pe_m2_time_from_submission_to_approval",
+  "pe_m1_time_from_approval_to_payment",
+  "pe_m2_time_from_approval_to_payment",
+  "pe_m1_time_from_remittance_to_payment",
+  "pe_m2_time_from_remittance_to_payment",
+  "pe_m1_time_from_inspection_pass_to_payment",
+  "pe_m2_time_from_pto_to_payment",
   "inspections_completion_date",
   "pto_completion_date",
   "pe_portal_url",
   "all_document_parent_folder_id",
 ];
+
+// HubSpot date-difference calc props are stored in milliseconds — convert to days.
+const msToDays = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round((n / 86_400_000) * 10) / 10 : null;
+};
 
 interface PeDealRow {
   dealId: string;
@@ -118,6 +135,15 @@ interface PeDealRow {
   m2RemittanceDate: string | null;
   m1ExpectedPaidDate: string | null; // forecast: approval + ~14d (calculated prop)
   m2ExpectedPaidDate: string | null;
+  // Calculated timing legs, converted ms -> DAYS at mapping (null if not set).
+  m1SubmitToApproveDays: number | null;
+  m2SubmitToApproveDays: number | null;
+  m1ApproveToPayDays: number | null;
+  m2ApproveToPayDays: number | null;
+  m1RemitToPayDays: number | null;
+  m2RemitToPayDays: number | null;
+  m1FullCycleDays: number | null; // inspection pass -> M1 payment
+  m2FullCycleDays: number | null; // PTO granted -> M2 payment
   inspectionPassDate: string | null; // M1 operational ready
   ptoGrantedDate: string | null; // M2 operational ready
   m1ReadyToSubmitDate: string | null; // stamped when M1 hits "Ready to Submit"
@@ -237,6 +263,14 @@ async function fetchPeDeals(): Promise<PeDealRow[]> {
         m2RemittanceDate: p.pe_m2_remittance_date ? String(p.pe_m2_remittance_date) : null,
         m1ExpectedPaidDate: p.pe_m1_expected_paid_by_date ? String(p.pe_m1_expected_paid_by_date) : null,
         m2ExpectedPaidDate: p.pe_m2_expected_paid_by_date ? String(p.pe_m2_expected_paid_by_date) : null,
+        m1SubmitToApproveDays: msToDays(p.pe_m1_time_from_submission_to_approval),
+        m2SubmitToApproveDays: msToDays(p.pe_m2_time_from_submission_to_approval),
+        m1ApproveToPayDays: msToDays(p.pe_m1_time_from_approval_to_payment),
+        m2ApproveToPayDays: msToDays(p.pe_m2_time_from_approval_to_payment),
+        m1RemitToPayDays: msToDays(p.pe_m1_time_from_remittance_to_payment),
+        m2RemitToPayDays: msToDays(p.pe_m2_time_from_remittance_to_payment),
+        m1FullCycleDays: msToDays(p.pe_m1_time_from_inspection_pass_to_payment),
+        m2FullCycleDays: msToDays(p.pe_m2_time_from_pto_to_payment),
         inspectionPassDate: p.inspections_completion_date ? String(p.inspections_completion_date) : null,
         ptoGrantedDate: p.pto_completion_date ? String(p.pto_completion_date) : null,
         m1ReadyToSubmitDate: p.pe_m1_ready_to_submit_date ? String(p.pe_m1_ready_to_submit_date) : null,
@@ -581,12 +615,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   );
 
   // --- Report 3: timing --------------------------------------------------------
+  const meanDays = (a: number[]) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 10) / 10 : null);
   const overall: TimingSummary[] = (["M1", "M2"] as const).map((m) => {
     const rs = records.filter((r) => r.milestone === m);
     const submitted = rs.filter((r) => r.timing.firstSubmitted);
     const s2a = rs.map((r) => r.timing.daysSubmitToApprove).filter((v): v is number => v !== null);
     const a2p = rs.map((r) => r.timing.daysApproveToPaid).filter((v): v is number => v !== null);
     const rejections = submitted.map((r) => r.timing.rejectionCount);
+    // Averages from the HubSpot-calculated timing props (one value per deal).
+    const prop = (sel: (d: PeDealRow) => number | null) => rs.map((r) => sel(r.deal)).filter((v): v is number => v !== null);
+    const pS2A = prop((d) => (m === "M1" ? d.m1SubmitToApproveDays : d.m2SubmitToApproveDays));
+    const pA2P = prop((d) => (m === "M1" ? d.m1ApproveToPayDays : d.m2ApproveToPayDays));
+    const pR2P = prop((d) => (m === "M1" ? d.m1RemitToPayDays : d.m2RemitToPayDays));
+    const pFC = prop((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays));
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -599,6 +640,14 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       avgRejections: rejections.length
         ? Math.round((rejections.reduce((a, b) => a + b, 0) / rejections.length) * 100) / 100
         : 0,
+      avgSubmitToApprove: meanDays(pS2A),
+      nSubmitToApprove: pS2A.length,
+      avgApproveToPay: meanDays(pA2P),
+      nApproveToPay: pA2P.length,
+      avgRemitToPay: meanDays(pR2P),
+      nRemitToPay: pR2P.length,
+      avgFullCycle: meanDays(pFC),
+      nFullCycle: pFC.length,
     };
   });
 
