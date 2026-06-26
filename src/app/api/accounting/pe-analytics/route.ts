@@ -970,6 +970,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
         lastUploadOn: lastUploadByMile.get(`${r.deal.dealId}::${r.milestone}`)?.toISOString().slice(0, 10) ?? null,
         // Reviewable by PE now? M1 always; M2 only once M1 is approved (M1 gates M2).
         peReviewable: r.milestone === "M1" || (m1ApprovedByDeal.get(r.deal.dealId) ?? false),
+        m1ApprovedOn: r.deal.m1ApprovalDate ? String(r.deal.m1ApprovalDate).slice(0, 10) : null,
         missingDocs,
         actionRequiredDocs,
         latestRejectionNote,

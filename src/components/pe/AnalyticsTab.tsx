@@ -139,7 +139,7 @@ function milestoneDrillToText(title: string, rows: MilestoneDrillRow[]): string 
 function milestoneDrillToCsv(rows: MilestoneDrillRow[]): string {
   const head = ["Deal", "Milestone", "Amount", "Status", "Last Upload", "PE age (days)", "Ready", "Submitted", "Approved", "Paid", "Rejected", "HubSpot", "PE Portal"];
   const lines = [...rows].sort((a, b) => b.amount - a.amount).map((r) =>
-    [r.dealName, r.milestone, String(r.amount), r.status ?? "", r.lastUploadOn ?? "", daysSince(r.lastUploadOn)?.toString() ?? "", r.readyOn ?? "", r.submittedOn ?? "", r.approvedOn ?? "", r.paidOn ?? "", r.rejectedOn ?? "", r.hubspotUrl ?? "", r.pePortalUrl ?? ""]
+    [r.dealName, r.milestone, String(r.amount), r.status ?? "", r.lastUploadOn ?? "", daysSince(peClockStart(r))?.toString() ?? "", r.readyOn ?? "", r.submittedOn ?? "", r.approvedOn ?? "", r.paidOn ?? "", r.rejectedOn ?? "", r.hubspotUrl ?? "", r.pePortalUrl ?? ""]
       .map((x) => drillCsvCell(x))
       .join(","),
   );
@@ -194,6 +194,17 @@ function daysSince(iso: string | null): number | null {
   if (!iso) return null;
   return Math.floor((Date.now() - new Date(iso + "T00:00:00Z").getTime()) / 86400000);
 }
+// When PE's review clock starts for a milestone. For a submitted M2, PE won't
+// begin until M1 is approved, so the clock starts at the LATER of M1 approval
+// and the M2 docs landing — not the docs alone. Everything else ages from its
+// last upload. (Dates are YYYY-MM-DD, so lexical max = chronological max.)
+function peClockStart(m: MilestoneDrillRow): string | null {
+  if (m.milestone === "M2" && (m.status === "Submitted" || m.status === "Resubmitted") && m.m1ApprovedOn) {
+    if (!m.lastUploadOn) return m.m1ApprovedOn;
+    return m.m1ApprovedOn > m.lastUploadOn ? m.m1ApprovedOn : m.lastUploadOn;
+  }
+  return m.lastUploadOn;
+}
 // Overdue with PE: in PE review, reviewable now (M1, or M2 with M1 approved),
 // and the current version has sat >12 days (past the p75 review window).
 function isPeOverdue(m: MilestoneDrillRow): boolean {
@@ -202,7 +213,7 @@ function isPeOverdue(m: MilestoneDrillRow): boolean {
   // Truly with PE only if nothing's pending on our side: every doc uploaded
   // (no missing) and nothing flagged (no action-required/rejected).
   if (m.missingDocs.length > 0 || m.actionRequiredDocs.length > 0) return false;
-  const d = daysSince(m.lastUploadOn);
+  const d = daysSince(peClockStart(m));
   return d != null && d > 12;
 }
 /** Thin x-axis labels in day mode (every 7th); show all in week/month mode. */
@@ -2022,7 +2033,7 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
                 <th className="py-1 pr-3 font-normal">MS</th>
                 <th className="py-1 pr-3 font-normal text-right">Amount</th>
                 <th className="py-1 pr-3 font-normal">Status</th>
-                <th className="py-1 pr-3 font-normal" title="Days since the last document upload — PE's real review clock">PE age</th>
+                <th className="py-1 pr-3 font-normal" title="Days PE has been able to review — since the last document upload, or for a submitted M2, since M1 approval (PE can't start M2 until M1 is approved)">PE age</th>
                 <th className="py-1 pr-3 font-normal">Ready</th>
                 <th className="py-1 pr-3 font-normal">Submitted</th>
                 <th className="py-1 pr-3 font-normal">Approved</th>
@@ -2061,11 +2072,16 @@ function DrillPanel({ rows, weekStart, weekPrefix, segmentLabel, gran = "week", 
                   <td className="py-1.5 pr-3 text-foreground">{r.status ?? "—"}</td>
                   <td className="py-1.5 pr-3">
                     {(() => {
-                      const d = daysSince(r.lastUploadOn);
+                      const start = peClockStart(r);
+                      const d = daysSince(start);
                       if (d == null) return <span className="text-muted">—</span>;
                       const live = (r.status === "Submitted" || r.status === "Resubmitted") && r.peReviewable;
                       const cls = live && d > 22 ? "text-red-400 font-medium" : live && d > 12 ? "text-orange-400" : "text-muted";
-                      return <span className={cls} title={`Last upload ${r.lastUploadOn}`}>{d}d</span>;
+                      const gatedByM1 = r.milestone === "M2" && start === r.m1ApprovedOn && start !== r.lastUploadOn;
+                      const title = gatedByM1
+                        ? `Since M1 approval ${start} — PE can't review M2 until M1 is approved (docs landed ${r.lastUploadOn})`
+                        : `Last upload ${r.lastUploadOn}`;
+                      return <span className={cls} title={title}>{d}d</span>;
                     })()}
                   </td>
                   <td className="py-1.5 pr-3 text-muted">{r.readyOn ?? "—"}</td>
