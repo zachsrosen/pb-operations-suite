@@ -27,6 +27,8 @@ export const PROJECT_FUNNEL_STAGES = [
   "designCompleted",
   "permitsSubmitted",
   "permitsIssued",
+  "interconnectionApproved",
+  "readyToBuild",
   "constructionScheduled",
   "constructionComplete",
   "inspectionPassed",
@@ -45,6 +47,8 @@ export interface ProjectFunnelCohort {
   designCompleted: ProjectFunnelStageData;
   permitsSubmitted: ProjectFunnelStageData;
   permitsIssued: ProjectFunnelStageData;
+  interconnectionApproved: ProjectFunnelStageData;
+  readyToBuild: ProjectFunnelStageData;
   constructionScheduled: ProjectFunnelStageData;
   constructionComplete: ProjectFunnelStageData;
   inspectionPassed: ProjectFunnelStageData;
@@ -514,6 +518,8 @@ function emptySummary(): Record<ProjectFunnelStageKey, ProjectFunnelStageData> {
     designCompleted: emptyStage(),
     permitsSubmitted: emptyStage(),
     permitsIssued: emptyStage(),
+    interconnectionApproved: emptyStage(),
+    readyToBuild: emptyStage(),
     constructionScheduled: emptyStage(),
     constructionComplete: emptyStage(),
     inspectionPassed: emptyStage(),
@@ -660,6 +666,8 @@ function tallyStageSummary(deals: Project[]): Record<ProjectFunnelStageKey, Proj
     if (m.hasDesignComplete) addToStage(summary.designCompleted, amt, cancelled, onHold);
     if (m.hasPermitSubmit) addToStage(summary.permitsSubmitted, amt, cancelled, onHold);
     if (m.hasPermitIssued) addToStage(summary.permitsIssued, amt, cancelled, onHold);
+    if (p.interconnectionApprovalDate) addToStage(summary.interconnectionApproved, amt, cancelled, onHold);
+    if (m.hasReadyToBuild) addToStage(summary.readyToBuild, amt, cancelled, onHold);
     if (m.hasConstructionScheduled) addToStage(summary.constructionScheduled, amt, cancelled, onHold);
     if (m.hasConstructionComplete) addToStage(summary.constructionComplete, amt, cancelled, onHold);
     if (m.hasInspectionPassed) addToStage(summary.inspectionPassed, amt, cancelled, onHold);
@@ -852,6 +860,14 @@ export function buildProjectFunnelData(
       addToStage(cohort.permitsIssued, amt, cancelled, onHold);
       if (!cancelled && p.permitSubmitDate && p.permitIssueDate)
         dPermitSubmitToIssued.push(daysBetween(p.permitSubmitDate, p.permitIssueDate));
+    }
+    if (p.interconnectionApprovalDate) {
+      addToStage(summary.interconnectionApproved, amt, cancelled, onHold);
+      addToStage(cohort.interconnectionApproved, amt, cancelled, onHold);
+    }
+    if (m.hasReadyToBuild) {
+      addToStage(summary.readyToBuild, amt, cancelled, onHold);
+      addToStage(cohort.readyToBuild, amt, cancelled, onHold);
     }
     if (m.hasReadyToBuild && !cancelled && p.permitIssueDate && p.readyToBuildDate)
       dPermitIssuedToReadyToBuild.push(daysBetween(p.permitIssueDate, p.readyToBuildDate));
@@ -1577,6 +1593,8 @@ const MILESTONE_DATE_FIELD: Record<ProjectFunnelStageKey, keyof Project> = {
   designCompleted: "designCompletionDate",
   permitsSubmitted: "permitSubmitDate",
   permitsIssued: "permitIssueDate",
+  interconnectionApproved: "interconnectionApprovalDate",
+  readyToBuild: "readyToBuildDate",
   constructionScheduled: "constructionScheduleDate",
   constructionComplete: "constructionCompleteDate",
   inspectionPassed: "inspectionPassDate",
@@ -1593,6 +1611,8 @@ export const FUNNEL_STAGE_LABELS: Record<ProjectFunnelStageKey, string> = {
   designCompleted: "Design Complete",
   permitsSubmitted: "Permits Submitted",
   permitsIssued: "Permits Issued",
+  interconnectionApproved: "Interconnection Approved",
+  readyToBuild: "Ready to Build",
   constructionScheduled: "Construction Sched.",
   constructionComplete: "Construction Complete",
   inspectionPassed: "Inspection Passed",

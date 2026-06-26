@@ -69,6 +69,8 @@ const STAGE_CONFIG: StageConfig[] = [
   { key: "designCompleted", label: "Design Complete", color: "bg-indigo-500", textColor: "text-indigo-400" },
   { key: "permitsSubmitted", label: "Permits Submitted", color: "bg-purple-500", textColor: "text-purple-400" },
   { key: "permitsIssued", label: "Permits Issued", color: "bg-violet-500", textColor: "text-violet-400" },
+  { key: "interconnectionApproved", label: "Interconnection Approved", color: "bg-fuchsia-500", textColor: "text-fuchsia-400" },
+  { key: "readyToBuild", label: "Ready to Build", color: "bg-cyan-600", textColor: "text-cyan-300" },
   // Construction & closeout
   { key: "constructionScheduled", label: "Construction Scheduled", color: "bg-cyan-500", textColor: "text-cyan-400" },
   { key: "constructionComplete", label: "Construction Complete", color: "bg-green-500", textColor: "text-green-400" },
@@ -366,10 +368,10 @@ function ProjectPipelineFunnelInner() {
               <div className="flex justify-end mb-2">
                 <ConversionLegend hideCancelled={tab === "funnel"} />
               </div>
-              {/* Sales Closed → Design Complete (6) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 6)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
-              {/* Permits Submitted → PTO Granted (6) */}
-              <HeroCards summary={s} stages={STAGE_CONFIG.slice(6)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
+              {/* Sales Closed → Permits Issued (7) */}
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(0, 7)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
+              {/* Interconnection Approved → PTO Granted (7) */}
+              <HeroCards summary={s} stages={STAGE_CONFIG.slice(7)} hideCancelled={tab === "funnel"} previousSummary={tab === "funnel" ? undefined : data.previousSummary} onConvClick={handleConvClick} />
             </>
           )}
 
@@ -563,6 +565,8 @@ const STAGE_TO_BACKLOG: Partial<Record<ProjectFunnelStageKey, string>> = {
   designCompleted: "awaitingDesignComplete",
   permitsSubmitted: "awaitingPermitSubmit",
   permitsIssued: "awaitingPermitIssue",
+  interconnectionApproved: "awaitingInterconnection",
+  readyToBuild: "awaitingReadyToBuild",
   constructionScheduled: "awaitingConstructionSchedule",
   constructionComplete: "awaitingConstructionComplete",
   inspectionPassed: "awaitingInspection",
