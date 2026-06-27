@@ -13,6 +13,10 @@ import { useBoardData } from "./useBoardData";
 import { applyBoardFilters, useBoardFilters } from "./useBoardFilters";
 import { ScheduleDrawer, type ScheduleWriteResult } from "./ScheduleDrawer";
 import { UndoSnackbar, type UndoTarget } from "./UndoSnackbar";
+import { ViewSwitcher, useSchedulerV2View } from "./ViewSwitcher";
+import { WeekView } from "./views/WeekView";
+import { MonthView } from "./views/MonthView";
+import { GanttView } from "./views/GanttView";
 
 /** Feature flag: drag/drop write affordances. Default off in production. */
 const DRAG_ENABLED = process.env.NEXT_PUBLIC_SCHEDULER_V2_DND === "true";
@@ -39,15 +43,32 @@ function mondayOf(dateStr: string): string {
  */
 function SchedulerV2ShellInner() {
   const { filters } = useBoardFilters();
+  const [view, setView] = useSchedulerV2View();
   const [weekStart, setWeekStart] = useState<string>(() =>
     mondayOf(getTodayStr())
   );
+  const [monthAnchor, setMonthAnchor] = useState<string>(() => getTodayStr());
+  const [ganttStart, setGanttStart] = useState<string>(() => getTodayStr());
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
     undefined
   );
 
-  const from = weekStart;
-  const to = addDaysYmd(weekStart, 6);
+  // Fetch window depends on the active lens so Month/Gantt have enough data.
+  // (Board/Week scope to a week; Month covers the visible month grid; Gantt a
+  // ~3-week forward window.) All views still render the SAME filtered BoardData.
+  const { from, to } = useMemo(() => {
+    if (view === "month") {
+      const [y, m] = monthAnchor.split("-").map(Number);
+      const first = `${y}-${String(m).padStart(2, "0")}-01`;
+      // Pad a week on each side to cover spill days + multi-day spans.
+      return { from: addDaysYmd(first, -7), to: addDaysYmd(first, 42) };
+    }
+    if (view === "gantt") {
+      return { from: ganttStart, to: addDaysYmd(ganttStart, 28) };
+    }
+    // board + week share the Monday..Sunday window
+    return { from: weekStart, to: addDaysYmd(weekStart, 6) };
+  }, [view, weekStart, monthAnchor, ganttStart]);
 
   const { data, isLoading, error, refetch } = useBoardData({ from, to });
 
@@ -131,10 +152,13 @@ function SchedulerV2ShellInner() {
 
   return (
     <div className="space-y-3">
-      {/* Top controls: saved views + filters */}
+      {/* Top controls: saved views + filters + view switcher */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-t-border bg-surface p-3 shadow-card">
         <SavedViews />
         <FilterBar data={data} />
+        <div className="ml-auto">
+          <ViewSwitcher value={view} onChange={setView} />
+        </div>
       </div>
 
       {/* Attention strip (counts derived from filtered data) */}
@@ -142,31 +166,65 @@ function SchedulerV2ShellInner() {
         <AttentionStrip data={filtered} />
       </div>
 
-      {/* Left rail queue + board */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-        <UnscheduledQueue
-          data={filtered}
-          selectedItemId={selectedItemId}
-          onSelectItem={handleSelect}
-          draggable={DRAG_ENABLED}
-          onDragStartItem={setDraggedItem}
-        />
-        <div className="min-w-0 flex-1">
-          <DispatchBoard
+      {/* Active lens. Board keeps the left-rail unscheduled queue (its drag
+          source); Week/Month/Gantt are read-only lenses over the same filtered
+          BoardData and render full-width. */}
+      {view === "board" ? (
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+          <UnscheduledQueue
             data={filtered}
-            isLoading={isLoading}
-            error={error}
-            refetch={refetch}
-            weekStart={weekStart}
-            onWeekStartChange={setWeekStart}
+            selectedItemId={selectedItemId}
             onSelectItem={handleSelect}
-            dragEnabled={DRAG_ENABLED}
-            onDropItem={handleDropItem}
-            draggedItem={draggedItem}
-            onDraggedItemChange={setDraggedItem}
+            draggable={DRAG_ENABLED}
+            onDragStartItem={setDraggedItem}
           />
+          <div className="min-w-0 flex-1">
+            <DispatchBoard
+              data={filtered}
+              isLoading={isLoading}
+              error={error}
+              refetch={refetch}
+              weekStart={weekStart}
+              onWeekStartChange={setWeekStart}
+              onSelectItem={handleSelect}
+              dragEnabled={DRAG_ENABLED}
+              onDropItem={handleDropItem}
+              draggedItem={draggedItem}
+              onDraggedItemChange={setDraggedItem}
+            />
+          </div>
         </div>
-      </div>
+      ) : view === "week" ? (
+        <WeekView
+          data={filtered}
+          isLoading={isLoading}
+          error={error}
+          refetch={refetch}
+          weekStart={weekStart}
+          onWeekStartChange={setWeekStart}
+          onSelectItem={handleSelect}
+        />
+      ) : view === "month" ? (
+        <MonthView
+          data={filtered}
+          isLoading={isLoading}
+          error={error}
+          refetch={refetch}
+          monthAnchor={monthAnchor}
+          onMonthAnchorChange={setMonthAnchor}
+          onSelectItem={handleSelect}
+        />
+      ) : (
+        <GanttView
+          data={filtered}
+          isLoading={isLoading}
+          error={error}
+          refetch={refetch}
+          ganttStart={ganttStart}
+          onGanttStartChange={setGanttStart}
+          onSelectItem={handleSelect}
+        />
+      )}
 
       {/* Write layer: drawer (explicit human confirm) + undo snackbar */}
       <ScheduleDrawer
