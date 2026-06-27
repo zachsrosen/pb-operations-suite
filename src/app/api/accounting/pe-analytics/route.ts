@@ -36,6 +36,7 @@ import {
   type MilestonePayment,
   type PaymentLine,
   type UploaderPaymentLine,
+  type ReRejection,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
@@ -797,6 +798,49 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     (changeLogByKey.get(k) ?? changeLogByKey.set(k, []).get(k)!).push({ status: ev.newStatus, date: ev.createdAt.toISOString(), note: ev.newNotes });
   }
   for (const list of changeLogByKey.values()) list.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Re-rejections after milestone approval: a doc PE had APPROVED flips back to
+  // ACTION_REQUIRED/REJECTED after the milestone was already approved. Track days
+  // after approval and days to fix (null until the doc is re-approved). Same-day
+  // churn on one doc is collapsed to a single row.
+  const M2_RR_SET = new Set(["Signed Interconnection Agreement", "Conditional Waiver — Final Payment", "Permission to Operate (PTO)"]);
+  const dealById = new Map(deals.map((d) => [d.dealId, d]));
+  const reRejSeen = new Set<string>();
+  const dayMs = (s: string) => Date.parse(`${s.slice(0, 10)}T00:00:00Z`);
+  const reRejections: ReRejection[] = [];
+  for (const ev of changeLog) {
+    if (ev.oldStatus !== "APPROVED" || (ev.newStatus !== "ACTION_REQUIRED" && ev.newStatus !== "REJECTED")) continue;
+    const deal = dealById.get(ev.dealId);
+    if (!deal) continue;
+    const isM2 = M2_RR_SET.has(ev.docName);
+    const apprDate = isM2 ? deal.m2ApprovalDate : deal.m1ApprovalDate;
+    if (!apprDate) continue;
+    const rejIso = ev.createdAt.toISOString();
+    const rejDay = rejIso.slice(0, 10);
+    if (rejDay <= apprDate.slice(0, 10)) continue; // only AFTER the milestone was approved
+    const dedupKey = `${ev.dealId}|${ev.docName}|${rejDay}`;
+    if (reRejSeen.has(dedupKey)) continue;
+    reRejSeen.add(dedupKey);
+    const list = changeLogByKey.get(`${ev.dealId}::${ev.docName}`) ?? [];
+    const reAppr = list.find((x) => x.status === "APPROVED" && x.date > rejIso);
+    const meta = dealMetaById.get(ev.dealId);
+    reRejections.push({
+      dealId: ev.dealId,
+      dealName: meta?.name ?? ev.dealName ?? ev.dealId,
+      milestone: isM2 ? "M2" : "M1",
+      docName: ev.docName,
+      approvedOn: apprDate.slice(0, 10),
+      reRejectedOn: rejDay,
+      daysAfterApproval: Math.round((dayMs(rejDay) - dayMs(apprDate)) / 86_400_000),
+      fixedOn: reAppr ? reAppr.date.slice(0, 10) : null,
+      daysToFix: reAppr ? Math.round((Date.parse(reAppr.date) - Date.parse(rejIso)) / 86_400_000) : null,
+      reviewerNote: ev.newNotes ?? null,
+      hubspotUrl: rejectionHsUrl(ev.dealId),
+      pePortalUrl: meta?.portal ?? null,
+    });
+  }
+  reRejections.sort((a, b) => b.reRejectedOn.localeCompare(a.reRejectedOn) || b.daysAfterApproval - a.daysAfterApproval);
+
   const dayOf = (iso: string | undefined) => (iso ? iso.slice(0, 10) : null);
   const buildDrillRow = (key: string): RejectionDrillDeal => {
     const dealId = key.slice(0, key.indexOf("::"));
@@ -1481,6 +1525,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     uploaderStatsLast,
     uploaderDocs,
     uploaderDocsShared,
+    reRejections,
     uploaderPayments,
     uploaderPaymentsShared,
     uploaderPaymentsLast,

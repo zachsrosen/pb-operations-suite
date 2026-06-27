@@ -463,6 +463,22 @@ export interface PaymentLine {
   bucket: "paid" | "approved" | "inreview";
 }
 
+/** A doc PE re-rejected AFTER its milestone was approved — the costly clawback. */
+export interface ReRejection {
+  dealId: string;
+  dealName: string;
+  milestone: "M1" | "M2";
+  docName: string;
+  approvedOn: string;            // milestone approval date (YYYY-MM-DD)
+  reRejectedOn: string;          // when the approved doc flipped back (YYYY-MM-DD)
+  daysAfterApproval: number;     // approval → re-rejection
+  fixedOn: string | null;        // re-approval date, null if still open
+  daysToFix: number | null;      // re-rejection → re-approval, null if still open
+  reviewerNote: string | null;   // PE reviewer reason on the re-rejection
+  hubspotUrl: string;
+  pePortalUrl: string | null;
+}
+
 /** One milestone payment behind a person's $ figure, enriched with deal links for the drill. */
 export interface UploaderPaymentLine {
   dealId: string;
@@ -1076,6 +1092,8 @@ export interface PeAnalyticsPayload {
   uploaderDocs: Record<string, UploaderOutcomeDocs>;
   /** Shared-mode drills — a multi-contributor doc appears under each person with its fractional `weight`. */
   uploaderDocsShared: Record<string, UploaderOutcomeDocs>;
+  /** Docs PE re-rejected after their milestone was approved — the post-approval clawback report. */
+  reRejections: ReRejection[];
   /** Per-uploader milestone payments behind the $ figures — the drill for the Approved $ view. One map per ownership mode (owner / fractional / last). Keyed by uploader. */
   uploaderPayments: Record<string, UploaderPaymentLine[]>;
   uploaderPaymentsShared: Record<string, UploaderPaymentLine[]>;
