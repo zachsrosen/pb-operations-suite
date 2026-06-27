@@ -6,6 +6,7 @@ import { getCustomerName } from "@/lib/scheduler-v2/normalize";
 import { WORKTYPE_ACCENT } from "@/lib/scheduler-v2/colors";
 import type { BoardData, WorkItem } from "@/lib/scheduler-v2/types";
 import { isUnscheduled } from "./AttentionStrip";
+import { setDragPayload } from "./dragdrop";
 
 /* ------------------------------------------------------------------ */
 /*  Age derivation                                                     */
@@ -55,6 +56,10 @@ export interface UnscheduledQueueProps {
   data: BoardData | undefined;
   selectedItemId?: string;
   onSelectItem?: (item: WorkItem) => void;
+  /** Enables dragging cards onto crew rows to schedule them. */
+  draggable?: boolean;
+  /** Fired when a card drag starts (board uses it to show the live conflict chip). */
+  onDragStartItem?: (item: WorkItem) => void;
 }
 
 /**
@@ -66,6 +71,8 @@ export function UnscheduledQueue({
   data,
   selectedItemId,
   onSelectItem,
+  draggable = false,
+  onDragStartItem,
 }: UnscheduledQueueProps) {
   const [sortMode, setSortMode] = useState<SortMode>("age");
   const today = getTodayStr();
@@ -139,6 +146,8 @@ export function UnscheduledQueue({
                 today={today}
                 selectedItemId={selectedItemId}
                 onSelectItem={onSelectItem}
+                draggable={draggable}
+                onDragStartItem={onDragStartItem}
               />
             )}
             {unassigned.length > 0 && (
@@ -150,6 +159,8 @@ export function UnscheduledQueue({
                 today={today}
                 selectedItemId={selectedItemId}
                 onSelectItem={onSelectItem}
+                draggable={draggable}
+                onDragStartItem={onDragStartItem}
               />
             )}
           </>
@@ -167,6 +178,8 @@ function QueueGroup({
   today,
   selectedItemId,
   onSelectItem,
+  draggable,
+  onDragStartItem,
 }: {
   title: string;
   count: number;
@@ -175,6 +188,8 @@ function QueueGroup({
   today: string;
   selectedItemId?: string;
   onSelectItem?: (item: WorkItem) => void;
+  draggable?: boolean;
+  onDragStartItem?: (item: WorkItem) => void;
 }) {
   return (
     <div className="mb-3">
@@ -190,6 +205,8 @@ function QueueGroup({
             today={today}
             selected={item.id === selectedItemId}
             onSelectItem={onSelectItem}
+            draggable={draggable}
+            onDragStartItem={onDragStartItem}
           />
         ))}
       </div>
@@ -202,11 +219,15 @@ function QueueCard({
   today,
   selected,
   onSelectItem,
+  draggable,
+  onDragStartItem,
 }: {
   item: WorkItem;
   today: string;
   selected: boolean;
   onSelectItem?: (item: WorkItem) => void;
+  draggable?: boolean;
+  onDragStartItem?: (item: WorkItem) => void;
 }) {
   const ageDays = ageDaysOf(item, today);
   const accent = WORKTYPE_ACCENT[item.workType] ?? "border-l-zinc-500 text-zinc-400";
@@ -216,9 +237,18 @@ function QueueCard({
     <button
       type="button"
       onClick={() => onSelectItem?.(item)}
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (e) => {
+              setDragPayload(e, item.id);
+              onDragStartItem?.(item);
+            }
+          : undefined
+      }
       className={`w-full rounded-lg border-l-2 border border-t-border bg-surface-2/40 p-2 text-left transition-colors hover:bg-surface-2 ${
         accent.split(" ").find((c) => c.startsWith("border-l-")) ?? ""
-      } ${selected ? "ring-2 ring-blue-500/60" : ""}`}
+      } ${selected ? "ring-2 ring-blue-500/60" : ""} ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="truncate text-sm font-medium text-foreground">

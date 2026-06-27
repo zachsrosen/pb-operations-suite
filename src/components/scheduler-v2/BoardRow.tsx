@@ -9,6 +9,29 @@ import type {
 } from "@/lib/scheduler-v2/types";
 import { CapacityBar } from "./CapacityBar";
 import { JobBar } from "./JobBar";
+import {
+  getDragPayload,
+  hasHardConflict,
+  type ConflictProbeState,
+  type ProbeArgs,
+} from "./dragdrop";
+
+/**
+ * Drag/drop wiring the board threads into each row. All optional so the row
+ * still renders without DnD (tests / isolated use).
+ */
+export interface BoardRowDnd {
+  /** The WorkItem currently being dragged (null when no drag in flight). */
+  draggedItem: WorkItem | null;
+  /** Latest conflict-probe result + which target it reflects. */
+  probeState: ConflictProbeState;
+  /** Fire a (debounced) conflict probe for a hovered cell. */
+  probe: (args: ProbeArgs) => void;
+  /** Clear probe state (drag left the board / ended). */
+  clearProbe: () => void;
+  /** Commit a drop onto this resource + date (opens the drawer / quick-confirm). */
+  onDropItem: (item: WorkItem, resource: Resource, date: string) => void;
+}
 
 export interface BoardRowProps {
   resource: Resource;
@@ -19,6 +42,11 @@ export interface BoardRowProps {
   /** Capacity cells for this resource keyed by date (board passes the slice). */
   capacityByDate: Map<string, CapacityCell>;
   onSelectItem?: (item: WorkItem) => void;
+  /** Drag bars to reschedule them. */
+  draggable?: boolean;
+  onDragStartItem?: (item: WorkItem) => void;
+  /** Drop-target wiring; when omitted the row is not a drop target. */
+  dnd?: BoardRowDnd;
 }
 
 interface PlacedItem {
@@ -72,6 +100,9 @@ export function BoardRow({
   items,
   capacityByDate,
   onSelectItem,
+  draggable = false,
+  onDragStartItem,
+  dnd,
 }: BoardRowProps) {
   // Place items, then assign each a lane (row) so overlapping spans stack
   // instead of colliding. Greedy interval layout by start column.
@@ -147,9 +178,29 @@ export function BoardRow({
               gridColumnEnd={p.endCol}
               gridRow={p.lane + 1}
               onClick={onSelectItem}
+              draggable={draggable}
+              onDragStartItem={onDragStartItem}
             />
           ))}
         </div>
+
+        {/* Drop-target overlay — only interactive while a drag is in flight. */}
+        {dnd && dnd.draggedItem && (
+          <div
+            className="pointer-events-none absolute inset-0 grid"
+            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(56px, 1fr))` }}
+          >
+            {days.map((day, i) => (
+              <DropCell
+                key={`drop-${resource.id}-${day}`}
+                colIndex={i}
+                day={day}
+                resource={resource}
+                dnd={dnd}
+              />
+            ))}
+          </div>
+        )}
 
         {/* capacity track under the row, one bar per day */}
         <div
@@ -173,6 +224,91 @@ export function BoardRow({
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A single drop-target cell that lights up on drag-over, probes conflicts, shows
+ * a live chip, and blocks the drop when a hard conflict exists.
+ *
+ * Hard conflicts (double_book / weekend_holiday / lead_time) → red chip + the
+ * drop is rejected. Soft (over_capacity / travel) → amber "schedule anyway" chip
+ * and the drop is allowed (the drawer is the explicit confirm step).
+ */
+function DropCell({
+  colIndex,
+  day,
+  resource,
+  dnd,
+}: {
+  colIndex: number;
+  day: string;
+  resource: Resource;
+  dnd: BoardRowDnd;
+}) {
+  const { draggedItem, probe, probeState, onDropItem } = dnd;
+  const targetKey = `${resource.id}|${day}`;
+  const isActiveTarget = probeState.targetKey === targetKey;
+  const result = isActiveTarget ? probeState.result : null;
+  const hard = isActiveTarget && hasHardConflict(result);
+  const soft = isActiveTarget && !hard && Boolean(result && result.soft.length > 0);
+
+  const chipMsg = isActiveTarget && result
+    ? (result.hard[0]?.message ?? result.soft[0]?.message ?? null)
+    : null;
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!draggedItem) return;
+    e.preventDefault();
+    // Reject the drop visually when a hard conflict is present.
+    e.dataTransfer.dropEffect = hard ? "none" : "move";
+    probe({
+      targetKey,
+      workItemId: draggedItem.id,
+      dealId: draggedItem.dealId,
+      resourceId: resource.zuperUserUid ?? resource.id,
+      location: draggedItem.location,
+      date: day,
+      days: Math.max(1, draggedItem.durationDays || 1),
+      workType: draggedItem.workType,
+    });
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    if (!draggedItem) return;
+    e.preventDefault();
+    const droppedId = getDragPayload(e);
+    if (droppedId && droppedId !== draggedItem.id) return; // mismatched payload
+    if (hard) return; // hard conflict blocks the drop entirely
+    onDropItem(draggedItem, resource, day);
+  }
+
+  return (
+    <div
+      className={`pointer-events-auto relative border-r border-t-border/30 last:border-r-0 transition-colors ${
+        isActiveTarget
+          ? hard
+            ? "bg-red-500/15 ring-1 ring-inset ring-red-500/50"
+            : soft
+              ? "bg-amber-500/15 ring-1 ring-inset ring-amber-500/50"
+              : "bg-blue-500/10 ring-1 ring-inset ring-blue-500/40"
+          : "hover:bg-blue-500/5"
+      }`}
+      style={{ gridColumn: `${colIndex + 1} / ${colIndex + 2}` }}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      aria-label={`Drop on ${resource.name} ${day}`}
+    >
+      {isActiveTarget && (hard || soft) && (
+        <div
+          className={`pointer-events-none absolute left-1/2 top-0 z-30 -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-0.5 text-[0.6rem] font-semibold shadow-lg ${
+            hard ? "bg-red-600 text-white" : "bg-amber-500 text-black"
+          }`}
+        >
+          {hard ? (chipMsg ?? "Blocked") : "Schedule anyway"}
+        </div>
+      )}
     </div>
   );
 }

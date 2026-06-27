@@ -2,6 +2,7 @@
 
 import { STATUS_COLORS, WORKTYPE_ACCENT } from "@/lib/scheduler-v2/colors";
 import type { WorkItem } from "@/lib/scheduler-v2/types";
+import { setDragPayload } from "./dragdrop";
 
 /**
  * Deterministic accent hue (Tailwind ring color class) derived from a deal id.
@@ -34,9 +35,21 @@ export interface JobBarProps {
   /** 1-based grid row (lane) within the parent grid. */
   gridRow?: number;
   onClick?: (item: WorkItem) => void;
+  /** When true the bar can be dragged to another crew/day to reschedule. */
+  draggable?: boolean;
+  /** Notifies the parent that a drag started (so it can mark the source). */
+  onDragStartItem?: (item: WorkItem) => void;
 }
 
-export function JobBar({ item, gridColumnStart, gridColumnEnd, gridRow, onClick }: JobBarProps) {
+export function JobBar({
+  item,
+  gridColumnStart,
+  gridColumnEnd,
+  gridRow,
+  onClick,
+  draggable = false,
+  onDragStartItem,
+}: JobBarProps) {
   // Status fill: overdue/forecast pseudo-states take precedence over base status.
   const statusKey = item.isForecast
     ? "forecast"
@@ -69,8 +82,17 @@ export function JobBar({ item, gridColumnStart, gridColumnEnd, gridRow, onClick 
     <button
       type="button"
       onClick={() => onClick?.(item)}
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (e) => {
+              setDragPayload(e, item.id);
+              onDragStartItem?.(item);
+            }
+          : undefined
+      }
       title={title}
-      className={`relative z-10 my-1 mx-0.5 flex min-w-0 items-center gap-1 overflow-hidden rounded px-1.5 py-0.5 text-left text-[0.68rem] leading-tight ${statusCls} ${noJobCls} ${hueRing} hover:brightness-110`}
+      className={`relative z-10 my-1 mx-0.5 flex min-w-0 items-center gap-1 overflow-hidden rounded px-1.5 py-0.5 text-left text-[0.68rem] leading-tight ${statusCls} ${noJobCls} ${hueRing} hover:brightness-110 ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
       style={{
         gridColumn: `${gridColumnStart} / ${gridColumnEnd}`,
         ...(gridRow ? { gridRow } : {}),

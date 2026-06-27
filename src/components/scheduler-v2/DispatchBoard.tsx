@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addDaysYmd,
   getTodayStr,
@@ -17,6 +17,7 @@ import type {
 } from "@/lib/scheduler-v2/types";
 import { useBoardData } from "./useBoardData";
 import { BoardRow } from "./BoardRow";
+import { useConflictProbe } from "./dragdrop";
 
 // ---------------------------------------------------------------------------
 // Date helpers (local, weekday-aware)
@@ -74,6 +75,20 @@ export interface DispatchBoardProps {
   /** Controlled week window. When omitted the board manages its own week. */
   weekStart?: string;
   onWeekStartChange?: (next: string) => void;
+  /** Enables drag-to-(re)schedule on bars + drop targets on day cells. */
+  dragEnabled?: boolean;
+  /**
+   * Commit a drop onto a crew/day. The shell wires this to open the
+   * ScheduleDrawer (or a quick-reschedule confirm). Required for drops to work.
+   */
+  onDropItem?: (item: WorkItem, resource: Resource, date: string) => void;
+  /**
+   * Controlled dragged-item. When the parent owns it (so the sibling queue can
+   * also set it as a drag source), pass both. Omit to let the board manage its
+   * own drag state.
+   */
+  draggedItem?: WorkItem | null;
+  onDraggedItemChange?: (item: WorkItem | null) => void;
 }
 
 export function DispatchBoard({
@@ -84,6 +99,10 @@ export function DispatchBoard({
   refetch: refetchProp,
   weekStart: weekStartProp,
   onWeekStartChange,
+  dragEnabled = false,
+  onDropItem,
+  draggedItem: draggedItemProp,
+  onDraggedItemChange,
 }: DispatchBoardProps) {
   const externallyControlled = dataProp !== undefined || weekStartProp !== undefined;
 
@@ -92,6 +111,59 @@ export function DispatchBoard({
   );
   const [includeWeekends, setIncludeWeekends] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // ----- Drag/drop state -----
+  const { state: probeState, probe, clear: clearProbe } = useConflictProbe();
+  const [internalDragged, setInternalDragged] = useState<WorkItem | null>(null);
+  const draggedControlled = draggedItemProp !== undefined;
+  const draggedItem = draggedControlled ? draggedItemProp : internalDragged;
+  const setDraggedItem = useCallback(
+    (item: WorkItem | null) => {
+      if (onDraggedItemChange) onDraggedItemChange(item);
+      if (!draggedControlled) setInternalDragged(item);
+    },
+    [onDraggedItemChange, draggedControlled],
+  );
+
+  const handleDragStartItem = useCallback(
+    (item: WorkItem) => {
+      setDraggedItem(item);
+    },
+    [setDraggedItem],
+  );
+
+  const endDrag = useCallback(() => {
+    setDraggedItem(null);
+    clearProbe();
+  }, [clearProbe, setDraggedItem]);
+
+  const handleDropItem = useCallback(
+    (item: WorkItem, resource: Resource, date: string) => {
+      onDropItem?.(item, resource, date);
+      endDrag();
+    },
+    [onDropItem, endDrag],
+  );
+
+  // Clear drag state if a drag ends anywhere (including outside the board).
+  useEffect(() => {
+    if (!draggedItem) return;
+    const onEnd = () => endDrag();
+    window.addEventListener("dragend", onEnd);
+    window.addEventListener("drop", onEnd);
+    return () => {
+      window.removeEventListener("dragend", onEnd);
+      window.removeEventListener("drop", onEnd);
+    };
+  }, [draggedItem, endDrag]);
+
+  const dnd = useMemo(
+    () =>
+      dragEnabled
+        ? { draggedItem, probeState, probe, clearProbe, onDropItem: handleDropItem }
+        : undefined,
+    [dragEnabled, draggedItem, probeState, probe, clearProbe, handleDropItem],
+  );
 
   const weekStart = weekStartProp ?? internalWeekStart;
   const setWeekStart = (updater: string | ((w: string) => string)) => {
@@ -351,6 +423,9 @@ export function DispatchBoard({
                           capacityByResourceDate.get(resource.id) ?? new Map()
                         }
                         onSelectItem={onSelectItem}
+                        draggable={dragEnabled}
+                        onDragStartItem={handleDragStartItem}
+                        dnd={dnd}
                       />
                     ))}
                 </div>
