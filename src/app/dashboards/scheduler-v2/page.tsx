@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import SchedulerV2Shell from "@/components/scheduler-v2/SchedulerV2Shell";
+import { isSchedulerV2Enabled } from "@/lib/scheduler-v2/flag";
 
-export default function SchedulerV2Page() {
-  if (process.env.NEXT_PUBLIC_UI_SCHEDULER_V2_ENABLED !== "true") {
+export default async function SchedulerV2Page() {
+  if (!(await isSchedulerV2Enabled())) {
     notFound();
   }
 

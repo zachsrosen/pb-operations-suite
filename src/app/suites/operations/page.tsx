@@ -1,6 +1,7 @@
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { isSchedulerV2Enabled } from "@/lib/scheduler-v2/flag";
 
 const BASE_LINKS: SuitePageCard[] = [
   // ── Scheduling & Planning ──
@@ -325,21 +326,19 @@ const BASE_LINKS: SuitePageCard[] = [
       ]
     : []),
 
-  // ── Scheduler v2 (beta, flag-gated) ──
-  ...(process.env.NEXT_PUBLIC_UI_SCHEDULER_V2_ENABLED === "true"
-    ? [
-        {
-          href: "/dashboards/scheduler-v2",
-          title: "Dispatch Board (v2)",
-          description: "Crew-row dispatch board — beta.",
-          tag: "BETA",
-          tagColor: "blue",
-          icon: "🗂️",
-          section: "Scheduling & Planning",
-        } satisfies SuitePageCard,
-      ]
-    : []),
 ];
+
+// Scheduler v2 (beta) — appended at runtime when the SystemConfig flag is on
+// (prod Vercel env space is full, so this gate is DB-driven, not env-driven).
+const SCHEDULER_V2_CARD: SuitePageCard = {
+  href: "/dashboards/scheduler-v2",
+  title: "Dispatch Board (v2)",
+  description: "Crew-row dispatch board — beta.",
+  tag: "BETA",
+  tagColor: "blue",
+  icon: "🗂️",
+  section: "Scheduling & Planning",
+};
 
 // Roles entitled to access /dashboards/pe-photo-builder (mirrors roles.ts allowlist).
 // OPERATIONS, OPERATIONS_MANAGER, and TECH_OPS are intentionally excluded — they see
@@ -365,12 +364,14 @@ export default async function OperationsSuitePage() {
     return true;
   });
 
+  const cards = (await isSchedulerV2Enabled()) ? [...links, SCHEDULER_V2_CARD] : links;
+
   return (
     <SuitePageShell
       currentSuiteHref="/suites/operations"
       title="Operations Suite"
       subtitle="Scheduling, field execution, and equipment management."
-      cards={links}
+      cards={cards}
       roles={user.roles}
     />
   );

@@ -38,6 +38,7 @@ import {
 } from "@/lib/scheduler-v2/adapters/construction";
 import { computeCapacityCells } from "@/lib/scheduler-v2/capacity";
 import { LOCATIONS } from "@/lib/scheduler-v2/constants";
+import { isSchedulerV2Enabled } from "@/lib/scheduler-v2/flag";
 import type { Assignment, BoardData } from "@/lib/scheduler-v2/types";
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ function daysBetween(start: string, end: string): number {
 
 export async function GET(request: NextRequest) {
   // Feature gate — additive endpoint stays invisible until explicitly enabled.
-  if (process.env.SCHEDULER_V2_ENABLED !== "true") {
+  if (!(await isSchedulerV2Enabled())) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
