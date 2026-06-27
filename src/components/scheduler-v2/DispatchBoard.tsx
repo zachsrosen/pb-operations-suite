@@ -10,6 +10,7 @@ import {
 import { LOCATIONS } from "@/lib/scheduler-v2/constants";
 import type {
   Assignment,
+  BoardData,
   CapacityCell,
   Resource,
   WorkItem,
@@ -59,17 +60,59 @@ function formatDayLabel(dateStr: string): { dow: string; md: string } {
 
 export interface DispatchBoardProps {
   onSelectItem?: (item: WorkItem) => void;
+  /**
+   * Optional externally-supplied (already-filtered) board data. When provided,
+   * the board renders this instead of fetching its own — the parent shell owns
+   * the fetch so the FilterBar / AttentionStrip / UnscheduledQueue can share
+   * the same scoped `BoardData`. The board still fetches standalone when these
+   * are omitted (keeps the component usable in isolation / tests).
+   */
+  data?: BoardData;
+  isLoading?: boolean;
+  error?: Error | null;
+  refetch?: () => void;
+  /** Controlled week window. When omitted the board manages its own week. */
+  weekStart?: string;
+  onWeekStartChange?: (next: string) => void;
 }
 
-export function DispatchBoard({ onSelectItem }: DispatchBoardProps) {
-  const [weekStart, setWeekStart] = useState<string>(() => mondayOf(getTodayStr()));
+export function DispatchBoard({
+  onSelectItem,
+  data: dataProp,
+  isLoading: isLoadingProp,
+  error: errorProp,
+  refetch: refetchProp,
+  weekStart: weekStartProp,
+  onWeekStartChange,
+}: DispatchBoardProps) {
+  const externallyControlled = dataProp !== undefined || weekStartProp !== undefined;
+
+  const [internalWeekStart, setInternalWeekStart] = useState<string>(() =>
+    mondayOf(getTodayStr())
+  );
   const [includeWeekends, setIncludeWeekends] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const weekStart = weekStartProp ?? internalWeekStart;
+  const setWeekStart = (updater: string | ((w: string) => string)) => {
+    const next =
+      typeof updater === "function" ? updater(weekStart) : updater;
+    if (onWeekStartChange) onWeekStartChange(next);
+    if (weekStartProp === undefined) setInternalWeekStart(next);
+  };
 
   const from = weekStart;
   const to = addDaysYmd(weekStart, 6); // Mon..Sun range; weekend filter trims display
 
-  const { data, isLoading, error, refetch } = useBoardData({ from, to });
+  // Only run the standalone fetch when the parent isn't supplying data.
+  // Passing empty from/to disables the query (hook is `enabled: from && to`).
+  const fetched = useBoardData(
+    externallyControlled ? { from: "", to: "" } : { from, to }
+  );
+  const data = externallyControlled ? dataProp : fetched.data;
+  const isLoading = externallyControlled ? isLoadingProp ?? false : fetched.isLoading;
+  const error = externallyControlled ? errorProp ?? null : fetched.error;
+  const refetch = externallyControlled ? refetchProp ?? (() => {}) : fetched.refetch;
 
   const days = useMemo(
     () => dayList(from, to, includeWeekends),
