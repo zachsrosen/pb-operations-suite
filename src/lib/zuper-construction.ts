@@ -1,11 +1,13 @@
 import type { ZuperJobCache } from "@/generated/prisma/client";
 import * as Sentry from "@sentry/nextjs";
+// Import from the Prisma-free categories module (not "./zuper", which pulls in
+// the DB client) so this module stays safe to include in client bundles.
 import {
   CONSTRUCTION_CATEGORY_NAMES,
   CONSTRUCTION_CATEGORY_UIDS,
   JOB_CATEGORIES,
   JOB_CATEGORY_UIDS,
-} from "./zuper";
+} from "./zuper-categories";
 
 export type SystemType = "solar" | "battery" | "ev" | "legacy";
 
