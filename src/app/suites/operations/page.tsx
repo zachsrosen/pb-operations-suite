@@ -324,6 +324,21 @@ const BASE_LINKS: SuitePageCard[] = [
         } satisfies SuitePageCard,
       ]
     : []),
+
+  // ── Scheduler v2 (beta, flag-gated) ──
+  ...(process.env.NEXT_PUBLIC_UI_SCHEDULER_V2_ENABLED === "true"
+    ? [
+        {
+          href: "/dashboards/scheduler-v2",
+          title: "Dispatch Board (v2)",
+          description: "Crew-row dispatch board — beta.",
+          tag: "BETA",
+          tagColor: "blue",
+          icon: "🗂️",
+          section: "Scheduling & Planning",
+        } satisfies SuitePageCard,
+      ]
+    : []),
 ];
 
 // Roles entitled to access /dashboards/pe-photo-builder (mirrors roles.ts allowlist).
