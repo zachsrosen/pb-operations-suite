@@ -41,6 +41,7 @@ import { isPbHoliday } from "@/lib/on-call-holidays";
 import { isWeekendDateYmd } from "@/lib/scheduling-utils";
 import { getSalesSurveyLeadTimeError } from "@/lib/scheduling-policy";
 import { evaluateSlotTravel, getConfig } from "@/lib/travel-time";
+import { isSchedulerV2Enabled } from "@/lib/scheduler-v2/flag";
 import type { Assignment, Resource } from "@/lib/scheduler-v2/types";
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ function isValidBody(b: unknown): b is ConflictRequestBody {
 
 export async function POST(request: NextRequest) {
   // Feature gate
-  if (process.env.SCHEDULER_V2_ENABLED !== "true") {
+  if (!(await isSchedulerV2Enabled())) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
