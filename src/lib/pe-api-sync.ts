@@ -48,6 +48,7 @@ import { syncPeDocStatusesToHubSpot } from "@/lib/pe-hubspot-sync";
 import { detectAndConsumeResubmissions } from "@/lib/pe-uploader-overrides";
 import { notifyOverrideResubmissions } from "@/lib/pe-doc-notify";
 import { hubspotClient } from "@/lib/hubspot";
+import { backfillPePaymentSplits } from "@/lib/pe-payment-split";
 
 /**
  * Stamp pe_portal_url + pe_project_id on matched deals that don't have them
@@ -767,6 +768,30 @@ export async function syncFromPeApi(options?: {
       } catch (err) {
         result.errors.push(
           `Portal-link stamp failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4d: Self-heal PE payment splits on Project-pipeline PE deals.
+    // Writes pe_payment_ic / pe_payment_pc / pe_total_pb_revenue wherever the
+    // stored value diverges from the canonical calc (idempotent — only deltas).
+    // Keeps Not-Yet-Eligible / Incoming / Expected KPI cards complete for deals
+    // that never hit the on-demand PE Deals page. Set
+    // PE_PAYMENT_SPLIT_SYNC_ENABLED=false to disable.
+    // -----------------------------------------------------------------------
+    if (process.env.PE_PAYMENT_SPLIT_SYNC_ENABLED !== "false") {
+      try {
+        const split = await backfillPePaymentSplits();
+        if (split.updated > 0 || split.failed > 0) {
+          console.warn(
+            `[pe-api-sync] PE payment splits: ${split.updated} written, ${split.failed} failed ` +
+              `(${split.scanned} scanned, ${split.unchanged} already correct, ${split.skippedNoAmount} no amount)`,
+          );
+        }
+      } catch (err) {
+        result.errors.push(
+          `PE payment split sync failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }

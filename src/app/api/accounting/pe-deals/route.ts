@@ -3,33 +3,10 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { searchWithRetry, hubspotClient, updateDealProperty } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { PIPELINE_IDS, getStageMaps } from "@/lib/deals-pipeline";
-import {
-  PE_LEASE,
-  calcLeaseFactorAdjustment,
-  DC_QUALIFYING_MODULE_BRANDS,
-  DC_QUALIFYING_BATTERY_BRANDS,
-  type PeSystemType,
-} from "@/lib/pricing-calculator";
 import { safeWaitUntil } from "@/lib/safe-wait-until";
-import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { prisma } from "@/lib/db";
 import { getPaymentAdjustments } from "@/lib/pe-payment-adjustments";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Round to 2dp and serialise as a string for HubSpot compare / store. */
-function currencyStr(n: number | null): string | null {
-  return n === null ? null : n.toFixed(2);
-}
-
-/** Normalise a fetched HubSpot number property to the same 2dp string shape. */
-function currencyPropStr(raw: unknown): string | null {
-  if (raw === null || raw === undefined || raw === "") return null;
-  const parsed = Number.parseFloat(String(raw));
-  return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
-}
+import { computePeSplit, currencyStr, currencyPropStr } from "@/lib/pe-payment-split";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -256,61 +233,25 @@ export async function GET() {
 
     const deals: PeDeal[] = rawDeals.map((deal) => {
       const dealId = String(deal.hs_object_id);
-      const amount = deal.amount ? parseFloat(String(deal.amount)) : null;
-      const epcPrice = amount && amount > 0 ? amount : null;
       const postalCode = String(deal.postal_code || "").trim() || null;
-      // Extract first 5 digits — handles ZIP+4 ("80027-8024") and leading spaces
-      const zipMatch = postalCode?.match(/^(\d{5})/);
-      const zip5 = zipMatch ? zipMatch[1] : null;
       const stageId = String(deal.dealstage || "");
       const stageLabel = allStageMaps[stageId] || stageId;
 
-      // System type
-      const projectType = String(deal.project_type || "").toLowerCase();
-      const batteryCount = parseInt(String(deal.battery_count || "0")) || 0;
-      let systemType: PeSystemType = "solar";
-      if (projectType.includes("battery") && projectType.includes("solar")) {
-        systemType = "solar+battery";
-      } else if (projectType.includes("battery") || (batteryCount > 0 && !projectType)) {
-        systemType = batteryCount > 0 && !projectType.includes("solar") ? "battery" : "solar+battery";
-      }
-
-      // DC qualifications
-      const moduleBrand = String(deal.module_brand || "");
-      const batteryBrand = String(deal.battery_brand || "");
-      const solarDC =
-        moduleBrand.length > 0 &&
-        DC_QUALIFYING_MODULE_BRANDS.some((b) =>
-          moduleBrand.toLowerCase().includes(b.toLowerCase()),
-        );
-      const batteryDC =
-        batteryCount > 0 &&
-        DC_QUALIFYING_BATTERY_BRANDS.some((b) =>
-          batteryBrand.toLowerCase().includes(b.toLowerCase()),
-        );
-
-      // Energy Community — static lookup, no network calls
-      const energyCommunity = zip5 ? EC_QUALIFYING_ZIPS.has(zip5) : false;
+      // PE payment split — single source of truth in @/lib/pe-payment-split
+      const {
+        systemType,
+        solarDC,
+        batteryDC,
+        energyCommunity,
+        leaseFactor,
+        epcPrice,
+        customerPays,
+        pePaymentTotal,
+        ic: pePaymentIC,
+        pc: pePaymentPC,
+        totalPbRevenue: totalPBRevenue,
+      } = computePeSplit(deal as Record<string, unknown>);
       const ecLookupFailed = false;
-
-      // Lease factor
-      const adjustment = calcLeaseFactorAdjustment(systemType, solarDC, batteryDC, energyCommunity);
-      const leaseFactor = PE_LEASE.baselineFactor + adjustment;
-
-      // Payment calculations — null if no EPC price
-      let customerPays: number | null = null;
-      let pePaymentTotal: number | null = null;
-      let pePaymentIC: number | null = null;
-      let pePaymentPC: number | null = null;
-      let totalPBRevenue: number | null = null;
-
-      if (epcPrice !== null) {
-        customerPays = epcPrice * 0.7;
-        pePaymentTotal = epcPrice - epcPrice / leaseFactor;
-        pePaymentIC = pePaymentTotal * (2 / 3);
-        pePaymentPC = pePaymentTotal * (1 / 3);
-        totalPBRevenue = customerPays + pePaymentTotal;
-      }
 
       // ------------------------------------------------------------------
       // HubSpot sync: compare calculated values against fetched properties.
