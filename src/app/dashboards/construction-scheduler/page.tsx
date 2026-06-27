@@ -15,6 +15,7 @@ import { LOCATION_TIMEZONES } from "@/lib/constants";
 import type { SubJobInfo } from "@/lib/scheduler-subjobs";
 import { ViewModeToggle, useViewMode } from "@/components/scheduler/ViewModeToggle";
 import { SubJobBreakdown } from "@/components/scheduler/SubJobBreakdown";
+import { SubJobLinks } from "@/components/scheduler/SubJobLinks";
 import { SubJobScheduleModal, type PerSubJobSchedule } from "@/components/scheduler/SubJobScheduleModal";
 import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import { getInternalDealUrl } from "@/lib/external-links";
@@ -2390,19 +2391,12 @@ export default function ConstructionSchedulerPage() {
                                     <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.984 2.21 2.21 0 00-4.42 0c0 .873.507 1.626 1.238 1.984V7.93a6.506 6.506 0 00-3.427 1.758l-7.27-5.66a2.56 2.56 0 00.076-.608 2.574 2.574 0 10-.988 2.03l7.128 5.548a6.543 6.543 0 00-.167 1.46c0 .5.057.986.165 1.453l-7.126 5.549a2.574 2.574 0 10.988 2.03c0-.211-.027-.416-.076-.613l7.27-5.658a6.506 6.506 0 003.427 1.758v2.844a2.198 2.198 0 00-1.238 1.985 2.21 2.21 0 004.42 0c0-.872-.505-1.627-1.237-1.985v-2.844a6.508 6.508 0 003.426-1.758 6.539 6.539 0 000-9.229 6.506 6.506 0 00-3.456-1.764zm-.154 9.076a4.016 4.016 0 01-2.854 1.182 4.016 4.016 0 01-2.854-1.182 4.05 4.05 0 01-1.182-2.863c0-1.082.42-2.1 1.182-2.864a4.016 4.016 0 012.854-1.182c1.08 0 2.095.42 2.854 1.182a4.05 4.05 0 011.182 2.864c0 1.081-.419 2.099-1.182 2.863z"/>
                                   </svg>
                                 </a>
-                                {project.zuperJobUid && (
-                                  <a
-                                    href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}/details`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="p-1 hover:bg-surface-2 rounded transition-colors"
-                                    title="Open in Zuper"
-                                  >
-                                    <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                    </svg>
-                                  </a>
-                                )}
+                                <SubJobLinks
+                                  subJobs={project.zuperSubJobs}
+                                  zuperJobUid={project.zuperJobUid}
+                                  zuperWebBaseUrl={zuperWebBaseUrl}
+                                  variant="compact"
+                                />
                               </div>
                             </td>
                             <td className="px-4 py-3 text-center">
@@ -2575,19 +2569,12 @@ export default function ConstructionSchedulerPage() {
                     </svg>
                     HubSpot
                   </a>
-                  {scheduleModal.project.zuperJobUid && (
-                    <a
-                      href={`${zuperWebBaseUrl}/jobs/${scheduleModal.project.zuperJobUid}/details`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      Zuper Job
-                    </a>
-                  )}
+                  <SubJobLinks
+                    subJobs={scheduleModal.project.zuperSubJobs}
+                    zuperJobUid={scheduleModal.project.zuperJobUid}
+                    zuperWebBaseUrl={zuperWebBaseUrl}
+                    variant="compact"
+                  />
                 </div>
               </div>
             </div>
