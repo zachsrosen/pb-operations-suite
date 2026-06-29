@@ -790,14 +790,22 @@ function HeroLocationMatrix({
   );
 }
 
-/** Group a backlog's deals by their status label (descending by count). */
-function statusBreakdown(deals: ProjectFunnelDrillDownDeal[]): Array<{ status: string; count: number }> {
-  const m = new Map<string, number>();
+/** Group a backlog's deals by their status label (descending by count), with
+ *  the summed deal revenue per status. */
+function statusBreakdown(
+  deals: ProjectFunnelDrillDownDeal[]
+): Array<{ status: string; count: number; amount: number }> {
+  const m = new Map<string, { count: number; amount: number }>();
   for (const d of deals) {
     const st = d.status && d.status.trim() ? d.status : "No status";
-    m.set(st, (m.get(st) || 0) + 1);
+    const e = m.get(st) || { count: 0, amount: 0 };
+    e.count += 1;
+    e.amount += d.amount || 0;
+    m.set(st, e);
   }
-  return [...m.entries()].map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+  return [...m.entries()]
+    .map(([status, v]) => ({ status, count: v.count, amount: v.amount }))
+    .sort((a, b) => b.count - a.count);
 }
 
 // Stepped opacity so stacked status segments of one backlog color stay distinct.
@@ -1292,7 +1300,7 @@ function BacklogSection({
                           key={seg.status}
                           className={`${b.color} h-full ${i > 0 ? "border-l border-black/25" : ""}`}
                           style={{ width: `${(seg.count / segTotal) * 100}%`, opacity: segOpacity(i) }}
-                          title={`${seg.status}: ${seg.count}`}
+                          title={`${seg.status}: ${seg.count} · ${formatCurrencyCompact(seg.amount)}`}
                         />
                       ))}
                     </div>
@@ -1345,7 +1353,8 @@ function BacklogSection({
               <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-[11.75rem] pb-1 text-[10px] text-muted">
                 {segs.map((seg) => (
                   <span key={seg.status} className="whitespace-nowrap">
-                    <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}
+                    <span className="text-foreground/70 font-semibold tabular-nums">{seg.count}</span> {seg.status}{" "}
+                    <span className="text-cyan-400/80 tabular-nums">{formatCurrencyCompact(seg.amount)}</span>
                   </span>
                 ))}
               </div>
