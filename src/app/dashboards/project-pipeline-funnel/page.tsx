@@ -108,6 +108,7 @@ function ProjectPipelineFunnelInner() {
   const peParam = searchParams.get("pe");
   const pe: "all" | "pe" | "non-pe" = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
   const includeOnHold = searchParams.get("oh") !== "0";
+  const includeRejected = searchParams.get("pr") !== "0";
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
@@ -156,7 +157,7 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold],
+    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
@@ -164,6 +165,7 @@ function ProjectPipelineFunnelInner() {
       if (owners.length > 0) params.set("owners", owners.join(","));
       if (pe !== "all") params.set("pe", pe);
       if (!includeOnHold) params.set("onhold", "0");
+      if (!includeRejected) params.set("rejected", "0");
       if (useActiveScope) {
         // Funnel tab: live snapshot of all active deals, no date window.
         params.set("scope", "active");
@@ -291,6 +293,15 @@ function ProjectPipelineFunnelInner() {
           title={includeOnHold ? "On-hold deals included — click to hide" : "On-hold deals hidden — click to show"}
         >
           {includeOnHold ? "On Hold: shown" : "On Hold: hidden"}
+        </button>
+        {/* Project-rejected toggle */}
+        <button
+          type="button"
+          onClick={() => setParam("pr", includeRejected ? "0" : "")}
+          className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeRejected ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-red-500/40 bg-red-500/10 text-red-300"}`}
+          title={includeRejected ? "Project-rejected deals included — click to hide" : "Project-rejected deals hidden — click to show"}
+        >
+          {includeRejected ? "Rejected: shown" : "Rejected: hidden"}
         </button>
         {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">

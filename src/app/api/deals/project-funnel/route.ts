@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
     const pe = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
     // onhold=0 hides on-hold deals; default includes them.
     const includeOnHold = searchParams.get("onhold") !== "0";
+    // rejected=0 hides project-rejected deals; default includes them.
+    const includeRejected = searchParams.get("rejected") !== "0";
     // granularity=month bins the cohort/lifecycle charts by month; default week.
     const cohortGranularity = searchParams.get("granularity") === "month" ? "month" : "week";
 
@@ -67,7 +69,7 @@ export async function GET(request: NextRequest) {
       locations.length > 0 ? locations : undefined,
       range,
       filters,
-      { scope, pe, includeOnHold, cohortGranularity }
+      { scope, pe, includeOnHold, includeRejected, cohortGranularity }
     );
 
     return NextResponse.json({
