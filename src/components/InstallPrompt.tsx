@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -8,11 +9,17 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function InstallPrompt() {
+  const pathname = usePathname();
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
 
+  // Never show on customer-facing portal pages (e.g. survey self-scheduling).
+  const isPortal = pathname?.startsWith("/portal");
+
   useEffect(() => {
+    if (isPortal) return;
+
     // Don't show if already installed (standalone mode)
     if (window.matchMedia("(display-mode: standalone)").matches) return;
 
@@ -27,7 +34,7 @@ export function InstallPrompt() {
 
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [isPortal]);
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
@@ -45,7 +52,7 @@ export function InstallPrompt() {
     localStorage.setItem("pb-install-dismissed", "1");
   };
 
-  if (!visible) return null;
+  if (isPortal || !visible) return null;
 
   return (
     <div className="fixed bottom-6 left-4 right-4 z-[9999] mx-auto max-w-md animate-slideUp">

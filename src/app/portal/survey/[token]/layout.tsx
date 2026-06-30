@@ -4,6 +4,12 @@
  * orange logo badge and CTAs. Mirrors photonbrothers.com's top-bar treatment.
  */
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Scheduler - Photon Brothers",
+};
+
 export default function PortalLayout({
   children,
 }: {
