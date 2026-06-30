@@ -4,6 +4,64 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-29
+
+### PE Analytics & Timing (Major)
+- PE Analytics: Milestones/Lifecycle chart split, Resubmitted band, Day/Week/Month granularity, Ready/Submitted lifecycle basis
+- New "Expected (Submission)" forecast mode on the weekly chart; stat cards reflect only the active chart
+- Drill-down panels on every milestone bucket with Copy/CSV export; respects category filter
+- 3-way awaiting split on the Submitted card (PE / blocks / bench)
+- Re-Rejected After Approval report — surfaces docs that PE re-rejects post-approval
+- PE Timing card now reads from calculated averages on the deal, ordered CC→pay through remittance→pay
+- New timing cards: Submit → Pay, Construction Complete → payment (M1 & M2), Inspection/PTO → Submit
+- M2 aging now starts from M1 approval (PE can't review M2 until M1 is approved)
+- PE review aging measured from last upload; overdue-with-PE escalation flags excluded for missing/action-required docs
+- Remittance timing tile and Remittance chart mode hidden pending data quality fixes
+
+### PE Cron & Forecasting
+- Nightly cron writes per-deal avg submission→payment, construction-complete→payment, and CC→payment days
+- All three forecast legs computed as (mean + median) / 2 for robustness against outliers
+- Approved milestones now advance to Paid from the invoice paid-in-full date
+- Invoice-paid sync gated on a SystemConfig flag (live toggle, no redeploy)
+
+### PE Document Sync (Bug Fixes)
+- Reviewer notes now pulled BEFORE status push so fresh rejections never sync note-less; must-pull-first + retry guarantees notes on every new rejection
+- Doc statuses pushed to HubSpot AFTER action items are written (root cause of blank-Notes regressions)
+- Stale per-team notes cleared so they can't re-fire team tasks on resubmission
+- `readyOn` now uses the "Ready to Submit" date with inspection/PTO fallback (dropped flaky status-history derivation)
+
+### PE Uploader Attribution
+- Pre-tracking (pre-Apr-30) nameless uploads credited to Layla for payment-$ view
+- Drop the date gate: ALL unattributed uploads credited to Layla; residual Unknown $ folded in
+- Drill-down on the Doc Uploaders payment-$ view
+
+### PE Card
+- Document count rendered as submitted/required with approved · under review · action required breakdown
+
+### Pipeline Backlog / Funnel (Major)
+- New Ready-to-Build milestone bucket with Project Rejected reason flag
+- Interconnection Approved + Ready to Build milestone cards (Interconnection Approved made monotonic — fixes 121% conversion artifact)
+- 3-way RTB split (interconnection / blocks / bench); IC status pill for Awaiting-Interconnection, construction status pill for Awaiting-RTB
+- Daily-trend panel (event throughput + recorded backlog state)
+- Company-wide access (no longer ops-only)
+- Per-status revenue shown in the Pipeline Backlog
+- "Hide project-rejected" toggle (mirrors on-hold)
+- Don't paint reopened deals as Cancelled
+- Closed Out milestone shipped then reverted pending payment-source rework
+
+### Scheduler v2 — Construction Dispatch Board (Phase 1)
+- New flag-gated construction dispatch board (additive, no impact on existing scheduler)
+- Gated on SystemConfig flag (Vercel env cap workaround, toggle live without redeploy)
+- `force-dynamic` so the runtime flag isn't baked at build time
+
+### Scheduler
+- Survey availability slots suppressed on PB holidays
+
+### Cache / Reliability
+- Pipeline page no longer blanks on transient empty fetches (stale-while-revalidate guard)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
