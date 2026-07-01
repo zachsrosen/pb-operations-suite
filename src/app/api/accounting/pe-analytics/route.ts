@@ -6,7 +6,7 @@ import { PIPELINE_IDS } from "@/lib/deals-pipeline";
 import { PE_LEASE, calcLeaseFactorAdjustment, DC_QUALIFYING_MODULE_BRANDS, DC_QUALIFYING_BATTERY_BRANDS, type PeSystemType } from "@/lib/pricing-calculator";
 import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { listAllProjects } from "@/lib/pe-api";
+import { listAllProjects, PE_ACTION_DOC_MAP } from "@/lib/pe-api";
 import { getUploaderOverridesRaw } from "@/lib/pe-uploader-overrides";
 import { getPaymentAdjustments } from "@/lib/pe-payment-adjustments";
 import { prisma } from "@/lib/db";
@@ -43,6 +43,7 @@ import {
   type WeeklySplitCohort,
   type MilestoneDrillRow,
   type RejectionDrillDeal,
+  type RejectionNote,
   type MissingDrillDeal,
   type DocRejectionEvent,
   type PipelineGroupRow,
@@ -738,7 +739,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .map(([month, vals]) => ({ month, medianSubmitToApprove: median(vals), approvals: vals.length }));
 
   // --- Report 4: rejections (DB) ------------------------------------------------
-  const [docRows, changeLog, versionRows] = await Promise.all([
+  const [docRows, changeLog, versionRows, actionItems] = await Promise.all([
     prisma
       ? prisma.peDocumentReview.findMany({ select: { dealId: true, docName: true, status: true, notes: true } })
       : Promise.resolve([]),
@@ -756,6 +757,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
           })
           // Table ships with this feature — don't 500 the dashboard if the
           // migration hasn't been applied yet.
+          .catch(() => [])
+      : Promise.resolve([]),
+    // PE reviewer action items — the authoritative rejection comment source since
+    // the switch to the PE API (~2026-06-15). Before that, comments lived in
+    // changeLog.newNotes; the API-sync path only writes a "Synced from PE API"
+    // stub there, so the rejection panels froze. Fold these in below.
+    prisma
+      ? prisma.peActionItem
+          .findMany({
+            where: { dealId: { not: null } },
+            orderBy: { actionDate: "desc" },
+            select: { dealId: true, docType: true, docLabel: true, notes: true, reviewer: true, actionDate: true, resolvedAt: true },
+          })
           .catch(() => [])
       : Promise.resolve([]),
   ]);
@@ -798,6 +812,41 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     (changeLogByKey.get(k) ?? changeLogByKey.set(k, []).get(k)!).push({ status: ev.newStatus, date: ev.createdAt.toISOString(), note: ev.newNotes });
   }
   for (const list of changeLogByKey.values()) list.sort((a, b) => a.date.localeCompare(b.date));
+
+  // --- Fold in PE reviewer action items ---------------------------------------
+  // changeLog.newNotes stopped carrying the reviewer comment when the source
+  // flipped to the PE API (~2026-06-15), so any (deal, doc) rejected after that
+  // is invisible to the changeLog-driven panels. PeActionItem still has the real
+  // comment (reviewer, [H##] code, page, actionDate, resolvedAt). Use it to (a)
+  // expand the ever-rejected history so post-cutoff rejections enter the buckets,
+  // and (b) supply the comment + rejection date for drill rows and recent notes.
+  const normActionDoc = (docType: string | null, docLabel: string | null) =>
+    (docType ? PE_ACTION_DOC_MAP[docType] : undefined) ?? docLabel ?? docType ?? "";
+  const latestActionByKey = new Map<string, { note: string; date: string; reviewer: string | null }>();
+  const actionsByDeal = new Map<string, { docName: string; note: string; date: string }[]>();
+  for (const ai of actionItems) {
+    if (!ai.dealId) continue;
+    const docName = normActionDoc(ai.docType, ai.docLabel);
+    if (!docName) continue;
+    const key = `${ai.dealId}::${docName}`;
+    realRejectionHistory.add(key); // Set — safe to re-add existing keys
+    // actionItems are ordered newest-first, so the first seen per key is latest.
+    if (!latestActionByKey.has(key)) {
+      latestActionByKey.set(key, { note: (ai.notes ?? "").trim(), date: ai.actionDate.toISOString(), reviewer: ai.reviewer });
+    }
+    if (ai.notes) {
+      (actionsByDeal.get(ai.dealId) ?? actionsByDeal.set(ai.dealId, []).get(ai.dealId)!)
+        .push({ docName, note: ai.notes.trim(), date: ai.actionDate.toISOString() });
+    }
+  }
+  // Latest reviewer comment for a (deal, doc): prefer the fresh action item,
+  // fall back to the pre-cutoff changeLog comment.
+  const latestRejNote = (dealId: string, docName: string): string | null => {
+    const a = latestActionByKey.get(`${dealId}::${docName}`);
+    if (a?.note) return a.note;
+    const cl = rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes;
+    return cl ? cleanRejectionNote(cl) : null;
+  };
 
   // Re-rejections after milestone approval: a doc PE had APPROVED flips back to
   // ACTION_REQUIRED/REJECTED after the milestone was already approved. Track days
@@ -845,9 +894,14 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   const buildDrillRow = (key: string): RejectionDrillDeal => {
     const dealId = key.slice(0, key.indexOf("::"));
     const evs = changeLogByKey.get(key) ?? [];
-    const lastRej = evs.filter((e) => (e.status === "REJECTED" || e.status === "ACTION_REQUIRED") && hasReviewerComment(e.note)).at(-1);
-    const resub = evs.filter((e) => (e.status === "UNDER_REVIEW" || e.status === "UPLOADED") && (!lastRej || e.date > lastRej.date)).at(-1);
+    const action = latestActionByKey.get(key);
+    const lastRejCl = evs.filter((e) => (e.status === "REJECTED" || e.status === "ACTION_REQUIRED") && hasReviewerComment(e.note)).at(-1);
+    // Rejection anchor: prefer the PE action item (fresh since the API cutoff),
+    // fall back to the last commented changeLog rejection (pre-cutoff history).
+    const rejDate = action?.date ?? lastRejCl?.date;
+    const resub = evs.filter((e) => (e.status === "UNDER_REVIEW" || e.status === "UPLOADED") && (!rejDate || e.date > rejDate)).at(-1);
     const appr = evs.filter((e) => e.status === "APPROVED").at(-1);
+    const comment = action?.note || (lastRejCl ? cleanRejectionNote(lastRejCl.note ?? "") : "");
     const meta = dealMetaById.get(dealId);
     return {
       dealName: meta?.name ?? dealId,
@@ -855,8 +909,8 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       hubspotUrl: rejectionHsUrl(dealId),
       pePortalUrl: meta?.portal ?? null,
       driveUrl: meta?.drive ?? null,
-      comment: lastRej ? cleanRejectionNote(lastRej.note ?? "") : null,
-      dateRejected: dayOf(lastRej?.date),
+      comment: comment || null,
+      dateRejected: dayOf(rejDate),
       dateResubmitted: dayOf(resub?.date),
       dateApproved: dayOf(appr?.date),
     };
@@ -947,23 +1001,33 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     .map(([docName, ds]) => ({ docName, missing: ds.length, deals: ds.sort((a, b) => a.dealName.localeCompare(b.dealName)) }))
     .sort((a, b) => b.missing - a.missing);
 
-  const recentNotes = rejectionLog
-    .filter((ev) => ev.newNotes)
-    // Only docs still OPEN (rejected / action-required) — drop notes whose doc
-    // has since been resubmitted or approved (the rejection is resolved).
-    .filter((ev) => {
-      const cur = statusByDealDoc.get(`${ev.dealId}::${ev.docName}`);
-      return cur === "REJECTED" || cur === "ACTION_REQUIRED";
-    })
-    .slice(0, 20)
-    .map((ev) => ({
-      docName: ev.docName,
-      dealName: dealMetaById.get(ev.dealId)?.name ?? ev.dealName ?? "",
-      note: cleanRejectionNote(ev.newNotes!),
-      date: ev.createdAt.toISOString().split("T")[0],
-      pePortalUrl: dealMetaById.get(ev.dealId)?.portal ?? null,
-      hubspotUrl: rejectionHsUrl(ev.dealId),
-    }));
+  // Latest reviewer comment per doc that is STILL open (action-required), from
+  // PeActionItem (the fresh source). actionItems are newest-first, so the first
+  // occurrence per (deal, doc) is the latest note; keep docs currently sitting in
+  // ACTION_REQUIRED / REJECTED so resolved ones drop off.
+  const recentSeen = new Set<string>();
+  const recentNotes: RejectionNote[] = [];
+  for (const ai of actionItems) {
+    if (!ai.dealId || !ai.notes) continue;
+    const docName = normActionDoc(ai.docType, ai.docLabel);
+    if (!docName) continue;
+    const key = `${ai.dealId}::${docName}`;
+    if (recentSeen.has(key)) continue;
+    const cur = statusByDealDoc.get(key);
+    if (cur !== "REJECTED" && cur !== "ACTION_REQUIRED") continue;
+    const meta = dealMetaById.get(ai.dealId);
+    if (!meta) continue;
+    recentSeen.add(key);
+    recentNotes.push({
+      docName,
+      dealName: meta.name ?? "",
+      note: ai.notes.trim(),
+      date: ai.actionDate.toISOString().split("T")[0],
+      pePortalUrl: meta.portal ?? null,
+      hubspotUrl: rejectionHsUrl(ai.dealId),
+    });
+    if (recentNotes.length >= 20) break;
+  }
 
   // --- Drill-down rows ---------------------------------------------------------
   const M2_DOC_NAMES = ["Signed Interconnection Agreement", "Conditional Waiver — Final Payment", "Permission to Operate (PTO)"];
@@ -999,11 +1063,14 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       const actionRequiredDocs = docMap
         ? names.filter((n) => ["ACTION_REQUIRED", "REJECTED"].includes(docMap.get(n) ?? ""))
         : [];
+      // Prefer the fresh PE action item note (newest for one of this milestone's
+      // docs); fall back to the pre-cutoff changeLog comment.
+      const latestActionNote = (actionsByDeal.get(r.deal.dealId) ?? []).find((a) => names.includes(a.docName))?.note ?? null;
       const latestRejectionRaw =
         rejectionLog.find(
           (ev) => ev.dealId === r.deal.dealId && ev.newNotes && names.includes(ev.docName),
         )?.newNotes ?? null;
-      const latestRejectionNote = latestRejectionRaw ? cleanRejectionNote(latestRejectionRaw) : null;
+      const latestRejectionNote = latestActionNote ?? (latestRejectionRaw ? cleanRejectionNote(latestRejectionRaw) : null);
       return {
         dealId: r.deal.dealId,
         dealName: r.deal.dealName,
@@ -1059,6 +1126,24 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       dealName: dealNameById.get(ev.dealId) ?? ev.dealName ?? ev.dealId,
       docName: ev.docName,
       note,
+    });
+  }
+  // Fold in PE action items so the per-day chart stays fresh past the changeLog
+  // comment cutoff. One event per (deal, doc, day), deduped against changeLog.
+  for (const ai of actionItems) {
+    if (!ai.dealId) continue;
+    const docName = normActionDoc(ai.docType, ai.docLabel);
+    if (!docName) continue;
+    const date = ai.actionDate.toISOString().slice(0, 10);
+    const key = `${ai.dealId}|${docName}|${date}`;
+    if (docRejectionSeen.has(key)) continue;
+    docRejectionSeen.add(key);
+    docRejectionEvents.push({
+      date,
+      dealId: ai.dealId,
+      dealName: dealNameById.get(ai.dealId) ?? ai.dealId,
+      docName,
+      note: (ai.notes ?? "").slice(0, 240) || null,
     });
   }
   docRejectionEvents.sort((a, b) => a.date.localeCompare(b.date));
@@ -1399,10 +1484,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const dealId = k.slice(0, sep);
     const docName = k.slice(sep + 1);
     if (!dealNameById.has(dealId)) continue;
-    const note = bucket === "rejected"
-      ? (rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null)
-      : null;
-    const clean = note ? cleanRejectionNote(note) : null;
+    const clean = bucket === "rejected" ? latestRejNote(dealId, docName) : null;
     const key = who?.trim() || UNKNOWN_UPLOADER;
     const entry = (uploaderDocs[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] });
     const doc: UploaderDoc = {
@@ -1433,10 +1515,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const dealId = k.slice(0, sep);
     const docName = k.slice(sep + 1);
     if (!dealNameById.has(dealId)) continue;
-    const note = bucket === "rejected"
-      ? (rejectionLog.find((ev) => ev.dealId === dealId && ev.docName === docName && ev.newNotes)?.newNotes ?? null)
-      : null;
-    const clean = note ? cleanRejectionNote(note) : null;
+    const clean = bucket === "rejected" ? latestRejNote(dealId, docName) : null;
     for (const { who, weight } of owners) {
       const key = who?.trim() || UNKNOWN_UPLOADER;
       const entry = (uploaderDocsShared[key] ??= { approved: [], inReview: [], rejected: [], superseded: [] });

@@ -559,6 +559,7 @@ export const PE_ACTION_DOC_MAP: Record<string, string> = {
   conditional_progress_lien_waiver: "Conditional Progress Lien Waiver",
   signed_interconnection_agreement: "Signed Interconnection Agreement",
   conditional_waiver_final_payment: "Conditional Waiver — Final Payment",
+  conditional_waiver_final: "Conditional Waiver — Final Payment", // PE API's current id for this doc
   permission_to_operate: "Permission to Operate (PTO)",
   bill_of_materials: "Bill of Materials",
 };
