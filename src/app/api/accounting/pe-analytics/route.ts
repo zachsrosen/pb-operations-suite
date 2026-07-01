@@ -671,32 +671,50 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const pR2P = prop((d) => (m === "M1" ? d.m1RemitToPayDays : d.m2RemitToPayDays));
     const pFC = prop((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays));
     const pS2P = prop((d) => (m === "M1" ? d.m1SubmitToPayDays : d.m2SubmitToPayDays));
+    // Date-derived legs as {gap, anchor} pairs so we can also window them by the
+    // terminal event date below. `anchor` is the leg's endpoint (paid / submit).
+    const gapPair = (start: string | null, end: string | null): { v: number | null; anchor: string | null } => {
+      if (!start || !end) return { v: null, anchor: end };
+      const a = Date.parse(start.length <= 10 ? `${start}T00:00:00Z` : start);
+      const b = Date.parse(end.length <= 10 ? `${end}T00:00:00Z` : end);
+      if (Number.isNaN(a) || Number.isNaN(b)) return { v: null, anchor: end };
+      const g = Math.round((b - a) / 86_400_000);
+      return { v: g >= 0 ? g : null, anchor: end };
+    };
     // Construction Complete → payment, measured straight from the dates.
-    const cc2p = rs
-      .map((r) => {
-        const cc = r.deal.constructionCompleteDate;
-        const paid = m === "M1" ? r.deal.m1PaidDate : r.deal.m2PaidDate;
-        if (!cc || !paid) return null;
-        const a = Date.parse(cc.length <= 10 ? `${cc}T00:00:00Z` : cc);
-        const b = Date.parse(paid.length <= 10 ? `${paid}T00:00:00Z` : paid);
-        if (Number.isNaN(a) || Number.isNaN(b)) return null;
-        const g = Math.round((b - a) / 86_400_000);
-        return g >= 0 ? g : null;
-      })
-      .filter((v): v is number => v !== null);
+    const cc2pPairs = rs.map((r) => gapPair(r.deal.constructionCompleteDate, m === "M1" ? r.deal.m1PaidDate : r.deal.m2PaidDate));
+    const cc2p = cc2pPairs.map((p) => p.v).filter((v): v is number => v !== null);
     // Operational-ready → submission: M1 inspection pass / M2 PTO granted → submission.
-    const op2sub = rs
-      .map((r) => {
-        const start = m === "M1" ? r.deal.inspectionPassDate : r.deal.ptoGrantedDate;
-        const sub = m === "M1" ? r.deal.m1SubmissionDate : r.deal.m2SubmissionDate;
-        if (!start || !sub) return null;
-        const a = Date.parse(start.length <= 10 ? `${start}T00:00:00Z` : start);
-        const b = Date.parse(sub.length <= 10 ? `${sub}T00:00:00Z` : sub);
-        if (Number.isNaN(a) || Number.isNaN(b)) return null;
-        const g = Math.round((b - a) / 86_400_000);
-        return g >= 0 ? g : null;
-      })
-      .filter((v): v is number => v !== null);
+    const op2subPairs = rs.map((r) => gapPair(m === "M1" ? r.deal.inspectionPassDate : r.deal.ptoGrantedDate, m === "M1" ? r.deal.m1SubmissionDate : r.deal.m2SubmissionDate));
+    const op2sub = op2subPairs.map((p) => p.v).filter((v): v is number => v !== null);
+
+    // --- Last-30-day window: same six legs, restricted to milestones whose
+    // terminal event (payment, approval, or submission) landed in the last 30
+    // days. Prop legs are gated by the milestone's terminal date; date legs use
+    // the pair anchors above. Small samples are expected (noisier than lifetime).
+    const cutoff = Date.now() - 30 * 86_400_000;
+    const within30 = (d: string | null): boolean => {
+      if (!d) return false;
+      const t = Date.parse(d.length <= 10 ? `${d}T00:00:00Z` : d);
+      return !Number.isNaN(t) && t >= cutoff;
+    };
+    const paidAnchor = (d: PeDealRow) => (m === "M1" ? d.m1PaidDate : d.m2PaidDate);
+    const winProp = (sel: (d: PeDealRow) => number | null, anchor: (d: PeDealRow) => string | null) => {
+      const vals = rs.filter((r) => within30(anchor(r.deal))).map((r) => sel(r.deal)).filter((v): v is number => v !== null);
+      return { avg: meanDays(vals), n: vals.length };
+    };
+    const winDates = (pairs: { v: number | null; anchor: string | null }[]) => {
+      const vals = pairs.filter((p) => p.v !== null && within30(p.anchor)).map((p) => p.v as number);
+      return { avg: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null, n: vals.length };
+    };
+    const last30 = {
+      ccToPaid: winDates(cc2pPairs),
+      fullCycle: winProp((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays), paidAnchor),
+      opToSub: winDates(op2subPairs),
+      submitToPay: winProp((d) => (m === "M1" ? d.m1SubmitToPayDays : d.m2SubmitToPayDays), paidAnchor),
+      submitToApprove: winProp((d) => (m === "M1" ? d.m1SubmitToApproveDays : d.m2SubmitToApproveDays), (d) => (m === "M1" ? d.m1ApprovalDate : d.m2ApprovalDate)),
+      approveToPay: winProp((d) => (m === "M1" ? d.m1ApproveToPayDays : d.m2ApproveToPayDays), paidAnchor),
+    };
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -725,6 +743,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       medianOpToSub: median(op2sub),
       avgOpToSub: op2sub.length ? Math.round(op2sub.reduce((a, b) => a + b, 0) / op2sub.length) : null,
       opToSubCount: op2sub.length,
+      last30,
     };
   });
 
