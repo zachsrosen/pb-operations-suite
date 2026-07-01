@@ -440,10 +440,11 @@ function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
     return { label: "RTB blocked", tone: "red", reason, note: null, parked: false };
   }
   if (p.stageId === PROJECT_REJECTED_STAGE_ID) {
-    // No dedicated reject-reason field; the "why" is usually the sales
-    // communication note (corrections needed), with the catch-all rationale as
-    // fallback. (Install notes are excluded — they're install-prep, not the reason.)
-    const reason = p.salesCommunicationReason || p.pbShitShowReason || p.katsNotes || null;
+    // PM Rejection Reason (pm_rejection_reason) is the PM's dedicated field for
+    // this stage — populated on ~all rejected deals. Fall back to the sales
+    // communication note / catch-all rationale only when it's blank. (Install
+    // notes are excluded — they're install-prep, not the reason.)
+    const reason = p.pmRejectionReason || p.salesCommunicationReason || p.pbShitShowReason || p.katsNotes || null;
     return { label: "Project rejected", tone: "red", reason, note: null, parked: false };
   }
   if (p.layoutStatus === "Pending Sales Changes") {
