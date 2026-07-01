@@ -41,6 +41,11 @@ export const SYSTEM_TAG_CLASSES: Record<SystemType, string> = {
   legacy: "bg-zinc-500/15 text-zinc-300 border border-zinc-500/30",
 };
 
+/** Build the Zuper web URL for a job's details page. */
+export function zuperJobUrl(baseUrl: string, jobUid: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/jobs/${jobUid}/details`;
+}
+
 export function zuperStatusToTone(status: string): string {
   const s = status.toLowerCase();
   if (s.includes("complete")) return "bg-green-500/20 text-green-400 border-green-500/30";

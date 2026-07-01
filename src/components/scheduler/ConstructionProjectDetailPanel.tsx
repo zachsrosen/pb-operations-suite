@@ -1,6 +1,8 @@
 "use client";
 
 import { formatCurrency, formatShortDate } from "@/lib/format";
+import type { SubJobInfo } from "@/lib/scheduler-subjobs";
+import { SubJobLinks } from "./SubJobLinks";
 
 export interface ConstructionProjectDetailPanelProject {
   id: string;
@@ -17,6 +19,7 @@ export interface ConstructionProjectDetailPanelProject {
   closeDate: string | null;
   hubspotUrl: string;
   zuperJobUid?: string;
+  zuperSubJobs?: SubJobInfo[];
   zuperJobStatus?: string;
   zuperAssignedTo?: string[];
 }
@@ -216,16 +219,12 @@ export function ConstructionProjectDetailPanel({
             >
               HubSpot
             </a>
-            {project.zuperJobUid && (
-              <a
-                href={`${zuperWebBaseUrl}/jobs/${project.zuperJobUid}/details`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 text-center px-3 py-1.5 text-xs rounded-md bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/25"
-              >
-                Zuper
-              </a>
-            )}
+            <SubJobLinks
+              subJobs={project.zuperSubJobs}
+              zuperJobUid={project.zuperJobUid}
+              zuperWebBaseUrl={zuperWebBaseUrl}
+              variant="button"
+            />
           </div>
         </div>
       </div>
