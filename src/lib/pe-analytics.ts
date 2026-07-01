@@ -286,6 +286,26 @@ export interface TimingSummary {
   medianOpToSub: number | null;
   avgOpToSub: number | null;
   opToSubCount: number;
+  // Same six legs, restricted to milestones whose terminal event (payment,
+  // approval, or submission) landed in the last 30 days — a rolling read on
+  // recent turnaround. Powers the All-time ↔ Last 30d toggle.
+  last30: TimingWindow;
+}
+
+/** One windowed leg: average days + sample size within the window. */
+export interface TimingLeg {
+  avg: number | null;
+  n: number;
+}
+
+/** The six PE Timing legs, windowed (e.g. last 30 days). */
+export interface TimingWindow {
+  ccToPaid: TimingLeg; // anchor: paid date
+  fullCycle: TimingLeg; // inspection/PTO → pay; anchor: paid date
+  opToSub: TimingLeg; // inspection/PTO → submit; anchor: submission date
+  submitToPay: TimingLeg; // anchor: paid date
+  submitToApprove: TimingLeg; // anchor: approval date
+  approveToPay: TimingLeg; // anchor: paid date
 }
 
 export interface MonthlyTiming {
