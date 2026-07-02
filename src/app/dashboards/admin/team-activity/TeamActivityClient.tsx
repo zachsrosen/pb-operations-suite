@@ -64,7 +64,20 @@ const HEADERS = [
   "Verdict",
 ];
 
-/** Shared summary table with expandable per-person daily detail. */
+interface DrillEvent {
+  ts: string;
+  source: ActivitySource;
+  kind: string | null;
+  objectKey: string | null;
+}
+const drillTimeFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "America/Denver",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** Shared summary table with expandable per-person daily detail + per-day drilldown. */
 function ActivityTable({
   summaries,
   personDays,
@@ -72,6 +85,7 @@ function ActivityTable({
   onToggle,
   onRemove,
   emptyText,
+  only,
 }: {
   summaries: SummaryRow[];
   personDays: DayRow[];
@@ -79,7 +93,31 @@ function ActivityTable({
   onToggle: (email: string) => void;
   onRemove?: (email: string) => void;
   emptyText: string;
+  only: string;
 }) {
+  const [drill, setDrill] = useState<{ key: string; loading: boolean; error: string | null; events: DrillEvent[] } | null>(
+    null,
+  );
+
+  const openDrill = async (email: string, day: string) => {
+    const key = `${email}|${day}`;
+    if (drill?.key === key) {
+      setDrill(null);
+      return;
+    }
+    setDrill({ key, loading: true, error: null, events: [] });
+    try {
+      const res = await fetch(
+        `/api/admin/team-activity/events?email=${encodeURIComponent(email)}&day=${day}&only=${only}`,
+      );
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
+      const json = (await res.json()) as { events: DrillEvent[] };
+      setDrill({ key, loading: false, error: null, events: json.events });
+    } catch (err) {
+      setDrill({ key, loading: false, error: err instanceof Error ? err.message : String(err), events: [] });
+    }
+  };
+
   return (
     <div className="bg-surface border border-t-border rounded-lg overflow-x-auto">
       <table className="w-full text-sm min-w-[860px]">
@@ -151,27 +189,65 @@ function ActivityTable({
                             </tr>
                           </thead>
                           <tbody>
-                            {days.map((d) => (
-                              <tr key={d.day} className={d.weekday ? "" : "text-muted"}>
-                                <td className="px-2 py-1">
-                                  {d.day}
-                                  {d.weekday ? "" : " (wknd)"}
-                                </td>
-                                <td className="px-2 py-1 text-right">{d.eventCount}</td>
-                                <td className="px-2 py-1 text-right">{d.interactions}</td>
-                                <td className="px-2 py-1 text-right">{h1(d.spanHours)}h</td>
-                                <td className="px-2 py-1 text-right">{h1(d.activeHours)}h</td>
-                                <td className="px-2 py-1 text-right">{d.talkMinutes || "—"}</td>
-                                <td className="px-2 py-1 text-right">{clock(d.firstMinute)}</td>
-                                <td className="px-2 py-1 text-right">{clock(d.lastMinute)}</td>
-                                <td className="px-2 py-1">
-                                  {(["pbops", "aircall", "zuper", "hubspot", "google"] as const)
-                                    .filter((k) => d.perSource[k] > 0)
-                                    .map((k) => `${k}:${d.perSource[k]}`)
-                                    .join("  ") || "—"}
-                                </td>
-                              </tr>
-                            ))}
+                            {days.map((d) => {
+                              const drillKey = `${s.email}|${d.day}`;
+                              const drilled = drill?.key === drillKey;
+                              return (
+                                <Fragment key={d.day}>
+                                  <tr
+                                    onClick={() => openDrill(s.email, d.day)}
+                                    className={`cursor-pointer hover:bg-surface-2 ${d.weekday ? "" : "text-muted"}`}
+                                  >
+                                    <td className="px-2 py-1">
+                                      <span className="text-muted mr-1">{drilled ? "▾" : "▸"}</span>
+                                      {d.day}
+                                      {d.weekday ? "" : " (wknd)"}
+                                    </td>
+                                    <td className="px-2 py-1 text-right">{d.eventCount}</td>
+                                    <td className="px-2 py-1 text-right">{d.interactions}</td>
+                                    <td className="px-2 py-1 text-right">{h1(d.spanHours)}h</td>
+                                    <td className="px-2 py-1 text-right">{h1(d.activeHours)}h</td>
+                                    <td className="px-2 py-1 text-right">{d.talkMinutes || "—"}</td>
+                                    <td className="px-2 py-1 text-right">{clock(d.firstMinute)}</td>
+                                    <td className="px-2 py-1 text-right">{clock(d.lastMinute)}</td>
+                                    <td className="px-2 py-1">
+                                      {(["pbops", "aircall", "zuper", "hubspot", "google"] as const)
+                                        .filter((k) => d.perSource[k] > 0)
+                                        .map((k) => `${k}:${d.perSource[k]}`)
+                                        .join("  ") || "—"}
+                                    </td>
+                                  </tr>
+                                  {drilled && (
+                                    <tr>
+                                      <td colSpan={9} className="px-2 pb-2">
+                                        {drill.loading && <div className="text-muted py-1">Loading events…</div>}
+                                        {drill.error && <div className="text-amber-400 py-1">{drill.error}</div>}
+                                        {!drill.loading && !drill.error && (
+                                          <div className="max-h-64 overflow-y-auto rounded border border-t-border bg-surface">
+                                            {drill.events.length === 0 && (
+                                              <div className="text-muted px-2 py-2">No individual events.</div>
+                                            )}
+                                            {drill.events.map((ev, i) => (
+                                              <div
+                                                key={i}
+                                                className="flex items-baseline gap-2 px-2 py-0.5 border-b border-t-border/40 last:border-0"
+                                              >
+                                                <span className="font-mono text-muted w-10 shrink-0">
+                                                  {drillTimeFmt.format(new Date(ev.ts))}
+                                                </span>
+                                                <span className="text-purple-300 w-14 shrink-0">{SOURCE_LABEL[ev.source]}</span>
+                                                <span className="text-foreground">{ev.kind ?? "event"}</span>
+                                                {ev.objectKey && <span className="text-muted">· {ev.objectKey}</span>}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -404,6 +480,7 @@ export default function TeamActivityClient() {
         expanded={expanded}
         onToggle={(email) => setExpanded((cur) => (cur === email ? null : email))}
         emptyText={isFetching ? "Running…" : "No activity in this range."}
+        only={applied.sources.join(",")}
       />
 
       {/* Look up anyone */}
@@ -457,6 +534,7 @@ export default function TeamActivityClient() {
               onToggle={(email) => setExpanded((cur) => (cur === email ? null : email))}
               onRemove={(email) => setExtras((prev) => prev.filter((x) => x.summary.email !== email))}
               emptyText="No one looked up yet."
+              only={applied.sources.join(",")}
             />
           </div>
         )}
