@@ -22,17 +22,20 @@ export interface RosterMember {
   zuperName?: string;
 }
 
+// Identities verified against the User table + Aircall on 2026-07-02. Canonical
+// email is the person's real login/Google address; do not invent first.last
+// variants. HubSpot resolves via directory lookup on these + aliases.
 export const DEFAULT_ROSTER: RosterMember[] = [
-  { email: "zach.rosen@photonbrothers.com", name: "Zach Rosen" },
-  { email: "alexis.severson@photonbrothers.com", name: "Alexis Severson", aliases: ["alexis@photonbrothers.com"] },
+  { email: "zach@photonbrothers.com", name: "Zach Rosen", aliases: ["zach.rosen@photonbrothers.com"] },
+  { email: "alexis@photonbrothers.com", name: "Alexis Severson", aircallId: "965988" },
   { email: "peter.zaun@photonbrothers.com", name: "Peter Zaun" },
-  { email: "kaitlyn.arnoldi@photonbrothers.com", name: "Kaitlyn Arnoldi", aliases: ["kaitlyn@photonbrothers.com"] },
+  { email: "kaitlyn@photonbrothers.com", name: "Kaitlyn Martinez", aircallId: "966000" },
   { email: "jacob.campbell@photonbrothers.com", name: "Jacob Campbell" },
-  { email: "layla.alqurashi@photonbrothers.com", name: "Layla Alqurashi", aliases: ["layla@photonbrothers.com"] },
-  { email: "kat.pospischil@photonbrothers.com", name: "Kat Pospischil", aliases: ["kat@photonbrothers.com"] },
+  { email: "layla@photonbrothers.com", name: "Layla Counts", aircallId: "1217192" },
+  { email: "kat@photonbrothers.com", name: "Katlyyn Arnoldi", aircallId: "1079651" },
   { email: "kristofer.stuhff@photonbrothers.com", name: "Kristofer Stuhff" },
   { email: "elliott.gunning@photonbrothers.com", name: "Elliott Gunning" },
-  { email: "natasha.sanford@photonbrothers.com", name: "Natasha Sanford", hubspotUserId: "77265642", aircallId: "1522029" },
+  { email: "natasha.sanford@photonbrothers.com", name: "Natasha Wooten Sanford", hubspotUserId: "77265642", aircallId: "1522029" },
 ];
 
 /** All lowercase addresses a roster member is known by (canonical + aliases). */
