@@ -8,7 +8,7 @@ import type { PersonSummary, PersonDayMetric, Verdict, ActivitySource } from "@/
 
 const ALL_SOURCES: ActivitySource[] = ["pbops", "aircall", "zuper", "hubspot", "google"];
 const SOURCE_LABEL: Record<ActivitySource, string> = {
-  pbops: "PB Ops",
+  pbops: "PB Tech Ops",
   aircall: "Aircall",
   zuper: "Zuper",
   hubspot: "HubSpot",
@@ -244,7 +244,7 @@ function ActivityTable({
                                     <td className="px-2 py-1">
                                       {(["pbops", "aircall", "zuper", "hubspot", "google"] as const)
                                         .filter((k) => d.perSource[k] > 0)
-                                        .map((k) => `${k}:${d.perSource[k]}`)
+                                        .map((k) => `${SOURCE_LABEL[k]}:${d.perSource[k]}`)
                                         .join("  ") || "—"}
                                     </td>
                                   </tr>
@@ -527,7 +527,7 @@ export default function TeamActivityClient() {
               key={s.source}
               className="text-xs px-2 py-1 rounded-md border bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
             >
-              {s.source} · {s.events.toLocaleString()} events
+              {SOURCE_LABEL[s.source as ActivitySource] ?? s.source} · {s.events.toLocaleString()} events
             </span>
           ))}
           {data.sources.skipped.map((s) => (
@@ -536,7 +536,7 @@ export default function TeamActivityClient() {
               title={s.reason}
               className="text-xs px-2 py-1 rounded-md border bg-amber-500/10 text-amber-300 border-amber-500/30 cursor-help"
             >
-              {s.source} skipped ⓘ
+              {SOURCE_LABEL[s.source as ActivitySource] ?? s.source} skipped ⓘ
             </span>
           ))}
         </div>
