@@ -620,6 +620,32 @@ model ZuperJobCache {
   @@index([lastSyncedAt])
 }
 
+// Per-employee activity pulled from external systems whose attribution lives
+// only in per-record detail responses (Zuper job timelines, later PandaDoc doc
+// details). Populated by sync crons; read by the team-activity report adapters.
+// Generic on purpose so new sources reuse the same table + read path.
+model ExternalActivity {
+  id String @id @default(cuid())
+
+  source        String // "zuper" | "pandadoc" | ...
+  sourceEventId String // idempotency key (e.g. Zuper status_history_uid)
+
+  userEmail String // lowercased PB employee email (attribution)
+  userName  String?
+
+  occurredAt DateTime // when the action happened
+  kind       String // e.g. "job Completed", "doc sent"
+  label      String? // human-readable (job title, doc name)
+
+  dealId    String? // linked HubSpot deal, when known
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@unique([source, sourceEventId])
+  @@index([source, userEmail, occurredAt])
+  @@index([occurredAt])
+}
+
 // ===========================================
 // ZUPER SCHEDULE EVENT LOG
 // ===========================================

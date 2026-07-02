@@ -78,7 +78,8 @@
     "src/app/api/cron/zuper-job-backfill/route.ts": { "maxDuration": 120 },
     "src/app/api/pe/photo-package/triage/route.ts": { "maxDuration": 300 },
     "src/app/api/pe/photo-package/assemble/route.ts": { "maxDuration": 300 },
-    "src/app/api/cron/vishtik-id-sync/route.ts": { "maxDuration": 300 }
+    "src/app/api/cron/vishtik-id-sync/route.ts": { "maxDuration": 300 },
+    "src/app/api/cron/zuper-field-activity-sync/route.ts": { "maxDuration": 300 }
   },
   "crons": [
     {
@@ -210,7 +211,8 @@
     { "path": "/api/cron/zuper-property-sync", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/zuper-job-backfill", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/vishtik-id-sync", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/workflow-map-sync", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/workflow-map-sync", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/zuper-field-activity-sync", "schedule": "0 */3 * * *" }
   ],
   "redirects": [
     {

@@ -118,43 +118,39 @@ export async function aircallAdapter(
 }
 
 // ---------------------------------------------------------------------------
-// Zuper — ZuperJobCache (our DB; LOW SIGNAL: schedule/complete dates only)
+// Zuper — ExternalActivity (job status changes by employee, populated by the
+// zuper-field-activity-sync cron). Replaces the old schedule-date-only version.
 // ---------------------------------------------------------------------------
 export async function zuperAdapter(
   prisma: PrismaClient,
   range: DateRange,
   roster: RosterMember[],
 ): Promise<AdapterResult> {
-  const names = roster
-    .map((m) => ({ email: m.email.toLowerCase(), name: (m.zuperName ?? m.name).toLowerCase() }))
-    .filter((m) => m.name);
-  const rows = await prisma.zuperJobCache.findMany({
-    where: {
-      OR: [
-        { completedDate: { gte: range.from, lte: range.to } },
-        { scheduledStart: { gte: range.from, lte: range.to } },
-      ],
-    },
-    select: { assignedUsers: true, completedDate: true, scheduledStart: true, jobUid: true },
-  });
-  const events: ActivityEvent[] = [];
-  for (const r of rows) {
-    const assigned = Array.isArray(r.assignedUsers) ? (r.assignedUsers as Array<{ user_name?: string }>) : [];
-    const assignedNames = assigned.map((a) => lc(a.user_name)).filter(Boolean);
-    for (const m of names) {
-      if (!assignedNames.some((n) => n.includes(m.name) || m.name.includes(n))) continue;
-      const stamps: Array<[Date | null, string]> = [
-        [r.completedDate, "job_completed"],
-        [r.scheduledStart, "job_scheduled"],
-      ];
-      for (const [ts, kind] of stamps) {
-        if (ts && ts >= range.from && ts <= range.to) {
-          events.push({ email: m.email, timestamp: ts, source: "zuper", objectKey: `job:${r.jobUid}`, kind });
-        }
-      }
+  const index = buildEmailIndex(roster);
+  const emails = [...index.keys()];
+  try {
+    const rows = await prisma.externalActivity.findMany({
+      where: { source: "zuper", userEmail: { in: emails, mode: "insensitive" }, occurredAt: { gte: range.from, lte: range.to } },
+      select: { userEmail: true, occurredAt: true, kind: true, label: true, dealId: true },
+    });
+    const events: ActivityEvent[] = [];
+    for (const r of rows) {
+      const email = index.get(lc(r.userEmail));
+      if (!email) continue;
+      events.push({
+        email,
+        timestamp: r.occurredAt,
+        source: "zuper",
+        kind: r.kind,
+        label: r.label ?? undefined,
+        objectKey: r.dealId ? `DEAL:${r.dealId}` : undefined,
+      });
     }
+    return { events };
+  } catch (e) {
+    // ExternalActivity table not migrated yet (or read failed) — degrade cleanly.
+    return { events: [], skipped: `Zuper field activity unavailable (needs migration + sync): ${msg(e)}` };
   }
-  return { events };
 }
 
 // ---------------------------------------------------------------------------
