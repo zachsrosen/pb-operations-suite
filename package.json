@@ -14,6 +14,7 @@
     "crew:deactivate": "tsx scripts/deactivate-crew-member.ts",
     "aircall:backfill": "tsx scripts/aircall-backfill.ts",
     "aircall:analytics-import": "tsx scripts/aircall-analytics-import.ts",
+    "team-activity": "tsx scripts/team-activity-report.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
