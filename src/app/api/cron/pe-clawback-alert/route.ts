@@ -22,7 +22,7 @@ import { hubspotClient } from "@/lib/hubspot";
  */
 export const maxDuration = 30;
 
-const RECIPIENTS = ["zach@photonbrothers.com"];
+const RECIPIENTS = ["zach@photonbrothers.com", "layla@photonbrothers.com"];
 const PORTAL_ID = (process.env.HUBSPOT_PORTAL_ID || "21710069").replace(/[^0-9]/g, "") || "21710069";
 const WINDOW_HOURS = 25; // daily run; 25h overlaps slightly so nothing slips a gap
 
