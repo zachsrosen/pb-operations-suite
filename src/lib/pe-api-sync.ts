@@ -49,6 +49,7 @@ import { detectAndConsumeResubmissions } from "@/lib/pe-uploader-overrides";
 import { notifyOverrideResubmissions } from "@/lib/pe-doc-notify";
 import { hubspotClient } from "@/lib/hubspot";
 import { backfillPePaymentSplits } from "@/lib/pe-payment-split";
+import { bumpPeRecalcNonceIfMonthChanged } from "@/lib/pe-recalc-nonce";
 
 /**
  * Stamp pe_portal_url + pe_project_id on matched deals that don't have them
@@ -792,6 +793,29 @@ export async function syncFromPeApi(options?: {
       } catch (err) {
         result.errors.push(
           `PE payment split sync failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 4e: Once per month, bump pe_recalc_nonce on every PE deal so the
+    // NOW-based KPI calc properties (this-month / expected / overdue) recompute
+    // for the new month. HubSpot won't recompute them on its own when only the
+    // calendar changes; the nonce is a referenced dependency, so bumping it is
+    // the trigger. No-op the rest of the month. Same flag as Step 4d.
+    // -----------------------------------------------------------------------
+    if (process.env.PE_PAYMENT_SPLIT_SYNC_ENABLED !== "false") {
+      try {
+        const bump = await bumpPeRecalcNonceIfMonthChanged();
+        if (bump.bumped) {
+          console.warn(
+            `[pe-api-sync] Bumped pe_recalc_nonce on ${bump.deals} PE deals for month ${bump.month} ` +
+              `(refreshes NOW-based KPI calc properties).`,
+          );
+        }
+      } catch (err) {
+        result.errors.push(
+          `PE recalc-nonce bump failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
