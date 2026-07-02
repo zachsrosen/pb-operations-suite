@@ -156,6 +156,14 @@ const LINKS: SuitePageCard[] = [
     section: "Communications",
   },
   {
+    href: "/dashboards/admin/team-activity",
+    title: "Team Activity",
+    description: "Per-employee working-hours across HubSpot, PB Ops, Aircall, Zuper, and Google.",
+    tag: "PEOPLE",
+    icon: "TA",
+    section: "Communications",
+  },
+  {
     href: "/prototypes/solar-checkout",
     title: "Solar Checkout Prototype",
     description: "Customer-facing checkout flow prototype.",
