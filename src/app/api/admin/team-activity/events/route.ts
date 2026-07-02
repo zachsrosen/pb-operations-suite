@@ -147,6 +147,7 @@ export async function GET(request: Request) {
   }
 
   const labelFor = (e: ActivityEvent): string | null => {
+    if (e.label) return e.label; // source-provided description (e.g. PB Tech Ops)
     if (!e.objectKey) return null;
     if (e.objectKey.startsWith("DEAL:")) {
       const name = dealNames.get(e.objectKey.slice("DEAL:".length));

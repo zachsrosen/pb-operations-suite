@@ -22,6 +22,8 @@ export interface ActivityEvent {
   objectKey?: string;
   /** e.g. "task_update", "call", "login" - for per-source breakdown */
   kind?: string;
+  /** human-readable description for the drilldown, when the source has one */
+  label?: string;
 }
 
 export interface TalkTimeRecord {

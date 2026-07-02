@@ -59,7 +59,7 @@ export async function pbopsAdapter(
   const emails = [...index.keys()];
   const rows = await prisma.activityLog.findMany({
     where: { userEmail: { in: emails, mode: "insensitive" }, createdAt: { gte: range.from, lte: range.to } },
-    select: { userEmail: true, type: true, entityType: true, entityId: true, createdAt: true },
+    select: { userEmail: true, type: true, entityType: true, entityId: true, createdAt: true, description: true, entityName: true },
   });
   const events: ActivityEvent[] = [];
   for (const r of rows) {
@@ -71,6 +71,7 @@ export async function pbopsAdapter(
       source: "pbops",
       objectKey: r.entityType && r.entityId ? `${r.entityType}:${r.entityId}` : undefined,
       kind: r.type,
+      label: r.description || r.entityName || undefined,
     });
   }
   return { events };
