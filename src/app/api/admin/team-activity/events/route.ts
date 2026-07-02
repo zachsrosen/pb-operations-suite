@@ -110,6 +110,25 @@ export async function GET(request: Request) {
     }
   }
 
+  // Resolve Aircall call ids -> "to/from <number> · Nm talk".
+  const callLabels = new Map<string, string>();
+  const callIds = [
+    ...new Set(
+      raw.filter((e) => e.source === "aircall" && e.objectKey?.startsWith("call:")).map((e) => e.objectKey!.slice("call:".length)),
+    ),
+  ];
+  if (callIds.length) {
+    const calls = await prisma.aircallCallCache.findMany({
+      where: { id: { in: callIds } },
+      select: { id: true, customerNumber: true, talkTimeSec: true, direction: true },
+    });
+    for (const c of calls) {
+      const who = c.customerNumber ?? "unknown";
+      const mins = Math.round((c.talkTimeSec ?? 0) / 60);
+      callLabels.set(c.id, `${c.direction === "inbound" ? "from" : "to"} ${who}${mins ? ` · ${mins}m talk` : ""}`);
+    }
+  }
+
   // Resolve Zuper job UIDs -> "Category: title (status)".
   const jobLabels = new Map<string, string>();
   const jobUids = [
@@ -139,6 +158,9 @@ export async function GET(request: Request) {
     }
     if (e.objectKey.startsWith("job:")) {
       return jobLabels.get(e.objectKey.slice("job:".length)) ?? e.objectKey;
+    }
+    if (e.objectKey.startsWith("call:")) {
+      return callLabels.get(e.objectKey.slice("call:".length)) ?? null;
     }
     return e.objectKey;
   };

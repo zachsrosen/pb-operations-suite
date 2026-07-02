@@ -95,7 +95,7 @@ export async function aircallAdapter(
         ...(aircallIds.length ? [{ userAircallId: { in: aircallIds } }] : []),
       ],
     },
-    select: { userEmail: true, userAircallId: true, startedAt: true, talkTimeSec: true },
+    select: { id: true, userEmail: true, userAircallId: true, startedAt: true, talkTimeSec: true, direction: true, status: true },
   });
   const idToEmail = new Map<string, string>();
   for (const m of roster) if (m.aircallId) idToEmail.set(m.aircallId, m.email.toLowerCase());
@@ -105,7 +105,7 @@ export async function aircallAdapter(
   for (const r of rows) {
     const email = index.get(lc(r.userEmail)) ?? (r.userAircallId ? idToEmail.get(r.userAircallId) : undefined);
     if (!email) continue;
-    events.push({ email, timestamp: r.startedAt, source: "aircall", kind: "call" });
+    events.push({ email, timestamp: r.startedAt, source: "aircall", kind: `${r.direction} ${r.status}`, objectKey: `call:${r.id}` });
     const day = denverDay(r.startedAt);
     const key = `${email} ${day}`;
     const t = talkMap.get(key) ?? { email, day, talkSec: 0, calls: 0 };
