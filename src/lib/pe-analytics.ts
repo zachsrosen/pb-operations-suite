@@ -489,12 +489,16 @@ export interface ReRejection {
   dealName: string;
   milestone: "M1" | "M2";
   docName: string;
-  approvedOn: string;            // milestone approval date (YYYY-MM-DD)
+  approvedOn: string;            // the doc's own approval date (YYYY-MM-DD)
   reRejectedOn: string;          // when the approved doc flipped back (YYYY-MM-DD)
-  daysAfterApproval: number;     // approval → re-rejection
+  daysAfterApproval: number;     // doc approval → re-rejection
   fixedOn: string | null;        // re-approval date, null if still open
   daysToFix: number | null;      // re-rejection → re-approval, null if still open
   reviewerNote: string | null;   // PE reviewer reason on the re-rejection
+  // True when the milestone was already fully approved before this re-rejection
+  // (the costliest clawbacks). False = doc re-rejected while the milestone was
+  // still in review.
+  afterMilestoneApproval: boolean;
   hubspotUrl: string;
   pePortalUrl: string | null;
 }

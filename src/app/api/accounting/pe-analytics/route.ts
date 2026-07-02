@@ -867,10 +867,12 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     return cl ? cleanRejectionNote(cl) : null;
   };
 
-  // Re-rejections after milestone approval: a doc PE had APPROVED flips back to
-  // ACTION_REQUIRED/REJECTED after the milestone was already approved. Track days
-  // after approval and days to fix (null until the doc is re-approved). Same-day
-  // churn on one doc is collapsed to a single row.
+  // Re-rejections after approval, at the DOC level: a doc PE had APPROVED flips
+  // back to ACTION_REQUIRED/REJECTED. Days-after is measured from the doc's OWN
+  // prior approval (not the milestone), so single-doc clawbacks count even before
+  // the milestone is fully approved (the ANCHOR pattern on Customer Agreements).
+  // `afterMilestoneApproval` flags the subset where the milestone was already
+  // approved (the costliest). Same-day churn on one doc is collapsed to one row.
   const M2_RR_SET = new Set(["Signed Interconnection Agreement", "Conditional Waiver — Final Payment", "Permission to Operate (PTO)"]);
   const dealById = new Map(deals.map((d) => [d.dealId, d]));
   const reRejSeen = new Set<string>();
@@ -881,15 +883,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const deal = dealById.get(ev.dealId);
     if (!deal) continue;
     const isM2 = M2_RR_SET.has(ev.docName);
-    const apprDate = isM2 ? deal.m2ApprovalDate : deal.m1ApprovalDate;
-    if (!apprDate) continue;
     const rejIso = ev.createdAt.toISOString();
     const rejDay = rejIso.slice(0, 10);
-    if (rejDay <= apprDate.slice(0, 10)) continue; // only AFTER the milestone was approved
+    // The doc's own approval date = the last APPROVED transition before this
+    // re-rejection in the doc's timeline; fall back to the milestone approval
+    // date if the doc's approval predates the change-log window.
+    const list = changeLogByKey.get(`${ev.dealId}::${ev.docName}`) ?? [];
+    const priorApproval = [...list].reverse().find((x) => x.status === "APPROVED" && x.date < rejIso);
+    const milestoneApproval = isM2 ? deal.m2ApprovalDate : deal.m1ApprovalDate;
+    const docApprovedOn = (priorApproval?.date ?? milestoneApproval ?? undefined)?.slice(0, 10);
+    if (!docApprovedOn) continue; // can't date the approval — skip
     const dedupKey = `${ev.dealId}|${ev.docName}|${rejDay}`;
     if (reRejSeen.has(dedupKey)) continue;
     reRejSeen.add(dedupKey);
-    const list = changeLogByKey.get(`${ev.dealId}::${ev.docName}`) ?? [];
     const reAppr = list.find((x) => x.status === "APPROVED" && x.date > rejIso);
     const meta = dealMetaById.get(ev.dealId);
     reRejections.push({
@@ -897,12 +903,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       dealName: meta?.name ?? ev.dealName ?? ev.dealId,
       milestone: isM2 ? "M2" : "M1",
       docName: ev.docName,
-      approvedOn: apprDate.slice(0, 10),
+      approvedOn: docApprovedOn,
       reRejectedOn: rejDay,
-      daysAfterApproval: Math.round((dayMs(rejDay) - dayMs(apprDate)) / 86_400_000),
+      daysAfterApproval: Math.round((dayMs(rejDay) - dayMs(docApprovedOn)) / 86_400_000),
       fixedOn: reAppr ? reAppr.date.slice(0, 10) : null,
       daysToFix: reAppr ? Math.round((Date.parse(reAppr.date) - Date.parse(rejIso)) / 86_400_000) : null,
       reviewerNote: ev.newNotes ?? null,
+      afterMilestoneApproval: !!milestoneApproval && rejDay > milestoneApproval.slice(0, 10),
       hubspotUrl: rejectionHsUrl(ev.dealId),
       pePortalUrl: meta?.portal ?? null,
     });

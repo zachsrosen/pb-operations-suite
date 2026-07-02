@@ -1913,21 +1913,39 @@ function Section({ title, subtitle, actions, children }: { title: string; subtit
 
 /** Docs PE re-rejected after the milestone was already approved — the clawback report. */
 function ReRejectionsSection({ rows }: { rows: ReRejection[] }) {
-  const fixed = rows.filter((r) => r.daysToFix !== null);
-  const open = rows.length - fixed.length;
+  // "All docs" = any doc re-rejected after it was doc-level approved.
+  // "After milestone" = only those where the milestone was already fully approved.
+  const [scope, setScope] = useState<"all" | "milestone">("all");
+  const postMs = rows.filter((r) => r.afterMilestoneApproval).length;
+  const shown = scope === "milestone" ? rows.filter((r) => r.afterMilestoneApproval) : rows;
+  const fixed = shown.filter((r) => r.daysToFix !== null);
+  const open = shown.length - fixed.length;
   const avgFix = fixed.length ? Math.round(fixed.reduce((s, r) => s + (r.daysToFix ?? 0), 0) / fixed.length) : null;
-  const avgAfter = rows.length ? Math.round(rows.reduce((s, r) => s + r.daysAfterApproval, 0) / rows.length) : null;
+  const avgAfter = shown.length ? Math.round(shown.reduce((s, r) => s + r.daysAfterApproval, 0) / shown.length) : null;
   return (
     <Section
       title="Re-Rejected After Approval"
-      subtitle="Docs PE flipped back to action-required AFTER the milestone was approved — the costly clawbacks. Days after = approval → re-rejection. Days to fix = re-rejection → re-approval (blank if still open). Same-day churn collapsed to one row; window limited to the change-log history."
+      subtitle="Docs PE flipped back to action-required after they had been approved. Days after = the doc's own approval → re-rejection. Days to fix = re-rejection → re-approval (blank if still open). Same-day churn collapsed to one row; window limited to the change-log history."
+      actions={
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {([["all", "All docs"], ["milestone", `After milestone (${postMs})`]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setScope(key)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${scope === key ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "border-t-border text-muted hover:text-foreground"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      }
     >
-      {rows.length === 0 ? (
-        <div className="text-sm text-muted py-6 text-center">No post-approval re-rejections in the tracked window.</div>
+      {shown.length === 0 ? (
+        <div className="text-sm text-muted py-6 text-center">No {scope === "milestone" ? "post-milestone-approval" : "post-approval"} re-rejections in the tracked window.</div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-            <MiniStat label="Re-rejections" value={String(rows.length)} subtitle={`${new Set(rows.map((r) => r.dealId)).size} deals`} />
+            <MiniStat label="Re-rejections" value={String(shown.length)} subtitle={`${new Set(shown.map((r) => r.dealId)).size} deals`} />
             <MiniStat label="Still open" value={String(open)} subtitle="not re-approved yet" />
             <MiniStat label="Avg days to fix" value={avgFix === null ? "—" : `${avgFix}d`} subtitle={`${fixed.length} re-approved`} />
             <MiniStat label="Avg days after approval" value={avgAfter === null ? "—" : `${avgAfter}d`} subtitle="approval → re-rejection" />
@@ -1940,18 +1958,23 @@ function ReRejectionsSection({ rows }: { rows: ReRejection[] }) {
                   <th className="py-1.5 pr-3 font-normal">MS</th>
                   <th className="py-1.5 pr-3 font-normal">Document</th>
                   <th className="py-1.5 pr-3 font-normal">Approved</th>
-                  <th className="py-1.5 pr-3 font-normal text-right" title="Days from milestone approval to re-rejection">Days after</th>
+                  <th className="py-1.5 pr-3 font-normal text-right" title="Days from the doc's own approval to re-rejection">Days after</th>
                   <th className="py-1.5 pr-3 font-normal">Re-rejected</th>
                   <th className="py-1.5 pr-3 font-normal text-right" title="Days from re-rejection to re-approval (blank if still open)">Days to fix</th>
                   <th className="py-1.5 font-normal">Links</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/20">
-                {rows.map((r, i) => (
+                {shown.map((r, i) => (
                   <tr key={`${r.dealId}-${r.docName}-${r.reRejectedOn}-${i}`} className="hover:bg-surface-2">
                     <td className="py-1.5 pr-3 text-foreground">{r.dealName}</td>
                     <td className="py-1.5 pr-3 text-muted">{r.milestone}</td>
-                    <td className="py-1.5 pr-3 text-foreground" title={r.reviewerNote ?? undefined}>{r.docName}</td>
+                    <td className="py-1.5 pr-3 text-foreground" title={r.reviewerNote ?? undefined}>
+                      {r.docName}
+                      {r.afterMilestoneApproval && (
+                        <span className="ml-1.5 align-middle rounded bg-orange-500/15 px-1 py-0.5 text-[10px] font-medium text-orange-400" title="Milestone was already fully approved when this was re-rejected">post-MS</span>
+                      )}
+                    </td>
                     <td className="py-1.5 pr-3 text-muted tabular-nums">{r.approvedOn}</td>
                     <td className="py-1.5 pr-3 text-right text-foreground tabular-nums">{r.daysAfterApproval}d</td>
                     <td className="py-1.5 pr-3 text-muted tabular-nums">{r.reRejectedOn}</td>
