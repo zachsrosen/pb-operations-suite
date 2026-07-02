@@ -6,13 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import type { PersonSummary, PersonDayMetric, Verdict, ActivitySource } from "@/lib/team-activity/metrics";
 
-const ALL_SOURCES: ActivitySource[] = ["pbops", "aircall", "zuper", "hubspot", "google"];
+const ALL_SOURCES: ActivitySource[] = ["pbops", "aircall", "zuper", "hubspot", "google", "pe"];
 const SOURCE_LABEL: Record<ActivitySource, string> = {
   pbops: "PB Tech Ops",
   aircall: "Aircall",
   zuper: "Zuper",
   hubspot: "HubSpot",
   google: "Google",
+  pe: "Participate",
 };
 
 interface SummaryRow extends PersonSummary {
@@ -242,8 +243,7 @@ function ActivityTable({
                                     <td className="px-2 py-1 text-right">{clock(d.firstMinute)}</td>
                                     <td className="px-2 py-1 text-right">{clock(d.lastMinute)}</td>
                                     <td className="px-2 py-1">
-                                      {(["pbops", "aircall", "zuper", "hubspot", "google"] as const)
-                                        .filter((k) => d.perSource[k] > 0)
+                                      {ALL_SOURCES.filter((k) => d.perSource[k] > 0)
                                         .map((k) => `${SOURCE_LABEL[k]}:${d.perSource[k]}`)
                                         .join("  ") || "—"}
                                     </td>

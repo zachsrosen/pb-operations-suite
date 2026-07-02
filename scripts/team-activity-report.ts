@@ -28,6 +28,7 @@ import {
   zuperAdapter,
   hubspotAdapter,
   googleAdapter,
+  peAdapter,
   type DateRange,
   type AdapterResult,
 } from "../src/lib/team-activity/adapters.ts";
@@ -52,6 +53,7 @@ const ALL: { key: ActivitySource; run: (p: PrismaClient) => Promise<AdapterResul
   { key: "zuper", run: (p) => zuperAdapter(p, range, DEFAULT_ROSTER) },
   { key: "hubspot", run: () => hubspotAdapter(range, DEFAULT_ROSTER) },
   { key: "google", run: () => googleAdapter(range, DEFAULT_ROSTER) },
+  { key: "pe", run: (p) => peAdapter(p, range, DEFAULT_ROSTER) },
 ];
 
 function csvEscape(v: unknown): string {
