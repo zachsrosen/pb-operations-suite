@@ -98,6 +98,37 @@ function ActivityTable({
   const [drill, setDrill] = useState<{ key: string; loading: boolean; error: string | null; events: DrillEvent[] } | null>(
     null,
   );
+  const [copied, setCopied] = useState(false);
+
+  const copyEvents = async (title: string, events: DrillEvent[]) => {
+    const lines = [
+      title,
+      ...events.map((ev) =>
+        [drillTimeFmt.format(new Date(ev.ts)), SOURCE_LABEL[ev.source], ev.kind ?? "", ev.label ?? ev.objectKey ?? ""]
+          .join("\t")
+          .replace(/\t+$/, ""),
+      ),
+    ];
+    const text = lines.join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        /* no-op */
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const openDrill = async (email: string, day: string) => {
     const key = `${email}|${day}`;
@@ -223,6 +254,16 @@ function ActivityTable({
                                         {drill.loading && <div className="text-muted py-1">Loading events…</div>}
                                         {drill.error && <div className="text-amber-400 py-1">{drill.error}</div>}
                                         {!drill.loading && !drill.error && (
+                                          <>
+                                            <div className="flex items-center justify-between mb-1">
+                                              <span className="text-muted">{drill.events.length} events</span>
+                                              <button
+                                                onClick={() => copyEvents(`${s.name} — ${d.day}`, drill.events)}
+                                                className="text-purple-300 hover:text-purple-200"
+                                              >
+                                                {copied ? "Copied!" : "Copy"}
+                                              </button>
+                                            </div>
                                           <div className="max-h-64 overflow-y-auto rounded border border-t-border bg-surface">
                                             {drill.events.length === 0 && (
                                               <div className="text-muted px-2 py-2">No individual events.</div>
@@ -243,6 +284,7 @@ function ActivityTable({
                                               </div>
                                             ))}
                                           </div>
+                                          </>
                                         )}
                                       </td>
                                     </tr>

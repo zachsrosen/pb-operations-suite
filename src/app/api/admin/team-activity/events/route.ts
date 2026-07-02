@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma } from "@/lib/db";
-import { batchReadDealsWithRetry } from "@/lib/hubspot";
+import { batchReadDealsWithRetry, batchReadTasksWithRetry } from "@/lib/hubspot";
 import { denverDay, type ActivityEvent, type ActivitySource } from "@/lib/team-activity/metrics";
 import { isTeamActivityEnabled, getReportsAdminEmail } from "@/lib/team-activity/flag";
 import {
@@ -87,11 +87,58 @@ export async function GET(request: Request) {
     }
   }
 
+  // Resolve HubSpot TASK ids -> task subject (tasks dominate the audit stream).
+  const taskNames = new Map<string, string>();
+  const taskIds = [
+    ...new Set(
+      raw
+        .filter((e) => e.source === "hubspot" && e.objectKey?.startsWith("TASK:"))
+        .map((e) => e.objectKey!.slice("TASK:".length)),
+    ),
+  ];
+  if (taskIds.length) {
+    try {
+      for (let i = 0; i < taskIds.length; i += 100) {
+        const res = await batchReadTasksWithRetry(taskIds.slice(i, i + 100));
+        for (const r of res.results) {
+          const subject = (r.properties as Record<string, string | null>)?.hs_task_subject;
+          if (subject) taskNames.set(r.id, subject);
+        }
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  // Resolve Zuper job UIDs -> "Category: title (status)".
+  const jobLabels = new Map<string, string>();
+  const jobUids = [
+    ...new Set(
+      raw.filter((e) => e.source === "zuper" && e.objectKey?.startsWith("job:")).map((e) => e.objectKey!.slice("job:".length)),
+    ),
+  ];
+  if (jobUids.length) {
+    const jobs = await prisma.zuperJobCache.findMany({
+      where: { jobUid: { in: jobUids } },
+      select: { jobUid: true, jobTitle: true, jobCategory: true, jobStatus: true },
+    });
+    for (const j of jobs) {
+      jobLabels.set(j.jobUid, `${j.jobCategory}: ${j.jobTitle}${j.jobStatus ? ` (${j.jobStatus})` : ""}`);
+    }
+  }
+
   const labelFor = (e: ActivityEvent): string | null => {
     if (!e.objectKey) return null;
     if (e.objectKey.startsWith("DEAL:")) {
       const name = dealNames.get(e.objectKey.slice("DEAL:".length));
       return name ? `Deal: ${name}` : e.objectKey;
+    }
+    if (e.objectKey.startsWith("TASK:")) {
+      const subject = taskNames.get(e.objectKey.slice("TASK:".length));
+      return subject ? `Task: ${subject}` : e.objectKey;
+    }
+    if (e.objectKey.startsWith("job:")) {
+      return jobLabels.get(e.objectKey.slice("job:".length)) ?? e.objectKey;
     }
     return e.objectKey;
   };

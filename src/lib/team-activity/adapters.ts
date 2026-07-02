@@ -142,9 +142,13 @@ export async function zuperAdapter(
     const assignedNames = assigned.map((a) => lc(a.user_name)).filter(Boolean);
     for (const m of names) {
       if (!assignedNames.some((n) => n.includes(m.name) || m.name.includes(n))) continue;
-      for (const ts of [r.completedDate, r.scheduledStart]) {
+      const stamps: Array<[Date | null, string]> = [
+        [r.completedDate, "job_completed"],
+        [r.scheduledStart, "job_scheduled"],
+      ];
+      for (const [ts, kind] of stamps) {
         if (ts && ts >= range.from && ts <= range.to) {
-          events.push({ email: m.email, timestamp: ts, source: "zuper", objectKey: `job:${r.jobUid}`, kind: "zuper_job" });
+          events.push({ email: m.email, timestamp: ts, source: "zuper", objectKey: `job:${r.jobUid}`, kind });
         }
       }
     }
