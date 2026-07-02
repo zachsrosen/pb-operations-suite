@@ -10,6 +10,7 @@ import {
   type TalkTimeRecord,
 } from "@/lib/team-activity/metrics";
 import { DEFAULT_ROSTER } from "@/lib/team-activity/roster";
+import { isTeamActivityEnabled, getReportsAdminEmail } from "@/lib/team-activity/flag";
 import {
   pbopsAdapter,
   aircallAdapter,
@@ -27,7 +28,7 @@ const DAY_MS = 86_400_000;
 /**
  * GET /api/admin/team-activity?from=YYYY-MM-DD&to=YYYY-MM-DD&only=pbops,aircall
  *
- * ADMIN only (also gated by TEAM_ACTIVITY_DASHBOARD_ENABLED). Runs the
+ * ADMIN only (also gated by the SystemConfig flag team_activity_dashboard_enabled). Runs the
  * same source adapters as the CLI and returns per-person summaries + per-day
  * detail. External sources (hubspot/google) degrade gracefully into `skipped`.
  */
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
   if (!user.roles.includes("ADMIN")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (process.env.TEAM_ACTIVITY_DASHBOARD_ENABLED !== "true") {
+  if (!(await isTeamActivityEnabled())) {
     return NextResponse.json({ error: "Team Activity dashboard is disabled" }, { status: 503 });
   }
 
@@ -51,13 +52,14 @@ export async function GET(request: Request) {
   }
   const only = url.searchParams.get("only")?.split(",").map((s) => s.trim()) as ActivitySource[] | undefined;
   const range: DateRange = { from, to };
+  const reportsAdmin = await getReportsAdminEmail();
 
   const adapters: { key: ActivitySource; run: () => Promise<AdapterResult> }[] = [
     { key: "pbops", run: () => pbopsAdapter(prisma, range, DEFAULT_ROSTER) },
     { key: "aircall", run: () => aircallAdapter(prisma, range, DEFAULT_ROSTER) },
     { key: "zuper", run: () => zuperAdapter(prisma, range, DEFAULT_ROSTER) },
     { key: "hubspot", run: () => hubspotAdapter(range, DEFAULT_ROSTER) },
-    { key: "google", run: () => googleAdapter(range, DEFAULT_ROSTER) },
+    { key: "google", run: () => googleAdapter(range, DEFAULT_ROSTER, reportsAdmin) },
   ];
 
   const chosen = adapters.filter((a) => !only || only.includes(a.key));
