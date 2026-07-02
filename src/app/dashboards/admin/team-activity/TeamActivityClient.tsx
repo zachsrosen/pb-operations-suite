@@ -82,20 +82,19 @@ const drillTimeFmt = new Intl.DateTimeFormat("en-GB", {
 function ActivityTable({
   summaries,
   personDays,
-  expanded,
-  onToggle,
   onRemove,
   emptyText,
   only,
 }: {
   summaries: SummaryRow[];
   personDays: DayRow[];
-  expanded: string | null;
-  onToggle: (email: string) => void;
   onRemove?: (email: string) => void;
   emptyText: string;
   only: string;
 }) {
+  // Expand state is per-table so a person present in both the roster and the
+  // lookup tables expands independently (was shared, which cross-opened rows).
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [drill, setDrill] = useState<{ key: string; loading: boolean; error: string | null; events: DrillEvent[] } | null>(
     null,
   );
@@ -138,7 +137,7 @@ function ActivityTable({
             return (
               <Fragment key={s.email}>
                 <tr
-                  onClick={() => onToggle(s.email)}
+                  onClick={() => setExpanded((cur) => (cur === s.email ? null : s.email))}
                   className="border-b border-t-border/50 hover:bg-surface-2 cursor-pointer"
                 >
                   <td className="px-3 py-2 font-medium text-foreground">
@@ -281,7 +280,6 @@ export default function TeamActivityClient() {
   const [toInput, setToInput] = useState(isoDay(today));
   const [sources, setSources] = useState<ActivitySource[]>(ALL_SOURCES);
   const [applied, setApplied] = useState({ from: isoDay(defaultFrom), to: isoDay(today), sources: ALL_SOURCES });
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   const onlyParam = `&only=${applied.sources.join(",")}`;
 
@@ -302,7 +300,6 @@ export default function TeamActivityClient() {
     const nextSources = sources.length ? sources : ALL_SOURCES;
     const changed = fromInput !== applied.from || toInput !== applied.to || nextSources.join(",") !== applied.sources.join(",");
     setApplied({ from: fromInput, to: toInput, sources: nextSources });
-    setExpanded(null);
     if (!changed) refetch();
   };
 
@@ -512,8 +509,6 @@ export default function TeamActivityClient() {
       <ActivityTable
         summaries={data?.summaries ?? []}
         personDays={data?.personDays ?? []}
-        expanded={expanded}
-        onToggle={(email) => setExpanded((cur) => (cur === email ? null : email))}
         emptyText={isFetching ? "Running…" : "No activity in this range."}
         only={applied.sources.join(",")}
       />
@@ -574,8 +569,6 @@ export default function TeamActivityClient() {
             <ActivityTable
               summaries={extraSummaries}
               personDays={extraDays}
-              expanded={expanded}
-              onToggle={(email) => setExpanded((cur) => (cur === email ? null : email))}
               onRemove={removeExtra}
               emptyText={extraPending.length ? "Loading…" : "No activity for the looked-up people in this range."}
               only={applied.sources.join(",")}
