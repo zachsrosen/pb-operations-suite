@@ -28,6 +28,25 @@ export interface AdapterResult {
 const lc = (s: string | null | undefined) => (s ?? "").toLowerCase();
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/**
+ * Run `fn` over `items` with at most `limit` in flight. Used to fan out the
+ * per-person HubSpot/Google API pulls (the dominant cost) instead of looping
+ * one person at a time, while keeping concurrency low enough to respect rate
+ * limits. Results preserve input order.
+ */
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 // ---------------------------------------------------------------------------
 // PB Tech Ops — ActivityLog (our DB, always available)
 // ---------------------------------------------------------------------------
@@ -195,8 +214,11 @@ export async function hubspotAdapter(range: DateRange, roster: RosterMember[]): 
   }
   if (!userIds.size) return { events: [], skipped: "no roster members resolved to a HubSpot user" };
 
-  const events: ActivityEvent[] = [];
-  for (const [email, uid] of userIds) {
+  // Fan out per-member pulls (each paginates audit-logs + login) with a small
+  // concurrency cap — this is the dominant cost of the whole report.
+  let scopeError: string | null = null;
+  const perMember = await mapPool([...userIds.entries()], 5, async ([email, uid]) => {
+    const evs: ActivityEvent[] = [];
     try {
       // Audit log — filter param is actingUserId (userId is silently ignored).
       const audits = await hsPageAll<HsAudit>(
@@ -207,7 +229,7 @@ export async function hubspotAdapter(range: DateRange, roster: RosterMember[]): 
       for (const a of audits) {
         const ts = new Date(a.occurredAt);
         if (ts < range.from || ts > range.to) continue;
-        events.push({
+        evs.push({
           email,
           timestamp: ts,
           source: "hubspot",
@@ -221,16 +243,17 @@ export async function hubspotAdapter(range: DateRange, roster: RosterMember[]): 
         if (!l.loginSucceeded) continue;
         const ts = new Date(l.loginAt);
         if (ts < range.from || ts > range.to) continue;
-        events.push({ email, timestamp: ts, source: "hubspot", kind: "login" });
+        evs.push({ email, timestamp: ts, source: "hubspot", kind: "login" });
       }
     } catch (e) {
-      // A scope error on the first member aborts the whole source cleanly.
-      if (/\b40[13]\b/.test(msg(e))) {
-        return { events, skipped: `HubSpot scope/permission error (needs account-info.security.read): ${msg(e)}` };
-      }
+      // A scope/permission error is systemic (not per-member) — record it.
+      if (/\b40[13]\b/.test(msg(e))) scopeError = `HubSpot scope/permission error (needs account-info.security.read): ${msg(e)}`;
       // otherwise skip just this member
     }
-  }
+    return evs;
+  });
+  const events = perMember.flat();
+  if (scopeError && events.length === 0) return { events, skipped: scopeError };
   return { events };
 }
 
@@ -252,28 +275,30 @@ export async function googleAdapter(
     return { events: [], skipped: `Google Reports scope not delegated (${msg(e)}); add ${scope} to DWD` };
   }
   interface ReportItem { id?: { time?: string } }
-  const events: ActivityEvent[] = [];
-  for (const m of roster) {
+  let authError: string | null = null;
+  const perMember = await mapPool(roster, 5, async (m) => {
     const url =
       `https://admin.googleapis.com/admin/reports/v1/activity/users/${encodeURIComponent(m.email)}` +
       `/applications/login?startTime=${range.from.toISOString()}&endTime=${range.to.toISOString()}&maxResults=1000`;
+    const evs: ActivityEvent[] = [];
     try {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          return { events, skipped: `Google Reports API ${res.status} — scope/admin not authorized` };
-        }
-        continue;
+        if (res.status === 401 || res.status === 403) authError = `Google Reports API ${res.status} — scope/admin not authorized`;
+        return evs;
       }
       const data = (await res.json()) as { items?: ReportItem[] };
       for (const item of data.items ?? []) {
         const ts = new Date(item.id?.time ?? NaN);
         if (isNaN(+ts) || ts < range.from || ts > range.to) continue;
-        events.push({ email: m.email.toLowerCase(), timestamp: ts, source: "google", kind: "login" });
+        evs.push({ email: m.email.toLowerCase(), timestamp: ts, source: "google", kind: "login" });
       }
     } catch {
       // skip this member
     }
-  }
+    return evs;
+  });
+  const events = perMember.flat();
+  if (authError && events.length === 0) return { events, skipped: authError };
   return { events };
 }

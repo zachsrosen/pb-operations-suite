@@ -39,7 +39,7 @@ const VERDICT_STYLE: Record<Verdict, string> = {
 
 export default function TeamActivityClient() {
   const today = useMemo(() => new Date(), []);
-  const defaultFrom = useMemo(() => new Date(today.getTime() - 30 * 86_400_000), [today]);
+  const defaultFrom = useMemo(() => new Date(today.getTime() - 14 * 86_400_000), [today]);
 
   const [fromInput, setFromInput] = useState(isoDay(defaultFrom));
   const [toInput, setToInput] = useState(isoDay(today));
