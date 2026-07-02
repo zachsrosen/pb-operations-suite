@@ -28,7 +28,7 @@ const DAY_MS = 86_400_000;
 /**
  * GET /api/admin/team-activity?from=YYYY-MM-DD&to=YYYY-MM-DD&only=pbops,aircall
  *
- * ADMIN only (also gated by the SystemConfig flag team_activity_dashboard_enabled). Runs the
+ * ADMIN only (also gated by TEAM_ACTIVITY_DASHBOARD_ENABLED). Runs the
  * same source adapters as the CLI and returns per-person summaries + per-day
  * detail. External sources (hubspot/google) degrade gracefully into `skipped`.
  */
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   const to = url.searchParams.get("to") ? new Date(`${url.searchParams.get("to")}T23:59:59Z`) : new Date();
   const from = url.searchParams.get("from")
     ? new Date(`${url.searchParams.get("from")}T00:00:00Z`)
-    : new Date(to.getTime() - 30 * DAY_MS);
+    : new Date(to.getTime() - 14 * DAY_MS);
   if (isNaN(+from) || isNaN(+to) || from > to) {
     return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
   }
