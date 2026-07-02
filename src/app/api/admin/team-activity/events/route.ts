@@ -87,11 +87,31 @@ export async function GET(request: Request) {
     }
   }
 
+  // Resolve Zuper job UIDs -> "Category: title (status)".
+  const jobLabels = new Map<string, string>();
+  const jobUids = [
+    ...new Set(
+      raw.filter((e) => e.source === "zuper" && e.objectKey?.startsWith("job:")).map((e) => e.objectKey!.slice("job:".length)),
+    ),
+  ];
+  if (jobUids.length) {
+    const jobs = await prisma.zuperJobCache.findMany({
+      where: { jobUid: { in: jobUids } },
+      select: { jobUid: true, jobTitle: true, jobCategory: true, jobStatus: true },
+    });
+    for (const j of jobs) {
+      jobLabels.set(j.jobUid, `${j.jobCategory}: ${j.jobTitle}${j.jobStatus ? ` (${j.jobStatus})` : ""}`);
+    }
+  }
+
   const labelFor = (e: ActivityEvent): string | null => {
     if (!e.objectKey) return null;
     if (e.objectKey.startsWith("DEAL:")) {
       const name = dealNames.get(e.objectKey.slice("DEAL:".length));
       return name ? `Deal: ${name}` : e.objectKey;
+    }
+    if (e.objectKey.startsWith("job:")) {
+      return jobLabels.get(e.objectKey.slice("job:".length)) ?? e.objectKey;
     }
     return e.objectKey;
   };
