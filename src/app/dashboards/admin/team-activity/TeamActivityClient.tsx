@@ -4,7 +4,16 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import DashboardShell from "@/components/DashboardShell";
-import type { PersonSummary, PersonDayMetric, Verdict } from "@/lib/team-activity/metrics";
+import type { PersonSummary, PersonDayMetric, Verdict, ActivitySource } from "@/lib/team-activity/metrics";
+
+const ALL_SOURCES: ActivitySource[] = ["pbops", "aircall", "zuper", "hubspot", "google"];
+const SOURCE_LABEL: Record<ActivitySource, string> = {
+  pbops: "PB Ops",
+  aircall: "Aircall",
+  zuper: "Zuper",
+  hubspot: "HubSpot",
+  google: "Google",
+};
 
 interface SummaryRow extends PersonSummary {
   name: string;
@@ -191,22 +200,31 @@ export default function TeamActivityClient() {
 
   const [fromInput, setFromInput] = useState(isoDay(defaultFrom));
   const [toInput, setToInput] = useState(isoDay(today));
-  const [applied, setApplied] = useState({ from: isoDay(defaultFrom), to: isoDay(today) });
+  const [sources, setSources] = useState<ActivitySource[]>(ALL_SOURCES);
+  const [applied, setApplied] = useState({ from: isoDay(defaultFrom), to: isoDay(today), sources: ALL_SOURCES });
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const onlyParam = `&only=${applied.sources.join(",")}`;
+
   const { data, isFetching, error, refetch } = useQuery<ApiResponse>({
-    queryKey: ["team-activity", applied.from, applied.to],
+    queryKey: ["team-activity", applied.from, applied.to, applied.sources.join(",")],
+    enabled: applied.sources.length > 0,
     queryFn: async () => {
-      const res = await fetch(`/api/admin/team-activity?from=${applied.from}&to=${applied.to}`);
+      const res = await fetch(`/api/admin/team-activity?from=${applied.from}&to=${applied.to}${onlyParam}`);
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
       return res.json();
     },
   });
 
+  const toggleSource = (s: ActivitySource) =>
+    setSources((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
+
   const run = () => {
-    setApplied({ from: fromInput, to: toInput });
+    const nextSources = sources.length ? sources : ALL_SOURCES;
+    const changed = fromInput !== applied.from || toInput !== applied.to || nextSources.join(",") !== applied.sources.join(",");
+    setApplied({ from: fromInput, to: toInput, sources: nextSources });
     setExpanded(null);
-    if (fromInput === applied.from && toInput === applied.to) refetch();
+    if (!changed) refetch();
   };
 
   // --- Look up anyone (ad-hoc) ---
@@ -249,7 +267,7 @@ export default function TeamActivityClient() {
     setLookingUp(true);
     setLookupError(null);
     try {
-      const res = await fetch(`/api/admin/team-activity?from=${applied.from}&to=${applied.to}&emails=${encodeURIComponent(e)}`);
+      const res = await fetch(`/api/admin/team-activity?from=${applied.from}&to=${applied.to}${onlyParam}&emails=${encodeURIComponent(e)}`);
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
       const json = (await res.json()) as ApiResponse;
       const summary = json.summaries[0];
@@ -323,6 +341,31 @@ export default function TeamActivityClient() {
           <span className="text-xs text-muted self-center">
             {data.totalEvents.toLocaleString()} events · {data.summaries.length} people
           </span>
+        )}
+      </div>
+
+      {/* Source toggles */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-xs text-muted mr-1">Sources:</span>
+        {ALL_SOURCES.map((s) => {
+          const on = sources.includes(s);
+          return (
+            <button
+              key={s}
+              onClick={() => toggleSource(s)}
+              className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                on
+                  ? "bg-purple-500/15 text-purple-300 border-purple-500/40"
+                  : "bg-surface text-muted border-t-border hover:text-foreground"
+              }`}
+            >
+              {on ? "✓ " : ""}
+              {SOURCE_LABEL[s]}
+            </button>
+          );
+        })}
+        {sources.join(",") !== applied.sources.join(",") && (
+          <span className="text-xs text-amber-400 self-center">— hit Run to apply</span>
         )}
       </div>
 
