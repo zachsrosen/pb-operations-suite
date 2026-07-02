@@ -11,6 +11,7 @@ import {
   zuperAdapter,
   hubspotAdapter,
   googleAdapter,
+  peAdapter,
   type DateRange,
 } from "@/lib/team-activity/adapters";
 
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
     { key: "zuper", run: () => zuperAdapter(prisma, range, roster) },
     { key: "hubspot", run: () => hubspotAdapter(range, roster) },
     { key: "google", run: () => googleAdapter(range, roster, reportsAdmin) },
+    { key: "pe", run: () => peAdapter(prisma, range, roster) },
   ];
   const chosen = adapters.filter((a) => !only || only.includes(a.key));
 
@@ -68,9 +70,7 @@ export async function GET(request: Request) {
   const dealNames = new Map<string, string>();
   const dealIds = [
     ...new Set(
-      raw
-        .filter((e) => e.source === "hubspot" && e.objectKey?.startsWith("DEAL:"))
-        .map((e) => e.objectKey!.slice("DEAL:".length)),
+      raw.filter((e) => e.objectKey?.startsWith("DEAL:")).map((e) => e.objectKey!.slice("DEAL:".length)),
     ),
   ];
   if (dealIds.length) {
@@ -161,6 +161,9 @@ export async function GET(request: Request) {
     }
     if (e.objectKey.startsWith("call:")) {
       return callLabels.get(e.objectKey.slice("call:".length)) ?? null;
+    }
+    if (e.objectKey.startsWith("pe:")) {
+      return e.objectKey.slice("pe:".length);
     }
     return e.objectKey;
   };

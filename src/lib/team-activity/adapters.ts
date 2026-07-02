@@ -157,6 +157,35 @@ export async function zuperAdapter(
 }
 
 // ---------------------------------------------------------------------------
+// Participate Energy — PeDocVersion (our DB; who uploaded which PE doc when)
+// ---------------------------------------------------------------------------
+export async function peAdapter(
+  prisma: PrismaClient,
+  range: DateRange,
+  roster: RosterMember[],
+): Promise<AdapterResult> {
+  const index = buildEmailIndex(roster);
+  const emails = [...index.keys()];
+  const rows = await prisma.peDocVersion.findMany({
+    where: { uploadedAt: { gte: range.from, lte: range.to }, uploadedBy: { in: emails, mode: "insensitive" } },
+    select: { uploadedBy: true, uploadedAt: true, docName: true, version: true, dealId: true, peProjectId: true },
+  });
+  const events: ActivityEvent[] = [];
+  for (const r of rows) {
+    const email = index.get(lc(r.uploadedBy));
+    if (!email) continue;
+    events.push({
+      email,
+      timestamp: r.uploadedAt,
+      source: "pe",
+      kind: `uploaded ${r.docName} v${r.version}`,
+      objectKey: r.dealId ? `DEAL:${r.dealId}` : `pe:${r.peProjectId}`,
+    });
+  }
+  return { events };
+}
+
+// ---------------------------------------------------------------------------
 // HubSpot — account-info activity API (scope: account-info.security.read)
 // ---------------------------------------------------------------------------
 async function hsGet(path: string, token: string): Promise<Response> {

@@ -17,6 +17,7 @@ import {
   zuperAdapter,
   hubspotAdapter,
   googleAdapter,
+  peAdapter,
   type AdapterResult,
   type DateRange,
 } from "@/lib/team-activity/adapters";
@@ -78,6 +79,7 @@ export async function GET(request: Request) {
     { key: "zuper", run: () => zuperAdapter(prisma, range, roster) },
     { key: "hubspot", run: () => hubspotAdapter(range, roster) },
     { key: "google", run: () => googleAdapter(range, roster, reportsAdmin) },
+    { key: "pe", run: () => peAdapter(prisma, range, roster) },
   ];
 
   const chosen = adapters.filter((a) => !only || only.includes(a.key));

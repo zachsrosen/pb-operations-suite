@@ -11,7 +11,7 @@
  * midnight.
  */
 
-export type ActivitySource = "pbops" | "aircall" | "zuper" | "hubspot" | "google";
+export type ActivitySource = "pbops" | "aircall" | "zuper" | "hubspot" | "google" | "pe";
 
 export interface ActivityEvent {
   /** normalized lowercase photonbrothers.com address */
@@ -143,6 +143,7 @@ const emptyPerSource = (): Record<ActivitySource, number> => ({
   zuper: 0,
   hubspot: 0,
   google: 0,
+  pe: 0,
 });
 
 /** Group events + talk-time into per-(person, day) metrics. */
