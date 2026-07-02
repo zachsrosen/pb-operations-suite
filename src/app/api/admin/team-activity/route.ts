@@ -54,12 +54,30 @@ export async function GET(request: Request) {
   const range: DateRange = { from, to };
   const reportsAdmin = await getReportsAdminEmail();
 
+  // Ad-hoc lookup: `?emails=a@x.com,b@x.com` builds a one-off roster (names
+  // resolved from the User directory) instead of the default team. Adapters
+  // resolve everything else by email/directory, so no pre-known IDs are needed.
+  const emailsParam = url.searchParams
+    .get("emails")
+    ?.split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  let roster = DEFAULT_ROSTER;
+  if (emailsParam?.length) {
+    const users = await prisma.user.findMany({
+      where: { email: { in: emailsParam, mode: "insensitive" } },
+      select: { email: true, name: true },
+    });
+    const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name]));
+    roster = emailsParam.map((email) => ({ email, name: nameByEmail.get(email) ?? email }));
+  }
+
   const adapters: { key: ActivitySource; run: () => Promise<AdapterResult> }[] = [
-    { key: "pbops", run: () => pbopsAdapter(prisma, range, DEFAULT_ROSTER) },
-    { key: "aircall", run: () => aircallAdapter(prisma, range, DEFAULT_ROSTER) },
-    { key: "zuper", run: () => zuperAdapter(prisma, range, DEFAULT_ROSTER) },
-    { key: "hubspot", run: () => hubspotAdapter(range, DEFAULT_ROSTER) },
-    { key: "google", run: () => googleAdapter(range, DEFAULT_ROSTER, reportsAdmin) },
+    { key: "pbops", run: () => pbopsAdapter(prisma, range, roster) },
+    { key: "aircall", run: () => aircallAdapter(prisma, range, roster) },
+    { key: "zuper", run: () => zuperAdapter(prisma, range, roster) },
+    { key: "hubspot", run: () => hubspotAdapter(range, roster) },
+    { key: "google", run: () => googleAdapter(range, roster, reportsAdmin) },
   ];
 
   const chosen = adapters.filter((a) => !only || only.includes(a.key));
@@ -92,7 +110,7 @@ export async function GET(request: Request) {
   const personDays = computePersonDays(events, talk);
   const summaries = rollupByPerson(personDays);
   const nameOf = (email: string) =>
-    DEFAULT_ROSTER.find((m) => m.email.toLowerCase() === email)?.name ?? email;
+    roster.find((m) => m.email.toLowerCase() === email)?.name ?? email;
 
   return NextResponse.json({
     range: { from: from.toISOString(), to: to.toISOString() },
