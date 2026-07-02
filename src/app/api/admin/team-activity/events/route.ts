@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma } from "@/lib/db";
+import { batchReadDealsWithRetry } from "@/lib/hubspot";
 import { denverDay, type ActivityEvent, type ActivitySource } from "@/lib/team-activity/metrics";
 import { isTeamActivityEnabled, getReportsAdminEmail } from "@/lib/team-activity/flag";
 import {
@@ -58,11 +59,50 @@ export async function GET(request: Request) {
   const settled = await Promise.all(
     chosen.map((a) => a.run().then((r) => r.events).catch(() => [] as ActivityEvent[])),
   );
-  const events = settled
+  const raw = settled
     .flat()
     .filter((e) => denverDay(e.timestamp) === day)
-    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-    .map((e) => ({ ts: e.timestamp.toISOString(), source: e.source, kind: e.kind ?? null, objectKey: e.objectKey ?? null }));
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  // Resolve HubSpot DEAL ids -> deal names (deals dominate the audit stream).
+  const dealNames = new Map<string, string>();
+  const dealIds = [
+    ...new Set(
+      raw
+        .filter((e) => e.source === "hubspot" && e.objectKey?.startsWith("DEAL:"))
+        .map((e) => e.objectKey!.slice("DEAL:".length)),
+    ),
+  ];
+  if (dealIds.length) {
+    try {
+      for (let i = 0; i < dealIds.length; i += 100) {
+        const res = await batchReadDealsWithRetry(dealIds.slice(i, i + 100), ["dealname"]);
+        for (const r of res.results) {
+          const name = (r.properties as Record<string, string | null>)?.dealname;
+          if (name) dealNames.set(r.id, name);
+        }
+      }
+    } catch {
+      // resolution is best-effort; fall back to raw ids
+    }
+  }
+
+  const labelFor = (e: ActivityEvent): string | null => {
+    if (!e.objectKey) return null;
+    if (e.objectKey.startsWith("DEAL:")) {
+      const name = dealNames.get(e.objectKey.slice("DEAL:".length));
+      return name ? `Deal: ${name}` : e.objectKey;
+    }
+    return e.objectKey;
+  };
+
+  const events = raw.map((e) => ({
+    ts: e.timestamp.toISOString(),
+    source: e.source,
+    kind: e.kind ?? null,
+    objectKey: e.objectKey ?? null,
+    label: labelFor(e),
+  }));
 
   return NextResponse.json({ email, day, count: events.length, events });
 }

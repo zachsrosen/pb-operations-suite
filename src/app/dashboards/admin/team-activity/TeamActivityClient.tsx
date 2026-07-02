@@ -69,6 +69,7 @@ interface DrillEvent {
   source: ActivitySource;
   kind: string | null;
   objectKey: string | null;
+  label: string | null;
 }
 const drillTimeFmt = new Intl.DateTimeFormat("en-GB", {
   timeZone: "America/Denver",
@@ -237,7 +238,9 @@ function ActivityTable({
                                                 </span>
                                                 <span className="text-purple-300 w-14 shrink-0">{SOURCE_LABEL[ev.source]}</span>
                                                 <span className="text-foreground">{ev.kind ?? "event"}</span>
-                                                {ev.objectKey && <span className="text-muted">· {ev.objectKey}</span>}
+                                                {(ev.label ?? ev.objectKey) && (
+                                                  <span className="text-muted">· {ev.label ?? ev.objectKey}</span>
+                                                )}
                                               </div>
                                             ))}
                                           </div>
@@ -306,9 +309,52 @@ export default function TeamActivityClient() {
   // --- Look up anyone (ad-hoc) ---
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<DirectoryUser[]>([]);
-  const [extras, setExtras] = useState<{ summary: SummaryRow; days: DayRow[] }[]>([]);
-  const [lookingUp, setLookingUp] = useState(false);
+  const [extraEmails, setExtraEmails] = useState<string[]>([]);
+  const [extraData, setExtraData] = useState<Record<string, { key: string; summary: SummaryRow | null; days: DayRow[] }>>(
+    {},
+  );
   const [lookupError, setLookupError] = useState<string | null>(null);
+
+  const dataKey = `${applied.from}|${applied.to}|${applied.sources.join(",")}`;
+
+  // Fetch each looked-up person, and re-fetch when the range/sources change.
+  useEffect(() => {
+    const stale = extraEmails.filter((e) => extraData[e]?.key !== dataKey);
+    if (!stale.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const email of stale) {
+        try {
+          const res = await fetch(
+            `/api/admin/team-activity?from=${applied.from}&to=${applied.to}${onlyParam}&emails=${encodeURIComponent(email)}`,
+          );
+          if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
+          const json = (await res.json()) as ApiResponse;
+          if (cancelled) return;
+          setExtraData((prev) => ({ ...prev, [email]: { key: dataKey, summary: json.summaries[0] ?? null, days: json.personDays } }));
+        } catch (err) {
+          if (cancelled) return;
+          setExtraData((prev) => ({ ...prev, [email]: { key: dataKey, summary: null, days: [] } }));
+          setLookupError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // extraData intentionally omitted: it's read via closure and changes on each
+    // fetch; the stale-filter prevents re-fetch loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey, extraEmails, applied.from, applied.to, onlyParam]);
+
+  const removeExtra = (email: string) => {
+    setExtraEmails((prev) => prev.filter((e) => e !== email));
+    setExtraData((prev) => {
+      const next = { ...prev };
+      delete next[email];
+      return next;
+    });
+  };
 
   // Debounced directory typeahead.
   useEffect(() => {
@@ -334,30 +380,19 @@ export default function TeamActivityClient() {
     };
   }, [query]);
 
-  const addPerson = async (email: string) => {
+  const addPerson = (email: string) => {
     const e = email.trim().toLowerCase();
     if (!e) return;
     setQuery("");
     setMatches([]);
-    if (extras.some((x) => x.summary.email === e)) return; // already added
-    setLookingUp(true);
     setLookupError(null);
-    try {
-      const res = await fetch(`/api/admin/team-activity?from=${applied.from}&to=${applied.to}${onlyParam}&emails=${encodeURIComponent(e)}`);
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
-      const json = (await res.json()) as ApiResponse;
-      const summary = json.summaries[0];
-      if (!summary) {
-        setLookupError(`No activity found for ${e} in this range.`);
-        return;
-      }
-      setExtras((prev) => [...prev, { summary, days: json.personDays }]);
-    } catch (err) {
-      setLookupError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLookingUp(false);
-    }
+    setExtraEmails((prev) => (prev.includes(e) ? prev : [...prev, e])); // effect fetches it
   };
+
+  const extraSummaries = extraEmails.map((e) => extraData[e]?.summary).filter((s): s is SummaryRow => !!s);
+  const extraDays = extraEmails.flatMap((e) => extraData[e]?.days ?? []);
+  const extraPending = extraEmails.filter((e) => extraData[e]?.key !== dataKey);
+  const extraNoActivity = extraEmails.filter((e) => extraData[e]?.key === dataKey && !extraData[e].summary);
 
   const exportRows = (data?.summaries ?? []).map((s) => ({
     name: s.name,
@@ -516,24 +551,33 @@ export default function TeamActivityClient() {
             </div>
           )}
         </div>
-        {lookingUp && <p className="text-xs text-muted mt-2">Looking up…</p>}
+        {extraPending.length > 0 && <p className="text-xs text-muted mt-2">Looking up…</p>}
         {lookupError && <p className="text-xs text-amber-400 mt-2">{lookupError}</p>}
+        {extraNoActivity.length > 0 && (
+          <p className="text-xs text-muted mt-2">No activity in this range: {extraNoActivity.join(", ")}</p>
+        )}
 
-        {extras.length > 0 && (
+        {extraEmails.length > 0 && (
           <div className="mt-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted">{extras.length} looked up</span>
-              <button onClick={() => setExtras([])} className="text-xs text-muted hover:text-red-400">
+              <span className="text-xs text-muted">{extraEmails.length} looked up</span>
+              <button
+                onClick={() => {
+                  setExtraEmails([]);
+                  setExtraData({});
+                }}
+                className="text-xs text-muted hover:text-red-400"
+              >
                 Clear all
               </button>
             </div>
             <ActivityTable
-              summaries={extras.map((x) => x.summary)}
-              personDays={extras.flatMap((x) => x.days)}
+              summaries={extraSummaries}
+              personDays={extraDays}
               expanded={expanded}
               onToggle={(email) => setExpanded((cur) => (cur === email ? null : email))}
-              onRemove={(email) => setExtras((prev) => prev.filter((x) => x.summary.email !== email))}
-              emptyText="No one looked up yet."
+              onRemove={removeExtra}
+              emptyText={extraPending.length ? "Loading…" : "No activity for the looked-up people in this range."}
               only={applied.sources.join(",")}
             />
           </div>
