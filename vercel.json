@@ -82,6 +82,10 @@
   },
   "crons": [
     {
+      "path": "/api/cron/pe-clawback-alert",
+      "schedule": "15 14 * * *"
+    },
+    {
       "path": "/api/cron/shit-show-task-sync",
       "schedule": "*/15 * * * *"
     },
