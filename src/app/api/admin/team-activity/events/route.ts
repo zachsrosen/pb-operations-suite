@@ -45,7 +45,10 @@ export async function GET(request: Request) {
   // Wide UTC window around the Denver day; filter precisely below.
   const mid = new Date(`${day}T12:00:00Z`).getTime();
   const range: DateRange = { from: new Date(mid - DAY_MS), to: new Date(mid + DAY_MS) };
-  const roster = [{ email, name: email }];
+  // Resolve the real display name so name-matched sources (Zuper) work here the
+  // same way they do in the main report; email-as-name would miss Zuper jobs.
+  const dbUser = await prisma.user.findUnique({ where: { email }, select: { name: true } });
+  const roster = [{ email, name: dbUser?.name ?? email }];
   const reportsAdmin = await getReportsAdminEmail();
 
   const adapters: { key: ActivitySource; run: () => Promise<{ events: ActivityEvent[] }> }[] = [
