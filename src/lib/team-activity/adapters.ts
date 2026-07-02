@@ -308,31 +308,60 @@ export async function googleAdapter(
   } catch (e) {
     return { events: [], skipped: `Google Reports scope not delegated (${msg(e)}); add ${scope} to DWD` };
   }
-  interface ReportItem { id?: { time?: string } }
+  interface ReportParam { name?: string; value?: string; multiValue?: string[] }
+  interface ReportEvent { name?: string; parameters?: ReportParam[] }
+  interface ReportItem { id?: { time?: string }; events?: ReportEvent[] }
+  const paramOf = (ev: ReportEvent | undefined, name: string) => {
+    const p = ev?.parameters?.find((x) => x.name === name);
+    return p?.value ?? p?.multiValue?.[0];
+  };
+  // Applications to pull per user. login = day boundaries; drive = real work
+  // (docs/sheets edits); meet/chat = calls + messages.
+  const APPS = ["login", "drive", "meet", "chat"] as const;
+  const PAGE_CAP = 5; // up to 5k events per (user, app) — guards runaway Drive volume
+
   let authError: string | null = null;
-  const perMember = await mapPool(roster, 5, async (m) => {
-    const url =
-      `https://admin.googleapis.com/admin/reports/v1/activity/users/${encodeURIComponent(m.email)}` +
-      `/applications/login?startTime=${range.from.toISOString()}&endTime=${range.to.toISOString()}&maxResults=1000`;
+  const tasks = roster.flatMap((m) => APPS.map((app) => ({ m, app })));
+  const perTask = await mapPool(tasks, 5, async ({ m, app }) => {
     const evs: ActivityEvent[] = [];
-    try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) authError = `Google Reports API ${res.status} — scope/admin not authorized`;
-        return evs;
+    let pageToken: string | undefined;
+    for (let page = 0; page < PAGE_CAP; page++) {
+      const url =
+        `https://admin.googleapis.com/admin/reports/v1/activity/users/${encodeURIComponent(m.email)}` +
+        `/applications/${app}?startTime=${range.from.toISOString()}&endTime=${range.to.toISOString()}` +
+        `&maxResults=1000${pageToken ? `&pageToken=${pageToken}` : ""}`;
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) authError = `Google Reports API ${res.status} — scope/admin not authorized`;
+          return evs;
+        }
+        const data = (await res.json()) as { items?: ReportItem[]; nextPageToken?: string };
+        for (const item of data.items ?? []) {
+          const ts = new Date(item.id?.time ?? NaN);
+          if (isNaN(+ts) || ts < range.from || ts > range.to) continue;
+          const ev = item.events?.[0];
+          const name = ev?.name;
+          const docTitle = app === "drive" ? paramOf(ev, "doc_title") : undefined;
+          const docId = app === "drive" ? paramOf(ev, "doc_id") : undefined;
+          evs.push({
+            email: m.email.toLowerCase(),
+            timestamp: ts,
+            source: "google",
+            kind: name ? `${app} ${name}` : app,
+            objectKey: docId ? `gdoc:${docId}` : undefined,
+            label: docTitle || undefined,
+          });
+        }
+        pageToken = data.nextPageToken;
+        if (!pageToken) break;
+      } catch {
+        break; // skip this app for this member
       }
-      const data = (await res.json()) as { items?: ReportItem[] };
-      for (const item of data.items ?? []) {
-        const ts = new Date(item.id?.time ?? NaN);
-        if (isNaN(+ts) || ts < range.from || ts > range.to) continue;
-        evs.push({ email: m.email.toLowerCase(), timestamp: ts, source: "google", kind: "login" });
-      }
-    } catch {
-      // skip this member
     }
     return evs;
   });
-  const events = perMember.flat();
+  const events = perTask.flat();
   if (authError && events.length === 0) return { events, skipped: authError };
   return { events };
 }
