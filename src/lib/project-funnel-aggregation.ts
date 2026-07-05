@@ -342,6 +342,7 @@ export interface ProjectFunnelCapacity {
 const CANCELLED_STAGE_ID = "68229433";
 const ON_HOLD_STAGE_ID = "20440344";
 const RTB_BLOCKED_STAGE_ID = "71052436";
+const PI_STAGE_ID = "20461938"; // Permitting & Interconnection
 const PROJECT_REJECTED_STAGE_ID = "20461935";
 const PROJECT_COMPLETE_STAGE_ID = "20440343";
 
@@ -1338,22 +1339,37 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasReadyToBuild) {
-      // Permit issued but not yet at the Ready-To-Build stage. Sequenced:
-      // permit issued → interconnection approved → ready to build. Each bucket
-      // counts from its own prior milestone:
-      //  - not approved → waiting on the utility (from permit issued)
-      //  - approved but still not RTB → blocked on something else (from approval)
-      if (p.interconnectionApprovalDate) {
-        // IC approved — the remaining blocker is construction-side, so show its status.
-        const waitSince = p.interconnectionApprovalDate || p.permitIssueDate || p.closeDate!;
-        drillDown.awaitingReadyToBuild.push(
-          toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
-        );
-      } else {
-        // Waiting on the utility — show the interconnection status.
+      // Permit issued but not yet at the Ready-To-Build stage. A deal only
+      // counts as "awaiting interconnection approval" when it's genuinely still
+      // on that track: sitting in the P&I stage, or explicitly RTB-Blocked with
+      // a "pending interconnection approval" reason. Deals blocked for other
+      // reasons — new construction, roof, DA payment, a customer-side utility
+      // form to sign — have effectively cleared/waived the IC gate and are
+      // proceeding, so they belong in Awaiting Ready to Build.
+      //
+      // We key off the free-text rtb_blocked_reason, NOT interconnection_blocked_date:
+      // that date is a sticky historical marker (set even when the current block
+      // is a roof or new build), so it over-counts. We match the reason EXACTLY
+      // (trailing period/space stripped), not as a substring: "Pending
+      // Interconnection Approval" is appended as a boilerplate suffix on many
+      // notes whose real blocker is something else (e.g. "Xcel form sent to
+      // customer, pending signature Pending Interconnection Approval"), so a
+      // substring match would wrongly keep those here.
+      const rtbReason = (p.rtbBlockedReason || "").trim().toLowerCase().replace(/[.\s]+$/, "");
+      const awaitingIc =
+        !p.interconnectionApprovalDate &&
+        (p.stageId === PI_STAGE_ID || rtbReason === "pending interconnection approval");
+      if (awaitingIc) {
+        // Genuinely waiting on the utility — show the interconnection status.
         const waitSince = p.permitIssueDate || p.closeDate!;
         drillDown.awaitingInterconnection.push(
           toDrillDown(p, daysBetween(waitSince, today), statusLabel("interconnection_status", p.interconnectionStatus))
+        );
+      } else {
+        // IC cleared or waived — the remaining blocker is construction-side.
+        const waitSince = p.interconnectionApprovalDate || p.permitIssueDate || p.closeDate!;
+        drillDown.awaitingReadyToBuild.push(
+          toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
         );
       }
     } else if (!m.hasConstructionScheduled) {
