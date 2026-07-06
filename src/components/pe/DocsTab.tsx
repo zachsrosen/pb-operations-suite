@@ -1731,8 +1731,10 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                     rows={dealsWithIssues.flatMap(({ summary, teamDocs }) =>
                       docsToExportRows(
                         summary,
-                        teamDocs.filter(({ review }) =>
+                        teamDocs.filter(({ doc, review }) =>
                           !!review && review.status !== "APPROVED" && review.status !== "UNDER_REVIEW" && review.status !== "UPLOADED"
+                          && review.status !== "NOT_REQUIRED"
+                          && !(review.status === "NOT_UPLOADED" && isDocWaived(doc, summary.deal))
                           && docPassesCategoryFilter(review.status, categoryFilter),
                         ),
                       ),
