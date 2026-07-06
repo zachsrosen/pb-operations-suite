@@ -3,6 +3,7 @@ import { assertOnCallEnabled } from "@/lib/on-call-guard";
 import { canAdminOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { resolveElectricianByEmail } from "@/lib/on-call-db";
+import { expandSwapDates, todayInTz } from "@/lib/on-call-swap";
 import { prisma, logActivity } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -63,26 +64,22 @@ export async function POST(req: Request) {
     }
   }
 
-  // Two-week lead-time guard per Tracey's go-live policy. Both swap dates
-  // must be at least 14 calendar days from today. Admins (asAdmin=true) can
-  // bypass for emergency last-minute swaps.
-  if (!body.asAdmin) {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const minDateMs = today.getTime() + 14 * 24 * 60 * 60 * 1000;
-    const dateAsUtc = (s: string) => {
-      const [y, m, d] = s.split("-").map(Number);
-      return Date.UTC(y, m - 1, d);
-    };
-    if (dateAsUtc(body.requesterDate) < minDateMs || dateAsUtc(body.counterpartyDate) < minDateMs) {
-      return NextResponse.json(
-        {
-          error:
-            "Shift changes must be requested at least 2 weeks in advance. If this is urgent, ask your manager to enter the swap.",
-        },
-        { status: 400 },
-      );
-    }
+  const pool = await prisma.onCallPool.findUnique({ where: { id: body.poolId } });
+  if (!pool) return NextResponse.json({ error: "Pool not found" }, { status: 404 });
+
+  // Swaps may be requested any distance out — every swap already requires
+  // manager approval before it applies (accept moves it to awaiting-admin),
+  // so short-notice requests are flagged in the approval UI rather than
+  // hard-blocked here. The only date rule: neither side's shift block may
+  // be entirely in the past.
+  const today = todayInTz(pool.timezone);
+  const entirelyPast = (date: string) =>
+    expandSwapDates(pool.rotationUnit, date).every((d) => d < today);
+  if (entirelyPast(body.requesterDate) || entirelyPast(body.counterpartyDate)) {
+    return NextResponse.json(
+      { error: "Cannot swap a shift that has already ended" },
+      { status: 400 },
+    );
   }
 
   // Validate that existing assignments match declared parties.
