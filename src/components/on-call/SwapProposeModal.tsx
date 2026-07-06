@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isShortNotice } from "@/lib/on-call-swap";
+import { groupIntoBlocks, isShortNotice, type SwapCandidateBlock } from "@/lib/on-call-swap";
 
 type Shift = {
   poolId: string;
@@ -49,8 +49,8 @@ function todayStr(): string {
 }
 
 export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSubmitted }: Props) {
-  const [candidates, setCandidates] = useState<Assignment[] | null>(null);
-  const [selected, setSelected] = useState<Assignment | null>(null);
+  const [candidates, setCandidates] = useState<SwapCandidateBlock[] | null>(null);
+  const [selected, setSelected] = useState<SwapCandidateBlock | null>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -66,18 +66,7 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
         const res = await fetch(`/api/on-call/assignments?poolId=${shift.poolId}&from=${from}&to=${to}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: { assignments: Assignment[] } = await res.json();
-        // Group consecutive same-member assignments into week blocks; keep the first date of each block.
-        const blocks: Assignment[] = [];
-        for (const a of json.assignments) {
-          if (a.crewMemberId === myCrewMemberId) continue;
-          const last = blocks[blocks.length - 1];
-          if (last && last.crewMemberId === a.crewMemberId && addDays(last.date, 1) === a.date) {
-            // extend — we only track first date, so skip
-            continue;
-          }
-          blocks.push(a);
-        }
-        setCandidates(blocks);
+        setCandidates(groupIntoBlocks(json.assignments, myCrewMemberId));
       } catch (e) {
         setErr(e instanceof Error ? e.message : "Failed to load candidates");
       }
@@ -97,7 +86,7 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
           requesterCrewMemberId: myCrewMemberId,
           requesterDate: shift.startDate, // day we give up (first day of our week block)
           counterpartyCrewMemberId: selected.crewMemberId,
-          counterpartyDate: selected.date,
+          counterpartyDate: selected.startDate,
           reason: reason.trim() || undefined,
         }),
       });
@@ -113,7 +102,10 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
   }
 
   const shortNotice =
-    isShortNotice(shift.startDate, todayStr()) || (selected ? isShortNotice(selected.date, todayStr()) : false);
+    isShortNotice(shift.startDate, todayStr()) || (selected ? isShortNotice(selected.startDate, todayStr()) : false);
+
+  const fmtRange = (start: string, end: string) =>
+    start === end ? formatDate(start) : `${formatDate(start)} – ${formatDate(end)}`;
 
   return (
     <div
@@ -158,10 +150,10 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
             </div>
             <div className="space-y-1 max-h-80 overflow-y-auto">
               {candidates.map((c) => {
-                const active = selected?.date === c.date && selected.crewMemberId === c.crewMemberId;
+                const active = selected?.startDate === c.startDate && selected.crewMemberId === c.crewMemberId;
                 return (
                   <button
-                    key={`${c.date}-${c.crewMemberId}`}
+                    key={`${c.startDate}-${c.crewMemberId}`}
                     type="button"
                     onClick={() => setSelected(c)}
                     className={
@@ -172,11 +164,11 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
                   >
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-medium">{c.crewMemberName}</div>
-                      <div className="text-xs text-muted">{formatDate(c.date)}</div>
+                      <div className="text-xs text-muted">{fmtRange(c.startDate, c.endDate)}</div>
                     </div>
                     {active && (
                       <div className="text-xs text-orange-300 mt-1">
-                        You cover {formatDate(c.date)} → they cover {formatDate(shift.startDate)}
+                        You cover {fmtRange(c.startDate, c.endDate)} → they cover {fmtRange(shift.startDate, shift.endDate)}
                       </div>
                     )}
                   </button>
