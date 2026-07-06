@@ -35,3 +35,47 @@ export function todayInTz(tz: string): string {
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
+
+export type SwapCandidateBlock = {
+  poolId: string;
+  crewMemberId: string;
+  crewMemberName: string;
+  startDate: string;
+  endDate: string;
+};
+
+/**
+ * Collapse per-day assignment rows (sorted by date) into contiguous
+ * same-member blocks — one entry per shift week, with its full date range.
+ * Rows for excludeCrewMemberId (the requester's own shifts) are dropped.
+ * A gap in dates (e.g. Sundays in coversSundays=false pools) or a change
+ * of member starts a new block.
+ */
+export function groupIntoBlocks(
+  assignments: Array<{ poolId: string; date: string; crewMemberId: string; crewMemberName: string }>,
+  excludeCrewMemberId?: string,
+): SwapCandidateBlock[] {
+  const blocks: SwapCandidateBlock[] = [];
+  let prevDate: string | null = null;
+  for (const a of assignments) {
+    if (excludeCrewMemberId && a.crewMemberId === excludeCrewMemberId) {
+      prevDate = null;
+      continue;
+    }
+    const last = blocks[blocks.length - 1];
+    if (last && last.crewMemberId === a.crewMemberId && prevDate !== null && addDays(prevDate, 1) === a.date) {
+      last.endDate = a.date;
+      prevDate = a.date;
+      continue;
+    }
+    blocks.push({
+      poolId: a.poolId,
+      crewMemberId: a.crewMemberId,
+      crewMemberName: a.crewMemberName,
+      startDate: a.date,
+      endDate: a.date,
+    });
+    prevDate = a.date;
+  }
+  return blocks;
+}
