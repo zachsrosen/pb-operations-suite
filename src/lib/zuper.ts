@@ -62,6 +62,10 @@ export interface ZuperJob {
   custom_fields?: any;
   job_notes?: string;
   status?: string;
+  // IANA timezone the job's scheduled times are displayed in (UI + customer
+  // notifications). Null/unset falls back to the Zuper account timezone
+  // (Mountain for PB) — always stamp this for Pacific jobs.
+  job_timezone?: string | null;
   // Zuper API returns the actual job status here (not in `status`)
   current_job_status?: {
     status_uid?: string;
@@ -316,6 +320,19 @@ export const JOB_TYPES = {
   SOLAR_EV: "Solar + EV Charger",
   FULL_SYSTEM: "Full System",
 } as const;
+
+/**
+ * IANA timezone for a customer address state. PB operates in Colorado and
+ * California only; anything not recognizably California gets the account
+ * default (Mountain).
+ */
+export function zuperTimezoneForState(state?: string | null): string {
+  const normalized = (state || "").trim().toLowerCase();
+  if (normalized === "ca" || normalized === "california") {
+    return "America/Los_Angeles";
+  }
+  return "America/Denver";
+}
 
 export class ZuperClient {
   private apiKey: string;
@@ -737,7 +754,8 @@ export class ZuperClient {
     scheduledStartTime: string,
     scheduledEndTime: string,
     userUids?: string[],
-    teamUid?: string
+    teamUid?: string,
+    timezone?: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
     // Fetch current job state first so we can skip the time update if unchanged
     // and reuse the data for assignment reconciliation below.
@@ -753,8 +771,18 @@ export class ZuperClient {
     const currentToDate = currentEndRaw ? this.formatZuperDateTime(currentEndRaw) : null;
     const timesChanged = newFromDate !== currentFromDate || newToDate !== currentToDate;
 
+    // Zuper renders scheduled times (UI + customer notifications) in
+    // job_timezone, falling back to the account timezone (Mountain) when
+    // unset. Stamp it on every reschedule so Pacific customers see Pacific
+    // times. The from/to datetimes stay UTC — job_timezone is display-only.
+    const derivedTimezone = prefetchJob?.customer_address?.state
+      ? zuperTimezoneForState(prefetchJob.customer_address.state)
+      : undefined;
+    const targetTimezone = timezone || derivedTimezone;
+    const timezoneChanged = !!targetTimezone && prefetchJob?.job_timezone !== targetTimezone;
+
     let scheduleResult: ZuperApiResponse<ZuperJob>;
-    if (timesChanged) {
+    if (timesChanged || timezoneChanged) {
       // Reschedule the job times
       scheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
         method: "PUT",
@@ -762,10 +790,11 @@ export class ZuperClient {
           job_uid: jobUid,
           from_date: newFromDate,
           to_date: newToDate,
+          ...(targetTimezone && { job_timezone: targetTimezone }),
         }),
       });
     } else {
-      console.log(`[Zuper] Skipping time update for job ${jobUid} — times unchanged (${newFromDate} → ${newToDate})`);
+      console.log(`[Zuper] Skipping time update for job ${jobUid} — times and timezone unchanged (${newFromDate} → ${newToDate})`);
       scheduleResult = prefetchResult as ZuperApiResponse<ZuperJob>;
     }
 
@@ -2216,6 +2245,9 @@ export async function createJobFromProject(project: {
     scheduled_start_time: startDateTime,
     scheduled_end_time: endDateTime,
     due_date: endDateTime,
+    // Display timezone for Zuper UI + customer notifications. Without this
+    // Zuper renders times in the account timezone (Mountain) even for CA jobs.
+    job_timezone: schedule.timezone || zuperTimezoneForState(project.state),
     ...(customerUid && { customer_uid: customerUid }),
     customer_address: {
       street: project.address,

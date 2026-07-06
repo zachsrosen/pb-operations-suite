@@ -554,6 +554,7 @@ Admin impersonation: `pb_effective_roles` (JSON array) + `pb_is_impersonating` c
 - Zuper API only allows setting `assigned_to` at job CREATION time, not updates
 - Custom fields differ between GET (array of objects) and POST (flat object) formats
 - Status is in `current_job_status`, not `status` field
+- `job_timezone` (IANA) controls how Zuper renders scheduled times in the UI and customer notifications; null falls back to the account timezone (Mountain). Scheduled datetimes are stored/sent as UTC regardless — always stamp `job_timezone` on create/reschedule (`zuperTimezoneForState()`)
 - Job categories have separate status workflows
 - Team UIDs and User UIDs configured via environment variables (JSON)
 - Zuper catalog (`lib/zuper-catalog.ts`) syncs product specs to Zuper custom fields
