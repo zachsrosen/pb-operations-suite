@@ -6,7 +6,7 @@ jest.mock("@/lib/pe-scraper-sync", () => ({
   matchProjectToDeal: jest.fn(),
 }));
 
-import { latestVersionUploadByDoc } from "@/lib/pe-api-sync";
+import { latestVersionUploadByDoc, selectSupersededItemIds } from "@/lib/pe-api-sync";
 
 /**
  * Option B — resolve PE action items superseded by a newer document version.
@@ -77,5 +77,88 @@ describe("latestVersionUploadByDoc", () => {
     ]).get("1::Signed Proposal")!;
     const reviewItem = d("2026-06-04T00:00:00Z"); // flagged after the only upload
     expect(reviewItem.getTime() < watermark.getTime()).toBe(false); // kept open
+  });
+});
+
+/**
+ * selectSupersededItemIds — the current-cycle gate. An item is resolved only
+ * when its doc ALSO has an item dated at/after the latest upload. That gate is
+ * what prevents pe_doc_*_notes from ever clearing to empty (old→new only, never
+ * old→empty→new), so the rejection-notifier workflow's fire behavior is unchanged.
+ */
+describe("selectSupersededItemIds", () => {
+  const d = (iso: string) => new Date(iso);
+  const upload = (dealId: string, docName: string, iso: string) =>
+    latestVersionUploadByDoc([{ dealId, docName, uploadedAt: d(iso) }]);
+
+  it("resolves the prior-cycle item when a current-cycle item exists (Rooney)", () => {
+    // Signed Proposal resubmitted 06-10; old NAD note (06-03) + new Load
+    // Justification note (06-12). Only the old one is superseded.
+    const ids = selectSupersededItemIds(
+      [
+        { id: "old", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-03T00:00:00Z") },
+        { id: "new", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-12T00:00:00Z") },
+      ],
+      upload("1", "Signed Proposal", "2026-06-10T00:00:00Z"),
+    );
+    expect(ids).toEqual(["old"]);
+  });
+
+  it("resolves nothing when the doc is resubmitted but not yet re-reviewed", () => {
+    // New version at 06-10, but every open item predates it → no current-cycle
+    // item → keep the prior note (do NOT clear to empty).
+    const ids = selectSupersededItemIds(
+      [
+        { id: "a", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-03T00:00:00Z") },
+        { id: "b", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-05T00:00:00Z") },
+      ],
+      upload("1", "Signed Proposal", "2026-06-10T00:00:00Z"),
+    );
+    expect(ids).toEqual([]);
+  });
+
+  it("resolves nothing for a doc with no version info", () => {
+    const ids = selectSupersededItemIds(
+      [{ id: "a", dealId: "1", docLabel: "State Disclosures", actionDate: d("2026-06-03T00:00:00Z") }],
+      upload("1", "Signed Proposal", "2026-06-10T00:00:00Z"), // different doc
+    );
+    expect(ids).toEqual([]);
+  });
+
+  it("skips items with a null dealId", () => {
+    const ids = selectSupersededItemIds(
+      [
+        { id: "x", dealId: null, docLabel: "Signed Proposal", actionDate: d("2026-06-03T00:00:00Z") },
+        { id: "new", dealId: null, docLabel: "Signed Proposal", actionDate: d("2026-06-12T00:00:00Z") },
+      ],
+      upload("1", "Signed Proposal", "2026-06-10T00:00:00Z"),
+    );
+    expect(ids).toEqual([]);
+  });
+
+  it("resolves nothing for a single item dated after the upload (current only)", () => {
+    const ids = selectSupersededItemIds(
+      [{ id: "only", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-12T00:00:00Z") }],
+      upload("1", "Signed Proposal", "2026-06-10T00:00:00Z"),
+    );
+    expect(ids).toEqual([]);
+  });
+
+  it("isolates docs — one doc's current item does not resolve another doc's items", () => {
+    const latest = latestVersionUploadByDoc([
+      { dealId: "1", docName: "Signed Proposal", uploadedAt: d("2026-06-10T00:00:00Z") },
+      { dealId: "1", docName: "State Disclosures", uploadedAt: d("2026-06-10T00:00:00Z") },
+    ]);
+    const ids = selectSupersededItemIds(
+      [
+        // Signed Proposal: has a current item → its old item resolves.
+        { id: "sp-old", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-03T00:00:00Z") },
+        { id: "sp-new", dealId: "1", docLabel: "Signed Proposal", actionDate: d("2026-06-12T00:00:00Z") },
+        // State Disclosures: only an old item → kept.
+        { id: "sd-old", dealId: "1", docLabel: "State Disclosures", actionDate: d("2026-06-03T00:00:00Z") },
+      ],
+      latest,
+    );
+    expect(ids).toEqual(["sp-old"]);
   });
 });

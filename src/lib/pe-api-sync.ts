@@ -212,6 +212,46 @@ export function latestVersionUploadByDoc(
   return latest;
 }
 
+/**
+ * Decide which open action items are superseded by a resubmission. For each
+ * (dealId, docLabel) group an item is superseded only when BOTH hold:
+ *   - the doc has a current-cycle item (an item dated at/after its latest version
+ *     upload), AND
+ *   - this item predates that upload (dated before it).
+ * Requiring a current-cycle item is what keeps pe_doc_*_notes moving old→new
+ * (never old→empty→new) — so we never clear a doc's notes in the
+ * resubmitted-but-not-yet-reviewed gap, leaving the rejection-notifier workflow's
+ * fire behavior unchanged. `latestUploadByDoc` keys are `${dealId}::${docName}`,
+ * which equals `${dealId}::${docLabel}` (docLabel == the canonical doc name, the
+ * same match the approved-doc resolver uses). Exported for unit testing.
+ */
+export function selectSupersededItemIds(
+  openItems: { id: string; dealId: string | null; docLabel: string; actionDate: Date }[],
+  latestUploadByDoc: Map<string, Date>,
+): string[] {
+  const byDoc = new Map<string, { id: string; actionDate: Date }[]>();
+  for (const it of openItems) {
+    if (!it.dealId) continue;
+    const key = `${it.dealId}::${it.docLabel}`;
+    const arr = byDoc.get(key);
+    if (arr) arr.push({ id: it.id, actionDate: it.actionDate });
+    else byDoc.set(key, [{ id: it.id, actionDate: it.actionDate }]);
+  }
+
+  const ids: string[] = [];
+  for (const [key, items] of byDoc) {
+    const upload = latestUploadByDoc.get(key);
+    if (!upload) continue; // no version info for this doc — leave it alone
+    const cutoff = upload.getTime();
+    const hasCurrent = items.some((i) => i.actionDate.getTime() >= cutoff);
+    if (!hasCurrent) continue; // resubmitted-but-not-reviewed (or never resubmitted)
+    for (const i of items) {
+      if (i.actionDate.getTime() < cutoff) ids.push(i.id);
+    }
+  }
+  return ids;
+}
+
 // ---------------------------------------------------------------------------
 // Document status derivation
 // ---------------------------------------------------------------------------
@@ -1012,39 +1052,53 @@ export async function syncFromPeApi(options?: {
       }
     }
 
-    // Auto-resolve action items superseded by a newer document version. When a
-    // doc is resubmitted (a version with a later uploadedAt lands), any action
-    // item PE flagged BEFORE that resubmission is historical — the installer has
-    // addressed it, and PE re-flags anything still wrong as a NEW item dated
-    // after the upload. Without this, a doc that stays in ACTION_REQUIRED across
-    // review cycles never resolves its prior-cycle items (resolve-on-approve and
-    // resolve-on-leave both need the doc to change status), so stale reviewer
-    // comments pile up in pe_doc_*_notes next to the current one. Version history
-    // comes from the LIST for every project, so this runs every sync. (PE's API
-    // has no per-item resolved flag; "flagged before the last upload" is the proxy.)
+    // Auto-resolve action items superseded by a resubmission — but ONLY once a
+    // current-cycle item exists for the doc (an open item dated at/after the doc's
+    // latest version upload). When a doc is resubmitted the installer has addressed
+    // the prior flags, and PE re-flags anything still wrong as a NEW item dated
+    // after the upload; the pre-upload items are then historical. Without this, a
+    // doc that stays in ACTION_REQUIRED across review cycles never resolves its
+    // prior-cycle items (resolve-on-approve and resolve-on-leave both need the doc
+    // to change status), so stale reviewer comments pile up in pe_doc_*_notes next
+    // to the current one (Rooney PROJ-8935 Signed Proposal).
+    //
+    // Requiring a current-cycle item is deliberate: it means pe_doc_*_notes moves
+    // old-note → new-note directly, never old-note → empty → new-note. So the
+    // rejection-notifier workflow (re-enrolls on pe_doc_*_notes IS_KNOWN) sees the
+    // same single note change it already sees today when a new comment lands — no
+    // extra known→unknown→known churn, no added duplicate-email risk. A doc that's
+    // resubmitted but not yet re-reviewed simply keeps its prior note until PE
+    // re-flags. Version history comes from the LIST for every project, so this runs
+    // every sync. (PE's API has no per-item resolved flag; the version upload date
+    // is the cutoff between "prior cycle" and "current cycle".)
     if (!skipActionItems && versionOps.length > 0) {
       try {
         const latestUploadByDoc = latestVersionUploadByDoc(versionOps);
-        let totalSuperseded = 0;
-        for (const [key, uploadedAt] of latestUploadByDoc) {
-          const sep = key.indexOf("::");
-          const dealId = key.slice(0, sep);
-          const docLabel = key.slice(sep + 2);
-          const { count } = await prisma.peActionItem.updateMany({
-            where: {
-              dealId,
-              docLabel,
-              resolvedAt: null,
-              actionDate: { lt: uploadedAt },
-            },
-            data: { resolvedAt: new Date() },
+        if (latestUploadByDoc.size > 0) {
+          const dealIds = [
+            ...new Set(
+              versionOps
+                .map((v) => v.dealId)
+                .filter((x): x is string => x !== null),
+            ),
+          ];
+          const openItems = await prisma.peActionItem.findMany({
+            where: { dealId: { in: dealIds }, resolvedAt: null },
+            select: { id: true, dealId: true, docLabel: true, actionDate: true },
           });
-          totalSuperseded += count;
-        }
-        if (totalSuperseded > 0) {
-          console.warn(
-            `[pe-api-sync] Auto-resolved ${totalSuperseded} action items superseded by a newer doc version`,
-          );
+          const idsToResolve = selectSupersededItemIds(openItems, latestUploadByDoc);
+          for (let i = 0; i < idsToResolve.length; i += BATCH_SIZE) {
+            const chunk = idsToResolve.slice(i, i + BATCH_SIZE);
+            await prisma.peActionItem.updateMany({
+              where: { id: { in: chunk }, resolvedAt: null },
+              data: { resolvedAt: new Date() },
+            });
+          }
+          if (idsToResolve.length > 0) {
+            console.warn(
+              `[pe-api-sync] Auto-resolved ${idsToResolve.length} action items superseded by a resubmission (current-cycle item present)`,
+            );
+          }
         }
       } catch (err) {
         result.errors.push(
