@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import { isShortNotice } from "@/lib/on-call-swap";
 import { useState } from "react";
 
 type Swap = {
@@ -59,6 +60,19 @@ function fmtRelative(isoTs: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(isoTs).toLocaleDateString();
+}
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function shortNoticePill(): React.ReactNode {
+  return (
+    <span className="inline-block text-[10px] px-2 py-0.5 rounded border bg-amber-500/15 text-amber-300 border-amber-500/30">
+      Short notice
+    </span>
+  );
 }
 
 function statusPill(status: string): React.ReactNode {
@@ -182,7 +196,7 @@ export function OnCallActivityClient() {
       {nothingPending && (
         <div className="bg-surface border border-t-border rounded-lg p-8 text-center">
           <p className="text-muted">Nothing pending right now. 🎉</p>
-          <p className="text-xs text-muted mt-1">Self-service swaps auto-apply when the counterparty accepts — you&apos;ll only see items here if someone needs your attention.</p>
+          <p className="text-xs text-muted mt-1">Swaps land here after the counterparty accepts — every swap needs a manager&apos;s approval before it takes effect.</p>
         </div>
       )}
 
@@ -198,6 +212,7 @@ export function OnCallActivityClient() {
                   <span className="text-muted">→</span>
                   <span className="text-sm font-semibold">{s.counterpartyCrewMember.name}</span>
                   <span className="text-xs text-muted ml-auto">{s.pool.name}</span>
+                  {(isShortNotice(s.requesterDate, todayStr()) || isShortNotice(s.counterpartyDate, todayStr())) && shortNoticePill()}
                   {statusPill(s.status)}
                 </div>
                 <div className="text-xs text-muted mb-2">

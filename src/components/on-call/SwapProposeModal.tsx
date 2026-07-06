@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isShortNotice } from "@/lib/on-call-swap";
 
 type Shift = {
   poolId: string;
@@ -42,6 +43,11 @@ function addDays(dateStr: string, n: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSubmitted }: Props) {
   const [candidates, setCandidates] = useState<Assignment[] | null>(null);
   const [selected, setSelected] = useState<Assignment | null>(null);
@@ -50,9 +56,11 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load future assignments in this pool (excluding my own) as swap candidates.
-    const from = addDays(shift.endDate, 1);
-    const to = addDays(shift.endDate, 120); // look ~4 months out
+    // Load upcoming assignments in this pool (excluding my own) as swap
+    // candidates. Starts from tomorrow so earlier-than-my-shift weeks are
+    // offered too — swaps can go in either direction.
+    const from = addDays(todayStr(), 1);
+    const to = addDays(todayStr(), 120); // look ~4 months out
     void (async () => {
       try {
         const res = await fetch(`/api/on-call/assignments?poolId=${shift.poolId}&from=${from}&to=${to}`);
@@ -74,7 +82,7 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
         setErr(e instanceof Error ? e.message : "Failed to load candidates");
       }
     })();
-  }, [shift.poolId, shift.endDate, myCrewMemberId]);
+  }, [shift.poolId, myCrewMemberId]);
 
   async function submit() {
     if (!selected) return;
@@ -103,6 +111,9 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
       setSubmitting(false);
     }
   }
+
+  const shortNotice =
+    isShortNotice(shift.startDate, todayStr()) || (selected ? isShortNotice(selected.date, todayStr()) : false);
 
   return (
     <div
@@ -175,6 +186,13 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
           </>
         )}
 
+        {shortNotice && (
+          <div className="text-xs rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 px-3 py-2 mt-3">
+            Short-notice swap (within 2 weeks) — it won&apos;t take effect until a manager approves it,
+            so give your manager a heads-up if it&apos;s urgent.
+          </div>
+        )}
+
         <div className="mt-4">
           <label className="block text-xs uppercase tracking-wider text-muted mb-1">Reason (optional)</label>
           <textarea
@@ -211,7 +229,7 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
             <li>They accept or decline</li>
             <li>If accepted, a manager reviews and finalizes the swap</li>
           </ol>
-          <p className="pt-1">Per company policy, swaps must be requested at least 2 weeks in advance.</p>
+          <p className="pt-1">Swaps within 2 weeks of the shift are flagged for manager review.</p>
         </div>
       </div>
     </div>
