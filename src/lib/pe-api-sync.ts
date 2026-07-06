@@ -191,6 +191,27 @@ export function isReviewPass(notes: string | null | undefined): boolean {
   return false;
 }
 
+/**
+ * Given the doc-version upsert ops collected in a sync, return the latest upload
+ * timestamp per (dealId, docName). Key format: `${dealId}::${docName}`.
+ * Only versions with a non-null dealId are considered — unmatched projects can't
+ * own action items. Exported for unit-testing the resolve-on-resubmission logic.
+ */
+export function latestVersionUploadByDoc(
+  versions: { dealId: string | null; docName: string; uploadedAt: Date }[],
+): Map<string, Date> {
+  const latest = new Map<string, Date>();
+  for (const v of versions) {
+    if (!v.dealId) continue;
+    const key = `${v.dealId}::${v.docName}`;
+    const cur = latest.get(key);
+    if (!cur || v.uploadedAt.getTime() > cur.getTime()) {
+      latest.set(key, v.uploadedAt);
+    }
+  }
+  return latest;
+}
+
 // ---------------------------------------------------------------------------
 // Document status derivation
 // ---------------------------------------------------------------------------
@@ -988,6 +1009,47 @@ export async function syncFromPeApi(options?: {
             `Failed to auto-resolve approved doc items: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
+      }
+    }
+
+    // Auto-resolve action items superseded by a newer document version. When a
+    // doc is resubmitted (a version with a later uploadedAt lands), any action
+    // item PE flagged BEFORE that resubmission is historical — the installer has
+    // addressed it, and PE re-flags anything still wrong as a NEW item dated
+    // after the upload. Without this, a doc that stays in ACTION_REQUIRED across
+    // review cycles never resolves its prior-cycle items (resolve-on-approve and
+    // resolve-on-leave both need the doc to change status), so stale reviewer
+    // comments pile up in pe_doc_*_notes next to the current one. Version history
+    // comes from the LIST for every project, so this runs every sync. (PE's API
+    // has no per-item resolved flag; "flagged before the last upload" is the proxy.)
+    if (!skipActionItems && versionOps.length > 0) {
+      try {
+        const latestUploadByDoc = latestVersionUploadByDoc(versionOps);
+        let totalSuperseded = 0;
+        for (const [key, uploadedAt] of latestUploadByDoc) {
+          const sep = key.indexOf("::");
+          const dealId = key.slice(0, sep);
+          const docLabel = key.slice(sep + 2);
+          const { count } = await prisma.peActionItem.updateMany({
+            where: {
+              dealId,
+              docLabel,
+              resolvedAt: null,
+              actionDate: { lt: uploadedAt },
+            },
+            data: { resolvedAt: new Date() },
+          });
+          totalSuperseded += count;
+        }
+        if (totalSuperseded > 0) {
+          console.warn(
+            `[pe-api-sync] Auto-resolved ${totalSuperseded} action items superseded by a newer doc version`,
+          );
+        }
+      } catch (err) {
+        result.errors.push(
+          `Failed to auto-resolve superseded action items: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
