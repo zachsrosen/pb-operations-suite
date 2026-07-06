@@ -69,7 +69,7 @@ const STAGE_CONFIG: StageConfig[] = [
   { key: "designCompleted", label: "Design Complete", color: "bg-indigo-500", textColor: "text-indigo-400" },
   { key: "permitsSubmitted", label: "Permits Submitted", color: "bg-purple-500", textColor: "text-purple-400" },
   { key: "permitsIssued", label: "Permits Issued", color: "bg-violet-500", textColor: "text-violet-400" },
-  { key: "interconnectionApproved", label: "Interconnection Approved", color: "bg-fuchsia-500", textColor: "text-fuchsia-400" },
+  { key: "interconnectionApproved", label: "Interconnection Cleared", color: "bg-fuchsia-500", textColor: "text-fuchsia-400" },
   { key: "readyToBuild", label: "Ready to Build", color: "bg-cyan-600", textColor: "text-cyan-300" },
   // Construction & closeout
   { key: "constructionScheduled", label: "Construction Scheduled", color: "bg-cyan-500", textColor: "text-cyan-400" },

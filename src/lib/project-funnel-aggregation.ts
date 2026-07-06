@@ -346,6 +346,27 @@ const PI_STAGE_ID = "20461938"; // Permitting & Interconnection
 const PROJECT_REJECTED_STAGE_ID = "20461935";
 const PROJECT_COMPLETE_STAGE_ID = "20440343";
 
+/**
+ * A deal (already permit-issued, not yet Ready-To-Build) is genuinely still
+ * waiting on interconnection when it has no approval date AND is either sitting
+ * in the P&I stage or RTB-Blocked with a reason of exactly "Pending
+ * Interconnection Approval". Everything else at that point has cleared/waived
+ * the IC gate and is proceeding (blocked, if at all, on something construction-
+ * side). Shared by the milestone resolver (so the "Interconnection Cleared"
+ * count matches) and the backlog bucketing (so they can't drift).
+ *
+ * Matches rtb_blocked_reason EXACTLY, not as a substring: that phrase is
+ * appended as a boilerplate suffix on notes whose real blocker is different
+ * (e.g. "Xcel form sent to customer, pending signature Pending Interconnection
+ * Approval"). Deliberately ignores interconnection_blocked_date — a sticky
+ * historical marker that over-counts.
+ */
+function isAwaitingInterconnection(p: Project): boolean {
+  if (p.interconnectionApprovalDate) return false;
+  const reason = (p.rtbBlockedReason || "").trim().toLowerCase().replace(/[.\s]+$/, "");
+  return p.stageId === PI_STAGE_ID || reason === "pending interconnection approval";
+}
+
 /** Active = still in flight: not cancelled and not project-complete. */
 function isActiveDeal(p: Project): boolean {
   return p.stageId !== CANCELLED_STAGE_ID && p.stageId !== PROJECT_COMPLETE_STAGE_ID;
@@ -626,10 +647,14 @@ export function resolveMilestones(p: Project) {
   const hasReadyToBuild = hasConstructionScheduled || stageReadyToBuild;
   const hasPermitIssued = hasReadyToBuild || stagePermitIssued || !!p.permitIssueDate;
   // Interconnection is a parallel track, so for a monotonic funnel count a deal
-  // counts as "interconnection cleared" if it has an approval date OR has
-  // already moved past it (reached Ready-To-Build). Gated on permit issued so
-  // the count stays ⊆ Permits Issued and ⊇ Ready to Build.
-  const hasInterconnectionApproved = hasReadyToBuild || (hasPermitIssued && !!p.interconnectionApprovalDate);
+  // counts as "interconnection cleared" if it has moved past Ready-To-Build OR
+  // (once permit-issued) is no longer genuinely waiting on interconnection —
+  // i.e. it has an approval date, or is proceeding without one (blocked on
+  // something construction-side). This is the SAME predicate the backlog uses to
+  // decide Awaiting Interconnection vs Awaiting Ready to Build, so the hero card
+  // and the backlog reconcile. Gated on permit issued so the count stays
+  // ⊆ Permits Issued and ⊇ Ready to Build.
+  const hasInterconnectionApproved = hasReadyToBuild || (hasPermitIssued && !isAwaitingInterconnection(p));
   const hasPermitSubmit = hasPermitIssued || stagePermitSubmit || !!p.permitSubmitDate;
   const hasDesignComplete = hasPermitSubmit || stageDesignComplete || !!p.designCompletionDate;
   const hasDaApproved = hasDesignComplete || stageDaApproved || !!p.designApprovalDate;
@@ -1339,27 +1364,14 @@ export function buildProjectFunnelData(
         toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasReadyToBuild) {
-      // Permit issued but not yet at the Ready-To-Build stage. A deal only
-      // counts as "awaiting interconnection approval" when it's genuinely still
-      // on that track: sitting in the P&I stage, or explicitly RTB-Blocked with
-      // a "pending interconnection approval" reason. Deals blocked for other
-      // reasons — new construction, roof, DA payment, a customer-side utility
-      // form to sign — have effectively cleared/waived the IC gate and are
-      // proceeding, so they belong in Awaiting Ready to Build.
-      //
-      // We key off the free-text rtb_blocked_reason, NOT interconnection_blocked_date:
-      // that date is a sticky historical marker (set even when the current block
-      // is a roof or new build), so it over-counts. We match the reason EXACTLY
-      // (trailing period/space stripped), not as a substring: "Pending
-      // Interconnection Approval" is appended as a boilerplate suffix on many
-      // notes whose real blocker is something else (e.g. "Xcel form sent to
-      // customer, pending signature Pending Interconnection Approval"), so a
-      // substring match would wrongly keep those here.
-      const rtbReason = (p.rtbBlockedReason || "").trim().toLowerCase().replace(/[.\s]+$/, "");
-      const awaitingIc =
-        !p.interconnectionApprovalDate &&
-        (p.stageId === PI_STAGE_ID || rtbReason === "pending interconnection approval");
-      if (awaitingIc) {
+      // Permit issued but not yet at the Ready-To-Build stage. A deal only stays
+      // in Awaiting Interconnection Approval when it's genuinely still on that
+      // track (see isAwaitingInterconnection). Deals blocked for other reasons —
+      // new construction, roof, DA payment, a customer-side utility form to sign
+      // — have effectively cleared/waived the IC gate and belong in Awaiting
+      // Ready to Build. This is the same predicate resolveMilestones uses for
+      // hasInterconnectionApproved, so this backlog reconciles with the hero card.
+      if (isAwaitingInterconnection(p)) {
         // Genuinely waiting on the utility — show the interconnection status.
         const waitSince = p.permitIssueDate || p.closeDate!;
         drillDown.awaitingInterconnection.push(
@@ -1647,7 +1659,7 @@ export const FUNNEL_STAGE_LABELS: Record<ProjectFunnelStageKey, string> = {
   designCompleted: "Design Complete",
   permitsSubmitted: "Permits Submitted",
   permitsIssued: "Permits Issued",
-  interconnectionApproved: "Interconnection Approved",
+  interconnectionApproved: "Interconnection Cleared",
   readyToBuild: "Ready to Build",
   constructionScheduled: "Construction Sched.",
   constructionComplete: "Construction Complete",
