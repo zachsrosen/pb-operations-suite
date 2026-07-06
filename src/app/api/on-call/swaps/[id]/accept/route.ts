@@ -4,6 +4,7 @@ import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
+import { sendOnCallSwapNotification } from "@/lib/on-call-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -47,5 +48,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     entityType: "OnCallSwapRequest",
     entityId: id,
   });
+  try {
+    await sendOnCallSwapNotification(id, "accepted");
+  } catch (err) {
+    console.warn("[on-call] swap-accepted notification failed", err);
+  }
   return NextResponse.json({ swap: updated });
 }

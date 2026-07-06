@@ -3,6 +3,7 @@ import { assertOnCallEnabled } from "@/lib/on-call-guard";
 import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma, logActivity } from "@/lib/db";
+import { sendOnCallSwapNotification } from "@/lib/on-call-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     entityType: "OnCallSwapRequest",
     entityId: id,
   });
-  console.warn("[on-call] swap-denied notification stub", { swapId: id });
+  try {
+    await sendOnCallSwapNotification(id, "denied");
+  } catch (err) {
+    console.warn("[on-call] swap-denied notification failed", err);
+  }
   return NextResponse.json({ swap });
 }

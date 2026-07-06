@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { expandSwapDates, todayInTz } from "@/lib/on-call-swap";
 import { prisma, logActivity } from "@/lib/db";
+import { sendOnCallSwapNotification } from "@/lib/on-call-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -114,5 +115,12 @@ export async function POST(req: Request) {
     entityType: "OnCallSwapRequest",
     entityId: swap.id,
   });
+  // Admin-entered swaps skip the counterparty step, so they go straight to
+  // the approvers' inbox; normal swaps ask the counterparty first.
+  try {
+    await sendOnCallSwapNotification(swap.id, body.asAdmin ? "accepted" : "requested");
+  } catch (err) {
+    console.warn("[on-call] swap-requested notification failed", err);
+  }
   return NextResponse.json({ swap });
 }
