@@ -54,6 +54,11 @@ interface PeDeal {
   pePortalUrl: string | null;
   peProjectId: string | null;
   driveUrl: string | null;
+  // Team leads — for by-team sub-grouping on the Docs page
+  dealOwner: string | null;
+  designLead: string | null;
+  permitLead: string | null;
+  interconnectionLead: string | null;
   docReviews: PeDocReviewRow[];
 }
 
@@ -102,6 +107,11 @@ const PE_DEAL_PROPERTIES = [
   // PE portal cross-reference
   "pe_portal_url",
   "pe_project_id",
+  // Team leads (for by-team sub-grouping on the Docs page)
+  "hubspot_owner_id",
+  "design",
+  "permit_tech",
+  "interconnections_tech",
   // PE payment properties — synced back to HubSpot on each load
   "pe_payment_ic",
   "pe_payment_pc",
@@ -227,6 +237,32 @@ export async function GET() {
     // Admin-recorded short-pays (PE paid less than the milestone amount)
     const paymentAdjustments = await getPaymentAdjustments();
 
+    // Resolve team-lead display names for the by-team sub-grouping. Deal owner
+    // AND the design/permit/interconnection lead fields all store a HubSpot
+    // owner id (those lead "select" fields are user references, not static
+    // options), so one owner-id→name map resolves all four. Include archived
+    // owners so a former lead still renders a name rather than a raw id.
+    const ownerNameById = new Map<string, string>();
+    for (const archived of [false, true]) {
+      try {
+        let after: string | undefined;
+        do {
+          const page = await hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 100, archived);
+          for (const o of page.results) {
+            const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email || String(o.id);
+            if (o.id != null && !ownerNameById.has(String(o.id))) ownerNameById.set(String(o.id), name);
+          }
+          after = page.paging?.next?.after;
+        } while (after);
+      } catch (err) {
+        console.error(`[pe-deals] owner name resolution failed (archived=${archived}):`, err);
+      }
+    }
+    const resolveOwner = (raw: unknown): string | null => {
+      const v = String(raw ?? "").trim();
+      return v ? (ownerNameById.get(v) ?? null) : null;
+    };
+
     // Transform deals + build HubSpot sync batch in one pass
     // (raw `deal` properties are only in scope inside this .map())
     const syncBatch: PeSyncEntry[] = [];
@@ -332,6 +368,10 @@ export async function GET() {
         pePortalUrl: deal.pe_portal_url ? String(deal.pe_portal_url) : null,
         peProjectId: deal.pe_project_id ? String(deal.pe_project_id) : null,
         driveUrl,
+        dealOwner: resolveOwner(deal.hubspot_owner_id),
+        designLead: resolveOwner(deal.design),
+        permitLead: resolveOwner(deal.permit_tech),
+        interconnectionLead: resolveOwner(deal.interconnections_tech),
         docReviews,
       };
     });
