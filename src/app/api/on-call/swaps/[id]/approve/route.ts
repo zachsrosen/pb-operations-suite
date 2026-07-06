@@ -4,6 +4,7 @@ import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { expandSwapDates, todayInTz } from "@/lib/on-call-swap";
 import { prisma, logActivity } from "@/lib/db";
+import { sendOnCallSwapNotification } from "@/lib/on-call-notifications";
 import { appCache } from "@/lib/cache";
 import { upsertAssignmentEvent } from "@/lib/on-call-google-calendar";
 
@@ -91,8 +92,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     entityType: "OnCallSwapRequest",
     entityId: id,
   });
-  // Notification stub — real React Email template ships in V1.1.
-  console.warn("[on-call] swap-approved notification stub", { swapId: id });
+  try {
+    await sendOnCallSwapNotification(id, "approved");
+  } catch (err) {
+    console.warn("[on-call] swap-approved notification failed", err);
+  }
 
   // Re-sync every swapped assignment to Google Calendar so the new attendees
   // see the events on their primary cal and the old attendees stop seeing
