@@ -4,6 +4,7 @@ import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma, logActivity } from "@/lib/db";
 import { appCache } from "@/lib/cache";
+import { sendOnCallPtoNotification } from "@/lib/on-call-notifications";
 import { upsertAssignmentEvent } from "@/lib/on-call-google-calendar";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +61,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     entityType: "OnCallPtoRequest",
     entityId: id,
   });
-  console.warn("[on-call] pto-approved notification stub", { ptoId: id });
+  try {
+    await sendOnCallPtoNotification(id, "approved");
+  } catch (err) {
+    console.warn("[on-call] pto-approved notification failed", err);
+  }
 
   // Re-sync the reassigned dates to Google Calendar so each replacement
   // electrician gets the invite on their primary cal.

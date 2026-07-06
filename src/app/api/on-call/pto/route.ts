@@ -4,6 +4,7 @@ import { canAdminOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
+import { sendOnCallPtoNotification } from "@/lib/on-call-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -84,5 +85,10 @@ export async function POST(req: Request) {
     entityType: "OnCallPtoRequest",
     entityId: created.id,
   });
+  try {
+    await sendOnCallPtoNotification(created.id, "requested");
+  } catch (err) {
+    console.warn("[on-call] pto-requested notification failed", err);
+  }
   return NextResponse.json({ request: created });
 }

@@ -3,6 +3,7 @@ import { assertOnCallEnabled } from "@/lib/on-call-guard";
 import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma, logActivity } from "@/lib/db";
+import { sendOnCallPtoNotification } from "@/lib/on-call-notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     entityType: "OnCallPtoRequest",
     entityId: id,
   });
-  console.warn("[on-call] pto-denied notification stub", { ptoId: id });
+  try {
+    await sendOnCallPtoNotification(id, "denied");
+  } catch (err) {
+    console.warn("[on-call] pto-denied notification failed", err);
+  }
   return NextResponse.json({ pto });
 }
