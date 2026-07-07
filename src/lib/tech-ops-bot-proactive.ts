@@ -2,10 +2,12 @@
  * Tech Ops Bot — Proactive Daily Digest
  *
  * The bot is otherwise purely reactive. This builds a once-a-day digest and
- * DMs it to the owner (Zach). Three sections:
- *   1. Stuck deals    — active deals sitting past a per-stage day threshold
- *   2. Milestones     — deals that hit a key milestone in the last 24h
- *   3. Escalations    — pending questions, corrections to fold in, bot errors
+ * DMs it to the owner (Zach). Two sections:
+ *   1. Milestones     — deals that hit a key milestone in the last 24h
+ *   2. Escalations    — pending questions, corrections to fold in, bot errors
+ *
+ * The old "Stuck deals" section moved to the bottleneck digest
+ * (src/lib/bottleneck-digest.ts), which supersedes it.
  *
  * The owner's DM space id is captured the first time they message the bot in a
  * DM (see the webhook route) and stored in SystemConfig — so this no-ops safely
@@ -25,23 +27,6 @@ export function ownerEmail(): string {
 
 /** Project pipeline id (matches the count/milestone tools). */
 const PROJECT_PIPELINE_ID = "6900017";
-
-/**
- * Per-stage "stuck" thresholds in days, keyed by the DEAL_STAGE_MAP display
- * name (lowercased). Stages move at different speeds, so the limits differ.
- * Stages not listed here (Close Out, Project Complete, On Hold, Cancelled,
- * Rejected) are never flagged.
- */
-const STUCK_THRESHOLDS: Record<string, number> = {
-  "site survey": 10,
-  "design & engineering": 10,
-  "permitting & interconnection": 30,
-  "rtb - blocked": 14,
-  "ready to build": 21,
-  "construction": 14,
-  "inspection": 14,
-  "permission to operate": 21,
-};
 
 /**
  * Milestones worth a heads-up, with their HubSpot date property. `key` lets a
@@ -88,14 +73,6 @@ export async function setOwnerDmSpace(spaceName: string): Promise<void> {
 
 // ── Helpers ──
 
-/** HubSpot datetime properties come back as epoch-ms strings or ISO; parse both. */
-function parseHubspotDate(v: string | null | undefined): number | null {
-  if (!v) return null;
-  if (/^\d+$/.test(v)) return Number(v);
-  const t = Date.parse(v);
-  return Number.isNaN(t) ? null : t;
-}
-
 /** Deal/project names are "PROJ-#### | Last, First | Address" — keep #### + name. */
 function shortProjectName(name: string | null | undefined): string {
   if (!name) return "(unnamed)";
@@ -118,88 +95,7 @@ async function locationMatcher(
   };
 }
 
-/** Section 1: deals sitting past their stage's threshold. */
-async function buildStuckSection(
-  now: number,
-  locations?: string[] | null,
-  stages?: string[] | null
-): Promise<string | null> {
-  const { searchWithRetry, DEAL_STAGE_MAP } = await import("@/lib/hubspot");
-  const { FilterOperatorEnum } = await import(
-    "@hubspot/api-client/lib/codegen/crm/deals"
-  );
-  const matches = await locationMatcher(locations);
-  // Optional stage focus (e.g. P&I room → only "Permitting & Interconnection").
-  const stageFilter =
-    stages && stages.length > 0
-      ? new Set(stages.map((s) => s.toLowerCase()))
-      : null;
-
-  // Only the *active* stages we nudge on — derived from STUCK_THRESHOLDS so
-  // adding a threshold auto-includes it. Without this the query also returns
-  // years-old Cancelled/Closed deals, which (sorted oldest-first) crowd out the
-  // genuinely-stuck active deals.
-  const nudgedStageIds = Object.entries(DEAL_STAGE_MAP)
-    .filter(([, name]) => STUCK_THRESHOLDS[name.toLowerCase()] != null)
-    .map(([id]) => id);
-
-  // Bound the result set: active nudged stages, already past the *smallest*
-  // threshold; the precise per-stage limit is applied in code below.
-  const minThresholdDays = Math.min(...Object.values(STUCK_THRESHOLDS));
-  const cutoffMs = now - minThresholdDays * 86_400_000;
-
-  const res = await searchWithRetry({
-    filterGroups: [
-      {
-        filters: [
-          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
-          { propertyName: "dealstage", operator: FilterOperatorEnum.In, values: nudgedStageIds },
-          {
-            propertyName: "hs_v2_date_entered_current_stage",
-            operator: FilterOperatorEnum.Lte,
-            value: String(cutoffMs),
-          },
-        ],
-      },
-    ],
-    properties: ["dealname", "dealstage", "pb_location", "hs_v2_date_entered_current_stage"],
-    sorts: ["hs_v2_date_entered_current_stage"],
-    limit: 200,
-  });
-
-  const stuck: Array<{ name: string; stage: string; days: number; location: string }> = [];
-  for (const r of res.results ?? []) {
-    const stageName = DEAL_STAGE_MAP[r.properties?.dealstage ?? ""] ?? null;
-    if (!stageName) continue;
-    if (stageFilter && !stageFilter.has(stageName.toLowerCase())) continue;
-    const threshold = STUCK_THRESHOLDS[stageName.toLowerCase()];
-    if (threshold == null) continue; // not a stage we nudge on
-    const enteredMs = parseHubspotDate(r.properties?.hs_v2_date_entered_current_stage);
-    if (enteredMs == null) continue;
-    const days = Math.floor((now - enteredMs) / 86_400_000);
-    if (days < threshold) continue;
-    const location = r.properties?.pb_location ?? "";
-    if (matches && !matches(location)) continue;
-    stuck.push({
-      name: shortProjectName(r.properties?.dealname),
-      stage: stageName,
-      days,
-      location,
-    });
-  }
-
-  if (stuck.length === 0) return null;
-  stuck.sort((a, b) => b.days - a.days);
-  const top = stuck.slice(0, 15);
-  const lines = top.map(
-    (s) => `• ${s.name} — ${s.stage}, ${s.days}d${s.location ? ` (${s.location})` : ""}`
-  );
-  let out = `🪧 Stuck deals (${stuck.length})\n${lines.join("\n")}`;
-  if (stuck.length > top.length) out += `\n…and ${stuck.length - top.length} more.`;
-  return out;
-}
-
-/** Section 2: deals that hit a key milestone in the last 24h. */
+/** Section: deals that hit a key milestone in the last 24h. */
 async function buildMilestoneSection(
   now: number,
   locations?: string[] | null,
@@ -254,7 +150,7 @@ async function buildMilestoneSection(
   return `🎉 Milestones in the last 24h (${total})\n${lines.join("\n")}`;
 }
 
-/** Section 3: escalation queue + corrections + recent bot errors. */
+/** Section: escalation queue + corrections + recent bot errors. */
 async function buildEscalationSection(now: number): Promise<string | null> {
   if (!prisma) return null;
   const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
@@ -332,12 +228,10 @@ async function buildScheduleSection(
 
 // ── Section composition ──
 
-export type SectionKey = "stuck" | "milestones" | "schedule" | "escalations";
+export type SectionKey = "milestones" | "schedule" | "escalations";
 
 interface SectionOptions {
   locations: string[] | null;
-  /** Limit stuck deals to these stage names (default: all nudged stages). */
-  stuckStages?: string[] | null;
   /** Limit milestones to these ALERT_MILESTONES keys (default: headline wins). */
   milestoneKeys?: string[] | null;
 }
@@ -351,8 +245,6 @@ async function buildSections(
   const built = await Promise.all(
     sections.map((key) => {
       switch (key) {
-        case "stuck":
-          return buildStuckSection(now, opts.locations, opts.stuckStages).catch(() => null);
         case "milestones":
           return buildMilestoneSection(now, opts.locations, opts.milestoneKeys).catch(() => null);
         case "schedule":
@@ -393,8 +285,6 @@ export interface DigestRoute {
   locations: string[];
   /** Which sections this room receives. */
   sections: SectionKey[];
-  /** Limit the stuck-deals section to these stage names. */
-  stuckStages?: string[];
   /** Limit the milestones section to these ALERT_MILESTONES keys. */
   milestones?: string[];
   enabled: boolean;
@@ -414,14 +304,14 @@ export const DIGEST_ROUTES: DigestRoute[] = [
     title: "Tech Ops — daily pulse",
     intro: "Operational snapshot across all shops.",
     locations: [],
-    sections: ["stuck", "milestones", "schedule"],
+    sections: ["milestones", "schedule"],
     enabled: false,
   },
   {
     // TODO(zach): tailor once we know Fight Club's focus — broad default for now.
     room: "Fight Club",
     locations: [],
-    sections: ["stuck", "milestones", "schedule"],
+    sections: ["milestones", "schedule"],
     enabled: false,
   },
   {
@@ -429,8 +319,7 @@ export const DIGEST_ROUTES: DigestRoute[] = [
     title: "CO P&I — daily",
     intro: "Where permitting & interconnection stand today.",
     locations: ["Westminster", "Centennial", "Colorado Springs"],
-    sections: ["stuck", "milestones"],
-    stuckStages: ["Permitting & Interconnection"],
+    sections: ["milestones"],
     milestones: ["permit_submitted", "permit_issued", "ic_submitted", "ic_approved"],
     enabled: false,
   },
@@ -452,7 +341,7 @@ export interface DigestResult {
  */
 export async function buildDailyDigestMessage(nowMs?: number): Promise<string | null> {
   const now = nowMs ?? Date.now();
-  const sections = await buildSections(now, ["stuck", "milestones", "escalations"], {
+  const sections = await buildSections(now, ["milestones", "escalations"], {
     locations: null,
   });
   if (sections.length === 0) return null;
@@ -555,7 +444,6 @@ export async function runRoomDigests(
 
     const sections = await buildSections(now, route.sections, {
       locations: route.locations.length > 0 ? route.locations : null,
-      stuckStages: route.stuckStages,
       milestoneKeys: route.milestones,
     });
 
