@@ -395,8 +395,10 @@ row (same table `pe-rejection-advance` already uses).
   (task id, deal id, kind, milestone, team, reason, timestamp); keyed by task id.
 - **Flagged.** `PE_TASK_AUTOCOMPLETE_ENABLED` kill-switch; off = pass skipped.
 - **Bounded work.** Task-first scanning touches only the ~350 open tasks matching
-  the three tokens and their deals, not the full PE deal population. All HubSpot
-  calls go through `withHubSpotRetry` and batch reads.
+  the three tokens and their deals, not the full PE deal population, and uses
+  batch reads. HubSpot calls use the `hubspotClient` SDK directly (matching the
+  sibling `pe-rejection-advance.ts`); adding a shared retry wrapper to both is a
+  reasonable follow-up but out of scope here.
 
 ## 10. Interaction with `pe-rejection-advance` and ordering
 

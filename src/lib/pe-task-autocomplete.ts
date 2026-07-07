@@ -14,7 +14,7 @@
  * the divider and lazy-import their I/O dependencies.
  */
 
-import { classifyRejectionTask } from "@/lib/pe-rejection-advance";
+import { classifyRejectionTask, READY, ONBOARDING_READY } from "@/lib/pe-rejection-advance";
 import { PE_DOC_TO_TEAM_FIELD } from "@/lib/pe-rejection-notes";
 import { PE_M1_DOC_NAMES } from "@/lib/pe-analytics";
 import { PE_DOC_HUBSPOT_MAP, normalizeActionItemDocName } from "@/lib/pe-hubspot-sync";
@@ -163,7 +163,7 @@ export function decideCompletion(
 
   if (task.kind === "resubmit") {
     const status = task.milestone === "m1" ? state.m1Status : state.m2Status;
-    const gate = task.flavor === "onboarding" ? "Onboarding Ready to Resubmit" : "Ready to Resubmit";
+    const gate = task.flavor === "onboarding" ? ONBOARDING_READY : READY;
     return status !== gate
       ? { complete: true, reason: `left ${gate}` }
       : { complete: false, reason: `still ${gate}` };
@@ -279,7 +279,7 @@ export async function autocompletePeTasks(opts: { dryRun?: boolean } = {}): Prom
     .map((t) => ({ task: t, cls: classifyPeTask(t.subject) }))
     .filter((c): c is { task: OpenTask; cls: ClassifiedTask } => c.cls !== null);
 
-  // task -> deal
+  // task -> deal (PE tasks are single-deal; take the first association if several)
   const taskDeal = new Map<string, string>();
   for (const { task } of candidates) {
     const a = await hubspotClient.crm.associations.v4.basicApi.getPage("tasks", task.id, "deals", undefined, 1);
