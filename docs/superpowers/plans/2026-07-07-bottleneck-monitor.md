@@ -200,7 +200,7 @@ describe("computeStageSnapshots", () => {
 
   it("reconstructs the 90-day volume norm from stamps (in-stage on day D iff entry ≤ D < exit)", () => {
     // One deal in permitting the whole trailing 90 days, one that exited 60 days ago
-    // → daily counts are 2 for the first ~30 days, 1 after → median 1.
+    // → daily count is 2 on days 61–90 ago, 1 on days 1–60 ago → median of the 90 samples = 1.
     const rows = [
       deal({ hubspotDealId: "v1", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(120) }),
       deal({ hubspotDealId: "v2", permitSubmitDate: daysAgo(120), permitIssueDate: daysAgo(60) }),
@@ -753,9 +753,16 @@ git commit -m "test(bottlenecks): threshold derivation, manual overrides, flow b
 - [ ] **Step 1: Write failing tests**
 
 ```ts
+// Full mock set up-front (jest.mock is hoisted; the orchestration tests below
+// need deal.findMany and the dynamically-imported bot/chat modules too):
 jest.mock("@/lib/db", () => ({
-  prisma: { systemConfig: { findUnique: jest.fn(), upsert: jest.fn() } },
+  prisma: {
+    deal: { findMany: jest.fn() },
+    systemConfig: { findUnique: jest.fn(), upsert: jest.fn() },
+  },
 }));
+jest.mock("@/lib/tech-ops-bot-proactive", () => ({ getOwnerDmSpace: jest.fn() }));
+jest.mock("@/lib/google-chat-api", () => ({ postGoogleChatMessage: jest.fn() }));
 
 import { buildDigestMessage, detectChanges, filterSnapshotForScope } from "@/lib/bottleneck-digest";
 import type { BottleneckSnapshot, StageSnapshot } from "@/lib/bottlenecks";
