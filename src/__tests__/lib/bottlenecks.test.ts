@@ -134,6 +134,33 @@ describe("computeStageSnapshots", () => {
     const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
     expect(snap.stages.find((s) => s.key === "permitting")!.volumeNorm90d).toBe(1);
   });
+
+  it("excludes deals on terminal pipeline stages even when their status column reads open", () => {
+    const rows = [
+      deal({ stage: "Project Complete", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(400) }),
+      deal({ hubspotDealId: "2", stage: "Cancelled", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(30) }),
+    ];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    const permitting = snap.stages.find((s) => s.key === "permitting")!;
+    expect(permitting.totalInStage).toBe(0);
+    expect(permitting.flagged).toHaveLength(0);
+  });
+
+  it("treats an exit stamp as leaving the stage regardless of status text (e.g. inspection 'Passed')", () => {
+    const rows = [deal({
+      finalInspectionStatus: "Passed",
+      constructionCompleteDate: daysAgo(50),
+      inspectionPassDate: daysAgo(10),
+    })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "inspection")!.totalInStage).toBe(0);
+  });
+
+  it("keeps a cancelled deal with no exit stamp out of the volume reconstruction", () => {
+    const rows = [deal({ stage: "Cancelled", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(120) })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "permitting")!.volumeNorm90d).toBe(0);
+  });
 });
 
 describe("deriveThresholds", () => {

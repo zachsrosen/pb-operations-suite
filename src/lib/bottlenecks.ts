@@ -210,6 +210,21 @@ function weekStartOf(date: Date): string {
 
 const FLOW_WEEKS = 8;
 
+/**
+ * Terminal deal stages (mirrors deals-pipeline.ts TERMINAL_KEYWORDS, which is
+ * module-private). Deals in these stages are done — their per-stage status
+ * columns often still read "open" (e.g. an old deal whose inspection status
+ * was never flipped), so without this gate historical deals count as in-stage.
+ * "Close Out" deliberately does NOT match (post-PTO work, incl. PE M2, is live).
+ */
+const TERMINAL_STAGE_KEYWORDS = ["complete", "cancelled", "canceled", "closed won", "closed lost", "rejected"];
+function isActiveDealStage(stage: string | null): boolean {
+  if (!stage) return false;
+  const s = stage.toLowerCase();
+  if (s === "deleted" || s === "merged") return false;
+  return !TERMINAL_STAGE_KEYWORDS.some((k) => s.includes(k));
+}
+
 export function computeStageSnapshots(
   rows: BottleneckDealRow[],
   thresholds: ThresholdConfig,
@@ -221,7 +236,13 @@ export function computeStageSnapshots(
     const threshold: StageThreshold =
       thresholds[stage.key] ?? { medianDays: null, p90Days: null, thresholdDays: null, source: "derived" };
 
-    const inStage = rows.filter((d) => stage.isInStage(d));
+    // In-stage = deal is on an active pipeline stage, the stage's status
+    // predicate says in-progress, AND it has no exit stamp yet. The exit-stamp
+    // check catches statuses the keyword lists miss (e.g. inspection "Passed"
+    // with inspectionPassDate set has left the stage regardless of status text).
+    const inStage = rows.filter(
+      (d) => isActiveDealStage(d.stage) && stage.isInStage(d) && stage.exitDate(d) == null
+    );
     const dwells: number[] = [];
     let unknownAgeCount = 0;
     const flagged: FlaggedDeal[] = [];
@@ -268,7 +289,10 @@ export function computeStageSnapshots(
       .map(([weekStart, v]) => ({ weekStart, ...v }));
 
     // Volume norm: median daily in-stage count over the trailing 90 days,
-    // reconstructed from stamps. Unknown-entry deals can't participate.
+    // reconstructed from stamps. Unknown-entry deals can't participate. Deals
+    // with no exit stamp only count if they're in-stage NOW — otherwise a
+    // cancelled deal that never got an exit stamp inflates every day forever.
+    const inStageIds = new Set(inStage.map((d) => d.hubspotDealId));
     const dailyCounts: number[] = [];
     for (let i = 1; i <= 90; i++) {
       const dayMs = nowMs - i * DAY_MS;
@@ -277,6 +301,7 @@ export function computeStageSnapshots(
         const entry = stage.entryDate(d);
         if (!entry || entry.getTime() > dayMs) continue;
         const exit = stage.exitDate(d);
+        if (exit == null && !inStageIds.has(d.hubspotDealId)) continue;
         if (exit == null || exit.getTime() > dayMs) count++;
       }
       dailyCounts.push(count);
