@@ -17,7 +17,11 @@
 import { classifyRejectionTask } from "@/lib/pe-rejection-advance";
 import { PE_DOC_TO_TEAM_FIELD } from "@/lib/pe-rejection-notes";
 import { PE_M1_DOC_NAMES } from "@/lib/pe-analytics";
-import { PE_DOC_HUBSPOT_MAP } from "@/lib/pe-hubspot-sync";
+import { PE_DOC_HUBSPOT_MAP, normalizeActionItemDocName } from "@/lib/pe-hubspot-sync";
+import { hubspotClient } from "@/lib/hubspot";
+import { markTaskComplete } from "@/lib/hubspot-tasks";
+// Note: `prisma` is lazy-imported inside the orchestrator/ledger functions so the
+// pure logic above stays importable by unit tests without a live client.
 
 // ---------------------------------------------------------------------------
 // Task classification (pure)
@@ -215,4 +219,148 @@ export function mergeAutocompleteLedger(
     lastRunAt: atIso,
     entries: [...base.entries, ...fresh].slice(-LEDGER_CAP),
   };
+}
+
+// ---------------------------------------------------------------------------
+// I/O: orchestrator (searches tasks, reads deal + DB state, completes tasks)
+//
+// Everything below does HubSpot/Prisma I/O. The pure logic above is what the
+// unit tests import.
+// ---------------------------------------------------------------------------
+
+const SEARCH_TOKENS = ["Participate", "Resubmit", "Rejection"];
+const OPEN_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "WAITING"];
+
+interface OpenTask { id: string; subject: string; createdAt: number }
+
+/** Search open tasks whose subject contains any PE signal token; dedupe by id. */
+async function searchOpenPeTasks(): Promise<OpenTask[]> {
+  const byId = new Map<string, OpenTask>();
+  for (const token of SEARCH_TOKENS) {
+    let after: string | undefined;
+    do {
+      const res = await hubspotClient.crm.objects.tasks.searchApi.doSearch({
+        filterGroups: [{ filters: [
+          { propertyName: "hs_task_status", operator: "IN" as const, values: OPEN_STATUSES },
+          { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN" as const, value: token },
+        ] }],
+        properties: ["hs_task_subject", "hs_task_status", "hs_createdate"],
+        limit: 100, after,
+      } as Parameters<typeof hubspotClient.crm.objects.tasks.searchApi.doSearch>[0]);
+      for (const t of res.results) {
+        if (byId.has(t.id)) continue;
+        byId.set(t.id, {
+          id: t.id,
+          subject: t.properties.hs_task_subject || "",
+          createdAt: new Date(t.properties.hs_createdate || 0).getTime(),
+        });
+      }
+      after = res.paging?.next?.after;
+    } while (after);
+  }
+  return [...byId.values()];
+}
+
+export interface AutocompleteResult {
+  scannedTasks: number;
+  candidates: number;
+  completed: CompletionEntry[];
+}
+
+/**
+ * Reconcile open PE tasks: find candidates, read the deal + DB state each needs,
+ * and complete the ones whose condition holds. `dryRun` computes without writing.
+ */
+export async function autocompletePeTasks(opts: { dryRun?: boolean } = {}): Promise<AutocompleteResult> {
+  const { prisma } = await import("@/lib/db");
+
+  const open = await searchOpenPeTasks();
+  const candidates = open
+    .map((t) => ({ task: t, cls: classifyPeTask(t.subject) }))
+    .filter((c): c is { task: OpenTask; cls: ClassifiedTask } => c.cls !== null);
+
+  // task -> deal
+  const taskDeal = new Map<string, string>();
+  for (const { task } of candidates) {
+    const a = await hubspotClient.crm.associations.v4.basicApi.getPage("tasks", task.id, "deals", undefined, 1);
+    if (a.results.length) taskDeal.set(task.id, String(a.results[0].toObjectId));
+  }
+  const dealIds = [...new Set(taskDeal.values())];
+  if (dealIds.length === 0) return { scannedTasks: open.length, candidates: candidates.length, completed: [] };
+
+  // deal properties
+  const dealProps = new Map<string, Record<string, string>>();
+  for (let i = 0; i < dealIds.length; i += 100) {
+    const res = await hubspotClient.crm.deals.batchApi.read({
+      inputs: dealIds.slice(i, i + 100).map((id) => ({ id })),
+      properties: ["dealname", "pe_m1_status", "pe_m2_status", "pe_m1_submission_date", "pe_m2_submission_date"],
+    } as Parameters<typeof hubspotClient.crm.deals.batchApi.read>[0]);
+    for (const d of res.results) dealProps.set(d.id, d.properties as Record<string, string>);
+  }
+
+  // DB state: unresolved action items + latest version upload per (deal, canonical doc)
+  const openItems = await prisma.peActionItem.findMany({
+    where: { dealId: { in: dealIds }, resolvedAt: null },
+    select: { dealId: true, docLabel: true },
+  });
+  const versions = await prisma.peDocVersion.findMany({
+    where: { dealId: { in: dealIds } },
+    select: { dealId: true, docName: true, uploadedAt: true },
+  });
+
+  const state = new Map<string, DealPeState>();
+  for (const id of dealIds) {
+    const p = dealProps.get(id) ?? {};
+    state.set(id, {
+      m1Status: p.pe_m1_status || "", m2Status: p.pe_m2_status || "",
+      m1SubmissionDate: p.pe_m1_submission_date || null, m2SubmissionDate: p.pe_m2_submission_date || null,
+      unresolvedDocsByMilestone: { m1: new Set(), m2: new Set() },
+      latestUploadByDoc: new Map(),
+    });
+  }
+  for (const it of openItems) {
+    if (!it.dealId) continue;
+    const s = state.get(it.dealId); if (!s) continue;
+    const doc = normalizeActionItemDocName(it.docLabel);
+    s.unresolvedDocsByMilestone[docToMilestone(doc)].add(doc);
+  }
+  for (const v of versions) {
+    if (!v.dealId) continue;
+    const s = state.get(v.dealId); if (!s) continue;
+    const ms = v.uploadedAt.getTime();
+    if (ms > (s.latestUploadByDoc.get(v.docName) ?? 0)) s.latestUploadByDoc.set(v.docName, ms);
+  }
+
+  const completed: CompletionEntry[] = [];
+  for (const { task, cls } of candidates) {
+    const dealId = taskDeal.get(task.id); if (!dealId) continue;
+    const s = state.get(dealId); if (!s) continue;
+    const { complete, reason } = decideCompletion(cls, task.createdAt, s);
+    if (!complete) continue;
+    if (!opts.dryRun) await markTaskComplete(task.id);
+    completed.push({
+      taskId: task.id, dealId, dealName: dealProps.get(dealId)?.dealname || dealId,
+      kind: cls.kind, milestone: cls.milestone,
+      team: cls.kind === "rejection" ? cls.team : undefined, reason,
+    });
+  }
+  return { scannedTasks: open.length, candidates: candidates.length, completed };
+}
+
+/** Read + append + persist the ledger to its SystemConfig row. */
+export async function recordAutocompleteLedger(
+  completed: CompletionEntry[],
+  atIso: string,
+): Promise<AutocompleteLedger> {
+  const { prisma } = await import("@/lib/db");
+  const row = await prisma.systemConfig.findUnique({ where: { key: AUTOCOMPLETE_LEDGER_KEY } });
+  let prev: AutocompleteLedger | null = null;
+  if (row) { try { prev = JSON.parse(row.value) as AutocompleteLedger; } catch { prev = null; } }
+  const next = mergeAutocompleteLedger(prev, completed, atIso);
+  await prisma.systemConfig.upsert({
+    where: { key: AUTOCOMPLETE_LEDGER_KEY },
+    create: { key: AUTOCOMPLETE_LEDGER_KEY, value: JSON.stringify(next) },
+    update: { value: JSON.stringify(next) },
+  });
+  return next;
 }
