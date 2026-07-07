@@ -33,6 +33,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/internal-rejection", // Internal QC rejection → per-team notes from reviewer input; bearer/token-validated in route
   "/api/cron/audit-digest",
   "/api/cron/tech-ops-bot-digest", // Tech Ops bot daily digest — CRON_SECRET validated in route
+  "/api/cron/bottleneck-digest", // CRON_SECRET validated in route
   "/api/cron/property-reconcile",
   "/api/cron/audit-retention",
   "/api/cron/pipeline-health",
