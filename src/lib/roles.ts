@@ -517,6 +517,8 @@ const OPERATIONS: RoleDefinition = {
     "/suites/service",
   ],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/operations",
     "/suites/service",
@@ -639,6 +641,8 @@ const SERVICE: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/service"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/service",
     "/dashboards/service",
@@ -728,6 +732,8 @@ const TECH_OPS: RoleDefinition = {
     "/suites/permitting-interconnection",
   ],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
@@ -889,6 +895,8 @@ const DESIGN: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/design-engineering"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/design-engineering",
     "/dashboards/design",
@@ -986,6 +994,8 @@ const PERMIT: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/permitting-interconnection"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/permitting-interconnection",
     "/dashboards/permitting",
@@ -1058,6 +1068,8 @@ const INTERCONNECT: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/permitting-interconnection"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/permitting-interconnection",
     "/dashboards/interconnection",
@@ -1130,6 +1142,8 @@ const INTELLIGENCE: RoleDefinition = {
   visibleInPicker: true,
   suites: [],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/dashboards/qc",
     "/dashboards/at-risk",
@@ -1209,6 +1223,8 @@ const ROOFING: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/dnr-roofing"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/dnr-roofing",
     "/dashboards/dnr",
@@ -1274,6 +1290,8 @@ const MARKETING: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/sales-marketing"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/sales-marketing",
     "/dashboards/sales",
@@ -1345,6 +1363,8 @@ const SALES_MANAGER: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/sales-marketing"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/operations",
     "/suites/executive",
@@ -1438,6 +1458,8 @@ const SALES: RoleDefinition = {
   visibleInPicker: true,
   suites: ["/suites/sales-marketing"],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/suites/sales-marketing",
     "/dashboards/site-survey-scheduler",
@@ -1579,6 +1601,8 @@ const VIEWER: RoleDefinition = {
   visibleInPicker: true,
   suites: [],
   allowedRoutes: [
+    "/dashboards/pe-avl",
+    "/api/pe-avl",
     "/",
     "/unassigned",
     "/dashboards/deals",
