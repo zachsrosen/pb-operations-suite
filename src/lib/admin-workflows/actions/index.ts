@@ -16,6 +16,7 @@ import { addHubspotContactNoteAction } from "./add-hubspot-contact-note";
 import { addHubspotNoteAction } from "./add-hubspot-note";
 import { aiComposeAction } from "./ai-compose";
 import { createHubspotTaskAction } from "./create-hubspot-task";
+import { createZuperJobAction } from "./create-zuper-job";
 import { fetchHubspotDealAction } from "./fetch-hubspot-deal";
 import { fetchZuperJobAction } from "./fetch-zuper-job";
 import { findHubspotContactAction } from "./find-hubspot-contact";
@@ -47,6 +48,7 @@ export const ACTIONS: AdminWorkflowAction[] = [
   // Zuper
   fetchZuperJobAction,
   updateZuperPropertyAction,
+  createZuperJobAction,
   // PB Ops
   runBomPipelineAction,
   logActivityAction,
