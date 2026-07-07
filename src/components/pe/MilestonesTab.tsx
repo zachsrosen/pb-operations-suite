@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { queryKeys } from "@/lib/query-keys";
+import { milestoneDocBucket } from "@/lib/pe-milestone-bucket";
 
 // ---------------------------------------------------------------------------
 // Milestone-first PE payments view.
@@ -34,6 +35,14 @@ interface PeDeal {
   hubspotUrl: string;
   pePortalUrl: string | null;
   peProjectId: string | null;
+  docReviews: PeDocReviewRow[];
+}
+
+// Per-document PE review status (from /api/accounting/pe-deals). Only name +
+// status are needed for milestone bucketing; the payload carries more fields.
+interface PeDocReviewRow {
+  docName: string;
+  status: string;
 }
 
 type MilestoneTab = "all" | "ic" | "pc";
@@ -75,37 +84,6 @@ const SUBGROUPS: { key: SubGroup; label: string; accent: string }[] = [
 ];
 const SUBGROUP_LABEL = new Map(SUBGROUPS.map((s) => [s.key, s.label]));
 
-// pe_m1_status / pe_m2_status raw value -> status subgroup
-function statusBucket(status: string | null | undefined): SubGroup {
-  switch ((status ?? "").trim()) {
-    case "Waiting on Information":
-    case "Waiting on Customer Payment":
-    case "Waiting on Safe Harbor":
-    case "Waiting on RBC":
-      return "waiting";
-    case "Ready to Submit":
-    case "Ready for Onboarding":
-      return "ready";
-    case "Rejected":
-    case "Ready to Resubmit":
-    case "Onboarding Rejected":
-    case "Onboarding Ready to Resubmit":
-    case "Internally Rejected":
-      return "action";
-    case "Submitted":
-    case "Resubmitted":
-    case "Onboarding Submitted":
-    case "Onboarding Resubmitted":
-      return "review";
-    case "Approved":
-      return "approved";
-    case "Paid":
-      return "paid";
-    default:
-      return "other";
-  }
-}
-
 type Phase = "preconstruction" | "construction" | "inspection" | "ic" | "pc";
 function stageToPhase(stageLabel: string): Phase {
   const s = (stageLabel ?? "").toLowerCase();
@@ -133,17 +111,26 @@ function paymentRows(deal: PeDeal): PaymentRow[] {
   ];
 }
 
+// docName -> PE review status, from the deal's synced doc reviews.
+function docStatusMap(deal: PeDeal): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const dr of deal.docReviews ?? []) m.set(dr.docName, dr.status);
+  return m;
+}
+
 // A payment's subgroup: construction stage until the milestone is active, then
-// that milestone's own status. IC activates at PTO; PC activates at Close Out
-// (PTO-stage PC sits in "Waiting on PTO").
+// its DOCUMENT state (via milestoneDocBucket) rather than the raw pe_m*_status.
+// IC activates at PTO; PC activates at Close Out (PTO-stage PC sits in
+// "Waiting on PTO"). The stage gate below is the eligibility check.
 function subgroupFor(row: PaymentRow): SubGroup {
   const phase = stageToPhase(row.deal.dealStageLabel);
   if (phase === "preconstruction" || phase === "construction" || phase === "inspection") {
     return phase;
   }
-  if (row.milestone === "IC") return statusBucket(row.status); // PTO+ -> M1 status
+  const statusByDoc = docStatusMap(row.deal);
+  if (row.milestone === "IC") return milestoneDocBucket("IC", statusByDoc, row.status); // PTO+ -> M1 active
   if (phase === "ic") return "waiting_pto"; // PC at PTO stage, not started yet
-  return statusBucket(row.status); // PC at Close Out+ -> M2 status
+  return milestoneDocBucket("PC", statusByDoc, row.status); // PC at Close Out+ -> M2 active
 }
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
