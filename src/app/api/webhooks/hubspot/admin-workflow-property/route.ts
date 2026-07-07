@@ -13,6 +13,14 @@
  *     "propertyValue": "true",
  *     "objectType": "deal" }            // optional, defaults to deal
  *
+ * HubSpot's NATIVE workflow webhook action can't customize the body (it
+ * posts the record snapshot with objectId only), so propertyName /
+ * propertyValue / objectType may also come as query params:
+ *
+ *   POST .../admin-workflow-property?propertyName=create_additional_visit&propertyValue=true
+ *
+ * Body fields win over query params when both are present.
+ *
  * Auth: HubSpot v3 webhook signature (same as eagleview-tdp-order).
  * The event is normalized into the exact shape the deal-sync fan-out
  * emits, so triggers behave identically regardless of feed.
@@ -63,21 +71,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  const query = request.nextUrl.searchParams;
   const objectId = String(payload.objectId ?? "").trim();
-  const propertyName = String(payload.propertyName ?? "").trim();
+  const propertyName = String(payload.propertyName ?? query.get("propertyName") ?? "").trim();
   if (!objectId || !propertyName) {
     return NextResponse.json({ error: "objectId and propertyName required" }, { status: 400 });
   }
-  const objectType = ["deal", "contact", "ticket"].includes(String(payload.objectType))
-    ? String(payload.objectType)
-    : "deal";
+  const rawObjectType = String(payload.objectType ?? query.get("objectType") ?? "deal");
+  const objectType = ["deal", "contact", "ticket"].includes(rawObjectType) ? rawObjectType : "deal";
+  const propertyValue = payload.propertyValue ?? query.get("propertyValue") ?? "";
 
   try {
     const queued = await fanoutAdminWorkflows("HUBSPOT_PROPERTY_CHANGE", {
       subscriptionType: `${objectType}.propertyChange`,
       objectId,
       propertyName,
-      propertyValue: payload.propertyValue == null ? "" : String(payload.propertyValue),
+      propertyValue: String(propertyValue),
     });
     return NextResponse.json({ ok: true, queued });
   } catch (err) {
