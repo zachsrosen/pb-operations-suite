@@ -61,6 +61,9 @@
     "src/app/api/cron/office-performance-warm/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/cron/neon-branch-sweep/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/api/cron/powerhub-assets/route.ts": { "maxDuration": 300 },
     "src/app/api/cron/powerhub-telemetry/route.ts": { "maxDuration": 120 },
     "src/app/api/cron/powerhub-alerts/route.ts": { "maxDuration": 120 },
@@ -212,7 +215,8 @@
     { "path": "/api/cron/zuper-job-backfill", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/vishtik-id-sync", "schedule": "0 8 * * *" },
     { "path": "/api/cron/workflow-map-sync", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/zuper-field-activity-sync", "schedule": "0 */3 * * *" }
+    { "path": "/api/cron/zuper-field-activity-sync", "schedule": "0 */3 * * *" },
+    { "path": "/api/cron/neon-branch-sweep", "schedule": "0 8 * * 0" }
   ],
   "redirects": [
     {

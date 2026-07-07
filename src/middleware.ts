@@ -54,6 +54,7 @@ const PUBLIC_API_ROUTES = [
   "/api/inngest", // Inngest Cloud → app handshake; signing-key validated by the serve handler
   "/api/webhooks/zuper/admin-workflows", // Zuper webhook → admin workflow fan-out; bearer-validated in route
   "/api/cron/admin-workflow-cleanup", // Mark stale admin-workflow runs as FAILED — CRON_SECRET validated in route
+  "/api/cron/neon-branch-sweep", // Delete stale Vercel preview branches on Neon — CRON_SECRET validated in route
   "/api/cron/admin-workflow-cron-dispatch", // Fire CRON-triggered admin workflows — CRON_SECRET validated in route
   "/api/cron/compliance-shadow-cleanup", // Compliance v2 shadow table TTL cleanup — CRON_SECRET validated in route
   "/api/cron/permit-hub-drafts-cleanup", // Permit Hub draft TTL cleanup — CRON_SECRET validated in route
