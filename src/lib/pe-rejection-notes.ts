@@ -25,6 +25,74 @@ import {
 const REJECTED_DOC_STATUS = "RESPONSE_NEEDED";
 
 /**
+ * Drop prior-cycle action items so a resubmitted document's team note reflects
+ * only its CURRENT rejection reason, not every reason PE ever flagged.
+ *
+ * PE's action items are cumulative and immutable — a doc rejected across multiple
+ * review cycles keeps every cycle's item, so `buildNotesByDoc` would otherwise
+ * concatenate an old reason with the new one (e.g. Rooney PROJ-8935's Signed
+ * Proposal: a stale NAD `[H050]` line beside the current Load Justification line).
+ * There's no resolved flag, so we use the doc's latest version upload as the
+ * cutoff: an item dated at/after the last resubmission is current; earlier items
+ * are superseded by that resubmission (PE re-flags anything still wrong as a new,
+ * later-dated item).
+ *
+ * Current-cycle GATE (mirrors the pe-api-sync resolver): a doc's old items are
+ * dropped only when it ALSO has a current-cycle item. If none qualify — a doc
+ * flipped to RESPONSE_NEEDED before its new note landed, or a note-less re-flip —
+ * we keep the doc's items unchanged rather than blanking the note to the
+ * "(no reviewer note provided)" placeholder. Docs with no version history are
+ * left untouched. Exported for unit testing.
+ */
+export function currentCycleActionItems(
+  documents: PeDocuments,
+  actionItems: PeActionItem[],
+): PeActionItem[] {
+  // Latest version upload (ms) per canonical doc name.
+  const cutoffByDoc = new Map<string, number>();
+  for (const [docKey, info] of Object.entries(documents)) {
+    const canonical = PE_API_DOC_MAP[docKey];
+    if (!canonical || !info) continue;
+    let latest = 0;
+    for (const v of info.versions ?? []) {
+      const t = new Date(v.uploadedAt).getTime();
+      if (!isNaN(t) && t > latest) latest = t;
+    }
+    if (latest > 0) cutoffByDoc.set(canonical, latest);
+  }
+
+  // Group items by canonical doc, preserving PE's original order.
+  const byDoc = new Map<string, PeActionItem[]>();
+  for (const item of actionItems) {
+    const canonical =
+      PE_ACTION_DOC_MAP[item.document?.id ?? ""] ?? item.document?.label ?? "";
+    if (!canonical) continue;
+    const arr = byDoc.get(canonical);
+    if (arr) arr.push(item);
+    else byDoc.set(canonical, [item]);
+  }
+
+  const kept = new Set<PeActionItem>();
+  for (const [canonical, items] of byDoc) {
+    const cutoff = cutoffByDoc.get(canonical);
+    if (cutoff == null) {
+      for (const it of items) kept.add(it); // no version info — leave untouched
+      continue;
+    }
+    const current = items.filter((it) => {
+      const t = new Date(it.date).getTime();
+      return !isNaN(t) && t >= cutoff;
+    });
+    // Gate: only trim when a current-cycle item exists; else keep the doc's items.
+    for (const it of current.length > 0 ? current : items) kept.add(it);
+  }
+
+  // Preserve PE's original input order; items on unmatched docs fall away here,
+  // exactly as buildNotesByDoc would drop them downstream.
+  return actionItems.filter((it) => kept.has(it));
+}
+
+/**
  * A reviewer line that references the Load Justification Form. PE has no
  * standalone LJF document — it bundles the request into the Proposal note — so
  * we detect it textually to mirror it to Design and to tick the LJF checkbox.
@@ -230,7 +298,7 @@ function buildRejectionBlocks(
   documents: PeDocuments,
   actionItems: PeActionItem[],
 ): RejectionBlock[] {
-  const notesByDoc = buildNotesByDoc(actionItems);
+  const notesByDoc = buildNotesByDoc(currentCycleActionItems(documents, actionItems));
   const blocks: RejectionBlock[] = [];
   for (const [docKey, info] of Object.entries(documents)) {
     if (!info || info.status !== REJECTED_DOC_STATUS) continue; // not currently rejected
@@ -316,7 +384,7 @@ export function composeRejectedDocuments(
   documents: PeDocuments,
   actionItems: PeActionItem[],
 ): { pe_m1_documents?: string; pe_m2_documents?: string } {
-  const notesByDoc = buildNotesByDoc(actionItems);
+  const notesByDoc = buildNotesByDoc(currentCycleActionItems(documents, actionItems));
   const m1: string[] = [];
   const m2: string[] = [];
 

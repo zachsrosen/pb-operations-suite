@@ -5,6 +5,7 @@ import {
   peInternalIdFromPortalUrl,
   sameDocSelection,
   withClearedTeamFields,
+  currentCycleActionItems,
   PE_DOC_TO_TEAM_FIELD,
   PE_REJECTION_TEAM_FIELDS,
 } from "@/lib/pe-rejection-notes";
@@ -360,5 +361,72 @@ describe("withClearedTeamFields", () => {
     const out = withClearedTeamFields({ pe_rejection_comments: "combined" });
     expect(out.pe_rejection_comments).toBe("combined");
     expect(out.pe_rejection_notes_for_sales).toBe("");
+  });
+});
+
+describe("currentCycleActionItems (team-note current-cycle gate)", () => {
+  // Dated action item + a doc carrying version upload dates (the cutoff source).
+  const itemAt = (id: string, label: string, notes: string, date: string): PeActionItem => ({
+    id: `ai-${id}-${date}`,
+    date,
+    activityBy: "PE Reviewer",
+    notes,
+    document: { type: "document", id, label },
+  });
+  const docV = (status: string | null, uploads: string[]): PeDocumentInfo => ({
+    present: true,
+    version: uploads.length || 1,
+    status,
+    versions: uploads.map((uploadedAt, i) => ({ version: i + 1, uploadedAt, uploadedBy: null })),
+  });
+  const idsOf = (items: PeActionItem[]) => items.map((i) => i.id);
+
+  it("drops the prior-cycle item once a current-cycle item exists (Rooney)", () => {
+    // Signed Proposal resubmitted 06-10; old NAD note (06-03) + new LJF note (06-12).
+    const documents = {
+      signedProposal: docV("RESPONSE_NEEDED", ["2026-06-01T00:00:00Z", "2026-06-10T00:00:00Z"]),
+    } as unknown as PeDocuments;
+    const old = itemAt("signed_proposal", "Signed Proposal", "[H050] INCOR-NET-AMT", "2026-06-03T00:00:00Z");
+    const cur = itemAt("signed_proposal", "Signed Proposal", "Load Justification needed", "2026-06-12T00:00:00Z");
+    expect(idsOf(currentCycleActionItems(documents, [old, cur]))).toEqual([cur.id]);
+  });
+
+  it("keeps the prior note when the doc is resubmitted but not yet re-reviewed (gate)", () => {
+    const documents = {
+      signedProposal: docV("RESPONSE_NEEDED", ["2026-06-01T00:00:00Z", "2026-06-10T00:00:00Z"]),
+    } as unknown as PeDocuments;
+    const a = itemAt("signed_proposal", "Signed Proposal", "old A", "2026-06-03T00:00:00Z");
+    const b = itemAt("signed_proposal", "Signed Proposal", "old B", "2026-06-05T00:00:00Z");
+    // No item dated after the 06-10 upload → keep both rather than blank the note.
+    expect(idsOf(currentCycleActionItems(documents, [a, b]))).toEqual([a.id, b.id]);
+  });
+
+  it("leaves items untouched for a doc with no version history", () => {
+    const documents = { designPlan: docV("RESPONSE_NEEDED", []) } as unknown as PeDocuments;
+    const a = itemAt("design_plan", "Design Plan", "some issue", "2026-06-03T00:00:00Z");
+    expect(idsOf(currentCycleActionItems(documents, [a]))).toEqual([a.id]);
+  });
+
+  it("gates each doc independently", () => {
+    const documents = {
+      signedProposal: docV("RESPONSE_NEEDED", ["2026-06-10T00:00:00Z"]),
+      designPlan: docV("RESPONSE_NEEDED", ["2026-06-10T00:00:00Z"]),
+    } as unknown as PeDocuments;
+    const spOld = itemAt("signed_proposal", "Signed Proposal", "sp old", "2026-06-03T00:00:00Z");
+    const spNew = itemAt("signed_proposal", "Signed Proposal", "sp new", "2026-06-12T00:00:00Z");
+    const dpOld = itemAt("design_plan", "Design Plan", "dp old", "2026-06-03T00:00:00Z"); // no current → kept
+    const kept = idsOf(currentCycleActionItems(documents, [spOld, spNew, dpOld]));
+    expect(kept).toEqual([spNew.id, dpOld.id]);
+  });
+
+  it("flows through composeRejectionNotes — only the current reason reaches the team field", () => {
+    const documents = {
+      signedProposal: docV("RESPONSE_NEEDED", ["2026-06-01T00:00:00Z", "2026-06-10T00:00:00Z"]),
+    } as unknown as PeDocuments;
+    const out = composeRejectionNotes(documents, [
+      itemAt("signed_proposal", "Signed Proposal", "stale NAD line", "2026-06-03T00:00:00Z"),
+      itemAt("signed_proposal", "Signed Proposal", "current size issue", "2026-06-12T00:00:00Z"),
+    ]);
+    expect(out["pe_rejection_notes_for_sales"]).toBe("Signed Proposal:\n• current size issue");
   });
 });
