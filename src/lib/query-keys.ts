@@ -133,6 +133,10 @@ export const queryKeys = {
     history: (dealId: string) => [...queryKeys.pePrep.root, "history", dealId] as const,
   },
   pipelineTracker: () => ["pipelineTracker"] as const,
+  bottlenecks: {
+    root: ["bottlenecks"] as const,
+    summary: () => [...queryKeys.bottlenecks.root, "summary"] as const,
+  },
   funnel: {
     root: ["funnel"] as const,
     designPipeline: (months?: number, locations?: string[]) =>
