@@ -135,3 +135,64 @@ describe("computeStageSnapshots", () => {
     expect(snap.stages.find((s) => s.key === "permitting")!.volumeNorm90d).toBe(1);
   });
 });
+
+describe("deriveThresholds", () => {
+  const completed = (n: number, days: number) =>
+    Array.from({ length: n }, (_, i) =>
+      deal({
+        hubspotDealId: `c${days}-${i}`,
+        permitSubmitDate: daysAgo(days + 30),
+        permitIssueDate: daysAgo(30),
+      })
+    );
+
+  it("computes median and p90 from completed transitions and defaults threshold to p90", () => {
+    // 10 transitions of 10d + 2 of 100d → median 10, p90 = 100
+    const rows = [...completed(10, 10), ...completed(2, 100)];
+    const t = deriveThresholds(rows, NOW);
+    expect(t.permitting.medianDays).toBe(10);
+    expect(t.permitting.thresholdDays).toBe(t.permitting.p90Days);
+  });
+
+  it("leaves thresholdDays null below 10 completed transitions (never flags)", () => {
+    const t = deriveThresholds(completed(3, 12), NOW);
+    expect(t.permitting.thresholdDays).toBeNull();
+    // and computeStageSnapshots never flags with a null threshold
+    const rows = [deal({ permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(500) })];
+    const snap = computeStageSnapshots(rows, t, NOW);
+    expect(snap.stages.find((s) => s.key === "permitting")!.flagged).toHaveLength(0);
+  });
+
+  it("preserves manual overrides while refreshing stats", () => {
+    const existing = {
+      permitting: { medianDays: 1, p90Days: 2, thresholdDays: 55, source: "manual" as const },
+    };
+    const t = deriveThresholds(completed(12, 10), NOW, existing);
+    expect(t.permitting.thresholdDays).toBe(55);
+    expect(t.permitting.source).toBe("manual");
+    expect(t.permitting.medianDays).toBe(10); // stats still refresh
+  });
+
+  it("ignores transitions older than the 12-month window", () => {
+    const old = completed(12, 10).map((d) => ({
+      ...d,
+      permitSubmitDate: daysAgo(500),
+      permitIssueDate: daysAgo(400),
+    }));
+    const t = deriveThresholds(old, NOW);
+    expect(t.permitting.medianDays).toBeNull();
+  });
+});
+
+describe("flow", () => {
+  it("buckets entries and exits by ISO week over all rows", () => {
+    const rows = [
+      deal({ hubspotDealId: "f1", permitSubmitDate: daysAgo(3) }),
+      deal({ hubspotDealId: "f2", permitSubmitDate: daysAgo(10), permitIssueDate: daysAgo(2) }),
+    ];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    const flow = snap.stages.find((s) => s.key === "permitting")!.flow;
+    const totals = flow.reduce((acc, w) => ({ entered: acc.entered + w.entered, exited: acc.exited + w.exited }), { entered: 0, exited: 0 });
+    expect(totals).toEqual({ entered: 2, exited: 1 });
+  });
+});
