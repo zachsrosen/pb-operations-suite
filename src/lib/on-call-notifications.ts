@@ -4,9 +4,10 @@ import { prisma } from "@/lib/db";
 import { sendEmailMessage } from "@/lib/email";
 import { expandSwapDates, isShortNotice, todayInTz } from "@/lib/on-call-swap";
 import OnCallSwapNotification, { type OnCallSwapEvent } from "@/emails/OnCallSwapNotification";
+import OnCallPtoNotification, { type OnCallPtoEvent } from "@/emails/OnCallPtoNotification";
 
-// Email notifications for the on-call swap lifecycle. Callers wrap in
-// try/catch — a failed email must never fail the underlying swap action.
+// Email notifications for the on-call swap and PTO lifecycles. Callers wrap in
+// try/catch — a failed email must never fail the underlying action.
 
 function baseUrl(): string {
   return (
@@ -152,5 +153,95 @@ export async function sendOnCallSwapNotification(swapId: string, event: OnCallSw
   });
   if (!result.success) {
     console.warn(`[on-call] swap ${event} notification send failed`, { swapId, error: result.error });
+  }
+}
+
+export async function sendOnCallPtoNotification(ptoId: string, event: OnCallPtoEvent): Promise<void> {
+  const pto = await prisma.onCallPtoRequest.findUnique({
+    where: { id: ptoId },
+    include: { crewMember: true, pool: true },
+  });
+  if (!pto) return;
+
+  const crewMemberName = pto.crewMember.name;
+  const ptoRange =
+    pto.startDate === pto.endDate
+      ? formatDayLong(pto.startDate)
+      : `${formatDayLong(pto.startDate)} – ${formatDayLong(pto.endDate)}`;
+  const shortNotice = isShortNotice(pto.startDate, todayInTz(pto.pool.timezone));
+
+  const mePage = `${baseUrl()}/dashboards/on-call/me`;
+  const activityPage = `${baseUrl()}/dashboards/on-call/activity`;
+
+  let to: string[];
+  let subject: string;
+  let actionUrl: string;
+  let actionLabel: string;
+
+  switch (event) {
+    case "requested": {
+      to = await approverEmails();
+      subject = `${shortNotice ? "[Short notice] " : ""}On-call PTO needs approval — ${crewMemberName} (${pto.pool.name})`;
+      actionUrl = activityPage;
+      actionLabel = "Approve or deny on the Activity page";
+      break;
+    }
+    case "approved": {
+      to = pto.crewMember.email ? [pto.crewMember.email] : [];
+      subject = `On-call PTO approved — ${ptoRange} (${pto.pool.name})`;
+      actionUrl = mePage;
+      actionLabel = "View your updated schedule";
+      break;
+    }
+    case "denied": {
+      to = pto.crewMember.email ? [pto.crewMember.email] : [];
+      subject = `On-call PTO denied — ${ptoRange} (${pto.pool.name})`;
+      actionUrl = mePage;
+      actionLabel = "View your on-call page";
+      break;
+    }
+  }
+
+  if (to.length === 0) {
+    console.warn(`[on-call] pto ${event} notification skipped — no recipient emails`, { ptoId });
+    return;
+  }
+
+  const props = {
+    event,
+    crewMemberName,
+    ptoRange,
+    poolName: pto.pool.name,
+    reason: pto.reason,
+    denialReason: pto.denialReason,
+    shortNotice,
+    actionUrl,
+    actionLabel,
+  };
+
+  const html = await render(React.createElement(OnCallPtoNotification, props));
+  const text = [
+    subject,
+    "",
+    `Electrician: ${crewMemberName}`,
+    `PTO dates: ${ptoRange}`,
+    `Pool: ${pto.pool.name}`,
+    ...(pto.reason ? [`Reason: ${pto.reason}`] : []),
+    ...(event === "denied" && pto.denialReason ? [`Denial reason: ${pto.denialReason}`] : []),
+    ...(shortNotice && event !== "denied" ? ["Short notice: this PTO starts within 2 weeks."] : []),
+    "",
+    `${actionLabel}: ${actionUrl}`,
+  ].join("\n");
+
+  const result = await sendEmailMessage({
+    to,
+    subject,
+    html,
+    text,
+    debugFallbackTitle: `On-call PTO ${event}`,
+    debugFallbackBody: text,
+  });
+  if (!result.success) {
+    console.warn(`[on-call] pto ${event} notification send failed`, { ptoId, error: result.error });
   }
 }
