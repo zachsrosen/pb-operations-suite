@@ -197,6 +197,17 @@ describe("computeStageSnapshots", () => {
     const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
     expect(snap.stages.find((s) => s.key === "permitting")!.flagged.map((f) => f.hubspotDealId)).toEqual(["b", "a"]);
   });
+
+  it("reconstructs the 90-day volume norm from stamps (in-stage on day D iff entry ≤ D < exit)", () => {
+    // One deal in permitting the whole trailing 90 days, one that exited 60 days ago
+    // → daily counts are 2 for the first ~30 days, 1 after → median 1.
+    const rows = [
+      deal({ hubspotDealId: "v1", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(120) }),
+      deal({ hubspotDealId: "v2", permitSubmitDate: daysAgo(120), permitIssueDate: daysAgo(60) }),
+    ];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "permitting")!.volumeNorm90d).toBe(1);
+  });
 });
 ```
 
@@ -386,6 +397,10 @@ export interface StageSnapshot {
   totalInStage: number;
   unknownAgeCount: number;
   medianDwellDays: number | null; // median of current in-stage dwell
+  /** Median daily in-stage count over the trailing 90 days, reconstructed from
+   *  stamps (in-stage on day D iff entry ≤ D < exit; null exit = still in).
+   *  Unknown-entry deals are excluded, so this can undercount. */
+  volumeNorm90d: number | null;
   threshold: StageThreshold;
   flagged: FlaggedDeal[];
   flow: Array<{ weekStart: string; entered: number; exited: number }>;
@@ -477,6 +492,22 @@ export function computeStageSnapshots(
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([weekStart, v]) => ({ weekStart, ...v }));
 
+    // Volume norm: median daily in-stage count over the trailing 90 days,
+    // reconstructed from stamps. Unknown-entry deals can't participate.
+    const dailyCounts: number[] = [];
+    for (let i = 1; i <= 90; i++) {
+      const dayMs = nowMs - i * DAY_MS;
+      let count = 0;
+      for (const d of rows) {
+        const entry = stage.entryDate(d);
+        if (!entry || entry.getTime() > dayMs) continue;
+        const exit = stage.exitDate(d);
+        if (exit == null || exit.getTime() > dayMs) count++;
+      }
+      dailyCounts.push(count);
+    }
+    dailyCounts.sort((a, b) => a - b);
+
     dwells.sort((a, b) => a - b);
     return {
       key: stage.key,
@@ -485,6 +516,7 @@ export function computeStageSnapshots(
       totalInStage: inStage.length,
       unknownAgeCount,
       medianDwellDays: median(dwells),
+      volumeNorm90d: median(dailyCounts),
       threshold,
       flagged,
       flow,
@@ -606,7 +638,9 @@ export async function refreshThresholds(nowMs = Date.now()): Promise<ThresholdCo
 }
 ```
 
-**Verify while implementing:** confirm the exact `Deal` field name for the HubSpot deal id (`hubspotDealId` expected) and the `pipeline` enum value (`"PROJECT"` expected) against `prisma/schema.prisma:3007-3013` and `src/app/api/projects/flagged/route.ts` (`where: { pipeline: "PROJECT" ... }`). Confirm `isPermitActiveStatus`/`isICActiveStatus`/`isPTOPipelineStatus` signatures in `src/lib/pi-statuses.ts:281-321` (they take `string`, hence the `?? ""`).
+**Verify while implementing:** confirm the exact `Deal` field name for the HubSpot deal id (`hubspotDealId` expected) and the `pipeline` enum value (`"PROJECT"` expected) against `prisma/schema.prisma:3007-3013` and `src/app/api/projects/flagged/route.ts` (`where: { pipeline: "PROJECT" ... }`). The `pi-statuses.ts` predicates (lines 281–321) accept `string | null | undefined`, so the `?? ""` is belt-and-suspenders only.
+
+**Known accepted behaviors** (do not "fix"): `peActive` counts the `"other"` bucket as in-stage (unrecognized PE statuses stay visible rather than vanishing); `computeBottleneckSnapshot` persists derived thresholds on first run even when called from a dashboard GET (self-initializing config).
 
 - [ ] **Step 4: Run tests, verify pass**
 
@@ -729,7 +763,7 @@ import type { BottleneckSnapshot, StageSnapshot } from "@/lib/bottlenecks";
 function stage(overrides: Partial<StageSnapshot>): StageSnapshot {
   return {
     key: "permitting", label: "Permitting", team: "pi",
-    totalInStage: 10, unknownAgeCount: 1, medianDwellDays: 12,
+    totalInStage: 10, unknownAgeCount: 1, medianDwellDays: 12, volumeNorm90d: 9,
     threshold: { medianDays: 12, p90Days: 30, thresholdDays: 30, source: "derived" },
     flagged: [], flow: [],
     ...overrides,
@@ -787,6 +821,33 @@ describe("buildDigestMessage", () => {
   it("returns null when nothing is flagged and nothing changed", () => {
     const s = snap([stage({ flagged: [] })]);
     expect(buildDigestMessage(s, { newlyFlagged: [], resolvedIds: [], hasChanges: false }, { includeFlow: false })).toBeNull();
+  });
+});
+
+describe("runBottleneckDigest orchestration", () => {
+  // IMPORTANT: the jest.mock calls for the dynamically-imported modules go at
+  // the TOP of the test file (jest.mock is hoisted; it cannot live in a describe):
+  //   jest.mock("@/lib/tech-ops-bot-proactive", () => ({ getOwnerDmSpace: jest.fn() }));
+  //   jest.mock("@/lib/google-chat-api", () => ({ postGoogleChatMessage: jest.fn() }));
+  // and the db mock at the top must also include deal.findMany:
+  //   jest.mock("@/lib/db", () => ({ prisma: { deal: { findMany: jest.fn() },
+  //     systemConfig: { findUnique: jest.fn(), upsert: jest.fn() } } }));
+
+  // NOTE for implementer: these tests drive runBottleneckDigest with nowMs values
+  // pinned to a Monday (2026-07-06T14:00Z) and a Tuesday (2026-07-07T14:00Z),
+  // prisma.deal.findMany returning [], and prisma.systemConfig.findUnique
+  // returning a thresholds row plus a last-digest row matching the empty state.
+  it("suppresses on a weekday when nothing changed", async () => {
+    // arrange mocks as above → expect { posted: false, reason: "no changes since last digest" }
+  });
+  it("always sends on Monday and refreshes thresholds", async () => {
+    // Monday nowMs → expect postGoogleChatMessage called (or reason "nothing to report"
+    // when buildDigestMessage returns null) and systemConfig.upsert called for
+    // bottleneck_thresholds (the refresh) — assert on the upsert key.
+  });
+  it("previews without posting or saving the snapshot", async () => {
+    // preview: true → message returned, postGoogleChatMessage NOT called,
+    // no bottleneck_last_digest upsert.
   });
 });
 
@@ -883,6 +944,11 @@ export function detectChanges(prev: FlagSnapshot | null, current: BottleneckSnap
 }
 
 // ── Rendering (plain text — Google Chat renders markdown tables as raw pipes) ──
+// Deliberate deviation from spec §5's "top 3 overall": we render top 3 PER
+// STAGE — it reads better per team and never hides a stage entirely.
+// Scoped delivery targets (spec §3) are v1-unused: the DigestScope type IS the
+// reserved shape; targets get added to the SystemConfig row when bot
+// visibility widens. No code here sends to anyone but the owner DM.
 
 /** "PROJ-#### | Last, First | Address" → "PROJ-#### — Last, First" */
 function shortName(name: string): string {
@@ -1049,7 +1115,7 @@ export async function GET(request: NextRequest) {
 
 - [ ] **Step 2: Register the cron in `vercel.json`**
 
-Add to the `crons` array (weekdays 14:00 UTC = 8am MDT / 7am MST — DST drift accepted per spec):
+Add to the `crons` array (starts ~line 87; weekdays 14:00 UTC = 8am MDT / 7am MST — DST drift accepted per spec):
 
 ```json
 {
@@ -1058,11 +1124,21 @@ Add to the `crons` array (weekdays 14:00 UTC = 8am MDT / 7am MST — DST drift a
 }
 ```
 
-- [ ] **Step 3: Typecheck + commit**
+- [ ] **Step 3: Allowlist the cron path in middleware — REQUIRED or the cron never fires**
+
+In `src/middleware.ts`, `PUBLIC_API_ROUTES` (lines ~21–70) individually allowlists every cron path (Vercel's cron request has no session; each route validates `CRON_SECRET` itself — see the existing `/api/cron/tech-ops-bot-digest` entry at ~line 35). Add alongside it:
+
+```ts
+"/api/cron/bottleneck-digest", // CRON_SECRET validated in route
+```
+
+Without this, middleware auth intercepts the sessionless cron request and the digest silently never sends in production.
+
+- [ ] **Step 4: Typecheck + commit**
 
 ```bash
 npx tsc --noEmit
-git add src/app/api/cron/bottleneck-digest/route.ts vercel.json
+git add src/app/api/cron/bottleneck-digest/route.ts vercel.json src/middleware.ts
 git commit -m "feat(bottlenecks): weekday digest cron (change-driven, Monday full send)"
 ```
 
@@ -1087,9 +1163,10 @@ In `src/lib/tech-ops-bot-proactive.ts`:
 - [ ] **Step 2: Check nothing else references the removed symbols**
 
 ```bash
-rg -n "STUCK_THRESHOLDS|buildStuckSection|stuckStages|\"stuck\"" src/
+rg -n "STUCK_THRESHOLDS|buildStuckSection|stuckStages" src/
+rg -n '"stuck"' src/lib/tech-ops-bot-proactive.ts src/app/api/cron/ src/app/api/webhooks/google-chat/
 ```
-Expected: no hits outside `tech-ops-bot-proactive.ts` history (fix any callers found — e.g. room-digest API routes passing `"stuck"`).
+Expected: zero hits after the edit. Do NOT grep `"stuck"` repo-wide and "fix" hits — the compliance-v2 job-status bucket (`src/lib/compliance-v2/types.ts`, `status-buckets.ts`, `scoring.ts`) and the zuper-compliance/pm-accountability dashboards use an unrelated `"stuck"` literal that must not be touched. (`buildSections` is module-private and the only external consumers of `tech-ops-bot-proactive` use `runDailyDigest`/`runRoomDigests`/`ownerEmail`/`setOwnerDmSpace`/`getOwnerDmSpace` — the removal is self-contained.)
 
 - [ ] **Step 3: Typecheck, run bot tests, commit**
 
@@ -1132,11 +1209,45 @@ export async function GET(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 2: Typecheck + commit**
+- [ ] **Step 2: Route shape test**
+
+Create `src/__tests__/api/bottlenecks-summary.test.ts` (follow the import style of the existing tests in `src/__tests__/api/`):
+
+```ts
+jest.mock("@/lib/bottlenecks", () => ({ computeBottleneckSnapshot: jest.fn() }));
+jest.mock("@/lib/sentry-request", () => ({ tagSentryRequest: jest.fn() }));
+
+import { GET } from "@/app/api/bottlenecks/summary/route";
+import { computeBottleneckSnapshot } from "@/lib/bottlenecks";
+import { NextRequest } from "next/server";
+
+it("returns the snapshot with lastUpdated", async () => {
+  (computeBottleneckSnapshot as jest.Mock).mockResolvedValue({
+    computedAt: "2026-07-07T14:00:00.000Z",
+    stages: [],
+  });
+  const res = await GET(new NextRequest("http://localhost/api/bottlenecks/summary"));
+  const body = await res.json();
+  expect(res.status).toBe(200);
+  expect(body.lastUpdated).toBe("2026-07-07T14:00:00.000Z");
+  expect(body.stages).toEqual([]);
+});
+
+it("returns 500 with the error message on failure", async () => {
+  (computeBottleneckSnapshot as jest.Mock).mockRejectedValue(new Error("boom"));
+  const res = await GET(new NextRequest("http://localhost/api/bottlenecks/summary"));
+  expect(res.status).toBe(500);
+});
+```
+
+(Role gating is enforced by middleware + the Task 9 allowlist, not in-route — verified manually in Task 9 Step 3.)
+
+- [ ] **Step 3: Run tests, typecheck, commit**
 
 ```bash
+npm test -- src/__tests__/api/bottlenecks-summary.test.ts
 npx tsc --noEmit
-git add src/app/api/bottlenecks/summary/route.ts
+git add src/app/api/bottlenecks/summary/route.ts src/__tests__/api/bottlenecks-summary.test.ts
 git commit -m "feat(bottlenecks): summary API for the dashboard"
 ```
 
@@ -1209,6 +1320,8 @@ Implementation notes (follow, don't improvise):
 - Theme tokens only (`bg-surface`, `border-t-border`, `text-muted`, `text-foreground`); flagged accents `text-red-*`. No hardcoded hex.
 - Table must live inside `overflow-x-auto`.
 - Reuse `MetricCard`/`MiniStat` from `@/components/ui/MetricCard` for tiles if a straightforward fit; otherwise simple styled divs are fine — do NOT add chart libraries.
+- Stage tiles include the volume comparison: `totalInStage` vs `volumeNorm90d` (e.g. "38 in stage · norm 31").
+- **Location filter**: use `MultiSelectFilter` from `@/components/ui/MultiSelectFilter`, options = distinct `pbLocation` values across all `flagged` deals. It filters the stuck-deal tables **client-side** (slicing `flagged[]` by `pbLocation`); stage tiles keep all-locations totals with a "tiles show all locations" caption when a filter is active — the API stays pre-aggregated, per spec's read-only v1.
 - Deal rows are display-only in v1 (no links needed; HubSpot deal links can be a follow-up).
 
 - [ ] **Step 3: Verify in the browser (preview tools)**
