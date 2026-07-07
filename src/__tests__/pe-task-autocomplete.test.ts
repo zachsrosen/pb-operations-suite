@@ -6,6 +6,8 @@ import {
   docToTeam,
   docToMilestone,
   subjectTeam,
+  decideCompletion,
+  type DealPeState,
 } from "@/lib/pe-task-autocomplete";
 
 describe("classifyPeTask", () => {
@@ -70,5 +72,69 @@ describe("doc -> team / milestone", () => {
     expect(subjectTeam("M1 Operations Rejection")).toBe("ops");
     expect(subjectTeam("M2 Interconnection Rejection")).toBe("interconnection");
     expect(subjectTeam("M1 Rejected by Participate Energy #1")).toBeUndefined();
+  });
+});
+
+describe("decideCompletion", () => {
+  const C = 1_000_000; // task hs_createdate (ms)
+  const base = (over: Partial<DealPeState> = {}): DealPeState => ({
+    m1Status: "Submitted", m2Status: "",
+    m1SubmissionDate: "1699999999999", m2SubmissionDate: null,
+    unresolvedDocsByMilestone: { m1: new Set(), m2: new Set() },
+    latestUploadByDoc: new Map(),
+    ...over,
+  });
+
+  it("submit: closes when the milestone submission date is set, not before", () => {
+    expect(decideCompletion({ kind: "submit", milestone: "m1" }, C, base({ m1SubmissionDate: "123" })).complete).toBe(true);
+    expect(decideCompletion({ kind: "submit", milestone: "m1" }, C, base({ m1SubmissionDate: null })).complete).toBe(false);
+    // per-milestone independence
+    expect(decideCompletion({ kind: "submit", milestone: "m2" }, C, base({ m2SubmissionDate: null })).complete).toBe(false);
+  });
+
+  it("per-team rejection: closes only when team's docs are resolved AND a post-C resubmission exists", () => {
+    const task = { kind: "rejection" as const, milestone: "m1" as const, flavor: "pe" as const, team: "sales" as const };
+    // Sales owns "Signed Proposal" (m1). Unresolved -> stays open.
+    expect(decideCompletion(task, C, base({ unresolvedDocsByMilestone: { m1: new Set(["Signed Proposal"]), m2: new Set() } })).complete).toBe(false);
+    // Resolved but no post-C upload -> stays open.
+    expect(decideCompletion(task, C, base({ latestUploadByDoc: new Map([["Signed Proposal", C - 1]]) })).complete).toBe(false);
+    // Resolved + post-C upload -> closes.
+    expect(decideCompletion(task, C, base({ latestUploadByDoc: new Map([["Signed Proposal", C + 1]]) })).complete).toBe(true);
+  });
+
+  it("per-team rejection: an M2 resubmission never closes an M1 accounting task", () => {
+    const m1acct = { kind: "rejection" as const, milestone: "m1" as const, flavor: "pe" as const, team: "accounting" as const };
+    // Only the M2 accounting doc was resubmitted; M1 accounting doc (Progress Lien) has no post-C upload.
+    const state = base({ latestUploadByDoc: new Map([["Conditional Waiver — Final Payment", C + 1]]) });
+    expect(decideCompletion(m1acct, C, state).complete).toBe(false);
+  });
+
+  it("generic rejection: waits until no unresolved docs remain on the milestone", () => {
+    const task = { kind: "rejection" as const, milestone: "m1" as const, flavor: "pe" as const, team: undefined };
+    expect(decideCompletion(task, C, base({ unresolvedDocsByMilestone: { m1: new Set(["Design Plan"]), m2: new Set() } })).complete).toBe(false);
+    expect(decideCompletion(task, C, base({ latestUploadByDoc: new Map([["Design Plan", C + 1]]) })).complete).toBe(true);
+  });
+
+  it("resubmit: closes once the milestone left Ready to Resubmit", () => {
+    const task = { kind: "resubmit" as const, milestone: "m1" as const, flavor: "pe" as const };
+    expect(decideCompletion(task, C, base({ m1Status: "Ready to Resubmit" })).complete).toBe(false);
+    expect(decideCompletion(task, C, base({ m1Status: "Submitted" })).complete).toBe(true);
+  });
+
+  it("onboarding resubmit: closes once m1 left Onboarding Ready to Resubmit", () => {
+    const task = { kind: "resubmit" as const, milestone: "m1" as const, flavor: "onboarding" as const };
+    expect(decideCompletion(task, C, base({ m1Status: "Onboarding Ready to Resubmit" })).complete).toBe(false);
+    expect(decideCompletion(task, C, base({ m1Status: "Onboarding Resubmitted" })).complete).toBe(true);
+  });
+
+  it("BOM rejection counts toward the Ops team task", () => {
+    const opsTask = { kind: "rejection" as const, milestone: "m1" as const, flavor: "pe" as const, team: "ops" as const };
+    // BOM is an Ops doc (override) resubmitted post-C, and no Ops doc is unresolved.
+    expect(decideCompletion(opsTask, C, base({ latestUploadByDoc: new Map([["Bill of Materials", C + 1]]) })).complete).toBe(true);
+  });
+
+  it("internal flavor is never completed in v1", () => {
+    const task = { kind: "rejection" as const, milestone: "m1" as const, flavor: "internal" as const, team: "ops" as const };
+    expect(decideCompletion(task, C, base()).complete).toBe(false);
   });
 });

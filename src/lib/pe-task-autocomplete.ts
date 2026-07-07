@@ -102,3 +102,76 @@ export function docToMilestone(docName: string): "m1" | "m2" {
 
 /** All canonical PE doc names, from the single source of truth. */
 export const ALL_DOC_NAMES: string[] = PE_DOC_HUBSPOT_MAP.map((d) => d.docName);
+
+// ---------------------------------------------------------------------------
+// Completion decision (pure)
+// ---------------------------------------------------------------------------
+
+export interface DealPeState {
+  m1Status: string;
+  m2Status: string;
+  m1SubmissionDate: string | null;
+  m2SubmissionDate: string | null;
+  /** Canonical doc names with an unresolved PeActionItem, split by milestone. */
+  unresolvedDocsByMilestone: { m1: Set<string>; m2: Set<string> };
+  /** Canonical doc name -> latest PeDocVersion.uploadedAt (ms). */
+  latestUploadByDoc: Map<string, number>;
+}
+
+const ONBOARDING_DOCS = [
+  "Customer Agreement (PPA/ESA)", "Installation Order", "State Disclosures", "Utility Bill",
+];
+
+/** Docs in a milestone owned by a team (undefined team = all docs in the milestone). */
+function scopedDocs(milestone: "m1" | "m2", team: Team | undefined, onlyOnboarding = false): string[] {
+  const pool = onlyOnboarding ? ONBOARDING_DOCS : ALL_DOC_NAMES;
+  return pool.filter(
+    (d) => docToMilestone(d) === milestone && (team === undefined || docToTeam(d) === team),
+  );
+}
+
+/** A doc is "resubmitted for this cycle" if its latest upload post-dates the task. */
+function resubmittedAfter(state: DealPeState, docs: string[], createdAt: number): boolean {
+  return docs.some((d) => (state.latestUploadByDoc.get(d) ?? 0) > createdAt);
+}
+
+/** No doc in the set still has an unresolved action item on the milestone. */
+function allResolved(state: DealPeState, milestone: "m1" | "m2", docs: string[]): boolean {
+  const unresolved = state.unresolvedDocsByMilestone[milestone];
+  return docs.every((d) => !unresolved.has(d));
+}
+
+/**
+ * Decide whether an open, classified task should be completed given the deal's
+ * current state. Complete-only + strictly condition-gated; see spec Section 6.
+ */
+export function decideCompletion(
+  task: ClassifiedTask,
+  createdAt: number,
+  state: DealPeState,
+): { complete: boolean; reason: string } {
+  if (task.kind === "submit") {
+    const date = task.milestone === "m1" ? state.m1SubmissionDate : state.m2SubmissionDate;
+    return date
+      ? { complete: true, reason: `${task.milestone} submission date set` }
+      : { complete: false, reason: "no submission date" };
+  }
+
+  if (task.kind === "resubmit") {
+    const status = task.milestone === "m1" ? state.m1Status : state.m2Status;
+    const gate = task.flavor === "onboarding" ? "Onboarding Ready to Resubmit" : "Ready to Resubmit";
+    return status !== gate
+      ? { complete: true, reason: `left ${gate}` }
+      : { complete: false, reason: `still ${gate}` };
+  }
+
+  // rejection
+  if (task.flavor === "internal") return { complete: false, reason: "internal deferred to phase 2" };
+
+  const docs = scopedDocs(task.milestone, task.team, task.flavor === "onboarding");
+  if (docs.length === 0) return { complete: false, reason: "no docs in scope" };
+
+  if (!allResolved(state, task.milestone, docs)) return { complete: false, reason: "unresolved items remain" };
+  if (!resubmittedAfter(state, docs, createdAt)) return { complete: false, reason: "no post-creation resubmission" };
+  return { complete: true, reason: `${task.team ?? "milestone"} docs resubmitted` };
+}
