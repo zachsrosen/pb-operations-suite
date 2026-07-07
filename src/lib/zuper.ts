@@ -493,6 +493,16 @@ export class ZuperClient {
   }
 
   /**
+   * List service-task masters (checklist templates). NOTE: the endpoint's
+   * category filters are silently ignored — callers filter client-side.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getServiceTaskMasters(): Promise<ZuperApiResponse<any[]>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.request<any[]>(`/service_tasks/master?count=100`, {}, 30000, "getServiceTaskMasters");
+  }
+
+  /**
    * Associate an existing job with a Zuper project.
    * Zuper links via POST /projects/{project_uid}/jobs/{job_uid}.
    */

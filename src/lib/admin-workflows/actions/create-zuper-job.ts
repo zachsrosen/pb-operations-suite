@@ -179,7 +179,41 @@ export const createZuperJobAction: AdminWorkflowAction<
     const categoryLabel = CATEGORY_LABELS[inputs.jobCategoryUid] || "Job";
     const jobTitle = inputs.jobTitle?.trim() || `${categoryLabel} - ${dealName}`;
     const teamUid = TEAM_UID_BY_PB_LOCATION[(deal.pb_location || "").trim().toLowerCase()];
+
+    // Zuper rejects service-task entries without a title, so enrich the
+    // configured master UID from the master record (title, duration, form).
+    // Best-effort: unknown/unfetchable master → job created without checklist.
+    let serviceTaskEntry: Record<string, unknown> | null = null;
     const serviceTaskMasterUid = inputs.serviceTaskMasterUid?.trim() || null;
+    if (serviceTaskMasterUid) {
+      try {
+        const mastersRes = await zuper.getServiceTaskMasters();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawMasters = mastersRes.type === "success" ? (mastersRes.data as any) : null;
+        const masters: unknown[] = Array.isArray(rawMasters)
+          ? rawMasters
+          : Array.isArray(rawMasters?.data)
+            ? rawMasters.data
+            : [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const master = masters.find((m: any) => m?.service_task_master_uid === serviceTaskMasterUid) as any;
+        if (master) {
+          serviceTaskEntry = {
+            sequence_no: 1,
+            service_task_master: serviceTaskMasterUid,
+            service_task_title: master.service_task_title || "Service Task",
+            ...(master.estimated_duration && { estimated_duration: master.estimated_duration }),
+            ...(master.inspection_form?.asset_form_uid && {
+              inspection_form: master.inspection_form.asset_form_uid,
+            }),
+          };
+        } else {
+          console.warn("[create-zuper-job] Service task master %s not found — skipping checklist", serviceTaskMasterUid);
+        }
+      } catch (err) {
+        console.warn("[create-zuper-job] Service task master lookup failed (non-fatal):", err);
+      }
+    }
 
     // Resolve (or create) the Zuper customer so the tenant accepts the job.
     const customerUid = await resolveOrCreateZuperCustomer({
@@ -231,11 +265,12 @@ export const createZuperJobAction: AdminWorkflowAction<
         { label: "Location (State)", value: state },
       ],
       // Optional checklist (service task) attached at creation.
-      ...(serviceTaskMasterUid && {
+      ...(serviceTaskEntry && {
         service_task: {
           is_enabled: true,
           execution_type: "PARALLEL",
-          service_tasks: [{ sequence_no: 1, service_task_master: serviceTaskMasterUid }],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          service_tasks: [serviceTaskEntry as any],
         },
       }),
     };

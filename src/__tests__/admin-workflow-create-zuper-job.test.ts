@@ -85,6 +85,19 @@ function mockZuperApis(opts: { projects?: unknown[] } = {}) {
     if (url.includes("/projects?")) {
       return { type: "success", data: opts.projects ?? [] };
     }
+    if (url.includes("/service_tasks/master")) {
+      return {
+        type: "success",
+        data: [
+          {
+            service_task_master_uid: "6c913698-5a39-4c7c-80a9-0d59970ff891",
+            service_task_title: "Participate Energy Photos",
+            estimated_duration: { days: 0, hours: 1, minutes: 0 },
+            inspection_form: { asset_form_uid: "60e51adc-1bc6-43ad-9ec8-b5fbd80cbb3f" },
+          },
+        ],
+      };
+    }
     if (method === "POST" && /\/projects\/[^/]+\/jobs\//.test(url)) {
       return { type: "success", message: "Job added to project" };
     }
@@ -238,7 +251,7 @@ describe("create-zuper-job action", () => {
     expect(postJobCalls()[0].body.job.assigned_to_team).toBeUndefined();
   });
 
-  it("attaches a service task at creation when a master UID is configured", async () => {
+  it("attaches a service task enriched from its master when a master UID is configured", async () => {
     mockDeal();
     mockZuperApis();
     await action.handler({
@@ -250,13 +263,36 @@ describe("create-zuper-job action", () => {
       context,
     });
     const job = postJobCalls()[0].body.job;
+    // Zuper rejects entries without service_task_title, so the action must
+    // enrich from the master record (title, duration, inspection form).
     expect(job.service_task).toEqual({
       is_enabled: true,
       execution_type: "PARALLEL",
       service_tasks: [
-        { sequence_no: 1, service_task_master: "6c913698-5a39-4c7c-80a9-0d59970ff891" },
+        {
+          sequence_no: 1,
+          service_task_master: "6c913698-5a39-4c7c-80a9-0d59970ff891",
+          service_task_title: "Participate Energy Photos",
+          estimated_duration: { days: 0, hours: 1, minutes: 0 },
+          inspection_form: "60e51adc-1bc6-43ad-9ec8-b5fbd80cbb3f",
+        },
       ],
     });
+  });
+
+  it("creates the job without a checklist when the master UID is unknown", async () => {
+    mockDeal();
+    mockZuperApis();
+    const output = await action.handler({
+      inputs: action.inputsSchema.parse({
+        dealId: "780",
+        jobCategoryUid: ADDITIONAL_VISIT_UID,
+        serviceTaskMasterUid: "does-not-exist",
+      }),
+      context,
+    });
+    expect(postJobCalls()[0].body.job.service_task).toBeUndefined();
+    expect(output.jobUid).toBe("new-job-uid");
   });
 
   it("links the job to the deal's Zuper project when one matches by HubSpot Deal ID", async () => {
