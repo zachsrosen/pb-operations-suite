@@ -467,6 +467,34 @@ export class ZuperClient {
   }
 
   /**
+   * Search Zuper projects. Only `filter.keyword` is honored by the API and
+   * it matches the project TITLE (customer name + address) — NOT custom
+   * fields, so callers must verify matches (e.g. by the "HubSpot Deal ID"
+   * custom field) themselves.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async searchProjects(keyword: string): Promise<ZuperApiResponse<any[]>> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.request<any[]>(
+      `/projects?page=1&count=20&filter.keyword=${encodeURIComponent(keyword)}`,
+      {},
+      30000,
+      "searchProjects",
+    );
+  }
+
+  /**
+   * Associate an existing job with a Zuper project.
+   * Zuper links via POST /projects/{project_uid}/jobs/{job_uid}.
+   */
+  async addJobToProject(projectUid: string, jobUid: string): Promise<ZuperApiResponse<unknown>> {
+    return this.request<unknown>(
+      `/projects/${encodeURIComponent(projectUid)}/jobs/${encodeURIComponent(jobUid)}`,
+      { method: "POST" },
+    );
+  }
+
+  /**
    * Get a job by ID
    */
   async getJob(jobUid: string, caller?: string): Promise<ZuperApiResponse<ZuperJob>> {

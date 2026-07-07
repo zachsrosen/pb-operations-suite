@@ -77,10 +77,16 @@ function mockDeal(overrides: Record<string, string | null> = {}) {
   });
 }
 
-function mockZuperApis() {
+function mockZuperApis(opts: { projects?: unknown[] } = {}) {
   mockFetch((url, method) => {
     if (method === "POST" && url.endsWith("/jobs")) {
       return { type: "success", data: { job_uid: "new-job-uid" } };
+    }
+    if (url.includes("/projects?")) {
+      return { type: "success", data: opts.projects ?? [] };
+    }
+    if (method === "POST" && /\/projects\/[^/]+\/jobs\//.test(url)) {
+      return { type: "success", message: "Job added to project" };
     }
     if (url.includes("/customers")) {
       return {
@@ -93,6 +99,9 @@ function mockZuperApis() {
     return { type: "success", data: {} };
   });
 }
+
+const projectLinkCalls = () =>
+  calls.filter((c) => c.method === "POST" && /\/projects\/[^/]+\/jobs\//.test(c.url));
 
 beforeEach(() => {
   calls.length = 0;
@@ -188,5 +197,53 @@ describe("create-zuper-job action", () => {
   it("rejects inputs missing a category", () => {
     const parsed = action.inputsSchema.safeParse({ dealId: "1" });
     expect(parsed.success).toBe(false);
+  });
+
+  it("links the job to the deal's Zuper project when one matches by HubSpot Deal ID", async () => {
+    mockDeal();
+    mockZuperApis({
+      projects: [
+        {
+          project_uid: "proj-uid-1",
+          project_title: "Test, Customer | 123 Main St",
+          custom_fields: [{ label: "HubSpot Deal ID", value: "54787360530" }],
+        },
+        {
+          project_uid: "proj-uid-other",
+          project_title: "Test, Customer | Somewhere Else",
+          custom_fields: [{ label: "HubSpot Deal ID", value: "999" }],
+        },
+      ],
+    });
+
+    const output = await action.handler({
+      inputs: action.inputsSchema.parse({
+        dealId: "54787360530",
+        jobCategoryUid: ADDITIONAL_VISIT_UID,
+      }),
+      context,
+    });
+
+    const links = projectLinkCalls();
+    expect(links).toHaveLength(1);
+    expect(links[0].url).toContain("/projects/proj-uid-1/jobs/new-job-uid");
+    expect(output.projectUid).toBe("proj-uid-1");
+  });
+
+  it("still succeeds (projectUid null) when no Zuper project matches", async () => {
+    mockDeal();
+    mockZuperApis({ projects: [] });
+
+    const output = await action.handler({
+      inputs: action.inputsSchema.parse({
+        dealId: "54787360530",
+        jobCategoryUid: ADDITIONAL_VISIT_UID,
+      }),
+      context,
+    });
+
+    expect(projectLinkCalls()).toHaveLength(0);
+    expect(output.projectUid).toBeNull();
+    expect(output.jobUid).toBe("new-job-uid");
   });
 });

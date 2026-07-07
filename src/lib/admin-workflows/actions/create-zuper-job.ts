@@ -57,9 +57,41 @@ const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
 
 const DEAL_PROPS = ["dealname", "address_line_1", "city", "state", "postal_code"];
 
+/**
+ * Best-effort: find the deal's Zuper project. Project titles are the deal
+ * name WITHOUT the PROJ-#### prefix, and `filter.keyword` only matches
+ * titles — so search by the customer-name segment, then verify via the
+ * project's "HubSpot Deal ID" custom field.
+ */
+async function findZuperProjectForDeal(dealId: string, dealName: string): Promise<string | null> {
+  const searchName = dealName
+    .replace(/^PROJ-\d+\s*\|\s*/i, "")
+    .split(" | ")[0]
+    .trim();
+  if (!searchName) return null;
+
+  const res = await zuper.searchProjects(searchName);
+  if (res.type !== "success") return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = res.data as any;
+  const projects: unknown[] = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+  for (const p of projects) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const proj = p as any;
+    const fields: Array<{ label?: string; value?: unknown }> = Array.isArray(proj?.custom_fields)
+      ? proj.custom_fields
+      : [];
+    const dealField = fields.find((f) => f.label === "HubSpot Deal ID");
+    if (dealField && String(dealField.value) === dealId && proj.project_uid) {
+      return String(proj.project_uid);
+    }
+  }
+  return null;
+}
+
 export const createZuperJobAction: AdminWorkflowAction<
   z.infer<typeof inputsSchema>,
-  { jobUid: string; jobUrl: string; jobTitle: string; categoryUid: string }
+  { jobUid: string; jobUrl: string; jobTitle: string; categoryUid: string; projectUid: string | null }
 > = {
   kind: "create-zuper-job",
   name: "Create Zuper job",
@@ -165,11 +197,34 @@ export const createZuperJobAction: AdminWorkflowAction<
       );
     }
 
+    // Associate with the deal's Zuper project (same as the Tray creators).
+    // Best-effort: many deals (service-only, pre-survey, tests) have no project.
+    let projectUid: string | null = null;
+    try {
+      projectUid = await findZuperProjectForDeal(inputs.dealId, dealName);
+      if (projectUid) {
+        const linkResult = await zuper.addJobToProject(projectUid, jobUid);
+        if (linkResult.type === "error") {
+          console.warn(
+            "[create-zuper-job] Project link failed for job %s → project %s: %s",
+            jobUid,
+            projectUid,
+            linkResult.error,
+          );
+          projectUid = null;
+        }
+      }
+    } catch (err) {
+      console.warn("[create-zuper-job] Project lookup/link failed (non-fatal):", err);
+      projectUid = null;
+    }
+
     return {
       jobUid,
       jobUrl: ZuperClient.getJobWebUrl(jobUid),
       jobTitle,
       categoryUid: inputs.jobCategoryUid,
+      projectUid,
     };
   },
 };
