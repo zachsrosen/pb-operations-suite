@@ -8,6 +8,8 @@ import {
   subjectTeam,
   decideCompletion,
   type DealPeState,
+  mergeAutocompleteLedger,
+  type CompletionEntry,
 } from "@/lib/pe-task-autocomplete";
 
 describe("classifyPeTask", () => {
@@ -136,5 +138,27 @@ describe("decideCompletion", () => {
   it("internal flavor is never completed in v1", () => {
     const task = { kind: "rejection" as const, milestone: "m1" as const, flavor: "internal" as const, team: "ops" as const };
     expect(decideCompletion(task, C, base()).complete).toBe(false);
+  });
+});
+
+describe("mergeAutocompleteLedger", () => {
+  const entry = (taskId: string): CompletionEntry => ({
+    taskId, dealId: "1", dealName: "D", kind: "submit", milestone: "m1", reason: "x",
+  });
+
+  it("folds entries and keeps a lifetime total", () => {
+    const l1 = mergeAutocompleteLedger(null, [entry("a"), entry("b")], "2026-07-07T00:00:00Z");
+    expect(l1.totalCompleted).toBe(2);
+    expect(l1.entries).toHaveLength(2);
+    const l2 = mergeAutocompleteLedger(l1, [entry("c")], "2026-07-07T01:00:00Z");
+    expect(l2.totalCompleted).toBe(3);
+    expect(l2.lastRunAt).toBe("2026-07-07T01:00:00Z");
+  });
+
+  it("caps stored entries but not the lifetime total", () => {
+    const many = Array.from({ length: 2100 }, (_, i) => entry(String(i)));
+    const l = mergeAutocompleteLedger(null, many, "2026-07-07T00:00:00Z");
+    expect(l.totalCompleted).toBe(2100);
+    expect(l.entries.length).toBe(2000);
   });
 });

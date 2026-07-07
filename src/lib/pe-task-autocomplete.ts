@@ -175,3 +175,44 @@ export function decideCompletion(
   if (!resubmittedAfter(state, docs, createdAt)) return { complete: false, reason: "no post-creation resubmission" };
   return { complete: true, reason: `${task.team ?? "milestone"} docs resubmitted` };
 }
+
+// ---------------------------------------------------------------------------
+// Ledger (pure merge; persistence lives in the I/O section)
+// ---------------------------------------------------------------------------
+
+export const AUTOCOMPLETE_LEDGER_KEY = "pe_task_autocomplete_ledger";
+const LEDGER_CAP = 2000;
+
+export interface CompletionEntry {
+  taskId: string;
+  dealId: string;
+  dealName: string;
+  kind: ClassifiedTask["kind"];
+  milestone: "m1" | "m2";
+  team?: Team;
+  reason: string;
+  at?: string;
+}
+export interface AutocompleteLedger {
+  totalCompleted: number;
+  lastRunAt: string;
+  entries: CompletionEntry[];
+}
+
+/**
+ * Fold a run's completions into the prior ledger (pure). `totalCompleted` is the
+ * lifetime count (never trimmed); `entries` keeps the most recent LEDGER_CAP.
+ */
+export function mergeAutocompleteLedger(
+  prev: AutocompleteLedger | null,
+  completed: CompletionEntry[],
+  atIso: string,
+): AutocompleteLedger {
+  const base = prev ?? { totalCompleted: 0, lastRunAt: atIso, entries: [] };
+  const fresh = completed.map((c) => ({ ...c, at: atIso }));
+  return {
+    totalCompleted: base.totalCompleted + completed.length,
+    lastRunAt: atIso,
+    entries: [...base.entries, ...fresh].slice(-LEDGER_CAP),
+  };
+}
