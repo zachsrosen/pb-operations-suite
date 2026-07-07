@@ -1520,8 +1520,11 @@ export class ZuperClient {
   async searchCustomers(
     query: string
   ): Promise<ZuperApiResponse<ZuperCustomer[]>> {
+    // NOTE: `?search=` is silently IGNORED by Zuper (returns the same
+    // unfiltered first page for any value — incl. the demo customer
+    // "Kushaal Zuper" as row 1). `filter.keyword` is the param that works.
     return this.request<ZuperCustomer[]>(
-      `/customers?search=${encodeURIComponent(query)}`
+      `/customers?filter.keyword=${encodeURIComponent(query)}&count=50`
     );
   }
 
@@ -2108,9 +2111,12 @@ export async function resolveOrCreateZuperCustomer(project: {
         const candidate = `${c.customer_first_name || ""} ${c.customer_last_name || ""}`.trim();
         return normalize(candidate) === normalize(`${firstName} ${lastName}`);
       });
-      const match = exact || customers.find((c) => !!c.customer_uid);
-      if (match?.customer_uid) {
-        return match.customer_uid;
+      // Only accept a REAL name match. The old "any customer with a uid"
+      // fallback attached the first row of the page (the demo customer
+      // "Kushaal Zuper") whenever the exact match missed — every wrongly
+      // matched job then notified that customer instead of the homeowner.
+      if (exact?.customer_uid) {
+        return exact.customer_uid;
       }
     }
 
@@ -2127,10 +2133,15 @@ export async function resolveOrCreateZuperCustomer(project: {
       };
     }
     const createCustomerResult = await zuper.createCustomer(createPayload);
-    if (createCustomerResult.type === "success" && createCustomerResult.data?.customer_uid) {
-      return createCustomerResult.data.customer_uid;
+    // POST /customers responses are enveloped ({type, data: {customer_uid}})
+    // or flat depending on tenant/version — accept both.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const createdRaw = createCustomerResult.type === "success" ? (createCustomerResult.data as any) : null;
+    const createdUid = createdRaw?.customer_uid ?? createdRaw?.data?.customer_uid;
+    if (createdUid) {
+      return createdUid;
     }
-    console.warn("[resolveOrCreateZuperCustomer] Failed to create customer for project %s: %s", project.id, createCustomerResult.error);
+    console.warn("[resolveOrCreateZuperCustomer] Failed to create customer for project %s: %s", project.id, createCustomerResult.type === "error" ? createCustomerResult.error : "no customer_uid in response");
   } catch (err) {
     console.warn("[resolveOrCreateZuperCustomer] Failed to resolve/create customer for project %s:", project.id, err);
   }

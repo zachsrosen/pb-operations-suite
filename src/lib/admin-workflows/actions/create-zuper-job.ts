@@ -90,11 +90,27 @@ const HUBSPOT_PORTAL_ID = "21710069";
  * titles — so search by the customer-name segment, then verify via the
  * project's "HubSpot Deal ID" custom field.
  */
+/**
+ * Extract the customer-name segment from a PB deal name. Deal names look
+ * like "PROJ-#### | Last, First | address", optionally prefixed with a
+ * pipeline tag ("SVC | ...", "D&R | ...", "RF | ..."), and portal deals may
+ * omit the PROJ number entirely. Getting this wrong is how every
+ * action-created job ended up attached to Zuper's demo customer.
+ */
+export function parseCustomerNameFromDealName(dealName: string): string {
+  const parts = dealName.split(" | ").map((p) => p.trim()).filter(Boolean);
+  const isNoise = (p: string) =>
+    /^(SVC|D&R|DNR|RF|ROOF(ING)?)$/i.test(p) ||
+    /^PROJ-\d+$/i.test(p) ||
+    /^\[.+\]$/.test(p);
+  const candidates = parts.filter((p) => !isNoise(p));
+  // Prefer a "Last, First" segment without digits (addresses have digits).
+  const nameSegment = candidates.find((p) => /^[^,]+,\s*\S/.test(p) && !/\d/.test(p));
+  return (nameSegment || candidates[0] || dealName).trim();
+}
+
 async function findZuperProjectForDeal(dealId: string, dealName: string): Promise<string | null> {
-  const searchName = dealName
-    .replace(/^PROJ-\d+\s*\|\s*/i, "")
-    .split(" | ")[0]
-    .trim();
+  const searchName = parseCustomerNameFromDealName(dealName);
   if (!searchName) return null;
 
   const res = await zuper.searchProjects(searchName);
@@ -216,9 +232,12 @@ export const createZuperJobAction: AdminWorkflowAction<
     }
 
     // Resolve (or create) the Zuper customer so the tenant accepts the job.
+    // customerName must be the parsed name segment — passing the raw deal
+    // name made "SVC | ..." deals resolve customer "SVC" (→ wrong customer).
     const customerUid = await resolveOrCreateZuperCustomer({
       id: inputs.dealId,
       name: dealName,
+      customerName: parseCustomerNameFromDealName(dealName),
       address: deal.address_line_1 || "",
       city: deal.city || "",
       state,
