@@ -13,6 +13,7 @@ import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { sendAvailabilityConflictNotification } from "@/lib/email";
+import { buildSurveyConflictAssigneeFilter } from "@/lib/availability-conflict-filter";
 import { getDealOwnerContact } from "@/lib/hubspot";
 import { JOB_CATEGORY_UIDS, ZuperClient } from "@/lib/zuper";
 import {
@@ -212,17 +213,17 @@ export async function POST(request: NextRequest) {
       ...reqCtx,
     });
 
-    // Notify surveyor + deal owner(s) when an override conflicts with existing scheduled surveys
-    const candidateRecords = prisma
+    // Notify surveyor + deal owner(s) when an override conflicts with existing scheduled surveys.
+    // Filter strictly by identifiers that exist — a blank zuperUserUid with
+    // `contains` matches every record and false-alerts other crews' surveys.
+    const assigneeFilter = buildSurveyConflictAssigneeFilter(crewMember);
+    const candidateRecords = prisma && assigneeFilter
       ? await prisma.scheduleRecord.findMany({
           where: {
             scheduleType: "survey",
             scheduledDate: date,
             status: { in: ["scheduled", "tentative"] },
-            OR: [
-              { assignedUserUid: { contains: crewMember.zuperUserUid } },
-              { assignedUser: { equals: crewMember.name, mode: "insensitive" } },
-            ],
+            ...assigneeFilter,
           },
           orderBy: { createdAt: "desc" },
           select: {
