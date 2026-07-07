@@ -272,6 +272,12 @@ export const DEAL_SYNC_PROPERTIES: string[] = [
   // Tesla PowerHub crosslink (pushed by powerhub-crosslink; surfaced via rawProperties)
   "tesla_portal_url",
   "tesla_site_id",
+  // PE milestone status + remittance dates (no Deal columns — surfaced via
+  // rawProperties for the bottleneck engine; backfilled by the next full sync)
+  "pe_m1_status",
+  "pe_m2_status",
+  "pe_m1_remittance_date",
+  "pe_m2_remittance_date",
 ];
 
 /** Department lead property keys for building departmentLeads Json */
