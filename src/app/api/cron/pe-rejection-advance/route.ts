@@ -20,6 +20,31 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Auto-complete stale PE tasks (submit / rejection / resubmit) BEFORE advancing,
+    // so a resubmission closes the rejection task and the advance step can flip the
+    // milestone status in the same run. Flag-gated; convergent so a skipped run heals.
+    let autocomplete: { completed: number; ledgerTotal?: number } | undefined;
+    if (process.env.PE_TASK_AUTOCOMPLETE_ENABLED === "true") {
+      try {
+        const { autocompletePeTasks, recordAutocompleteLedger } = await import("@/lib/pe-task-autocomplete");
+        const ac = await autocompletePeTasks();
+        let acLedgerTotal: number | undefined;
+        if (ac.completed.length > 0) {
+          console.warn(
+            "[pe-task-autocomplete] completed:",
+            ac.completed
+              .map((c) => `${c.dealName} ${c.kind}/${c.milestone}${c.team ? `/${c.team}` : ""}`)
+              .join(" | "),
+          );
+          const acLedger = await recordAutocompleteLedger(ac.completed, new Date().toISOString());
+          acLedgerTotal = acLedger.totalCompleted;
+        }
+        autocomplete = { completed: ac.completed.length, ledgerTotal: acLedgerTotal };
+      } catch (err) {
+        console.error("[pe-task-autocomplete] failed (non-fatal):", err);
+      }
+    }
+
     const result = await advancePeRejections();
     // Persist a durable running tally (survives log retention) so the total
     // auto-advanced is auditable any time. Only touch the row when something
@@ -39,6 +64,7 @@ export async function GET(request: NextRequest) {
       advanced: result.advanced.length,
       ledgerTotal,
       deals: result.advanced,
+      autocomplete,
     });
   } catch (err) {
     console.error("[pe-rejection-advance] failed:", err);
