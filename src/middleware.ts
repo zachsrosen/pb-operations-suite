@@ -461,7 +461,14 @@ export default auth((req) => {
     if (!isPathAllowed(pathname)) {
       // Redirect to their default allowed page
       const defaultRoute = getDefaultRouteForRole(userRole);
-      return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
+      const redirect = addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
+      // Never cache role-denial redirects. next.config.ts puts a public 1-hour
+      // Cache-Control on /dashboards/* — without this override, a visit made
+      // before a role gained access caches the 307→default-suite for that URL
+      // (browser + Vercel edge) and keeps bouncing the user for up to an hour
+      // after access is granted. Same fix as the /login redirect above.
+      redirect.headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate");
+      return redirect;
     }
   }
 
