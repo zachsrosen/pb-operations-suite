@@ -56,6 +56,15 @@ export interface ZuperJob {
   // For read: array of { user: { first_name, last_name, ... } }
   // NOTE: Zuper API only allows setting assigned_to at CREATION time, not updates!
   assigned_to?: ZuperAssignment[] | { user: { first_name?: string; last_name?: string; user_uid?: string } }[];
+  // For create: array of { team_uid }. GET returns array of { team: {...} }.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assigned_to_team?: any[];
+  // Service-task checklist config (create accepts service_task_master refs).
+  service_task?: {
+    is_enabled: boolean;
+    execution_type: string;
+    service_tasks: Array<{ sequence_no: number; service_task_master: string }>;
+  };
   job_tags?: string[];
   // custom_fields can be an array (from GET) or object (for POST)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

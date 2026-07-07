@@ -33,7 +33,32 @@ const inputsSchema = z.object({
   jobDescription: z.string().optional(),
   /** Due date offset. Defaults to 7 business days out (same as the Tray flows). */
   dueInBusinessDays: z.coerce.number().int().min(1).max(60).optional(),
+  /**
+   * Optional Zuper service-task master (checklist) to attach at creation —
+   * e.g. "Participate Energy Photos" on Additional Visits, matching the
+   * Tray creators. Empty string means none.
+   */
+  serviceTaskMasterUid: z.string().optional(),
 });
+
+/**
+ * PB location (HubSpot pb_location values) → Zuper team UID, so jobs land
+ * on the right dispatch boards — same behavior as the Tray creators.
+ * Live tenant UIDs; teams are stable org structure.
+ */
+const TEAM_UID_BY_PB_LOCATION: Record<string, string> = {
+  westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
+  centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
+  "colorado springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
+  "san luis obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
+  camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
+};
+
+/** Common service-task masters for the editor dropdown. */
+const SERVICE_TASK_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "6c913698-5a39-4c7c-80a9-0d59970ff891", label: "Participate Energy Photos" },
+];
 
 /**
  * Live Zuper category UIDs (photonbrothers tenant). Static by design —
@@ -55,7 +80,9 @@ const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   CATEGORY_OPTIONS.map((o) => [o.value, o.label]),
 );
 
-const DEAL_PROPS = ["dealname", "address_line_1", "city", "state", "postal_code"];
+const DEAL_PROPS = ["dealname", "address_line_1", "city", "state", "postal_code", "pb_location"];
+
+const HUBSPOT_PORTAL_ID = "21710069";
 
 /**
  * Best-effort: find the deal's Zuper project. Project titles are the deal
@@ -132,6 +159,13 @@ export const createZuperJobAction: AdminWorkflowAction<
       placeholder: "7",
       help: "Due date stamped on the job. Defaults to 7 business days from today.",
     },
+    {
+      key: "serviceTaskMasterUid",
+      label: "Service task (checklist)",
+      kind: "select",
+      options: SERVICE_TASK_OPTIONS,
+      help: "Optional checklist attached to the job — e.g. Participate Energy Photos for Additional Visits.",
+    },
   ],
   inputsSchema,
   handler: async ({ inputs }) => {
@@ -144,6 +178,8 @@ export const createZuperJobAction: AdminWorkflowAction<
     const state = deal.state || "";
     const categoryLabel = CATEGORY_LABELS[inputs.jobCategoryUid] || "Job";
     const jobTitle = inputs.jobTitle?.trim() || `${categoryLabel} - ${dealName}`;
+    const teamUid = TEAM_UID_BY_PB_LOCATION[(deal.pb_location || "").trim().toLowerCase()];
+    const serviceTaskMasterUid = inputs.serviceTaskMasterUid?.trim() || null;
 
     // Resolve (or create) the Zuper customer so the tenant accepts the job.
     const customerUid = await resolveOrCreateZuperCustomer({
@@ -181,9 +217,27 @@ export const createZuperJobAction: AdminWorkflowAction<
         ...(dealName.match(/PROJ-\d+/i) ? [dealName.match(/PROJ-\d+/i)![0].toLowerCase()] : []),
         "admin-workflow",
       ],
-      custom_fields: {
-        hubspot_deal_id: inputs.dealId,
-      },
+      // Team assignment from PB location — same dispatch-board behavior as
+      // the Tray creators. Omitted when the deal has no recognizable location.
+      ...(teamUid && { assigned_to_team: [{ team_uid: teamUid }] }),
+      // Labeled custom fields, matching the Tray creators' labels exactly so
+      // Zuper job views line up regardless of which system created the job.
+      custom_fields: [
+        { label: "HubSpot Deal ID", value: inputs.dealId },
+        {
+          label: "Hubspot Deal Link",
+          value: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/record/0-3/${inputs.dealId}/`,
+        },
+        { label: "Location (State)", value: state },
+      ],
+      // Optional checklist (service task) attached at creation.
+      ...(serviceTaskMasterUid && {
+        service_task: {
+          is_enabled: true,
+          execution_type: "PARALLEL",
+          service_tasks: [{ sequence_no: 1, service_task_master: serviceTaskMasterUid }],
+        },
+      }),
     };
 
     const result = await zuper.createJob(job);

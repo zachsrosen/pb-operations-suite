@@ -133,8 +133,12 @@ describe("create-zuper-job action", () => {
     expect(job.scheduled_start_time).toBeUndefined();
     expect(job.scheduled_end_time).toBeUndefined();
     // Deal linkage for humans + the Link Deal to Zuper Job HubSpot workflow.
+    // custom_fields use Zuper's labeled array format (same as the Tray flows).
     expect(job.job_tags).toContain("hubspot-54787360530");
-    expect(job.custom_fields.hubspot_deal_id).toBe("54787360530");
+    const dealIdField = (job.custom_fields as Array<{ label: string; value: string }>).find(
+      (f) => f.label === "HubSpot Deal ID",
+    );
+    expect(dealIdField?.value).toBe("54787360530");
 
     expect(output.jobUid).toBe("new-job-uid");
     expect(output.jobUrl).toContain("new-job-uid");
@@ -197,6 +201,62 @@ describe("create-zuper-job action", () => {
   it("rejects inputs missing a category", () => {
     const parsed = action.inputsSchema.safeParse({ dealId: "1" });
     expect(parsed.success).toBe(false);
+  });
+
+  it("assigns the Zuper team from pb_location and adds Tray-parity custom fields", async () => {
+    mockDeal({ pb_location: "Westminster", state: "CO", city: "Westminster" });
+    mockZuperApis();
+
+    await action.handler({
+      inputs: action.inputsSchema.parse({
+        dealId: "777",
+        jobCategoryUid: ADDITIONAL_VISIT_UID,
+      }),
+      context,
+    });
+
+    const job = postJobCalls()[0].body.job;
+    // Westminster team UID (live Zuper tenant)
+    expect(job.assigned_to_team).toEqual([{ team_uid: "1c23adb9-cefa-44c7-8506-804949afc56f" }]);
+    const labels = (job.custom_fields as Array<{ label: string; value: string }>).map((f) => f.label);
+    expect(labels).toEqual(
+      expect.arrayContaining(["HubSpot Deal ID", "Hubspot Deal Link", "Location (State)"]),
+    );
+    const link = (job.custom_fields as Array<{ label: string; value: string }>).find(
+      (f) => f.label === "Hubspot Deal Link",
+    );
+    expect(link?.value).toContain("/record/0-3/777");
+  });
+
+  it("omits team assignment when pb_location is unknown", async () => {
+    mockDeal({ pb_location: null });
+    mockZuperApis();
+    await action.handler({
+      inputs: action.inputsSchema.parse({ dealId: "778", jobCategoryUid: ADDITIONAL_VISIT_UID }),
+      context,
+    });
+    expect(postJobCalls()[0].body.job.assigned_to_team).toBeUndefined();
+  });
+
+  it("attaches a service task at creation when a master UID is configured", async () => {
+    mockDeal();
+    mockZuperApis();
+    await action.handler({
+      inputs: action.inputsSchema.parse({
+        dealId: "779",
+        jobCategoryUid: ADDITIONAL_VISIT_UID,
+        serviceTaskMasterUid: "6c913698-5a39-4c7c-80a9-0d59970ff891",
+      }),
+      context,
+    });
+    const job = postJobCalls()[0].body.job;
+    expect(job.service_task).toEqual({
+      is_enabled: true,
+      execution_type: "PARALLEL",
+      service_tasks: [
+        { sequence_no: 1, service_task_master: "6c913698-5a39-4c7c-80a9-0d59970ff891" },
+      ],
+    });
   });
 
   it("links the job to the deal's Zuper project when one matches by HubSpot Deal ID", async () => {
