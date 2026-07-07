@@ -70,7 +70,7 @@ Tracked stages and their markers (`Deal` columns per `deal-property-map.ts`; PE 
 | PE M1 | `pe_m1_status` (deals with `isParticipateEnergy` only) | `inspectionPassDate` | `pe_m1_remittance_date` |
 | PE M2 | `pe_m2_status` (deals with `isParticipateEnergy` only) | `ptoCompletionDate` | `pe_m2_remittance_date` |
 
-Active-value sets reuse the existing constants (`pi-statuses.ts`, PE status enums) rather than redefining them. Construction entry prefers `installScheduleDate` over `permitIssueDate` so RTB/scheduling wait isn't billed to construction dwell.
+Active-value sets reuse the existing constants where they exist (`pi-statuses.ts` for permitting/IC, `pe-milestone-bucket.ts` for PE). Design, construction, inspection, and PTO have no named constant today — the plan enumerates their active values from the sets already used by the tech-ops bot's `count_deals_by_status` tool and `hubspot-status-display.ts`, rather than inventing new ones. Construction entry prefers `installScheduleDate` over `permitIssueDate` so RTB/scheduling wait isn't billed to construction dwell.
 
 ### Signals
 
@@ -90,7 +90,7 @@ Stored in a `SystemConfig` JSON row `bottleneck_thresholds`:
 { "permitting": { "medianDays": 18, "p90Days": 41, "thresholdDays": 41, "source": "derived" }, ... }
 ```
 
-- The weekly cron pass recomputes `medianDays`/`p90Days` from completed transitions in the cache (deals with both entry and exit stamps, trailing 12 months).
+- The weekly cron pass recomputes `medianDays`/`p90Days` from completed transitions in the `Deal` mirror (deals with both entry and exit stamps, trailing 12 months).
 - `thresholdDays` defaults to the derived p90. If `source` is `"manual"`, recomputation updates the stats but never overwrites the threshold.
 - The dashboard displays the threshold and its source next to every flag, so the rule is never a black box. Editing (flipping a stage to manual) is done via the existing admin SystemConfig tooling in v1; a dedicated edit UI is a follow-up.
 
@@ -109,13 +109,13 @@ New page in the Operations suite using `DashboardShell` (accent: red), backed by
 - **Flow chart**: entered-vs-exited per week per stage (reuses `MonthlyBarChart` patterns), trailing 8 weeks.
 - Filters: location (`MultiSelectFilter`), team, "show unknown-age".
 
-Route allowlist: `/dashboards/bottlenecks` and `/api/bottlenecks/*` added to `allowedRoutes` for **every role granted `/suites/operations` in `roles.ts`** (currently including ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, and any executive roles with Operations access) — a suite card without a matching route allowlist silently 403s. A suite card is added to the Operations suite landing page.
+Route allowlist: `/dashboards/bottlenecks` and `/api/bottlenecks/*` added to `allowedRoutes` for **every role granted `/suites/operations` in `roles.ts`** (currently including ADMIN, OWNER, EXECUTIVE, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, and SALES_MANAGER — which has direct-URL Operations access even though the suite isn't in its switcher) — a suite card without a matching route allowlist silently 403s. A suite card is added to the Operations suite landing page.
 
 ## 5. Bot digest
 
 Extends the existing proactive module (`tech-ops-bot-proactive.ts`), which already owns the Zach DM space.
 
-**Relationship to the existing daily digest:** the proactive module's current digest (`/api/cron/tech-ops-bot-digest`) already opens with a "Stuck deals" section driven by hardcoded `STUCK_THRESHOLDS`. The bottleneck digest **replaces that section**: the hardcoded thresholds are retired, the stuck-deals content moves to the bottleneck engine (config-driven thresholds), and the remaining sections of the daily digest are unchanged. Zach gets one morning DM, not two overlapping ones.
+**Relationship to the existing daily digest:** the proactive module's current digest (`/api/cron/tech-ops-bot-digest`) already opens with a "Stuck deals" section driven by hardcoded `STUCK_THRESHOLDS`. The bottleneck digest **replaces that section**: the hardcoded thresholds are retired, the stuck-deals content moves to the bottleneck engine (config-driven thresholds), and the remaining sections of the daily digest are unchanged. The two crons stay separate sends (the existing daily digest, plus the bottleneck digest on change-days/Mondays) — no duplicated stuck-deals content between them; do not merge them into one message.
 
 - **Cadence**: weekday mornings via a new `/api/cron/bottleneck-digest` endpoint (Vercel cron, same auth pattern as existing crons). Vercel crons are UTC-fixed, so the send time drifts an hour across DST (8am MDT / 7am MST) — accepted.
 - **Change suppression** (Tue–Fri): the digest sends only if, versus the last-sent snapshot, a deal newly crossed its threshold, a flagged deal resolved, or a stage's flagged count grew. Otherwise the run exits silently.
