@@ -25,7 +25,7 @@ Deals stall inside pipeline stages (design, permitting, interconnection, constru
 ## Architecture
 
 ```
-HubSpotProjectCache (existing DB mirror, incl. stage date stamps)
+Deal (existing Prisma mirror: statuses, stage date stamps, owner, PE flag)
         │
    src/lib/bottlenecks.ts  ── engine: dwell, volume, flow, flags
         │                       thresholds from SystemConfig
@@ -34,7 +34,9 @@ HubSpotProjectCache (existing DB mirror, incl. stage date stamps)
                                              (change detection vs. last snapshot)
 ```
 
-All reads come from the existing Prisma `HubSpotProjectCache` mirror (kept fresh by the deal-sync webhook and existing sync jobs). The engine never calls the HubSpot API, so it adds zero rate-limit pressure.
+All reads come from the existing Prisma `Deal` mirror (the table `deal-property-map.ts` / `deal-sync.ts` maintain, kept fresh by the deal-sync webhook — not the thin legacy `HubSpotProjectCache`). The engine never calls the HubSpot API, so it adds zero rate-limit pressure.
+
+**One prerequisite for the PE stages:** `pe_m1_status`, `pe_m2_status`, and the M1/M2 remittance dates are not currently synced into `Deal`. They are added to `DEAL_SYNC_PROPERTIES` and read from `Deal.rawProperties` (JSON) — a map change only, no new columns, no migration. PE stages report "age unknown" until a full deal re-sync backfills `rawProperties`; the other six stages work day one.
 
 ## 1. Engine (`src/lib/bottlenecks.ts`)
 
@@ -46,34 +48,34 @@ A `StageDefinition[]` constant defines each tracked stage:
 interface StageDefinition {
   key: string;                 // "permitting"
   label: string;               // "Permitting"
-  statusColumn: string;        // cache column holding the stage status
+  statusColumn: string;        // Deal column holding the stage status
   activeValues: string[];      // status values meaning "deal is in this stage"
-  entryDateColumn: string;     // cache column marking stage entry
-  entryFallbackColumns: string[]; // prior-stage completion stamps, tried in order
+  entryDateColumn: string;     // Deal column marking stage entry
+  entryFallbackColumns: string[]; // prior-stage stamps, tried in order
   exitDateColumn: string;      // stamp marking stage exit (for flow)
   team: string;                // segmentation key, e.g. "design", "pi", "ops"
 }
 ```
 
-Tracked stages and their markers (all columns already exist in `deal-property-map.ts` / `HubSpotProjectCache`):
+Tracked stages and their markers (`Deal` columns per `deal-property-map.ts`; PE fields via `rawProperties` per the prerequisite above):
 
 | Stage | Active status source | Entry stamp | Exit stamp |
 |---|---|---|---|
-| Design | design status | `designStartDate` (fallback `siteSurveyCompletionDate`) | `designCompletionDate` |
-| Permitting | `permitting_status` active values (per `pi-statuses.ts`) | `permitSubmitDate` (fallback `designCompletionDate`) | `permitIssueDate` |
-| Interconnection | IC status | `icSubmitDate` (fallback `designCompletionDate`) | `icApprovalDate` |
-| Construction | `install_status` | `permitIssueDate` | install completion |
-| Inspection | `final_inspection_status` | install completion | `inspectionPassDate` |
-| PTO | `pto_status` | `ptoStartDate` (fallback `inspectionPassDate`) | `ptoCompletionDate` |
-| PE M1 | `pe_m1_status` (PE-tagged deals only) | `inspectionPassDate` | M1 remittance date |
-| PE M2 | `pe_m2_status` (PE-tagged deals only) | `ptoCompletionDate` | M2 remittance date |
+| Design | `designStatus` | `designStartDate` (fallback `siteSurveyCompletionDate`) | `designCompletionDate` |
+| Permitting | `permittingStatus` — active values per `pi-statuses.ts` | `permitSubmitDate` (fallback `designCompletionDate`) | `permitIssueDate` |
+| Interconnection | `icStatus` — active values per `pi-statuses.ts` | `icSubmitDate` (fallback `designCompletionDate`) | `icApprovalDate` |
+| Construction | `installStatus` | `installScheduleDate` (fallbacks `rtbDate`, `permitIssueDate`) | `constructionCompleteDate` |
+| Inspection | `finalInspectionStatus` | `constructionCompleteDate` | `inspectionPassDate` |
+| PTO | `ptoStatus` | `ptoStartDate` (fallback `inspectionPassDate`) | `ptoCompletionDate` |
+| PE M1 | `pe_m1_status` (deals with `isParticipateEnergy` only) | `inspectionPassDate` | `pe_m1_remittance_date` |
+| PE M2 | `pe_m2_status` (deals with `isParticipateEnergy` only) | `ptoCompletionDate` | `pe_m2_remittance_date` |
 
-Exact column names are finalized during implementation against `deal-property-map.ts`; the table above uses its current mappings. Active-value sets reuse the existing constants (`pi-statuses.ts`, PE status enums) rather than redefining them.
+Active-value sets reuse the existing constants (`pi-statuses.ts`, PE status enums) rather than redefining them. Construction entry prefers `installScheduleDate` over `permitIssueDate` so RTB/scheduling wait isn't billed to construction dwell.
 
 ### Signals
 
 - **Age**: `dwellDays = today − entryDate` for every deal currently in an active status. Deals whose entry stamp (and all fallbacks) are null land in an **"age unknown"** bucket — surfaced explicitly, never silently dropped. Unknown-age deals are a data-hygiene signal in their own right.
-- **Volume**: current count of deals per stage, shown against the trailing 90-day median count.
+- **Volume**: current count of deals per stage, shown against the trailing 90-day median count. Historical counts are reconstructed from stamps (a deal was in-stage on day D iff `entryDate ≤ D < exitDate`) — no snapshot table needed. Unknown-entry deals are excluded from the reconstruction (and the dashboard notes this), so the norm can undercount where stamp hygiene is poor.
 - **Flow**: per ISO week, `entered = count(entryDate in week)` vs. `exited = count(exitDate in week)`, trailing 8 weeks.
 
 ### Flagging
@@ -107,13 +109,15 @@ New page in the Operations suite using `DashboardShell` (accent: red), backed by
 - **Flow chart**: entered-vs-exited per week per stage (reuses `MonthlyBarChart` patterns), trailing 8 weeks.
 - Filters: location (`MultiSelectFilter`), team, "show unknown-age".
 
-Route allowlist: `/dashboards/bottlenecks` and `/api/bottlenecks/*` added to `allowedRoutes` for ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS (matching the Operations suite audience). A suite card is added to the Operations suite landing page.
+Route allowlist: `/dashboards/bottlenecks` and `/api/bottlenecks/*` added to `allowedRoutes` for **every role granted `/suites/operations` in `roles.ts`** (currently including ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, and any executive roles with Operations access) — a suite card without a matching route allowlist silently 403s. A suite card is added to the Operations suite landing page.
 
 ## 5. Bot digest
 
-Extends the existing proactive module (`tech-ops-bot-proactive.ts`), which already owns the Zach DM space:
+Extends the existing proactive module (`tech-ops-bot-proactive.ts`), which already owns the Zach DM space.
 
-- **Cadence**: weekday mornings, 8am Mountain, via a new `/api/cron/bottleneck-digest` endpoint (Vercel cron, same auth pattern as existing crons).
+**Relationship to the existing daily digest:** the proactive module's current digest (`/api/cron/tech-ops-bot-digest`) already opens with a "Stuck deals" section driven by hardcoded `STUCK_THRESHOLDS`. The bottleneck digest **replaces that section**: the hardcoded thresholds are retired, the stuck-deals content moves to the bottleneck engine (config-driven thresholds), and the remaining sections of the daily digest are unchanged. Zach gets one morning DM, not two overlapping ones.
+
+- **Cadence**: weekday mornings via a new `/api/cron/bottleneck-digest` endpoint (Vercel cron, same auth pattern as existing crons). Vercel crons are UTC-fixed, so the send time drifts an hour across DST (8am MDT / 7am MST) — accepted.
 - **Change suppression** (Tue–Fri): the digest sends only if, versus the last-sent snapshot, a deal newly crossed its threshold, a flagged deal resolved, or a stage's flagged count grew. Otherwise the run exits silently.
 - **Monday**: always sends the full digest including flow trends ("permitting: 22 in, 9 out over 2 weeks"), so Zach walks into the weekly meetings current.
 - **Format**: plain text (Google Chat mangles markdown tables) — headline counts per stage, top 3 stuck deals overall with owner + days, "N new / M resolved since yesterday", link to the dashboard.
@@ -121,13 +125,13 @@ Extends the existing proactive module (`tech-ops-bot-proactive.ts`), which alrea
 
 ## 6. Storage & operational notes
 
-- **No schema migration.** Two `SystemConfig` rows (`bottleneck_thresholds`, `bottleneck_last_digest`) and code only.
+- **No schema migration.** Two `SystemConfig` rows (`bottleneck_thresholds`, `bottleneck_last_digest`), an addition to `DEAL_SYNC_PROPERTIES` (PE fields into `Deal.rawProperties`), and code only.
 - Threshold recomputation piggybacks on the Monday digest run (one cron endpoint, branch on weekday).
 - Known data-quality caveat: some stamps are unreliably populated (e.g., PE ready-to-submit dates). The unknown-age bucket absorbs these visibly; digest counts may undercount until stamp hygiene improves. Accepted for v1.
 
 ## Testing
 
-- Unit tests for the engine: dwell computation with entry fallbacks, unknown-age bucketing, threshold flagging, derived-threshold math (median/p90), manual-override preservation, flow bucketing by week — all against fixture cache rows.
+- Unit tests for the engine: dwell computation with entry fallbacks, unknown-age bucketing, threshold flagging, derived-threshold math (median/p90), manual-override preservation, flow bucketing by week, volume reconstruction from stamps — all against fixture `Deal` rows.
 - Digest builder tests: change-detection matrix (new flag / resolved flag / count growth / no change), Monday-vs-weekday behavior, scope filtering (`all`, `team`, `person`), plain-text rendering.
 - Route tests: summary API shape and role gating.
 
