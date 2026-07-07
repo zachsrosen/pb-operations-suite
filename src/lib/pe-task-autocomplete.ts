@@ -48,6 +48,20 @@ export function subjectTeam(subject: string): Team | undefined {
   return w ? TEAM_WORDS[w] : undefined;
 }
 
+/**
+ * Extract a canonical team from a task BODY. The per-team rejection tasks often
+ * carry the generic title "M1 Rejected by Participate Energy" while the owning
+ * team is named only in the body ("...rejected the <team> documents..."). A
+ * milestone-level phrasing ("rejected the M1 documents") is truly generic, so
+ * TEAM_WORDS returns undefined for "m1"/"m2"/"onboarding".
+ */
+export function bodyTeam(body: string): Team | undefined {
+  const text = (body || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
+  const m = text.match(/rejected the (\w+) documents/i);
+  const w = m?.[1]?.toLowerCase();
+  return w ? TEAM_WORDS[w] : undefined;
+}
+
 const milestoneToken = (s: string): "m1" | "m2" | null =>
   /\bM1\b/i.test(s) ? "m1" : /\bM2\b/i.test(s) ? "m2" : null;
 
@@ -57,7 +71,7 @@ const milestoneToken = (s: string): "m1" | "m2" | null =>
  * onboarding) token is always required, which excludes the utility/misc
  * near-misses ("Onboard Project...", "PTO Ready to Resubmit", etc.).
  */
-export function classifyPeTask(subject: string): ClassifiedTask | null {
+export function classifyPeTask(subject: string, body = ""): ClassifiedTask | null {
   const s = subject.trim();
 
   // submit: "submit" + "participate" + milestone, and not a reject/resubmit task
@@ -73,9 +87,15 @@ export function classifyPeTask(subject: string): ClassifiedTask | null {
     if (m) return { kind: "resubmit", milestone: m, flavor: "pe" };
   }
 
-  // rejection: delegate to the shared classifier, then extract team
+  // rejection: delegate to the shared classifier, then resolve the team. For PE
+  // rejections the team is in the subject ("M1 Sales Rejection") or, when the
+  // title is generic ("M1 Rejected by Participate Energy"), in the body. A body
+  // that names the milestone ("rejected the M1 documents") stays generic.
   const rej = classifyRejectionTask(s);
-  if (rej) return { kind: "rejection", milestone: rej.milestone, flavor: rej.flavor, team: subjectTeam(s) };
+  if (rej) {
+    const team = rej.flavor === "pe" ? (subjectTeam(s) ?? bodyTeam(body)) : subjectTeam(s);
+    return { kind: "rejection", milestone: rej.milestone, flavor: rej.flavor, team };
+  }
 
   return null;
 }
@@ -231,7 +251,7 @@ export function mergeAutocompleteLedger(
 const SEARCH_TOKENS = ["Participate", "Resubmit", "Rejection"];
 const OPEN_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "WAITING"];
 
-interface OpenTask { id: string; subject: string; createdAt: number }
+interface OpenTask { id: string; subject: string; body: string; createdAt: number }
 
 /** Search open tasks whose subject contains any PE signal token; dedupe by id. */
 async function searchOpenPeTasks(): Promise<OpenTask[]> {
@@ -244,7 +264,8 @@ async function searchOpenPeTasks(): Promise<OpenTask[]> {
           { propertyName: "hs_task_status", operator: "IN" as const, values: OPEN_STATUSES },
           { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN" as const, value: token },
         ] }],
-        properties: ["hs_task_subject", "hs_task_status", "hs_createdate"],
+        // hs_task_body carries the owning team for generic-titled rejection tasks.
+        properties: ["hs_task_subject", "hs_task_body", "hs_task_status", "hs_createdate"],
         limit: 100, after,
       } as Parameters<typeof hubspotClient.crm.objects.tasks.searchApi.doSearch>[0]);
       for (const t of res.results) {
@@ -252,6 +273,7 @@ async function searchOpenPeTasks(): Promise<OpenTask[]> {
         byId.set(t.id, {
           id: t.id,
           subject: t.properties.hs_task_subject || "",
+          body: t.properties.hs_task_body || "",
           createdAt: new Date(t.properties.hs_createdate || 0).getTime(),
         });
       }
@@ -276,7 +298,7 @@ export async function autocompletePeTasks(opts: { dryRun?: boolean } = {}): Prom
 
   const open = await searchOpenPeTasks();
   const candidates = open
-    .map((t) => ({ task: t, cls: classifyPeTask(t.subject) }))
+    .map((t) => ({ task: t, cls: classifyPeTask(t.subject, t.body) }))
     .filter((c): c is { task: OpenTask; cls: ClassifiedTask } => c.cls !== null);
 
   // task -> deal (PE tasks are single-deal; take the first association if several)

@@ -6,6 +6,7 @@ import {
   docToTeam,
   docToMilestone,
   subjectTeam,
+  bodyTeam,
   decideCompletion,
   type DealPeState,
   mergeAutocompleteLedger,
@@ -33,6 +34,24 @@ describe("classifyPeTask", () => {
 
   it("classifies internal-QC tasks (recognized; completed=false handled by decideCompletion)", () => {
     expect(classifyPeTask("M1 Ops Internal Rejection - ZRS")).toEqual({ kind: "rejection", milestone: "m1", flavor: "internal", team: "ops" });
+  });
+
+  it("resolves the team from the BODY when a generic-titled rejection task names it", () => {
+    // The 'M1 Rejected by Participate Energy' tasks carry the team in the body.
+    expect(classifyPeTask("M1 Rejected by Participate Energy #1 - ZRS",
+      "<p>Participate Energy rejected the sales documents. Please see below...</p>"))
+      .toEqual({ kind: "rejection", milestone: "m1", flavor: "pe", team: "sales" });
+    expect(classifyPeTask("M1 Rejected by Participate Energy #2 - ZRS",
+      "Participate Energy rejected the operations documents."))
+      .toEqual({ kind: "rejection", milestone: "m1", flavor: "pe", team: "ops" });
+    // A milestone-level body stays generic (team undefined).
+    expect(classifyPeTask("M1 Rejected by Participate Energy # - ZRS",
+      "Participate Energy rejected the M1 documents."))
+      .toEqual({ kind: "rejection", milestone: "m1", flavor: "pe", team: undefined });
+    // Subject team wins over body when both are present.
+    expect(classifyPeTask("M1 Design Rejection - ZRS",
+      "Participate Energy rejected the sales documents."))
+      .toEqual({ kind: "rejection", milestone: "m1", flavor: "pe", team: "design" });
   });
 
   it("returns null for non-PE and ambiguous subjects", () => {
@@ -74,6 +93,14 @@ describe("doc -> team / milestone", () => {
     expect(subjectTeam("M1 Operations Rejection")).toBe("ops");
     expect(subjectTeam("M2 Interconnection Rejection")).toBe("interconnection");
     expect(subjectTeam("M1 Rejected by Participate Energy #1")).toBeUndefined();
+  });
+
+  it("maps body team words (HTML tolerated); milestone-level body is generic", () => {
+    expect(bodyTeam("<div>Participate Energy rejected the sales documents.</div>")).toBe("sales");
+    expect(bodyTeam("rejected the operations documents")).toBe("ops");
+    expect(bodyTeam("rejected the compliance documents")).toBe("compliance");
+    expect(bodyTeam("Participate Energy rejected the M1 documents.")).toBeUndefined();
+    expect(bodyTeam("")).toBeUndefined();
   });
 });
 
