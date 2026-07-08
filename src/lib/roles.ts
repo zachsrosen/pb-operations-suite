@@ -1765,6 +1765,9 @@ const FUNNEL_VIEW_ROUTES = [
   "/dashboards/project-pipeline-funnel",
   "/api/deals/project-funnel",
   "/api/deals/funnel-metrics-snapshot",
+  // Bottlenecks tab on the funnel page self-fetches this (Zach OK'd all-role
+  // visibility 7/7). The standalone /dashboards/bottlenecks page stays ops-only.
+  "/api/bottlenecks",
 ];
 for (const def of Object.values(ROLES)) {
   if (def.allowedRoutes.includes("*")) continue;

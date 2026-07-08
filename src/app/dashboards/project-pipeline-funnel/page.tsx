@@ -27,7 +27,7 @@ import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { resolveMonths, calendarMonthRange, monthRangeToDates } from "@/lib/dashboard-timeframe";
 import { MonthlyActivityView } from "@/components/funnel/MonthlyActivityView";
 import FunnelDailyTrend from "@/components/funnel/FunnelDailyTrend";
-import { AnalysisOverview } from "@/components/funnel/AnalysisOverview";
+import BottleneckView from "@/components/bottlenecks/BottleneckView";
 
 const TIMEFRAMES = [
   { label: "This Month", value: "this-month" },
@@ -224,11 +224,12 @@ function ProjectPipelineFunnelInner() {
       <div className="flex gap-1 mb-4 border-b border-t-border">
         {([
           { key: "funnel", label: "Active Pipeline" },
+          { key: "bottlenecks", label: "Bottlenecks" },
           { key: "sales-funnel", label: "Sales Funnel" },
           { key: "incoming", label: "Incoming" },
           { key: "activity", label: "Monthly Throughput" },
-          // Bottlenecks + Analysis hidden for now (still reachable via ?tab=);
-          // re-add { key: "bottlenecks", ... } / { key: "cohorts", label: "Analysis" } to restore.
+          // Analysis hidden for now (still reachable via ?tab=cohorts);
+          // re-add { key: "cohorts", label: "Analysis" } to restore.
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -346,7 +347,7 @@ function ProjectPipelineFunnelInner() {
 
       {tab === "bottlenecks" ? (
         /* Self-fetches the live pipeline — independent of the page query. */
-        <AnalysisOverview locations={locations} pms={pms} owners={owners} />
+        <BottleneckView />
       ) : isLoading || !data || !s ? (
         <LoadingSpinner />
       ) : tab === "activity" ? (
