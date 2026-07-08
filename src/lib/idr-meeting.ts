@@ -638,6 +638,50 @@ export function computeAdderTotal(item: {
 }
 
 // ---------------------------------------------------------------------------
+// Review types — what varies per item type. ESCALATION's row encodes its
+// existing behavior (IDR task subject, as-built revision routing) so sync can
+// resolve every type uniformly. Adding a future review type = one enum value
+// + one row here + its HubSpot task/workflow.
+// ---------------------------------------------------------------------------
+
+export type ReviewItemType = "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
+
+export const NC_READY_FOR_REVIEW_STATUS = "New Construction - Ready for Review";
+
+export const REVIEW_TYPES: Record<ReviewItemType, {
+  noteLabel: string;
+  taskSubject: string;
+  revisionType: "design" | "escalation";
+  revisionReasonProperty: "idr_revision_reason" | "inspection_rejection_reason";
+}> = {
+  IDR: {
+    noteLabel: "IDR Meeting",
+    taskSubject: "Complete Initial Design Review",
+    revisionType: "design",
+    revisionReasonProperty: "idr_revision_reason",
+  },
+  NEW_CONSTRUCTION: {
+    noteLabel: "New Construction Review",
+    taskSubject: "New Construction Design Review",
+    revisionType: "escalation",
+    revisionReasonProperty: "inspection_rejection_reason",
+  },
+  ESCALATION: {
+    noteLabel: "IDR Meeting",
+    taskSubject: "Complete Initial Design Review",
+    revisionType: "escalation",
+    revisionReasonProperty: "inspection_rejection_reason",
+  },
+};
+
+/** Derive an item's review type from its HubSpot design_status snapshot. */
+export function deriveItemTypeFromStatus(
+  designStatus: string | null | undefined,
+): "IDR" | "NEW_CONSTRUCTION" {
+  return designStatus === NC_READY_FOR_REVIEW_STATUS ? "NEW_CONSTRUCTION" : "IDR";
+}
+
+// ---------------------------------------------------------------------------
 // Session creation — query HubSpot + build items
 // ---------------------------------------------------------------------------
 
