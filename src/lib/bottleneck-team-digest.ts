@@ -512,8 +512,12 @@ export async function runPersonalWorklists(opts: {
     }
   }
 
-  const { postGoogleChatMessage, findOrCreateDmSpace } = await import("@/lib/google-chat-api");
-  const { getOwnerDmSpace } = await import("@/lib/tech-ops-bot-proactive");
+  const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
+  const { getOwnerDmSpace, getUserDmSpaces } = await import("@/lib/tech-ops-bot-proactive");
+  // The chat.bot scope can't CREATE DMs (spaces:setup → scope-insufficient),
+  // so live delivery uses the DM spaces the webhook recorded when each person
+  // first messaged the bot. No recorded space = they haven't said hi yet.
+  const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
 
   for (const w of worklists) {
     const email = emailByName.get(w.person.trim().toLowerCase()) ?? null;
@@ -536,7 +540,11 @@ export async function runPersonalWorklists(opts: {
         results.push({ ...base, sent: true });
       } else {
         if (!email) { results.push({ ...base, reason: "no User-table match" }); continue; }
-        const space = await findOrCreateDmSpace(email);
+        const space = dmSpaces[email];
+        if (!space) {
+          results.push({ ...base, reason: "no DM space recorded — they need to message the bot once" });
+          continue;
+        }
         await postGoogleChatMessage({ spaceName: space, text: message });
         results.push({ ...base, sent: true });
       }
