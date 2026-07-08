@@ -378,7 +378,7 @@ interface NoteFields {
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
-export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): string {
+export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string, noteLabel = "IDR Meeting"): string {
   // Format date as M/D/YYYY — parse as local date to avoid UTC timezone shift
   // Accepts "YYYY-MM-DD" or full ISO strings
   const isoDateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -394,7 +394,7 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   }
 
   // HubSpot hs_note_body is rendered as HTML — use <br> for line breaks
-  const lines: string[] = [`<strong>IDR Meeting -- ${formatted}</strong>`];
+  const lines: string[] = [`<strong>${noteLabel} -- ${formatted}</strong>`];
 
   if (fields.customerNotes) lines.push(`<strong>Customer Notes:</strong> ${esc(fields.customerNotes)}`);
   if (fields.operationsNotes) lines.push(`<strong>Operation Notes:</strong> ${esc(fields.operationsNotes)}`);
@@ -1073,6 +1073,7 @@ export async function syncItemToHubSpot(
           needsReReview: item.needsReReview,
         },
         sessionDate.toISOString(),
+        REVIEW_TYPES[item.type].noteLabel,
       );
       await createDealTimelineNote(item.dealId, noteBody);
     } catch (err) {

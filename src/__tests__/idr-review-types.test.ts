@@ -14,6 +14,7 @@ import {
   NC_READY_FOR_REVIEW_STATUS,
   deriveItemTypeFromStatus,
   buildHubSpotPropertyUpdates,
+  buildHubSpotNoteBody,
 } from "@/lib/idr-meeting";
 
 describe("REVIEW_TYPES registry", () => {
@@ -85,5 +86,26 @@ describe("buildHubSpotPropertyUpdates revision routing", () => {
   it("missing itemType defaults to IDR routing", () => {
     const u = buildHubSpotPropertyUpdates({ ...base });
     expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
+  });
+});
+
+describe("buildHubSpotNoteBody header", () => {
+  const fields = {
+    difficulty: null, installerCount: null, installerDays: null,
+    electricianCount: null, electricianDays: null, discoReco: false,
+    interiorAccess: false, customerNotes: null, operationsNotes: null,
+    salesChangeRequested: null, salesChangeNotes: null, opsChangeNotes: null,
+    needsSurveyInfo: null, designNotes: null, conclusion: null,
+    designRevisionNeeded: false, designRevisionReason: null,
+    adderSummary: null, adderAmount: null,
+  } as never; // NoteFields shape — only the header is under test
+
+  it("defaults to the IDR Meeting header", () => {
+    expect(buildHubSpotNoteBody(fields, "2026-07-08")).toContain("<strong>IDR Meeting -- 7/8/2026</strong>");
+  });
+
+  it("uses the New Construction Review label when passed", () => {
+    expect(buildHubSpotNoteBody(fields, "2026-07-08", "New Construction Review"))
+      .toContain("<strong>New Construction Review -- 7/8/2026</strong>");
   });
 });
