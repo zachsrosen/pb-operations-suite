@@ -124,6 +124,48 @@ async function getOwnerEmailMap(): Promise<Map<string, string>> {
   return map;
 }
 
+const OWNER_NAME_MAP_CACHE_KEY = "hubspot:owner-name-email-map";
+
+/**
+ * Normalized "first last" display name → login email, from the HubSpot owners
+ * list (verified source — never guessed). Used to resolve people whose names
+ * appear in deal lead fields but whose User-table spelling differs (e.g.
+ * HubSpot "Roland Valle" vs User "Rolando Valle").
+ */
+export async function getOwnerNameEmailMap(): Promise<Map<string, string>> {
+  const cached = appCache.get<Record<string, string>>(OWNER_NAME_MAP_CACHE_KEY);
+  if (cached.hit && cached.data) {
+    return new Map(Object.entries(cached.data));
+  }
+
+  const map = new Map<string, string>();
+  let after: string | undefined = undefined;
+  const MAX_PAGES = 10;
+
+  try {
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const page: {
+        results?: Array<{ email?: string; firstName?: string; lastName?: string }>;
+        paging?: { next?: { after?: string } };
+      } = await withHubSpotRetry(
+        "owners.list",
+        () => hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false),
+      );
+      for (const o of page.results ?? []) {
+        const email = o.email?.trim().toLowerCase();
+        const name = `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim().toLowerCase();
+        if (email && name) map.set(name, email);
+      }
+      after = page.paging?.next?.after;
+      if (!after) break;
+    }
+    appCache.set(OWNER_NAME_MAP_CACHE_KEY, Object.fromEntries(map));
+  } catch (err) {
+    Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "getOwnerNameEmailMap" } });
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // Owner resolution by name
 // ---------------------------------------------------------------------------

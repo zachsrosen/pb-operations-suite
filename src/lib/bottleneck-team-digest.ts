@@ -675,6 +675,16 @@ export async function runPersonalWorklists(opts: {
   const emailByName = new Map(
     users.filter((u) => u.name).map((u) => [u.name!.trim().toLowerCase(), u.email])
   );
+  // Second VERIFIED source: HubSpot owners (lead-field names originate there,
+  // so spelling matches even when the User table differs — e.g. Roland/Rolando).
+  try {
+    const { getOwnerNameEmailMap } = await import("@/lib/hubspot-tasks");
+    for (const [name, email] of await getOwnerNameEmailMap()) {
+      if (!emailByName.has(name)) emailByName.set(name, email);
+    }
+  } catch {
+    // owners lookup is best-effort; User-table matches still work without it
+  }
 
   const results: PersonalSendResult[] = [];
   const unmatched: string[] = [];
