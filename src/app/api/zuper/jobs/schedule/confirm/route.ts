@@ -21,6 +21,8 @@ import {
   getInstallationCalendarEventId,
 } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { findRecordConflict, findZuperJobConflict } from "@/lib/survey-slot-conflict";
+import { buildSurveyConflictAssigneeFilter } from "@/lib/availability-conflict-filter";
 import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
@@ -693,6 +695,76 @@ export async function POST(request: NextRequest) {
       endDateTimeForHubSpot = endDateTime;
       boundaryStartDateForHubSpot = record.scheduledDate;
       boundaryEndDateForHubSpot = endDateForSchedule;
+
+      // Booking-time double-book guard (survey slots): the tentative hold may
+      // be hours old — re-validate the slot against ScheduleRecords + live
+      // Zuper jobs before writing. Mirrors the guard in ../route.ts.
+      if (isSurveyLike(scheduleType) && record.scheduledStart && record.scheduledEnd) {
+        try {
+          const conflictParams = {
+            dealId: String(record.projectId),
+            startTime: record.scheduledStart,
+            endTime: record.scheduledEnd,
+            assigneeUid: resolvedUserUids[0] || undefined,
+            assigneeName: desiredAssigneeName || undefined,
+          };
+          const assigneeFilter = buildSurveyConflictAssigneeFilter({
+            name: conflictParams.assigneeName,
+            zuperUserUid: conflictParams.assigneeUid,
+          });
+          let conflict = null;
+          if (prisma && assigneeFilter) {
+            const otherRecords = await prisma.scheduleRecord.findMany({
+              where: {
+                scheduleType: "survey",
+                scheduledDate: record.scheduledDate,
+                status: { in: ["scheduled", "tentative"] },
+                NOT: { projectId: String(record.projectId) },
+                ...assigneeFilter,
+              },
+              select: {
+                projectId: true,
+                projectName: true,
+                scheduledStart: true,
+                scheduledEnd: true,
+                assignedUser: true,
+                assignedUserUid: true,
+              },
+            });
+            conflict = findRecordConflict(otherRecords, conflictParams);
+          }
+          if (!conflict) {
+            const jobsResult = await zuper.getScheduledJobsForDateRange({
+              fromDate: record.scheduledDate,
+              toDate: record.scheduledDate,
+            });
+            if (jobsResult.type === "success" && jobsResult.data) {
+              conflict = findZuperJobConflict(jobsResult.data, {
+                dealId: conflictParams.dealId,
+                startUtc: startDateTime,
+                endUtc: endDateTime,
+                assigneeUid: conflictParams.assigneeUid,
+                assigneeName: conflictParams.assigneeName,
+                excludeJobUid: existingJob?.job_uid || null,
+              });
+            }
+          }
+          if (conflict) {
+            console.warn(
+              `[Zuper Confirm] BLOCKED double-book: ${conflictParams.assigneeName || conflictParams.assigneeUid} already has ${conflict.projectName} via ${conflict.source}`
+            );
+            return NextResponse.json(
+              {
+                error: `${conflict.assignedUser || "This surveyor"} already has a survey booked in this slot: ${conflict.projectName}. Refresh the schedule and pick a new slot.`,
+                conflict,
+              },
+              { status: 409 }
+            );
+          }
+        } catch (conflictErr) {
+          console.warn("[Zuper Confirm] Conflict check failed (proceeding):", conflictErr);
+        }
+      }
 
       if (existingJob?.job_uid) {
         if (isSurveyLike(scheduleType)) {
