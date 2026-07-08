@@ -290,7 +290,7 @@ async function firePostCancelSideEffects(ctx: {
     const tzAbbrev = timezone === "America/Los_Angeles" ? "PT" : "MT";
     const formattedTime = invite.scheduledTime ? formatTime12(invite.scheduledTime) : "";
 
-    await sendPortalEmail({
+    const emailResult = await sendPortalEmail({
       to: invite.customerEmail,
       subject: "Your Site Survey Has Been Cancelled - Photon Brothers",
       html: buildCancellationEmailHtml({
@@ -303,7 +303,9 @@ async function firePostCancelSideEffects(ctx: {
       }),
       senderEmail: invite.sentBy || undefined,
     });
-    console.log(`[portal/cancel] Cancellation email sent to ${invite.customerEmail}`);
+    if (emailResult.success && !emailResult.skipped) {
+      console.log(`[portal/cancel] Cancellation email sent to ${invite.customerEmail}`);
+    }
   } catch (err) {
     warnings.push(`Customer cancellation email failed: ${err instanceof Error ? err.message : String(err)}`);
   }

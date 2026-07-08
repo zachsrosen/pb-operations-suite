@@ -533,7 +533,7 @@ async function firePostRescheduleSideEffects(ctx: {
     const tzAbbrev = timezone === "America/Los_Angeles" ? "PT" : "MT";
     const formattedTime = formatTime12(newSlot.time);
 
-    await sendPortalEmail({
+    const emailResult = await sendPortalEmail({
       to: invite.customerEmail,
       subject: "Your Site Survey Has Been Rescheduled - Photon Brothers",
       html: buildRescheduleEmailHtml({
@@ -545,7 +545,9 @@ async function firePostRescheduleSideEffects(ctx: {
       }),
       senderEmail: invite.sentBy || undefined,
     });
-    console.log(`[portal/reschedule] Confirmation email sent to ${invite.customerEmail}`);
+    if (emailResult.success && !emailResult.skipped) {
+      console.log(`[portal/reschedule] Confirmation email sent to ${invite.customerEmail}`);
+    }
   } catch (err) {
     warnings.push(`Customer confirmation email failed: ${err instanceof Error ? err.message : String(err)}`);
   }
