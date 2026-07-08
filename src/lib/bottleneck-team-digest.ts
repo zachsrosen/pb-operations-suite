@@ -120,37 +120,56 @@ function section(
  */
 /** PE statuses that mean "ready to go back out the door". */
 const PE_READY_RESUBMIT = new Set(["Ready to Resubmit", "Onboarding Ready to Resubmit"]);
-/** Deals with a doc flipped to one of these recently → "recent rejections".
- *  PeDocChangeLog uses the PE API's status vocabulary: ACTION_REQUIRED is the
- *  rejection/response-needed state (the HubSpot-side "Rejected" labels never
- *  appear in this table). Note: the PE ANCHOR reconciler bot occasionally
- *  auto-flips docs Approved→ACTION_REQUIRED as no-ops — if those get noisy
- *  here, filter by same-minute batch signatures. */
-export const PE_REJECTED_STATUSES = ["ACTION_REQUIRED"];
+/** PE API status vocabulary for "needs a response" (PeDocumentReview/PeDocChangeLog). */
+export const PE_REJECTED_STATUSES = ["ACTION_REQUIRED", "REJECTED"];
 
 export interface PeRecentRejection {
   docs: string[];
   daysAgo: number; // since the most recent rejection flip
 }
 
-/** Deals with a PE doc rejected in the trailing window, from PeDocChangeLog. */
+/**
+ * Deals with docs CURRENTLY in a rejected state (PeDocumentReview is the live
+ * per-doc status table), with recency from the change log's latest rejection
+ * flip. Using current state — not just flips — means the PE ANCHOR
+ * reconciler's reject-then-reapprove no-ops filter themselves out, and open
+ * rejections older than any window still show (freshest sort surfaces the
+ * "recent" ones Zach asked for).
+ */
 export async function getRecentPeRejections(
-  nowMs = Date.now(),
-  windowDays = 7
+  nowMs = Date.now()
 ): Promise<Map<string, PeRecentRejection>> {
   if (!prisma) return new Map();
-  const cutoff = new Date(nowMs - windowDays * 86_400_000);
-  const rows = await prisma.peDocChangeLog.findMany({
-    where: { newStatus: { in: PE_REJECTED_STATUSES }, createdAt: { gte: cutoff } },
+  const open = await prisma.peDocumentReview.findMany({
+    where: { status: { in: ["ACTION_REQUIRED", "REJECTED"] } },
+    select: { dealId: true, docName: true, updatedAt: true },
+  });
+  if (open.length === 0) return new Map();
+
+  // Recency: latest rejection flip per (deal, doc) from the change log; falls
+  // back to the review row's updatedAt when no log entry exists.
+  const flips = await prisma.peDocChangeLog.findMany({
+    where: {
+      newStatus: { in: PE_REJECTED_STATUSES },
+      dealId: { in: [...new Set(open.map((o) => o.dealId))] },
+    },
     select: { dealId: true, docName: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
+  const flipAt = new Map<string, number>();
+  for (const f of flips) {
+    const k = `${f.dealId}::${f.docName}`;
+    if (!flipAt.has(k)) flipAt.set(k, f.createdAt.getTime());
+  }
+
   const map = new Map<string, PeRecentRejection>();
-  for (const r of rows) {
-    const e = map.get(r.dealId) ?? { docs: [], daysAgo: 999 };
-    if (!e.docs.includes(r.docName)) e.docs.push(r.docName);
-    e.daysAgo = Math.min(e.daysAgo, Math.floor((nowMs - r.createdAt.getTime()) / 86_400_000));
-    map.set(r.dealId, e);
+  for (const o of open) {
+    const ts = flipAt.get(`${o.dealId}::${o.docName}`) ?? o.updatedAt.getTime();
+    const daysAgo = Math.floor((nowMs - ts) / 86_400_000);
+    const e = map.get(o.dealId) ?? { docs: [], daysAgo: 9999 };
+    if (!e.docs.includes(o.docName)) e.docs.push(o.docName);
+    e.daysAgo = Math.min(e.daysAgo, daysAgo);
+    map.set(o.dealId, e);
   }
   return map;
 }
@@ -302,7 +321,7 @@ export function buildTeamSections(
       // ready lists are the (large) backlog — they truncate gracefully when
       // the Chat char budget runs out, the urgent sections never should.
       return [
-        { title: "Recent rejections (docs, days since flip)", followUpDays: 0, groupBy: "location", lines: rejectionLines },
+        { title: "Open rejections — respond to PE (docs, days since rejected)", followUpDays: 0, groupBy: "location", lines: rejectionLines },
         { title: "M1 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", inReview, 14) },
         { title: "M2 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", inReview, 14) },
         { title: "M1 ready to submit / resubmit", followUpDays: null, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", readyOrResubmit, null) },

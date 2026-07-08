@@ -125,7 +125,7 @@ describe("buildTeamSections", () => {
     });
     const byTitle = (frag: string) => sections.find((x) => x.title.includes(frag))!;
     // Priority order: rejections first, follow-ups, then the big ready lists.
-    expect(sections[0].title).toContain("Recent rejections");
+    expect(sections[0].title).toContain("Open rejections");
     const ready = byTitle("M1 ready to submit / resubmit");
     expect(ready.lines.map((l) => l.id).sort()).toEqual(["r1", "r2"]);
     const review = byTitle("M1 submitted");
@@ -133,7 +133,7 @@ describe("buildTeamSections", () => {
     expect(review.lines[0].needsFollowUp).toBe(true); // 20d > 14d
     expect(review.lines[0].lead).toBe("");
     expect(review.groupBy).toBe("location");
-    const rej = byTitle("Recent rejections");
+    const rej = byTitle("Open rejections");
     expect(rej.lines.map((l) => l.id)).toEqual(["x1"]);
     expect(rej.lines[0].status).toBe("Signed Final Permit, BOM");
     expect(rej.lines[0].daysWaiting).toBe(2);
