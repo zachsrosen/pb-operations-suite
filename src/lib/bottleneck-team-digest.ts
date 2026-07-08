@@ -146,11 +146,33 @@ export function buildTeamSections(
         section("Interconnection — follow up with utility", dd.awaitingInterconnection, (d) => leadOf(d.interconnectionsLead), 45),
         section("PTO — follow up", dd.awaitingPto, (d) => leadOf(d.interconnectionsLead), 21),
       ];
-    case "ops":
+    case "ops": {
+      // Overdue = scheduled date is in the PAST and the work still isn't done.
+      // Future-scheduled deals are on plan, not bottlenecks (and would render
+      // as negative days) — they're excluded entirely.
+      const DAY = 86_400_000;
+      const overdue = (
+        title: string,
+        deals: ProjectFunnelDrillDownDeal[],
+        lead: (d: ProjectFunnelDrillDownDeal) => string
+      ): DigestSection => {
+        const lines = deals
+          .filter(workable)
+          .filter((d) => d.scheduledDate && Date.parse(`${d.scheduledDate}T12:00:00`) < nowMs)
+          .map((d) => ({
+            ...toLine(d, lead(d), null),
+            daysWaiting: Math.floor((nowMs - Date.parse(`${d.scheduledDate}T12:00:00`)) / DAY),
+            needsFollowUp: true, // past its scheduled date by definition
+          }))
+          .sort((a, b) => b.daysWaiting - a.daysWaiting);
+        return { title, followUpDays: 0, groupBy: "lead", lines };
+      };
       return [
-        section("Installs to complete", dd.awaitingConstructionComplete, (d) => leadOf(d.operationsManager, leadOf(d.projectManager)), null),
+        overdue("Overdue site surveys (days past scheduled date)", dd.awaitingSurvey, (d) => leadOf(d.siteSurveyor, leadOf(d.projectManager))),
+        overdue("Overdue installs (days past scheduled date)", dd.awaitingConstructionComplete, (d) => leadOf(d.operationsManager, leadOf(d.projectManager))),
         section("Inspections to pass", dd.awaitingInspection, (d) => leadOf(d.inspectionsLead, leadOf(d.operationsManager)), 14),
       ];
+    }
     case "sales":
       return [
         section("Surveys to schedule", dd.awaitingSurveySchedule, (d) => leadOf(d.dealOwner), null),
@@ -299,13 +321,12 @@ export interface TeamDigestResult {
   message?: string; // preview mode only
 }
 
-export async function runTeamDigest(
+/** Load the live pipeline and build one team's worklist sections (DB entry point). */
+export async function getTeamSections(
   team: TeamDigestKey,
-  opts?: { nowMs?: number; preview?: boolean }
-): Promise<TeamDigestResult> {
-  if (!prisma) return { posted: false, team, reason: "db unavailable" };
-  const nowMs = opts?.nowMs ?? Date.now();
-
+  nowMs = Date.now()
+): Promise<DigestSection[]> {
+  if (!prisma) return [];
   const deals = await prisma.deal.findMany({
     where: { pipeline: "PROJECT", stage: { notIn: ["DELETED", "MERGED"] } },
   });
@@ -313,13 +334,16 @@ export async function runTeamDigest(
   const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, {
     scope: "active",
   });
+  return buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs);
+}
 
-  const sections = buildTeamSections(
-    team,
-    funnel.drillDown,
-    deals as unknown as BottleneckDealRow[],
-    nowMs
-  );
+export async function runTeamDigest(
+  team: TeamDigestKey,
+  opts?: { nowMs?: number; preview?: boolean }
+): Promise<TeamDigestResult> {
+  if (!prisma) return { posted: false, team, reason: "db unavailable" };
+  const nowMs = opts?.nowMs ?? Date.now();
+  const sections = await getTeamSections(team, nowMs);
   const message = renderTeamDigest(team, sections, nowMs);
   if (!message) return { posted: false, team, reason: "nothing waiting on this team" };
 
@@ -386,7 +410,7 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
   });
   const out: string[] = [
     `👋 ${w.person.split(" ")[0]} — your pipeline worklist for ${day}`,
-    `${w.totalDeals} deal${w.totalDeals === 1 ? "" : "s"} waiting on you`,
+    `${w.totalDeals} of your deals ${w.totalDeals === 1 ? "needs" : "need"} a next step`,
     "",
   ];
   let used = out.join("\n").length + 200;

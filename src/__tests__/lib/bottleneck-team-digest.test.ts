@@ -60,7 +60,28 @@ describe("buildTeamSections", () => {
     expect(buildTeamSections("sales", dd, [], NOW)[0].lines[0].lead).toBe("Sally Sales");
     expect(buildTeamSections("pm", dd, [], NOW)[0].lines[0].lead).toBe("Pat PM");
     expect(buildTeamSections("ic", dd, [], NOW)[0].lines[0].lead).toBe("Ian IC");
-    expect(buildTeamSections("ops", dd, [], NOW)[1].lines[0].lead).toBe("Ira Inspect");
+    // Ops sections are now [overdue surveys, overdue installs, inspections].
+    expect(buildTeamSections("ops", dd, [], NOW)[2].lines[0].lead).toBe("Ira Inspect");
+  });
+
+  it("ops overdue sections only include deals PAST their scheduled date, aged from that date", () => {
+    const past = new Date(NOW - 6 * 86_400_000).toISOString().slice(0, 10);
+    const future = new Date(NOW + 3 * 86_400_000).toISOString().slice(0, 10);
+    const dd = {
+      ...EMPTY_DD,
+      awaitingSurvey: [
+        ddDeal({ id: 1, scheduledDate: past, siteSurveyor: "Sam Surveyor" }),
+        ddDeal({ id: 2, scheduledDate: future }), // on plan — excluded (no negative days)
+        ddDeal({ id: 3, scheduledDate: null }),   // unscheduled — not "overdue"
+      ],
+      awaitingConstructionComplete: [ddDeal({ id: 4, scheduledDate: past })],
+    };
+    const [surveys, installs] = buildTeamSections("ops", dd, [], NOW);
+    expect(surveys.lines.map((l: { id: string }) => l.id)).toEqual(["1"]);
+    expect(surveys.lines[0].daysWaiting).toBeGreaterThanOrEqual(5);
+    expect(surveys.lines[0].needsFollowUp).toBe(true);
+    expect(surveys.lines[0].lead).toBe("Sam Surveyor");
+    expect(installs.lines.map((l: { id: string }) => l.id)).toEqual(["4"]);
   });
 
   it("skips parked (On Hold) deals but keeps non-parked blocked deals with their reason", () => {

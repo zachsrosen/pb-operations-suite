@@ -145,34 +145,172 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
 
 /**
  * URL presets so team digests can deep-link their view:
- *   ?view=design|permitting|ic|ops|sales|pm|compliance → team chip preset
- *   ?loc=Westminster (comma-separated ok)              → location filter preset
- * The digest team keys are finer-grained than the tab's chips, so they map down.
+ *   ?view=design|permitting|ic|ops|sales|pm|compliance → that team's WORKLIST
+ *     (the same funnel-bucket sections its digest sends, grouped by person)
+ *   ?person=Peter+Zaun → filter the worklist to one person's deals
+ *   ?loc=Westminster (comma-separated ok) → location filter (both modes)
+ * Without ?view=, the tab shows the stalled/zombie queue view (leadership lens).
  */
-const VIEW_PRESET_TO_TEAM: Record<string, TeamKey> = {
-  design: "design",
-  permitting: "pi",
-  ic: "pi",
-  pto: "pi",
-  ops: "ops",
-  pm: "ops",
-  compliance: "compliance",
-  sales: "all",
+const WORKLIST_TEAMS = ["design", "permitting", "ic", "ops", "sales", "pm", "compliance"] as const;
+type WorklistTeam = (typeof WORKLIST_TEAMS)[number];
+const WORKLIST_LABELS: Record<WorklistTeam, string> = {
+  design: "Design", permitting: "Permitting", ic: "Interconnection",
+  ops: "Ops", sales: "Sales", pm: "PM", compliance: "Compliance (PE)",
 };
+
+interface WorklistLine {
+  id: string; name: string; status: string | null; stage: string;
+  daysWaiting: number; lead: string; location: string;
+  needsFollowUp: boolean; blockedNote: string | null;
+}
+interface WorklistSection {
+  title: string; followUpDays: number | null;
+  groupBy: "lead" | "location"; lines: WorklistLine[];
+}
+interface WorklistResponse {
+  team: string; label: string; sections: WorklistSection[]; lastUpdated: string;
+}
+
+function WorklistPanel({
+  team, person, locations,
+}: { team: WorklistTeam; person: string | null; locations: string[] }) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: [...queryKeys.bottlenecks.root, "worklist", team],
+    queryFn: async (): Promise<WorklistResponse> => {
+      const r = await fetch(`/api/bottlenecks/worklist?team=${team}`);
+      if (!r.ok) throw new Error(`failed: ${r.status}`);
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  if (isError)
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-8 text-center">
+        <p className="text-sm font-medium text-red-400">Couldn&apos;t load the worklist.</p>
+        <button onClick={() => refetch()} className="mt-3 rounded-md border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated">Retry</button>
+      </div>
+    );
+  if (isLoading || !data)
+    return <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">Loading…</div>;
+
+  const matches = (l: WorklistLine) =>
+    (person == null || l.lead === person) &&
+    (locations.length === 0 || (l.location !== "" && locations.includes(l.location)));
+
+  const sections = data.sections
+    .map((s) => ({ ...s, lines: s.lines.filter(matches) }))
+    .filter((s) => s.lines.length > 0);
+
+  if (sections.length === 0)
+    return (
+      <div className="rounded-lg border border-t-border/60 bg-surface p-6 text-center text-sm text-muted">
+        Nothing waiting{person ? ` on ${person}` : ` on ${data.label}`} in the current selection. 🎉
+      </div>
+    );
+
+  return (
+    <div className="space-y-4">
+      {sections.map((s) => {
+        const flagged = s.followUpDays != null ? s.lines.filter((l) => l.needsFollowUp).length : 0;
+        const groups = new Map<string, WorklistLine[]>();
+        for (const l of s.lines) {
+          const key = (s.groupBy === "location" ? l.location : l.lead) || "(unassigned)";
+          groups.set(key, [...(groups.get(key) ?? []), l]);
+        }
+        const ordered = [...groups.entries()].sort(
+          (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])
+        );
+        return (
+          <div key={s.title} className="overflow-hidden rounded-lg border border-t-border/60 bg-surface">
+            <div className="flex items-baseline justify-between border-b border-t-border/60 bg-surface-2 px-3 py-2">
+              <span className="text-sm font-medium text-foreground">{s.title}</span>
+              <span className="text-xs text-muted">
+                {s.lines.length} deal{s.lines.length === 1 ? "" : "s"}
+                {s.followUpDays != null ? ` · ${flagged} past ${s.followUpDays}d` : ""}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-t-border/60 text-left text-[11px] uppercase tracking-wider text-muted">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">{s.groupBy === "location" ? "Office" : "Owner"}</th>
+                    <th className="px-3 py-2 font-medium">Deal</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Stage</th>
+                    <th className="px-3 py-2 text-right font-medium">Days</th>
+                    <th className="px-3 py-2 font-medium">Location</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-t-border/60">
+                  {ordered.flatMap(([who, lines]) =>
+                    lines.map((l, i) => (
+                      <tr key={l.id + s.title}>
+                        <td className="px-3 py-2 text-foreground">{i === 0 ? `${who} (${lines.length})` : ""}</td>
+                        <td className="px-3 py-2">
+                          <a href={dealUrl(l.id)} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-t-border underline-offset-2 hover:decoration-foreground">
+                            {shortenDealName(l.name)}
+                          </a>
+                          {l.blockedNote && <span className="ml-2 text-xs text-orange-400">[{l.blockedNote}]</span>}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{l.status ?? "—"}</td>
+                        <td className="px-3 py-2 text-muted">{l.stage || "—"}</td>
+                        <td className={`px-3 py-2 text-right font-medium ${l.needsFollowUp ? "text-red-400" : "text-foreground"}`}>
+                          {l.daysWaiting}{l.needsFollowUp ? " ⚠" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{l.location || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function BottleneckView() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const [team, setTeam] = useState<TeamKey>(() => {
-    const v = searchParams?.get("view");
-    return (v && VIEW_PRESET_TO_TEAM[v]) || "all";
-  });
+  const viewParam = searchParams?.get("view");
+  const worklistTeam: WorklistTeam | null = (WORKLIST_TEAMS as readonly string[]).includes(viewParam ?? "")
+    ? (viewParam as WorklistTeam)
+    : null;
+  const personParam = searchParams?.get("person");
+  const [worklistOff, setWorklistOff] = useState(false);
+  const [team, setTeam] = useState<TeamKey>("all");
   const [locations, setLocations] = useState<string[]>(() => {
     const loc = searchParams?.get("loc");
     return loc ? loc.split(",").map((s) => s.trim()).filter(Boolean) : [];
   });
   const [showZombies, setShowZombies] = useState(false);
   const [showUnknown, setShowUnknown] = useState(false);
+
+  if (worklistTeam && !worklistOff) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-t-border/60 bg-surface p-3">
+          <div className="text-sm text-foreground">
+            <span className="font-semibold">{WORKLIST_LABELS[worklistTeam]} worklist</span>
+            {personParam && <span className="text-muted"> — {personParam}</span>}
+            <span className="ml-2 text-xs text-muted">the same list the team digest sends</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWorklistOff(true)}
+            className="rounded-md border border-t-border/60 bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted hover:text-foreground"
+          >
+            Switch to queue view
+          </button>
+        </div>
+        <WorklistPanel team={worklistTeam} person={personParam ?? null} locations={locations} />
+      </div>
+    );
+  }
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.bottlenecks.summary(),
