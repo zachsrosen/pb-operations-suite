@@ -302,7 +302,7 @@ const FLOW_WEEKS = 8;
  * on-hold deals were topping the Design digest).
  */
 const TERMINAL_STAGE_KEYWORDS = ["complete", "cancelled", "canceled", "closed won", "closed lost", "rejected", "on-hold", "on hold"];
-function isActiveDealStage(stage: string | null): boolean {
+export function isActiveDealStage(stage: string | null): boolean {
   if (!stage) return false;
   const s = stage.toLowerCase();
   if (s === "deleted" || s === "merged") return false;
