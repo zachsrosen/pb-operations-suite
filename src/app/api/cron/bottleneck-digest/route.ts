@@ -33,14 +33,17 @@ export async function GET(request: NextRequest) {
   // SystemConfig flag AND Chat-app visibility that includes the recipients.
   const personal = request.nextUrl.searchParams.get("personal");
   if (personal) {
-    if (!["preview", "dryrun", "live"].includes(personal)) {
-      return NextResponse.json({ error: "personal must be preview|dryrun|live" }, { status: 400 });
+    if (!["preview", "dryrun", "provision", "live"].includes(personal)) {
+      return NextResponse.json({ error: "personal must be preview|dryrun|provision|live" }, { status: 400 });
     }
     const limitParam = Number(request.nextUrl.searchParams.get("limit"));
+    const exclude = (request.nextUrl.searchParams.get("exclude") || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
     try {
       const out = await runPersonalWorklists({
-        mode: personal as "preview" | "dryrun" | "live",
+        mode: personal as "preview" | "dryrun" | "provision" | "live",
         limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
+        exclude,
       });
       return NextResponse.json(out);
     } catch (error) {

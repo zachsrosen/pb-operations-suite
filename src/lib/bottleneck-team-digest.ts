@@ -451,6 +451,30 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
   return out.join("\n");
 }
 
+// One-time welcome tracking (SystemConfig set of emails).
+const WELCOMED_KEY = "bottleneck_personal_welcomed";
+async function getWelcomedSet(): Promise<Set<string>> {
+  if (!prisma) return new Set();
+  const row = await prisma.systemConfig.findUnique({ where: { key: WELCOMED_KEY } });
+  try {
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+async function markWelcomed(email: string): Promise<void> {
+  if (!prisma) return;
+  const set = await getWelcomedSet();
+  set.add(email);
+  const value = JSON.stringify([...set]);
+  await prisma.systemConfig.upsert({
+    where: { key: WELCOMED_KEY },
+    create: { key: WELCOMED_KEY, value },
+    update: { value },
+  });
+}
+
 export interface PersonalSendResult {
   person: string;
   email: string | null;
@@ -461,19 +485,23 @@ export interface PersonalSendResult {
 
 /**
  * Build every person's worklist and deliver it.
- * mode "preview" → JSON summaries only (nothing sent).
- * mode "dryrun"  → each digest posted to the OWNER's DM, labeled with the
- *                  intended recipient (safe review; default).
- * mode "live"    → real DMs to each person. Requires BOTH the
- *                  bottleneck_personal_worklists_enabled SystemConfig flag
- *                  AND app visibility that includes the recipients.
+ * mode "preview"   → JSON summaries only (nothing sent).
+ * mode "dryrun"    → each digest posted to the OWNER's DM, labeled with the
+ *                    intended recipient (safe review; default).
+ * mode "provision" → no digests sent; force-create each person's DM with the
+ *                    bot via domain-wide delegation and record it in the
+ *                    delivery map. The bot appears in their Chat silently.
+ * mode "live"      → real DMs to recorded spaces. Requires the
+ *                    bottleneck_personal_worklists_enabled SystemConfig flag.
  * Emails resolve strictly from the User table by exact (case-insensitive)
  * name match — unmatched people are reported, never guessed.
  */
 export async function runPersonalWorklists(opts: {
-  mode: "preview" | "dryrun" | "live";
+  mode: "preview" | "dryrun" | "provision" | "live";
   nowMs?: number;
   limit?: number;
+  /** Emails to skip entirely (e.g. someone out of office). */
+  exclude?: string[];
 }): Promise<{ results: PersonalSendResult[]; unmatched: string[] }> {
   if (!prisma) return { results: [], unmatched: [] };
   const nowMs = opts.nowMs ?? Date.now();
@@ -519,13 +547,32 @@ export async function runPersonalWorklists(opts: {
   // first messaged the bot. No recorded space = they haven't said hi yet.
   const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
 
+  const excluded = new Set((opts.exclude ?? []).map((e) => e.trim().toLowerCase()));
+
   for (const w of worklists) {
     const email = emailByName.get(w.person.trim().toLowerCase()) ?? null;
     if (!email) unmatched.push(w.person);
     const base: PersonalSendResult = { person: w.person, email, deals: w.totalDeals, sent: false };
 
+    if (email && excluded.has(email)) {
+      results.push({ ...base, reason: "excluded" });
+      continue;
+    }
+
     if (opts.mode === "preview") {
       results.push({ ...base, reason: "preview" });
+      continue;
+    }
+    if (opts.mode === "provision") {
+      if (!email) { results.push({ ...base, reason: "no User-table match" }); continue; }
+      try {
+        const { provisionUserDmSpace } = await import("@/lib/tech-ops-bot-proactive");
+        const space = await provisionUserDmSpace(email);
+        results.push({ ...base, sent: false, reason: `provisioned ${space}` });
+      } catch (e) {
+        results.push({ ...base, reason: e instanceof Error ? e.message.slice(0, 200) : "provision failed" });
+      }
+      await new Promise((r) => setTimeout(r, 500));
       continue;
     }
     const message = renderPersonalWorklist(w, nowMs);
@@ -542,10 +589,17 @@ export async function runPersonalWorklists(opts: {
         if (!email) { results.push({ ...base, reason: "no User-table match" }); continue; }
         const space = dmSpaces[email];
         if (!space) {
-          results.push({ ...base, reason: "no DM space recorded — they need to message the bot once" });
+          results.push({ ...base, reason: "no DM space recorded — provision or have them message the bot" });
           continue;
         }
-        await postGoogleChatMessage({ spaceName: space, text: message });
+        // First-ever send gets a one-time intro so the worklist isn't contextless.
+        const welcomed = await getWelcomedSet();
+        const isFirst = !welcomed.has(email);
+        const text = isFirst
+          ? `👋 Hi! I'm the PB Tech Ops Bot — I'll DM you a worklist like this when deals are waiting on you, and you can reply here with questions about any of them (or anything pipeline-related).\n\n${message}`
+          : message;
+        await postGoogleChatMessage({ spaceName: space, text });
+        if (isFirst) await markWelcomed(email);
         results.push({ ...base, sent: true });
       }
     } catch (e) {
