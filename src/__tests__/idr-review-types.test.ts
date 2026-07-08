@@ -26,7 +26,8 @@ import {
 import {
   REVIEW_TYPES,
   NC_READY_FOR_REVIEW_STATUS,
-  deriveItemTypeFromStatus,
+  deriveItemType,
+  buildQueueFilterGroups,
   buildHubSpotPropertyUpdates,
   buildHubSpotNoteBody,
   syncItemToHubSpot,
@@ -68,17 +69,51 @@ describe("REVIEW_TYPES registry", () => {
   });
 });
 
-describe("deriveItemTypeFromStatus", () => {
-  it("derives NEW_CONSTRUCTION for the NC ready-for-review status", () => {
-    expect(deriveItemTypeFromStatus(NC_READY_FOR_REVIEW_STATUS)).toBe("NEW_CONSTRUCTION");
-    expect(NC_READY_FOR_REVIEW_STATUS).toBe("New Construction - Ready for Review");
+describe("deriveItemType (pipeline-first)", () => {
+  it("Service/D&R pipeline always derives DNR_SERVICE", () => {
+    expect(deriveItemType(SERVICE_PIPELINE_ID, "Initial Review")).toBe("DNR_SERVICE");
+    expect(deriveItemType(DNR_PIPELINE_ID, "IDR Revision Complete")).toBe("DNR_SERVICE");
+    expect(deriveItemType(SERVICE_PIPELINE_ID, NC_READY_FOR_REVIEW_STATUS)).toBe("DNR_SERVICE");
   });
+  it("Project pipeline falls through to status rules", () => {
+    expect(deriveItemType("6900017", NC_READY_FOR_REVIEW_STATUS)).toBe("NEW_CONSTRUCTION");
+    expect(deriveItemType("6900017", "Initial Review")).toBe("IDR");
+    expect(deriveItemType(null, "Initial Review")).toBe("IDR");
+    expect(deriveItemType(null, NC_READY_FOR_REVIEW_STATUS)).toBe("NEW_CONSTRUCTION");
+  });
+});
 
-  it("derives IDR for every other status (status wins over filter-group membership)", () => {
-    expect(deriveItemTypeFromStatus("Initial Review")).toBe("IDR");
-    expect(deriveItemTypeFromStatus("IDR Revision Complete")).toBe("IDR");
-    expect(deriveItemTypeFromStatus(null)).toBe("IDR");
-    expect(deriveItemTypeFromStatus(undefined)).toBe("IDR");
+describe("DNR_SERVICE registry row", () => {
+  it("syncs via the combined task and the IDR revision track", () => {
+    expect(REVIEW_TYPES.DNR_SERVICE.taskSubject).toBe("D&R/Service Design Review");
+    expect(REVIEW_TYPES.DNR_SERVICE.revisionType).toBe("design");
+    expect(REVIEW_TYPES.DNR_SERVICE.revisionReasonProperty).toBe("idr_revision_reason");
+    expect(REVIEW_TYPES.DNR_SERVICE.noteLabel).toBe("D&R/Service Design Review");
+    expect(REVIEW_TYPES.DNR_SERVICE.autoBomExtract).toBe(false);
+    expect(REVIEW_TYPES.DNR_SERVICE.pushRevisionFlagsWithoutTask).toBe(false);
+  });
+  it("NC keeps push-without-task; IDR/ESCALATION stay task-gated with auto-extract only on IDR/NC", () => {
+    expect(REVIEW_TYPES.NEW_CONSTRUCTION.pushRevisionFlagsWithoutTask).toBe(true);
+    expect(REVIEW_TYPES.IDR.pushRevisionFlagsWithoutTask).toBe(false);
+    expect(REVIEW_TYPES.IDR.autoBomExtract).toBe(true);
+    expect(REVIEW_TYPES.NEW_CONSTRUCTION.autoBomExtract).toBe(true);
+    expect(REVIEW_TYPES.ESCALATION.autoBomExtract).toBe(false);
+  });
+});
+
+describe("buildQueueFilterGroups", () => {
+  it("builds one group per status-driven type plus the re-review group", () => {
+    const groups = buildQueueFilterGroups();
+    expect(groups).toHaveLength(4);
+    const dnr = groups.find((g) =>
+      g.filters.some((f) => f.propertyName === "pipeline" && f.values?.includes(SERVICE_PIPELINE_ID)) &&
+      g.filters.some((f) => f.propertyName === "design_status"));
+    expect(dnr).toBeDefined();
+    expect(dnr!.filters.some((f) => f.propertyName === "design_status" && f.value === "Initial Review")).toBe(true);
+    expect(dnr!.filters.some((f) => f.propertyName === "dealstage" && f.values?.includes("56217769") && f.values?.includes("72700977"))).toBe(true);
+    // re-review group spans all registry pipelines
+    const rr = groups.find((g) => g.filters.some((f) => f.propertyName === "idr_re_review_needed"));
+    expect(rr!.filters.some((f) => f.propertyName === "pipeline" && f.values?.includes(SERVICE_PIPELINE_ID) && f.values?.includes("6900017"))).toBe(true);
   });
 });
 
