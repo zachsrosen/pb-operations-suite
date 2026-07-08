@@ -10,6 +10,7 @@ import {
   getReturningDealIds,
   buildOwnerMap,
   locationInBucket,
+  deriveItemTypeFromStatus,
   SNAPSHOT_PROPERTIES,
   type LocationBucket,
 } from "@/lib/idr-meeting";
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
         data: {
           sessionId: session.id,
           dealId: deal.dealId,
-          type: "IDR",
+          type: deriveItemTypeFromStatus(snapshot.designStatus),
           sortOrder: sortOrder++,
           ...snapshot,
           addedBy: "system",
@@ -269,7 +270,7 @@ export async function POST(req: NextRequest) {
   // ── Fire-and-forget BOM extraction for IDR items ──
   // Escalation items skip auto-extraction (on-demand only).
   const idrItemsWithFolder = items.filter(
-    (item) => item.type === "IDR" && item.designFolderUrl,
+    (item) => (item.type === "IDR" || item.type === "NEW_CONSTRUCTION") && item.designFolderUrl,
   );
   if (idrItemsWithFolder.length > 0) {
     const extractionActor = { email: auth.email, name: auth.name ?? auth.email };

@@ -149,6 +149,13 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                       </span>
                     )}
 
+                    {/* New Construction review badge */}
+                    {item.type === "NEW_CONSTRUCTION" && (
+                      <span className="text-[10px] font-semibold text-cyan-500 shrink-0" title="New Construction Design Review">
+                        NC
+                      </span>
+                    )}
+
                     {/* Re-review indicator */}
                     {item.isReReview && (
                       <span className="text-[10px] font-semibold text-purple-400 shrink-0" title="Re-review after design revision">

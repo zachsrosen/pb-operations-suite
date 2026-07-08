@@ -7,7 +7,9 @@ import {
   snapshotDealProperties,
   computeReadinessBadge,
   buildOwnerMap,
+  deriveItemTypeFromStatus,
   SNAPSHOT_PROPERTIES,
+  type ReviewItemType,
 } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
 import { readShitShowFlagsBatch } from "@/lib/shit-show/snapshot";
@@ -91,7 +93,7 @@ export async function GET() {
       id: `preview-${deal.dealId}`,
       sessionId: "",
       dealId: deal.dealId,
-      type: "IDR" as "IDR" | "ESCALATION",
+      type: deriveItemTypeFromStatus(snapshot.designStatus) as ReviewItemType,
       ...snapshot,
       sortOrder: sortOrder++,
       snapshotUpdatedAt: new Date().toISOString(),

@@ -378,7 +378,7 @@ interface NoteFields {
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
-export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): string {
+export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string, noteLabel = "IDR Meeting"): string {
   // Format date as M/D/YYYY — parse as local date to avoid UTC timezone shift
   // Accepts "YYYY-MM-DD" or full ISO strings
   const isoDateMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -394,7 +394,7 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   }
 
   // HubSpot hs_note_body is rendered as HTML — use <br> for line breaks
-  const lines: string[] = [`<strong>IDR Meeting -- ${formatted}</strong>`];
+  const lines: string[] = [`<strong>${noteLabel} -- ${formatted}</strong>`];
 
   if (fields.customerNotes) lines.push(`<strong>Customer Notes:</strong> ${esc(fields.customerNotes)}`);
   if (fields.operationsNotes) lines.push(`<strong>Operation Notes:</strong> ${esc(fields.operationsNotes)}`);
@@ -464,7 +464,7 @@ interface PropertyFields {
   designRevisionReason: string | null;
   needsReReview: boolean;
   reviewed: boolean;
-  itemType?: "IDR" | "ESCALATION";
+  itemType?: ReviewItemType;
   designNotes?: string | null;
   opsRevisionNotes?: string | null;
 }
@@ -511,15 +511,14 @@ export function buildHubSpotPropertyUpdates(
   updates.idr_adders = fields.adderSummary ?? "";
   if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
 
-  // Design status is handled via HubSpot task completion in syncItemToHubSpot.
-  // Completing the "Complete Initial Design Review" task triggers a workflow that
-  // sets design_status. When a revision is also flagged, syncItemToHubSpot waits
-  // for the workflow to fire, then overrides design_status to "IDR Revision Needed"
-  // in a separate property push (see postTaskRevisionUpdate).
+  // Design status is never set here. syncItemToHubSpot completes the review
+  // task for the item's type (REVIEW_TYPES[type].taskSubject) and a HubSpot
+  // workflow advances design_status. When a revision is also flagged, sync
+  // pushes idr_revision_requested + idr_revision_type in a second property
+  // push and the "IDR Revision Needed" workflow overrides design_status.
   //
-  // This first property push does NOT include design_status — only the revision
-  // metadata fields. design_status is set either by the workflow (normal review)
-  // or by the post-task override (revision flagged).
+  // This first push carries only revision metadata; which reason property the
+  // combined reason lands in varies by review type (REVIEW_TYPES).
   if (fields.designRevisionNeeded) {
     updates.idr_re_review_needed = fields.needsReReview ? "true" : "false";
     const combinedReason = buildCombinedRevisionReason(
@@ -527,12 +526,9 @@ export function buildHubSpotPropertyUpdates(
       fields.designNotes,
       fields.opsRevisionNotes,
     );
-    if (fields.itemType === "ESCALATION") {
-      // Escalation revisions → as-built revision reason
-      if (combinedReason) updates.inspection_rejection_reason = combinedReason;
-    } else {
-      // IDR / re-review revisions → IDR revision reason
-      if (combinedReason) updates.idr_revision_reason = combinedReason;
+    if (combinedReason) {
+      const reasonProperty = REVIEW_TYPES[fields.itemType ?? "IDR"].revisionReasonProperty;
+      updates[reasonProperty] = combinedReason;
     }
   } else if (fields.reviewed) {
     // Clear the re-review flag when a deal is reviewed (normal or re-review).
@@ -638,6 +634,50 @@ export function computeAdderTotal(item: {
 }
 
 // ---------------------------------------------------------------------------
+// Review types — what varies per item type. ESCALATION's row encodes its
+// existing behavior (IDR task subject, as-built revision routing) so sync can
+// resolve every type uniformly. Adding a future review type = one enum value
+// + one row here + its HubSpot task/workflow.
+// ---------------------------------------------------------------------------
+
+export type ReviewItemType = "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
+
+export const NC_READY_FOR_REVIEW_STATUS = "New Construction - Ready for Review";
+
+export const REVIEW_TYPES: Record<ReviewItemType, {
+  noteLabel: string;
+  taskSubject: string;
+  revisionType: "design" | "escalation";
+  revisionReasonProperty: "idr_revision_reason" | "inspection_rejection_reason";
+}> = {
+  IDR: {
+    noteLabel: "IDR Meeting",
+    taskSubject: "Complete Initial Design Review",
+    revisionType: "design",
+    revisionReasonProperty: "idr_revision_reason",
+  },
+  NEW_CONSTRUCTION: {
+    noteLabel: "New Construction Review",
+    taskSubject: "New Construction Design Review",
+    revisionType: "escalation",
+    revisionReasonProperty: "inspection_rejection_reason",
+  },
+  ESCALATION: {
+    noteLabel: "IDR Meeting",
+    taskSubject: "Complete Initial Design Review",
+    revisionType: "escalation",
+    revisionReasonProperty: "inspection_rejection_reason",
+  },
+};
+
+/** Derive an item's review type from its HubSpot design_status snapshot. */
+export function deriveItemTypeFromStatus(
+  designStatus: string | null | undefined,
+): "IDR" | "NEW_CONSTRUCTION" {
+  return designStatus === NC_READY_FOR_REVIEW_STATUS ? "NEW_CONSTRUCTION" : "IDR";
+}
+
+// ---------------------------------------------------------------------------
 // Session creation — query HubSpot + build items
 // ---------------------------------------------------------------------------
 
@@ -660,6 +700,7 @@ export async function fetchInitialReviewDeals(): Promise<
     filterGroups: [
       { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" }] },
       { filters: [...commonFilters, { propertyName: "idr_revision_complete_date", operator: FilterOperatorEnum.HasProperty }, { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" }] },
+      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: NC_READY_FOR_REVIEW_STATUS }] },
     ] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
@@ -791,14 +832,18 @@ export async function createDealTask(
 }
 
 /**
- * Find and complete the "Complete Initial Design Review" HubSpot task on a deal.
- * The task is created by HubSpot workflows when a deal enters the design phase;
- * completing it triggers downstream workflow effects (status change, notifications).
+ * Find and complete the design-review HubSpot task on a deal. The subject
+ * varies by review type (REVIEW_TYPES[type].taskSubject): "Complete Initial
+ * Design Review" for IDR/ESCALATION, "New Construction Design Review" for NC.
+ * The two subjects cannot cross-match via CONTAINS_TOKEN (NC lacks the
+ * "Complete"/"Initial" tokens, IDR lacks "Construction"). The task is created
+ * by HubSpot workflows (or manually for NC); completing it triggers downstream
+ * workflow effects (status change, notifications).
  *
  * Returns { completed: true, taskId } if found and completed,
  * { completed: false } if no matching task exists (caller can fall back to direct update).
  */
-export async function completeInitialDesignReviewTask(dealId: string): Promise<{
+export async function completeDesignReviewTask(dealId: string, taskSubject: string): Promise<{
   completed: boolean;
   taskId?: string;
 }> {
@@ -817,7 +862,7 @@ export async function completeInitialDesignReviewTask(dealId: string): Promise<{
       filterGroups: [
         {
           filters: [
-            { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN", value: "Complete Initial Design Review" },
+            { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN", value: taskSubject },
             { propertyName: "hs_task_status", operator: "EQ", value: "NOT_STARTED" },
             { propertyName: "associations.deal", operator: "EQ", value: dealId },
           ],
@@ -894,7 +939,7 @@ export async function syncItemToHubSpot(
     id: string;
     dealId: string;
     dealName: string;
-    type: "IDR" | "ESCALATION";
+    type: ReviewItemType;
     difficulty: number | null;
     installerCount: number | null;
     installerDays: number | null;
@@ -968,35 +1013,44 @@ export async function syncItemToHubSpot(
       await pushDealProperties(item.dealId, properties);
     }
 
-    // Complete the "Complete Initial Design Review" HubSpot task when reviewed.
-    // The review IS complete whether they approve or flag a revision — the task
-    // should be completed either way. The workflow sets design_status to "Draft Complete".
+    // Complete the review task when reviewed. The review IS complete whether
+    // they approve or flag a revision — the task should be completed either
+    // way. A HubSpot workflow then advances design_status ("Draft Complete").
     //
-    // When a revision is ALSO flagged, we wait for the workflow to fire, then
-    // override design_status to "IDR Revision Needed" in a second property push.
+    // When a revision is ALSO flagged, we push idr_revision_requested +
+    // idr_revision_type; the "IDR Revision Needed" workflow waits ~3 min, then
+    // overrides design_status per the type ("design" → IDR Revision Needed,
+    // "escalation" → Revision Needed - Rejected / As-Built).
+    //
+    // NEW_CONSTRUCTION pushes the revision flags even when the task is missing
+    // or completion throws: NC task creation is manual (the 08c workflow is
+    // disabled), and the revision workflow enrolls on the property, not the
+    // task — only the "Draft Complete" flip (which the revision would override
+    // anyway) is lost. IDR/ESCALATION keep task-gated behavior.
+    const reviewType = REVIEW_TYPES[item.type];
     let taskCompleteWarning: string | undefined;
     if (item.reviewed) {
+      let taskCompleted = false;
       try {
-        const result = await completeInitialDesignReviewTask(item.dealId);
+        const result = await completeDesignReviewTask(item.dealId, reviewType.taskSubject);
+        taskCompleted = result.completed;
         if (!result.completed) {
-          console.warn(`[idr-meeting] No "Complete Initial Design Review" task found for deal ${item.dealId} — workflow won't fire`);
+          console.warn(`[idr-meeting] No "${reviewType.taskSubject}" task found for deal ${item.dealId} — workflow won't fire`);
           taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
-        } else if (item.designRevisionNeeded) {
-          // Task completed → HubSpot workflow will set "Draft Complete" async.
-          // A SECOND HubSpot workflow watches idr_revision_requested, waits ~3 min,
-          // then overrides design_status to the value in idr_revision_type.
-          const revisionType = item.type === "ESCALATION"
-            ? "escalation"
-            : "design";
-          await pushDealProperties(item.dealId, {
-            idr_revision_requested: "true",
-            idr_revision_type: revisionType,
-          });
-          console.log(`[idr-meeting] Set idr_revision_requested=true, type=${revisionType} on deal ${item.dealId}`);
         }
       } catch (err) {
         console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
         taskCompleteWarning = "Failed to complete design review task — design_status may need manual update.";
+      }
+      if (
+        item.designRevisionNeeded &&
+        (taskCompleted || item.type === "NEW_CONSTRUCTION")
+      ) {
+        await pushDealProperties(item.dealId, {
+          idr_revision_requested: "true",
+          idr_revision_type: reviewType.revisionType,
+        });
+        console.log(`[idr-meeting] Set idr_revision_requested=true, type=${reviewType.revisionType} on deal ${item.dealId}`);
       }
     }
 
@@ -1031,6 +1085,7 @@ export async function syncItemToHubSpot(
           needsReReview: item.needsReReview,
         },
         sessionDate.toISOString(),
+        REVIEW_TYPES[item.type].noteLabel,
       );
       await createDealTimelineNote(item.dealId, noteBody);
     } catch (err) {
