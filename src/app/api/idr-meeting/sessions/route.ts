@@ -10,9 +10,11 @@ import {
   getReturningDealIds,
   buildOwnerMap,
   locationInBucket,
-  deriveItemTypeFromStatus,
+  deriveItemType,
+  REVIEW_TYPES,
   SNAPSHOT_PROPERTIES,
   type LocationBucket,
+  type ReviewItemType,
 } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
 import { extractBomForDeal } from "@/lib/idr-bom-extract";
@@ -131,7 +133,7 @@ export async function POST(req: NextRequest) {
         data: {
           sessionId: session.id,
           dealId: deal.dealId,
-          type: deriveItemTypeFromStatus(snapshot.designStatus),
+          type: deriveItemType(snapshot.pipeline, snapshot.designStatus),
           sortOrder: sortOrder++,
           ...snapshot,
           addedBy: "system",
@@ -267,10 +269,10 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ── Fire-and-forget BOM extraction for IDR items ──
-  // Escalation items skip auto-extraction (on-demand only).
+  // ── Fire-and-forget BOM extraction (registry-driven per review type) ──
+  // Escalation and D&R/Service items skip auto-extraction (on-demand only).
   const idrItemsWithFolder = items.filter(
-    (item) => (item.type === "IDR" || item.type === "NEW_CONSTRUCTION") && item.designFolderUrl,
+    (item) => REVIEW_TYPES[item.type as ReviewItemType].autoBomExtract && item.designFolderUrl,
   );
   if (idrItemsWithFolder.length > 0) {
     const extractionActor = { email: auth.email, name: auth.name ?? auth.email };

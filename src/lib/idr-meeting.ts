@@ -755,6 +755,15 @@ export function buildQueueFilterGroups(): { filters: QueueFilter[] }[] {
   return groups;
 }
 
+/** Union of every pipeline any registry queue pulls from (deal-search scope). */
+export function registryQueuePipelines(): string[] {
+  const pipelines = new Set<string>();
+  for (const cfg of Object.values(REVIEW_TYPES)) {
+    cfg.queue?.pipelines.forEach((p) => pipelines.add(p));
+  }
+  return [...pipelines];
+}
+
 /** Query HubSpot for all active deals in the review queue (registry-driven). */
 export async function fetchInitialReviewDeals(): Promise<
   Array<{ dealId: string; properties: Record<string, string | null> }>

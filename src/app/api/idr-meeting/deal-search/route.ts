@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { isIdrAllowedRole } from "@/lib/idr-meeting";
+import { isIdrAllowedRole, registryQueuePipelines } from "@/lib/idr-meeting";
 import { searchWithRetry } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
-
-const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
 
 export async function GET(req: NextRequest) {
   const auth = await requireApiAuth();
@@ -24,11 +22,11 @@ export async function GET(req: NextRequest) {
     filterGroups: [
       {
         filters: [
-          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
+          { propertyName: "pipeline", operator: FilterOperatorEnum.In, values: registryQueuePipelines() },
         ],
       },
     ],
-    properties: ["dealname", "pb_location", "project_type", "design_status"],
+    properties: ["dealname", "pb_location", "project_type", "design_status", "pipeline"],
     limit: 20,
   });
 
@@ -38,6 +36,7 @@ export async function GET(req: NextRequest) {
     region: deal.properties.pb_location,
     projectType: deal.properties.project_type,
     designStatus: deal.properties.design_status,
+    pipeline: deal.properties.pipeline,
   }));
 
   return NextResponse.json({ deals });
