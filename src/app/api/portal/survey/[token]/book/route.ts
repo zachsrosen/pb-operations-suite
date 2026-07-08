@@ -26,6 +26,7 @@ import {
   getSurveyCalendarEventId,
 } from "@/lib/google-calendar";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+import { checkSurveySlotBookingConflict } from "@/lib/survey-booking-guard";
 
 const BookingSchema = z.object({
   slotId: z.string().min(1),
@@ -141,6 +142,36 @@ export async function POST(
   // Compute end time (1-hour slot)
   const [h, m] = slot.time.split(":").map(Number);
   const endTime = `${(h + 1).toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+
+  // ----- Booking-time double-book guard (same race as PR #1337) -----
+  // The slot picker is rendered from availability fetched at page load; a
+  // slot taken since then still looks bookable. Re-validate against our
+  // ScheduleRecords AND live Zuper jobs right before writing. No
+  // allowDoubleBook bypass for customers. slotTaken tells the client to
+  // re-render the picker with fresh availability.
+  const conflict = await checkSurveySlotBookingConflict({
+    dealId: invite.dealId,
+    date: slot.date,
+    startTime: slot.time,
+    endTime,
+    startUtc: localTimeToUtcString(slot.date, slot.time, timezone),
+    endUtc: localTimeToUtcString(slot.date, endTime, timezone),
+    assigneeUid: crewMember.zuperUserUid,
+    assigneeName: crewMember.name,
+  });
+  if (conflict) {
+    console.warn(
+      `[portal/book] BLOCKED double-book: ${crewMember.name} already has ${conflict.projectName} (${conflict.scheduledStart}-${conflict.scheduledEnd}) via ${conflict.source}`,
+    );
+    await markIdempotencyFailed(idempotencyKey, scope);
+    return NextResponse.json(
+      {
+        error: "This time slot is no longer available. Please choose another time.",
+        slotTaken: true,
+      },
+      { status: 409 },
+    );
+  }
 
   // ----- Transactional booking -----
   // SELECT FOR UPDATE on the crew availability row to serialize concurrent bookings,
