@@ -464,7 +464,7 @@ interface PropertyFields {
   designRevisionReason: string | null;
   needsReReview: boolean;
   reviewed: boolean;
-  itemType?: "IDR" | "ESCALATION";
+  itemType?: ReviewItemType;
   designNotes?: string | null;
   opsRevisionNotes?: string | null;
 }
@@ -527,12 +527,9 @@ export function buildHubSpotPropertyUpdates(
       fields.designNotes,
       fields.opsRevisionNotes,
     );
-    if (fields.itemType === "ESCALATION") {
-      // Escalation revisions → as-built revision reason
-      if (combinedReason) updates.inspection_rejection_reason = combinedReason;
-    } else {
-      // IDR / re-review revisions → IDR revision reason
-      if (combinedReason) updates.idr_revision_reason = combinedReason;
+    if (combinedReason) {
+      const reasonProperty = REVIEW_TYPES[fields.itemType ?? "IDR"].revisionReasonProperty;
+      updates[reasonProperty] = combinedReason;
     }
   } else if (fields.reviewed) {
     // Clear the re-review flag when a deal is reviewed (normal or re-review).

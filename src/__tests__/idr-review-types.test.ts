@@ -13,6 +13,7 @@ import {
   REVIEW_TYPES,
   NC_READY_FOR_REVIEW_STATUS,
   deriveItemTypeFromStatus,
+  buildHubSpotPropertyUpdates,
 } from "@/lib/idr-meeting";
 
 describe("REVIEW_TYPES registry", () => {
@@ -49,5 +50,40 @@ describe("deriveItemTypeFromStatus", () => {
     expect(deriveItemTypeFromStatus("IDR Revision Complete")).toBe("IDR");
     expect(deriveItemTypeFromStatus(null)).toBe("IDR");
     expect(deriveItemTypeFromStatus(undefined)).toBe("IDR");
+  });
+});
+
+describe("buildHubSpotPropertyUpdates revision routing", () => {
+  const base = {
+    difficulty: null, installerCount: null, installerDays: null,
+    electricianCount: null, electricianDays: null, discoReco: null,
+    interiorAccess: null, operationsNotes: null, needsSurveyInfo: null,
+    needsResurvey: null, salesChangeRequested: null, salesChangeNotes: null,
+    opsChangeNotes: null, designRevisionNeeded: true,
+    designRevisionReason: "Panel layout wrong", needsReReview: false,
+    reviewed: true,
+  } as const;
+
+  it("IDR revisions write idr_revision_reason", () => {
+    const u = buildHubSpotPropertyUpdates({ ...base, itemType: "IDR" });
+    expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
+    expect(u.inspection_rejection_reason).toBeUndefined();
+  });
+
+  it("ESCALATION revisions write inspection_rejection_reason (unchanged behavior)", () => {
+    const u = buildHubSpotPropertyUpdates({ ...base, itemType: "ESCALATION" });
+    expect(u.inspection_rejection_reason).toBe("Revision Reason: Panel layout wrong");
+    expect(u.idr_revision_reason).toBeUndefined();
+  });
+
+  it("NEW_CONSTRUCTION revisions write inspection_rejection_reason (as-built track)", () => {
+    const u = buildHubSpotPropertyUpdates({ ...base, itemType: "NEW_CONSTRUCTION" });
+    expect(u.inspection_rejection_reason).toBe("Revision Reason: Panel layout wrong");
+    expect(u.idr_revision_reason).toBeUndefined();
+  });
+
+  it("missing itemType defaults to IDR routing", () => {
+    const u = buildHubSpotPropertyUpdates({ ...base });
+    expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
   });
 });
