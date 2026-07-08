@@ -134,6 +134,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Construction",
   },
   {
+    href: "/dashboards/bottlenecks",
+    title: "Bottleneck Monitor",
+    description: "Deals stuck past stage thresholds — age, volume, and flow per pipeline stage.",
+    tag: "OPS",
+    icon: "🚧",
+    section: "Construction",
+  },
+  {
     href: "/dashboards/project-pipeline-funnel",
     title: "Project Pipeline Funnel",
     description: "Full Sales-Closed → PTO funnel — backlog, RTB bench & runway, incoming forecast, and median stage times.",
