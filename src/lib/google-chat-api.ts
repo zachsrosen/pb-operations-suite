@@ -150,9 +150,10 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
   }
 
   // Audit trail: every outbound bot message lands in the ActivityLog with its
-  // full text (digests, worklists, conversational replies). Fire-and-forget —
-  // logging must never fail or slow a send.
-  void logOutboundMessage(params).catch(() => {});
+  // full text (digests, worklists, conversational replies). Awaited: serverless
+  // runtimes freeze after return and silently kill detached promises — the
+  // ~15ms insert is worth a lossless audit log. Errors never fail the send.
+  await logOutboundMessage(params).catch((e) => console.warn("[google-chat-api] audit log failed:", e));
 }
 
 async function logOutboundMessage(params: PostMessageParams): Promise<void> {
