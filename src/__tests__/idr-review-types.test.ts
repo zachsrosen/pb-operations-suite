@@ -150,6 +150,12 @@ describe("buildHubSpotPropertyUpdates revision routing", () => {
     const u = buildHubSpotPropertyUpdates({ ...base });
     expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
   });
+
+  it("DNR_SERVICE revisions write idr_revision_reason", () => {
+    const u = buildHubSpotPropertyUpdates({ ...base, itemType: "DNR_SERVICE" });
+    expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
+    expect(u.inspection_rejection_reason).toBeUndefined();
+  });
 });
 
 describe("buildHubSpotNoteBody header", () => {
@@ -170,6 +176,11 @@ describe("buildHubSpotNoteBody header", () => {
   it("uses the New Construction Review label when passed", () => {
     expect(buildHubSpotNoteBody(fields, "2026-07-08", "New Construction Review"))
       .toContain("<strong>New Construction Review -- 7/8/2026</strong>");
+  });
+
+  it("uses the D&R/Service label when passed", () => {
+    expect(buildHubSpotNoteBody(fields, "2026-07-08", "D&R/Service Design Review"))
+      .toContain("<strong>D&R/Service Design Review -- 7/8/2026</strong>");
   });
 });
 
@@ -262,5 +273,31 @@ describe("syncItemToHubSpot revision-flag gating", () => {
     expect(result.ok).toBe(true);
     expect(result.taskWarning).toContain("Failed to complete design review task");
     expect(findFlagPush()).toBeDefined();
+  });
+
+  it("DNR_SERVICE stays task-gated and searches the combined subject", async () => {
+    const result = await syncItemToHubSpot(
+      makeItem({ type: "DNR_SERVICE" }) as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+    expect(result.ok).toBe(true);
+    expect(findFlagPush()).toBeUndefined();   // no task found → no flag push
+    const searchBody = (global.fetch as jest.Mock).mock.calls[0][1].body as string;
+    expect(searchBody).toContain("D&R/Service Design Review");
+  });
+
+  it("DNR_SERVICE pushes design-type flags when the task IS found and completed", async () => {
+    // Task search returns one open task; the PATCH completion also goes through fetch.
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ id: "task-9" }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    const result = await syncItemToHubSpot(
+      makeItem({ type: "DNR_SERVICE" }) as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+    expect(result.ok).toBe(true);
+    const flagPush = findFlagPush();
+    expect(flagPush).toBeDefined();
+    expect(flagPush![1].properties.idr_revision_type).toBe("design");
   });
 });

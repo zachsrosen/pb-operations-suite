@@ -1081,11 +1081,12 @@ export async function syncItemToHubSpot(
     // overrides design_status per the type ("design" → IDR Revision Needed,
     // "escalation" → Revision Needed - Rejected / As-Built).
     //
-    // NEW_CONSTRUCTION pushes the revision flags even when the task is missing
-    // or completion throws: NC task creation is manual (the 08c workflow is
-    // disabled), and the revision workflow enrolls on the property, not the
-    // task — only the "Draft Complete" flip (which the revision would override
-    // anyway) is lost. IDR/ESCALATION keep task-gated behavior.
+    // Types with pushRevisionFlagsWithoutTask (NEW_CONSTRUCTION) push the
+    // revision flags even when the task is missing or completion throws: NC
+    // task creation is manual (the 08c workflow is disabled), and the revision
+    // workflow enrolls on the property, not the task — only the "Draft
+    // Complete" flip (which the revision would override anyway) is lost.
+    // IDR/ESCALATION/DNR_SERVICE keep task-gated behavior.
     const reviewType = REVIEW_TYPES[item.type];
     let taskCompleteWarning: string | undefined;
     if (item.reviewed) {
@@ -1103,7 +1104,7 @@ export async function syncItemToHubSpot(
       }
       if (
         item.designRevisionNeeded &&
-        (taskCompleted || item.type === "NEW_CONSTRUCTION")
+        (taskCompleted || reviewType.pushRevisionFlagsWithoutTask)
       ) {
         await pushDealProperties(item.dealId, {
           idr_revision_requested: "true",
