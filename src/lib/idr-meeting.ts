@@ -833,14 +833,18 @@ export async function createDealTask(
 }
 
 /**
- * Find and complete the "Complete Initial Design Review" HubSpot task on a deal.
- * The task is created by HubSpot workflows when a deal enters the design phase;
- * completing it triggers downstream workflow effects (status change, notifications).
+ * Find and complete the design-review HubSpot task on a deal. The subject
+ * varies by review type (REVIEW_TYPES[type].taskSubject): "Complete Initial
+ * Design Review" for IDR/ESCALATION, "New Construction Design Review" for NC.
+ * The two subjects cannot cross-match via CONTAINS_TOKEN (NC lacks the
+ * "Complete"/"Initial" tokens, IDR lacks "Construction"). The task is created
+ * by HubSpot workflows (or manually for NC); completing it triggers downstream
+ * workflow effects (status change, notifications).
  *
  * Returns { completed: true, taskId } if found and completed,
  * { completed: false } if no matching task exists (caller can fall back to direct update).
  */
-export async function completeInitialDesignReviewTask(dealId: string): Promise<{
+export async function completeDesignReviewTask(dealId: string, taskSubject: string): Promise<{
   completed: boolean;
   taskId?: string;
 }> {
@@ -859,7 +863,7 @@ export async function completeInitialDesignReviewTask(dealId: string): Promise<{
       filterGroups: [
         {
           filters: [
-            { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN", value: "Complete Initial Design Review" },
+            { propertyName: "hs_task_subject", operator: "CONTAINS_TOKEN", value: taskSubject },
             { propertyName: "hs_task_status", operator: "EQ", value: "NOT_STARTED" },
             { propertyName: "associations.deal", operator: "EQ", value: dealId },
           ],
@@ -936,7 +940,7 @@ export async function syncItemToHubSpot(
     id: string;
     dealId: string;
     dealName: string;
-    type: "IDR" | "ESCALATION";
+    type: ReviewItemType;
     difficulty: number | null;
     installerCount: number | null;
     installerDays: number | null;
@@ -1010,35 +1014,44 @@ export async function syncItemToHubSpot(
       await pushDealProperties(item.dealId, properties);
     }
 
-    // Complete the "Complete Initial Design Review" HubSpot task when reviewed.
-    // The review IS complete whether they approve or flag a revision — the task
-    // should be completed either way. The workflow sets design_status to "Draft Complete".
+    // Complete the review task when reviewed. The review IS complete whether
+    // they approve or flag a revision — the task should be completed either
+    // way. A HubSpot workflow then advances design_status ("Draft Complete").
     //
-    // When a revision is ALSO flagged, we wait for the workflow to fire, then
-    // override design_status to "IDR Revision Needed" in a second property push.
+    // When a revision is ALSO flagged, we push idr_revision_requested +
+    // idr_revision_type; the "IDR Revision Needed" workflow waits ~3 min, then
+    // overrides design_status per the type ("design" → IDR Revision Needed,
+    // "escalation" → Revision Needed - Rejected / As-Built).
+    //
+    // NEW_CONSTRUCTION pushes the revision flags even when the task is missing
+    // or completion throws: NC task creation is manual (the 08c workflow is
+    // disabled), and the revision workflow enrolls on the property, not the
+    // task — only the "Draft Complete" flip (which the revision would override
+    // anyway) is lost. IDR/ESCALATION keep task-gated behavior.
+    const reviewType = REVIEW_TYPES[item.type];
     let taskCompleteWarning: string | undefined;
     if (item.reviewed) {
+      let taskCompleted = false;
       try {
-        const result = await completeInitialDesignReviewTask(item.dealId);
+        const result = await completeDesignReviewTask(item.dealId, reviewType.taskSubject);
+        taskCompleted = result.completed;
         if (!result.completed) {
-          console.warn(`[idr-meeting] No "Complete Initial Design Review" task found for deal ${item.dealId} — workflow won't fire`);
+          console.warn(`[idr-meeting] No "${reviewType.taskSubject}" task found for deal ${item.dealId} — workflow won't fire`);
           taskCompleteWarning = "No design review task found on this deal — design_status may need manual update.";
-        } else if (item.designRevisionNeeded) {
-          // Task completed → HubSpot workflow will set "Draft Complete" async.
-          // A SECOND HubSpot workflow watches idr_revision_requested, waits ~3 min,
-          // then overrides design_status to the value in idr_revision_type.
-          const revisionType = item.type === "ESCALATION"
-            ? "escalation"
-            : "design";
-          await pushDealProperties(item.dealId, {
-            idr_revision_requested: "true",
-            idr_revision_type: revisionType,
-          });
-          console.log(`[idr-meeting] Set idr_revision_requested=true, type=${revisionType} on deal ${item.dealId}`);
         }
       } catch (err) {
         console.error(`[idr-meeting] Failed to complete design review task for deal ${item.dealId}:`, err);
         taskCompleteWarning = "Failed to complete design review task — design_status may need manual update.";
+      }
+      if (
+        item.designRevisionNeeded &&
+        (taskCompleted || item.type === "NEW_CONSTRUCTION")
+      ) {
+        await pushDealProperties(item.dealId, {
+          idr_revision_requested: "true",
+          idr_revision_type: reviewType.revisionType,
+        });
+        console.log(`[idr-meeting] Set idr_revision_requested=true, type=${reviewType.revisionType} on deal ${item.dealId}`);
       }
     }
 
