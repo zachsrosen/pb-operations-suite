@@ -732,7 +732,7 @@ async function firePostBookingSideEffects(ctx: {
     const tzAbbrev = timezone === "America/Los_Angeles" ? "PT" : "MT";
     const formattedTime = formatTime12(slot.time);
 
-    await sendPortalEmail({
+    const emailResult = await sendPortalEmail({
       to: invite.customerEmail,
       subject: "Your Site Survey is Confirmed - Photon Brothers",
       html: buildConfirmationEmailHtml({
@@ -744,7 +744,9 @@ async function firePostBookingSideEffects(ctx: {
       }),
       senderEmail: invite.sentBy || undefined,
     });
-    console.log(`[portal/book] Confirmation email sent to ${invite.customerEmail}`);
+    if (emailResult.success && !emailResult.skipped) {
+      console.log(`[portal/book] Confirmation email sent to ${invite.customerEmail}`);
+    }
   } catch (err) {
     warnings.push(`Customer confirmation email failed: ${err instanceof Error ? err.message : String(err)}`);
   }

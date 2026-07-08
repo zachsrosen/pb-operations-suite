@@ -2015,7 +2015,16 @@ export async function sendPortalEmail(params: {
   /** Optional: send from this user's Workspace account (e.g. the rep who clicked Invite) */
   senderEmail?: string;
   senderName?: string;
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+  // Olivia (the PM bot) owns all customer messaging — the app must not email
+  // customers unless this flag is explicitly enabled.
+  if (!isTruthy(process.env.PORTAL_CUSTOMER_EMAILS_ENABLED)) {
+    console.log(
+      `[email] Customer emails disabled (PORTAL_CUSTOMER_EMAILS_ENABLED is off) — skipped "${params.subject}" to ${params.to}`
+    );
+    return { success: true, skipped: true };
+  }
+
   // Strip HTML tags for plain-text fallback
   const text = params.html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 

@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         senderName: session.user.name || undefined,
       });
 
-      emailSent = result.success;
+      emailSent = result.success && !result.skipped;
       if (!result.success) {
         console.error("[portal/invite] Failed to send email:", result.error);
       }
