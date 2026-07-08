@@ -61,10 +61,18 @@ export async function GET(request: NextRequest) {
     );
   }
   try {
-    const result = teamParam
-      ? await runTeamDigest(teamParam as TeamDigestKey, { preview })
-      : await runBottleneckDigest({ preview });
-    return NextResponse.json(result);
+    if (teamParam) {
+      const result = await runTeamDigest(teamParam as TeamDigestKey, { preview });
+      return NextResponse.json(result);
+    }
+    // Default weekday-morning run: Zach's daily digest + everyone's personal
+    // worklists (live mode is flag-gated, honors standing exclusions and
+    // coverage redirects, and only reaches recorded DM spaces).
+    const daily = await runBottleneckDigest({ preview });
+    const personal = preview
+      ? { results: [], unmatched: [], skipped: "preview" }
+      : await runPersonalWorklists({ mode: "live" });
+    return NextResponse.json({ daily, personal });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     console.error("[bottleneck-digest] failed:", message);

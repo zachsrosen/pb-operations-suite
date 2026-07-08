@@ -28,13 +28,16 @@ export default async function TechOpsEscalationsPage({
 
   const { status: statusFilter } = await searchParams;
   const isCorrections = statusFilter === "CORRECTIONS";
+  const isConversations = statusFilter === "CONVERSATIONS";
   const filter = isCorrections
     ? "CORRECTIONS"
-    : statusFilter === "RESOLVED" ||
-        statusFilter === "DISMISSED" ||
-        statusFilter === "all"
-      ? statusFilter
-      : "PENDING";
+    : isConversations
+      ? "CONVERSATIONS"
+      : statusFilter === "RESOLVED" ||
+          statusFilter === "DISMISSED" ||
+          statusFilter === "all"
+        ? statusFilter
+        : "PENDING";
 
   if (!prisma) {
     return (
@@ -60,6 +63,47 @@ export default async function TechOpsEscalationsPage({
       ? notCorrection
       : { status: filter, ...notCorrection };
 
+  // Conversations tab: full DM/room history from the bot's conversation
+  // memory (TechOpsBotConversation) — the "received" half of the audit trail.
+  let conversations: Array<{
+    spaceId: string;
+    person: string;
+    lastAt: string;
+    messages: Array<{ role: string; senderName: string; content: string; createdAt: string; toolsUsed: string[] }>;
+  }> = [];
+  if (isConversations) {
+    const rows = await prisma.techOpsBotConversation.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 600,
+      select: {
+        spaceId: true, senderEmail: true, senderName: true, role: true,
+        content: true, toolsUsed: true, createdAt: true,
+      },
+    });
+    const bySpace = new Map<string, typeof rows>();
+    for (const r of rows) bySpace.set(r.spaceId, [...(bySpace.get(r.spaceId) ?? []), r]);
+    conversations = [...bySpace.entries()]
+      .map(([spaceId, msgs]) => {
+        const human = msgs.find((m) => m.role === "user");
+        return {
+          spaceId,
+          person: human ? `${human.senderName} <${human.senderEmail}>` : spaceId,
+          lastAt: msgs[0].createdAt.toISOString(),
+          messages: [...msgs]
+            .reverse()
+            .slice(-60)
+            .map((m) => ({
+              role: m.role,
+              senderName: m.senderName,
+              content: m.content,
+              createdAt: m.createdAt.toISOString(),
+              toolsUsed: m.toolsUsed ?? [],
+            })),
+        };
+      })
+      .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  }
+
   const escalations = await prisma.techOpsBotEscalation.findMany({
     where,
     orderBy: { createdAt: "desc" },
@@ -79,7 +123,7 @@ export default async function TechOpsEscalationsPage({
     },
   });
 
-  const [pendingCount, resolvedCount, dismissedCount, correctionsCount] =
+  const [pendingCount, resolvedCount, dismissedCount, correctionsCount, conversationCount] =
     await Promise.all([
       prisma.techOpsBotEscalation.count({
         where: { status: "PENDING", ...notCorrection },
@@ -93,6 +137,7 @@ export default async function TechOpsEscalationsPage({
       prisma.techOpsBotEscalation.count({
         where: { question: { startsWith: CORRECTION_PREFIX } },
       }),
+      prisma.techOpsBotConversation.count(),
     ]);
 
   return (
@@ -109,7 +154,9 @@ export default async function TechOpsEscalationsPage({
           resolved: resolvedCount,
           dismissed: dismissedCount,
           corrections: correctionsCount,
+          conversations: conversationCount,
         }}
+        conversations={conversations}
       />
     </DashboardShell>
   );

@@ -205,3 +205,43 @@ describe("overdue-survey ops-director fanout", () => {
     }
   });
 });
+
+describe("delivery redirects", () => {
+  const { buildPersonalWorklists } = jest.requireActual("@/lib/bottleneck-team-digest");
+  it("routes a covered person's lines to their coverage, keeping the original lead on lines", () => {
+    const past = new Date(NOW - 3 * 86_400_000).toISOString().slice(0, 10);
+    const dd = {
+      ...EMPTY_DD,
+      awaitingConstructionComplete: [ddDeal({ id: 1, scheduledDate: past, operationsManager: "Roland Valle" })],
+    };
+    const byTeam = [{ team: "ops" as const, sections: buildTeamSections("ops", dd, [], NOW) }];
+    const redirects = new Map([["roland valle", "Lenny Uematsu"]]);
+    const lists = buildPersonalWorklists(byTeam, redirects);
+    expect(lists.map((w: { person: string }) => w.person)).toEqual(["Lenny Uematsu"]);
+    expect(lists[0].sections[0].section.lines[0].lead).toBe("Roland Valle"); // context preserved
+  });
+});
+
+describe("location-based redirects", () => {
+  const { buildPersonalWorklists } = jest.requireActual("@/lib/bottleneck-team-digest");
+  it("splits a person's lines to regional owners by deal office", () => {
+    const past = new Date(NOW - 3 * 86_400_000).toISOString().slice(0, 10);
+    const dd = {
+      ...EMPTY_DD,
+      awaitingConstructionComplete: [
+        ddDeal({ id: 1, scheduledDate: past, operationsManager: "Derek Pomar", pbLocation: "Centennial" }),
+        ddDeal({ id: 2, scheduledDate: past, operationsManager: "Derek Pomar", pbLocation: "San Luis Obispo" }),
+        ddDeal({ id: 3, scheduledDate: past, operationsManager: "Derek Pomar", pbLocation: "Mystery Office" }),
+      ],
+    };
+    const byTeam = [{ team: "ops" as const, sections: buildTeamSections("ops", dd, [], NOW) }];
+    const redirects = new Map([
+      ["derek pomar", { byLocation: { "centennial": "Drew Perry", "san luis obispo": "nickolas scarpellino" } }],
+    ]);
+    const lists = buildPersonalWorklists(byTeam, redirects);
+    const byPerson = Object.fromEntries(lists.map((w: { person: string; totalDeals: number }) => [w.person, w.totalDeals]));
+    expect(byPerson["Drew Perry"]).toBe(1);
+    expect(byPerson["nickolas scarpellino"]).toBe(1);
+    expect(byPerson["Derek Pomar"]).toBe(1); // unmapped office stays with Derek
+  });
+});

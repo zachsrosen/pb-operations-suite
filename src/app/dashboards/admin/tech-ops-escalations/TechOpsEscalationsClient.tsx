@@ -32,8 +32,15 @@ interface EscalationRow {
 
 interface Props {
   initialEscalations: EscalationRow[];
-  currentFilter: "PENDING" | "RESOLVED" | "DISMISSED" | "all" | "CORRECTIONS";
+  currentFilter: "PENDING" | "RESOLVED" | "DISMISSED" | "all" | "CORRECTIONS" | "CONVERSATIONS";
+  conversations?: Array<{
+    spaceId: string;
+    person: string;
+    lastAt: string;
+    messages: Array<{ role: string; senderName: string; content: string; createdAt: string; toolsUsed: string[] }>;
+  }>;
   counts: {
+    conversations: number;
     pending: number;
     resolved: number;
     dismissed: number;
@@ -78,6 +85,7 @@ export default function TechOpsEscalationsClient({
   initialEscalations,
   currentFilter,
   counts,
+  conversations,
 }: Props) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -170,6 +178,7 @@ export default function TechOpsEscalationsClient({
             ["DISMISSED", `Dismissed (${counts.dismissed})`],
             ["all", `All (${counts.pending + counts.resolved + counts.dismissed})`],
             ["CORRECTIONS", `🎓 Corrections (${counts.corrections})`],
+            ["CONVERSATIONS", `💬 Conversations (${counts.conversations})`],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -187,8 +196,46 @@ export default function TechOpsEscalationsClient({
         ))}
       </div>
 
+      {/* Conversations view */}
+      {currentFilter === "CONVERSATIONS" && (
+        <div className="space-y-3">
+          {(conversations ?? []).length === 0 && (
+            <div className="bg-surface border border-t-border rounded-lg p-12 text-center text-muted">
+              No conversations recorded yet.
+            </div>
+          )}
+          {(conversations ?? []).map((c) => (
+            <details key={c.spaceId} className="bg-surface border border-t-border rounded-lg">
+              <summary className="cursor-pointer px-4 py-3 flex items-baseline justify-between gap-3">
+                <span className="text-sm font-medium text-foreground">{c.person}</span>
+                <span className="text-xs text-muted">
+                  {c.messages.length} message{c.messages.length === 1 ? "" : "s"} · last{" "}
+                  {new Date(c.lastAt).toLocaleString()}
+                </span>
+              </summary>
+              <div className="border-t border-t-border px-4 py-3 space-y-3">
+                {c.messages.map((m, i) => (
+                  <div key={i} className="text-sm">
+                    <div className="flex items-baseline gap-2">
+                      <span className={m.role === "user" ? "font-medium text-foreground" : "font-medium text-purple-400"}>
+                        {m.role === "user" ? m.senderName : "Bot"}
+                      </span>
+                      <span className="text-[11px] text-muted">{new Date(m.createdAt).toLocaleString()}</span>
+                      {m.toolsUsed.length > 0 && (
+                        <span className="text-[11px] text-muted">tools: {m.toolsUsed.join(", ")}</span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 whitespace-pre-wrap text-muted">{m.content}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+
       {/* Empty state */}
-      {initialEscalations.length === 0 && (
+      {currentFilter !== "CONVERSATIONS" && initialEscalations.length === 0 && (
         <div className="bg-surface border border-t-border rounded-lg p-12 text-center text-muted">
           {currentFilter === "CORRECTIONS"
             ? "No corrections logged yet. When someone tells the bot it got something wrong, it'll show up here."
