@@ -8,6 +8,7 @@ import { prisma } from "@/lib/db";
 import {
   computeBottleneckSnapshot,
   refreshThresholds,
+  ZOMBIE_DAYS,
   type BottleneckSnapshot,
   type BottleneckTeam,
   type FlaggedDeal,
@@ -46,17 +47,24 @@ export interface DigestChanges {
   hasChanges: boolean;
 }
 
+/** Only STALLED deals participate in the digest and its change detection —
+ *  zombies (untouched ≥ ZOMBIE_DAYS) are a dashboard cleanup list, not daily noise. */
+const stalledOf = (flagged: FlaggedDeal[]) => flagged.filter((f) => f.bucket === "stalled");
+
 export function toFlagSnapshot(s: BottleneckSnapshot): FlagSnapshot {
-  return Object.fromEntries(s.stages.map((x) => [x.key, x.flagged.map((f) => f.hubspotDealId)]));
+  return Object.fromEntries(
+    s.stages.map((x) => [x.key, stalledOf(x.flagged).map((f) => f.hubspotDealId)])
+  );
 }
 
 export function detectChanges(prev: FlagSnapshot | null, current: BottleneckSnapshot): DigestChanges {
   const newlyFlagged: FlaggedDeal[] = [];
   const resolvedIds: string[] = [];
   for (const stage of current.stages) {
+    const stalled = stalledOf(stage.flagged);
     const before = new Set(prev?.[stage.key] ?? []);
-    const now = new Set(stage.flagged.map((f) => f.hubspotDealId));
-    for (const f of stage.flagged) if (!before.has(f.hubspotDealId)) newlyFlagged.push(f);
+    const now = new Set(stalled.map((f) => f.hubspotDealId));
+    for (const f of stalled) if (!before.has(f.hubspotDealId)) newlyFlagged.push(f);
     for (const id of before) if (!now.has(id)) resolvedIds.push(id);
   }
   return {
@@ -84,8 +92,12 @@ export function buildDigestMessage(
   changes: DigestChanges,
   opts: { includeFlow: boolean }
 ): string | null {
-  const flaggedTotal = snapshot.stages.reduce((n, s) => n + s.flagged.length, 0);
-  if (flaggedTotal === 0 && !changes.hasChanges && !opts.includeFlow) return null;
+  const stalledTotal = snapshot.stages.reduce((n, s) => n + stalledOf(s.flagged).length, 0);
+  const zombieTotal = snapshot.stages.reduce(
+    (n, s) => n + (s.flagged.length - stalledOf(s.flagged).length),
+    0
+  );
+  if (stalledTotal === 0 && !changes.hasChanges && !opts.includeFlow) return null;
 
   const day = new Date(snapshot.computedAt).toLocaleDateString("en-US", {
     timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
@@ -96,19 +108,21 @@ export function buildDigestMessage(
     changes.newlyFlagged.length || changes.resolvedIds.length
       ? ` (${changes.newlyFlagged.length} new, ${changes.resolvedIds.length} resolved)`
       : "";
-  lines.push(`${flaggedTotal} deal${flaggedTotal === 1 ? "" : "s"} past threshold${delta}`);
+  lines.push(`${stalledTotal} stalled deal${stalledTotal === 1 ? "" : "s"} to work${delta}`);
   lines.push("");
 
   for (const s of snapshot.stages) {
-    if (s.flagged.length === 0 && !(opts.includeFlow && s.flow.length > 0)) continue;
-    const th = s.threshold.thresholdDays != null ? `, threshold ${s.threshold.thresholdDays}d` : "";
-    lines.push(`${s.label}: ${s.flagged.length} flagged / ${s.totalInStage} in stage${th}`);
-    for (const f of s.flagged.slice(0, 3)) {
+    const stalled = stalledOf(s.flagged);
+    if (stalled.length === 0 && !(opts.includeFlow && s.flow.length > 0)) continue;
+    lines.push(`${s.label}: ${stalled.length} stalled / ${s.totalInStage} in stage, threshold ${s.effective.days}d`);
+    for (const f of stalled.slice(0, 3)) {
+      const status = f.status ? ` — ${f.status}` : "";
+      const quiet = f.daysSinceActivity != null ? `, quiet ${f.daysSinceActivity}d` : "";
       const who = f.dealOwnerName ? ` — ${f.dealOwnerName}` : "";
       const where = f.pbLocation ? ` (${f.pbLocation})` : "";
-      lines.push(`• ${shortName(f.dealName)} — ${f.dwellDays}d${who}${where}`);
+      lines.push(`• ${shortName(f.dealName)}${status} — ${f.dwellDays}d in stage${quiet}${who}${where}`);
     }
-    if (s.flagged.length > 3) lines.push(`…and ${s.flagged.length - 3} more.`);
+    if (stalled.length > 3) lines.push(`…and ${stalled.length - 3} more.`);
     if (opts.includeFlow && s.flow.length > 0) {
       const recent = s.flow.slice(-2);
       const entered = recent.reduce((n, w) => n + w.entered, 0);
@@ -118,6 +132,9 @@ export function buildDigestMessage(
     lines.push("");
   }
 
+  if (zombieTotal > 0) {
+    lines.push(`🧟 ${zombieTotal} zombie${zombieTotal === 1 ? "" : "s"} (untouched ${ZOMBIE_DAYS}d+) excluded — cleanup list on the dashboard.`);
+  }
   lines.push(`Dashboard: ${DASHBOARD_URL}`);
   return lines.join("\n");
 }
