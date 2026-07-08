@@ -391,6 +391,27 @@ export const PE_M1_DOC_NAMES = [
   "Conditional Progress Lien Waiver",
 ] as const;
 
+/** The 3 docs owed at the PC (Project Complete / M2) milestone. */
+export const PE_M2_DOC_NAMES = [
+  "Signed Interconnection Agreement",
+  "Conditional Waiver — Final Payment",
+  "Permission to Operate (PTO)",
+] as const;
+
+/**
+ * Every doc a milestone can owe (M1 + M2). Used to scope the doc-status cards.
+ *
+ * A synced doc that is NOT in this set is not a milestone requirement and must be
+ * excluded from those stats — notably "Change Order", PE's remediation instrument,
+ * which we track for visibility but which no milestone owes. Without this guard a
+ * Change Order row would land in `uploadedDocs` (its status is never NOT_UPLOADED)
+ * and skew the doc-approval-rate denominator.
+ */
+export const PE_MILESTONE_DOC_NAMES: ReadonlySet<string> = new Set<string>([
+  ...PE_M1_DOC_NAMES,
+  ...PE_M2_DOC_NAMES,
+]);
+
 /**
  * Docs PE only requires on *some* projects. Unlike the always-required docs, a
  * conditional doc is "owed" by a deal only when PE actually includes its slot —

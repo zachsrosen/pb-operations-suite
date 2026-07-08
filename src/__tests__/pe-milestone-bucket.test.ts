@@ -3,6 +3,7 @@ import {
   milestoneDocCounts,
   milestoneDocBucket,
 } from "@/lib/pe-milestone-bucket";
+import { PE_MILESTONE_DOC_NAMES, PE_CONDITIONAL_DOC_NAMES } from "@/lib/pe-analytics";
 
 // Build a docName -> status map from pairs.
 const docs = (pairs: Record<string, string>) => new Map<string, string>(Object.entries(pairs));
@@ -168,5 +169,21 @@ describe("milestoneDocBucket — no doc data", () => {
     expect(milestoneDocBucket("IC", new Map(), "Submitted")).toBe("review");
     expect(milestoneDocBucket("IC", new Map(), "Waiting on Information")).toBe("waiting");
     expect(milestoneDocBucket("PC", new Map(), "Approved")).toBe("approved");
+  });
+});
+
+// The analytics doc-status cards scope on PE_MILESTONE_DOC_NAMES. "Change Order"
+// must stay out of it: its row is never NOT_UPLOADED, so including it would count
+// as an "uploaded doc" and skew the doc-approval-rate denominator.
+describe("PE_MILESTONE_DOC_NAMES excludes non-milestone docs", () => {
+  it("covers the 16 milestone docs and omits Change Order", () => {
+    expect(PE_MILESTONE_DOC_NAMES.size).toBe(16);
+    expect(PE_MILESTONE_DOC_NAMES.has("Change Order")).toBe(false);
+    expect(PE_MILESTONE_DOC_NAMES.has("Bill of Materials")).toBe(true);
+    expect(PE_MILESTONE_DOC_NAMES.has("Permission to Operate (PTO)")).toBe(true);
+  });
+
+  it("Change Order is a conditional doc, so an absent slot records NOT_REQUIRED", () => {
+    expect(PE_CONDITIONAL_DOC_NAMES.has("Change Order")).toBe(true);
   });
 });
