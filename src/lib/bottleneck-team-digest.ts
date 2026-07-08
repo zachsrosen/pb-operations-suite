@@ -461,7 +461,10 @@ export async function getAllTeamSections(
 ): Promise<Array<{ team: TeamDigestKey; label: string; sections: DigestSection[] }>> {
   const inputs = await loadWorklistInputs(nowMs);
   if (!inputs) return [];
-  return (Object.keys(TEAM_DIGEST_LABELS) as TeamDigestKey[]).map((team) => ({
+  // Ops leads the page (field execution first — per Zach, it's what
+  // leadership looks for), then the project-team functions.
+  const DISPLAY_ORDER: TeamDigestKey[] = ["ops", "design", "permitting", "ic", "pm", "sales", "compliance"];
+  return DISPLAY_ORDER.map((team) => ({
     team,
     label: TEAM_DIGEST_LABELS[team],
     sections: buildTeamSections(team, inputs.dd, inputs.deals, nowMs, {
