@@ -26,6 +26,8 @@ import {
   getInstallationCalendarEventId,
 } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
+import { findRecordConflict, findZuperJobConflict } from "@/lib/survey-slot-conflict";
+import { buildSurveyConflictAssigneeFilter } from "@/lib/availability-conflict-filter";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
@@ -852,6 +854,87 @@ export async function PUT(request: NextRequest) {
         console.log(`[Zuper Schedule] Resolved "${schedule.assignedUser}" → userUid: ${resolvedCrew}, teamUid: ${resolvedTeamUid}`);
       } else {
         console.warn(`[Zuper Schedule] Could not resolve UID for "${schedule.assignedUser}"`);
+      }
+    }
+
+    // Booking-time double-book guard (survey slots only). The scheduler UI
+    // validates availability at page load; a stale tab can book a slot taken
+    // hours earlier (7/2: two reps booked the same surveyor/slot 5h apart).
+    // Re-validate here against our ScheduleRecords AND live Zuper jobs.
+    // schedule.allowDoubleBook === true bypasses (deliberate stacking).
+    if (
+      isSurveyLike(schedule.type) &&
+      schedule.startTime &&
+      schedule.endTime &&
+      schedule.allowDoubleBook !== true &&
+      (resolvedCrew || schedule.assignedUser)
+    ) {
+      try {
+        const conflictParams = {
+          dealId: String(project.id),
+          startTime: schedule.startTime as string,
+          endTime: schedule.endTime as string,
+          assigneeUid: isUuidList(resolvedCrew) ? resolvedCrew : undefined,
+          assigneeName: typeof schedule.assignedUser === "string" ? schedule.assignedUser : undefined,
+        };
+        const assigneeFilter = buildSurveyConflictAssigneeFilter({
+          name: conflictParams.assigneeName,
+          zuperUserUid: conflictParams.assigneeUid,
+        });
+        let conflict = null;
+        if (prisma && assigneeFilter) {
+          const records = await prisma.scheduleRecord.findMany({
+            where: {
+              scheduleType: "survey",
+              scheduledDate: schedule.date,
+              status: { in: ["scheduled", "tentative"] },
+              NOT: { projectId: String(project.id) },
+              ...assigneeFilter,
+            },
+            select: {
+              projectId: true,
+              projectName: true,
+              scheduledStart: true,
+              scheduledEnd: true,
+              assignedUser: true,
+              assignedUserUid: true,
+            },
+          });
+          conflict = findRecordConflict(records, conflictParams);
+        }
+        if (!conflict) {
+          // Authoritative: live Zuper jobs for that date, ANY category — a
+          // surveyor mid-install is just as busy as one mid-survey.
+          const jobsResult = await zuper.getScheduledJobsForDateRange({
+            fromDate: schedule.date,
+            toDate: schedule.date,
+          });
+          if (jobsResult.type === "success" && jobsResult.data) {
+            conflict = findZuperJobConflict(jobsResult.data, {
+              dealId: conflictParams.dealId,
+              startUtc: startDateTime,
+              endUtc: endDateTime,
+              assigneeUid: conflictParams.assigneeUid,
+              assigneeName: conflictParams.assigneeName,
+              excludeJobUid: existingJob?.job_uid || existingJobUid || null,
+            });
+          }
+        }
+        if (conflict) {
+          console.warn(
+            `[Zuper Schedule] BLOCKED double-book: ${conflictParams.assigneeName || conflictParams.assigneeUid} already has ${conflict.projectName} (${conflict.scheduledStart}-${conflict.scheduledEnd}) via ${conflict.source}`
+          );
+          return NextResponse.json(
+            {
+              error: `${conflict.assignedUser || "This surveyor"} already has a survey booked in this slot: ${conflict.projectName}. Refresh the schedule to see current availability.`,
+              conflict,
+            },
+            { status: 409 }
+          );
+        }
+      } catch (conflictErr) {
+        // Guard failures must never block legitimate bookings.
+        console.warn("[Zuper Schedule] Conflict check failed (proceeding):", conflictErr);
       }
     }
 

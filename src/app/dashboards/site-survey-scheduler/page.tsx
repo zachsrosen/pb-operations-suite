@@ -938,6 +938,29 @@ export default function SiteSurveySchedulerPage() {
     }
   }, [selectedProject, selectedPreSaleDeal, zuperConfigured, currentMonth, currentYear, fetchAvailability, showAvailability]);
 
+  // Refresh availability whenever the tab regains focus — schedulers stay
+  // open for hours and stale slot grids caused double-bookings (7/2: two
+  // reps booked the same surveyor/slot 5h apart). The server now also
+  // rejects conflicting bookings with a 409, but self-healing the grid
+  // avoids most of those errors in the first place.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || !zuperConfigured) return;
+      const activeProject = selectedPreSaleDeal || selectedProject;
+      if (activeProject) {
+        fetchAvailability(activeProject.location, activeProject);
+      } else if (showAvailability) {
+        fetchAvailability();
+      }
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [selectedProject, selectedPreSaleDeal, zuperConfigured, fetchAvailability, showAvailability]);
+
   /* ================================================================ */
   /*  Toast                                                            */
   /* ================================================================ */
@@ -1552,6 +1575,17 @@ export default function SiteSurveySchedulerPage() {
               );
             }
           }
+        } else if (response.status === 409) {
+          // Slot conflict: someone booked this surveyor/slot after our grid
+          // loaded. Do NOT save locally (that would keep the double-booking)
+          // — refresh the grid and make the user pick a fresh slot.
+          const errorData = await response.json().catch(() => null);
+          const conflictMsg = errorData?.error || "That slot was just booked by someone else — pick a new slot";
+          console.warn(`[Survey Schedule] Slot conflict for "${project.name}":`, conflictMsg);
+          showToast(conflictMsg, "error");
+          setScheduleModal(null);
+          fetchAvailability(project.location, project);
+          return;
         } else {
           const errorData = await response.json().catch(() => null);
           const errorMsg = errorData?.error || "Zuper sync failed";
@@ -1906,6 +1940,13 @@ export default function SiteSurveySchedulerPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
+        if (res.status === 409) {
+          // Slot was taken while this hold sat tentative — refresh the grid
+          // so the user re-picks from live availability.
+          showToast(data?.error || "That slot was just booked by someone else — pick a new slot", "error");
+          fetchAvailability(project.location, project);
+          return;
+        }
         showToast(data?.error || (isPendingZuper ? "Zuper job still not found" : "Failed to confirm tentative schedule"), "warning");
         return;
       }
