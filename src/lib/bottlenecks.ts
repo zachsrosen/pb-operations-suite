@@ -319,8 +319,13 @@ export function computeStageSnapshots(
       const dwell = dwellDays(entry, nowMs);
       dwells.push(dwell);
       if (dwell > effective.days) {
-        const daysSinceActivity = d.hubspotUpdatedAt
-          ? Math.floor((nowMs - d.hubspotUpdatedAt.getTime()) / DAY_MS)
+        // Activity = last ENGAGEMENT (note/call/email/task via notes_last_updated),
+        // not hs_lastmodifieddate — bulk property scripts mass-stamp the latter
+        // (observed: a 4/29 bulk touch made every deal read "quiet 69d").
+        // hubspotUpdatedAt is the fallback until a full sync backfills the raw prop.
+        const lastActivity = rawDate(d, "notes_last_updated") ?? d.hubspotUpdatedAt;
+        const daysSinceActivity = lastActivity
+          ? Math.floor((nowMs - lastActivity.getTime()) / DAY_MS)
           : null;
         flagged.push({
           hubspotDealId: d.hubspotDealId,

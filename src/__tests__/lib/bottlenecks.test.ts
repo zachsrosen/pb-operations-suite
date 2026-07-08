@@ -187,6 +187,20 @@ describe("computeStageSnapshots", () => {
     expect(s1.daysSinceActivity).toBe(5);
     expect(s1.status).toBe("Submitted to AHJ");
   });
+
+  it("prefers engagement date (notes_last_updated) over hs_lastmodifieddate for activity", () => {
+    // Bulk scripts mass-stamp hs_lastmodifieddate; engagement is the real signal.
+    const rows = [deal({
+      permittingStatus: "Submitted to AHJ",
+      permitSubmitDate: daysAgo(40),
+      hubspotUpdatedAt: daysAgo(3), // bulk-touched recently…
+      rawProperties: { notes_last_updated: daysAgo(150).toISOString() }, // …but nobody's worked it
+    })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    const f = snap.stages.find((s) => s.key === "permitting")!.flagged[0];
+    expect(f.daysSinceActivity).toBe(150);
+    expect(f.bucket).toBe("zombie");
+  });
 });
 
 describe("deriveThresholds", () => {
