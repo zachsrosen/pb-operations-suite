@@ -504,20 +504,30 @@ export interface PersonalWorklist {
 }
 
 /** Pivot the team sections into per-person worklists (pure). */
+/** A redirect target: a person, or a per-office split (lowercased location → person). */
+export type RedirectTarget = string | { byLocation: Record<string, string> };
+
 export function buildPersonalWorklists(
   sectionsByTeam: Array<{ team: TeamDigestKey; sections: DigestSection[] }>,
-  /** Coverage redirects: lowercased from-name → to-name (e.g. Roland → Lenny).
-   *  The redirected lines keep their original lead for context. */
-  redirects?: Map<string, string>
+  /** Coverage redirects: lowercased from-name → target. String = simple
+   *  handoff (Roland → Lenny); byLocation splits a person's lines to regional
+   *  owners by the DEAL's office (Derek → Drew/Joe/Lenny/nick). Unmapped
+   *  locations stay with the original person. Lines keep their original lead. */
+  redirects?: Map<string, RedirectTarget>
 ): Omit<PersonalWorklist, "email">[] {
-  const redirect = (p: string) => redirects?.get(p.trim().toLowerCase()) ?? p;
+  const redirect = (p: string, location: string) => {
+    const target = redirects?.get(p.trim().toLowerCase());
+    if (!target) return p;
+    if (typeof target === "string") return target;
+    return target.byLocation[location.trim().toLowerCase()] ?? p;
+  };
   const byPerson = new Map<string, Map<string, { team: TeamDigestKey; section: DigestSection }>>();
   for (const { team, sections } of sectionsByTeam) {
     for (const s of sections) {
       if (s.groupBy !== "lead") continue;
       for (const l of s.lines) {
         const primary = l.lead && l.lead !== "—" ? l.lead : null;
-        const recipients = [...new Set([primary, ...(l.alsoNotify ?? [])].map((p) => (p ? redirect(p) : p)))].filter(
+        const recipients = [...new Set([primary, ...(l.alsoNotify ?? [])].map((p) => (p ? redirect(p, l.location) : p)))].filter(
           (p): p is string => Boolean(p && p !== "—")
         );
         for (const person of recipients) {
@@ -611,12 +621,17 @@ export async function getPersonalSections(
 
 /** Coverage redirects from SystemConfig `bottleneck_delivery_redirects`
  *  ({"roland valle": "Lenny Uematsu"}). Editable without a deploy. */
-export async function getDeliveryRedirects(): Promise<Map<string, string>> {
+export async function getDeliveryRedirects(): Promise<Map<string, RedirectTarget>> {
   if (!prisma) return new Map();
   const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_delivery_redirects" } });
   try {
     const obj = row?.value ? JSON.parse(row.value) : {};
-    return new Map(Object.entries(obj).map(([k, v]) => [k.trim().toLowerCase(), String(v)]));
+    return new Map(
+      Object.entries(obj).map(([k, v]) => [
+        k.trim().toLowerCase(),
+        typeof v === "string" ? v : ({ byLocation: (v as { byLocation: Record<string, string> }).byLocation ?? {} } as RedirectTarget),
+      ])
+    );
   } catch {
     return new Map();
   }
