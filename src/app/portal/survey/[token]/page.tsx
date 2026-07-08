@@ -94,43 +94,45 @@ function SurveyScheduleInner() {
   const [selectedSlot, setSelectedSlot] = useState<PortalSlot | null>(null);
   const [accessNotes, setAccessNotes] = useState("");
   const [booking, setBooking] = useState(false);
+  const [slotTakenNotice, setSlotTakenNotice] = useState(false);
 
   const idempotencyKey = useRef(crypto.randomUUID());
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const url = isReschedule
-          ? `/api/portal/survey/${token}?reschedule=1`
-          : `/api/portal/survey/${token}`;
-        const res = await fetch(url);
-        if (res.status === 404) {
-          setState({ type: "error", message: "This link is not valid. Please check the URL from your email." });
-          return;
-        }
-        if (res.status === 410) {
-          setState({ type: "expired" });
-          return;
-        }
-        if (!res.ok) {
-          setState({ type: "error", message: "Something went wrong. Please try again later." });
-          return;
-        }
-        const data: InviteData = await res.json();
-        setState({ type: "data", data });
-
-        const avail = data.status === "pending"
-          ? data.availability
-          : data.availability;
-        if (avail && avail.days.length > 0) {
-          setSelectedDate(avail.days[0].date);
-        }
-      } catch {
-        setState({ type: "error", message: "Unable to connect. Please check your internet and try again." });
+  const loadInvite = useCallback(async () => {
+    try {
+      const url = isReschedule
+        ? `/api/portal/survey/${token}?reschedule=1`
+        : `/api/portal/survey/${token}`;
+      const res = await fetch(url);
+      if (res.status === 404) {
+        setState({ type: "error", message: "This link is not valid. Please check the URL from your email." });
+        return;
       }
+      if (res.status === 410) {
+        setState({ type: "expired" });
+        return;
+      }
+      if (!res.ok) {
+        setState({ type: "error", message: "Something went wrong. Please try again later." });
+        return;
+      }
+      const data: InviteData = await res.json();
+      setState({ type: "data", data });
+
+      const avail = data.status === "pending"
+        ? data.availability
+        : data.availability;
+      if (avail && avail.days.length > 0) {
+        setSelectedDate(avail.days[0].date);
+      }
+    } catch {
+      setState({ type: "error", message: "Unable to connect. Please check your internet and try again." });
     }
-    load();
   }, [token, isReschedule]);
+
+  useEffect(() => {
+    loadInvite();
+  }, [loadInvite]);
 
   const handleBook = useCallback(async () => {
     if (!selectedSlot || booking) return;
@@ -154,6 +156,15 @@ function SurveyScheduleInner() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
+        // Slot got taken between page load and confirm (double-book guard):
+        // keep the customer on the picker with fresh availability instead of
+        // dead-ending on the error page.
+        if (res.status === 409 && body?.slotTaken) {
+          setSelectedSlot(null);
+          setSlotTakenNotice(true);
+          await loadInvite();
+          return;
+        }
         const msg = body?.error || "Something went wrong. Please try again.";
         setState({ type: "error", message: msg });
         return;
@@ -165,7 +176,7 @@ function SurveyScheduleInner() {
     } finally {
       setBooking(false);
     }
-  }, [selectedSlot, accessNotes, booking, token, router, isReschedule]);
+  }, [selectedSlot, accessNotes, booking, token, router, isReschedule, loadInvite]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -256,6 +267,16 @@ function SurveyScheduleInner() {
         </div>
       </div>
 
+      {/* Slot-taken notice (double-book guard 409) */}
+      {slotTakenNotice && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-800">
+            Sorry, that time was just booked and is no longer available. Here are
+            the latest available times. Please choose another.
+          </p>
+        </div>
+      )}
+
       {availability.days.length === 0 ? (
         <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-8 text-center">
           <p className="text-sm text-[#6B7280]">
@@ -301,7 +322,10 @@ function SurveyScheduleInner() {
                 {selectedDay.slots.map((slot) => (
                   <button
                     key={slot.slotId}
-                    onClick={() => setSelectedSlot(slot)}
+                    onClick={() => {
+                      setSelectedSlot(slot);
+                      setSlotTakenNotice(false);
+                    }}
                     className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
                       selectedSlot?.slotId === slot.slotId
                         ? "border-[#FF9E1B] bg-[#FFF4E0] text-[#7C4903]"

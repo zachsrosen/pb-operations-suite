@@ -25,6 +25,7 @@ import {
   getSurveyCalendarEventId,
 } from "@/lib/google-calendar";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+import { checkSurveySlotBookingConflict } from "@/lib/survey-booking-guard";
 
 const RescheduleSchema = z.object({
   slotId: z.string().min(1),
@@ -133,6 +134,37 @@ export async function PUT(
 
   const [h, m] = newSlot.time.split(":").map(Number);
   const endTime = `${(h + 1).toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+
+  // ----- Booking-time double-book guard (same race as PR #1337) -----
+  // Re-validate the new slot against our ScheduleRecords AND live Zuper
+  // jobs right before writing; the picker was rendered from availability
+  // fetched at page load. The deal's own Zuper job is excluded (we're
+  // moving it). slotTaken tells the client to re-render the picker with
+  // fresh availability.
+  const conflict = await checkSurveySlotBookingConflict({
+    dealId: invite.dealId,
+    date: newSlot.date,
+    startTime: newSlot.time,
+    endTime,
+    startUtc: localTimeToUtcString(newSlot.date, newSlot.time, timezone),
+    endUtc: localTimeToUtcString(newSlot.date, endTime, timezone),
+    assigneeUid: crewMember.zuperUserUid,
+    assigneeName: crewMember.name,
+    excludeJobUid: invite.zuperJobUid,
+  });
+  if (conflict) {
+    console.warn(
+      `[portal/reschedule] BLOCKED double-book: ${crewMember.name} already has ${conflict.projectName} (${conflict.scheduledStart}-${conflict.scheduledEnd}) via ${conflict.source}`,
+    );
+    await markFailed(idempotencyKey, scope);
+    return NextResponse.json(
+      {
+        error: "This time slot is no longer available. Please choose another time.",
+        slotTaken: true,
+      },
+      { status: 409 },
+    );
+  }
 
   try {
     const result = await prisma.$transaction(async (tx) => {
