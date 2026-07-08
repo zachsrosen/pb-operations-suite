@@ -285,15 +285,19 @@ export async function POST(request: NextRequest) {
       return chatTextResponse("I can only respond to text messages.", isAddOn);
     }
 
-    // ── Capture the owner's DM space for proactive digests ──
-    // The first time the owner messages the bot in a DM (not a room), record
-    // the space so the daily digest cron knows where to post. Fire-and-forget.
+    // ── Capture DM spaces for proactive sends ──
+    // The first time anyone messages the bot in a DM (not a room), record the
+    // space: the owner's drives the daily digest, and every user's feeds the
+    // personal-worklist delivery map (the chat.bot scope can't create DMs, only
+    // message existing ones). Fire-and-forget.
     if (!isRoomSpace(event.space)) {
       void import("@/lib/tech-ops-bot-proactive")
-        .then(({ ownerEmail, setOwnerDmSpace }) => {
+        .then(({ ownerEmail, setOwnerDmSpace, recordUserDmSpace }) => {
+          const tasks: Promise<void>[] = [recordUserDmSpace(senderEmail, spaceName)];
           if (senderEmail.toLowerCase() === ownerEmail()) {
-            return setOwnerDmSpace(spaceName);
+            tasks.push(setOwnerDmSpace(spaceName));
           }
+          return Promise.all(tasks).then(() => undefined);
         })
         .catch(() => {});
     }

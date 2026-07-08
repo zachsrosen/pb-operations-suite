@@ -71,6 +71,38 @@ export async function setOwnerDmSpace(spaceName: string): Promise<void> {
   });
 }
 
+// ── Per-user DM spaces (personal worklist delivery) ──
+// The chat.bot scope can't CREATE DMs (spaces:setup → scope-insufficient), but
+// it can message any DM that exists. So the webhook records every user's DM
+// space the first time they message the bot, and proactive sends use the map.
+
+const USER_DM_SPACES_KEY = "techops_bot_user_dm_spaces";
+
+export async function getUserDmSpaces(): Promise<Record<string, string>> {
+  if (!prisma) return {};
+  const row = await prisma.systemConfig.findUnique({ where: { key: USER_DM_SPACES_KEY } });
+  if (!row?.value) return {};
+  try {
+    const parsed = JSON.parse(row.value);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function recordUserDmSpace(email: string, spaceName: string): Promise<void> {
+  if (!prisma || !email || !spaceName) return;
+  const key = email.trim().toLowerCase();
+  const current = await getUserDmSpaces();
+  if (current[key] === spaceName) return;
+  const next = { ...current, [key]: spaceName };
+  await prisma.systemConfig.upsert({
+    where: { key: USER_DM_SPACES_KEY },
+    create: { key: USER_DM_SPACES_KEY, value: JSON.stringify(next) },
+    update: { value: JSON.stringify(next) },
+  });
+}
+
 // ── Helpers ──
 
 /** Deal/project names are "PROJ-#### | Last, First | Address" — keep #### + name. */
