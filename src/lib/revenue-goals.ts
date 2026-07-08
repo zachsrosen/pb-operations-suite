@@ -9,6 +9,8 @@ import { searchWithRetry } from "./hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { zuper } from "./zuper";
 import { getCompletedTimeFromHistory } from "./compliance-helpers";
+import { appCache, CACHE_KEYS } from "./cache";
+import { prisma } from "./db";
 import {
   REVENUE_GROUPS,
   getClosedMonthCount,
@@ -444,4 +446,57 @@ export function buildRevenueGoalResponse(
       paceStatus: computePaceStatus(companyYtdActual, companyYtdExpected),
     },
   };
+}
+
+/**
+ * Cached, DB-seeded revenue goal snapshot for a year — the single entry point
+ * shared by the /api/revenue-goals route and the bot's get_revenue_goals tool
+ * so both report identical numbers. Seeds default per-group monthly targets
+ * on first access for a year, then merges any DB overrides.
+ */
+export async function getRevenueGoalSnapshot(
+  year: number,
+  forceRefresh = false
+): Promise<{ data: RevenueGoalResponse; lastUpdated: string }> {
+  const { data, lastUpdated } = await appCache.getOrFetch(
+    CACHE_KEYS.REVENUE_GOALS(year),
+    async () => {
+      let goals = await prisma.revenueGoal.findMany({
+        where: { year },
+        orderBy: [{ groupKey: "asc" }, { month: "asc" }],
+      });
+      if (goals.length === 0) {
+        const seedRows = Object.entries(REVENUE_GROUPS).flatMap(([groupKey, group]) =>
+          Array.from({ length: 12 }, (_, i) => ({
+            year,
+            groupKey,
+            month: i + 1,
+            target: String(Math.round((group.annualTarget / 12) * 100) / 100),
+          }))
+        );
+        await prisma.revenueGoal.createMany({ data: seedRows });
+        goals = await prisma.revenueGoal.findMany({
+          where: { year },
+          orderBy: [{ groupKey: "asc" }, { month: "asc" }],
+        });
+      }
+
+      const baseTargetsMap: Record<string, number[]> = {};
+      for (const [groupKey, group] of Object.entries(REVENUE_GROUPS)) {
+        baseTargetsMap[groupKey] = Array(12).fill(group.annualTarget / 12);
+      }
+      for (const goal of goals) {
+        if (!baseTargetsMap[goal.groupKey]) continue;
+        baseTargetsMap[goal.groupKey][goal.month - 1] = Number(goal.target);
+      }
+
+      const [deals, zuperActuals] = await Promise.all([
+        fetchRevenueDeals(year),
+        fetchZuperCompletedRevenue(year),
+      ]);
+      return buildRevenueGoalResponse(year, deals, baseTargetsMap, new Date(), zuperActuals);
+    },
+    forceRefresh
+  );
+  return { data: data as RevenueGoalResponse, lastUpdated };
 }
