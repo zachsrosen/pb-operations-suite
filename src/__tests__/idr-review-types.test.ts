@@ -1,20 +1,30 @@
 import { describe, it, expect } from "@jest/globals";
 
 // Mock runtime dependencies pulled in transitively by idr-meeting.ts
-// (same pattern as idr-adder-serialization.test.ts)
-jest.mock("@/lib/db", () => ({ prisma: null }));
+// (same pattern as idr-adder-serialization.test.ts, plus callable fns for the
+// syncItemToHubSpot gating tests below)
+jest.mock("@/lib/db", () => ({
+  prisma: { idrMeetingItem: { update: jest.fn(async () => ({})) } },
+}));
 jest.mock("@/lib/hubspot", () => ({
-  hubspotClient: { crm: { deals: { basicApi: {} }, objects: { notes: { basicApi: {} } } } },
+  hubspotClient: {
+    crm: {
+      deals: { basicApi: { update: jest.fn(async () => ({})) } },
+      objects: { notes: { basicApi: {} } },
+    },
+  },
   searchWithRetry: jest.fn(),
   resolveHubSpotOwnerContact: jest.fn(),
 }));
 
+import { hubspotClient } from "@/lib/hubspot";
 import {
   REVIEW_TYPES,
   NC_READY_FOR_REVIEW_STATUS,
   deriveItemTypeFromStatus,
   buildHubSpotPropertyUpdates,
   buildHubSpotNoteBody,
+  syncItemToHubSpot,
 } from "@/lib/idr-meeting";
 
 describe("REVIEW_TYPES registry", () => {
@@ -107,5 +117,97 @@ describe("buildHubSpotNoteBody header", () => {
   it("uses the New Construction Review label when passed", () => {
     expect(buildHubSpotNoteBody(fields, "2026-07-08", "New Construction Review"))
       .toContain("<strong>New Construction Review -- 7/8/2026</strong>");
+  });
+});
+
+describe("syncItemToHubSpot revision-flag gating", () => {
+  const dealsUpdate = hubspotClient.crm.deals.basicApi.update as jest.Mock;
+
+  const makeItem = (overrides: Record<string, unknown> = {}) => ({
+    id: "item-1",
+    dealId: "9001",
+    dealName: "PROJ-1234 Test Customer",
+    type: "IDR",
+    difficulty: null, installerCount: null, installerDays: null,
+    electricianCount: null, electricianDays: null,
+    discoReco: null, interiorAccess: null, operationsNotes: null,
+    needsSurveyInfo: null, needsResurvey: null,
+    salesChangeRequested: null, salesChangeNotes: null, salesChangeAmount: null,
+    opsChangeNotes: null, customerNotes: null, customerNotesCreateTask: false,
+    designNotes: null, conclusion: null,
+    shitShowFlagged: false, shitShowReason: null, opsRevisionNotes: null,
+    designRevisionNeeded: true, designRevisionReason: "Panel layout wrong",
+    needsReReview: false, reviewed: true,
+    adderTileRoof: false, adderMetalRoof: false, adderFlatFoamRoof: false,
+    adderShakeRoof: false, adderSteepPitch: false, adderTwoStorey: false,
+    adderTrenching: false, adderGroundMount: false, adderMpuUpgrade: false,
+    adderEvCharger: false, adderTier1: false, adderTier2: false,
+    systemSizeKw: null, dealAmount: null, customAdders: [],
+    ...overrides,
+  });
+
+  const sessionDate = new Date("2026-07-08T12:00:00Z");
+
+  /** Find the pushDealProperties call carrying the revision flag pair, if any. */
+  const findFlagPush = () =>
+    dealsUpdate.mock.calls.find(
+      ([, body]) => body?.properties?.idr_revision_requested === "true",
+    );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.HUBSPOT_ACCESS_TOKEN = "test-token";
+    // Task search returns no open task — the "missing task" case for every test.
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ results: [] }),
+    })) as unknown as typeof fetch;
+  });
+
+  it("NEW_CONSTRUCTION pushes revision flags even when no task is found", async () => {
+    const result = await syncItemToHubSpot(
+      makeItem({ type: "NEW_CONSTRUCTION" }) as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.taskWarning).toContain("No design review task found");
+
+    const flagPush = findFlagPush();
+    expect(flagPush).toBeDefined();
+    expect(flagPush![1].properties.idr_revision_type).toBe("escalation");
+
+    // The task search used the NC subject, not the IDR one
+    const searchBody = (global.fetch as jest.Mock).mock.calls[0][1].body as string;
+    expect(searchBody).toContain("New Construction Design Review");
+    expect(searchBody).not.toContain("Complete Initial Design Review");
+  });
+
+  it("IDR stays task-gated: no revision-flag push when the task is missing", async () => {
+    const result = await syncItemToHubSpot(
+      makeItem() as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.taskWarning).toContain("No design review task found");
+    expect(findFlagPush()).toBeUndefined();
+
+    const searchBody = (global.fetch as jest.Mock).mock.calls[0][1].body as string;
+    expect(searchBody).toContain("Complete Initial Design Review");
+  });
+
+  it("NEW_CONSTRUCTION also pushes flags when task completion throws", async () => {
+    process.env.HUBSPOT_ACCESS_TOKEN = "test-token";
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("HubSpot 500"));
+
+    const result = await syncItemToHubSpot(
+      makeItem({ type: "NEW_CONSTRUCTION" }) as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.taskWarning).toContain("Failed to complete design review task");
+    expect(findFlagPush()).toBeDefined();
   });
 });

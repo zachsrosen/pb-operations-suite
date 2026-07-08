@@ -176,7 +176,7 @@ function SessionCard({ item }: { item: SessionItem }) {
               : "bg-surface text-muted"
           }`}
         >
-          {item.type}
+          {item.type === "NEW_CONSTRUCTION" ? "NC" : item.type}
         </span>
       </div>
 

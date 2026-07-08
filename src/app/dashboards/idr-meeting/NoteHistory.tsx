@@ -165,7 +165,7 @@ export function NoteHistory({ item, userEmail }: Props) {
                           : "bg-surface text-muted"
                       }`}
                     >
-                      {hi.type}
+                      {hi.type === "NEW_CONSTRUCTION" ? "NC" : hi.type}
                     </span>
                   </div>
                   {hi.conclusion && (

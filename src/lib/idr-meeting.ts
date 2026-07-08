@@ -511,15 +511,14 @@ export function buildHubSpotPropertyUpdates(
   updates.idr_adders = fields.adderSummary ?? "";
   if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
 
-  // Design status is handled via HubSpot task completion in syncItemToHubSpot.
-  // Completing the "Complete Initial Design Review" task triggers a workflow that
-  // sets design_status. When a revision is also flagged, syncItemToHubSpot waits
-  // for the workflow to fire, then overrides design_status to "IDR Revision Needed"
-  // in a separate property push (see postTaskRevisionUpdate).
+  // Design status is never set here. syncItemToHubSpot completes the review
+  // task for the item's type (REVIEW_TYPES[type].taskSubject) and a HubSpot
+  // workflow advances design_status. When a revision is also flagged, sync
+  // pushes idr_revision_requested + idr_revision_type in a second property
+  // push and the "IDR Revision Needed" workflow overrides design_status.
   //
-  // This first property push does NOT include design_status — only the revision
-  // metadata fields. design_status is set either by the workflow (normal review)
-  // or by the post-task override (revision flagged).
+  // This first push carries only revision metadata; which reason property the
+  // combined reason lands in varies by review type (REVIEW_TYPES).
   if (fields.designRevisionNeeded) {
     updates.idr_re_review_needed = fields.needsReReview ? "true" : "false";
     const combinedReason = buildCombinedRevisionReason(
