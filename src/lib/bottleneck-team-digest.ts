@@ -333,3 +333,179 @@ export async function runTeamDigest(
   await postGoogleChatMessage({ spaceName: space, text: message });
   return { posted: true, team };
 }
+
+// ── Personal worklists — one DM per responsible person ──
+
+const PERSONAL_TEAMS: TeamDigestKey[] = ["design", "permitting", "ic", "ops", "sales", "pm"];
+// Compliance is excluded: no per-deal compliance lead exists (grouped by office).
+
+export interface PersonalWorklist {
+  person: string;
+  email: string | null; // resolved from the User table; null = unmatched, never guessed
+  sections: Array<{ team: TeamDigestKey; section: DigestSection }>;
+  totalDeals: number;
+}
+
+/** Pivot the team sections into per-person worklists (pure). */
+export function buildPersonalWorklists(
+  sectionsByTeam: Array<{ team: TeamDigestKey; sections: DigestSection[] }>
+): Omit<PersonalWorklist, "email">[] {
+  const byPerson = new Map<string, Map<string, { team: TeamDigestKey; section: DigestSection }>>();
+  for (const { team, sections } of sectionsByTeam) {
+    for (const s of sections) {
+      if (s.groupBy !== "lead") continue;
+      for (const l of s.lines) {
+        const person = l.lead && l.lead !== "—" ? l.lead : null;
+        if (!person) continue;
+        const key = `${team}::${s.title}`;
+        const personMap = byPerson.get(person) ?? new Map();
+        const entry =
+          personMap.get(key) ??
+          { team, section: { title: s.title, followUpDays: s.followUpDays, groupBy: s.groupBy, lines: [] as DigestLine[] } };
+        entry.section.lines.push(l);
+        personMap.set(key, entry);
+        byPerson.set(person, personMap);
+      }
+    }
+  }
+  return [...byPerson.entries()]
+    .map(([person, m]) => {
+      const sections = [...m.values()];
+      return {
+        person,
+        sections,
+        totalDeals: sections.reduce((n, e) => n + e.section.lines.length, 0),
+      };
+    })
+    .sort((a, b) => b.totalDeals - a.totalDeals);
+}
+
+export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs: number): string {
+  const day = new Date(nowMs).toLocaleDateString("en-US", {
+    timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
+  });
+  const out: string[] = [
+    `👋 ${w.person.split(" ")[0]} — your pipeline worklist for ${day}`,
+    `${w.totalDeals} deal${w.totalDeals === 1 ? "" : "s"} waiting on you`,
+    "",
+  ];
+  let used = out.join("\n").length + 200;
+  let cut = 0;
+  for (const { team, section: s } of w.sections) {
+    const header = `${TEAM_DIGEST_LABELS[team]} — ${s.title} (${s.lines.length})`;
+    if (used + header.length > CHAT_CHAR_BUDGET) { cut += s.lines.length; continue; }
+    out.push(header); used += header.length + 1;
+    for (const l of [...s.lines].sort((a, b) => b.daysWaiting - a.daysWaiting)) {
+      const status = l.status ? ` — ${l.status}` : "";
+      const stage = l.stage ? ` — ${l.stage}` : "";
+      const mark = l.needsFollowUp ? " ⚠" : "";
+      const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
+      const where = l.location ? ` (${l.location})` : "";
+      const line = `• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`;
+      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
+      out.push(line); used += line.length + 1;
+    }
+    out.push(""); used += 1;
+  }
+  if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
+  out.push(`Dashboard: ${FUNNEL_TAB_URL}`);
+  return out.join("\n");
+}
+
+export interface PersonalSendResult {
+  person: string;
+  email: string | null;
+  deals: number;
+  sent: boolean;
+  reason?: string;
+}
+
+/**
+ * Build every person's worklist and deliver it.
+ * mode "preview" → JSON summaries only (nothing sent).
+ * mode "dryrun"  → each digest posted to the OWNER's DM, labeled with the
+ *                  intended recipient (safe review; default).
+ * mode "live"    → real DMs to each person. Requires BOTH the
+ *                  bottleneck_personal_worklists_enabled SystemConfig flag
+ *                  AND app visibility that includes the recipients.
+ * Emails resolve strictly from the User table by exact (case-insensitive)
+ * name match — unmatched people are reported, never guessed.
+ */
+export async function runPersonalWorklists(opts: {
+  mode: "preview" | "dryrun" | "live";
+  nowMs?: number;
+  limit?: number;
+}): Promise<{ results: PersonalSendResult[]; unmatched: string[] }> {
+  if (!prisma) return { results: [], unmatched: [] };
+  const nowMs = opts.nowMs ?? Date.now();
+
+  const deals = await prisma.deal.findMany({
+    where: { pipeline: "PROJECT", stage: { notIn: ["DELETED", "MERGED"] } },
+  });
+  const projects = deals.map(dealToProject);
+  const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, { scope: "active" });
+  const sectionsByTeam = PERSONAL_TEAMS.map((team) => ({
+    team,
+    sections: buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs),
+  }));
+  const worklists = buildPersonalWorklists(sectionsByTeam).slice(0, opts.limit ?? 100);
+
+  const users = await prisma.user.findMany({ select: { name: true, email: true } });
+  const emailByName = new Map(
+    users.filter((u) => u.name).map((u) => [u.name!.trim().toLowerCase(), u.email])
+  );
+
+  const results: PersonalSendResult[] = [];
+  const unmatched: string[] = [];
+
+  if (opts.mode === "live") {
+    const flag = await prisma.systemConfig.findUnique({
+      where: { key: "bottleneck_personal_worklists_enabled" },
+    });
+    if (flag?.value !== "true") {
+      return {
+        results: worklists.map((w) => ({
+          person: w.person, email: null, deals: w.totalDeals, sent: false,
+          reason: "bottleneck_personal_worklists_enabled is not 'true'",
+        })),
+        unmatched,
+      };
+    }
+  }
+
+  const { postGoogleChatMessage, findOrCreateDmSpace } = await import("@/lib/google-chat-api");
+  const { getOwnerDmSpace } = await import("@/lib/tech-ops-bot-proactive");
+
+  for (const w of worklists) {
+    const email = emailByName.get(w.person.trim().toLowerCase()) ?? null;
+    if (!email) unmatched.push(w.person);
+    const base: PersonalSendResult = { person: w.person, email, deals: w.totalDeals, sent: false };
+
+    if (opts.mode === "preview") {
+      results.push({ ...base, reason: "preview" });
+      continue;
+    }
+    const message = renderPersonalWorklist(w, nowMs);
+    try {
+      if (opts.mode === "dryrun") {
+        const owner = await getOwnerDmSpace();
+        if (!owner) { results.push({ ...base, reason: "owner DM space missing" }); continue; }
+        await postGoogleChatMessage({
+          spaceName: owner,
+          text: `🧪 TEST — would DM ${w.person}${email ? ` <${email}>` : " (NO USER-TABLE MATCH — would be skipped)"}\n\n${message}`,
+        });
+        results.push({ ...base, sent: true });
+      } else {
+        if (!email) { results.push({ ...base, reason: "no User-table match" }); continue; }
+        const space = await findOrCreateDmSpace(email);
+        await postGoogleChatMessage({ spaceName: space, text: message });
+        results.push({ ...base, sent: true });
+      }
+    } catch (e) {
+      results.push({ ...base, reason: e instanceof Error ? e.message.slice(0, 200) : "send failed" });
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  return { results, unmatched };
+}

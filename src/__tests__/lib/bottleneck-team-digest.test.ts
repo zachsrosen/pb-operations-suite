@@ -120,3 +120,28 @@ describe("renderTeamDigest", () => {
     expect(renderTeamDigest("sales", buildTeamSections("sales", EMPTY_DD, [], NOW), NOW)).toBeNull();
   });
 });
+
+describe("buildPersonalWorklists", () => {
+  const { buildPersonalWorklists, renderPersonalWorklist } = jest.requireActual("@/lib/bottleneck-team-digest");
+  it("pivots team sections into per-person worklists across teams", () => {
+    const dd = {
+      ...EMPTY_DD,
+      awaitingPermitSubmit: [ddDeal({ id: 1, permitLead: "Peter Zaun" }), ddDeal({ id: 2, permitLead: "Alexis Severson" })],
+      awaitingPermitIssue: [ddDeal({ id: 3, permitLead: "Peter Zaun", daysWaiting: 40 })],
+      awaitingReadyToBuild: [ddDeal({ id: 4, projectManager: "Peter Zaun" })], // same person, different team hat
+    };
+    const byTeam = (["permitting", "pm"] as const).map((team) => ({
+      team,
+      sections: buildTeamSections(team, dd, [], NOW),
+    }));
+    const lists = buildPersonalWorklists(byTeam);
+    const peter = lists.find((w: { person: string }) => w.person === "Peter Zaun")!;
+    expect(peter.totalDeals).toBe(3);
+    expect(peter.sections.map((s: { team: string }) => s.team).sort()).toEqual(["permitting", "permitting", "pm"]);
+    const msg = renderPersonalWorklist(peter, NOW);
+    expect(msg).toContain("👋 Peter — your pipeline worklist");
+    expect(msg).toContain("Permitting — Submitted — follow up with AHJ (1)");
+    expect(msg).toContain("PM — Ready to build — clear blockers (1)");
+    expect(lists.find((w: { person: string }) => w.person === "Alexis Severson")!.totalDeals).toBe(1);
+  });
+});
