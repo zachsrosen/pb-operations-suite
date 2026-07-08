@@ -25,7 +25,9 @@ const TEAM_OPTIONS: { key: TeamKey; label: string }[] = [
   { key: "compliance", label: "Compliance (PE)" },
 ];
 
-const HUBSPOT_PORTAL = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069";
+// Digits-only guard — this env var has shipped with a literal "\n" before.
+const HUBSPOT_PORTAL =
+  (process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 const dealUrl = (id: string) => `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-3/${id}`;
 
 /** First two "|"-separated segments of a HubSpot deal name. */

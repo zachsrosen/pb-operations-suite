@@ -17,7 +17,10 @@ import {
 const LAST_DIGEST_KEY = "bottleneck_last_digest";
 /** Primary surface is the Bottlenecks tab on the pipeline funnel page (all roles). */
 const DASHBOARD_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
-const HUBSPOT_PORTAL = process.env.HUBSPOT_PORTAL_ID || "21710069";
+// Digits-only guard: this env var has been stored with a literal "\n" before
+// (the echo|vercel-env-add gotcha), which silently corrupts every URL built
+// from it — Chat's <url|text> parser breaks exactly at the stray characters.
+const HUBSPOT_PORTAL = (process.env.HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 
 // ── Scopes ──
 

@@ -361,7 +361,7 @@ export default function PePipelinePage() {
                 <tr key={deal.dealId} className="bg-surface rounded-md">
                   <td className="rounded-l-md px-3 py-3 font-medium">
                     <a
-                      href={`https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069"}/record/0-3/${deal.dealId}`}
+                      href={`https://app.hubspot.com/contacts/${(process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069"}/record/0-3/${deal.dealId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="hover:underline"
