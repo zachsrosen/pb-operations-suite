@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
+import { SERVICE_PIPELINE_ID, DNR_PIPELINE_ID } from "./review-type-labels";
 
 interface DealResult {
   dealId: string;
@@ -11,6 +12,14 @@ interface DealResult {
   region: string | null;
   projectType: string | null;
   designStatus: string | null;
+  pipeline?: string | null;
+}
+
+/** Compact marker for Service/D&R pipeline deals in search results. */
+function pipelineMarker(pipeline: string | null | undefined): string | null {
+  if (pipeline === SERVICE_PIPELINE_ID) return "SVC";
+  if (pipeline === DNR_PIPELINE_ID) return "D&R";
+  return null;
 }
 
 interface Props {
@@ -147,6 +156,11 @@ export function AddProjectDialog({ sessionId, onClose, onAdded }: Props) {
                     <div className="flex gap-2 text-xs text-muted mt-0.5">
                       {deal.region && <span>{deal.region}</span>}
                       {deal.designStatus && <span>{deal.designStatus}</span>}
+                      {pipelineMarker(deal.pipeline) && (
+                        <span className="font-semibold" title="D&R/Service Design Review">
+                          {pipelineMarker(deal.pipeline)}
+                        </span>
+                      )}
                     </div>
                   </button>
                 ))}

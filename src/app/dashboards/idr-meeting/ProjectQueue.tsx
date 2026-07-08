@@ -1,6 +1,7 @@
 "use client";
 
 import type { IdrItem, PresenceUser } from "./IdrMeetingClient";
+import { reviewTypePillLabel } from "./review-type-labels";
 
 interface Props {
   items: IdrItem[];
@@ -153,6 +154,13 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                     {item.type === "NEW_CONSTRUCTION" && (
                       <span className="text-[10px] font-semibold text-cyan-500 shrink-0" title="New Construction Design Review">
                         NC
+                      </span>
+                    )}
+
+                    {/* D&R/Service review badge (SVC or D&R by pipeline) */}
+                    {item.type === "DNR_SERVICE" && (
+                      <span className="text-[10px] font-semibold text-amber-500 shrink-0" title="D&R/Service Design Review">
+                        {reviewTypePillLabel(item.type, item.pipeline)}
                       </span>
                     )}
 
