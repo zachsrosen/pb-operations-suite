@@ -3,6 +3,7 @@ import {
   milestoneDocCounts,
   milestoneDocBucket,
 } from "@/lib/pe-milestone-bucket";
+import { PE_MILESTONE_DOC_NAMES, PE_CONDITIONAL_DOC_NAMES } from "@/lib/pe-analytics";
 
 // Build a docName -> status map from pairs.
 const docs = (pairs: Record<string, string>) => new Map<string, string>(Object.entries(pairs));
@@ -127,10 +128,62 @@ describe("milestoneDocBucket — a doc still missing", () => {
   });
 });
 
+// "Change Order" is synced + shown in DocsTab, but it is PE's remediation
+// instrument, not a milestone requirement. It must never affect bucketing.
+describe("Change Order is never a milestone requirement", () => {
+  it("a NOT_REQUIRED Change Order does not count toward owed docs", () => {
+    const c = milestoneDocCounts("IC", m1All("APPROVED", { "Change Order": "NOT_REQUIRED" }), "Approved");
+    expect(c.total).toBe(12);
+    expect(c.missing).toBe(0);
+  });
+
+  it("a NOT_UPLOADED Change Order never reads as a missing doc", () => {
+    const map = m1All("UNDER_REVIEW", { "Change Order": "NOT_UPLOADED" });
+    const c = milestoneDocCounts("IC", map, "Submitted");
+    expect(c.total).toBe(12);
+    expect(c.missing).toBe(0);
+    expect(milestoneDocBucket("IC", map, "Submitted")).toBe("review");
+  });
+
+  it("an uploaded Change Order does not flip the bucket", () => {
+    expect(milestoneDocBucket("IC", m1All("UNDER_REVIEW", { "Change Order": "UNDER_REVIEW" }), "Submitted")).toBe("review");
+  });
+
+  it("a flagged Change Order does not escalate the milestone to action", () => {
+    expect(milestoneDocBucket("IC", m1All("APPROVED", { "Change Order": "ACTION_REQUIRED" }), "Approved")).toBe("approved");
+  });
+
+  it("PC ignores Change Order too", () => {
+    const c = milestoneDocCounts("PC", docs({
+      "Signed Interconnection Agreement": "APPROVED",
+      "Conditional Waiver — Final Payment": "APPROVED",
+      "Permission to Operate (PTO)": "APPROVED",
+      "Change Order": "UNDER_REVIEW",
+    }), "Approved");
+    expect(c.total).toBe(3);
+  });
+});
+
 describe("milestoneDocBucket — no doc data", () => {
   it("empty doc map → falls back to the status bucket (unchanged behavior)", () => {
     expect(milestoneDocBucket("IC", new Map(), "Submitted")).toBe("review");
     expect(milestoneDocBucket("IC", new Map(), "Waiting on Information")).toBe("waiting");
     expect(milestoneDocBucket("PC", new Map(), "Approved")).toBe("approved");
+  });
+});
+
+// The analytics doc-status cards scope on PE_MILESTONE_DOC_NAMES. "Change Order"
+// must stay out of it: its row is never NOT_UPLOADED, so including it would count
+// as an "uploaded doc" and skew the doc-approval-rate denominator.
+describe("PE_MILESTONE_DOC_NAMES excludes non-milestone docs", () => {
+  it("covers the 16 milestone docs and omits Change Order", () => {
+    expect(PE_MILESTONE_DOC_NAMES.size).toBe(16);
+    expect(PE_MILESTONE_DOC_NAMES.has("Change Order")).toBe(false);
+    expect(PE_MILESTONE_DOC_NAMES.has("Bill of Materials")).toBe(true);
+    expect(PE_MILESTONE_DOC_NAMES.has("Permission to Operate (PTO)")).toBe(true);
+  });
+
+  it("Change Order is a conditional doc, so an absent slot records NOT_REQUIRED", () => {
+    expect(PE_CONDITIONAL_DOC_NAMES.has("Change Order")).toBe(true);
   });
 });

@@ -88,6 +88,10 @@ const PE_DOCUMENTS: DocRequirement[] = [
   { name: "Certificate of Acceptance", section: "ic", owner: "PB", team: "compliance" },
   { name: "Attestation of Customer Payment", section: "ic", owner: "PB", team: "compliance" },
   { name: "Conditional Progress Lien Waiver", section: "ic", owner: "PB", team: "accounting" },
+  // Conditional: PE creates the slot only when a Change Order exists, so it reads
+  // "Not Required" until one is uploaded. Required whenever a fix moves the Net
+  // Amount Due (incentive removal, NAD/payment-schedule correction).
+  { name: "Change Order", section: "ic", owner: "PB", team: "sales", note: "Required when the Net Amount Due changes" },
   { name: "Signed Interconnection Agreement", section: "pc", owner: "PB", team: "interconnection" },
   { name: "Conditional Waiver — Final Payment", section: "pc", owner: "PB", team: "accounting" },
   { name: "Permission to Operate (PTO)", section: "pc", owner: "PB", team: "interconnection" },

@@ -29,6 +29,8 @@ import {
   buildDocTypeByUploader,
   PIPELINE_GROUP_ORDER,
   PE_M1_DOC_NAMES,
+  PE_M2_DOC_NAMES,
+  PE_MILESTONE_DOC_NAMES,
   PE_CONDITIONAL_DOC_NAMES,
   UNKNOWN_UPLOADER,
   type UploaderDoc,
@@ -975,15 +977,19 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
 
   // --- Doc-status header stats -----------------------------------------------
   // All four cards are scoped to deals actively in a milestone (PTO stage owes
-  // the 12 M1 docs, Close Out owes all 15); other stages owe nothing yet.
+  // the M1 docs, Close Out and Complete owe M1 + M2); other stages owe nothing yet.
   const stageById = new Map(deals.map((d) => [d.dealId, d.stage]));
   const m1DocSet = new Set<string>(PE_M1_DOC_NAMES);
   const scopedDeals = new Set<string>();
   const relevantRows = docRows.filter((r) => {
     const stage = stageById.get(r.dealId);
     if (stage !== PTO_STAGE_ID && stage !== CLOSEOUT_STAGE_ID && stage !== COMPLETE_STAGE_ID) return false;
-    scopedDeals.add(r.dealId);
-    // PTO-stage deals owe the 12 M1 docs; Close Out and Complete owe all 15.
+    scopedDeals.add(r.dealId); // a deal is scoped by stage, regardless of which rows survive
+    // Only docs a milestone actually owes. "Change Order" is synced for visibility
+    // but no milestone owes it — without this guard its row (never NOT_UPLOADED)
+    // would count as an uploaded doc and skew the approval-rate denominator.
+    if (!PE_MILESTONE_DOC_NAMES.has(r.docName)) return false;
+    // PTO-stage deals owe only the M1 docs; Close Out and Complete owe M1 + M2.
     return stage !== PTO_STAGE_ID || m1DocSet.has(r.docName);
   });
   const docStat = (statuses: string[]) => {
@@ -1056,7 +1062,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
   }
 
   // --- Drill-down rows ---------------------------------------------------------
-  const M2_DOC_NAMES = ["Signed Interconnection Agreement", "Conditional Waiver — Final Payment", "Permission to Operate (PTO)"];
+  const M2_DOC_NAMES: string[] = [...PE_M2_DOC_NAMES]; // shared with PE_MILESTONE_DOC_NAMES
   const docStatusByDeal = new Map<string, Map<string, string>>();
   for (const r of docRows) {
     (docStatusByDeal.get(r.dealId) || docStatusByDeal.set(r.dealId, new Map()).get(r.dealId)!).set(r.docName, r.status);
