@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import MultiSelectFilter, { type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
@@ -25,7 +26,9 @@ const TEAM_OPTIONS: { key: TeamKey; label: string }[] = [
   { key: "compliance", label: "Compliance (PE)" },
 ];
 
-const HUBSPOT_PORTAL = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069";
+// Digits-only guard — this env var has shipped with a literal "\n" before.
+const HUBSPOT_PORTAL =
+  (process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 const dealUrl = (id: string) => `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-3/${id}`;
 
 /** First two "|"-separated segments of a HubSpot deal name. */
@@ -102,7 +105,6 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
           <tr>
             <th className="px-3 py-2 font-medium">Deal</th>
             <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Owner</th>
             <th className="px-3 py-2 font-medium">Location</th>
             <th className="px-3 py-2 text-right font-medium">Days in stage</th>
             <th className="px-3 py-2 text-right font-medium">Quiet</th>
@@ -124,7 +126,6 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
                 </a>
               </td>
               <td className="px-3 py-2 text-muted">{f.status ?? "—"}</td>
-              <td className="px-3 py-2 text-foreground">{f.dealOwnerName ?? "—"}</td>
               <td className="px-3 py-2 text-muted">{f.pbLocation ?? "—"}</td>
               <td className="px-3 py-2 text-right font-medium text-red-400">{f.dwellDays}</td>
               <td className="px-3 py-2 text-right text-muted">
@@ -142,13 +143,174 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
   );
 }
 
+/**
+ * URL presets so team digests can deep-link their view:
+ *   ?view=design|permitting|ic|ops|sales|pm|compliance → that team's WORKLIST
+ *     (the same funnel-bucket sections its digest sends, grouped by person)
+ *   ?person=Peter+Zaun → filter the worklist to one person's deals
+ *   ?loc=Westminster (comma-separated ok) → location filter (both modes)
+ * Without ?view=, the tab shows the stalled/zombie queue view (leadership lens).
+ */
+const WORKLIST_TEAMS = ["design", "permitting", "ic", "ops", "sales", "pm", "compliance"] as const;
+type WorklistTeam = (typeof WORKLIST_TEAMS)[number];
+const WORKLIST_LABELS: Record<WorklistTeam, string> = {
+  design: "Design", permitting: "Permitting", ic: "Interconnection",
+  ops: "Ops", sales: "Sales", pm: "PM", compliance: "Compliance (PE)",
+};
+
+interface WorklistLine {
+  id: string; name: string; status: string | null; stage: string;
+  daysWaiting: number; lead: string; location: string;
+  needsFollowUp: boolean; blockedNote: string | null;
+}
+interface WorklistSection {
+  title: string; followUpDays: number | null;
+  groupBy: "lead" | "location"; lines: WorklistLine[];
+}
+interface WorklistResponse {
+  team: string; label: string; sections: WorklistSection[]; lastUpdated: string;
+}
+
+function WorklistPanel({
+  team, person, locations,
+}: { team: WorklistTeam; person: string | null; locations: string[] }) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: [...queryKeys.bottlenecks.root, "worklist", team],
+    queryFn: async (): Promise<WorklistResponse> => {
+      const r = await fetch(`/api/bottlenecks/worklist?team=${team}`);
+      if (!r.ok) throw new Error(`failed: ${r.status}`);
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  if (isError)
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-8 text-center">
+        <p className="text-sm font-medium text-red-400">Couldn&apos;t load the worklist.</p>
+        <button onClick={() => refetch()} className="mt-3 rounded-md border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated">Retry</button>
+      </div>
+    );
+  if (isLoading || !data)
+    return <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">Loading…</div>;
+
+  const matches = (l: WorklistLine) =>
+    (person == null || l.lead === person) &&
+    (locations.length === 0 || (l.location !== "" && locations.includes(l.location)));
+
+  const sections = data.sections
+    .map((s) => ({ ...s, lines: s.lines.filter(matches) }))
+    .filter((s) => s.lines.length > 0);
+
+  if (sections.length === 0)
+    return (
+      <div className="rounded-lg border border-t-border/60 bg-surface p-6 text-center text-sm text-muted">
+        Nothing waiting{person ? ` on ${person}` : ` on ${data.label}`} in the current selection. 🎉
+      </div>
+    );
+
+  return (
+    <div className="space-y-4">
+      {sections.map((s) => {
+        const flagged = s.followUpDays != null ? s.lines.filter((l) => l.needsFollowUp).length : 0;
+        const groups = new Map<string, WorklistLine[]>();
+        for (const l of s.lines) {
+          const key = (s.groupBy === "location" ? l.location : l.lead) || "(unassigned)";
+          groups.set(key, [...(groups.get(key) ?? []), l]);
+        }
+        const ordered = [...groups.entries()].sort(
+          (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])
+        );
+        return (
+          <div key={s.title} className="overflow-hidden rounded-lg border border-t-border/60 bg-surface">
+            <div className="flex items-baseline justify-between border-b border-t-border/60 bg-surface-2 px-3 py-2">
+              <span className="text-sm font-medium text-foreground">{s.title}</span>
+              <span className="text-xs text-muted">
+                {s.lines.length} deal{s.lines.length === 1 ? "" : "s"}
+                {s.followUpDays != null ? ` · ${flagged} past ${s.followUpDays}d` : ""}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-t-border/60 text-left text-[11px] uppercase tracking-wider text-muted">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">{s.groupBy === "location" ? "Office" : "Owner"}</th>
+                    <th className="px-3 py-2 font-medium">Deal</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Stage</th>
+                    <th className="px-3 py-2 text-right font-medium">Days</th>
+                    <th className="px-3 py-2 font-medium">Location</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-t-border/60">
+                  {ordered.flatMap(([who, lines]) =>
+                    lines.map((l, i) => (
+                      <tr key={l.id + s.title}>
+                        <td className="px-3 py-2 text-foreground">{i === 0 ? `${who} (${lines.length})` : ""}</td>
+                        <td className="px-3 py-2">
+                          <a href={dealUrl(l.id)} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-t-border underline-offset-2 hover:decoration-foreground">
+                            {shortenDealName(l.name)}
+                          </a>
+                          {l.blockedNote && <span className="ml-2 text-xs text-orange-400">[{l.blockedNote}]</span>}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{l.status ?? "—"}</td>
+                        <td className="px-3 py-2 text-muted">{l.stage || "—"}</td>
+                        <td className={`px-3 py-2 text-right font-medium ${l.needsFollowUp ? "text-red-400" : "text-foreground"}`}>
+                          {l.daysWaiting}{l.needsFollowUp ? " ⚠" : ""}
+                        </td>
+                        <td className="px-3 py-2 text-muted">{l.location || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function BottleneckView() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const viewParam = searchParams?.get("view");
+  const worklistTeam: WorklistTeam | null = (WORKLIST_TEAMS as readonly string[]).includes(viewParam ?? "")
+    ? (viewParam as WorklistTeam)
+    : null;
+  const personParam = searchParams?.get("person");
+  const [worklistOff, setWorklistOff] = useState(false);
   const [team, setTeam] = useState<TeamKey>("all");
-  const [locations, setLocations] = useState<string[]>([]);
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  const [locations, setLocations] = useState<string[]>(() => {
+    const loc = searchParams?.get("loc");
+    return loc ? loc.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  });
   const [showZombies, setShowZombies] = useState(false);
   const [showUnknown, setShowUnknown] = useState(false);
+
+  if (worklistTeam && !worklistOff) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-t-border/60 bg-surface p-3">
+          <div className="text-sm text-foreground">
+            <span className="font-semibold">{WORKLIST_LABELS[worklistTeam]} worklist</span>
+            {personParam && <span className="text-muted"> — {personParam}</span>}
+            <span className="ml-2 text-xs text-muted">the same list the team digest sends</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWorklistOff(true)}
+            className="rounded-md border border-t-border/60 bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted hover:text-foreground"
+          >
+            Switch to queue view
+          </button>
+        </div>
+        <WorklistPanel team={worklistTeam} person={personParam ?? null} locations={locations} />
+      </div>
+    );
+  }
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.bottlenecks.summary(),
@@ -176,34 +338,32 @@ export default function BottleneckView() {
     return [...distinct].sort().map((v) => ({ value: v, label: v }));
   }, [allStages]);
 
-  const rowFilterActive = locations.length > 0 || ownerFilter != null;
+  const rowFilterActive = locations.length > 0;
   const matchesFilters = (f: FlaggedDeal) =>
-    (locations.length === 0 || (f.pbLocation != null && locations.includes(f.pbLocation))) &&
-    (ownerFilter == null || f.dealOwnerName === ownerFilter);
+    locations.length === 0 || (f.pbLocation != null && locations.includes(f.pbLocation));
 
   const stalledFor = (s: StageSnapshot) =>
     s.flagged.filter((f) => f.bucket === "stalled" && matchesFilters(f));
   const zombiesFor = (s: StageSnapshot) =>
     s.flagged.filter((f) => f.bucket === "zombie" && matchesFilters(f));
 
-  // Owner rollup over the selected teams + locations (not the owner filter itself).
-  const ownerRollup = useMemo(() => {
+  // Location rollup over the selected teams (locations are the accountability
+  // axis per Zach — owners intentionally aren't surfaced).
+  const locationRollup = useMemo(() => {
     const map = new Map<string, { stalled: number; zombies: number }>();
     for (const s of stages) {
       for (const f of s.flagged) {
-        if (locations.length > 0 && !(f.pbLocation != null && locations.includes(f.pbLocation)))
-          continue;
-        const owner = f.dealOwnerName ?? "(unassigned)";
-        const e = map.get(owner) ?? { stalled: 0, zombies: 0 };
+        const loc = f.pbLocation ?? "(no location)";
+        const e = map.get(loc) ?? { stalled: 0, zombies: 0 };
         if (f.bucket === "stalled") e.stalled++;
         else e.zombies++;
-        map.set(owner, e);
+        map.set(loc, e);
       }
     }
     return [...map.entries()]
-      .map(([owner, counts]) => ({ owner, ...counts }))
+      .map(([location, counts]) => ({ location, ...counts }))
       .sort((a, b) => b.stalled - a.stalled || b.zombies - a.zombies);
-  }, [stages, locations]);
+  }, [stages]);
 
   const stalledStages = stages.filter((s) => stalledFor(s).length > 0);
   const zombieStages = stages.filter((s) => zombiesFor(s).length > 0);
@@ -267,15 +427,6 @@ export default function BottleneckView() {
               </button>
             ))}
             <div className="ml-auto flex items-center gap-2">
-              {ownerFilter && (
-                <button
-                  type="button"
-                  onClick={() => setOwnerFilter(null)}
-                  className="rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400"
-                >
-                  Owner: {ownerFilter} ✕
-                </button>
-              )}
               <MultiSelectFilter
                 label="Location"
                 options={locationOptions}
@@ -303,7 +454,7 @@ export default function BottleneckView() {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Stages</h2>
               {rowFilterActive && (
                 <span className="text-[11px] text-muted">
-                  tiles show all owners/locations — filters apply to the tables below
+                  tiles show all locations — the location filter applies to the tables below
                 </span>
               )}
             </div>
@@ -314,12 +465,12 @@ export default function BottleneckView() {
             </div>
           </section>
 
-          {/* Owner accountability rollup */}
+          {/* Location rollup — the accountability axis */}
           <section>
             <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted">
-              By owner
+              By location
             </h2>
-            {ownerRollup.length === 0 ? (
+            {locationRollup.length === 0 ? (
               <div className="rounded-lg border border-t-border/60 bg-surface p-4 text-sm text-muted">
                 Nothing flagged in the selected teams.
               </div>
@@ -329,36 +480,34 @@ export default function BottleneckView() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-t-border/60 bg-surface-2 text-left text-[11px] uppercase tracking-wider text-muted">
                       <tr>
-                        <th className="px-3 py-2 font-medium">Owner</th>
+                        <th className="px-3 py-2 font-medium">Location</th>
                         <th className="px-3 py-2 text-right font-medium">Stalled</th>
                         <th className="px-3 py-2 text-right font-medium">Zombies</th>
                         <th className="px-3 py-2 font-medium"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-t-border/60">
-                      {ownerRollup.map((o) => (
-                        <tr
-                          key={o.owner}
-                          className={ownerFilter === o.owner ? "bg-surface-2" : undefined}
-                        >
-                          <td className="px-3 py-2 text-foreground">{o.owner}</td>
-                          <td className="px-3 py-2 text-right font-medium text-red-400">
-                            {o.stalled}
-                          </td>
-                          <td className="px-3 py-2 text-right text-muted">{o.zombies}</td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOwnerFilter((cur) => (cur === o.owner ? null : o.owner))
-                              }
-                              className="rounded border border-t-border/60 bg-surface-2 px-2 py-0.5 text-xs text-muted hover:text-foreground"
-                            >
-                              {ownerFilter === o.owner ? "clear" : "filter"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {locationRollup.map((o) => {
+                        const active = locations.length === 1 && locations[0] === o.location;
+                        return (
+                          <tr key={o.location} className={active ? "bg-surface-2" : undefined}>
+                            <td className="px-3 py-2 text-foreground">{o.location}</td>
+                            <td className="px-3 py-2 text-right font-medium text-red-400">
+                              {o.stalled}
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted">{o.zombies}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setLocations(active ? [] : [o.location])}
+                                className="rounded border border-t-border/60 bg-surface-2 px-2 py-0.5 text-xs text-muted hover:text-foreground"
+                              >
+                                {active ? "clear" : "filter"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

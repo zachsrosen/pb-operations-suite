@@ -188,6 +188,31 @@ describe("computeStageSnapshots", () => {
     expect(s1.status).toBe("Submitted to AHJ");
   });
 
+  it("excludes On-Hold deals from every queue (paused ≠ bottlenecked)", () => {
+    const rows = [deal({ stage: "On-Hold", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(60) })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "permitting")!.totalInStage).toBe(0);
+  });
+
+  it("keeps pre-permit deals out of the construction queue even with an open install status", () => {
+    const rows = [deal({ stage: "Permitting & Interconnection", installStatus: "Blocked", rtbDate: daysAgo(40), permitIssueDate: null })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "construction")!.totalInStage).toBe(0);
+  });
+
+  it("counts audit-discovered in-flight statuses the shared constants miss", () => {
+    const rows = [
+      deal({ hubspotDealId: "p1", permittingStatus: "Non-Design Related Rejection", permitSubmitDate: daysAgo(10) }),
+      deal({ hubspotDealId: "i1", icStatus: "Transformer Upgrade", icSubmitDate: daysAgo(10) }),
+      deal({ hubspotDealId: "i2", icStatus: "Supplemental Review", icSubmitDate: daysAgo(10) }),
+      deal({ hubspotDealId: "t1", ptoStatus: "Ready to Resubmit", ptoStartDate: daysAgo(10) }),
+    ];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "permitting")!.totalInStage).toBe(1);
+    expect(snap.stages.find((s) => s.key === "interconnection")!.totalInStage).toBe(2);
+    expect(snap.stages.find((s) => s.key === "pto")!.totalInStage).toBe(1);
+  });
+
   it("prefers engagement date (notes_last_updated) over hs_lastmodifieddate for activity", () => {
     // Bulk scripts mass-stamp hs_lastmodifieddate; engagement is the real signal.
     const rows = [deal({

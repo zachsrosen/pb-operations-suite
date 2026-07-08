@@ -96,6 +96,16 @@ const first = (...dates: Array<Date | null>) => dates.find((x) => x != null) ?? 
 const PE_DONE = new Set(["approved", "paid"]);
 const peActive = (status: string | null) => status != null && !PE_DONE.has(statusBucket(status));
 
+/**
+ * In-flight statuses the shared pi-statuses constants miss — found by the 7/7
+ * deal-level audit against the funnel backlog (deals the funnel tracked that
+ * the engine dropped). Kept engine-local; the shared constants drive other
+ * dashboards and aren't ours to widen.
+ */
+const EXTRA_PERMIT_ACTIVE = new Set(["Non-Design Related Rejection"]);
+const EXTRA_IC_ACTIVE = new Set(["Transformer Upgrade", "Supplemental Review"]);
+const EXTRA_PTO_ACTIVE = new Set(["Ready to Resubmit"]);
+
 export const STAGES: StageDefinition[] = [
   {
     key: "design", label: "Design", team: "design",
@@ -106,21 +116,27 @@ export const STAGES: StageDefinition[] = [
   },
   {
     key: "permitting", label: "Permitting", team: "pi",
-    isInStage: (d) => isPermitActiveStatus(d.permittingStatus ?? ""),
+    isInStage: (d) =>
+      isPermitActiveStatus(d.permittingStatus ?? "") ||
+      EXTRA_PERMIT_ACTIVE.has(d.permittingStatus ?? ""),
     entryDate: (d) => first(d.permitSubmitDate, d.designCompletionDate),
     exitDate: (d) => d.permitIssueDate,
     statusOf: (d) => d.permittingStatus,
   },
   {
     key: "interconnection", label: "Interconnection", team: "pi",
-    isInStage: (d) => isICActiveStatus(d.icStatus ?? ""),
+    isInStage: (d) =>
+      isICActiveStatus(d.icStatus ?? "") || EXTRA_IC_ACTIVE.has(d.icStatus ?? ""),
     entryDate: (d) => first(d.icSubmitDate, d.designCompletionDate),
     exitDate: (d) => d.icApprovalDate,
     statusOf: (d) => d.icStatus,
   },
   {
     key: "construction", label: "Construction", team: "ops",
-    isInStage: (d) => isOpenStatus(d.installStatus),
+    // permitIssueDate gate: without a permit the deal isn't construction's
+    // queue yet (audit: pre-permit deals with installStatus "Blocked" were
+    // landing here while still sitting in Permitting).
+    isInStage: (d) => isOpenStatus(d.installStatus) && d.permitIssueDate != null,
     entryDate: (d) => first(d.installScheduleDate, d.rtbDate, d.permitIssueDate),
     exitDate: (d) => d.constructionCompleteDate,
     statusOf: (d) => d.installStatus,
@@ -134,7 +150,8 @@ export const STAGES: StageDefinition[] = [
   },
   {
     key: "pto", label: "PTO", team: "pi",
-    isInStage: (d) => isPTOPipelineStatus(d.ptoStatus ?? ""),
+    isInStage: (d) =>
+      isPTOPipelineStatus(d.ptoStatus ?? "") || EXTRA_PTO_ACTIVE.has(d.ptoStatus ?? ""),
     entryDate: (d) => first(d.ptoStartDate, d.inspectionPassDate),
     exitDate: (d) => d.ptoCompletionDate,
     statusOf: (d) => d.ptoStatus,
@@ -281,8 +298,10 @@ const FLOW_WEEKS = 8;
  * columns often still read "open" (e.g. an old deal whose inspection status
  * was never flipped), so without this gate historical deals count as in-stage.
  * "Close Out" deliberately does NOT match (post-PTO work, incl. PE M2, is live).
+ * "On-Hold" IS excluded: a deliberately paused deal is not a bottleneck (audit:
+ * on-hold deals were topping the Design digest).
  */
-const TERMINAL_STAGE_KEYWORDS = ["complete", "cancelled", "canceled", "closed won", "closed lost", "rejected"];
+const TERMINAL_STAGE_KEYWORDS = ["complete", "cancelled", "canceled", "closed won", "closed lost", "rejected", "on-hold", "on hold"];
 function isActiveDealStage(stage: string | null): boolean {
   if (!stage) return false;
   const s = stage.toLowerCase();

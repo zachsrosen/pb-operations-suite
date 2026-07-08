@@ -196,3 +196,31 @@ export async function listGoogleChatSpaces(): Promise<GoogleChatSpace[]> {
 
   return spaces;
 }
+
+/**
+ * Find-or-create the bot's DM space with a user (by email). Uses
+ * spaces:setup, which is idempotent for DIRECT_MESSAGE spaces.
+ *
+ * IMPORTANT: only works for users the Chat app is VISIBLE to. While the
+ * app's visibility is restricted (currently zach@ only), this fails with
+ * 403/404 for everyone else — widen visibility via a Google Group on the
+ * GCP Chat-app config (or Marketplace publish) before going live.
+ */
+export async function findOrCreateDmSpace(email: string): Promise<string> {
+  const token = await getAccessToken();
+  const resp = await fetch(`${CHAT_API_BASE}/spaces:setup`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      space: { spaceType: "DIRECT_MESSAGE", singleUserBotDm: true },
+      memberships: [{ member: { name: `users/${email}`, type: "HUMAN" } }],
+    }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.name) {
+    throw new Error(
+      `spaces:setup failed for ${email}: ${resp.status} ${JSON.stringify(data).slice(0, 300)}`
+    );
+  }
+  return data.name as string;
+}

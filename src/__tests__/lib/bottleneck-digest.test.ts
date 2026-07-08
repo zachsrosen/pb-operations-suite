@@ -88,17 +88,27 @@ describe("detectChanges", () => {
 });
 
 describe("buildDigestMessage", () => {
-  it("renders plain text with per-stage stalled counts, status, quiet days, owners, and the dashboard link", () => {
+  it("renders per-stage stalled counts, status, quiet days, hyperlinked deals, and the funnel-tab link", () => {
     const s = snap([stage({ flagged: [flaggedDeal("1", 62), flaggedDeal("2", 45)] })]);
     const msg = buildDigestMessage(s, detectChanges({ permitting: ["2"] }, s), { includeFlow: false });
     expect(msg).toContain("2 stalled deals to work");
     expect(msg).toContain("Permitting: 2 stalled / 10 in stage, threshold 30d");
     expect(msg).toContain("Submitted to AHJ");
     expect(msg).toContain("62d in stage, quiet 4d");
-    expect(msg).toContain("Jane Owner");
-    expect(msg).toContain("/dashboards/bottlenecks");
+    // Deals render as Google Chat <url|text> hyperlinks into HubSpot.
+    expect(msg).toContain("<https://app.hubspot.com/contacts/");
+    expect(msg).toContain("/record/0-3/1|PROJ-1 — Test, Casey>");
+    // Owners are deliberately absent (location is the accountability axis).
+    expect(msg).not.toContain("Jane Owner");
+    expect(msg).toContain("(Westminster)");
+    expect(msg).toContain("/dashboards/project-pipeline-funnel?tab=bottlenecks");
     expect(msg).toContain("1 new");
-    expect(msg).not.toContain("|"); // no markdown tables — Chat renders raw pipes
+  });
+
+  it("labels team-scoped digests in the header", () => {
+    const s = snap([stage({ flagged: [flaggedDeal("1")] })]);
+    const msg = buildDigestMessage(s, detectChanges(null, s), { includeFlow: false, teamLabel: "P&I" });
+    expect(msg).toContain("🚧 P&I bottleneck digest —");
   });
 
   it("renders zombies only as a one-line count, never as deal rows", () => {
@@ -194,6 +204,29 @@ describe("runBottleneckDigest orchestration", () => {
       (c: [{ where: { key: string } }]) => c[0].where.key
     );
     expect(upsertKeys).not.toContain("bottleneck_last_digest");
+  });
+
+  it("team test-sends always post, label the header, and never save the snapshot", async () => {
+    prisma.deal.findMany.mockResolvedValue([]);
+    mockConfigRows({
+      bottleneck_thresholds: EMPTY_THRESHOLDS,
+      bottleneck_last_digest: EMPTY_LAST_DIGEST,
+    });
+    getOwnerDmSpace.mockResolvedValue("spaces/owner123");
+
+    // Tuesday + no changes would suppress the daily digest — team sends ignore that.
+    const result = await runBottleneckDigest({ nowMs: TUESDAY, team: "pi" });
+
+    expect(result.team).toBe("pi");
+    expect(result.posted).toBe(true);
+    expect(postGoogleChatMessage).toHaveBeenCalledTimes(1);
+    const text = (postGoogleChatMessage.mock.calls[0][0] as { text: string }).text;
+    expect(text).toContain("P&I bottleneck digest");
+    const upsertKeys = prisma.systemConfig.upsert.mock.calls.map(
+      (c: [{ where: { key: string } }]) => c[0].where.key
+    );
+    expect(upsertKeys).not.toContain("bottleneck_last_digest");
+    expect(upsertKeys).not.toContain("bottleneck_thresholds"); // no refresh on test sends
   });
 });
 
