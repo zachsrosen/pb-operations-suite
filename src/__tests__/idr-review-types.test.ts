@@ -19,6 +19,11 @@ jest.mock("@/lib/hubspot", () => ({
 
 import { hubspotClient } from "@/lib/hubspot";
 import {
+  SERVICE_PIPELINE_ID,
+  DNR_PIPELINE_ID,
+  reviewTypePillLabel,
+} from "@/app/dashboards/idr-meeting/review-type-labels";
+import {
   REVIEW_TYPES,
   NC_READY_FOR_REVIEW_STATUS,
   deriveItemTypeFromStatus,
@@ -26,6 +31,19 @@ import {
   buildHubSpotNoteBody,
   syncItemToHubSpot,
 } from "@/lib/idr-meeting";
+
+describe("reviewTypePillLabel", () => {
+  it("maps DNR_SERVICE by pipeline", () => {
+    expect(reviewTypePillLabel("DNR_SERVICE", SERVICE_PIPELINE_ID)).toBe("SVC");
+    expect(reviewTypePillLabel("DNR_SERVICE", DNR_PIPELINE_ID)).toBe("D&R");
+    expect(reviewTypePillLabel("DNR_SERVICE", null)).toBe("D&R/SVC");
+  });
+  it("maps NEW_CONSTRUCTION to NC and passes other types through", () => {
+    expect(reviewTypePillLabel("NEW_CONSTRUCTION", null)).toBe("NC");
+    expect(reviewTypePillLabel("IDR", null)).toBe("IDR");
+    expect(reviewTypePillLabel("ESCALATION", "whatever")).toBe("ESCALATION");
+  });
+});
 
 describe("REVIEW_TYPES registry", () => {
   it("IDR routes revisions to the design branch and idr_revision_reason", () => {
