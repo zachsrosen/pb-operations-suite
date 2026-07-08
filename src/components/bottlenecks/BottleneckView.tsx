@@ -102,7 +102,6 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
           <tr>
             <th className="px-3 py-2 font-medium">Deal</th>
             <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Owner</th>
             <th className="px-3 py-2 font-medium">Location</th>
             <th className="px-3 py-2 text-right font-medium">Days in stage</th>
             <th className="px-3 py-2 text-right font-medium">Quiet</th>
@@ -124,7 +123,6 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
                 </a>
               </td>
               <td className="px-3 py-2 text-muted">{f.status ?? "—"}</td>
-              <td className="px-3 py-2 text-foreground">{f.dealOwnerName ?? "—"}</td>
               <td className="px-3 py-2 text-muted">{f.pbLocation ?? "—"}</td>
               <td className="px-3 py-2 text-right font-medium text-red-400">{f.dwellDays}</td>
               <td className="px-3 py-2 text-right text-muted">
@@ -146,7 +144,6 @@ export default function BottleneckView() {
   const queryClient = useQueryClient();
   const [team, setTeam] = useState<TeamKey>("all");
   const [locations, setLocations] = useState<string[]>([]);
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const [showZombies, setShowZombies] = useState(false);
   const [showUnknown, setShowUnknown] = useState(false);
 
@@ -176,34 +173,32 @@ export default function BottleneckView() {
     return [...distinct].sort().map((v) => ({ value: v, label: v }));
   }, [allStages]);
 
-  const rowFilterActive = locations.length > 0 || ownerFilter != null;
+  const rowFilterActive = locations.length > 0;
   const matchesFilters = (f: FlaggedDeal) =>
-    (locations.length === 0 || (f.pbLocation != null && locations.includes(f.pbLocation))) &&
-    (ownerFilter == null || f.dealOwnerName === ownerFilter);
+    locations.length === 0 || (f.pbLocation != null && locations.includes(f.pbLocation));
 
   const stalledFor = (s: StageSnapshot) =>
     s.flagged.filter((f) => f.bucket === "stalled" && matchesFilters(f));
   const zombiesFor = (s: StageSnapshot) =>
     s.flagged.filter((f) => f.bucket === "zombie" && matchesFilters(f));
 
-  // Owner rollup over the selected teams + locations (not the owner filter itself).
-  const ownerRollup = useMemo(() => {
+  // Location rollup over the selected teams (locations are the accountability
+  // axis per Zach — owners intentionally aren't surfaced).
+  const locationRollup = useMemo(() => {
     const map = new Map<string, { stalled: number; zombies: number }>();
     for (const s of stages) {
       for (const f of s.flagged) {
-        if (locations.length > 0 && !(f.pbLocation != null && locations.includes(f.pbLocation)))
-          continue;
-        const owner = f.dealOwnerName ?? "(unassigned)";
-        const e = map.get(owner) ?? { stalled: 0, zombies: 0 };
+        const loc = f.pbLocation ?? "(no location)";
+        const e = map.get(loc) ?? { stalled: 0, zombies: 0 };
         if (f.bucket === "stalled") e.stalled++;
         else e.zombies++;
-        map.set(owner, e);
+        map.set(loc, e);
       }
     }
     return [...map.entries()]
-      .map(([owner, counts]) => ({ owner, ...counts }))
+      .map(([location, counts]) => ({ location, ...counts }))
       .sort((a, b) => b.stalled - a.stalled || b.zombies - a.zombies);
-  }, [stages, locations]);
+  }, [stages]);
 
   const stalledStages = stages.filter((s) => stalledFor(s).length > 0);
   const zombieStages = stages.filter((s) => zombiesFor(s).length > 0);
@@ -267,15 +262,6 @@ export default function BottleneckView() {
               </button>
             ))}
             <div className="ml-auto flex items-center gap-2">
-              {ownerFilter && (
-                <button
-                  type="button"
-                  onClick={() => setOwnerFilter(null)}
-                  className="rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400"
-                >
-                  Owner: {ownerFilter} ✕
-                </button>
-              )}
               <MultiSelectFilter
                 label="Location"
                 options={locationOptions}
@@ -303,7 +289,7 @@ export default function BottleneckView() {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Stages</h2>
               {rowFilterActive && (
                 <span className="text-[11px] text-muted">
-                  tiles show all owners/locations — filters apply to the tables below
+                  tiles show all locations — the location filter applies to the tables below
                 </span>
               )}
             </div>
@@ -314,12 +300,12 @@ export default function BottleneckView() {
             </div>
           </section>
 
-          {/* Owner accountability rollup */}
+          {/* Location rollup — the accountability axis */}
           <section>
             <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted">
-              By owner
+              By location
             </h2>
-            {ownerRollup.length === 0 ? (
+            {locationRollup.length === 0 ? (
               <div className="rounded-lg border border-t-border/60 bg-surface p-4 text-sm text-muted">
                 Nothing flagged in the selected teams.
               </div>
@@ -329,36 +315,34 @@ export default function BottleneckView() {
                   <table className="w-full text-sm">
                     <thead className="border-b border-t-border/60 bg-surface-2 text-left text-[11px] uppercase tracking-wider text-muted">
                       <tr>
-                        <th className="px-3 py-2 font-medium">Owner</th>
+                        <th className="px-3 py-2 font-medium">Location</th>
                         <th className="px-3 py-2 text-right font-medium">Stalled</th>
                         <th className="px-3 py-2 text-right font-medium">Zombies</th>
                         <th className="px-3 py-2 font-medium"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-t-border/60">
-                      {ownerRollup.map((o) => (
-                        <tr
-                          key={o.owner}
-                          className={ownerFilter === o.owner ? "bg-surface-2" : undefined}
-                        >
-                          <td className="px-3 py-2 text-foreground">{o.owner}</td>
-                          <td className="px-3 py-2 text-right font-medium text-red-400">
-                            {o.stalled}
-                          </td>
-                          <td className="px-3 py-2 text-right text-muted">{o.zombies}</td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOwnerFilter((cur) => (cur === o.owner ? null : o.owner))
-                              }
-                              className="rounded border border-t-border/60 bg-surface-2 px-2 py-0.5 text-xs text-muted hover:text-foreground"
-                            >
-                              {ownerFilter === o.owner ? "clear" : "filter"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {locationRollup.map((o) => {
+                        const active = locations.length === 1 && locations[0] === o.location;
+                        return (
+                          <tr key={o.location} className={active ? "bg-surface-2" : undefined}>
+                            <td className="px-3 py-2 text-foreground">{o.location}</td>
+                            <td className="px-3 py-2 text-right font-medium text-red-400">
+                              {o.stalled}
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted">{o.zombies}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setLocations(active ? [] : [o.location])}
+                                className="rounded border border-t-border/60 bg-surface-2 px-2 py-0.5 text-xs text-muted hover:text-foreground"
+                              >
+                                {active ? "clear" : "filter"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

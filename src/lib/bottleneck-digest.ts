@@ -15,7 +15,9 @@ import {
 } from "@/lib/bottlenecks";
 
 const LAST_DIGEST_KEY = "bottleneck_last_digest";
-const DASHBOARD_URL = "https://www.pbtechops.com/dashboards/bottlenecks";
+/** Primary surface is the Bottlenecks tab on the pipeline funnel page (all roles). */
+const DASHBOARD_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
+const HUBSPOT_PORTAL = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
 // ── Scopes ──
 
@@ -87,10 +89,23 @@ function shortName(name: string): string {
   return parts.slice(0, 2).join(" — ") || name;
 }
 
+/** Google Chat app-message hyperlink: <url|text>. Renders as a clickable link. */
+function dealLink(f: FlaggedDeal): string {
+  const url = `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-3/${f.hubspotDealId}`;
+  return `<${url}|${shortName(f.dealName)}>`;
+}
+
+export const TEAM_LABELS: Record<BottleneckTeam, string> = {
+  design: "Design",
+  pi: "P&I",
+  ops: "Ops",
+  compliance: "Compliance (PE)",
+};
+
 export function buildDigestMessage(
   snapshot: BottleneckSnapshot,
   changes: DigestChanges,
-  opts: { includeFlow: boolean }
+  opts: { includeFlow: boolean; teamLabel?: string }
 ): string | null {
   const stalledTotal = snapshot.stages.reduce((n, s) => n + stalledOf(s.flagged).length, 0);
   const zombieTotal = snapshot.stages.reduce(
@@ -103,7 +118,8 @@ export function buildDigestMessage(
     timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
   });
 
-  const lines: string[] = [`🚧 Bottleneck digest — ${day}`];
+  const title = opts.teamLabel ? `${opts.teamLabel} bottleneck digest` : "Bottleneck digest";
+  const lines: string[] = [`🚧 ${title} — ${day}`];
   const delta =
     changes.newlyFlagged.length || changes.resolvedIds.length
       ? ` (${changes.newlyFlagged.length} new, ${changes.resolvedIds.length} resolved)`
@@ -118,9 +134,8 @@ export function buildDigestMessage(
     for (const f of stalled.slice(0, 3)) {
       const status = f.status ? ` — ${f.status}` : "";
       const quiet = f.daysSinceActivity != null ? `, quiet ${f.daysSinceActivity}d` : "";
-      const who = f.dealOwnerName ? ` — ${f.dealOwnerName}` : "";
       const where = f.pbLocation ? ` (${f.pbLocation})` : "";
-      lines.push(`• ${shortName(f.dealName)}${status} — ${f.dwellDays}d in stage${quiet}${who}${where}`);
+      lines.push(`• ${dealLink(f)}${status} — ${f.dwellDays}d in stage${quiet}${where}`);
     }
     if (stalled.length > 3) lines.push(`…and ${stalled.length - 3} more.`);
     if (opts.includeFlow && s.flow.length > 0) {
@@ -168,39 +183,53 @@ export interface BottleneckDigestResult {
   posted: boolean;
   reason?: string;
   isMonday: boolean;
+  team?: BottleneckTeam;
   message?: string; // preview mode only
 }
 
 export async function runBottleneckDigest(opts?: {
   nowMs?: number;
   preview?: boolean;
+  /**
+   * Team-scoped TEST send: filters to the team's stages, labels the header,
+   * always sends (no change suppression), and never saves the flag snapshot —
+   * so it can't interfere with the daily all-scope cadence. Still delivers to
+   * the owner DM only (team delivery targets unlock with bot visibility).
+   */
+  team?: BottleneckTeam;
 }): Promise<BottleneckDigestResult> {
   const nowMs = opts?.nowMs ?? Date.now();
+  const team = opts?.team;
   const isMonday =
     new Date(nowMs).toLocaleDateString("en-US", { timeZone: "America/Denver", weekday: "short" }) === "Mon";
 
   // Mondays also refresh derived thresholds (manual overrides preserved).
-  if (isMonday && !opts?.preview) await refreshThresholds(nowMs);
+  if (isMonday && !opts?.preview && !team) await refreshThresholds(nowMs);
 
-  const snapshot = await computeBottleneckSnapshot(nowMs);
-  const prev = await getLastFlagSnapshot();
+  const full = await computeBottleneckSnapshot(nowMs);
+  const snapshot = team ? filterSnapshotForScope(full, { kind: "team", team }) : full;
+  const prev = team ? null : await getLastFlagSnapshot();
   const changes = detectChanges(prev, snapshot);
 
-  if (!isMonday && !changes.hasChanges) {
+  if (!team && !isMonday && !changes.hasChanges) {
     return { posted: false, reason: "no changes since last digest", isMonday };
   }
 
-  const message = buildDigestMessage(snapshot, changes, { includeFlow: isMonday });
-  if (!message) return { posted: false, reason: "nothing to report", isMonday };
+  const message = buildDigestMessage(snapshot, changes, {
+    // Team sends always include flow — they're review/test sends, show everything.
+    includeFlow: isMonday || Boolean(team),
+    teamLabel: team ? TEAM_LABELS[team] : undefined,
+  });
+  if (!message) return { posted: false, reason: "nothing to report", isMonday, team };
 
-  if (opts?.preview) return { posted: false, isMonday, message };
+  if (opts?.preview) return { posted: false, isMonday, team, message };
 
   const { getOwnerDmSpace } = await import("@/lib/tech-ops-bot-proactive");
   const space = await getOwnerDmSpace();
-  if (!space) return { posted: false, reason: "owner DM space not captured yet", isMonday };
+  if (!space) return { posted: false, reason: "owner DM space not captured yet", isMonday, team };
 
   const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
   await postGoogleChatMessage({ spaceName: space, text: message });
-  await saveFlagSnapshot(toFlagSnapshot(snapshot));
-  return { posted: true, isMonday };
+  if (!team) await saveFlagSnapshot(toFlagSnapshot(snapshot));
+  return { posted: true, isMonday, team };
 }
