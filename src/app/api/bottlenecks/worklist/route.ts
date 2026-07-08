@@ -21,13 +21,23 @@ export async function GET(request: NextRequest) {
   tagSentryRequest(request);
   const team = request.nextUrl.searchParams.get("team");
   const person = request.nextUrl.searchParams.get("person");
-  if (!person && (!team || !(team in TEAM_DIGEST_LABELS))) {
+  if (!person && team !== "all" && (!team || !(team in TEAM_DIGEST_LABELS))) {
     return NextResponse.json(
-      { error: `team must be one of: ${Object.keys(TEAM_DIGEST_LABELS).join(", ")} (or pass person=)` },
+      { error: `team must be "all" or one of: ${Object.keys(TEAM_DIGEST_LABELS).join(", ")} (or pass person=)` },
       { status: 400 }
     );
   }
   try {
+    if (team === "all" && !person) {
+      // Every team's worklist in one response — the tab's default "what we're
+      // actively telling people" overview.
+      const keys = Object.keys(TEAM_DIGEST_LABELS) as TeamDigestKey[];
+      const teams = [];
+      for (const k of keys) {
+        teams.push({ team: k, label: TEAM_DIGEST_LABELS[k], sections: await getTeamSections(k) });
+      }
+      return NextResponse.json({ teams, lastUpdated: new Date().toISOString() });
+    }
     const sections = person
       ? await getPersonalSections(person)
       : await getTeamSections(team as TeamDigestKey);

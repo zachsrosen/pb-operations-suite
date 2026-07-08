@@ -217,6 +217,10 @@ function WorklistPanel({
       </div>
     );
 
+  return <SectionList sections={sections} />;
+}
+
+function SectionList({ sections }: { sections: WorklistSection[] }) {
   return (
     <div className="space-y-4">
       {sections.map((s) => {
@@ -280,6 +284,81 @@ function WorklistPanel({
   );
 }
 
+interface AllTeamsResponse {
+  teams: Array<{ team: string; label: string; sections: WorklistSection[] }>;
+  lastUpdated: string;
+}
+
+/** Default tab content: every team's worklist — exactly what the digests are
+ *  actively telling people, on one page. */
+function AllTeamsPanel({ locations }: { locations: string[] }) {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: [...queryKeys.bottlenecks.root, "worklist", "all"],
+    queryFn: async (): Promise<AllTeamsResponse> => {
+      const r = await fetch("/api/bottlenecks/worklist?team=all");
+      if (!r.ok) throw new Error(`failed: ${r.status}`);
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  if (isError)
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-8 text-center">
+        <p className="text-sm font-medium text-red-400">Couldn&apos;t load the worklists.</p>
+        <button onClick={() => refetch()} className="mt-3 rounded-md border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated">Retry</button>
+      </div>
+    );
+  if (isLoading || !data)
+    return <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">Loading…</div>;
+
+  const byLoc = (sections: WorklistSection[]) =>
+    sections
+      .map((s) => ({
+        ...s,
+        lines: s.lines.filter(
+          (l) => locations.length === 0 || (l.location !== "" && locations.includes(l.location))
+        ),
+      }))
+      .filter((s) => s.lines.length > 0);
+
+  const teams = data.teams
+    .map((t) => ({ ...t, sections: byLoc(t.sections) }))
+    .filter((t) => t.sections.length > 0);
+
+  if (teams.length === 0)
+    return (
+      <div className="rounded-lg border border-t-border/60 bg-surface p-6 text-center text-sm text-muted">
+        Nothing waiting on any team in the current selection. 🎉
+      </div>
+    );
+
+  return (
+    <div className="space-y-8">
+      {teams.map((t) => {
+        const total = t.sections.reduce((n, s) => n + s.lines.length, 0);
+        return (
+          <section key={t.team}>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+                {t.label} — {total} deal{total === 1 ? "" : "s"}
+              </h2>
+              <a
+                href={`?tab=bottlenecks&view=${t.team}`}
+                className="text-xs text-muted underline decoration-t-border underline-offset-2 hover:text-foreground"
+              >
+                open {t.label} view
+              </a>
+            </div>
+            <SectionList sections={t.sections} />
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function BottleneckView() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
@@ -291,7 +370,11 @@ export default function BottleneckView() {
       : (WORKLIST_TEAMS as readonly string[]).includes(viewParam ?? "")
         ? (viewParam as WorklistTeam)
         : null;
-  const [worklistOff, setWorklistOff] = useState(false);
+  // Default = the all-teams worklist overview (what the digests are actively
+  // telling people). "queues" = the stalled/zombie leadership lens — reached
+  // via ?view=queues (the daily digest's link) or the in-page toggle.
+  const [queueOverride, setQueueOverride] = useState<boolean | null>(null);
+  const queueMode = queueOverride ?? viewParam === "queues";
   const [team, setTeam] = useState<TeamKey>("all");
   const [locations, setLocations] = useState<string[]>(() => {
     const loc = searchParams?.get("loc");
@@ -300,28 +383,37 @@ export default function BottleneckView() {
   const [showZombies, setShowZombies] = useState(false);
   const [showUnknown, setShowUnknown] = useState(false);
 
-  if (worklistTeam && !worklistOff) {
+  if (!queueMode) {
+    const headline = worklistTeam
+      ? worklistTeam === "personal"
+        ? `${personParam}'s worklist`
+        : `${WORKLIST_LABELS[worklistTeam]} worklist`
+      : "Team worklists";
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-t-border/60 bg-surface p-3">
           <div className="text-sm text-foreground">
-            <span className="font-semibold">
-              {worklistTeam === "personal" ? `${personParam}'s worklist` : `${WORKLIST_LABELS[worklistTeam]} worklist`}
-            </span>
-            {worklistTeam !== "personal" && personParam && (
+            <span className="font-semibold">{headline}</span>
+            {worklistTeam && worklistTeam !== "personal" && personParam && (
               <span className="text-muted"> — {personParam}</span>
             )}
-            <span className="ml-2 text-xs text-muted">the same list the digest sends</span>
+            <span className="ml-2 text-xs text-muted">
+              {worklistTeam ? "the same list the digest sends" : "everything the digests are actively telling each team"}
+            </span>
           </div>
           <button
             type="button"
-            onClick={() => setWorklistOff(true)}
+            onClick={() => setQueueOverride(true)}
             className="rounded-md border border-t-border/60 bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted hover:text-foreground"
           >
-            Switch to queue view
+            Queue view (stalled/zombies)
           </button>
         </div>
-        <WorklistPanel team={worklistTeam} person={personParam ?? null} locations={locations} />
+        {worklistTeam ? (
+          <WorklistPanel team={worklistTeam} person={personParam ?? null} locations={locations} />
+        ) : (
+          <AllTeamsPanel locations={locations} />
+        )}
       </div>
     );
   }
@@ -447,6 +539,13 @@ export default function BottleneckView() {
                 selected={locations}
                 onChange={setLocations}
               />
+              <button
+                type="button"
+                onClick={() => setQueueOverride(false)}
+                className="rounded-md border border-t-border/60 bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted hover:text-foreground"
+              >
+                Team worklists
+              </button>
               <button
                 type="button"
                 onClick={() => setShowUnknown((v) => !v)}

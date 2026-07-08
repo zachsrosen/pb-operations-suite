@@ -15,8 +15,9 @@ import {
 } from "@/lib/bottlenecks";
 
 const LAST_DIGEST_KEY = "bottleneck_last_digest";
-/** Primary surface is the Bottlenecks tab on the pipeline funnel page (all roles). */
-const DASHBOARD_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
+/** The daily digest is the stalled/zombie leadership lens — link to the queue
+ *  view explicitly (the tab's default now shows the team worklists). */
+const DASHBOARD_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks&view=queues";
 // Digits-only guard: this env var has been stored with a literal "\n" before
 // (the echo|vercel-env-add gotcha), which silently corrupts every URL built
 // from it — Chat's <url|text> parser breaks exactly at the stray characters.
