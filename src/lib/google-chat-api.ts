@@ -148,6 +148,46 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
     console.error(`[google-chat-api] Failed to post message: ${resp.status} ${errText}`);
     throw new Error(`Google Chat API error: ${resp.status} ${errText}`.slice(0, 800));
   }
+
+  // Audit trail: every outbound bot message lands in the ActivityLog with its
+  // full text (digests, worklists, conversational replies). Fire-and-forget —
+  // logging must never fail or slow a send.
+  void logOutboundMessage(params).catch(() => {});
+}
+
+async function logOutboundMessage(params: PostMessageParams): Promise<void> {
+  const { prisma } = await import("@/lib/db");
+  if (!prisma) return;
+  // Best-effort recipient resolution: reverse-lookup the space in the DM maps.
+  let recipient: string | null = null;
+  try {
+    const { getOwnerDmSpace, getUserDmSpaces, ownerEmail } = await import(
+      "@/lib/tech-ops-bot-proactive"
+    );
+    if ((await getOwnerDmSpace()) === params.spaceName) {
+      recipient = ownerEmail();
+    } else {
+      const spaces = await getUserDmSpaces();
+      recipient = Object.entries(spaces).find(([, s]) => s === params.spaceName)?.[0] ?? null;
+    }
+  } catch {
+    // leave recipient null — the space name still identifies the conversation
+  }
+  await prisma.activityLog.create({
+    data: {
+      type: "BOT_MESSAGE_SENT",
+      description: `Bot Chat message → ${recipient ?? params.spaceName}`,
+      userEmail: recipient,
+      entityType: "chat-space",
+      entityId: params.spaceName,
+      metadata: {
+        spaceName: params.spaceName,
+        threadName: params.threadName ?? null,
+        recipient,
+        text: params.text,
+      },
+    },
+  });
 }
 
 export interface GoogleChatSpace {

@@ -319,6 +319,8 @@ enum ActivityType {
 
   // Enphase Enlighten
   ENPHASE_STATUS_CHANGE
+  // Tech Ops bot — outbound Google Chat messages (digests, worklists, replies)
+  BOT_MESSAGE_SENT
 }
 
 enum ClientType {

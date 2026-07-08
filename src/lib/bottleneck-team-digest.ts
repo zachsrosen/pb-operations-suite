@@ -447,8 +447,40 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
     out.push(""); used += 1;
   }
   if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
-  out.push(`Dashboard: ${FUNNEL_TAB_URL}`);
+  // Deep-link to the personal worklist view — the dashboard renders exactly
+  // this list (same pivot), not the generic queue view.
+  out.push(`Dashboard: ${FUNNEL_TAB_URL}&view=personal&person=${encodeURIComponent(w.person)}`);
   return out.join("\n");
+}
+
+/**
+ * One person's cross-team worklist sections, titles prefixed with the team
+ * label — the dashboard's `view=personal` mode renders these so the page
+ * matches the personal digest exactly.
+ */
+export async function getPersonalSections(
+  person: string,
+  nowMs = Date.now()
+): Promise<DigestSection[]> {
+  if (!prisma) return [];
+  const deals = await prisma.deal.findMany({
+    where: { pipeline: "PROJECT", stage: { notIn: ["DELETED", "MERGED"] } },
+  });
+  const projects = deals.map(dealToProject);
+  const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, { scope: "active" });
+  const sectionsByTeam = PERSONAL_TEAMS.map((team) => ({
+    team,
+    sections: buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs),
+  }));
+  const target = person.trim().toLowerCase();
+  const w = buildPersonalWorklists(sectionsByTeam).find(
+    (x) => x.person.trim().toLowerCase() === target
+  );
+  if (!w) return [];
+  return w.sections.map(({ team, section }) => ({
+    ...section,
+    title: `${TEAM_DIGEST_LABELS[team]} — ${section.title}`,
+  }));
 }
 
 // One-time welcome tracking (SystemConfig set of emails).

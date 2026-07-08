@@ -173,11 +173,15 @@ interface WorklistResponse {
 
 function WorklistPanel({
   team, person, locations,
-}: { team: WorklistTeam; person: string | null; locations: string[] }) {
+}: { team: WorklistTeam | "personal"; person: string | null; locations: string[] }) {
+  const personal = team === "personal";
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: [...queryKeys.bottlenecks.root, "worklist", team],
+    queryKey: [...queryKeys.bottlenecks.root, "worklist", personal ? `person:${person}` : team],
     queryFn: async (): Promise<WorklistResponse> => {
-      const r = await fetch(`/api/bottlenecks/worklist?team=${team}`);
+      const url = personal
+        ? `/api/bottlenecks/worklist?person=${encodeURIComponent(person ?? "")}`
+        : `/api/bottlenecks/worklist?team=${team}`;
+      const r = await fetch(url);
       if (!r.ok) throw new Error(`failed: ${r.status}`);
       return r.json();
     },
@@ -195,8 +199,11 @@ function WorklistPanel({
   if (isLoading || !data)
     return <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">Loading…</div>;
 
+  // In personal mode the API already scoped the sections to this person
+  // (including lines fanned out to them with a different primary lead), so
+  // only the location filter applies client-side.
   const matches = (l: WorklistLine) =>
-    (person == null || l.lead === person) &&
+    (personal || person == null || l.lead === person) &&
     (locations.length === 0 || (l.location !== "" && locations.includes(l.location)));
 
   const sections = data.sections
@@ -277,10 +284,13 @@ export default function BottleneckView() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const viewParam = searchParams?.get("view");
-  const worklistTeam: WorklistTeam | null = (WORKLIST_TEAMS as readonly string[]).includes(viewParam ?? "")
-    ? (viewParam as WorklistTeam)
-    : null;
   const personParam = searchParams?.get("person");
+  const worklistTeam: WorklistTeam | "personal" | null =
+    viewParam === "personal" && personParam
+      ? "personal"
+      : (WORKLIST_TEAMS as readonly string[]).includes(viewParam ?? "")
+        ? (viewParam as WorklistTeam)
+        : null;
   const [worklistOff, setWorklistOff] = useState(false);
   const [team, setTeam] = useState<TeamKey>("all");
   const [locations, setLocations] = useState<string[]>(() => {
@@ -295,9 +305,13 @@ export default function BottleneckView() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-t-border/60 bg-surface p-3">
           <div className="text-sm text-foreground">
-            <span className="font-semibold">{WORKLIST_LABELS[worklistTeam]} worklist</span>
-            {personParam && <span className="text-muted"> — {personParam}</span>}
-            <span className="ml-2 text-xs text-muted">the same list the team digest sends</span>
+            <span className="font-semibold">
+              {worklistTeam === "personal" ? `${personParam}'s worklist` : `${WORKLIST_LABELS[worklistTeam]} worklist`}
+            </span>
+            {worklistTeam !== "personal" && personParam && (
+              <span className="text-muted"> — {personParam}</span>
+            )}
+            <span className="ml-2 text-xs text-muted">the same list the digest sends</span>
           </div>
           <button
             type="button"
