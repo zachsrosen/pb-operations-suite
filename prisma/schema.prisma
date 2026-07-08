@@ -2783,6 +2783,7 @@ enum IdrItemType {
   IDR
   ESCALATION
   NEW_CONSTRUCTION
+  DNR_SERVICE
 }
 
 enum IdrSyncStatus {
@@ -2819,6 +2820,7 @@ model IdrMeetingItem {
   dealId    String
   type      IdrItemType       @default(IDR)
   region    String // pb_location
+  pipeline  String? // HubSpot pipeline ID, snapshotted at creation (badge split)
   sortOrder Int               @default(0)
 
   // Snapshot fields (refreshed via stale-while-revalidate)
