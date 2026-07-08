@@ -15,6 +15,8 @@ import {
   PIPELINE_GROUP_ORDER,
   weekStartUTC,
   groupForStatus,
+  PRE_SUBMISSION_STATUSES,
+  isPreSubmissionStatus,
   type PeAnalyticsPayload,
   type WeeklyPayments,
   type WeeklyLifecycle,
@@ -41,6 +43,10 @@ import {
   buildUploadsByPeriod,
   UNKNOWN_UPLOADER,
 } from "@/lib/pe-analytics";
+
+// "Waiting on submission" status set + guard: single source of truth in the lib
+// (derived from STATUS_TO_GROUP), shared by the card value, its drill, and totals.
+const isPreSubmission = isPreSubmissionStatus;
 
 // ---------------------------------------------------------------------------
 // Drill-down copy/export — shared by the Doc Uploaders / Rejections / Missing
@@ -2341,10 +2347,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     const isPaidAgg = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
     const isApprovedAgg = (r: MilestoneDrillRow) => !!r.approvedOn || r.status === "Approved" || isPaidAgg(r);
     if (drill.week === null) {
-      const PRE_SUB = new Set([
-        "Ready to Submit", "Waiting on Information", "Ready for Onboarding", "Onboarding Submitted",
-        "Onboarding Rejected", "Onboarding Ready to Resubmit", "Onboarding Resubmitted",
-      ]);
+      const PRE_SUB = PRE_SUBMISSION_STATUSES;
       switch (drill.segment) {
         case "waitSubmission":
           return data.milestones.filter((r) => !!r.readyOn && !r.submittedOn && (!r.status || PRE_SUB.has(r.status)));
@@ -2380,10 +2383,18 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     const isPaid = (r: MilestoneDrillRow) => !!r.paidOn || r.status === "Paid";
     const isApprovedPlus = (r: MilestoneDrillRow) => !!r.approvedOn || r.status === "Approved" || isPaid(r);
     const segOk = (r: MilestoneDrillRow) => {
+      // Total Ready (no segment) in the ready view = the cohort's done + pending:
+      // submitted, OR ready-but-not-submitted in a pre-submission status. Excludes
+      // ready-but-non-pre-submission (e.g. Rejected) rows, matching the card total.
+      if (weeklyMode === "ready" && !drill.segment) return !!r.submittedOn || isPreSubmission(r.status);
       if (!drill.segment) return true;
       switch (weeklyMode) {
         case "ready":
-          return drill.segment === "done" ? !!r.submittedOn : !r.submittedOn;
+          // Match the readiness cohort card exactly: pending = ready-but-not-submitted
+          // AND still pre-submission (a Rejected/Ready-to-Resubmit milestone is NOT
+          // "waiting on submission"); done = submitted. Without the status guard the
+          // drill listed more rows than the card counted.
+          return drill.segment === "done" ? !!r.submittedOn : (!r.submittedOn && isPreSubmission(r.status));
         case "rejections": {
           const pending = r.status === "Rejected" || r.status === "Ready to Resubmit";
           return drill.segment === "pending" ? pending : !pending;
@@ -2471,10 +2482,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     // Distinct deal counts per stage (from the drill rows, which carry deal
     // IDs; the weekly series don't). Predicates mirror the aggregate drills.
     const ms = data?.milestones ?? [];
-    const PRE_SUB = new Set([
-      "Ready to Submit", "Waiting on Information", "Ready for Onboarding", "Onboarding Submitted",
-      "Onboarding Rejected", "Onboarding Ready to Resubmit", "Onboarding Resubmitted",
-    ]);
+    const PRE_SUB = PRE_SUBMISSION_STATUSES;
     const distinct = (rows: typeof ms) => new Set(rows.map((r) => r.dealId)).size;
     const deals = {
       ready: distinct(ms.filter((r) => !!r.readyOn)),

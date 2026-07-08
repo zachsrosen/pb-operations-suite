@@ -482,3 +482,31 @@ describe("buildDocTypeByUploader", () => {
     expect(out[out.length - 1].uploader).toBe(UNKNOWN_UPLOADER); // Unknown sorted last
   });
 });
+
+describe("PRE_SUBMISSION_STATUSES (waiting-on-submission definition)", () => {
+  const { PRE_SUBMISSION_STATUSES, isPreSubmissionStatus, groupForStatus } = require("@/lib/pe-analytics");
+
+  it("contains exactly the statuses whose group is Onboarding or Ready to Submit", () => {
+    for (const s of PRE_SUBMISSION_STATUSES) {
+      const g = groupForStatus(s);
+      expect(g === "Onboarding" || g === "Ready to Submit").toBe(true);
+    }
+    // the 7 known pre-submission statuses
+    for (const s of ["Ready to Submit", "Waiting on Information", "Ready for Onboarding",
+      "Onboarding Submitted", "Onboarding Rejected", "Onboarding Ready to Resubmit", "Onboarding Resubmitted"]) {
+      expect(PRE_SUBMISSION_STATUSES.has(s)).toBe(true);
+    }
+  });
+
+  it("excludes submitted / rejected / approved / paid statuses", () => {
+    for (const s of ["Submitted", "Resubmitted", "Rejected", "Ready to Resubmit", "Approved", "Paid"]) {
+      expect(PRE_SUBMISSION_STATUSES.has(s)).toBe(false);
+      expect(isPreSubmissionStatus(s)).toBe(false);
+    }
+  });
+
+  it("treats a null/absent status as pre-submission", () => {
+    expect(isPreSubmissionStatus(null)).toBe(true);
+    expect(isPreSubmissionStatus(undefined)).toBe(true);
+  });
+});

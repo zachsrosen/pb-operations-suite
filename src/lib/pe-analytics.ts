@@ -63,6 +63,25 @@ const STATUS_TO_GROUP: Record<string, PipelineGroup> = {
   Paid: "Paid",
 };
 
+/**
+ * Statuses that mean a milestone is still PRE-submission (ready, not yet sent to
+ * PE) — the single source of truth for the "waiting on submission" definition.
+ * DERIVED from STATUS_TO_GROUP so it can never drift from the readiness cohort,
+ * which counts a milestone as waiting when groupForStatus ∈ Onboarding /
+ * Ready to Submit. A ready-but-unsubmitted milestone in any other status
+ * (Rejected, Ready to Resubmit, …) is NOT waiting on submission.
+ */
+export const PRE_SUBMISSION_STATUSES: ReadonlySet<string> = new Set(
+  Object.entries(STATUS_TO_GROUP)
+    .filter(([, g]) => g === "Onboarding" || g === "Ready to Submit")
+    .map(([status]) => status),
+);
+
+/** True when a status is pre-submission (or absent). Mirrors the readiness cohort. */
+export function isPreSubmissionStatus(status: string | null | undefined): boolean {
+  return !status || PRE_SUBMISSION_STATUSES.has(status);
+}
+
 /** Map a raw pe_m1_status / pe_m2_status value to its pipeline group. */
 export function groupForStatus(status: string | null | undefined): PipelineGroup | null {
   if (!status) return null;
