@@ -8,7 +8,7 @@ import type { IdrItem, IdrNote } from "./IdrMeetingClient";
 
 interface HistoryItem {
   id: string;
-  type: "IDR" | "ESCALATION";
+  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
   conclusion: string | null;
   session: { date: string; status: string };
   createdAt: string;

@@ -32,7 +32,7 @@ export interface IdrItem {
   id: string;
   sessionId: string;
   dealId: string;
-  type: "IDR" | "ESCALATION";
+  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
   region: string;
   sortOrder: number;
   dealName: string;

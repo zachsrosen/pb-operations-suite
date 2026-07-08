@@ -10,7 +10,7 @@ const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286"
 
 interface SessionItem {
   id: string;
-  type: "IDR" | "ESCALATION";
+  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
   dealId: string;
   dealName: string;
   address: string | null;
