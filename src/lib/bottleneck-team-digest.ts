@@ -461,17 +461,19 @@ export interface PersonalSendResult {
 
 /**
  * Build every person's worklist and deliver it.
- * mode "preview" → JSON summaries only (nothing sent).
- * mode "dryrun"  → each digest posted to the OWNER's DM, labeled with the
- *                  intended recipient (safe review; default).
- * mode "live"    → real DMs to each person. Requires BOTH the
- *                  bottleneck_personal_worklists_enabled SystemConfig flag
- *                  AND app visibility that includes the recipients.
+ * mode "preview"   → JSON summaries only (nothing sent).
+ * mode "dryrun"    → each digest posted to the OWNER's DM, labeled with the
+ *                    intended recipient (safe review; default).
+ * mode "provision" → no digests sent; force-create each person's DM with the
+ *                    bot via domain-wide delegation and record it in the
+ *                    delivery map. The bot appears in their Chat silently.
+ * mode "live"      → real DMs to recorded spaces. Requires the
+ *                    bottleneck_personal_worklists_enabled SystemConfig flag.
  * Emails resolve strictly from the User table by exact (case-insensitive)
  * name match — unmatched people are reported, never guessed.
  */
 export async function runPersonalWorklists(opts: {
-  mode: "preview" | "dryrun" | "live";
+  mode: "preview" | "dryrun" | "provision" | "live";
   nowMs?: number;
   limit?: number;
 }): Promise<{ results: PersonalSendResult[]; unmatched: string[] }> {
@@ -526,6 +528,18 @@ export async function runPersonalWorklists(opts: {
 
     if (opts.mode === "preview") {
       results.push({ ...base, reason: "preview" });
+      continue;
+    }
+    if (opts.mode === "provision") {
+      if (!email) { results.push({ ...base, reason: "no User-table match" }); continue; }
+      try {
+        const { provisionUserDmSpace } = await import("@/lib/tech-ops-bot-proactive");
+        const space = await provisionUserDmSpace(email);
+        results.push({ ...base, sent: false, reason: `provisioned ${space}` });
+      } catch (e) {
+        results.push({ ...base, reason: e instanceof Error ? e.message.slice(0, 200) : "provision failed" });
+      }
+      await new Promise((r) => setTimeout(r, 500));
       continue;
     }
     const message = renderPersonalWorklist(w, nowMs);

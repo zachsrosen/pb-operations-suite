@@ -90,6 +90,32 @@ export async function getUserDmSpaces(): Promise<Record<string, string>> {
   }
 }
 
+/**
+ * Force-provision a user's DM with the bot: impersonate them via domain-wide
+ * delegation (chat.spaces.create scope on the pb-ops-workspace-sync client)
+ * and call spaces:setup — the DM appears in their Chat with no action on
+ * their part. Verified 7/8: returns the existing space when one exists
+ * (owner control test matched the recorded space exactly).
+ */
+export async function provisionUserDmSpace(email: string): Promise<string> {
+  const { getServiceAccountToken } = await import("@/lib/google-auth");
+  const token = await getServiceAccountToken(
+    ["https://www.googleapis.com/auth/chat.spaces.create"],
+    email
+  );
+  const resp = await fetch("https://chat.googleapis.com/v1/spaces:setup", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ space: { spaceType: "DIRECT_MESSAGE", singleUserBotDm: true } }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.name) {
+    throw new Error(`spaces:setup as ${email} failed: ${resp.status} ${JSON.stringify(data).slice(0, 250)}`);
+  }
+  await recordUserDmSpace(email, data.name as string);
+  return data.name as string;
+}
+
 export async function recordUserDmSpace(email: string, spaceName: string): Promise<void> {
   if (!prisma || !email || !spaceName) return;
   const key = email.trim().toLowerCase();
