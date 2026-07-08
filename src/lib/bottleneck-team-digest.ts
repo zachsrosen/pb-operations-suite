@@ -429,12 +429,9 @@ export interface TeamDigestResult {
   message?: string; // preview mode only
 }
 
-/** Load the live pipeline and build one team's worklist sections (DB entry point). */
-export async function getTeamSections(
-  team: TeamDigestKey,
-  nowMs = Date.now()
-): Promise<DigestSection[]> {
-  if (!prisma) return [];
+/** One deal-load + funnel build, reused for any number of team section builds. */
+async function loadWorklistInputs(nowMs: number) {
+  if (!prisma) return null;
   const deals = await prisma.deal.findMany({
     where: { pipeline: "PROJECT", stage: { notIn: ["DELETED", "MERGED"] } },
   });
@@ -442,9 +439,35 @@ export async function getTeamSections(
   const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, {
     scope: "active",
   });
-  const extras =
-    team === "compliance" ? { peRecentRejections: await getRecentPeRejections(nowMs) } : undefined;
-  return buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs, extras);
+  const peRecentRejections = await getRecentPeRejections(nowMs);
+  return { deals: deals as unknown as BottleneckDealRow[], dd: funnel.drillDown, peRecentRejections };
+}
+
+/** Load the live pipeline and build one team's worklist sections (DB entry point). */
+export async function getTeamSections(
+  team: TeamDigestKey,
+  nowMs = Date.now()
+): Promise<DigestSection[]> {
+  const inputs = await loadWorklistInputs(nowMs);
+  if (!inputs) return [];
+  return buildTeamSections(team, inputs.dd, inputs.deals, nowMs, {
+    peRecentRejections: inputs.peRecentRejections,
+  });
+}
+
+/** Every team's sections from ONE load — the tab's all-teams overview. */
+export async function getAllTeamSections(
+  nowMs = Date.now()
+): Promise<Array<{ team: TeamDigestKey; label: string; sections: DigestSection[] }>> {
+  const inputs = await loadWorklistInputs(nowMs);
+  if (!inputs) return [];
+  return (Object.keys(TEAM_DIGEST_LABELS) as TeamDigestKey[]).map((team) => ({
+    team,
+    label: TEAM_DIGEST_LABELS[team],
+    sections: buildTeamSections(team, inputs.dd, inputs.deals, nowMs, {
+      peRecentRejections: inputs.peRecentRejections,
+    }),
+  }));
 }
 
 export async function runTeamDigest(

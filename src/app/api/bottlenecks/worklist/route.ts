@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import {
   getTeamSections,
+  getAllTeamSections,
   getPersonalSections,
   TEAM_DIGEST_LABELS,
   type TeamDigestKey,
@@ -29,13 +30,8 @@ export async function GET(request: NextRequest) {
   }
   try {
     if (team === "all" && !person) {
-      // Every team's worklist in one response — the tab's default "what we're
-      // actively telling people" overview.
-      const keys = Object.keys(TEAM_DIGEST_LABELS) as TeamDigestKey[];
-      const teams = [];
-      for (const k of keys) {
-        teams.push({ team: k, label: TEAM_DIGEST_LABELS[k], sections: await getTeamSections(k) });
-      }
+      // Every team's worklist in one response — one deal-load + funnel build.
+      const teams = await getAllTeamSections();
       return NextResponse.json({ teams, lastUpdated: new Date().toISOString() });
     }
     const sections = person
