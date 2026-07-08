@@ -17,7 +17,7 @@ import {
   type ProjectFunnelDrillDownDeal,
 } from "@/lib/project-funnel-aggregation";
 import { statusBucket } from "@/lib/pe-milestone-bucket";
-import { STAGES, isActiveDealStage, type BottleneckDealRow } from "@/lib/bottlenecks";
+import { STAGES, type BottleneckDealRow } from "@/lib/bottlenecks";
 
 const HUBSPOT_PORTAL = (process.env.HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 const FUNNEL_TAB_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
@@ -252,6 +252,12 @@ export function buildTeamSections(
       ];
     case "compliance": {
       // No per-deal compliance lead exists in HubSpot — grouped by office instead.
+      // Compliance only works deals in PTO / Close Out (M1 is post-inspection,
+      // M2 post-PTO) — earlier-stage deals with PE statuses are not actionable
+      // for the team yet (per Zach 7/8).
+      const COMPLIANCE_STAGES = new Set(["permission to operate", "close out"]);
+      const inComplianceStage = (r: BottleneckDealRow) =>
+        COMPLIANCE_STAGES.has((r.stage ?? "").trim().toLowerCase());
       const DAY_MS = 86_400_000;
       const peStage = (key: "pe_m1" | "pe_m2") => STAGES.find((s) => s.key === key)!;
       const peStatusOf = (r: BottleneckDealRow, statusProp: string): string | null => {
@@ -268,7 +274,7 @@ export function buildTeamSections(
         const stage = peStage(key);
         return peRows
           .filter((r) => {
-            if (!r.isParticipateEnergy || !isActiveDealStage(r.stage)) return false;
+            if (!r.isParticipateEnergy || !inComplianceStage(r)) return false;
             const status = peStatusOf(r, statusProp);
             return status != null && want(status);
           })
@@ -301,7 +307,7 @@ export function buildTeamSections(
       const rejectionLines: DigestSection["lines"] = [...rejections.entries()]
         .map(([dealId, rej]) => {
           const r = rowById.get(dealId);
-          if (!r || !r.isParticipateEnergy || !isActiveDealStage(r.stage)) return null;
+          if (!r || !r.isParticipateEnergy || !inComplianceStage(r)) return null;
           return {
             id: dealId,
             name: r.dealName ?? "(unnamed)",

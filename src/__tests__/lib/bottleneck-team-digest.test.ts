@@ -118,6 +118,7 @@ describe("buildTeamSections", () => {
       pe("s1", "Submitted", 20),
       pe("x1", "Rejected", 30), // rejected is NOT "ready" and NOT "in review"
       { ...pe("c1", "Ready to Submit", 5), stage: "Cancelled" } as BottleneckDealRow, // terminal stage — excluded
+      { ...pe("c2", "Ready to Submit", 5), stage: "Construction" } as BottleneckDealRow, // pre-PTO — not compliance-actionable
     ];
     const rejections = new Map([["x1", { docs: ["Signed Final Permit", "BOM"], daysAgo: 2 }]]);
     const sections = buildTeamSections("compliance", { ...EMPTY_DD }, rows, NOW, {
