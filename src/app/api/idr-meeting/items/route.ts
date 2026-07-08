@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
-import { isIdrAllowedRole, snapshotDealProperties, buildOwnerMap, SNAPSHOT_PROPERTIES } from "@/lib/idr-meeting";
+import { isIdrAllowedRole, snapshotDealProperties, buildOwnerMap, deriveItemTypeFromStatus, SNAPSHOT_PROPERTIES } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
 
 export async function POST(req: NextRequest) {
@@ -49,6 +49,12 @@ export async function POST(req: NextRequest) {
   const ownerMap = await buildOwnerMap([{ properties: deal.properties as Record<string, string | null> }]);
   const snapshot = snapshotDealProperties(deal.properties as Record<string, string | null>, ownerMap);
 
+  // Derive the type from the deal's design_status for non-escalations —
+  // never trust the client to pick NEW_CONSTRUCTION vs IDR.
+  const itemType = type === "ESCALATION"
+    ? "ESCALATION"
+    : deriveItemTypeFromStatus(snapshot.designStatus);
+
   // Get max sortOrder in session
   const maxSort = await prisma.idrMeetingItem.findFirst({
     where: { sessionId },
@@ -60,7 +66,7 @@ export async function POST(req: NextRequest) {
     data: {
       sessionId,
       dealId,
-      type: type ?? "IDR",
+      type: itemType,
       sortOrder: (maxSort?.sortOrder ?? -1) + 1,
       ...snapshot,
       escalationReason: type === "ESCALATION" ? escalationReason : null,
