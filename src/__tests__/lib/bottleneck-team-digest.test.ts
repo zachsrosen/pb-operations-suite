@@ -205,3 +205,19 @@ describe("overdue-survey ops-director fanout", () => {
     }
   });
 });
+
+describe("delivery redirects", () => {
+  const { buildPersonalWorklists } = jest.requireActual("@/lib/bottleneck-team-digest");
+  it("routes a covered person's lines to their coverage, keeping the original lead on lines", () => {
+    const past = new Date(NOW - 3 * 86_400_000).toISOString().slice(0, 10);
+    const dd = {
+      ...EMPTY_DD,
+      awaitingConstructionComplete: [ddDeal({ id: 1, scheduledDate: past, operationsManager: "Roland Valle" })],
+    };
+    const byTeam = [{ team: "ops" as const, sections: buildTeamSections("ops", dd, [], NOW) }];
+    const redirects = new Map([["roland valle", "Lenny Uematsu"]]);
+    const lists = buildPersonalWorklists(byTeam, redirects);
+    expect(lists.map((w: { person: string }) => w.person)).toEqual(["Lenny Uematsu"]);
+    expect(lists[0].sections[0].section.lines[0].lead).toBe("Roland Valle"); // context preserved
+  });
+});

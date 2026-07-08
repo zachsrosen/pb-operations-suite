@@ -505,15 +505,19 @@ export interface PersonalWorklist {
 
 /** Pivot the team sections into per-person worklists (pure). */
 export function buildPersonalWorklists(
-  sectionsByTeam: Array<{ team: TeamDigestKey; sections: DigestSection[] }>
+  sectionsByTeam: Array<{ team: TeamDigestKey; sections: DigestSection[] }>,
+  /** Coverage redirects: lowercased from-name → to-name (e.g. Roland → Lenny).
+   *  The redirected lines keep their original lead for context. */
+  redirects?: Map<string, string>
 ): Omit<PersonalWorklist, "email">[] {
+  const redirect = (p: string) => redirects?.get(p.trim().toLowerCase()) ?? p;
   const byPerson = new Map<string, Map<string, { team: TeamDigestKey; section: DigestSection }>>();
   for (const { team, sections } of sectionsByTeam) {
     for (const s of sections) {
       if (s.groupBy !== "lead") continue;
       for (const l of s.lines) {
         const primary = l.lead && l.lead !== "—" ? l.lead : null;
-        const recipients = [...new Set([primary, ...(l.alsoNotify ?? [])])].filter(
+        const recipients = [...new Set([primary, ...(l.alsoNotify ?? [])].map((p) => (p ? redirect(p) : p)))].filter(
           (p): p is string => Boolean(p && p !== "—")
         );
         for (const person of recipients) {
@@ -595,7 +599,7 @@ export async function getPersonalSections(
     sections: buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs),
   }));
   const target = person.trim().toLowerCase();
-  const w = buildPersonalWorklists(sectionsByTeam).find(
+  const w = buildPersonalWorklists(sectionsByTeam, await getDeliveryRedirects()).find(
     (x) => x.person.trim().toLowerCase() === target
   );
   if (!w) return [];
@@ -603,6 +607,19 @@ export async function getPersonalSections(
     ...section,
     title: `${TEAM_DIGEST_LABELS[team]} — ${section.title}`,
   }));
+}
+
+/** Coverage redirects from SystemConfig `bottleneck_delivery_redirects`
+ *  ({"roland valle": "Lenny Uematsu"}). Editable without a deploy. */
+export async function getDeliveryRedirects(): Promise<Map<string, string>> {
+  if (!prisma) return new Map();
+  const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_delivery_redirects" } });
+  try {
+    const obj = row?.value ? JSON.parse(row.value) : {};
+    return new Map(Object.entries(obj).map(([k, v]) => [k.trim().toLowerCase(), String(v)]));
+  } catch {
+    return new Map();
+  }
 }
 
 // One-time welcome tracking (SystemConfig set of emails).
@@ -669,7 +686,7 @@ export async function runPersonalWorklists(opts: {
     team,
     sections: buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs),
   }));
-  const worklists = buildPersonalWorklists(sectionsByTeam).slice(0, opts.limit ?? 100);
+  const worklists = buildPersonalWorklists(sectionsByTeam, await getDeliveryRedirects()).slice(0, opts.limit ?? 100);
 
   const users = await prisma.user.findMany({ select: { name: true, email: true } });
   const emailByName = new Map(
