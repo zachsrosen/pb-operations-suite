@@ -166,3 +166,23 @@ describe("buildPersonalWorklists", () => {
     expect(lists.find((w: { person: string }) => w.person === "Alexis Severson")!.totalDeals).toBe(1);
   });
 });
+
+describe("overdue-survey ops-director fanout", () => {
+  const { buildPersonalWorklists } = jest.requireActual("@/lib/bottleneck-team-digest");
+  it("puts an overdue survey in BOTH the surveyor's and the ops director's personal lists", () => {
+    const past = new Date(NOW - 4 * 86_400_000).toISOString().slice(0, 10);
+    const dd = {
+      ...EMPTY_DD,
+      awaitingSurvey: [
+        ddDeal({ id: 9, scheduledDate: past, siteSurveyor: "Sam Surveyor", operationsManager: "Drew Perry" }),
+      ],
+    };
+    const byTeam = [{ team: "ops" as const, sections: buildTeamSections("ops", dd, [], NOW) }];
+    const lists = buildPersonalWorklists(byTeam);
+    const names = lists.map((w: { person: string }) => w.person).sort();
+    expect(names).toEqual(["Drew Perry", "Sam Surveyor"]);
+    for (const w of lists) {
+      expect(w.sections[0].section.lines.map((l: { id: string }) => l.id)).toEqual(["9"]);
+    }
+  });
+});

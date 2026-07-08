@@ -61,6 +61,9 @@ interface DigestLine {
   needsFollowUp: boolean;
   /** Non-parked blocked context, e.g. "RTB blocked: waiting on HOA". */
   blockedNote: string | null;
+  /** Additional people whose PERSONAL worklists should include this line
+   *  (e.g. overdue surveys go to the ops director as well as the surveyor). */
+  alsoNotify?: string[];
 }
 
 export interface DigestSection {
@@ -167,8 +170,16 @@ export function buildTeamSections(
           .sort((a, b) => b.daysWaiting - a.daysWaiting);
         return { title, followUpDays: 0, groupBy: "lead", lines };
       };
+      const surveys = overdue("Overdue site surveys (days past scheduled date)", dd.awaitingSurvey, (d) => leadOf(d.siteSurveyor, leadOf(d.projectManager)));
+      // Overdue surveys also land in the ops director's PERSONAL worklist,
+      // not just the surveyor's (per Zach 7/8).
+      const opsMgrByDeal = new Map(dd.awaitingSurvey.map((d) => [String(d.id), leadOf(d.operationsManager, "")]));
+      for (const l of surveys.lines) {
+        const mgr = opsMgrByDeal.get(l.id);
+        if (mgr && mgr !== "—" && mgr !== "" && mgr !== l.lead) l.alsoNotify = [mgr];
+      }
       return [
-        overdue("Overdue site surveys (days past scheduled date)", dd.awaitingSurvey, (d) => leadOf(d.siteSurveyor, leadOf(d.projectManager))),
+        surveys,
         overdue("Overdue installs (days past scheduled date)", dd.awaitingConstructionComplete, (d) => leadOf(d.operationsManager, leadOf(d.projectManager))),
         section("Inspections to pass", dd.awaitingInspection, (d) => leadOf(d.inspectionsLead, leadOf(d.operationsManager)), 14),
       ];
@@ -379,16 +390,20 @@ export function buildPersonalWorklists(
     for (const s of sections) {
       if (s.groupBy !== "lead") continue;
       for (const l of s.lines) {
-        const person = l.lead && l.lead !== "—" ? l.lead : null;
-        if (!person) continue;
-        const key = `${team}::${s.title}`;
-        const personMap = byPerson.get(person) ?? new Map();
-        const entry =
-          personMap.get(key) ??
-          { team, section: { title: s.title, followUpDays: s.followUpDays, groupBy: s.groupBy, lines: [] as DigestLine[] } };
-        entry.section.lines.push(l);
-        personMap.set(key, entry);
-        byPerson.set(person, personMap);
+        const primary = l.lead && l.lead !== "—" ? l.lead : null;
+        const recipients = [...new Set([primary, ...(l.alsoNotify ?? [])])].filter(
+          (p): p is string => Boolean(p && p !== "—")
+        );
+        for (const person of recipients) {
+          const key = `${team}::${s.title}`;
+          const personMap = byPerson.get(person) ?? new Map();
+          const entry =
+            personMap.get(key) ??
+            { team, section: { title: s.title, followUpDays: s.followUpDays, groupBy: s.groupBy, lines: [] as DigestLine[] } };
+          entry.section.lines.push(l);
+          personMap.set(key, entry);
+          byPerson.set(person, personMap);
+        }
       }
     }
   }
