@@ -53,6 +53,55 @@ interface ChatToolContext {
   role: string;
 }
 
+type StageRevenueFilter = {
+  propertyName: string;
+  operator: FilterOperatorEnum;
+  value: string;
+};
+
+/**
+ * Sum `amount` across EVERY deal matching the filters. Paginates to
+ * completion (terminal stages like "Project Complete" can hold thousands of
+ * deals), with a high safety bound of 50 pages (10,000 deals) so a runaway
+ * query can't loop forever. `truncated` is true only if that bound is hit —
+ * callers must not claim completeness when it is. Sample-based tools must
+ * never report revenue from their sample alone; this gives them the true total.
+ */
+const REVENUE_PAGE_LIMIT = 50; // 50 × 200 = 10,000 deals
+async function sumDealRevenue(
+  filters: StageRevenueFilter[]
+): Promise<{ totalRevenue: number; scanned: number; total: number; truncated: boolean }> {
+  const { searchWithRetry } = await import("@/lib/hubspot");
+  let total = 0;
+  let scanned = 0;
+  let totalRevenue = 0;
+  let after: string | undefined;
+  let truncated = false;
+  for (let page = 0; page < REVENUE_PAGE_LIMIT; page++) {
+    const req: {
+      filterGroups: { filters: StageRevenueFilter[] }[];
+      properties: string[];
+      limit: number;
+      after?: string;
+    } = {
+      filterGroups: [{ filters }],
+      properties: ["amount"],
+      limit: 200,
+    };
+    if (after) req.after = after;
+    const res = await searchWithRetry(req);
+    total = res.total ?? total;
+    for (const d of res.results) {
+      scanned++;
+      totalRevenue += Number(d.properties?.amount) || 0;
+    }
+    after = res.paging?.next?.after;
+    if (!after) break;
+    if (page === REVENUE_PAGE_LIMIT - 1) truncated = true;
+  }
+  return { totalRevenue: Math.round(totalRevenue), scanned, total, truncated };
+}
+
 export function createChatTools(context: ChatToolContext) {
   const getDeal = betaZodTool({
     name: "get_deal",
@@ -329,14 +378,22 @@ export function createChatTools(context: ChatToolContext) {
       }));
 
       const total = response.total ?? deals.length;
+      const revenue = await sumDealRevenue([
+        { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: stageId },
+      ]);
+      const revenueNote = revenue.truncated
+        ? `totalRevenue covers the first ${revenue.scanned} of ${total} deals (very large stage) — treat it as a floor, not exact.`
+        : `totalRevenue covers ALL ${total} deals, not just the sample.`;
       return JSON.stringify({
         stage: stageName,
         total, // true number of deals in this stage
+        totalRevenue: revenue.totalRevenue, // sum across ALL deals in the stage (see revenueTruncated)
+        revenueTruncated: revenue.truncated,
         returned: deals.length, // how many are in the sample below
         truncated: total > deals.length,
         ...(total > deals.length
           ? {
-              note: `Showing ${deals.length} of ${total}. This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
+              note: `Showing ${deals.length} of ${total}. ${revenueNote} This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
             }
           : {}),
         deals,
@@ -553,15 +610,21 @@ export function createReadOnlyChatTools() {
 
       const total = response.total ?? response.results.length;
       const returned = response.results.length;
+      const revenue = await sumDealRevenue(filters);
+      const revenueNote = revenue.truncated
+        ? `totalRevenue covers the first ${revenue.scanned} of ${total} deals (very large stage) — treat it as a floor, not exact.`
+        : `totalRevenue covers ALL ${total} deals, not just the sample.`;
       return JSON.stringify({
         stage: stageName,
         location: canonicalLocation ?? "all locations",
         total, // true number of deals in this stage (within the location, if given)
+        totalRevenue: revenue.totalRevenue, // sum across ALL matching deals (see revenueTruncated)
+        revenueTruncated: revenue.truncated,
         returned, // how many are in the `deals` sample below
         truncated: total > returned,
         ...(total > returned
           ? {
-              note: `Showing ${returned} of ${total}. This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
+              note: `Showing ${returned} of ${total}. ${revenueNote} This tool can't filter by sub-status (e.g. "waiting on DA to be sent") — don't infer that from this list.`,
             }
           : {}),
         deals: response.results.map((deal) => ({
@@ -1112,6 +1175,223 @@ export function createReadOnlyChatTools() {
     },
   });
 
+  const getPePayments = betaZodTool({
+    name: "get_pe_payments",
+    description:
+      "Participate Energy (PE) payment money — the authoritative source for PE cash. " +
+      "Returns how much PE has PAID us (cash received; all-time, or within a date " +
+      "window when fromDate/toDate are given), plus the current outstanding buckets: " +
+      "in transit (PE remitted, ACH not landed), approved but not yet sent, and " +
+      "submitted awaiting PE review. Use for 'how much have we been paid by " +
+      "Participate', 'PE cash received in June', 'how much does PE owe us'. " +
+      "PE pays per milestone: M1 (~2/3, after inspection) and M2 (~1/3, after PTO).",
+    inputSchema: z.object({
+      fromDate: z
+        .string()
+        .optional()
+        .describe("Optional window start, YYYY-MM-DD — scopes received/remitted to payments in the window"),
+      toDate: z
+        .string()
+        .optional()
+        .describe("Optional window end, YYYY-MM-DD (inclusive). Required if fromDate is set."),
+    }),
+    run: async (input) => {
+      const { searchWithRetry } = await import("@/lib/hubspot");
+
+      const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      const hasWindow = Boolean(input.fromDate || input.toDate);
+      let fromMs = Number.NEGATIVE_INFINITY;
+      let toMs = Number.POSITIVE_INFINITY;
+      if (hasWindow) {
+        if (!input.fromDate || !input.toDate || !DATE_RE.test(input.fromDate) || !DATE_RE.test(input.toDate)) {
+          return JSON.stringify({ error: "Provide BOTH fromDate and toDate as YYYY-MM-DD, or neither." });
+        }
+        fromMs = Date.parse(`${input.fromDate}T00:00:00.000Z`);
+        toMs = Date.parse(`${input.toDate}T23:59:59.999Z`);
+        if (Number.isNaN(fromMs) || Number.isNaN(toMs) || fromMs > toMs) {
+          return JSON.stringify({ error: `Invalid date range: ${input.fromDate} → ${input.toDate}` });
+        }
+      }
+
+      // One paginated scan of every Project-pipeline deal with a PE payment
+      // split; every bucket is computed from the same date-gated logic as the
+      // HubSpot pe_received_total / pe_in_review_total KPI properties.
+      type PeDealProps = Record<string, string | null | undefined>;
+      const rows: PeDealProps[] = [];
+      let after: string | undefined;
+      let peTruncated = false;
+      const PE_PAGE_LIMIT = 50; // 50 × 200 = 10,000 PE deals — far above the fleet
+      for (let page = 0; page < PE_PAGE_LIMIT; page++) {
+        const req: {
+          filterGroups: { filters: unknown[] }[];
+          properties: string[];
+          limit: number;
+          after?: string;
+        } = {
+          filterGroups: [
+            {
+              filters: [
+                { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
+                { propertyName: "pe_payment_ic", operator: FilterOperatorEnum.HasProperty },
+              ],
+            },
+          ],
+          properties: [
+            "pe_payment_ic",
+            "pe_payment_pc",
+            "pe_m1_paid_date",
+            "pe_m2_paid_date",
+            "pe_m1_remittance_date",
+            "pe_m2_remittance_date",
+            "pe_m1_approval_date",
+            "pe_m2_approval_date",
+            "pe_m1_submission_date",
+            "pe_m2_submission_date",
+          ],
+          limit: 200,
+        };
+        if (after) req.after = after;
+        const res = await searchWithRetry(req as Parameters<typeof searchWithRetry>[0]);
+        for (const d of res.results) rows.push(d.properties ?? {});
+        after = res.paging?.next?.after;
+        if (!after) break;
+        if (page === PE_PAGE_LIMIT - 1) peTruncated = true;
+      }
+
+      const inWindow = (dateStr: string | null | undefined): boolean => {
+        if (!dateStr) return false;
+        const ms = Date.parse(dateStr);
+        return !Number.isNaN(ms) && ms >= fromMs && ms <= toMs;
+      };
+      const bucket = () => ({ count: 0, amount: 0 });
+      const received = { m1: bucket(), m2: bucket() };
+      const remitted = { m1: bucket(), m2: bucket() };
+      const inTransit = { m1: bucket(), m2: bucket() };
+      const approvedNotSent = { m1: bucket(), m2: bucket() };
+      const inReview = { m1: bucket(), m2: bucket() };
+
+      for (const p of rows) {
+        for (const m of ["m1", "m2"] as const) {
+          const amount = Number(m === "m1" ? p.pe_payment_ic : p.pe_payment_pc) || 0;
+          if (!amount) continue;
+          const paid = p[`pe_${m}_paid_date`];
+          const remit = p[`pe_${m}_remittance_date`];
+          const approval = p[`pe_${m}_approval_date`];
+          const submission = p[`pe_${m}_submission_date`];
+          if (paid && inWindow(paid)) {
+            received[m].count++;
+            received[m].amount += amount;
+          }
+          if (remit && inWindow(remit)) {
+            remitted[m].count++;
+            remitted[m].amount += amount;
+          }
+          // Outstanding buckets are a CURRENT snapshot — never window-scoped.
+          if (remit && !paid) {
+            inTransit[m].count++;
+            inTransit[m].amount += amount;
+          } else if (approval && !remit && !paid) {
+            approvedNotSent[m].count++;
+            approvedNotSent[m].amount += amount;
+          } else if (submission && !approval && !paid) {
+            inReview[m].count++;
+            inReview[m].amount += amount;
+          }
+        }
+      }
+
+      const roll = (b: { m1: { count: number; amount: number }; m2: { count: number; amount: number } }) => ({
+        m1Count: b.m1.count,
+        m1Amount: Math.round(b.m1.amount),
+        m2Count: b.m2.count,
+        m2Amount: Math.round(b.m2.amount),
+        totalCount: b.m1.count + b.m2.count,
+        totalAmount: Math.round(b.m1.amount + b.m2.amount),
+      });
+
+      return JSON.stringify({
+        scope: hasWindow ? `payments dated ${input.fromDate} → ${input.toDate}` : "all-time",
+        received: roll(received),
+        ...(hasWindow ? { remittedInWindow: roll(remitted) } : {}),
+        outstanding: {
+          inTransit: roll(inTransit),
+          approvedNotYetSent: roll(approvedNotSent),
+          submittedInReview: roll(inReview),
+        },
+        dealsScanned: rows.length,
+        ...(peTruncated ? { truncated: true } : {}),
+        definitions:
+          "received = milestone paid date set (cash landed). inTransit = PE remitted, ACH not landed (~4 days). " +
+          "approvedNotYetSent = PE approved the docs but hasn't sent payment (also captures a milestone re-rejected " +
+          "after its first approval, since the approval date persists). submittedInReview = submitted but never approved, " +
+          "awaiting PE review. Outstanding buckets are today's snapshot regardless of any date window." +
+          (peTruncated ? " WARNING: hit the scan cap — totals are a floor, not complete." : ""),
+      });
+    },
+  });
+
+  const getRevenueGoals = betaZodTool({
+    name: "get_revenue_goals",
+    description:
+      "Company revenue GOALS vs actuals — the executive Revenue Goal Tracker. Use for " +
+      "'how are we pacing against goal', 'is Westminster ahead of target', 'what's the " +
+      "annual revenue goal', 'revenue vs goal this month / YTD'. Revenue groups: " +
+      "Westminster, DTC (Centennial), Colorado Springs, California, Roofing & D&R, " +
+      "Service. Numbers match the executive dashboard exactly — never estimate goal " +
+      "progress from other tools.",
+    inputSchema: z.object({
+      year: z.number().optional().describe("Calendar year; defaults to the current year"),
+    }),
+    run: async (input) => {
+      const { getRevenueGoalSnapshot } = await import("@/lib/revenue-goals");
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const year = input.year ?? currentYear;
+      // Guard the DB seed: reject junk years rather than seeding 72 phantom
+      // RevenueGoal rows for e.g. 20250 or 1999.
+      if (year < 2020 || year > currentYear + 1) {
+        return JSON.stringify({
+          error: `No revenue goals for ${year}. Ask about ${2020}–${currentYear + 1}.`,
+        });
+      }
+      const { data } = await getRevenueGoalSnapshot(year);
+      const isCurrentYear = year === currentYear;
+      const currentMonthIdx = now.getUTCMonth();
+      return JSON.stringify({
+        year: data.year,
+        companyTotal: {
+          annualTarget: Math.round(data.companyTotal.annualTarget),
+          ytdActual: Math.round(data.companyTotal.ytdActual),
+          ytdPaceExpected: Math.round(data.companyTotal.ytdPaceExpected),
+          paceStatus: data.companyTotal.paceStatus,
+        },
+        groups: data.groups.map((g) => {
+          const m = isCurrentYear ? g.months[currentMonthIdx] : undefined;
+          return {
+            group: g.displayName,
+            annualTarget: Math.round(g.annualTarget),
+            ytdActual: Math.round(g.ytdActual),
+            ytdPaceExpected: Math.round(g.ytdPaceExpected),
+            paceStatus: g.paceStatus,
+            ...(m
+              ? {
+                  currentMonth: {
+                    month: m.month,
+                    actual: Math.round(m.actual),
+                    target: Math.round(m.effectiveTarget),
+                    onTarget: m.actual >= m.effectiveTarget,
+                  },
+                }
+              : {}),
+          };
+        }),
+        note:
+          "Same data as the executive Revenue Goal Tracker. paceStatus compares YTD actual " +
+          "against straight-line pace toward the annual target (closed months only).",
+      });
+    },
+  });
+
   return [
     getDeal,
     searchDeals,
@@ -1119,6 +1399,8 @@ export function createReadOnlyChatTools() {
     countDealsByStage,
     countDealsByStatus,
     countMilestoneInDateRange,
+    getPePayments,
+    getRevenueGoals,
     getProjectTeam,
     getProjectService,
   ];
