@@ -64,6 +64,10 @@ type Section = "onboarding" | "ic" | "pc";
  * Canonical PE documents by section. A focused copy of DocsTab's `PE_DOCUMENTS`
  * (only name + section is needed here). The IC payment (M1) owes the onboarding
  * + ic docs; the PC payment (M2) owes the pc docs.
+ *
+ * NOTE: "Change Order" is intentionally absent. It is PE's remediation instrument,
+ * not a milestone requirement, so it must never count toward a milestone's owed
+ * docs. (It is synced and shown in DocsTab, but bucketing ignores it.)
  */
 const PE_MILESTONE_DOCS: { name: string; section: Section }[] = [
   { name: "Customer Agreement (PPA/ESA)", section: "onboarding" },

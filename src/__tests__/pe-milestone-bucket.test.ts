@@ -127,6 +127,42 @@ describe("milestoneDocBucket — a doc still missing", () => {
   });
 });
 
+// "Change Order" is synced + shown in DocsTab, but it is PE's remediation
+// instrument, not a milestone requirement. It must never affect bucketing.
+describe("Change Order is never a milestone requirement", () => {
+  it("a NOT_REQUIRED Change Order does not count toward owed docs", () => {
+    const c = milestoneDocCounts("IC", m1All("APPROVED", { "Change Order": "NOT_REQUIRED" }), "Approved");
+    expect(c.total).toBe(12);
+    expect(c.missing).toBe(0);
+  });
+
+  it("a NOT_UPLOADED Change Order never reads as a missing doc", () => {
+    const map = m1All("UNDER_REVIEW", { "Change Order": "NOT_UPLOADED" });
+    const c = milestoneDocCounts("IC", map, "Submitted");
+    expect(c.total).toBe(12);
+    expect(c.missing).toBe(0);
+    expect(milestoneDocBucket("IC", map, "Submitted")).toBe("review");
+  });
+
+  it("an uploaded Change Order does not flip the bucket", () => {
+    expect(milestoneDocBucket("IC", m1All("UNDER_REVIEW", { "Change Order": "UNDER_REVIEW" }), "Submitted")).toBe("review");
+  });
+
+  it("a flagged Change Order does not escalate the milestone to action", () => {
+    expect(milestoneDocBucket("IC", m1All("APPROVED", { "Change Order": "ACTION_REQUIRED" }), "Approved")).toBe("approved");
+  });
+
+  it("PC ignores Change Order too", () => {
+    const c = milestoneDocCounts("PC", docs({
+      "Signed Interconnection Agreement": "APPROVED",
+      "Conditional Waiver — Final Payment": "APPROVED",
+      "Permission to Operate (PTO)": "APPROVED",
+      "Change Order": "UNDER_REVIEW",
+    }), "Approved");
+    expect(c.total).toBe(3);
+  });
+});
+
 describe("milestoneDocBucket — no doc data", () => {
   it("empty doc map → falls back to the status bucket (unchanged behavior)", () => {
     expect(milestoneDocBucket("IC", new Map(), "Submitted")).toBe("review");

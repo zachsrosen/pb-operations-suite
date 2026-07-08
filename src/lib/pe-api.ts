@@ -518,7 +518,12 @@ export async function getProjectDetails(
 
 /**
  * Maps API document keys to the canonical names used in PeDocumentReview.
- * These must match the 15 document names in pe-scraper-sync.ts COMPACT_DOC_NAMES.
+ *
+ * Adding a key here makes the sync write a PeDocumentReview row for it. Docs PE
+ * only creates a slot for on *some* projects must also be listed in
+ * `PE_CONDITIONAL_DOC_NAMES` (pe-analytics.ts), otherwise an absent slot is
+ * recorded as NOT_UPLOADED and reads as missing on every project. Pushing a doc's
+ * status/notes to HubSpot is opt-in via `PE_DOC_PROPERTIES` (pe-hubspot-sync.ts).
  */
 export const PE_API_DOC_MAP: Record<string, string> = {
   customerAgreement: "Customer Agreement (PPA/ESA)",
@@ -537,6 +542,11 @@ export const PE_API_DOC_MAP: Record<string, string> = {
   conditionalWaiverReleaseFinalPayment: "Conditional Waiver — Final Payment",
   permissionToOperate: "Permission to Operate (PTO)",
   billOfMaterials: "Bill of Materials",
+  // PE's remediation instrument, not a milestone requirement. PE creates the slot
+  // only on projects that have one, so it is CONDITIONAL (see
+  // PE_CONDITIONAL_DOC_NAMES) and never reads as missing. Tracking it lets us tell
+  // "blocked, needs a Change Order" apart from "Change Order submitted, awaiting PE".
+  changeOrders: "Change Order",
 };
 
 /**

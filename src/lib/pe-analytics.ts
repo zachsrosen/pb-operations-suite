@@ -399,8 +399,17 @@ export const PE_M1_DOC_NAMES = [
  * on the rest), so we must not show it as missing everywhere. The sync skips
  * writing a NOT_UPLOADED row for these when the API omits the slot, and the
  * tracker/analytics only count them as owed when a row exists.
+ *
+ * "Change Order" is PE's remediation instrument (required whenever a fix moves
+ * the Net Amount Due). PE creates its slot only on projects that have one, so it
+ * must be conditional too — otherwise every project without a Change Order would
+ * read as missing a doc. It is deliberately NOT part of any milestone's required
+ * doc set (see `pe-milestone-bucket.ts`).
  */
-export const PE_CONDITIONAL_DOC_NAMES = new Set<string>(["Bill of Materials"]);
+export const PE_CONDITIONAL_DOC_NAMES = new Set<string>([
+  "Bill of Materials",
+  "Change Order",
+]);
 
 export interface DocStatusStat {
   docs: number;
