@@ -336,7 +336,7 @@ export interface DigestResult {
 }
 
 /**
- * Build the owner's digest message (all locations; stuck + milestones +
+ * Build the owner's digest message (all locations; milestones +
  * escalations). Returns null when there's nothing worth reporting.
  */
 export async function buildDailyDigestMessage(nowMs?: number): Promise<string | null> {
