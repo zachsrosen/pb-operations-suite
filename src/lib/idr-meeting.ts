@@ -704,6 +704,7 @@ export async function fetchInitialReviewDeals(): Promise<
     filterGroups: [
       { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" }] },
       { filters: [...commonFilters, { propertyName: "idr_revision_complete_date", operator: FilterOperatorEnum.HasProperty }, { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" }] },
+      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: NC_READY_FOR_REVIEW_STATUS }] },
     ] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
