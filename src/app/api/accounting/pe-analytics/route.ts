@@ -1000,7 +1000,13 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     actionRequired: docStat(["ACTION_REQUIRED", "REJECTED"]),
     underReview: docStat(["UNDER_REVIEW", "UPLOADED"]),
     approvedDocs: relevantRows.filter((r) => r.status === "APPROVED").length,
-    uploadedDocs: relevantRows.filter((r) => r.status !== "NOT_UPLOADED").length,
+    // "uploaded" = a doc PE actually received. Exclude NOT_UPLOADED (never sent)
+    // AND NOT_REQUIRED (PE didn't ask for it on this project — e.g. an absent
+    // conditional Bill of Materials). NOT_REQUIRED is not an uploaded doc and must
+    // not inflate the doc-approval-rate denominator (approvedDocs / uploadedDocs).
+    uploadedDocs: relevantRows.filter(
+      (r) => r.status !== "NOT_UPLOADED" && r.status !== "NOT_REQUIRED",
+    ).length,
     missingExpected: docStat(["NOT_UPLOADED"]),
     scopedDeals: scopedDeals.size,
   };
