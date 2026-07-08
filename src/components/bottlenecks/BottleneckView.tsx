@@ -8,6 +8,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import MultiSelectFilter, { type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
@@ -142,10 +143,34 @@ function DealTable({ rows, showBucket }: { rows: FlaggedDeal[]; showBucket?: boo
   );
 }
 
+/**
+ * URL presets so team digests can deep-link their view:
+ *   ?view=design|permitting|ic|ops|sales|pm|compliance → team chip preset
+ *   ?loc=Westminster (comma-separated ok)              → location filter preset
+ * The digest team keys are finer-grained than the tab's chips, so they map down.
+ */
+const VIEW_PRESET_TO_TEAM: Record<string, TeamKey> = {
+  design: "design",
+  permitting: "pi",
+  ic: "pi",
+  pto: "pi",
+  ops: "ops",
+  pm: "ops",
+  compliance: "compliance",
+  sales: "all",
+};
+
 export default function BottleneckView() {
   const queryClient = useQueryClient();
-  const [team, setTeam] = useState<TeamKey>("all");
-  const [locations, setLocations] = useState<string[]>([]);
+  const searchParams = useSearchParams();
+  const [team, setTeam] = useState<TeamKey>(() => {
+    const v = searchParams?.get("view");
+    return (v && VIEW_PRESET_TO_TEAM[v]) || "all";
+  });
+  const [locations, setLocations] = useState<string[]>(() => {
+    const loc = searchParams?.get("loc");
+    return loc ? loc.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  });
   const [showZombies, setShowZombies] = useState(false);
   const [showUnknown, setShowUnknown] = useState(false);
 
