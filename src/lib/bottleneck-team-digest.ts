@@ -728,7 +728,16 @@ export async function runPersonalWorklists(opts: {
   // first messaged the bot. No recorded space = they haven't said hi yet.
   const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
 
-  const excluded = new Set((opts.exclude ?? []).map((e) => e.trim().toLowerCase()));
+  // Standing exclusions (SystemConfig bottleneck_delivery_exclusions: JSON
+  // array of emails) — people who must never receive worklists (e.g. owners
+  // on the visibility list only for one-off messages). Merged with per-call.
+  let standing: string[] = [];
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_delivery_exclusions" } });
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    if (Array.isArray(arr)) standing = arr;
+  } catch { /* best effort */ }
+  const excluded = new Set([...standing, ...(opts.exclude ?? [])].map((e) => String(e).trim().toLowerCase()));
 
   for (const w of worklists) {
     const email = emailByName.get(w.person.trim().toLowerCase()) ?? null;
