@@ -664,4 +664,52 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
     text: responseText || "I processed your message but didn't have anything to say. Try asking a specific question?",
   });
   console.warn(`[tech-ops-bot] reply posted to ${spaceName}`);
+
+  // ── Mirror the exchange to the owner's tracking space (real-time usage) ──
+  // Awaited (not fire-and-forget): serverless freezes after return, which
+  // silently kills detached promises. The user's reply is already posted.
+  await mirrorExchangeToTrackingSpace({
+    senderName,
+    senderEmail,
+    spaceName,
+    spaceDisplayName,
+    messageText,
+    responseText,
+    toolsUsed,
+  }).catch((e) => console.warn("[tech-ops-bot] mirror failed:", e));
+}
+
+/**
+ * Live usage feed: every exchange (question + reply + tools) mirrors into the
+ * space configured in SystemConfig `techops_bot_mirror_space`. The owner's own
+ * DM turns aren't mirrored (they can already see them), and the mirror space
+ * itself is skipped to prevent loops. Fire-and-forget; never blocks a reply.
+ */
+async function mirrorExchangeToTrackingSpace(args: {
+  senderName: string;
+  senderEmail: string;
+  spaceName: string;
+  spaceDisplayName?: string;
+  messageText: string;
+  responseText: string;
+  toolsUsed: string[];
+}): Promise<void> {
+  if (!prisma) return;
+  const row = await prisma.systemConfig.findUnique({
+    where: { key: "techops_bot_mirror_space" },
+  });
+  const mirror = row?.value?.trim();
+  if (!mirror) return;
+  if (args.spaceName === mirror) return;
+  const { ownerEmail } = await import("@/lib/tech-ops-bot-proactive");
+  if (args.senderEmail.trim().toLowerCase() === ownerEmail()) return;
+
+  const where = args.spaceDisplayName ? `in "${args.spaceDisplayName}"` : "(DM)";
+  const reply =
+    args.responseText.length > 1500 ? `${args.responseText.slice(0, 1500)}…` : args.responseText;
+  const tools = args.toolsUsed.length > 0 ? `\n🛠 ${args.toolsUsed.join(", ")}` : "";
+  await postGoogleChatMessage({
+    spaceName: mirror,
+    text: `👤 ${args.senderName} ${where}:\n${args.messageText}\n\n🤖 ${reply}${tools}`,
+  });
 }
