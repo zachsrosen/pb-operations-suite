@@ -100,18 +100,25 @@ describe("computeStageSnapshots", () => {
   it("only counts PE stages for isParticipateEnergy deals, reading status from rawProperties", () => {
     const pe = deal({
       isParticipateEnergy: true,
+      stage: "Permission To Operate",
       inspectionPassDate: daysAgo(45),
       rawProperties: { pe_m1_status: "Submitted" },
     });
-    const nonPe = deal({ hubspotDealId: "2", rawProperties: { pe_m1_status: "Submitted" }, inspectionPassDate: daysAgo(45) });
+    const nonPe = deal({ hubspotDealId: "2", stage: "Permission To Operate", rawProperties: { pe_m1_status: "Submitted" }, inspectionPassDate: daysAgo(45) });
     const snap = computeStageSnapshots([pe, nonPe], THRESHOLDS, NOW);
     const m1 = snap.stages.find((s) => s.key === "pe_m1")!;
     expect(m1.totalInStage).toBe(1);
     expect(m1.flagged[0].dwellDays).toBe(45);
   });
 
+  it("keeps pre-PTO deals out of the PE queues even with an active PE status", () => {
+    const rows = [deal({ isParticipateEnergy: true, stage: "Construction", inspectionPassDate: daysAgo(45), rawProperties: { pe_m1_status: "Ready for Onboarding" } })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    expect(snap.stages.find((s) => s.key === "pe_m1")!.totalInStage).toBe(0);
+  });
+
   it("treats PE approved/paid buckets as out of stage", () => {
-    const rows = [deal({ isParticipateEnergy: true, inspectionPassDate: daysAgo(45), rawProperties: { pe_m1_status: "Paid" } })];
+    const rows = [deal({ isParticipateEnergy: true, stage: "Close Out", inspectionPassDate: daysAgo(45), rawProperties: { pe_m1_status: "Paid" } })];
     const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
     expect(snap.stages.find((s) => s.key === "pe_m1")!.totalInStage).toBe(0);
   });
