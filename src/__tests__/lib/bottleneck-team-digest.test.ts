@@ -37,13 +37,13 @@ describe("buildTeamSections", () => {
         ddDeal({ id: 3, status: "Design Revision In Progress" }), // design's, not permitting's
       ],
     };
-    const sections = buildTeamSections("permitting", dd, [], new Map(), NOW);
+    const sections = buildTeamSections("permitting", dd, [], NOW);
     expect(sections[0].lines.map((l) => l.id)).toEqual(["1"]);
     expect(sections[1].lines.map((l) => l.id)).toEqual(["2"]);
     expect(sections[1].lines[0].needsFollowUp).toBe(true);
     expect(sections[1].lines[0].lead).toBe("Katie Permit");
 
-    const design = buildTeamSections("design", dd, [], new Map(), NOW);
+    const design = buildTeamSections("design", dd, [], NOW);
     expect(design[2].title).toBe("Permit revisions in design");
     expect(design[2].lines.map((l) => l.id)).toEqual(["3"]);
     expect(design[2].lines[0].lead).toBe("Dana Design");
@@ -57,10 +57,10 @@ describe("buildTeamSections", () => {
       awaitingInterconnection: [ddDeal({ id: 3 })],
       awaitingInspection: [ddDeal({ id: 4 })],
     };
-    expect(buildTeamSections("sales", dd, [], new Map(), NOW)[0].lines[0].lead).toBe("Sally Sales");
-    expect(buildTeamSections("pm", dd, [], new Map(), NOW)[0].lines[0].lead).toBe("Pat PM");
-    expect(buildTeamSections("ic", dd, [], new Map(), NOW)[0].lines[0].lead).toBe("Ian IC");
-    expect(buildTeamSections("ops", dd, [], new Map(), NOW)[1].lines[0].lead).toBe("Ira Inspect");
+    expect(buildTeamSections("sales", dd, [], NOW)[0].lines[0].lead).toBe("Sally Sales");
+    expect(buildTeamSections("pm", dd, [], NOW)[0].lines[0].lead).toBe("Pat PM");
+    expect(buildTeamSections("ic", dd, [], NOW)[0].lines[0].lead).toBe("Ian IC");
+    expect(buildTeamSections("ops", dd, [], NOW)[1].lines[0].lead).toBe("Ira Inspect");
   });
 
   it("skips parked (On Hold) deals but keeps non-parked blocked deals with their reason", () => {
@@ -71,7 +71,7 @@ describe("buildTeamSections", () => {
         ddDeal({ id: 2, flag: { label: "RTB blocked", tone: "red", reason: "HOA", note: null, parked: false } }),
       ],
     };
-    const [rtb] = buildTeamSections("pm", dd, [], new Map(), NOW);
+    const [rtb] = buildTeamSections("pm", dd, [], NOW);
     expect(rtb.lines.map((l) => l.id)).toEqual(["2"]);
     expect(rtb.lines[0].blockedNote).toBe("RTB blocked: HOA");
   });
@@ -92,12 +92,12 @@ describe("buildTeamSections", () => {
       }) as BottleneckDealRow;
 
     const rows = [pe("r1", "Ready to Submit", 5), pe("s1", "Submitted", 20)];
-    const pm = new Map([["s1", "Pat PM"]]);
-    const sections = buildTeamSections("compliance", rows.length ? { ...EMPTY_DD } : EMPTY_DD, rows, pm, NOW);
+    const sections = buildTeamSections("compliance", rows.length ? { ...EMPTY_DD } : EMPTY_DD, rows, NOW);
     expect(sections[0].lines.map((l) => l.id)).toEqual(["r1"]);
     expect(sections[1].lines.map((l) => l.id)).toEqual(["s1"]);
     expect(sections[1].lines[0].needsFollowUp).toBe(true); // 20d > 14d
-    expect(sections[1].lines[0].lead).toBe("Pat PM");
+    expect(sections[1].lines[0].lead).toBe("");
+    expect(sections[1].groupBy).toBe("location");
   });
 });
 
@@ -107,16 +107,16 @@ describe("renderTeamDigest", () => {
       ...EMPTY_DD,
       awaitingPermitIssue: [ddDeal({ id: 2, daysWaiting: 34 })],
     };
-    const msg = renderTeamDigest("permitting", buildTeamSections("permitting", dd, [], new Map(), NOW), NOW)!;
+    const msg = renderTeamDigest("permitting", buildTeamSections("permitting", dd, [], NOW), NOW)!;
     expect(msg).toContain("🚧 Permitting worklist");
     expect(msg).toContain("Submitted — follow up with AHJ (1 — 1 past 21d)");
+    expect(msg).toContain("Katie Permit (1)"); // group header = responsible party
     expect(msg).toContain("/record/0-3/2|PROJ-1000 — Test, Casey>");
-    expect(msg).toContain("34d ⚠");
-    expect(msg).toContain("Katie Permit");
+    expect(msg).toContain("— Permitting & Interconnection — 34d ⚠"); // deal stage on the line
     expect(msg).toContain("?tab=bottlenecks&view=permitting");
   });
 
   it("returns null when nothing is waiting", () => {
-    expect(renderTeamDigest("sales", buildTeamSections("sales", EMPTY_DD, [], new Map(), NOW), NOW)).toBeNull();
+    expect(renderTeamDigest("sales", buildTeamSections("sales", EMPTY_DD, [], NOW), NOW)).toBeNull();
   });
 });

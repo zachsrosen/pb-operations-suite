@@ -53,6 +53,8 @@ interface DigestLine {
   id: string;
   name: string;
   status: string | null;
+  /** Current pipeline stage (e.g. "Permitting & Interconnection"). */
+  stage: string;
   daysWaiting: number;
   lead: string;
   location: string;
@@ -65,6 +67,8 @@ export interface DigestSection {
   title: string;
   /** Days past which a deal gets the ⚠ follow-up mark (null = no mark). */
   followUpDays: number | null;
+  /** Lines are grouped under this axis in the rendered digest. */
+  groupBy: "lead" | "location";
   lines: DigestLine[];
 }
 
@@ -79,6 +83,7 @@ function toLine(
     id: String(d.id),
     name: d.name,
     status: d.status,
+    stage: d.stage || "",
     daysWaiting: d.daysWaiting,
     lead,
     location: d.pbLocation || "",
@@ -103,7 +108,7 @@ function section(
     .filter(workable)
     .map((d) => toLine(d, lead(d), followUpDays))
     .sort((a, b) => b.daysWaiting - a.daysWaiting);
-  return { title, followUpDays, lines };
+  return { title, followUpDays, groupBy: "lead", lines };
 }
 
 /**
@@ -114,7 +119,6 @@ export function buildTeamSections(
   team: TeamDigestKey,
   dd: ProjectFunnelDrillDown,
   peRows: BottleneckDealRow[],
-  pmByDealId: Map<string, string>,
   nowMs: number
 ): DigestSection[] {
   switch (team) {
@@ -157,6 +161,7 @@ export function buildTeamSections(
         section("Construction to schedule", dd.awaitingConstructionSchedule, (d) => leadOf(d.projectManager), null),
       ];
     case "compliance": {
+      // No per-deal compliance lead exists in HubSpot — grouped by office instead.
       const DAY_MS = 86_400_000;
       const peStage = (key: "pe_m1" | "pe_m2") => STAGES.find((s) => s.key === key)!;
       const peLines = (
@@ -182,8 +187,9 @@ export function buildTeamSections(
               id: r.hubspotDealId,
               name: r.dealName ?? "(unnamed)",
               status,
+              stage: r.stage ?? "",
               daysWaiting: days,
-              lead: leadOf(pmByDealId.get(r.hubspotDealId)),
+              lead: "",
               location: r.pbLocation ?? "",
               needsFollowUp: followUpDays != null && days > followUpDays,
               blockedNote: null,
@@ -192,10 +198,10 @@ export function buildTeamSections(
           .sort((a, b) => b.daysWaiting - a.daysWaiting);
       };
       return [
-        { title: "M1 ready to submit", followUpDays: null, lines: peLines("pe_m1", "pe_m1_status", "ready", null) },
-        { title: "M1 submitted — follow up with PE", followUpDays: 14, lines: peLines("pe_m1", "pe_m1_status", "review", 14) },
-        { title: "M2 ready to submit", followUpDays: null, lines: peLines("pe_m2", "pe_m2_status", "ready", null) },
-        { title: "M2 submitted — follow up with PE", followUpDays: 14, lines: peLines("pe_m2", "pe_m2_status", "review", 14) },
+        { title: "M1 ready to submit", followUpDays: null, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", "ready", null) },
+        { title: "M1 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", "review", 14) },
+        { title: "M2 ready to submit", followUpDays: null, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", "ready", null) },
+        { title: "M2 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", "review", 14) },
       ];
     }
   }
@@ -211,7 +217,8 @@ function shortName(name: string): string {
 const dealLink = (id: string, name: string) =>
   `<https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-3/${id}|${shortName(name)}>`;
 
-const MAX_LINES_PER_SECTION = 5;
+/** Google Chat text messages cap at 4,096 chars — leave headroom for safety. */
+const CHAT_CHAR_BUDGET = 3900;
 
 export function renderTeamDigest(
   team: TeamDigestKey,
@@ -225,30 +232,61 @@ export function renderTeamDigest(
     timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
   });
 
+  const footer = `Dashboard: ${FUNNEL_TAB_URL}&view=${team}`;
   const out: string[] = [`🚧 ${TEAM_DIGEST_LABELS[team]} worklist — ${day}`];
   out.push(`${total} deal${total === 1 ? "" : "s"} waiting on your team`);
   out.push("");
+
+  // Show every deal that fits; once the Chat char budget runs out, stop and
+  // say how many were cut. Budget counts rendered chars incl. link markup.
+  let used = out.join("\n").length + footer.length + 64; // slack for cut-notes
+  let cut = 0;
+
+  const push = (line: string): boolean => {
+    if (used + line.length + 1 > CHAT_CHAR_BUDGET) return false;
+    out.push(line);
+    used += line.length + 1;
+    return true;
+  };
 
   for (const s of sections) {
     if (s.lines.length === 0) continue;
     const flagged = s.followUpDays != null ? s.lines.filter((l) => l.needsFollowUp).length : 0;
     const followNote = s.followUpDays != null ? ` — ${flagged} past ${s.followUpDays}d` : "";
-    out.push(`${s.title} (${s.lines.length}${followNote})`);
-    for (const l of s.lines.slice(0, MAX_LINES_PER_SECTION)) {
-      const status = l.status ? ` — ${l.status}` : "";
-      const mark = l.needsFollowUp ? " ⚠" : "";
-      const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
-      const who = l.lead !== "—" ? ` — ${l.lead}` : "";
-      const where = l.location ? ` (${l.location})` : "";
-      out.push(`• ${dealLink(l.id, l.name)}${status} — ${l.daysWaiting}d${mark}${blocked}${who}${where}`);
+    if (!push(`${s.title} (${s.lines.length}${followNote})`)) { cut += s.lines.length; continue; }
+
+    // Group by the responsible party (lead) or office, biggest group first;
+    // within a group, oldest first.
+    const groups = new Map<string, typeof s.lines>();
+    for (const l of s.lines) {
+      const key = (s.groupBy === "location" ? l.location : l.lead) || "(unassigned)";
+      const arr = groups.get(key) ?? [];
+      arr.push(l);
+      groups.set(key, arr);
     }
-    if (s.lines.length > MAX_LINES_PER_SECTION) {
-      out.push(`…and ${s.lines.length - MAX_LINES_PER_SECTION} more.`);
+    const ordered = [...groups.entries()].sort(
+      (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])
+    );
+
+    for (const [who, lines] of ordered) {
+      if (!push(`${who} (${lines.length})`)) { cut += lines.length; continue; }
+      for (const l of lines) {
+        const status = l.status ? ` — ${l.status}` : "";
+        const stage = l.stage ? ` — ${l.stage}` : "";
+        const mark = l.needsFollowUp ? " ⚠" : "";
+        const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
+        // Location shown per line only when the grouping isn't already location.
+        const where = s.groupBy !== "location" && l.location ? ` (${l.location})` : "";
+        if (!push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`)) {
+          cut++;
+        }
+      }
     }
-    out.push("");
+    push("");
   }
 
-  out.push(`Dashboard: ${FUNNEL_TAB_URL}&view=${team}`);
+  if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
+  out.push(footer);
   return out.join("\n");
 }
 
@@ -275,15 +313,11 @@ export async function runTeamDigest(
   const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, {
     scope: "active",
   });
-  const pmByDealId = new Map(
-    projects.map((p) => [String(p.id), (p as { projectManager?: string }).projectManager ?? ""])
-  );
 
   const sections = buildTeamSections(
     team,
     funnel.drillDown,
     deals as unknown as BottleneckDealRow[],
-    pmByDealId,
     nowMs
   );
   const message = renderTeamDigest(team, sections, nowMs);
