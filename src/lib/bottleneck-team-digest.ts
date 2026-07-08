@@ -451,6 +451,30 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
   return out.join("\n");
 }
 
+// One-time welcome tracking (SystemConfig set of emails).
+const WELCOMED_KEY = "bottleneck_personal_welcomed";
+async function getWelcomedSet(): Promise<Set<string>> {
+  if (!prisma) return new Set();
+  const row = await prisma.systemConfig.findUnique({ where: { key: WELCOMED_KEY } });
+  try {
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+async function markWelcomed(email: string): Promise<void> {
+  if (!prisma) return;
+  const set = await getWelcomedSet();
+  set.add(email);
+  const value = JSON.stringify([...set]);
+  await prisma.systemConfig.upsert({
+    where: { key: WELCOMED_KEY },
+    create: { key: WELCOMED_KEY, value },
+    update: { value },
+  });
+}
+
 export interface PersonalSendResult {
   person: string;
   email: string | null;
@@ -476,6 +500,8 @@ export async function runPersonalWorklists(opts: {
   mode: "preview" | "dryrun" | "provision" | "live";
   nowMs?: number;
   limit?: number;
+  /** Emails to skip entirely (e.g. someone out of office). */
+  exclude?: string[];
 }): Promise<{ results: PersonalSendResult[]; unmatched: string[] }> {
   if (!prisma) return { results: [], unmatched: [] };
   const nowMs = opts.nowMs ?? Date.now();
@@ -521,10 +547,17 @@ export async function runPersonalWorklists(opts: {
   // first messaged the bot. No recorded space = they haven't said hi yet.
   const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
 
+  const excluded = new Set((opts.exclude ?? []).map((e) => e.trim().toLowerCase()));
+
   for (const w of worklists) {
     const email = emailByName.get(w.person.trim().toLowerCase()) ?? null;
     if (!email) unmatched.push(w.person);
     const base: PersonalSendResult = { person: w.person, email, deals: w.totalDeals, sent: false };
+
+    if (email && excluded.has(email)) {
+      results.push({ ...base, reason: "excluded" });
+      continue;
+    }
 
     if (opts.mode === "preview") {
       results.push({ ...base, reason: "preview" });
@@ -556,10 +589,17 @@ export async function runPersonalWorklists(opts: {
         if (!email) { results.push({ ...base, reason: "no User-table match" }); continue; }
         const space = dmSpaces[email];
         if (!space) {
-          results.push({ ...base, reason: "no DM space recorded — they need to message the bot once" });
+          results.push({ ...base, reason: "no DM space recorded — provision or have them message the bot" });
           continue;
         }
-        await postGoogleChatMessage({ spaceName: space, text: message });
+        // First-ever send gets a one-time intro so the worklist isn't contextless.
+        const welcomed = await getWelcomedSet();
+        const isFirst = !welcomed.has(email);
+        const text = isFirst
+          ? `👋 Hi! I'm the PB Tech Ops Bot — I'll DM you a worklist like this when deals are waiting on you, and you can reply here with questions about any of them (or anything pipeline-related).\n\n${message}`
+          : message;
+        await postGoogleChatMessage({ spaceName: space, text });
+        if (isFirst) await markWelcomed(email);
         results.push({ ...base, sent: true });
       }
     } catch (e) {

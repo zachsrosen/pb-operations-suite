@@ -37,10 +37,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "personal must be preview|dryrun|provision|live" }, { status: 400 });
     }
     const limitParam = Number(request.nextUrl.searchParams.get("limit"));
+    const exclude = (request.nextUrl.searchParams.get("exclude") || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
     try {
       const out = await runPersonalWorklists({
         mode: personal as "preview" | "dryrun" | "provision" | "live",
         limit: Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined,
+        exclude,
       });
       return NextResponse.json(out);
     } catch (error) {
