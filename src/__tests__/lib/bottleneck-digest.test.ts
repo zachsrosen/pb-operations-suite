@@ -37,15 +37,22 @@ function stage(overrides: Partial<StageSnapshot>): StageSnapshot {
     key: "permitting", label: "Permitting", team: "pi",
     totalInStage: 10, unknownAgeCount: 1, medianDwellDays: 12, volumeNorm90d: 9,
     threshold: { medianDays: 12, p90Days: 30, thresholdDays: 30, source: "derived" },
+    effective: { days: 30, source: "derived" },
+    stalledCount: 0, zombieCount: 0,
     flagged: [], flow: [],
     ...overrides,
   };
 }
 const snap = (stages: StageSnapshot[]): BottleneckSnapshot => ({ computedAt: "2026-07-07T14:00:00.000Z", stages });
-const flaggedDeal = (id: string, dwell = 40) => ({
+const flaggedDeal = (
+  id: string,
+  dwell = 40,
+  bucket: "stalled" | "zombie" = "stalled"
+) => ({
   hubspotDealId: id, dealName: `PROJ-${id} | Test, Casey | 1 Main St`, projectNumber: `PROJ-${id}`,
   pbLocation: "Westminster", dealOwnerName: "Jane Owner", hubspotOwnerId: "42",
-  dwellDays: dwell, thresholdDays: 30,
+  status: "Submitted to AHJ", dwellDays: dwell, thresholdDays: 30,
+  daysSinceActivity: bucket === "stalled" ? 4 : 200, bucket,
 });
 
 describe("detectChanges", () => {
@@ -68,18 +75,40 @@ describe("detectChanges", () => {
     const c = detectChanges(null, snap([stage({ flagged: [flaggedDeal("2")] })]));
     expect(c.hasChanges).toBe(true);
   });
+
+  it("ignores zombies entirely — a zombie appearing or vanishing is not a change", () => {
+    const prev = { permitting: ["2"] };
+    const current = snap([
+      stage({ flagged: [flaggedDeal("2"), flaggedDeal("z9", 400, "zombie")] }),
+    ]);
+    const c = detectChanges(prev, current);
+    expect(c.hasChanges).toBe(false);
+    expect(c.newlyFlagged).toHaveLength(0);
+  });
 });
 
 describe("buildDigestMessage", () => {
-  it("renders plain text with per-stage counts, top deals with owners, and the dashboard link", () => {
+  it("renders plain text with per-stage stalled counts, status, quiet days, owners, and the dashboard link", () => {
     const s = snap([stage({ flagged: [flaggedDeal("1", 62), flaggedDeal("2", 45)] })]);
     const msg = buildDigestMessage(s, detectChanges({ permitting: ["2"] }, s), { includeFlow: false });
-    expect(msg).toContain("Permitting: 2 flagged / 10 in stage");
-    expect(msg).toContain("62d");
+    expect(msg).toContain("2 stalled deals to work");
+    expect(msg).toContain("Permitting: 2 stalled / 10 in stage, threshold 30d");
+    expect(msg).toContain("Submitted to AHJ");
+    expect(msg).toContain("62d in stage, quiet 4d");
     expect(msg).toContain("Jane Owner");
     expect(msg).toContain("/dashboards/bottlenecks");
     expect(msg).toContain("1 new");
     expect(msg).not.toContain("|"); // no markdown tables — Chat renders raw pipes
+  });
+
+  it("renders zombies only as a one-line count, never as deal rows", () => {
+    const s = snap([
+      stage({ flagged: [flaggedDeal("1", 62), flaggedDeal("z1", 700, "zombie")] }),
+    ]);
+    const msg = buildDigestMessage(s, detectChanges(null, s), { includeFlow: false })!;
+    expect(msg).toContain("Permitting: 1 stalled / 10 in stage");
+    expect(msg).toContain("1 zombie (untouched 90d+) excluded");
+    expect(msg).not.toContain("PROJ-z1"); // zombie deals never render as rows
   });
 
   it("includes flow lines when includeFlow (Monday) is set", () => {

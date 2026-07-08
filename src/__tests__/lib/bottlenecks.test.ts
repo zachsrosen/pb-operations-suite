@@ -26,6 +26,7 @@ function deal(overrides: Partial<BottleneckDealRow>): BottleneckDealRow {
     hubspotOwnerId: "42",
     stage: "Permitting & Interconnection",
     isParticipateEnergy: false,
+    hubspotUpdatedAt: daysAgo(2), // recently active → flagged deals default to "stalled"
     rawProperties: null,
     designStatus: null,
     permittingStatus: null,
@@ -161,6 +162,45 @@ describe("computeStageSnapshots", () => {
     const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
     expect(snap.stages.find((s) => s.key === "permitting")!.volumeNorm90d).toBe(0);
   });
+
+  it("assigns teams per Zach's mapping: PTO → pi, PE → compliance", () => {
+    const byKey = Object.fromEntries(STAGES.map((s) => [s.key, s.team]));
+    expect(byKey.pto).toBe("pi");
+    expect(byKey.pe_m1).toBe("compliance");
+    expect(byKey.pe_m2).toBe("compliance");
+    expect(byKey.construction).toBe("ops");
+  });
+
+  it("buckets flagged deals: recently-touched → stalled, untouched 90d+ or unknown → zombie", () => {
+    const rows = [
+      deal({ hubspotDealId: "s1", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(40), hubspotUpdatedAt: daysAgo(5) }),
+      deal({ hubspotDealId: "z1", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(40), hubspotUpdatedAt: daysAgo(200) }),
+      deal({ hubspotDealId: "z2", permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(40), hubspotUpdatedAt: null }),
+    ];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    const permitting = snap.stages.find((s) => s.key === "permitting")!;
+    const buckets = Object.fromEntries(permitting.flagged.map((f) => [f.hubspotDealId, f.bucket]));
+    expect(buckets).toEqual({ s1: "stalled", z1: "zombie", z2: "zombie" });
+    expect(permitting.stalledCount).toBe(1);
+    expect(permitting.zombieCount).toBe(2);
+    const s1 = permitting.flagged.find((f) => f.hubspotDealId === "s1")!;
+    expect(s1.daysSinceActivity).toBe(5);
+    expect(s1.status).toBe("Submitted to AHJ");
+  });
+
+  it("prefers engagement date (notes_last_updated) over hs_lastmodifieddate for activity", () => {
+    // Bulk scripts mass-stamp hs_lastmodifieddate; engagement is the real signal.
+    const rows = [deal({
+      permittingStatus: "Submitted to AHJ",
+      permitSubmitDate: daysAgo(40),
+      hubspotUpdatedAt: daysAgo(3), // bulk-touched recently…
+      rawProperties: { notes_last_updated: daysAgo(150).toISOString() }, // …but nobody's worked it
+    })];
+    const snap = computeStageSnapshots(rows, THRESHOLDS, NOW);
+    const f = snap.stages.find((s) => s.key === "permitting")!.flagged[0];
+    expect(f.daysSinceActivity).toBe(150);
+    expect(f.bucket).toBe("zombie");
+  });
 });
 
 describe("deriveThresholds", () => {
@@ -181,13 +221,36 @@ describe("deriveThresholds", () => {
     expect(t.permitting.thresholdDays).toBe(t.permitting.p90Days);
   });
 
-  it("leaves thresholdDays null below 10 completed transitions (never flags)", () => {
+  it("leaves derived thresholdDays null below 10 completed transitions; flagging falls back to the cap", () => {
     const t = deriveThresholds(completed(3, 12), NOW);
     expect(t.permitting.thresholdDays).toBeNull();
-    // and computeStageSnapshots never flags with a null threshold
+    // computeStageSnapshots still flags via the stage cap (permitting: 30d)
     const rows = [deal({ permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(500) })];
     const snap = computeStageSnapshots(rows, t, NOW);
-    expect(snap.stages.find((s) => s.key === "permitting")!.flagged).toHaveLength(0);
+    const permitting = snap.stages.find((s) => s.key === "permitting")!;
+    expect(permitting.effective).toEqual({ days: 30, source: "capped" });
+    expect(permitting.flagged).toHaveLength(1);
+  });
+
+  it("caps a lenient derived p90 at the stage cap", () => {
+    // 12 completed permitting transitions of 200d → p90 = 200, way over the 30d cap.
+    const t = deriveThresholds(completed(12, 200), NOW);
+    const rows = [deal({ permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(40) })];
+    const snap = computeStageSnapshots(rows, t, NOW);
+    const permitting = snap.stages.find((s) => s.key === "permitting")!;
+    expect(permitting.effective).toEqual({ days: 30, source: "capped" });
+    expect(permitting.flagged).toHaveLength(1); // 40d > 30d cap, though under the 200d p90
+  });
+
+  it("manual thresholds bypass the cap", () => {
+    const manual = {
+      permitting: { medianDays: 10, p90Days: 20, thresholdDays: 60, source: "manual" as const },
+    };
+    const rows = [deal({ permittingStatus: "Submitted to AHJ", permitSubmitDate: daysAgo(40) })];
+    const snap = computeStageSnapshots(rows, manual, NOW);
+    const permitting = snap.stages.find((s) => s.key === "permitting")!;
+    expect(permitting.effective).toEqual({ days: 60, source: "manual" });
+    expect(permitting.flagged).toHaveLength(0); // 40d < 60d manual
   });
 
   it("preserves manual overrides while refreshing stats", () => {

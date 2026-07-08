@@ -278,6 +278,10 @@ export const DEAL_SYNC_PROPERTIES: string[] = [
   "pe_m2_status",
   "pe_m1_remittance_date",
   "pe_m2_remittance_date",
+  // Engagement-based "Last Activity Date" (last note/call/email/task — NOT
+  // property writes, which bulk scripts mass-stamp). Bottleneck stalled/zombie
+  // signal; surfaced via rawProperties, backfilled by the next full sync.
+  "notes_last_updated",
 ];
 
 /** Department lead property keys for building departmentLeads Json */

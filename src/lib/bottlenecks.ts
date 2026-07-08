@@ -23,6 +23,8 @@ export interface BottleneckDealRow {
   hubspotOwnerId: string | null;
   stage: string | null;
   isParticipateEnergy: boolean;
+  /** HubSpot hs_lastmodifieddate mirror — drives the stalled/zombie split. */
+  hubspotUpdatedAt: Date | null;
   rawProperties: unknown;
   designStatus: string | null;
   permittingStatus: string | null;
@@ -47,7 +49,8 @@ export interface BottleneckDealRow {
 
 // ── Stage registry ──
 
-export type BottleneckTeam = "design" | "pi" | "ops" | "precon";
+/** Team ownership per Zach 7/7: PTO belongs to P&I, PE milestones to Compliance. */
+export type BottleneckTeam = "design" | "pi" | "ops" | "compliance";
 
 export interface StageDefinition {
   key: string;
@@ -59,6 +62,8 @@ export interface StageDefinition {
   entryDate(d: BottleneckDealRow): Date | null;
   /** When did it leave? (flow signal — null while still in stage) */
   exitDate(d: BottleneckDealRow): Date | null;
+  /** The deal's current status text within this stage (for display). */
+  statusOf(d: BottleneckDealRow): string | null;
 }
 
 /**
@@ -97,48 +102,56 @@ export const STAGES: StageDefinition[] = [
     isInStage: (d) => isOpenStatus(d.designStatus),
     entryDate: (d) => first(d.designStartDate, d.siteSurveyCompletionDate),
     exitDate: (d) => d.designCompletionDate,
+    statusOf: (d) => d.designStatus,
   },
   {
     key: "permitting", label: "Permitting", team: "pi",
     isInStage: (d) => isPermitActiveStatus(d.permittingStatus ?? ""),
     entryDate: (d) => first(d.permitSubmitDate, d.designCompletionDate),
     exitDate: (d) => d.permitIssueDate,
+    statusOf: (d) => d.permittingStatus,
   },
   {
     key: "interconnection", label: "Interconnection", team: "pi",
     isInStage: (d) => isICActiveStatus(d.icStatus ?? ""),
     entryDate: (d) => first(d.icSubmitDate, d.designCompletionDate),
     exitDate: (d) => d.icApprovalDate,
+    statusOf: (d) => d.icStatus,
   },
   {
     key: "construction", label: "Construction", team: "ops",
     isInStage: (d) => isOpenStatus(d.installStatus),
     entryDate: (d) => first(d.installScheduleDate, d.rtbDate, d.permitIssueDate),
     exitDate: (d) => d.constructionCompleteDate,
+    statusOf: (d) => d.installStatus,
   },
   {
     key: "inspection", label: "Inspection", team: "ops",
     isInStage: (d) => isOpenStatus(d.finalInspectionStatus),
     entryDate: (d) => d.constructionCompleteDate,
     exitDate: (d) => d.inspectionPassDate,
+    statusOf: (d) => d.finalInspectionStatus,
   },
   {
-    key: "pto", label: "PTO", team: "ops",
+    key: "pto", label: "PTO", team: "pi",
     isInStage: (d) => isPTOPipelineStatus(d.ptoStatus ?? ""),
     entryDate: (d) => first(d.ptoStartDate, d.inspectionPassDate),
     exitDate: (d) => d.ptoCompletionDate,
+    statusOf: (d) => d.ptoStatus,
   },
   {
-    key: "pe_m1", label: "PE M1", team: "precon",
+    key: "pe_m1", label: "PE M1", team: "compliance",
     isInStage: (d) => d.isParticipateEnergy && peActive(rawProp(d, "pe_m1_status")),
     entryDate: (d) => d.inspectionPassDate,
     exitDate: (d) => rawDate(d, "pe_m1_remittance_date"),
+    statusOf: (d) => rawProp(d, "pe_m1_status"),
   },
   {
-    key: "pe_m2", label: "PE M2", team: "precon",
+    key: "pe_m2", label: "PE M2", team: "compliance",
     isInStage: (d) => d.isParticipateEnergy && peActive(rawProp(d, "pe_m2_status")),
     entryDate: (d) => d.ptoCompletionDate,
     exitDate: (d) => rawDate(d, "pe_m2_remittance_date"),
+    statusOf: (d) => rawProp(d, "pe_m2_status"),
   },
 ];
 
@@ -147,12 +160,53 @@ export const STAGES: StageDefinition[] = [
 export interface StageThreshold {
   medianDays: number | null;
   p90Days: number | null;
-  thresholdDays: number | null; // null → stage never flags (insufficient history)
+  thresholdDays: number | null; // null → derive-time gate not met; caps still apply
   source: "derived" | "manual";
 }
 export type ThresholdConfig = Record<string, StageThreshold>;
 
+/**
+ * Per-stage flag caps (days). The derived p90 is calibrated on deals that
+ * completed each stage — the fast survivors — so it runs far too lenient
+ * against the live population (v1 flagged >90% of some stages). The effective
+ * flag threshold is min(derived p90, cap); manual overrides bypass the cap.
+ * Values follow the old bot's STUCK_THRESHOLDS ranges, tuned per stage speed.
+ */
+export const THRESHOLD_CAPS: Record<string, number> = {
+  design: 14,
+  permitting: 30,
+  interconnection: 45,
+  construction: 14,
+  inspection: 14,
+  pto: 21,
+  pe_m1: 30,
+  pe_m2: 30,
+};
+
+export type ThresholdSource = "manual" | "derived" | "capped";
+
+/**
+ * Effective flag threshold for a stage: manual wins outright; otherwise the
+ * gated derived value (p90, null under 10 transitions) capped at the stage cap.
+ */
+export function effectiveThreshold(
+  stageKey: string,
+  t: StageThreshold
+): { days: number; source: ThresholdSource } {
+  if (t.source === "manual" && t.thresholdDays != null) {
+    return { days: t.thresholdDays, source: "manual" };
+  }
+  const cap = THRESHOLD_CAPS[stageKey] ?? 30;
+  if (t.thresholdDays != null && t.thresholdDays <= cap) {
+    return { days: t.thresholdDays, source: "derived" };
+  }
+  return { days: cap, source: "capped" };
+}
+
 // ── Snapshot computation ──
+
+/** Untouched for this many days → zombie (cleanup list, not the daily worklist). */
+export const ZOMBIE_DAYS = 90;
 
 export interface FlaggedDeal {
   hubspotDealId: string;
@@ -161,8 +215,15 @@ export interface FlaggedDeal {
   pbLocation: string | null;
   dealOwnerName: string | null;
   hubspotOwnerId: string | null;
+  /** Current status text within the stage (e.g. "Submitted to AHJ"). */
+  status: string | null;
   dwellDays: number;
   thresholdDays: number;
+  /** Days since the deal was last modified in HubSpot; null if unknown. */
+  daysSinceActivity: number | null;
+  /** stalled = aged past threshold but recently active (work these);
+   *  zombie = untouched ≥ ZOMBIE_DAYS (cleanup/close-out list). */
+  bucket: "stalled" | "zombie";
 }
 
 export interface StageSnapshot {
@@ -177,6 +238,10 @@ export interface StageSnapshot {
    *  Unknown-entry deals are excluded, so this can undercount. */
   volumeNorm90d: number | null;
   threshold: StageThreshold;
+  /** The threshold actually used for flagging (manual / derived / capped). */
+  effective: { days: number; source: ThresholdSource };
+  stalledCount: number;
+  zombieCount: number;
   flagged: FlaggedDeal[];
   flow: Array<{ weekStart: string; entered: number; exited: number }>;
 }
@@ -243,6 +308,7 @@ export function computeStageSnapshots(
     const inStage = rows.filter(
       (d) => isActiveDealStage(d.stage) && stage.isInStage(d) && stage.exitDate(d) == null
     );
+    const effective = effectiveThreshold(stage.key, threshold);
     const dwells: number[] = [];
     let unknownAgeCount = 0;
     const flagged: FlaggedDeal[] = [];
@@ -252,7 +318,15 @@ export function computeStageSnapshots(
       if (!entry) { unknownAgeCount++; continue; }
       const dwell = dwellDays(entry, nowMs);
       dwells.push(dwell);
-      if (threshold.thresholdDays != null && dwell > threshold.thresholdDays) {
+      if (dwell > effective.days) {
+        // Activity = last ENGAGEMENT (note/call/email/task via notes_last_updated),
+        // not hs_lastmodifieddate — bulk property scripts mass-stamp the latter
+        // (observed: a 4/29 bulk touch made every deal read "quiet 69d").
+        // hubspotUpdatedAt is the fallback until a full sync backfills the raw prop.
+        const lastActivity = rawDate(d, "notes_last_updated") ?? d.hubspotUpdatedAt;
+        const daysSinceActivity = lastActivity
+          ? Math.floor((nowMs - lastActivity.getTime()) / DAY_MS)
+          : null;
         flagged.push({
           hubspotDealId: d.hubspotDealId,
           dealName: d.dealName ?? "(unnamed)",
@@ -260,12 +334,19 @@ export function computeStageSnapshots(
           pbLocation: d.pbLocation,
           dealOwnerName: d.dealOwnerName,
           hubspotOwnerId: d.hubspotOwnerId,
+          status: stage.statusOf(d),
           dwellDays: dwell,
-          thresholdDays: threshold.thresholdDays,
+          thresholdDays: effective.days,
+          daysSinceActivity,
+          // Unknown activity ⇒ zombie: no evidence anyone is working it.
+          bucket:
+            daysSinceActivity != null && daysSinceActivity < ZOMBIE_DAYS ? "stalled" : "zombie",
         });
       }
     }
     flagged.sort((a, b) => b.dwellDays - a.dwellDays);
+    const stalledCount = flagged.filter((f) => f.bucket === "stalled").length;
+    const zombieCount = flagged.length - stalledCount;
 
     // Flow: entry/exit stamps over the trailing weeks — computed over ALL rows,
     // not just current in-stage deals (a deal that exited is no longer in stage).
@@ -318,6 +399,9 @@ export function computeStageSnapshots(
       medianDwellDays: median(dwells),
       volumeNorm90d: median(dailyCounts),
       threshold,
+      effective,
+      stalledCount,
+      zombieCount,
       flagged,
       flow,
     };
@@ -406,7 +490,7 @@ export async function loadBottleneckDeals(): Promise<BottleneckDealRow[]> {
     select: {
       hubspotDealId: true, dealName: true, projectNumber: true, pbLocation: true,
       dealOwnerName: true, hubspotOwnerId: true, stage: true,
-      isParticipateEnergy: true, rawProperties: true,
+      isParticipateEnergy: true, hubspotUpdatedAt: true, rawProperties: true,
       designStatus: true, permittingStatus: true, icStatus: true,
       installStatus: true, finalInspectionStatus: true, ptoStatus: true,
       siteSurveyCompletionDate: true, designStartDate: true, designCompletionDate: true,
