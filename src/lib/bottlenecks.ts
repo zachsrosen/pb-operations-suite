@@ -95,6 +95,11 @@ function rawDate(d: BottleneckDealRow, key: string): Date | null {
 const first = (...dates: Array<Date | null>) => dates.find((x) => x != null) ?? null;
 const PE_DONE = new Set(["approved", "paid"]);
 const peActive = (status: string | null) => status != null && !PE_DONE.has(statusBucket(status));
+/** Compliance works PE milestones only once the deal reaches PTO / Close Out
+ *  (M1 is post-inspection, M2 post-PTO) — matches the compliance worklist. */
+const PE_WORKABLE_STAGES = new Set(["permission to operate", "close out"]);
+const inPeWorkableStage = (d: BottleneckDealRow) =>
+  PE_WORKABLE_STAGES.has((d.stage ?? "").trim().toLowerCase());
 
 /**
  * In-flight statuses the shared pi-statuses constants miss — found by the 7/7
@@ -158,14 +163,14 @@ export const STAGES: StageDefinition[] = [
   },
   {
     key: "pe_m1", label: "PE M1", team: "compliance",
-    isInStage: (d) => d.isParticipateEnergy && peActive(rawProp(d, "pe_m1_status")),
+    isInStage: (d) => d.isParticipateEnergy && inPeWorkableStage(d) && peActive(rawProp(d, "pe_m1_status")),
     entryDate: (d) => d.inspectionPassDate,
     exitDate: (d) => rawDate(d, "pe_m1_remittance_date"),
     statusOf: (d) => rawProp(d, "pe_m1_status"),
   },
   {
     key: "pe_m2", label: "PE M2", team: "compliance",
-    isInStage: (d) => d.isParticipateEnergy && peActive(rawProp(d, "pe_m2_status")),
+    isInStage: (d) => d.isParticipateEnergy && inPeWorkableStage(d) && peActive(rawProp(d, "pe_m2_status")),
     entryDate: (d) => d.ptoCompletionDate,
     exitDate: (d) => rawDate(d, "pe_m2_remittance_date"),
     statusOf: (d) => rawProp(d, "pe_m2_status"),
@@ -302,7 +307,7 @@ const FLOW_WEEKS = 8;
  * on-hold deals were topping the Design digest).
  */
 const TERMINAL_STAGE_KEYWORDS = ["complete", "cancelled", "canceled", "closed won", "closed lost", "rejected", "on-hold", "on hold"];
-function isActiveDealStage(stage: string | null): boolean {
+export function isActiveDealStage(stage: string | null): boolean {
   if (!stage) return false;
   const s = stage.toLowerCase();
   if (s === "deleted" || s === "merged") return false;

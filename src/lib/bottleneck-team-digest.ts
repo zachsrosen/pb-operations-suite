@@ -118,11 +118,68 @@ function section(
  * Build the sections for one team from the funnel drill-down + (for
  * Compliance) the raw Deal rows. Pure — unit-testable without a DB.
  */
+/** PE statuses that mean "ready to go back out the door". */
+const PE_READY_RESUBMIT = new Set(["Ready to Resubmit", "Onboarding Ready to Resubmit"]);
+/** PE API status vocabulary for "needs a response" (PeDocumentReview/PeDocChangeLog). */
+export const PE_REJECTED_STATUSES = ["ACTION_REQUIRED", "REJECTED"];
+
+export interface PeRecentRejection {
+  docs: string[];
+  daysAgo: number; // since the most recent rejection flip
+}
+
+/**
+ * Deals with docs CURRENTLY in a rejected state (PeDocumentReview is the live
+ * per-doc status table), with recency from the change log's latest rejection
+ * flip. Using current state — not just flips — means the PE ANCHOR
+ * reconciler's reject-then-reapprove no-ops filter themselves out, and open
+ * rejections older than any window still show (freshest sort surfaces the
+ * "recent" ones Zach asked for).
+ */
+export async function getRecentPeRejections(
+  nowMs = Date.now()
+): Promise<Map<string, PeRecentRejection>> {
+  if (!prisma) return new Map();
+  const open = await prisma.peDocumentReview.findMany({
+    where: { status: { in: ["ACTION_REQUIRED", "REJECTED"] } },
+    select: { dealId: true, docName: true, updatedAt: true },
+  });
+  if (open.length === 0) return new Map();
+
+  // Recency: latest rejection flip per (deal, doc) from the change log; falls
+  // back to the review row's updatedAt when no log entry exists.
+  const flips = await prisma.peDocChangeLog.findMany({
+    where: {
+      newStatus: { in: PE_REJECTED_STATUSES },
+      dealId: { in: [...new Set(open.map((o) => o.dealId))] },
+    },
+    select: { dealId: true, docName: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const flipAt = new Map<string, number>();
+  for (const f of flips) {
+    const k = `${f.dealId}::${f.docName}`;
+    if (!flipAt.has(k)) flipAt.set(k, f.createdAt.getTime());
+  }
+
+  const map = new Map<string, PeRecentRejection>();
+  for (const o of open) {
+    const ts = flipAt.get(`${o.dealId}::${o.docName}`) ?? o.updatedAt.getTime();
+    const daysAgo = Math.floor((nowMs - ts) / 86_400_000);
+    const e = map.get(o.dealId) ?? { docs: [], daysAgo: 9999 };
+    if (!e.docs.includes(o.docName)) e.docs.push(o.docName);
+    e.daysAgo = Math.min(e.daysAgo, daysAgo);
+    map.set(o.dealId, e);
+  }
+  return map;
+}
+
 export function buildTeamSections(
   team: TeamDigestKey,
   dd: ProjectFunnelDrillDown,
   peRows: BottleneckDealRow[],
-  nowMs: number
+  nowMs: number,
+  extras?: { peRecentRejections?: Map<string, PeRecentRejection> }
 ): DigestSection[] {
   switch (team) {
     case "design": {
@@ -195,25 +252,34 @@ export function buildTeamSections(
       ];
     case "compliance": {
       // No per-deal compliance lead exists in HubSpot — grouped by office instead.
+      // Compliance only works deals in PTO / Close Out (M1 is post-inspection,
+      // M2 post-PTO) — earlier-stage deals with PE statuses are not actionable
+      // for the team yet (per Zach 7/8).
+      const COMPLIANCE_STAGES = new Set(["permission to operate", "close out"]);
+      const inComplianceStage = (r: BottleneckDealRow) =>
+        COMPLIANCE_STAGES.has((r.stage ?? "").trim().toLowerCase());
       const DAY_MS = 86_400_000;
       const peStage = (key: "pe_m1" | "pe_m2") => STAGES.find((s) => s.key === key)!;
+      const peStatusOf = (r: BottleneckDealRow, statusProp: string): string | null => {
+        const raw = r.rawProperties as Record<string, unknown> | null;
+        const v = raw && typeof raw === "object" ? raw[statusProp] : null;
+        return typeof v === "string" && v ? v : null;
+      };
       const peLines = (
         key: "pe_m1" | "pe_m2",
         statusProp: string,
-        wantBucket: "ready" | "review",
+        want: (status: string) => boolean,
         followUpDays: number | null
       ): DigestSection["lines"] => {
         const stage = peStage(key);
         return peRows
           .filter((r) => {
-            if (!r.isParticipateEnergy) return false;
-            const raw = r.rawProperties as Record<string, unknown> | null;
-            const status = raw && typeof raw === "object" ? raw[statusProp] : null;
-            return typeof status === "string" && statusBucket(status) === wantBucket;
+            if (!r.isParticipateEnergy || !inComplianceStage(r)) return false;
+            const status = peStatusOf(r, statusProp);
+            return status != null && want(status);
           })
           .map((r) => {
-            const raw = r.rawProperties as Record<string, unknown> | null;
-            const status = raw && typeof raw === "object" ? String(raw[statusProp] ?? "") : "";
+            const status = peStatusOf(r, statusProp) ?? "";
             const entry = stage.entryDate(r);
             const days = entry ? Math.floor((nowMs - entry.getTime()) / DAY_MS) : 0;
             return {
@@ -230,11 +296,42 @@ export function buildTeamSections(
           })
           .sort((a, b) => b.daysWaiting - a.daysWaiting);
       };
+      const readyOrResubmit = (s: string) => statusBucket(s) === "ready" || PE_READY_RESUBMIT.has(s);
+      const inReview = (s: string) => statusBucket(s) === "review";
+
+      // Recent rejections: deals with a PE doc flipped to Rejected/Internally
+      // Rejected/Onboarding Rejected in the trailing window (PeDocChangeLog),
+      // with the doc names on the line and days since the latest flip.
+      const rejections = extras?.peRecentRejections ?? new Map<string, PeRecentRejection>();
+      const rowById = new Map(peRows.map((r) => [r.hubspotDealId, r]));
+      const rejectionLines: DigestSection["lines"] = [...rejections.entries()]
+        .map(([dealId, rej]) => {
+          const r = rowById.get(dealId);
+          if (!r || !r.isParticipateEnergy || !inComplianceStage(r)) return null;
+          return {
+            id: dealId,
+            name: r.dealName ?? "(unnamed)",
+            status: rej.docs.join(", "),
+            stage: r.stage ?? "",
+            daysWaiting: rej.daysAgo,
+            lead: "",
+            location: r.pbLocation ?? "",
+            needsFollowUp: true,
+            blockedNote: null,
+          };
+        })
+        .filter((l): l is NonNullable<typeof l> => l != null)
+        .sort((a, b) => a.daysWaiting - b.daysWaiting); // freshest rejection first
+
+      // Priority order: rejections demand a response, submitted need chasing,
+      // ready lists are the (large) backlog — they truncate gracefully when
+      // the Chat char budget runs out, the urgent sections never should.
       return [
-        { title: "M1 ready to submit", followUpDays: null, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", "ready", null) },
-        { title: "M1 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", "review", 14) },
-        { title: "M2 ready to submit", followUpDays: null, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", "ready", null) },
-        { title: "M2 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", "review", 14) },
+        { title: "Open rejections — respond to PE (docs, days since rejected)", followUpDays: 0, groupBy: "location", lines: rejectionLines },
+        { title: "M1 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", inReview, 14) },
+        { title: "M2 submitted — follow up with PE", followUpDays: 14, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", inReview, 14) },
+        { title: "M1 ready to submit / resubmit", followUpDays: null, groupBy: "location", lines: peLines("pe_m1", "pe_m1_status", readyOrResubmit, null) },
+        { title: "M2 ready to submit / resubmit", followUpDays: null, groupBy: "location", lines: peLines("pe_m2", "pe_m2_status", readyOrResubmit, null) },
       ];
     }
   }
@@ -345,7 +442,9 @@ export async function getTeamSections(
   const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, {
     scope: "active",
   });
-  return buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs);
+  const extras =
+    team === "compliance" ? { peRecentRejections: await getRecentPeRejections(nowMs) } : undefined;
+  return buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs, extras);
 }
 
 export async function runTeamDigest(
@@ -447,8 +546,40 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
     out.push(""); used += 1;
   }
   if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
-  out.push(`Dashboard: ${FUNNEL_TAB_URL}`);
+  // Deep-link to the personal worklist view — the dashboard renders exactly
+  // this list (same pivot), not the generic queue view.
+  out.push(`Dashboard: ${FUNNEL_TAB_URL}&view=personal&person=${encodeURIComponent(w.person)}`);
   return out.join("\n");
+}
+
+/**
+ * One person's cross-team worklist sections, titles prefixed with the team
+ * label — the dashboard's `view=personal` mode renders these so the page
+ * matches the personal digest exactly.
+ */
+export async function getPersonalSections(
+  person: string,
+  nowMs = Date.now()
+): Promise<DigestSection[]> {
+  if (!prisma) return [];
+  const deals = await prisma.deal.findMany({
+    where: { pipeline: "PROJECT", stage: { notIn: ["DELETED", "MERGED"] } },
+  });
+  const projects = deals.map(dealToProject);
+  const funnel = buildProjectFunnelData(projects, 6, undefined, undefined, undefined, { scope: "active" });
+  const sectionsByTeam = PERSONAL_TEAMS.map((team) => ({
+    team,
+    sections: buildTeamSections(team, funnel.drillDown, deals as unknown as BottleneckDealRow[], nowMs),
+  }));
+  const target = person.trim().toLowerCase();
+  const w = buildPersonalWorklists(sectionsByTeam).find(
+    (x) => x.person.trim().toLowerCase() === target
+  );
+  if (!w) return [];
+  return w.sections.map(({ team, section }) => ({
+    ...section,
+    title: `${TEAM_DIGEST_LABELS[team]} — ${section.title}`,
+  }));
 }
 
 // One-time welcome tracking (SystemConfig set of emails).

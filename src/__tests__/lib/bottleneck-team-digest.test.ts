@@ -112,13 +112,32 @@ describe("buildTeamSections", () => {
         inspectionPassDate: daysAgo(passDaysAgo), ptoCompletionDate: null, ptoStartDate: null,
       }) as BottleneckDealRow;
 
-    const rows = [pe("r1", "Ready to Submit", 5), pe("s1", "Submitted", 20)];
-    const sections = buildTeamSections("compliance", rows.length ? { ...EMPTY_DD } : EMPTY_DD, rows, NOW);
-    expect(sections[0].lines.map((l) => l.id)).toEqual(["r1"]);
-    expect(sections[1].lines.map((l) => l.id)).toEqual(["s1"]);
-    expect(sections[1].lines[0].needsFollowUp).toBe(true); // 20d > 14d
-    expect(sections[1].lines[0].lead).toBe("");
-    expect(sections[1].groupBy).toBe("location");
+    const rows = [
+      pe("r1", "Ready to Submit", 5),
+      pe("r2", "Ready to Resubmit", 8), // resubmit-ready counts as ready to go out
+      pe("s1", "Submitted", 20),
+      pe("x1", "Rejected", 30), // rejected is NOT "ready" and NOT "in review"
+      { ...pe("c1", "Ready to Submit", 5), stage: "Cancelled" } as BottleneckDealRow, // terminal stage — excluded
+      { ...pe("c2", "Ready to Submit", 5), stage: "Construction" } as BottleneckDealRow, // pre-PTO — not compliance-actionable
+    ];
+    const rejections = new Map([["x1", { docs: ["Signed Final Permit", "BOM"], daysAgo: 2 }]]);
+    const sections = buildTeamSections("compliance", { ...EMPTY_DD }, rows, NOW, {
+      peRecentRejections: rejections,
+    });
+    const byTitle = (frag: string) => sections.find((x) => x.title.includes(frag))!;
+    // Priority order: rejections first, follow-ups, then the big ready lists.
+    expect(sections[0].title).toContain("Open rejections");
+    const ready = byTitle("M1 ready to submit / resubmit");
+    expect(ready.lines.map((l) => l.id).sort()).toEqual(["r1", "r2"]);
+    const review = byTitle("M1 submitted");
+    expect(review.lines.map((l) => l.id)).toEqual(["s1"]);
+    expect(review.lines[0].needsFollowUp).toBe(true); // 20d > 14d
+    expect(review.lines[0].lead).toBe("");
+    expect(review.groupBy).toBe("location");
+    const rej = byTitle("Open rejections");
+    expect(rej.lines.map((l) => l.id)).toEqual(["x1"]);
+    expect(rej.lines[0].status).toBe("Signed Final Permit, BOM");
+    expect(rej.lines[0].daysWaiting).toBe(2);
   });
 });
 
