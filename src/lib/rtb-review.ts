@@ -23,10 +23,10 @@ export interface RtbQueueItem {
   /** Display label for the deal's pipeline stage (e.g. "RTB - Blocked"). */
   dealStage: string | null;
   permitIssueDate: string | null;
-  /** Resolved to the HubSpot display label, not the raw option value. */
-  permittingStatus: string | null;
-  /** Resolved to the HubSpot display label, not the raw option value. */
-  designStatus: string | null;
+  /** Free-text RTB - Blocked Reason from the deal (why it's parked). */
+  rtbBlockedReason: string | null;
+  /** Construction (install) status, resolved to the HubSpot display label. */
+  constructionStatus: string | null;
   revisionCount: number | null;
   approved: boolean;
   lastModified: string | null;
@@ -40,8 +40,8 @@ const PROPERTIES = [
   "dealstage",
   "pipeline",
   "permit_completion_date",
-  "permitting_status",
-  "design_status",
+  "rtb_blocked_reason",
+  "install_status",
   "total_revision_count",
   "pm_rtb_approved",
   "hs_lastmodifieddate",
@@ -84,8 +84,8 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         ownerId: p.hubspot_owner_id ?? null,
         dealStage: p.dealstage ? DEAL_STAGE_MAP[p.dealstage] ?? p.dealstage : null,
         permitIssueDate: p.permit_completion_date ?? null,
-        permittingStatus: statusLabel("permitting_status", p.permitting_status),
-        designStatus: statusLabel("design_status", p.design_status),
+        rtbBlockedReason: p.rtb_blocked_reason ?? null,
+        constructionStatus: statusLabel("install_status", p.install_status),
         revisionCount: p.total_revision_count
           ? Number(p.total_revision_count)
           : null,

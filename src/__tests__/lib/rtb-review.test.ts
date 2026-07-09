@@ -21,9 +21,8 @@ describe("fetchRtbQueue", () => {
             pb_location: "Westminster",
             project_manager: "Jane PM",
             permit_completion_date: "2026-07-01T00:00:00Z",
-            // raw HubSpot option *values* that differ from their display labels
-            permitting_status: "Complete",
-            design_status: "DA Approved",
+            rtb_blocked_reason: "Waiting on utility meter release",
+            install_status: "Ready to Build",
             total_revision_count: "2",
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
@@ -40,9 +39,9 @@ describe("fetchRtbQueue", () => {
       projectManager: "Jane PM",
       dealStage: "RTB - Blocked",
       permitIssueDate: "2026-07-01T00:00:00Z",
-      // resolved to display labels, not the raw values
-      permittingStatus: "Permit Issued",
-      designStatus: "Final Design Review",
+      rtbBlockedReason: "Waiting on utility meter release",
+      // resolved to display label, not the raw value
+      constructionStatus: "Ready to Build",
       approved: false,
     });
     const req = mockSearchWithRetry.mock.calls[0][0];

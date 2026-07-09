@@ -126,8 +126,8 @@ export default function RtbReviewClient() {
               <th className="text-left px-3 py-2 font-medium">Location</th>
               <th className="text-left px-3 py-2 font-medium">Deal Stage</th>
               <th className="text-left px-3 py-2 font-medium">Permit Issued</th>
-              <th className="text-left px-3 py-2 font-medium">Permitting Status</th>
-              <th className="text-left px-3 py-2 font-medium">Design Status</th>
+              <th className="text-left px-3 py-2 font-medium">RTB Blocked Notes</th>
+              <th className="text-left px-3 py-2 font-medium">Construction Status</th>
               <th className="text-left px-3 py-2 font-medium">Revisions</th>
               <th className="text-right px-3 py-2 font-medium">Action</th>
             </tr>
@@ -168,8 +168,10 @@ export default function RtbReviewClient() {
                   <td className="px-3 py-2 text-muted whitespace-nowrap">
                     {formatDate(item.permitIssueDate)}
                   </td>
-                  <td className="px-3 py-2 text-muted">{item.permittingStatus ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted">{item.designStatus ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted max-w-xs whitespace-pre-wrap">
+                    {item.rtbBlockedReason ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted">{item.constructionStatus ?? "—"}</td>
                   <td className="px-3 py-2 text-muted">{item.revisionCount ?? "—"}</td>
                   <td className="px-3 py-2 text-right">
                     <button
