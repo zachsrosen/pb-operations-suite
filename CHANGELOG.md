@@ -4,6 +4,62 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-10
+
+### Tech Ops Bot — Google Chat (Major)
+- Google Chat bot (formerly "OOO bot") for Tech Ops requests, deal lookups, and HubSpot task creation
+- Renamed internals from OOO bot to Tech Ops bot; assistant framing replaces OOO framing with process-request filing
+- HubSpot task creation tool: exact deal matching, customer name/address resolution, task assigned to requester via shared resolver
+- Tool calls echo deal name; never fabricate task creation (passes project ref through tool)
+- `count_deals_by_status` tool returns DA / design / permitting breakdowns; reports true stage counts with a data-integrity prompt rule
+- Encoded DA lifecycle phases (Review In Progress = pre-send) so bot distinguishes pre/post DA send states
+- Admin dashboard for reviewing bot escalations (`/dashboards/admin`)
+- Auth hardening: multi-source JWKS resolution, multiple JWT audiences accepted, base64 service account key handling, claim logging
+- Reply handling: posts to main timeline instead of thread; async error capture to DB with detailed Chat API error logs
+- Workspace add-on envelope format support; static `waitUntil` import for serverless reliability
+- Conversation history scoped by space, not thread (fixes context loss across replies)
+
+### PE Doc Digest (Major)
+- Restructured daily digest into 4 actionable sections (replaces flat list)
+- Each deal includes a Google Drive folder link and time since last update
+- Dropped "Today's Changes" section; slimmed email to summary + tracker link
+- In-app mirror of digest with same actionable sections + Drive links
+- Replay endpoint for re-sending past digest batches (one-shot replay cron used + retired)
+- Merged `UPLOADED` and `UNDER_REVIEW` into a single "In Review" status; convergence no longer logged as a change
+- Notes-only PE doc changes relabeled instead of showing "Uploaded → Uploaded"
+- Middleware allowlist for `/api/cron/pe-doc-digest`
+
+### Funnel + Monthly Activity Dashboards
+- New Monthly Activity throughput dashboard
+- Interconnection rendered as a parallel workstream (throughput columns + backlog IC status)
+- PM/owner filters, trend vs prior period, URL-synced filter state, by-location hero matrix
+- Sortable backlog columns on both Funnel and Monthly Activity pages
+- Calendar-timeframe fix on both pages
+- Fixed cancelled deals being counted as having reached every funnel milestone
+- Fixed Closed Out / Cancelled handling, per-stage revenue, status labels, conversion %
+- Awaiting DA Send column now shows design approval status
+
+### Scheduler
+- Weekend visibility toggle (optional Saturday/Sunday columns)
+- Weekend events stay on their own cells — no Saturday shift, no Monday steal
+
+### Shop Health (Performance)
+- Lightweight overview path: 1 Project pipeline fetch, no ticket fetch
+- Fail open on new Service / D&R fetches instead of breaking the page
+- Stop duplicate Project pipeline fetch
+
+### Admin Analytics
+- Page Traffic analytics: views, dwell time, dead-weight pages, per-user breakdown
+
+### On-call
+- Monday-start weeks across on-call rotation views
+- Dropped California Sunday coverage from the rotation
+
+### Infrastructure
+- Centralized Claude model IDs in a single module; replaced retiring Sonnet 4 and bumped to current models
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
