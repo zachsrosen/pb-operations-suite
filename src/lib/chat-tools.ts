@@ -1194,6 +1194,164 @@ export function createReadOnlyChatTools() {
     },
   });
 
+  const listDealsByStatus = betaZodTool({
+    name: "list_deals_by_status",
+    description:
+      "LIST the individual deals that match one specific status VALUE, grouped by deal " +
+      "owner (or the relevant team lead), with revenue and a HubSpot link per deal. Use " +
+      "this whenever someone wants an actual LIST (not just a count) of deals in a " +
+      "sub-status — e.g. 'list all DAs pending sales changes grouped by owner with " +
+      "revenue', 'show me the deals waiting on X by owner'. statusType selects the status " +
+      "field: 'da' = customer Design Approval (layout_status — this is where 'Pending " +
+      "Sales Changes' lives), 'design' = engineering design, 'permitting', " +
+      "'interconnection', 'site_survey', 'construction' (install), 'inspection', 'pto'. " +
+      "statusValue is the exact status to match (case-insensitive; matches the display " +
+      "label or the raw value). groupBy defaults to 'owner' (the sales deal owner); use " +
+      "'lead' to group by the team lead for that status instead. If nothing matches, the " +
+      "tool returns the available status values so you can suggest the right one.",
+    inputSchema: z.object({
+      statusType: z.enum([
+        "da",
+        "design",
+        "permitting",
+        "interconnection",
+        "site_survey",
+        "construction",
+        "inspection",
+        "pto",
+      ]),
+      statusValue: z
+        .string()
+        .describe("Exact status to match, e.g. 'Pending Sales Changes'. Case-insensitive."),
+      location: z
+        .string()
+        .optional()
+        .describe(
+          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
+            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+        ),
+      groupBy: z
+        .enum(["owner", "lead"])
+        .optional()
+        .describe("Group deals by 'owner' (sales deal owner, default) or 'lead' (team lead)."),
+    }),
+    run: async (input) => {
+      const { fetchAllProjects } = await import("@/lib/hubspot");
+      const { statusLabel } = await import("@/lib/deal-status-labels");
+      const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+
+      // [projectField, hubspotPropKey] — same mapping count_deals_by_status uses.
+      const FIELD_MAP: Record<string, [string, string]> = {
+        da: ["layoutStatus", "layout_status"],
+        design: ["designStatus", "design_status"],
+        permitting: ["permittingStatus", "permitting_status"],
+        interconnection: ["interconnectionStatus", "interconnection_status"],
+        site_survey: ["siteSurveyStatus", "site_survey_status"],
+        construction: ["constructionStatus", "install_status"],
+        inspection: ["finalInspectionStatus", "final_inspection_status"],
+        pto: ["ptoStatus", "pto_status"],
+      };
+      // The team lead field per status type (for groupBy: "lead").
+      const LEAD_FIELD: Record<string, string> = {
+        da: "dealOwner",
+        design: "designLead",
+        permitting: "permitLead",
+        interconnection: "interconnectionsLead",
+        site_survey: "siteSurveyor",
+        construction: "projectManager",
+        inspection: "inspectionsLead",
+        pto: "interconnectionsLead",
+      };
+      const [projField, propKey] = FIELD_MAP[input.statusType];
+
+      let canonicalLocation: string | null = null;
+      if (input.location) {
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
+          return JSON.stringify({ error: `Unknown location: ${input.location}`, knownLocations: CANONICAL_LOCATIONS });
+        }
+      }
+
+      let projects = await fetchAllProjects({ activeOnly: true });
+      if (canonicalLocation) {
+        projects = projects.filter((p) => normalizeLocation(p.pbLocation) === canonicalLocation);
+      }
+
+      const want = input.statusValue.trim().toLowerCase();
+      const rawOf = (p: Record<string, unknown>) => (p[projField] as string | null) ?? null;
+      const matched = projects.filter((p) => {
+        const raw = rawOf(p as unknown as Record<string, unknown>);
+        if (!raw) return false;
+        const label = statusLabel(propKey, raw) || "";
+        return String(raw).toLowerCase() === want || label.toLowerCase() === want;
+      });
+
+      if (matched.length === 0) {
+        // Help the model recover: list the status values that DO exist (with counts).
+        const present: Record<string, number> = {};
+        for (const p of projects) {
+          const raw = rawOf(p as unknown as Record<string, unknown>);
+          if (!raw) continue;
+          const label = statusLabel(propKey, raw) || String(raw);
+          present[label] = (present[label] ?? 0) + 1;
+        }
+        return JSON.stringify({
+          statusType: input.statusType,
+          statusValue: input.statusValue,
+          matched: 0,
+          note: `No active deals have that ${input.statusType} status. Available values (with counts) are listed — suggest the closest match.`,
+          availableStatuses: Object.fromEntries(Object.entries(present).sort((a, b) => b[1] - a[1])),
+        });
+      }
+
+      const groupField = input.groupBy === "lead" ? LEAD_FIELD[input.statusType] : "dealOwner";
+      const byGroup: Record<string, { count: number; revenue: number }> = {};
+      let totalRevenue = 0;
+      for (const p of matched as unknown as Record<string, unknown>[]) {
+        const key = ((p[groupField] as string) || "").trim() || "(unassigned)";
+        const amount = Number(p.amount) || 0;
+        byGroup[key] = byGroup[key] ?? { count: 0, revenue: 0 };
+        byGroup[key].count++;
+        byGroup[key].revenue = Math.round(byGroup[key].revenue + amount);
+        totalRevenue += amount;
+      }
+      const sortedGroups = Object.fromEntries(
+        Object.entries(byGroup).sort((a, b) => b[1].revenue - a[1].revenue)
+      );
+
+      const CAP = 60;
+      const deals = (matched as unknown as Record<string, unknown>[])
+        .slice()
+        .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))
+        .slice(0, CAP)
+        .map((p) => ({
+          dealId: String(p.id),
+          name: (p.name as string) || "",
+          projectNumber: (p.projectNumber as string) || "",
+          owner: (p.dealOwner as string) || "",
+          lead: (p[LEAD_FIELD[input.statusType]] as string) || "",
+          revenue: Math.round(Number(p.amount) || 0),
+          stage: (p.stage as string) || "",
+          location: (p.pbLocation as string) || "",
+          url: (p.url as string) || "",
+        }));
+
+      return JSON.stringify({
+        statusType: input.statusType,
+        statusValue: statusLabel(propKey, rawOf(matched[0] as unknown as Record<string, unknown>)) || input.statusValue,
+        location: canonicalLocation ?? "all locations",
+        groupedBy: input.groupBy === "lead" ? "team lead" : "deal owner",
+        total: matched.length,
+        totalRevenue: Math.round(totalRevenue),
+        byGroup: sortedGroups,
+        deals,
+        ...(matched.length > CAP
+          ? { note: `Showing the top ${CAP} of ${matched.length} deals by revenue; byGroup + totals cover ALL of them.` }
+          : {}),
+      });
+    },
+  });
+
   const getPePayments = betaZodTool({
     name: "get_pe_payments",
     description:
@@ -1494,6 +1652,7 @@ export function createReadOnlyChatTools() {
     filterDealsByStage,
     countDealsByStage,
     countDealsByStatus,
+    listDealsByStatus,
     countMilestoneInDateRange,
     getPePayments,
     getRevenueGoals,
