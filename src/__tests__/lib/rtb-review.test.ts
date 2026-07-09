@@ -1,6 +1,7 @@
 const mockSearchWithRetry = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
   searchWithRetry: (...args: unknown[]) => mockSearchWithRetry(...args),
+  DEAL_STAGE_MAP: { "71052436": "RTB - Blocked", "22580871": "Ready To Build" },
 }));
 
 import { fetchRtbQueue } from "@/lib/rtb-review";
@@ -8,7 +9,7 @@ import { fetchRtbQueue } from "@/lib/rtb-review";
 describe("fetchRtbQueue", () => {
   beforeEach(() => mockSearchWithRetry.mockReset());
 
-  it("shapes RTB-Blocked deals into queue rows", async () => {
+  it("shapes RTB-Blocked deals into queue rows with resolved labels", async () => {
     mockSearchWithRetry.mockResolvedValue({
       results: [
         {
@@ -18,9 +19,10 @@ describe("fetchRtbQueue", () => {
             dealstage: "71052436",
             pipeline: "6900017",
             pb_location: "Westminster",
+            project_manager: "Jane PM",
             permit_completion_date: "2026-07-01T00:00:00Z",
-            permitting_status: "Issued",
-            design_status: "Approved",
+            rtb_blocked_reason: "Waiting on utility meter release",
+            install_status: "Ready to Build",
             total_revision_count: "2",
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
@@ -34,9 +36,12 @@ describe("fetchRtbQueue", () => {
       dealId: "111",
       dealName: "PROJ-1000 - Smith",
       location: "Westminster",
+      projectManager: "Jane PM",
+      dealStage: "RTB - Blocked",
       permitIssueDate: "2026-07-01T00:00:00Z",
-      permittingStatus: "Issued",
-      designStatus: "Approved",
+      rtbBlockedReason: "Waiting on utility meter release",
+      // resolved to display label, not the raw value
+      constructionStatus: "Ready to Build",
       approved: false,
     });
     const req = mockSearchWithRetry.mock.calls[0][0];
