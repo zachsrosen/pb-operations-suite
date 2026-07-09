@@ -150,6 +150,16 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                       </span>
                     )}
 
+                    {/* Escalation photo count */}
+                    {item.type === "ESCALATION" && (item.escalationPhotoCount ?? 0) > 0 && (
+                      <span
+                        className="text-[10px] text-muted shrink-0"
+                        title={`${item.escalationPhotoCount} photo(s)`}
+                      >
+                        &#128247;{item.escalationPhotoCount}
+                      </span>
+                    )}
+
                     {/* New Construction review badge */}
                     {item.type === "NEW_CONSTRUCTION" && (
                       <span className="text-[10px] font-semibold text-cyan-500 shrink-0" title="New Construction Design Review">
