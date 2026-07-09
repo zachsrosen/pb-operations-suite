@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
+import { EscalationPhotoUploader, type PendingPhoto } from "./EscalationPhotoUploader";
 
 interface DealResult {
   dealId: string;
@@ -24,6 +25,7 @@ export function AddEscalationDialog({ onClose }: Props) {
   const [debouncedQ, setDebouncedQ] = useState("");
   const [selectedDeal, setSelectedDeal] = useState<DealResult | null>(null);
   const [reason, setReason] = useState("");
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
   const backdropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,7 +65,33 @@ export function AddEscalationDialog({ onClose }: Props) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to add");
       }
-      return res.json();
+      const queued = await res.json();
+
+      // Upload chosen photos sequentially so sortOrder stays deterministic.
+      // A failed photo does not roll back the escalation — toast and continue.
+      for (const photo of pendingPhotos) {
+        try {
+          const fd = new FormData();
+          fd.append("file", photo.file);
+          fd.append("dealId", selectedDeal.dealId);
+          const caption = photo.caption.trim();
+          if (caption) fd.append("caption", caption);
+          const up = await fetch("/api/idr-meeting/escalation-photos", {
+            method: "POST",
+            body: fd,
+          });
+          if (!up.ok) {
+            const data = await up.json().catch(() => ({}));
+            throw new Error(data.error ?? "Upload failed");
+          }
+        } catch (err) {
+          addToast({
+            type: "error",
+            title: `Photo "${photo.file.name}" failed: ${err instanceof Error ? err.message : "upload error"}`,
+          });
+        }
+      }
+      return queued;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.escalationQueue() });
@@ -177,6 +205,8 @@ export function AddEscalationDialog({ onClose }: Props) {
                 placeholder="Why does this need to be reviewed?"
               />
             </div>
+
+            <EscalationPhotoUploader mode="pending" onChange={setPendingPhotos} />
 
             <div className="flex justify-end gap-2 pt-2">
               <button
