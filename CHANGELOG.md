@@ -4,6 +4,66 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-07-08
+
+### Bottleneck Monitor (Major)
+- New age/volume/flow engine that surfaces stalled deals across the project pipeline funnel
+- v2 splits deals into `stalled` vs. `zombie` states, rolls up ownership, and uses real activity signal (not just stage duration) to decide staleness
+- Dedicated Bottlenecks tab on the project pipeline funnel page
+- Bot digest polish: hyperlinked deal names, per-team worklists, personal DM routing, saved presets
+
+### Team Activity Report (Major)
+- New cross-system employee activity report and admin page for tracking output across HubSpot, Google Workspace, Aircall, Zuper, and Participate Energy
+- Six sources: HubSpot, Google (Drive + Meet + Chat), Aircall, Zuper field activity (via ExternalActivity), Participate Energy, and PB Tech Ops (renamed from PB Ops)
+- Ad-hoc "look up anyone" section for on-demand queries outside the fixed roster
+- Day drill-down: raw event timeline with deal names, Zuper job/task names, PB Tech Ops descriptions, Aircall call detail, and a Copy button
+- Source toggle chips let viewers narrow to a single system; per-table row-expand state
+- Parallelized per-person HubSpot/Google pulls; default range shortened to 14 days for faster loads
+- Gated behind a SystemConfig DB flag with Google reports admin scope
+- Fixes: roster identities corrected (some were previously fabricated); drilldown now resolves real names so Zuper events surface; deal name lookups refresh when the date range changes
+
+### Participate Energy (PE)
+- New "Re-Rejected After Approval" report on PE Analytics — counts doc-level re-approvals, not just milestone-level, to catch clawbacks accurately
+- Daily ANCHOR clawback alert when an already-approved doc is re-opened
+- Milestones tab now buckets entries by document state
+- PE AVL dashboard opened to all roles
+- Fixes: rejection panels unfrozen (PeActionItem re-sourced) with a Last-30d timing toggle; self-heals PE payment splits so the KPI funnel doesn't undercount; resurfaced rejection notes now trim to the current review cycle on both doc and team paths
+
+### Admin Workflows
+- New `create-zuper-job` action with full Tray parity, including linkage to the deal's Zuper project
+- Property-change webhook feed for triggering workflows from HubSpot/Zuper property edits
+- Webhook now accepts `propertyName`/`value` via query params
+- Service-task entries enriched from the master record
+
+### On-Call Rotation
+- Real emails for the PTO lifecycle (replaces prior notification stubs)
+- Email notifications for the full swap lifecycle
+- Swaps now allowed at any distance out and can cover whole-week blocks
+- Swap picker shows one row per week with a full date range
+
+### Project Pipeline Funnel
+- Per-status revenue displayed on the Pipeline Backlog
+- New "hide project-rejected" toggle (mirrors the existing on-hold toggle)
+- Interconnection Cleared card reconciled with the backlog totals
+- "Awaiting Interconnection Approval" now scoped to genuine IC waits
+- Project-rejected notes now use the PM Rejection Reason field
+
+### Scheduler v2
+- Gated behind a SystemConfig DB flag (workaround for Vercel env-var cap)
+- `force-dynamic` on the route so the runtime flag isn't baked at build time
+
+### Zuper
+- Stopped attaching the demo customer to newly created jobs
+- Stamped `job_timezone` on job creation so CA customers get Pacific-time notifications instead of Mountain
+
+### Infrastructure & Fixes
+- Weekly cron sweeps stale Neon preview branches to cap extra-branch cost
+- Middleware no longer caches role-denial redirects (was serving stale 403s after role changes)
+- Blank crew `zuperUserUid` no longer matches every survey in conflict scan
+- Survey portal hides the PWA install prompt and sets a proper tab title
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
