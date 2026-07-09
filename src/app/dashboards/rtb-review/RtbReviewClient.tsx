@@ -131,7 +131,7 @@ export default function RtbReviewClient() {
               <th className="text-left px-3 py-2 font-medium">RTB Blocked Notes</th>
               <th className="text-left px-3 py-2 font-medium">Construction Status</th>
               <th className="text-left px-3 py-2 font-medium">Line Items</th>
-              <th className="text-left px-3 py-2 font-medium">Revisions</th>
+              <th className="text-left px-3 py-2 font-medium">DA Paid</th>
               <th className="text-right px-3 py-2 font-medium">Action</th>
             </tr>
           </thead>
@@ -213,7 +213,13 @@ export default function RtbReviewClient() {
                       </details>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-muted">{item.revisionCount ?? "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {item.daPaid ? (
+                      <span className="text-green-500">✓ Paid</span>
+                    ) : (
+                      <span className="text-muted">{item.daStatus ?? "—"}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <button
                       onClick={() => approveDeal.mutate(item.dealId)}

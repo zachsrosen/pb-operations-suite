@@ -11,6 +11,7 @@ import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   searchWithRetry,
   fetchLineItemsForDeals,
+  resolveHubSpotOwnerContact,
   DEAL_STAGE_MAP,
 } from "@/lib/hubspot";
 import { statusLabel } from "@/lib/deal-status-labels";
@@ -40,6 +41,7 @@ export interface RtbQueueItem {
   dealId: string;
   dealName: string;
   location: string | null;
+  /** Resolved owner-directory name (project_manager stores a HubSpot userId). */
   projectManager: string | null;
   ownerId: string | null;
   /** Display label for the deal's pipeline stage (e.g. "RTB - Blocked"). */
@@ -51,7 +53,10 @@ export interface RtbQueueItem {
   rtbBlockedReason: string | null;
   /** Construction (install) status, resolved to the HubSpot display label. */
   constructionStatus: string | null;
-  revisionCount: number | null;
+  /** DA invoice status ("Pending Approval" | "Open" | "Paid In Full"). */
+  daStatus: string | null;
+  /** True when the DA milestone is Paid In Full. */
+  daPaid: boolean;
   /** Link to the project's Google Drive folder, or null when unset. */
   driveFolderUrl: string | null;
   /** HubSpot line items on the deal (equipment the PM is releasing to build). */
@@ -72,7 +77,7 @@ const PROPERTIES = [
   "rtb_blocked_reason",
   "install_status",
   "all_document_parent_folder_id",
-  "total_revision_count",
+  "da_invoice_status",
   "pm_rtb_approved",
   "hs_lastmodifieddate",
 ];
@@ -124,13 +129,37 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
     console.error("[rtb-review] line-item fetch failed:", error);
   }
 
+  // project_manager stores a HubSpot userId — resolve each distinct id to a
+  // display name via the (cached) owner directory. Non-fatal: fall back to
+  // the raw value so the queue still renders if the owners API is down.
+  const pmIds = [
+    ...new Set(
+      results
+        .map((r) => (r.properties?.project_manager ?? "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  const pmNameById = new Map<string, string>();
+  await Promise.all(
+    pmIds.map(async (id) => {
+      try {
+        const contact = await resolveHubSpotOwnerContact(id);
+        if (contact?.name) pmNameById.set(id, contact.name);
+      } catch (error) {
+        console.error(`[rtb-review] owner resolution failed for ${id}:`, error);
+      }
+    })
+  );
+
   return results.map((r) => {
       const p = r.properties ?? {};
       return {
         dealId: r.id,
         dealName: p.dealname ?? "",
         location: p.pb_location ?? null,
-        projectManager: p.project_manager ?? null,
+        projectManager: p.project_manager
+          ? pmNameById.get(p.project_manager.trim()) ?? p.project_manager
+          : null,
         ownerId: p.hubspot_owner_id ?? null,
         dealStage: p.dealstage ? DEAL_STAGE_MAP[p.dealstage] ?? p.dealstage : null,
         permitIssueDate: p.permit_completion_date ?? null,
@@ -140,9 +169,8 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         ),
         rtbBlockedReason: p.rtb_blocked_reason ?? null,
         constructionStatus: statusLabel("install_status", p.install_status),
-        revisionCount: p.total_revision_count
-          ? Number(p.total_revision_count)
-          : null,
+        daStatus: p.da_invoice_status ?? null,
+        daPaid: p.da_invoice_status === "Paid In Full",
         driveFolderUrl: driveFolderUrl(p.all_document_parent_folder_id),
         lineItems: lineItemsByDeal.get(r.id) ?? [],
         approved: p.pm_rtb_approved === "true",

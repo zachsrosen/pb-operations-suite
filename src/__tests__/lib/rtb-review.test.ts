@@ -1,8 +1,10 @@
 const mockSearchWithRetry = jest.fn();
 const mockFetchLineItemsForDeals = jest.fn();
+const mockResolveOwner = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
   searchWithRetry: (...args: unknown[]) => mockSearchWithRetry(...args),
   fetchLineItemsForDeals: (...args: unknown[]) => mockFetchLineItemsForDeals(...args),
+  resolveHubSpotOwnerContact: (...args: unknown[]) => mockResolveOwner(...args),
   DEAL_STAGE_MAP: { "71052436": "RTB - Blocked", "22580871": "Ready To Build" },
 }));
 
@@ -13,6 +15,8 @@ describe("fetchRtbQueue", () => {
     mockSearchWithRetry.mockReset();
     mockFetchLineItemsForDeals.mockReset();
     mockFetchLineItemsForDeals.mockResolvedValue([]);
+    mockResolveOwner.mockReset();
+    mockResolveOwner.mockResolvedValue(null);
   });
 
   it("shapes RTB-Blocked deals into queue rows with resolved labels", async () => {
@@ -25,13 +29,13 @@ describe("fetchRtbQueue", () => {
             dealstage: "71052436",
             pipeline: "6900017",
             pb_location: "Westminster",
-            project_manager: "Jane PM",
+            project_manager: "212300959",
             permit_completion_date: "2026-07-01T00:00:00Z",
             interconnection_status: "Signature Acquired By Customer",
             rtb_blocked_reason: "Waiting on utility meter release",
             install_status: "Ready to Build",
             all_document_parent_folder_id: "1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
-            total_revision_count: "2",
+            da_invoice_status: "Paid In Full",
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
           },
@@ -43,13 +47,20 @@ describe("fetchRtbQueue", () => {
       { dealId: "111", name: "Tesla Powerwall 3", quantity: 1, productCategory: "BATTERY" },
       { dealId: "999", name: "Other deal item", quantity: 5, productCategory: "MODULE" },
     ]);
+    mockResolveOwner.mockResolvedValue({
+      id: "212300959",
+      name: "Jane PM",
+      email: "jane@photonbrothers.com",
+    });
 
     const rows = await fetchRtbQueue();
     expect(rows).toHaveLength(1);
+    expect(mockResolveOwner).toHaveBeenCalledWith("212300959");
     expect(rows[0]).toMatchObject({
       dealId: "111",
       dealName: "PROJ-1000 - Smith",
       location: "Westminster",
+      // resolved from the project_manager userId via the owner directory
       projectManager: "Jane PM",
       dealStage: "RTB - Blocked",
       permitIssueDate: "2026-07-01T00:00:00Z",
@@ -59,6 +70,8 @@ describe("fetchRtbQueue", () => {
       constructionStatus: "Ready to Build",
       driveFolderUrl:
         "https://drive.google.com/drive/folders/1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
+      daStatus: "Paid In Full",
+      daPaid: true,
       approved: false,
     });
     // only THIS deal's line items, in {name, quantity, category} shape
