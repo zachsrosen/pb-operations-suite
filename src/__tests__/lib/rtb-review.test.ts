@@ -35,6 +35,8 @@ describe("fetchRtbQueue", () => {
             rtb_blocked_reason: "Waiting on utility meter release",
             install_status: "Ready to Build",
             all_document_parent_folder_id: "1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
+            project_type: "Solar",
+            amount: "30105.6",
             da_invoice_status: "Paid In Full",
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
@@ -70,6 +72,8 @@ describe("fetchRtbQueue", () => {
       constructionStatus: "Ready to Build",
       driveFolderUrl:
         "https://drive.google.com/drive/folders/1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
+      projectType: "Solar",
+      amount: 30105.6,
       daStatus: "Paid In Full",
       daPaid: true,
       approved: false,

@@ -37,6 +37,46 @@ function optionsFrom(
     .map((v) => ({ value: v, label: v }));
 }
 
+const CURRENCY = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+type SortField =
+  | "dealName"
+  | "projectManager"
+  | "location"
+  | "projectType"
+  | "amount"
+  | "permitIssueDate"
+  | "interconnectionStatus"
+  | "constructionStatus"
+  | "daStatus";
+
+/** Per-field comparable value; null/undefined sort last in either direction. */
+function sortValue(item: RtbQueueItem, field: SortField): string | number | null {
+  const v = item[field];
+  if (v == null || v === "") return null;
+  return v;
+}
+
+function SortIcon({
+  field,
+  sortField,
+  sortDir,
+}: {
+  field: SortField;
+  sortField: SortField;
+  sortDir: "asc" | "desc";
+}) {
+  return (
+    <span className={sortField === field ? "text-foreground" : "opacity-30"}>
+      {sortField === field ? (sortDir === "asc" ? "▲" : "▼") : "▼"}
+    </span>
+  );
+}
+
 export default function RtbReviewClient() {
   const queryClient = useQueryClient();
 
@@ -64,6 +104,18 @@ export default function RtbReviewClient() {
 
   const [selectedPMs, setSelectedPMs] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  // Default: longest-waiting first (oldest permit issue date at the top).
+  const [sortField, setSortField] = useState<SortField>("permitIssueDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
 
   const pmOptions = useMemo(
     () => optionsFrom(items, (i) => i.projectManager),
@@ -74,19 +126,29 @@ export default function RtbReviewClient() {
     [items]
   );
 
-  const filtered = useMemo(
-    () =>
-      items.filter((i) => {
-        const pmOk =
-          selectedPMs.length === 0 ||
-          (i.projectManager != null && selectedPMs.includes(i.projectManager));
-        const locOk =
-          selectedLocations.length === 0 ||
-          (i.location != null && selectedLocations.includes(i.location));
-        return pmOk && locOk;
-      }),
-    [items, selectedPMs, selectedLocations]
-  );
+  const filtered = useMemo(() => {
+    const subset = items.filter((i) => {
+      const pmOk =
+        selectedPMs.length === 0 ||
+        (i.projectManager != null && selectedPMs.includes(i.projectManager));
+      const locOk =
+        selectedLocations.length === 0 ||
+        (i.location != null && selectedLocations.includes(i.location));
+      return pmOk && locOk;
+    });
+    return [...subset].sort((a, b) => {
+      const av = sortValue(a, sortField);
+      const bv = sortValue(b, sortField);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1; // nulls last regardless of direction
+      if (bv == null) return -1;
+      const cmp =
+        typeof av === "number" && typeof bv === "number"
+          ? av - bv
+          : String(av).localeCompare(String(bv));
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+  }, [items, selectedPMs, selectedLocations, sortField, sortDir]);
 
   return (
     <DashboardShell
@@ -122,30 +184,51 @@ export default function RtbReviewClient() {
         <table className="w-full text-sm">
           <thead className="bg-surface-2 text-muted">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Deal</th>
-              <th className="text-left px-3 py-2 font-medium">Project Manager</th>
-              <th className="text-left px-3 py-2 font-medium">Location</th>
-              <th className="text-left px-3 py-2 font-medium">Deal Stage</th>
-              <th className="text-left px-3 py-2 font-medium">Permit Issued</th>
-              <th className="text-left px-3 py-2 font-medium">Interconnection Status</th>
-              <th className="text-left px-3 py-2 font-medium">RTB Blocked Notes</th>
-              <th className="text-left px-3 py-2 font-medium">Construction Status</th>
-              <th className="text-left px-3 py-2 font-medium">Line Items</th>
-              <th className="text-left px-3 py-2 font-medium">DA Paid</th>
+              {(
+                [
+                  ["Deal", "dealName"],
+                  ["Project Manager", "projectManager"],
+                  ["Location", "location"],
+                  ["Deal Stage", null],
+                  ["Project Type", "projectType"],
+                  ["Revenue", "amount"],
+                  ["Permit Issued", "permitIssueDate"],
+                  ["Interconnection Status", "interconnectionStatus"],
+                  ["RTB Blocked Notes", null],
+                  ["Construction Status", "constructionStatus"],
+                  ["Line Items", null],
+                  ["DA Paid", "daStatus"],
+                ] as Array<[string, SortField | null]>
+              ).map(([label, field]) =>
+                field ? (
+                  <th
+                    key={label}
+                    onClick={() => toggleSort(field)}
+                    className="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                  >
+                    {label}{" "}
+                    <SortIcon field={field} sortField={sortField} sortDir={sortDir} />
+                  </th>
+                ) : (
+                  <th key={label} className="text-left px-3 py-2 font-medium">
+                    {label}
+                  </th>
+                )
+              )}
               <th className="text-right px-3 py-2 font-medium">Action</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={11} className="text-center text-muted py-8">
+                <td colSpan={13} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={11} className="text-center text-muted py-8">
+                <td colSpan={13} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -184,6 +267,12 @@ export default function RtbReviewClient() {
                   <td className="px-3 py-2 text-muted">{item.location ?? "—"}</td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap">
                     {item.dealStage ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                    {item.projectType ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                    {item.amount != null ? CURRENCY.format(item.amount) : "—"}
                   </td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap">
                     {formatDate(item.permitIssueDate)}
