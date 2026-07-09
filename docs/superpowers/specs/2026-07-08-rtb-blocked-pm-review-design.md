@@ -38,8 +38,9 @@ Applies to **all locations** (not just California).
 - Permit-issued signal on the deal: `permit_issued_` (boolean) and
   `permit_completion_date` (datetime → `permitIssueDate`).
 - Customer notification fires on **deal stage = Ready to Build** (confirmed with Zach).
-- The stage ordering in `src/lib/constants.ts` (`STAGE_ORDER`) already lists
-  `RTB - Blocked` immediately before `Ready To Build`.
+- `src/lib/constants.ts` (`STAGE_ORDER`, ordered furthest-along-first) lists both stages:
+  `RTB - Blocked` is the less-advanced of the two, so in pipeline progression a deal reaches
+  RTB - Blocked before Ready To Build.
 
 ## Design
 
@@ -63,7 +64,12 @@ One writable gate plus audit fields on the **deal**:
 |----------------------------|-----------|----------------------------------------------------|
 | `pm_rtb_approved`          | boolean   | The single release control. PM sets true to release. |
 | `pm_rtb_approved_date`     | datetime  | Stamped when `pm_rtb_approved` flips true (audit).  |
-| `pm_rtb_approved_by`       | string    | Who approved (HubSpot owner name/email) (audit).    |
+| `pm_rtb_approved_by`       | string    | Who approved (audit). See attribution caveat below. |
+
+**Attribution caveat:** in Phase 1 a HubSpot workflow generally cannot capture *who* flipped
+`pm_rtb_approved`, so `pm_rtb_approved_by` can only reliably record the deal owner. In Phase 2
+the app API route knows the acting user and populates it accurately. Don't oversell the Phase 1
+value of this field.
 
 No per-item checklist properties. The review "items" are read-only context surfaced from
 existing properties (see Info card).
