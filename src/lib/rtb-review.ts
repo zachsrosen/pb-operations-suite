@@ -8,7 +8,8 @@
  */
 
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
-import { searchWithRetry } from "@/lib/hubspot";
+import { searchWithRetry, DEAL_STAGE_MAP } from "@/lib/hubspot";
+import { statusLabel } from "@/lib/deal-status-labels";
 
 const PROJECT_PIPELINE = "6900017";
 const RTB_BLOCKED_STAGE = "71052436";
@@ -18,8 +19,12 @@ export interface RtbQueueItem {
   dealName: string;
   location: string | null;
   ownerId: string | null;
+  /** Display label for the deal's pipeline stage (e.g. "RTB - Blocked"). */
+  dealStage: string | null;
   permitIssueDate: string | null;
+  /** Resolved to the HubSpot display label, not the raw option value. */
   permittingStatus: string | null;
+  /** Resolved to the HubSpot display label, not the raw option value. */
   designStatus: string | null;
   revisionCount: number | null;
   approved: boolean;
@@ -74,9 +79,10 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         dealName: p.dealname ?? "",
         location: p.pb_location ?? null,
         ownerId: p.hubspot_owner_id ?? null,
+        dealStage: p.dealstage ? DEAL_STAGE_MAP[p.dealstage] ?? p.dealstage : null,
         permitIssueDate: p.permit_completion_date ?? null,
-        permittingStatus: p.permitting_status ?? null,
-        designStatus: p.design_status ?? null,
+        permittingStatus: statusLabel("permitting_status", p.permitting_status),
+        designStatus: statusLabel("design_status", p.design_status),
         revisionCount: p.total_revision_count
           ? Number(p.total_revision_count)
           : null,

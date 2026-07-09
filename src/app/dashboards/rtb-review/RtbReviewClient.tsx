@@ -59,6 +59,7 @@ export default function RtbReviewClient() {
             <tr>
               <th className="text-left px-3 py-2 font-medium">Deal</th>
               <th className="text-left px-3 py-2 font-medium">Location</th>
+              <th className="text-left px-3 py-2 font-medium">Deal Stage</th>
               <th className="text-left px-3 py-2 font-medium">Permit Issued</th>
               <th className="text-left px-3 py-2 font-medium">Permitting Status</th>
               <th className="text-left px-3 py-2 font-medium">Design Status</th>
@@ -69,14 +70,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={7} className="text-center text-muted py-8">
+                <td colSpan={8} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-muted py-8">
+                <td colSpan={8} className="text-center text-muted py-8">
                   No deals awaiting RTB review
                 </td>
               </tr>
@@ -93,6 +94,9 @@ export default function RtbReviewClient() {
                     {item.dealName || item.dealId}
                   </td>
                   <td className="px-3 py-2 text-muted">{item.location ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                    {item.dealStage ?? "—"}
+                  </td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap">
                     {formatDate(item.permitIssueDate)}
                   </td>
