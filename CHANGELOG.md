@@ -4,6 +4,52 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-26
+
+### Participate Energy (Major)
+- HubSpot Deal card for PE status — submitted/required document count with approved · under review · action required breakdown (#1218, #1224)
+- Sync button on all PE tabs in the shared tab bar; "Synced X ago" now reflects the last *successful* pull (#1215, #1216)
+- Bill of Materials promoted to its own M1 document — conditionally required (only where PE asks), with HubSpot status sync and a "Not Required" status for conditional docs (#1199, #1200, #1202, #1203)
+- Rejection notes: pull for new/changed docs only so fresh rejections never sync note-less; must-pull-first + retry to guarantee reviewer notes on NEW rejections; push statuses *after* action items are written to fix blank Notes (#1219, #1220, #1221)
+- Per-team rejection notes are now cleared on resolve so they can't re-fire team tasks (#1227)
+- Approved milestones advance to Paid from the invoice paid-in-full date (gated on a SystemConfig flag — live toggle, no redeploy) (#1225, #1226)
+- `readyOn` resolves via "Ready to Submit" date → inspection/PTO; flaky status-history fallback dropped (#1223)
+- "Last submitter" payment-ownership mode on the Doc Uploaders table (#1211)
+- PE review aging by last upload + overdue-with-PE escalation; excludes missing/action-required docs from overdue (#1245, #1247)
+- PE Timing card and Submit → Pay timing card driven by calculated timing props (averages); nightly cron writes avg submission→payment days to all PE deals (#1248, #1249, #1250)
+- Charts: Milestones/Lifecycle split, Remittance & Expected-Paid charts, Rejected lifecycle basis; Resubmitted band + Day/Week/Month on all charts; "Expected (Submission)" forecast mode on the weekly chart (#1228, #1237, #1251)
+- Submitted card: 3-way awaiting split; drill into each awaiting-approval bucket with Copy + CSV export on the drill-down panel (#1230, #1231, #1234)
+- Stat cards now reflect only the active chart; milestone pills moved into the controls row (#1240, #1241)
+- Docs Copy/CSV export now honors the category filter (#1233)
+
+### Project Funnel
+- New milestone cards: Interconnection Approved + Ready to Build (#1242)
+- Interconnection Approved is now a monotonic milestone count (fixes 121% conversion bug) (#1243)
+- Ready-to-Build milestone bucket added + Project Rejected reason flagged (#1232)
+- 3-way RTB split (interconnection / blocks / bench) with company-wide access (#1236)
+- Awaiting-Interconnection shows IC status; Awaiting-Ready-to-Build shows construction status (#1238)
+- Daily-trend panel: event throughput + recorded backlog state (#1235)
+- Closed Out milestone added then reverted pending data fix (#1244, #1246)
+
+### Cohort Charts
+- Drill-down on summary cards + lifecycle DA metric (#1198)
+- Revenue/count label placed directly above each bar (#1206)
+
+### Scheduler
+- New Construction as its own tab between Ops Surveys and Pre-Sale; surveys split into Needs Revisit + New Construction (three groups total) (#1205, #1209)
+- Revisits stay in Ops Surveys after status flips to Ready to Schedule (#1212)
+- Needs Revisit group was empty due to stale schedule date hiding revisits — fixed (#1207)
+- DTC office filter no longer hides all survey availability (#1201)
+- Lenny Uematsu replaces Rolando for all Colorado Springs field work (#1204, #1213)
+
+### EagleView Orders
+- Show Design Lead on each order; resolved via owner map (was always blank) (#1208, #1210)
+
+### Cache & Performance
+- Stop transient empty fetches from blanking the pipeline page (#1239)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
