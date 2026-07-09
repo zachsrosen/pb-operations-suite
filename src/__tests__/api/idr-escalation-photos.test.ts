@@ -15,25 +15,31 @@ jest.mock("@/lib/db", () => ({
       findMany: jest.fn(),
       findUnique: jest.fn(),
       delete: jest.fn(),
+      aggregate: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     },
   },
 }));
 
 import { NextRequest } from "next/server";
 import { GET, POST } from "@/app/api/idr-meeting/escalation-photos/route";
-import { DELETE } from "@/app/api/idr-meeting/escalation-photos/[id]/route";
+import { DELETE, PATCH } from "@/app/api/idr-meeting/escalation-photos/[id]/route";
 import { GET as VIEW } from "@/app/api/idr-meeting/escalation-photos/view/route";
 import { requireApiAuth } from "@/lib/api-auth";
 import { isIdrAllowedRole } from "@/lib/idr-meeting";
-import { del } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { prisma } from "@/lib/db";
 
 const mockAuth = requireApiAuth as jest.MockedFunction<typeof requireApiAuth>;
 const mockRole = isIdrAllowedRole as jest.MockedFunction<typeof isIdrAllowedRole>;
+const mockPut = put as jest.MockedFunction<typeof put>;
 const mockDel = del as jest.MockedFunction<typeof del>;
 const mockFindMany = prisma.idrEscalationPhoto.findMany as jest.Mock;
 const mockFindUnique = prisma.idrEscalationPhoto.findUnique as jest.Mock;
 const mockDelete = prisma.idrEscalationPhoto.delete as jest.Mock;
+const mockAggregate = prisma.idrEscalationPhoto.aggregate as jest.Mock;
+const mockCreate = prisma.idrEscalationPhoto.create as jest.Mock;
 
 // Non-IDR role name used only to make intent clear; the guard decision is the
 // return value of isIdrAllowedRole (a stub that currently returns true for all
@@ -69,6 +75,99 @@ describe("escalation-photos route auth gate", () => {
       params: Promise.resolve({ id: "p1" }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("PATCH returns 403 for a non-IDR role", async () => {
+    mockRole.mockReturnValue(false);
+    const res = await PATCH(req("http://localhost/api/idr-meeting/escalation-photos/p1"), {
+      params: Promise.resolve({ id: "p1" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("VIEW returns 403 for a non-IDR role", async () => {
+    mockRole.mockReturnValue(false);
+    const res = await VIEW(req("http://localhost/api/idr-meeting/escalation-photos/view?path=escalation-photos/a.png"));
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("POST upload (happy path + failure handling)", () => {
+  const OLD_ENV = process.env.BLOB_READ_WRITE_TOKEN;
+  afterEach(() => {
+    if (OLD_ENV === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
+    else process.env.BLOB_READ_WRITE_TOKEN = OLD_ENV;
+  });
+
+  // Bypass real multipart parsing (unreliable under jest) by faking req.formData()
+  // directly — the handler only calls formData().get(...), so this exercises the
+  // full handler logic without a round-trip through undici's multipart parser.
+  function postReq(file: File | null, dealId: string | null, caption?: string): NextRequest {
+    const map = new Map<string, unknown>();
+    if (file) map.set("file", file);
+    if (dealId != null) map.set("dealId", dealId);
+    if (caption != null) map.set("caption", caption);
+    return {
+      formData: async () => ({ get: (k: string) => (map.has(k) ? map.get(k) : null) }),
+      nextUrl: new URL("http://localhost/api/idr-meeting/escalation-photos"),
+    } as unknown as NextRequest;
+  }
+  const img = () => new File([Buffer.from("fakebytes")], "shot.png", { type: "image/png" });
+
+  it("assigns sortOrder = max+1 and returns 201 with viewerUrl", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    mockPut.mockResolvedValue({ pathname: "escalation-photos/shot-xyz.png" } as never);
+    mockAggregate.mockResolvedValue({ _max: { sortOrder: 4 } });
+    mockCreate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "new1", createdAt: new Date(), ...data,
+    }));
+
+    const res = await POST(postReq(img(), "d9", "main panel"));
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sortOrder: 5, dealId: "d9", caption: "main panel" }) }),
+    );
+    const body = await res.json();
+    expect(body.viewerUrl).toBe("/api/idr-meeting/escalation-photos/view?path=escalation-photos%2Fshot-xyz.png");
+  });
+
+  it("first photo for a deal gets sortOrder 0", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    mockPut.mockResolvedValue({ pathname: "escalation-photos/first.png" } as never);
+    mockAggregate.mockResolvedValue({ _max: { sortOrder: null } });
+    mockCreate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "n", createdAt: new Date(), ...data }));
+
+    await POST(postReq(img(), "d1"));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sortOrder: 0 }) }),
+    );
+  });
+
+  it("returns 503 when the blob token is missing", async () => {
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    const res = await POST(postReq(img(), "d1"));
+    expect(res.status).toBe(503);
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it("rejects a disallowed file type with 400", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    const pdf = new File([Buffer.from("x")], "doc.pdf", { type: "application/pdf" });
+    const res = await POST(postReq(pdf, "d1"));
+    expect(res.status).toBe(400);
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it("deletes the orphan blob and returns 500 when row create fails", async () => {
+    process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+    mockPut.mockResolvedValue({ pathname: "escalation-photos/orphan.png" } as never);
+    mockAggregate.mockResolvedValue({ _max: { sortOrder: null } });
+    mockCreate.mockRejectedValue(new Error("db down"));
+    mockDel.mockResolvedValue(undefined as never);
+
+    const res = await POST(postReq(img(), "d1"));
+    expect(res.status).toBe(500);
+    expect(mockDel).toHaveBeenCalledWith("escalation-photos/orphan.png");
   });
 });
 

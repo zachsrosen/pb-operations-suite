@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { isIdrAllowedRole } from "@/lib/idr-meeting";
@@ -51,21 +51,32 @@ export async function POST(req: NextRequest) {
     addRandomSuffix: true,
   });
 
-  const max = await prisma.idrEscalationPhoto.aggregate({
-    where: { dealId },
-    _max: { sortOrder: true },
-  });
+  let photo;
+  try {
+    const max = await prisma.idrEscalationPhoto.aggregate({
+      where: { dealId },
+      _max: { sortOrder: true },
+    });
 
-  const photo = await prisma.idrEscalationPhoto.create({
-    data: {
-      dealId,
-      blobPath: blob.pathname,
-      fileName: file.name,
-      caption: typeof caption === "string" && caption.trim() ? caption.trim() : null,
-      sortOrder: (max._max.sortOrder ?? -1) + 1,
-      uploadedBy: auth.email,
-    },
-  });
+    photo = await prisma.idrEscalationPhoto.create({
+      data: {
+        dealId,
+        blobPath: blob.pathname,
+        fileName: file.name,
+        caption: typeof caption === "string" && caption.trim() ? caption.trim() : null,
+        sortOrder: (max._max.sortOrder ?? -1) + 1,
+        uploadedBy: auth.email,
+      },
+    });
+  } catch (err) {
+    // Row creation failed after the blob landed — delete the orphan so we don't
+    // accumulate unreferenced blobs. Best-effort; log if cleanup also fails.
+    console.error("[idr/escalation-photos] Row create failed, deleting orphan blob:", err);
+    await del(blob.pathname).catch((delErr) =>
+      console.error("[idr/escalation-photos] Orphan blob cleanup failed:", delErr),
+    );
+    return NextResponse.json({ error: "Failed to save photo" }, { status: 500 });
+  }
 
   appCache.invalidate("idr-meeting:preview");
   return NextResponse.json({ ...photo, viewerUrl: photoViewerUrl(photo.blobPath) }, { status: 201 });
