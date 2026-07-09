@@ -1208,14 +1208,22 @@ export function createReadOnlyChatTools() {
       "interconnection_status, site_survey_status, construction_status, inspection_status, " +
       "pto_status, location, owner (sales deal owner), design_lead, permit_lead, " +
       "interconnection_lead, inspection_lead, project_manager, surveyor, " +
-      "participate_energy (true/false), amount, project_number. Operators: equals, in " +
-      "(value = array of strings), not, contains, gt, lt, gte, lte, present, blank. " +
-      "Status/name matching is case-insensitive and accepts the display label OR raw " +
-      "value. Examples: {filters:[{field:'da_status',op:'equals',value:'Pending Sales " +
-      "Changes'}],groupBy:'owner'}; {filters:[{field:'stage',op:'equals',value:" +
-      "'Construction'},{field:'participate_energy',op:'equals',value:true}],groupBy:" +
-      "'location'}. If a filter value matches nothing, the tool returns the available " +
-      "values for that field so you can pick the right one — never guess or fabricate.",
+      "participate_energy (true/false), amount, project_number. DATE fields (YYYY-MM-DD, " +
+      "filter with gte/lte/gt/lt/present/blank): sales_closed, survey_completed_date, " +
+      "da_sent_date, da_approved_date, design_complete_date, permit_submitted_date, " +
+      "permit_issued_date, ic_submitted_date, ic_approved_date, rtb_date, " +
+      "construction_complete_date, inspection_passed_date, pto_submitted_date, " +
+      "pto_granted_date. Operators: equals, in (value = array of strings), not, contains, " +
+      "gt, lt, gte, lte, present, blank. Status/name matching is case-insensitive and " +
+      "accepts the display label OR raw value. IMPORTANT: to include cancelled/terminal " +
+      "deals in a date-window query (e.g. 'ALL deals sold in 2026 including cancelled'), " +
+      "set includeInactive:true AND use the date filter together — this is the tool for " +
+      "date+cancelled combined, so do NOT say you can't or file a process request. " +
+      "Examples: {filters:[{field:'da_status',op:'equals',value:'Pending Sales Changes'}]," +
+      "groupBy:'owner'}; {filters:[{field:'sales_closed',op:'gte',value:'2026-01-01'}," +
+      "{field:'sales_closed',op:'lte',value:'2026-12-31'}],groupBy:'stage'," +
+      "includeInactive:true}. If a filter value matches nothing, the tool returns the " +
+      "available values for that field so you can pick the right one — never guess or fabricate.",
     inputSchema: z.object({
       filters: z
         .array(
@@ -1247,7 +1255,7 @@ export function createReadOnlyChatTools() {
       type P = Record<string, unknown>;
       const FIELDS: Record<
         string,
-        { get: (p: P) => unknown; kind: "status" | "string" | "number" | "bool"; propKey?: string; isLocation?: boolean }
+        { get: (p: P) => unknown; kind: "status" | "string" | "number" | "bool" | "date"; propKey?: string; isLocation?: boolean }
       > = {
         stage: { get: (p) => p.stage, kind: "string" },
         da_status: { get: (p) => p.layoutStatus, kind: "status", propKey: "layout_status" },
@@ -1269,6 +1277,22 @@ export function createReadOnlyChatTools() {
         participate_energy: { get: (p) => p.isParticipateEnergy, kind: "bool" },
         amount: { get: (p) => p.amount, kind: "number" },
         project_number: { get: (p) => p.projectNumber, kind: "string" },
+        // Date fields (YYYY-MM-DD). Filter with gte/lte/gt/lt/present/blank — e.g.
+        // "deals sold in 2026" = sales_closed gte 2026-01-01 AND lte 2026-12-31.
+        sales_closed: { get: (p) => p.closeDate, kind: "date" },
+        survey_completed_date: { get: (p) => p.siteSurveyCompletionDate, kind: "date" },
+        da_sent_date: { get: (p) => p.designApprovalSentDate, kind: "date" },
+        da_approved_date: { get: (p) => p.designApprovalDate, kind: "date" },
+        design_complete_date: { get: (p) => p.designCompletionDate, kind: "date" },
+        permit_submitted_date: { get: (p) => p.permitSubmitDate, kind: "date" },
+        permit_issued_date: { get: (p) => p.permitIssueDate, kind: "date" },
+        ic_submitted_date: { get: (p) => p.interconnectionSubmitDate, kind: "date" },
+        ic_approved_date: { get: (p) => p.interconnectionApprovalDate, kind: "date" },
+        rtb_date: { get: (p) => p.readyToBuildDate, kind: "date" },
+        construction_complete_date: { get: (p) => p.constructionCompleteDate, kind: "date" },
+        inspection_passed_date: { get: (p) => p.inspectionPassDate, kind: "date" },
+        pto_submitted_date: { get: (p) => p.ptoSubmitDate, kind: "date" },
+        pto_granted_date: { get: (p) => p.ptoGrantedDate, kind: "date" },
       };
       const knownFields = Object.keys(FIELDS);
 
@@ -1311,6 +1335,21 @@ export function createReadOnlyChatTools() {
             default: return false;
           }
         }
+        if (spec.kind === "date") {
+          if (rawVal == null || String(rawVal).trim() === "") return false; // no date → not in any range
+          const d = Date.parse(String(rawVal));
+          const v = Date.parse(String(f.value));
+          if (Number.isNaN(d) || Number.isNaN(v)) return false;
+          switch (f.op) {
+            case "gt": return d > v;
+            case "lt": return d < v;
+            case "gte": return d >= v;
+            case "lte": return d <= v;
+            case "equals": return String(rawVal).slice(0, 10) === String(f.value).slice(0, 10);
+            case "not": return String(rawVal).slice(0, 10) !== String(f.value).slice(0, 10);
+            default: return false;
+          }
+        }
         const cur = displayOf(spec, rawVal).toLowerCase();
         const rawLower = rawVal == null ? "" : String(rawVal).toLowerCase();
         const eq = (want: string) =>
@@ -1333,7 +1372,7 @@ export function createReadOnlyChatTools() {
         const help: Record<string, Record<string, number>> = {};
         for (const f of filters) {
           const spec = FIELDS[f.field];
-          if (spec.kind === "number" || spec.kind === "bool") continue;
+          if (spec.kind === "number" || spec.kind === "bool" || spec.kind === "date") continue;
           const vals: Record<string, number> = {};
           for (const p of projects) {
             const d = displayOf(spec, spec.get(p));
