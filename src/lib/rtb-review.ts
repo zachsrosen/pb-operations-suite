@@ -18,6 +18,7 @@ export interface RtbQueueItem {
   dealId: string;
   dealName: string;
   location: string | null;
+  projectManager: string | null;
   ownerId: string | null;
   /** Display label for the deal's pipeline stage (e.g. "RTB - Blocked"). */
   dealStage: string | null;
@@ -34,6 +35,7 @@ export interface RtbQueueItem {
 const PROPERTIES = [
   "dealname",
   "pb_location",
+  "project_manager",
   "hubspot_owner_id",
   "dealstage",
   "pipeline",
@@ -78,6 +80,7 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         dealId: r.id,
         dealName: p.dealname ?? "",
         location: p.pb_location ?? null,
+        projectManager: p.project_manager ?? null,
         ownerId: p.hubspot_owner_id ?? null,
         dealStage: p.dealstage ? DEAL_STAGE_MAP[p.dealstage] ?? p.dealstage : null,
         permitIssueDate: p.permit_completion_date ?? null,

@@ -19,6 +19,7 @@ describe("fetchRtbQueue", () => {
             dealstage: "71052436",
             pipeline: "6900017",
             pb_location: "Westminster",
+            project_manager: "Jane PM",
             permit_completion_date: "2026-07-01T00:00:00Z",
             // raw HubSpot option *values* that differ from their display labels
             permitting_status: "Complete",
@@ -36,6 +37,7 @@ describe("fetchRtbQueue", () => {
       dealId: "111",
       dealName: "PROJ-1000 - Smith",
       location: "Westminster",
+      projectManager: "Jane PM",
       dealStage: "RTB - Blocked",
       permitIssueDate: "2026-07-01T00:00:00Z",
       // resolved to display labels, not the raw values
