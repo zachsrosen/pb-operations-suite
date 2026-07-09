@@ -4,7 +4,7 @@ import { fetchRtbQueue } from "@/lib/rtb-review";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   const auth = await requireApiAuth();
   if (auth instanceof NextResponse) return auth;
   const items = await fetchRtbQueue();
