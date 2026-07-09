@@ -58,18 +58,12 @@ Permitting & Interconnection
 
 ### HubSpot properties (new)
 
-One writable gate plus audit fields on the **deal**:
+One writable gate plus a timestamp on the **deal**:
 
 | Property (internal name)   | Type      | Purpose                                            |
 |----------------------------|-----------|----------------------------------------------------|
 | `pm_rtb_approved`          | boolean   | The single release control. PM sets true to release. |
 | `pm_rtb_approved_date`     | datetime  | Stamped when `pm_rtb_approved` flips true (audit).  |
-| `pm_rtb_approved_by`       | string    | Who approved (audit). See attribution caveat below. |
-
-**Attribution caveat:** in Phase 1 a HubSpot workflow generally cannot capture *who* flipped
-`pm_rtb_approved`, so `pm_rtb_approved_by` can only reliably record the deal owner. In Phase 2
-the app API route knows the acting user and populates it accurately. Don't oversell the Phase 1
-value of this field.
 
 No per-item checklist properties. The review "items" are read-only context surfaced from
 existing properties (see Info card).
@@ -79,8 +73,8 @@ existing properties (see Info card).
 1. **Modify the existing permit-issued workflow.** Change its stage-move target from
    Ready to Build (`22580871`) to **RTB - Blocked** (`71052436`). Everything else about
    that workflow stays the same.
-   - As part of entering RTB - Blocked, **reset** `pm_rtb_approved` to false (and clear the
-     two audit fields) so a stale prior approval cannot instantly re-release a deal that
+   - As part of entering RTB - Blocked, **reset** `pm_rtb_approved` to false (and clear
+     `pm_rtb_approved_date`) so a stale prior approval cannot instantly re-release a deal that
      re-enters the stage.
 
 2. **New "release" workflow.** Enrollment trigger: `pm_rtb_approved` becomes `true`
@@ -88,7 +82,6 @@ existing properties (see Info card).
    Actions:
    - Set deal stage → Ready to Build (`22580871`).
    - Stamp `pm_rtb_approved_date` = now.
-   - Set `pm_rtb_approved_by` = current owner (or the actor, if available).
 
    Guard: scoping the trigger to `stage = RTB - Blocked` ensures the flag only releases
    deals sitting in the gate — it cannot yank a later-stage deal backward or forward.
