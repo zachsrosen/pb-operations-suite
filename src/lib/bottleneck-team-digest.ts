@@ -757,6 +757,14 @@ export async function runPersonalWorklists(opts: {
   } catch { /* best effort */ }
   const excluded = new Set([...standing, ...(opts.exclude ?? [])].map((e) => String(e).trim().toLowerCase()));
 
+  // Owner tracking space: every live worklist is copied here so the owner can
+  // see exactly what each person was sent (the Q&A mirror only covers replies).
+  let mirrorSpace: string | null = null;
+  if (opts.mode === "live") {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "techops_bot_mirror_space" } });
+    mirrorSpace = row?.value?.trim() || null;
+  }
+
   for (const w of worklists) {
     const email = emailByName.get(w.person.trim().toLowerCase()) ?? null;
     if (!email) unmatched.push(w.person);
@@ -808,6 +816,13 @@ export async function runPersonalWorklists(opts: {
           : message;
         await postGoogleChatMessage({ spaceName: space, text });
         if (isFirst) await markWelcomed(email);
+        // Copy into the owner's tracking space so they can see what was sent.
+        if (mirrorSpace && mirrorSpace !== space) {
+          await postGoogleChatMessage({
+            spaceName: mirrorSpace,
+            text: `📋 Worklist → ${w.person}${email ? ` <${email}>` : ""} (${w.totalDeals} deals):\n\n${message}`,
+          }).catch((e) => console.warn("[worklists] mirror copy failed:", e));
+        }
         results.push({ ...base, sent: true });
       }
     } catch (e) {
