@@ -2,6 +2,7 @@
 
 import type { IdrItem, PresenceUser } from "./IdrMeetingClient";
 import { reviewTypePillLabel } from "./review-type-labels";
+import { parseDealLabel } from "./deal-label";
 
 interface Props {
   items: IdrItem[];
@@ -26,24 +27,6 @@ const SYNC_INDICATOR: Record<string, { symbol: string; color: string }> = {
   SYNCED: { symbol: "\u2713", color: "text-emerald-500" },
   FAILED: { symbol: "\u2717", color: "text-red-500" },
 };
-
-/** Parse project number and customer name from dealName like "PROJ-1234 | Smith, John | 123 Main St" */
-function parseDealLabel(dealName: string): { projNum: string | null; fullName: string } {
-  const parts = dealName.split("|").map((s) => s.trim());
-  // Extract PROJ-XXXX from the first segment
-  const projMatch = parts[0]?.match(/PROJ-\d+/);
-  const projNum = projMatch?.[0] ?? null;
-  // Name is usually the second segment; fall back to first
-  const namePart = parts[1] ?? parts[0] ?? dealName;
-  // If "Last, First" format, flip to "First Last"
-  const comma = namePart.indexOf(",");
-  if (comma > 0) {
-    const last = namePart.slice(0, comma).trim();
-    const first = namePart.slice(comma + 1).trim();
-    return { projNum, fullName: first ? `${first} ${last}` : last };
-  }
-  return { projNum, fullName: namePart.trim() };
-}
 
 // Custom region sort order — CO shops first (meeting priority), then CA
 const REGION_ORDER: Record<string, number> = {
