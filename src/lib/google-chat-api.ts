@@ -117,9 +117,38 @@ interface PostMessageParams {
   text: string;
 }
 
+// Google Chat rejects messages over 4096 characters. Split a long message into
+// as few chunks as possible at line boundaries (never mid-line, so a link or
+// deal row is never cut in half) so a complete answer always posts in full.
+const CHAT_TEXT_LIMIT = 4000; // headroom under Chat's 4096 hard cap
+function splitForChat(text: string, limit = CHAT_TEXT_LIMIT): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  let cur = "";
+  for (const line of text.split("\n")) {
+    if (line.length > limit) {
+      // A single line longer than the limit (rare) — flush, then hard-split it.
+      if (cur) { chunks.push(cur); cur = ""; }
+      for (let i = 0; i < line.length; i += limit) chunks.push(line.slice(i, i + limit));
+      continue;
+    }
+    const candidate = cur ? `${cur}\n${line}` : line;
+    if (candidate.length > limit) {
+      if (cur) chunks.push(cur);
+      cur = line;
+    } else {
+      cur = candidate;
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
 /**
  * Post a message to a Google Chat space/thread.
  * If threadName is provided, replies in that thread.
+ * Messages longer than Chat's 4096-char limit are split into multiple
+ * sequential messages at line boundaries (never truncated mid-content).
  */
 export async function postGoogleChatMessage(params: PostMessageParams): Promise<void> {
   const token = await getAccessToken();
@@ -129,30 +158,34 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
     url.searchParams.set("messageReplyOption", "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD");
   }
 
-  const body: Record<string, unknown> = { text: params.text };
-  if (params.threadName) {
-    body.thread = { name: params.threadName };
-  }
+  const chunks = splitForChat(params.text);
+  for (const chunk of chunks) {
+    const body: Record<string, unknown> = { text: chunk };
+    if (params.threadName) {
+      body.thread = { name: params.threadName };
+    }
 
-  const resp = await fetch(url.toString(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+    const resp = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "unknown");
-    console.error(`[google-chat-api] Failed to post message: ${resp.status} ${errText}`);
-    throw new Error(`Google Chat API error: ${resp.status} ${errText}`.slice(0, 800));
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "unknown");
+      console.error(`[google-chat-api] Failed to post message: ${resp.status} ${errText}`);
+      throw new Error(`Google Chat API error: ${resp.status} ${errText}`.slice(0, 800));
+    }
   }
 
   // Audit trail: every outbound bot message lands in the ActivityLog with its
-  // full text (digests, worklists, conversational replies). Awaited: serverless
-  // runtimes freeze after return and silently kill detached promises — the
-  // ~15ms insert is worth a lossless audit log. Errors never fail the send.
+  // full text (digests, worklists, conversational replies) — logged once with
+  // the complete text even when it went out as several chunks. Awaited:
+  // serverless runtimes freeze after return and silently kill detached
+  // promises — the ~15ms insert is worth a lossless audit log. Never fails the send.
   await logOutboundMessage(params).catch((e) => console.warn("[google-chat-api] audit log failed:", e));
 }
 
