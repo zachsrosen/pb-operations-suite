@@ -2999,6 +2999,19 @@ model IdrEscalationQueue {
   @@index([dealId])
 }
 
+model IdrEscalationPhoto {
+  id         String   @id @default(cuid())
+  dealId     String
+  blobPath   String
+  fileName   String
+  caption    String?
+  sortOrder  Int      @default(0)
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  @@index([dealId])
+}
+
 enum IdrEscalationStatus {
   QUEUED
   CONSUMED
