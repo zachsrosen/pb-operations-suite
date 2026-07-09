@@ -1203,7 +1203,12 @@ export function createReadOnlyChatTools() {
       "in transit (PE remitted, ACH not landed), approved but not yet sent, and " +
       "submitted awaiting PE review. Use for 'how much have we been paid by " +
       "Participate', 'PE cash received in June', 'how much does PE owe us'. " +
-      "PE pays per milestone: M1 (~2/3, after inspection) and M2 (~1/3, after PTO).",
+      "PE pays per milestone: M1 (~2/3, after inspection) and M2 (~1/3, after PTO). " +
+      "For a WEEK-BY-WEEK breakdown of cash received (e.g. 'PE payments by week for " +
+      "the last 6 weeks'), pass fromDate+toDate AND groupByWeek=true — the tool " +
+      "returns a real weeklyReceived series (Monday-start UTC weeks, the same " +
+      "convention as the PE dashboard). NEVER invent weekly buckets yourself; if you " +
+      "need per-week numbers, call this with groupByWeek.",
     inputSchema: z.object({
       fromDate: z
         .string()
@@ -1213,6 +1218,13 @@ export function createReadOnlyChatTools() {
         .string()
         .optional()
         .describe("Optional window end, YYYY-MM-DD (inclusive). Required if fromDate is set."),
+      groupByWeek: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true (requires fromDate+toDate), also return weeklyReceived: cash " +
+            "received bucketed by Monday-start week. Use for any per-week PE payment breakdown."
+        ),
     }),
     run: async (input) => {
       const { searchWithRetry } = await import("@/lib/hubspot");
@@ -1231,6 +1243,14 @@ export function createReadOnlyChatTools() {
           return JSON.stringify({ error: `Invalid date range: ${input.fromDate} → ${input.toDate}` });
         }
       }
+      if (input.groupByWeek && !hasWindow) {
+        return JSON.stringify({
+          error: "groupByWeek requires fromDate and toDate (a bounded range to bucket into weeks).",
+        });
+      }
+      // Monday-start UTC week key — identical convention to the PE dashboard's
+      // weekly charts, so a "by week" answer matches what the suite shows.
+      const { weekStartUTC } = await import("@/lib/pe-analytics");
 
       // One paginated scan of every Project-pipeline deal with a PE payment
       // split; every bucket is computed from the same date-gated logic as the
@@ -1289,6 +1309,10 @@ export function createReadOnlyChatTools() {
       const approvedNotSent = { m1: bucket(), m2: bucket() };
       const inReview = { m1: bucket(), m2: bucket() };
 
+      // weekStart → per-milestone received totals, populated only when grouping.
+      type WeekBucket = { m1: { count: number; amount: number }; m2: { count: number; amount: number } };
+      const weeklyReceived = new Map<string, WeekBucket>();
+
       for (const p of rows) {
         for (const m of ["m1", "m2"] as const) {
           const amount = Number(m === "m1" ? p.pe_payment_ic : p.pe_payment_pc) || 0;
@@ -1300,6 +1324,16 @@ export function createReadOnlyChatTools() {
           if (paid && inWindow(paid)) {
             received[m].count++;
             received[m].amount += amount;
+            if (input.groupByWeek) {
+              const wk = weekStartUTC(new Date(Date.parse(paid)));
+              let wb = weeklyReceived.get(wk);
+              if (!wb) {
+                wb = { m1: bucket(), m2: bucket() };
+                weeklyReceived.set(wk, wb);
+              }
+              wb[m].count++;
+              wb[m].amount += amount;
+            }
           }
           if (remit && inWindow(remit)) {
             remitted[m].count++;
@@ -1328,10 +1362,53 @@ export function createReadOnlyChatTools() {
         totalAmount: Math.round(b.m1.amount + b.m2.amount),
       });
 
+      // Emit a contiguous week series (Monday-start) across the whole window so
+      // zero-payment weeks show as 0 instead of silently vanishing.
+      let weeklySeries: Array<Record<string, string | number>> | undefined;
+      if (input.groupByWeek) {
+        const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const fmt = (ms: number) => {
+          const d = new Date(ms);
+          return { mon: MON[d.getUTCMonth()], day: d.getUTCDate() };
+        };
+        // "Mon Jul 6 – Sun Jul 12" style label (start Monday, end Sunday) so the
+        // model never has to compute a weekday or shift a date itself.
+        const weekLabel = (mondayMs: number) => {
+          const s = fmt(mondayMs);
+          const e = fmt(mondayMs + 6 * 24 * 60 * 60 * 1000);
+          return s.mon === e.mon ? `${s.mon} ${s.day}–${e.day}` : `${s.mon} ${s.day} – ${e.mon} ${e.day}`;
+        };
+        weeklySeries = [];
+        const firstWeekMs = Date.parse(`${weekStartUTC(new Date(fromMs))}T00:00:00.000Z`);
+        for (let wkMs = firstWeekMs; wkMs <= toMs; wkMs += 7 * 24 * 60 * 60 * 1000) {
+          const wk = new Date(wkMs).toISOString().split("T")[0];
+          const wb = weeklyReceived.get(wk);
+          const m1 = wb?.m1 ?? { count: 0, amount: 0 };
+          const m2 = wb?.m2 ?? { count: 0, amount: 0 };
+          weeklySeries.push({
+            week: weekLabel(wkMs), // Mon–Sun label — render this verbatim, do not recompute
+            weekStart: wk,
+            m1Amount: Math.round(m1.amount),
+            m2Amount: Math.round(m2.amount),
+            totalAmount: Math.round(m1.amount + m2.amount),
+            payments: m1.count + m2.count,
+          });
+        }
+        weeklySeries.reverse(); // most-recent week first
+      }
+
       return JSON.stringify({
         scope: hasWindow ? `payments dated ${input.fromDate} → ${input.toDate}` : "all-time",
         received: roll(received),
         ...(hasWindow ? { remittedInWindow: roll(remitted) } : {}),
+        ...(weeklySeries
+          ? {
+              weeklyReceived: weeklySeries,
+              weekConvention:
+                "Weeks run Monday–Sunday. Render each row's `week` label VERBATIM and " +
+                "use its exact amounts; do NOT recompute dates, shift the weekday, or drop weeks.",
+            }
+          : {}),
         outstanding: {
           inTransit: roll(inTransit),
           approvedNotYetSent: roll(approvedNotSent),
