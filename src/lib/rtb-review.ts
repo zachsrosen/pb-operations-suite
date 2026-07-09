@@ -63,8 +63,11 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
     sorts: ["hs_lastmodifieddate"],
   } as unknown as Parameters<typeof searchWithRetry>[0]);
 
-  return (response.results ?? []).map(
-    (r: { id: string; properties: Record<string, string> }) => {
+  const results = (response.results ?? []) as unknown as Array<{
+    id: string;
+    properties: Record<string, string>;
+  }>;
+  return results.map((r) => {
       const p = r.properties ?? {};
       return {
         dealId: r.id,
