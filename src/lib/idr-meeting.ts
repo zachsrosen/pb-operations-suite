@@ -12,12 +12,15 @@ import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   AssociationSpecAssociationCategoryEnum,
 } from "@hubspot/api-client/lib/codegen/crm/objects/notes/models/AssociationSpec";
+import { SERVICE_PIPELINE_ID, DNR_PIPELINE_ID } from "@/app/dashboards/idr-meeting/review-type-labels";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
+const SERVICE_PIPELINE = process.env.HUBSPOT_PIPELINE_SERVICE ?? SERVICE_PIPELINE_ID;
+const DNR_PIPELINE = process.env.HUBSPOT_PIPELINE_DNR ?? DNR_PIPELINE_ID;
 
 // Region buckets — canonical pb_location values grouped by how the team meets.
 // CO and CA meetings are held separately; each session is scoped to one bucket.
@@ -54,7 +57,7 @@ export function locationInBucket(
 
 /** Properties fetched for each deal during session creation / snapshot refresh. */
 export const SNAPSHOT_PROPERTIES = [
-  "dealname", "pb_location", "project_type", "address_line_1", "city", "state",
+  "dealname", "pb_location", "pipeline", "project_type", "address_line_1", "city", "state",
   "amount",
   "calculated_system_size__kwdc_", "site_survey_status", "site_survey_date",
   "design_status", "layout_status", "design_draft_completion_date", "is_site_survey_completed_",
@@ -119,6 +122,7 @@ function buildEquipmentSummary(p: Record<string, string | null>): string {
 export type SnapshotFields = {
   dealName: string;
   region: string;
+  pipeline: string | null;
   address: string | null;
   projectType: string | null;
   equipmentSummary: string;
@@ -192,6 +196,7 @@ export function snapshotDealProperties(
   return {
     dealName: p.dealname ?? "Unknown",
     region: p.pb_location ?? "Unknown",
+    pipeline: p.pipeline ?? null,
     address: addr,
     projectType: p.project_type ?? null,
     equipmentSummary: buildEquipmentSummary(p),
@@ -640,40 +645,79 @@ export function computeAdderTotal(item: {
 // + one row here + its HubSpot task/workflow.
 // ---------------------------------------------------------------------------
 
-export type ReviewItemType = "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
+export type ReviewItemType = "IDR" | "ESCALATION" | "NEW_CONSTRUCTION" | "DNR_SERVICE";
 
 export const NC_READY_FOR_REVIEW_STATUS = "New Construction - Ready for Review";
+
+// Terminal deal stages (Project pipeline) — deals in these stages should never
+// appear in the IDR queue: Cancelled, Project Complete, On Hold.
+const PROJECT_TERMINAL_STAGES = ["68229433", "20440343", "20440344"];
 
 export const REVIEW_TYPES: Record<ReviewItemType, {
   noteLabel: string;
   taskSubject: string;
   revisionType: "design" | "escalation";
   revisionReasonProperty: "idr_revision_reason" | "inspection_rejection_reason";
+  autoBomExtract: boolean;
+  pushRevisionFlagsWithoutTask: boolean;
+  /** Status-driven queue pull; absent for queue-driven ESCALATION. */
+  queue?: { pipelines: string[]; statusValue: string; terminalStages: string[] };
 }> = {
   IDR: {
     noteLabel: "IDR Meeting",
     taskSubject: "Complete Initial Design Review",
     revisionType: "design",
     revisionReasonProperty: "idr_revision_reason",
+    autoBomExtract: true,
+    pushRevisionFlagsWithoutTask: false,
+    queue: {
+      pipelines: [PROJECT_PIPELINE_ID],
+      statusValue: "Initial Review",
+      terminalStages: PROJECT_TERMINAL_STAGES,
+    },
   },
   NEW_CONSTRUCTION: {
     noteLabel: "New Construction Review",
     taskSubject: "New Construction Design Review",
     revisionType: "escalation",
     revisionReasonProperty: "inspection_rejection_reason",
+    autoBomExtract: true,
+    pushRevisionFlagsWithoutTask: true,
+    queue: {
+      pipelines: [PROJECT_PIPELINE_ID],
+      statusValue: NC_READY_FOR_REVIEW_STATUS,
+      terminalStages: PROJECT_TERMINAL_STAGES,
+    },
+  },
+  DNR_SERVICE: {
+    noteLabel: "D&R/Service Design Review",
+    taskSubject: "D&R/Service Design Review",
+    revisionType: "design",
+    revisionReasonProperty: "idr_revision_reason",
+    autoBomExtract: false,
+    pushRevisionFlagsWithoutTask: false,
+    queue: {
+      pipelines: [SERVICE_PIPELINE, DNR_PIPELINE],
+      statusValue: "Initial Review",
+      terminalStages: ["56217769", "76979603", "52474745", "68245827", "72700977"],
+    },
   },
   ESCALATION: {
     noteLabel: "IDR Meeting",
     taskSubject: "Complete Initial Design Review",
     revisionType: "escalation",
     revisionReasonProperty: "inspection_rejection_reason",
+    autoBomExtract: false,
+    pushRevisionFlagsWithoutTask: false,
   },
 };
 
-/** Derive an item's review type from its HubSpot design_status snapshot. */
-export function deriveItemTypeFromStatus(
+/** Derive an item's review type: pipeline decides for Service/D&R, else status. */
+export function deriveItemType(
+  pipeline: string | null | undefined,
   designStatus: string | null | undefined,
-): "IDR" | "NEW_CONSTRUCTION" {
+): "IDR" | "NEW_CONSTRUCTION" | "DNR_SERVICE" {
+  if (pipeline === SERVICE_PIPELINE || pipeline === DNR_PIPELINE) return "DNR_SERVICE";
   return designStatus === NC_READY_FOR_REVIEW_STATUS ? "NEW_CONSTRUCTION" : "IDR";
 }
 
@@ -681,27 +725,51 @@ export function deriveItemTypeFromStatus(
 // Session creation — query HubSpot + build items
 // ---------------------------------------------------------------------------
 
-// Terminal deal stages — deals in these stages should never appear in the IDR queue
-const TERMINAL_DEAL_STAGES = [
-  "68229433",  // Cancelled
-  "20440343",  // Project Complete
-  "20440344",  // On Hold
-];
+type QueueFilter = { propertyName: string; operator: string; value?: string; values?: string[] };
 
-/** Query HubSpot for all active Project pipeline deals in Initial Review. */
+/**
+ * Build the HubSpot deal-search filter groups for the review queue from the
+ * REVIEW_TYPES registry: one group per status-driven type, plus one re-review
+ * group spanning every registry pipeline.
+ */
+export function buildQueueFilterGroups(): { filters: QueueFilter[] }[] {
+  const groups: { filters: QueueFilter[] }[] = [];
+  const allPipelines = new Set<string>();
+  const allTerminal = new Set<string>();
+  for (const cfg of Object.values(REVIEW_TYPES)) {
+    if (!cfg.queue) continue;
+    cfg.queue.pipelines.forEach((p) => allPipelines.add(p));
+    cfg.queue.terminalStages.forEach((s) => allTerminal.add(s));
+    groups.push({ filters: [
+      { propertyName: "pipeline", operator: FilterOperatorEnum.In, values: cfg.queue.pipelines },
+      { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: cfg.queue.terminalStages },
+      { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: cfg.queue.statusValue },
+    ]});
+  }
+  groups.push({ filters: [
+    { propertyName: "pipeline", operator: FilterOperatorEnum.In, values: [...allPipelines] },
+    { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: [...allTerminal] },
+    { propertyName: "idr_revision_complete_date", operator: FilterOperatorEnum.HasProperty },
+    { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" },
+  ]});
+  return groups;
+}
+
+/** Union of every pipeline any registry queue pulls from (deal-search scope). */
+export function registryQueuePipelines(): string[] {
+  const pipelines = new Set<string>();
+  for (const cfg of Object.values(REVIEW_TYPES)) {
+    cfg.queue?.pipelines.forEach((p) => pipelines.add(p));
+  }
+  return [...pipelines];
+}
+
+/** Query HubSpot for all active deals in the review queue (registry-driven). */
 export async function fetchInitialReviewDeals(): Promise<
   Array<{ dealId: string; properties: Record<string, string | null> }>
 > {
-  const commonFilters: Record<string, unknown>[] = [
-    { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
-    { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: TERMINAL_DEAL_STAGES },
-  ];
   const response = await searchWithRetry({
-    filterGroups: [
-      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" }] },
-      { filters: [...commonFilters, { propertyName: "idr_revision_complete_date", operator: FilterOperatorEnum.HasProperty }, { propertyName: "idr_re_review_needed", operator: FilterOperatorEnum.Eq, value: "true" }] },
-      { filters: [...commonFilters, { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: NC_READY_FOR_REVIEW_STATUS }] },
-    ] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
+    filterGroups: buildQueueFilterGroups() as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
   });
@@ -1022,11 +1090,12 @@ export async function syncItemToHubSpot(
     // overrides design_status per the type ("design" → IDR Revision Needed,
     // "escalation" → Revision Needed - Rejected / As-Built).
     //
-    // NEW_CONSTRUCTION pushes the revision flags even when the task is missing
-    // or completion throws: NC task creation is manual (the 08c workflow is
-    // disabled), and the revision workflow enrolls on the property, not the
-    // task — only the "Draft Complete" flip (which the revision would override
-    // anyway) is lost. IDR/ESCALATION keep task-gated behavior.
+    // Types with pushRevisionFlagsWithoutTask (NEW_CONSTRUCTION) push the
+    // revision flags even when the task is missing or completion throws: NC
+    // task creation is manual (the 08c workflow is disabled), and the revision
+    // workflow enrolls on the property, not the task — only the "Draft
+    // Complete" flip (which the revision would override anyway) is lost.
+    // IDR/ESCALATION/DNR_SERVICE keep task-gated behavior.
     const reviewType = REVIEW_TYPES[item.type];
     let taskCompleteWarning: string | undefined;
     if (item.reviewed) {
@@ -1044,7 +1113,7 @@ export async function syncItemToHubSpot(
       }
       if (
         item.designRevisionNeeded &&
-        (taskCompleted || item.type === "NEW_CONSTRUCTION")
+        (taskCompleted || reviewType.pushRevisionFlagsWithoutTask)
       ) {
         await pushDealProperties(item.dealId, {
           idr_revision_requested: "true",

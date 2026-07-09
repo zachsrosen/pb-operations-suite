@@ -32,8 +32,9 @@ export interface IdrItem {
   id: string;
   sessionId: string;
   dealId: string;
-  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
+  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION" | "DNR_SERVICE";
   region: string;
+  pipeline: string | null;
   sortOrder: number;
   dealName: string;
   address: string | null;

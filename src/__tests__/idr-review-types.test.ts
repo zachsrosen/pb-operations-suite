@@ -19,13 +19,32 @@ jest.mock("@/lib/hubspot", () => ({
 
 import { hubspotClient } from "@/lib/hubspot";
 import {
+  SERVICE_PIPELINE_ID,
+  DNR_PIPELINE_ID,
+  reviewTypePillLabel,
+} from "@/app/dashboards/idr-meeting/review-type-labels";
+import {
   REVIEW_TYPES,
   NC_READY_FOR_REVIEW_STATUS,
-  deriveItemTypeFromStatus,
+  deriveItemType,
+  buildQueueFilterGroups,
   buildHubSpotPropertyUpdates,
   buildHubSpotNoteBody,
   syncItemToHubSpot,
 } from "@/lib/idr-meeting";
+
+describe("reviewTypePillLabel", () => {
+  it("maps DNR_SERVICE by pipeline", () => {
+    expect(reviewTypePillLabel("DNR_SERVICE", SERVICE_PIPELINE_ID)).toBe("SVC");
+    expect(reviewTypePillLabel("DNR_SERVICE", DNR_PIPELINE_ID)).toBe("D&R");
+    expect(reviewTypePillLabel("DNR_SERVICE", null)).toBe("D&R/SVC");
+  });
+  it("maps NEW_CONSTRUCTION to NC and passes other types through", () => {
+    expect(reviewTypePillLabel("NEW_CONSTRUCTION", null)).toBe("NC");
+    expect(reviewTypePillLabel("IDR", null)).toBe("IDR");
+    expect(reviewTypePillLabel("ESCALATION", "whatever")).toBe("ESCALATION");
+  });
+});
 
 describe("REVIEW_TYPES registry", () => {
   it("IDR routes revisions to the design branch and idr_revision_reason", () => {
@@ -50,17 +69,51 @@ describe("REVIEW_TYPES registry", () => {
   });
 });
 
-describe("deriveItemTypeFromStatus", () => {
-  it("derives NEW_CONSTRUCTION for the NC ready-for-review status", () => {
-    expect(deriveItemTypeFromStatus(NC_READY_FOR_REVIEW_STATUS)).toBe("NEW_CONSTRUCTION");
-    expect(NC_READY_FOR_REVIEW_STATUS).toBe("New Construction - Ready for Review");
+describe("deriveItemType (pipeline-first)", () => {
+  it("Service/D&R pipeline always derives DNR_SERVICE", () => {
+    expect(deriveItemType(SERVICE_PIPELINE_ID, "Initial Review")).toBe("DNR_SERVICE");
+    expect(deriveItemType(DNR_PIPELINE_ID, "IDR Revision Complete")).toBe("DNR_SERVICE");
+    expect(deriveItemType(SERVICE_PIPELINE_ID, NC_READY_FOR_REVIEW_STATUS)).toBe("DNR_SERVICE");
   });
+  it("Project pipeline falls through to status rules", () => {
+    expect(deriveItemType("6900017", NC_READY_FOR_REVIEW_STATUS)).toBe("NEW_CONSTRUCTION");
+    expect(deriveItemType("6900017", "Initial Review")).toBe("IDR");
+    expect(deriveItemType(null, "Initial Review")).toBe("IDR");
+    expect(deriveItemType(null, NC_READY_FOR_REVIEW_STATUS)).toBe("NEW_CONSTRUCTION");
+  });
+});
 
-  it("derives IDR for every other status (status wins over filter-group membership)", () => {
-    expect(deriveItemTypeFromStatus("Initial Review")).toBe("IDR");
-    expect(deriveItemTypeFromStatus("IDR Revision Complete")).toBe("IDR");
-    expect(deriveItemTypeFromStatus(null)).toBe("IDR");
-    expect(deriveItemTypeFromStatus(undefined)).toBe("IDR");
+describe("DNR_SERVICE registry row", () => {
+  it("syncs via the combined task and the IDR revision track", () => {
+    expect(REVIEW_TYPES.DNR_SERVICE.taskSubject).toBe("D&R/Service Design Review");
+    expect(REVIEW_TYPES.DNR_SERVICE.revisionType).toBe("design");
+    expect(REVIEW_TYPES.DNR_SERVICE.revisionReasonProperty).toBe("idr_revision_reason");
+    expect(REVIEW_TYPES.DNR_SERVICE.noteLabel).toBe("D&R/Service Design Review");
+    expect(REVIEW_TYPES.DNR_SERVICE.autoBomExtract).toBe(false);
+    expect(REVIEW_TYPES.DNR_SERVICE.pushRevisionFlagsWithoutTask).toBe(false);
+  });
+  it("NC keeps push-without-task; IDR/ESCALATION stay task-gated with auto-extract only on IDR/NC", () => {
+    expect(REVIEW_TYPES.NEW_CONSTRUCTION.pushRevisionFlagsWithoutTask).toBe(true);
+    expect(REVIEW_TYPES.IDR.pushRevisionFlagsWithoutTask).toBe(false);
+    expect(REVIEW_TYPES.IDR.autoBomExtract).toBe(true);
+    expect(REVIEW_TYPES.NEW_CONSTRUCTION.autoBomExtract).toBe(true);
+    expect(REVIEW_TYPES.ESCALATION.autoBomExtract).toBe(false);
+  });
+});
+
+describe("buildQueueFilterGroups", () => {
+  it("builds one group per status-driven type plus the re-review group", () => {
+    const groups = buildQueueFilterGroups();
+    expect(groups).toHaveLength(4);
+    const dnr = groups.find((g) =>
+      g.filters.some((f) => f.propertyName === "pipeline" && f.values?.includes(SERVICE_PIPELINE_ID)) &&
+      g.filters.some((f) => f.propertyName === "design_status"));
+    expect(dnr).toBeDefined();
+    expect(dnr!.filters.some((f) => f.propertyName === "design_status" && f.value === "Initial Review")).toBe(true);
+    expect(dnr!.filters.some((f) => f.propertyName === "dealstage" && f.values?.includes("56217769") && f.values?.includes("72700977"))).toBe(true);
+    // re-review group spans all registry pipelines
+    const rr = groups.find((g) => g.filters.some((f) => f.propertyName === "idr_re_review_needed"));
+    expect(rr!.filters.some((f) => f.propertyName === "pipeline" && f.values?.includes(SERVICE_PIPELINE_ID) && f.values?.includes("6900017"))).toBe(true);
   });
 });
 
@@ -97,6 +150,12 @@ describe("buildHubSpotPropertyUpdates revision routing", () => {
     const u = buildHubSpotPropertyUpdates({ ...base });
     expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
   });
+
+  it("DNR_SERVICE revisions write idr_revision_reason", () => {
+    const u = buildHubSpotPropertyUpdates({ ...base, itemType: "DNR_SERVICE" });
+    expect(u.idr_revision_reason).toBe("Revision Reason: Panel layout wrong");
+    expect(u.inspection_rejection_reason).toBeUndefined();
+  });
 });
 
 describe("buildHubSpotNoteBody header", () => {
@@ -117,6 +176,11 @@ describe("buildHubSpotNoteBody header", () => {
   it("uses the New Construction Review label when passed", () => {
     expect(buildHubSpotNoteBody(fields, "2026-07-08", "New Construction Review"))
       .toContain("<strong>New Construction Review -- 7/8/2026</strong>");
+  });
+
+  it("uses the D&R/Service label when passed", () => {
+    expect(buildHubSpotNoteBody(fields, "2026-07-08", "D&R/Service Design Review"))
+      .toContain("<strong>D&R/Service Design Review -- 7/8/2026</strong>");
   });
 });
 
@@ -209,5 +273,31 @@ describe("syncItemToHubSpot revision-flag gating", () => {
     expect(result.ok).toBe(true);
     expect(result.taskWarning).toContain("Failed to complete design review task");
     expect(findFlagPush()).toBeDefined();
+  });
+
+  it("DNR_SERVICE stays task-gated and searches the combined subject", async () => {
+    const result = await syncItemToHubSpot(
+      makeItem({ type: "DNR_SERVICE" }) as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+    expect(result.ok).toBe(true);
+    expect(findFlagPush()).toBeUndefined();   // no task found → no flag push
+    const searchBody = (global.fetch as jest.Mock).mock.calls[0][1].body as string;
+    expect(searchBody).toContain("D&R/Service Design Review");
+  });
+
+  it("DNR_SERVICE pushes design-type flags when the task IS found and completed", async () => {
+    // Task search returns one open task; the PATCH completion also goes through fetch.
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ id: "task-9" }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    const result = await syncItemToHubSpot(
+      makeItem({ type: "DNR_SERVICE" }) as Parameters<typeof syncItemToHubSpot>[0],
+      sessionDate,
+    );
+    expect(result.ok).toBe(true);
+    const flagPush = findFlagPush();
+    expect(flagPush).toBeDefined();
+    expect(flagPush![1].properties.idr_revision_type).toBe("design");
   });
 });

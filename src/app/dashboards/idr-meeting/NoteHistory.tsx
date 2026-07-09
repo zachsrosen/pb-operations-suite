@@ -5,10 +5,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
 import type { IdrItem, IdrNote } from "./IdrMeetingClient";
+import { reviewTypePillLabel } from "./review-type-labels";
 
 interface HistoryItem {
   id: string;
-  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION";
+  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION" | "DNR_SERVICE";
+  pipeline: string | null;
   conclusion: string | null;
   session: { date: string; status: string };
   createdAt: string;
@@ -165,7 +167,7 @@ export function NoteHistory({ item, userEmail }: Props) {
                           : "bg-surface text-muted"
                       }`}
                     >
-                      {hi.type === "NEW_CONSTRUCTION" ? "NC" : hi.type}
+                      {reviewTypePillLabel(hi.type, hi.pipeline)}
                     </span>
                   </div>
                   {hi.conclusion && (

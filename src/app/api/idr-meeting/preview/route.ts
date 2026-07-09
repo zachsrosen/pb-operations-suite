@@ -7,7 +7,7 @@ import {
   snapshotDealProperties,
   computeReadinessBadge,
   buildOwnerMap,
-  deriveItemTypeFromStatus,
+  deriveItemType,
   SNAPSHOT_PROPERTIES,
   type ReviewItemType,
 } from "@/lib/idr-meeting";
@@ -93,7 +93,7 @@ export async function GET() {
       id: `preview-${deal.dealId}`,
       sessionId: "",
       dealId: deal.dealId,
-      type: deriveItemTypeFromStatus(snapshot.designStatus) as ReviewItemType,
+      type: deriveItemType(snapshot.pipeline, snapshot.designStatus) as ReviewItemType,
       ...snapshot,
       sortOrder: sortOrder++,
       snapshotUpdatedAt: new Date().toISOString(),
