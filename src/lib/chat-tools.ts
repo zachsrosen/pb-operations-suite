@@ -1194,159 +1194,205 @@ export function createReadOnlyChatTools() {
     },
   });
 
-  const listDealsByStatus = betaZodTool({
-    name: "list_deals_by_status",
+  const queryProjects = betaZodTool({
+    name: "query_projects",
     description:
-      "LIST the individual deals that match one specific status VALUE, grouped by deal " +
-      "owner (or the relevant team lead), with revenue and a HubSpot link per deal. Use " +
-      "this whenever someone wants an actual LIST (not just a count) of deals in a " +
-      "sub-status — e.g. 'list all DAs pending sales changes grouped by owner with " +
-      "revenue', 'show me the deals waiting on X by owner'. statusType selects the status " +
-      "field: 'da' = customer Design Approval (layout_status — this is where 'Pending " +
-      "Sales Changes' lives), 'design' = engineering design, 'permitting', " +
-      "'interconnection', 'site_survey', 'construction' (install), 'inspection', 'pto'. " +
-      "statusValue is the exact status to match (case-insensitive; matches the display " +
-      "label or the raw value). groupBy defaults to 'owner' (the sales deal owner); use " +
-      "'lead' to group by the team lead for that status instead. If nothing matches, the " +
-      "tool returns the available status values so you can suggest the right one.",
+      "Flexible deal query — the GENERAL tool for any 'list/count deals where X, " +
+      "optionally grouped by Y, with revenue' question. Give it filters (all ANDed) and " +
+      "an optional groupBy; it returns matching deals (with HubSpot links), a total, " +
+      "total revenue, and a per-group count+revenue rollup. Owner/lead names and status " +
+      "values come back resolved (real names, display labels); only ACTIVE project deals " +
+      "count by default. Use THIS instead of saying you need a different tool. " +
+      "Filterable/groupable fields: stage, da_status (the layout/DA status — where " +
+      "'Pending Sales Changes' lives), design_status, permitting_status, " +
+      "interconnection_status, site_survey_status, construction_status, inspection_status, " +
+      "pto_status, location, owner (sales deal owner), design_lead, permit_lead, " +
+      "interconnection_lead, inspection_lead, project_manager, surveyor, " +
+      "participate_energy (true/false), amount, project_number. Operators: equals, in " +
+      "(value = array of strings), not, contains, gt, lt, gte, lte, present, blank. " +
+      "Status/name matching is case-insensitive and accepts the display label OR raw " +
+      "value. Examples: {filters:[{field:'da_status',op:'equals',value:'Pending Sales " +
+      "Changes'}],groupBy:'owner'}; {filters:[{field:'stage',op:'equals',value:" +
+      "'Construction'},{field:'participate_energy',op:'equals',value:true}],groupBy:" +
+      "'location'}. If a filter value matches nothing, the tool returns the available " +
+      "values for that field so you can pick the right one — never guess or fabricate.",
     inputSchema: z.object({
-      statusType: z.enum([
-        "da",
-        "design",
-        "permitting",
-        "interconnection",
-        "site_survey",
-        "construction",
-        "inspection",
-        "pto",
-      ]),
-      statusValue: z
-        .string()
-        .describe("Exact status to match, e.g. 'Pending Sales Changes'. Case-insensitive."),
-      location: z
-        .string()
+      filters: z
+        .array(
+          z.object({
+            field: z.string().describe("A filterable field name (see the tool description)."),
+            op: z.enum(["equals", "in", "not", "contains", "gt", "lt", "gte", "lte", "present", "blank"]),
+            value: z
+              .union([z.string(), z.number(), z.boolean(), z.array(z.string())])
+              .optional()
+              .describe("The comparison value. Omit for present/blank. Use an array for 'in'."),
+          })
+        )
         .optional()
-        .describe(
-          "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
-            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
-        ),
+        .describe("Conditions, all ANDed. Omit or empty = all active deals."),
       groupBy: z
-        .enum(["owner", "lead"])
+        .string()
         .optional()
-        .describe("Group deals by 'owner' (sales deal owner, default) or 'lead' (team lead)."),
+        .describe("Optional field to group the rollup by, e.g. 'owner', 'design_lead', 'location', 'stage'."),
+      includeInactive: z
+        .boolean()
+        .optional()
+        .describe("Include terminal/cancelled deals too (default false = active only)."),
     }),
     run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
       const { statusLabel } = await import("@/lib/deal-status-labels");
-      const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+      const { normalizeLocation } = await import("@/lib/locations");
 
-      // [projectField, hubspotPropKey] — same mapping count_deals_by_status uses.
-      const FIELD_MAP: Record<string, [string, string]> = {
-        da: ["layoutStatus", "layout_status"],
-        design: ["designStatus", "design_status"],
-        permitting: ["permittingStatus", "permitting_status"],
-        interconnection: ["interconnectionStatus", "interconnection_status"],
-        site_survey: ["siteSurveyStatus", "site_survey_status"],
-        construction: ["constructionStatus", "install_status"],
-        inspection: ["finalInspectionStatus", "final_inspection_status"],
-        pto: ["ptoStatus", "pto_status"],
+      type P = Record<string, unknown>;
+      const FIELDS: Record<
+        string,
+        { get: (p: P) => unknown; kind: "status" | "string" | "number" | "bool"; propKey?: string; isLocation?: boolean }
+      > = {
+        stage: { get: (p) => p.stage, kind: "string" },
+        da_status: { get: (p) => p.layoutStatus, kind: "status", propKey: "layout_status" },
+        design_status: { get: (p) => p.designStatus, kind: "status", propKey: "design_status" },
+        permitting_status: { get: (p) => p.permittingStatus, kind: "status", propKey: "permitting_status" },
+        interconnection_status: { get: (p) => p.interconnectionStatus, kind: "status", propKey: "interconnection_status" },
+        site_survey_status: { get: (p) => p.siteSurveyStatus, kind: "status", propKey: "site_survey_status" },
+        construction_status: { get: (p) => p.constructionStatus, kind: "status", propKey: "install_status" },
+        inspection_status: { get: (p) => p.finalInspectionStatus, kind: "status", propKey: "final_inspection_status" },
+        pto_status: { get: (p) => p.ptoStatus, kind: "status", propKey: "pto_status" },
+        location: { get: (p) => p.pbLocation, kind: "string", isLocation: true },
+        owner: { get: (p) => p.dealOwner, kind: "string" },
+        design_lead: { get: (p) => p.designLead, kind: "string" },
+        permit_lead: { get: (p) => p.permitLead, kind: "string" },
+        interconnection_lead: { get: (p) => p.interconnectionsLead, kind: "string" },
+        inspection_lead: { get: (p) => p.inspectionsLead, kind: "string" },
+        project_manager: { get: (p) => p.projectManager, kind: "string" },
+        surveyor: { get: (p) => p.siteSurveyor, kind: "string" },
+        participate_energy: { get: (p) => p.isParticipateEnergy, kind: "bool" },
+        amount: { get: (p) => p.amount, kind: "number" },
+        project_number: { get: (p) => p.projectNumber, kind: "string" },
       };
-      // The team lead field per status type (for groupBy: "lead").
-      const LEAD_FIELD: Record<string, string> = {
-        da: "dealOwner",
-        design: "designLead",
-        permitting: "permitLead",
-        interconnection: "interconnectionsLead",
-        site_survey: "siteSurveyor",
-        construction: "projectManager",
-        inspection: "inspectionsLead",
-        pto: "interconnectionsLead",
-      };
-      const [projField, propKey] = FIELD_MAP[input.statusType];
+      const knownFields = Object.keys(FIELDS);
 
-      let canonicalLocation: string | null = null;
-      if (input.location) {
-        canonicalLocation = normalizeLocation(input.location);
-        if (!canonicalLocation) {
-          return JSON.stringify({ error: `Unknown location: ${input.location}`, knownLocations: CANONICAL_LOCATIONS });
+      // Display value for a status/string field (labels for status codes).
+      const displayOf = (spec: (typeof FIELDS)[string], raw: unknown): string => {
+        if (raw == null) return "";
+        if (spec.kind === "status" && spec.propKey) return statusLabel(spec.propKey, String(raw)) || String(raw);
+        return String(raw);
+      };
+
+      const filters = input.filters ?? [];
+      for (const f of filters) {
+        if (!FIELDS[f.field]) return JSON.stringify({ error: `Unknown field "${f.field}"`, knownFields });
+      }
+      if (input.groupBy && !FIELDS[input.groupBy]) {
+        return JSON.stringify({ error: `Unknown groupBy "${input.groupBy}"`, knownFields });
+      }
+
+      const projects = (await fetchAllProjects({ activeOnly: !input.includeInactive })) as unknown as P[];
+
+      const matchOne = (p: P, f: { field: string; op: string; value?: unknown }): boolean => {
+        const spec = FIELDS[f.field];
+        const rawVal = spec.get(p);
+        if (f.op === "present") return rawVal != null && String(rawVal).trim() !== "";
+        if (f.op === "blank") return rawVal == null || String(rawVal).trim() === "";
+        if (spec.kind === "bool") {
+          const want = f.value === true || String(f.value).toLowerCase() === "true";
+          return Boolean(rawVal) === want;
         }
-      }
+        if (spec.kind === "number") {
+          const n = Number(rawVal) || 0;
+          const v = Number(f.value);
+          switch (f.op) {
+            case "gt": return n > v;
+            case "lt": return n < v;
+            case "gte": return n >= v;
+            case "lte": return n <= v;
+            case "equals": return n === v;
+            case "not": return n !== v;
+            default: return false;
+          }
+        }
+        const cur = displayOf(spec, rawVal).toLowerCase();
+        const rawLower = rawVal == null ? "" : String(rawVal).toLowerCase();
+        const eq = (want: string) =>
+          cur === want.toLowerCase() ||
+          rawLower === want.toLowerCase() ||
+          (spec.isLocation ? normalizeLocation(String(rawVal)) != null && normalizeLocation(String(rawVal)) === normalizeLocation(want) : false);
+        switch (f.op) {
+          case "equals": return typeof f.value === "string" ? eq(f.value) : false;
+          case "not": return typeof f.value === "string" ? !eq(f.value) : true;
+          case "contains": return typeof f.value === "string" ? cur.includes(f.value.toLowerCase()) : false;
+          case "in": return Array.isArray(f.value) ? f.value.some((v) => eq(String(v))) : false;
+          default: return false;
+        }
+      };
 
-      let projects = await fetchAllProjects({ activeOnly: true });
-      if (canonicalLocation) {
-        projects = projects.filter((p) => normalizeLocation(p.pbLocation) === canonicalLocation);
-      }
+      const matched = projects.filter((p) => filters.every((f) => matchOne(p, f)));
 
-      const want = input.statusValue.trim().toLowerCase();
-      const rawOf = (p: Record<string, unknown>) => (p[projField] as string | null) ?? null;
-      const matched = projects.filter((p) => {
-        const raw = rawOf(p as unknown as Record<string, unknown>);
-        if (!raw) return false;
-        const label = statusLabel(propKey, raw) || "";
-        return String(raw).toLowerCase() === want || label.toLowerCase() === want;
-      });
-
-      if (matched.length === 0) {
-        // Help the model recover: list the status values that DO exist (with counts).
-        const present: Record<string, number> = {};
-        for (const p of projects) {
-          const raw = rawOf(p as unknown as Record<string, unknown>);
-          if (!raw) continue;
-          const label = statusLabel(propKey, raw) || String(raw);
-          present[label] = (present[label] ?? 0) + 1;
+      // Recovery: nothing matched but categorical filters were given → surface values.
+      if (matched.length === 0 && filters.length > 0) {
+        const help: Record<string, Record<string, number>> = {};
+        for (const f of filters) {
+          const spec = FIELDS[f.field];
+          if (spec.kind === "number" || spec.kind === "bool") continue;
+          const vals: Record<string, number> = {};
+          for (const p of projects) {
+            const d = displayOf(spec, spec.get(p));
+            if (d) vals[d] = (vals[d] ?? 0) + 1;
+          }
+          help[f.field] = Object.fromEntries(Object.entries(vals).sort((a, b) => b[1] - a[1]).slice(0, 30));
         }
         return JSON.stringify({
-          statusType: input.statusType,
-          statusValue: input.statusValue,
           matched: 0,
-          note: `No active deals have that ${input.statusType} status. Available values (with counts) are listed — suggest the closest match.`,
-          availableStatuses: Object.fromEntries(Object.entries(present).sort((a, b) => b[1] - a[1])),
+          note: "No deals matched. Available values for the filtered categorical fields are listed — pick the closest, don't fabricate.",
+          availableValues: help,
         });
       }
 
-      const groupField = input.groupBy === "lead" ? LEAD_FIELD[input.statusType] : "dealOwner";
-      const byGroup: Record<string, { count: number; revenue: number }> = {};
       let totalRevenue = 0;
-      for (const p of matched as unknown as Record<string, unknown>[]) {
-        const key = ((p[groupField] as string) || "").trim() || "(unassigned)";
-        const amount = Number(p.amount) || 0;
-        byGroup[key] = byGroup[key] ?? { count: 0, revenue: 0 };
-        byGroup[key].count++;
-        byGroup[key].revenue = Math.round(byGroup[key].revenue + amount);
-        totalRevenue += amount;
+      for (const p of matched) totalRevenue += Number(p.amount) || 0;
+
+      let byGroup: Record<string, { count: number; revenue: number }> | undefined;
+      if (input.groupBy) {
+        const spec = FIELDS[input.groupBy];
+        const g: Record<string, { count: number; revenue: number }> = {};
+        for (const p of matched) {
+          const key = displayOf(spec, spec.get(p)) || "(none)";
+          g[key] = g[key] ?? { count: 0, revenue: 0 };
+          g[key].count++;
+          g[key].revenue = Math.round(g[key].revenue + (Number(p.amount) || 0));
+        }
+        byGroup = Object.fromEntries(Object.entries(g).sort((a, b) => b[1].revenue - a[1].revenue));
       }
-      const sortedGroups = Object.fromEntries(
-        Object.entries(byGroup).sort((a, b) => b[1].revenue - a[1].revenue)
-      );
 
       const CAP = 60;
-      const deals = (matched as unknown as Record<string, unknown>[])
+      const deals = matched
         .slice()
         .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))
         .slice(0, CAP)
         .map((p) => ({
           dealId: String(p.id),
-          name: (p.name as string) || "",
           projectNumber: (p.projectNumber as string) || "",
+          name: (p.name as string) || "",
           owner: (p.dealOwner as string) || "",
-          lead: (p[LEAD_FIELD[input.statusType]] as string) || "",
-          revenue: Math.round(Number(p.amount) || 0),
+          projectManager: (p.projectManager as string) || "",
+          designLead: (p.designLead as string) || "",
           stage: (p.stage as string) || "",
           location: (p.pbLocation as string) || "",
+          participateEnergy: Boolean(p.isParticipateEnergy),
+          revenue: Math.round(Number(p.amount) || 0),
           url: (p.url as string) || "",
         }));
 
       return JSON.stringify({
-        statusType: input.statusType,
-        statusValue: statusLabel(propKey, rawOf(matched[0] as unknown as Record<string, unknown>)) || input.statusValue,
-        location: canonicalLocation ?? "all locations",
-        groupedBy: input.groupBy === "lead" ? "team lead" : "deal owner",
+        scope: input.includeInactive ? "all deals (incl. terminal)" : "active project deals",
+        filters,
+        groupBy: input.groupBy ?? null,
         total: matched.length,
         totalRevenue: Math.round(totalRevenue),
-        byGroup: sortedGroups,
+        ...(byGroup ? { byGroup } : {}),
         deals,
         ...(matched.length > CAP
-          ? { note: `Showing the top ${CAP} of ${matched.length} deals by revenue; byGroup + totals cover ALL of them.` }
+          ? { note: `Showing top ${CAP} of ${matched.length} deals by revenue; total + byGroup cover ALL of them.` }
           : {}),
       });
     },
@@ -1652,7 +1698,7 @@ export function createReadOnlyChatTools() {
     filterDealsByStage,
     countDealsByStage,
     countDealsByStatus,
-    listDealsByStatus,
+    queryProjects,
     countMilestoneInDateRange,
     getPePayments,
     getRevenueGoals,
