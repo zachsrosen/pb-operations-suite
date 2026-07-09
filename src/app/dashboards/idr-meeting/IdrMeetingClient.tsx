@@ -117,6 +117,7 @@ export interface IdrItem {
   isReturning: boolean;
   isReReview: boolean;
   surveyJobUid: string | null;
+  escalationPhotoCount?: number;
   notes?: IdrNote[];
 }
 

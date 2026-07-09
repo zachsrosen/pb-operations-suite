@@ -144,6 +144,7 @@ export async function GET() {
       isReturning: false,
       isReReview: snapshot.designStatus === "IDR Revision Complete",
       surveyJobUid: surveyJobByDeal.get(deal.dealId) ?? null,
+      escalationPhotoCount: undefined as number | undefined,
     };
   });
 
@@ -229,6 +230,7 @@ export async function GET() {
           isReturning: false,
           isReReview: snapshot.designStatus === "IDR Revision Complete",
           surveyJobUid: surveyJobByDeal.get(esc.dealId) ?? null,
+          escalationPhotoCount: undefined as number | undefined,
         });
       }
     } catch (err) {
@@ -259,6 +261,25 @@ export async function GET() {
       const queueCustom = esc.customAdders as Array<{ name: string; amount: number }> | null;
       if (queueCustom && Array.isArray(queueCustom) && queueCustom.length > 0) {
         existing.customAdders = queueCustom;
+      }
+    }
+  }
+
+  // Batch-count escalation photos per deal so the queue can show a badge.
+  const escItemDealIds = items
+    .filter((i) => i.type === "ESCALATION")
+    .map((i) => i.dealId);
+  if (escItemDealIds.length) {
+    const grouped = await prisma.idrEscalationPhoto.groupBy({
+      by: ["dealId"],
+      where: { dealId: { in: escItemDealIds } },
+      _count: { _all: true },
+    });
+    const photoCounts = new Map<string, number>();
+    for (const g of grouped) photoCounts.set(g.dealId, g._count._all);
+    for (const item of items) {
+      if (item.type === "ESCALATION") {
+        item.escalationPhotoCount = photoCounts.get(item.dealId) ?? 0;
       }
     }
   }

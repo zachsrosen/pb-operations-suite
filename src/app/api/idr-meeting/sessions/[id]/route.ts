@@ -61,6 +61,20 @@ export async function GET(
 
   const leadNames = await buildLeadResolveMap(session.items);
 
+  // Batch-count escalation photos per deal so the queue can show a badge.
+  const escDealIds = session.items
+    .filter((i) => i.type === "ESCALATION")
+    .map((i) => i.dealId);
+  const photoCounts = new Map<string, number>();
+  if (escDealIds.length) {
+    const grouped = await prisma.idrEscalationPhoto.groupBy({
+      by: ["dealId"],
+      where: { dealId: { in: escDealIds } },
+      _count: { _all: true },
+    });
+    for (const g of grouped) photoCounts.set(g.dealId, g._count._all);
+  }
+
   const itemsWithBadges = session.items.map((item) => ({
     ...item,
     designLead: (item.designLead && leadNames.get(item.designLead)) || item.designLead,
@@ -69,6 +83,8 @@ export async function GET(
     isReturning: returningDealIds.has(item.dealId),
     isReReview: item.designStatus === "IDR Revision Complete",
     surveyJobUid: surveyJobByDeal.get(item.dealId) ?? null,
+    escalationPhotoCount:
+      item.type === "ESCALATION" ? (photoCounts.get(item.dealId) ?? 0) : undefined,
   }));
 
   return NextResponse.json({ ...session, items: itemsWithBadges });
