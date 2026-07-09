@@ -8,7 +8,11 @@
  */
 
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
-import { searchWithRetry, DEAL_STAGE_MAP } from "@/lib/hubspot";
+import {
+  searchWithRetry,
+  fetchLineItemsForDeals,
+  DEAL_STAGE_MAP,
+} from "@/lib/hubspot";
 import { statusLabel } from "@/lib/deal-status-labels";
 
 const PROJECT_PIPELINE = "6900017";
@@ -24,6 +28,12 @@ function driveFolderUrl(raw: string | null | undefined): string | null {
   if (!v) return null;
   if (v.startsWith("http")) return v;
   return `https://drive.google.com/drive/folders/${v}`;
+}
+
+export interface RtbLineItem {
+  name: string;
+  quantity: number;
+  category: string | null;
 }
 
 export interface RtbQueueItem {
@@ -44,6 +54,8 @@ export interface RtbQueueItem {
   revisionCount: number | null;
   /** Link to the project's Google Drive folder, or null when unset. */
   driveFolderUrl: string | null;
+  /** HubSpot line items on the deal (equipment the PM is releasing to build). */
+  lineItems: RtbLineItem[];
   approved: boolean;
   lastModified: string | null;
 }
@@ -92,6 +104,26 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
     id: string;
     properties: Record<string, string>;
   }>;
+  if (results.length === 0) return [];
+
+  // One batched pass for every parked deal's line items. Non-fatal: the queue
+  // is still useful without equipment, so swallow failures into empty lists.
+  const lineItemsByDeal = new Map<string, RtbLineItem[]>();
+  try {
+    const lineItems = await fetchLineItemsForDeals(results.map((r) => r.id));
+    for (const li of lineItems) {
+      const list = lineItemsByDeal.get(li.dealId) ?? [];
+      list.push({
+        name: li.name,
+        quantity: li.quantity,
+        category: li.productCategory || null,
+      });
+      lineItemsByDeal.set(li.dealId, list);
+    }
+  } catch (error) {
+    console.error("[rtb-review] line-item fetch failed:", error);
+  }
+
   return results.map((r) => {
       const p = r.properties ?? {};
       return {
@@ -112,6 +144,7 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
           ? Number(p.total_revision_count)
           : null,
         driveFolderUrl: driveFolderUrl(p.all_document_parent_folder_id),
+        lineItems: lineItemsByDeal.get(r.id) ?? [],
         approved: p.pm_rtb_approved === "true",
         lastModified: p.hs_lastmodifieddate ?? null,
       };

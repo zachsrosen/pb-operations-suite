@@ -130,6 +130,7 @@ export default function RtbReviewClient() {
               <th className="text-left px-3 py-2 font-medium">Interconnection Status</th>
               <th className="text-left px-3 py-2 font-medium">RTB Blocked Notes</th>
               <th className="text-left px-3 py-2 font-medium">Construction Status</th>
+              <th className="text-left px-3 py-2 font-medium">Line Items</th>
               <th className="text-left px-3 py-2 font-medium">Revisions</th>
               <th className="text-right px-3 py-2 font-medium">Action</th>
             </tr>
@@ -137,14 +138,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={10} className="text-center text-muted py-8">
+                <td colSpan={11} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center text-muted py-8">
+                <td colSpan={11} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -192,6 +193,26 @@ export default function RtbReviewClient() {
                     {item.rtbBlockedReason ?? "—"}
                   </td>
                   <td className="px-3 py-2 text-muted">{item.constructionStatus ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted">
+                    {item.lineItems.length === 0 ? (
+                      "—"
+                    ) : (
+                      <details>
+                        <summary className="cursor-pointer whitespace-nowrap hover:text-foreground">
+                          {item.lineItems.length} item
+                          {item.lineItems.length === 1 ? "" : "s"}
+                        </summary>
+                        <ul className="mt-1 space-y-0.5 text-xs min-w-48">
+                          {item.lineItems.map((li, idx) => (
+                            <li key={idx} className="whitespace-nowrap">
+                              <span className="text-foreground">{li.quantity}×</span>{" "}
+                              {li.name}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-muted">{item.revisionCount ?? "—"}</td>
                   <td className="px-3 py-2 text-right">
                     <button
