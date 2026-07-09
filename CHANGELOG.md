@@ -4,6 +4,79 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-22
+
+### Enphase Enlighten Integration (Major)
+- Full Enphase Enlighten API integration at PowerHub parity (#824)
+- OAuth2 auth code flow with DB-persisted refresh token rotation in SystemConfig
+- Token-bucket rate limiter (8 req/sec) with optional Fly.io proxy
+- Cron jobs: fleet discovery (daily), telemetry snapshots (15m), micro health checks (30m)
+- HubSpot card with HMAC signing showing production, battery SoC, micro health, portal link
+- Partner OAuth setup route for installer-credentials flow (#834) — simpler than per-homeowner authorization_code
+- 8 new `enphase_*` columns on `HubSpotPropertyCache`, `EnphaseSite` / `EnphaseTelemetrySnapshot` / `EnphaseTelemetryHistory` models
+- Feature-flagged via `ENPHASE_ENABLED`, `ENPHASE_CROSSLINK_ENABLED`, `NEXT_PUBLIC_UI_ENPHASE_VIEWS_ENABLED`
+
+### Project Pipeline Funnel (Major)
+- New 9-stage sales-to-construction funnel on Executive suite (#829)
+- Stages inferred from deal pipeline (not custom date properties) for accuracy
+- Added Survey Scheduled stage and cleaned up hero card layout
+- Monthly Activity table with named timeframe presets (#830)
+- Close-out stage, activity drill-down dates, staff assignment columns (#831, #832)
+
+### Shop Health Dashboard
+- Switched scoring to deal-level response rollups + fix review drill-down (#843)
+- Drill-down tables for sentiment, 5-star reviews, response time (#828)
+- Drill-down tables across all Customer Success metrics (#827) and count-based metrics (#826)
+- Multiple bottleneck entries per shop per week supported (#825)
+- Customer Success metrics wired to contact response data (#821)
+
+### EagleView Orders
+- New EagleView Orders dashboard page (#842)
+- Switched to production PlaceOrder request format (#839)
+
+### Customer Survey Portal
+- Full redesign of customer survey portal; chatbot hidden, URL newline fix (#837)
+- Subdomain isolation, brand palette match to photonbrothers.com, inline cancel, scroll fix (#840, #841)
+- New service-to-service survey invite endpoint for Olivia (#836)
+
+### PowerHub / Tesla
+- PowerHub primary site selection now prefers sites with equipment (#833)
+- Push all Tesla device serials + model numbers to Zuper Property and Job custom fields
+- HubSpot card shows Tesla device model numbers alongside serials
+- Prisma migration for new Tesla device model columns
+
+### Zuper Performance
+- Job-list cache in lookup endpoint reduces Zuper API calls ~97%
+- `zuper-property-sync` cron cut from /15min to /30min
+- `sync-cache` cron reduced from /30min to every 4h
+- Backfill script gains `--skip-zuper` flag to avoid API burst
+
+### Master Scheduler
+- Show orphaned resurvey/re-inspection jobs (#563, #819)
+- Editable date picker added to drag-drop reschedule confirmation (#626, #818)
+- Fix completed Zuper jobs showing as overdue (#814)
+- Pre-sale jobs render as purple cards (regular surveys unaffected) (#794)
+- Orphaned job locations resolve from deal `pb_location`; no longer show as unscheduled
+
+### PE Deals & Scraper
+- Group deals by pipeline stage with stage distribution in hero (#820)
+- Fixed stage groups, reorder, collapsible sections (#822)
+- Instant email notification on PE doc status changes (#815)
+- PE scraper tracks doc status diffs between sync runs (#796)
+- Full status breakdown shown in digest Nearly Complete section (#813)
+- Removed broken PE scraper GCS cron — webhook is now the sole sync path (#838)
+
+### HubSpot Card v3 Signing
+- Lean v3 signature verifier: sign with URL-decoded query-param values
+- Removed `HUBSPOT_CARD_SKIP_SIG_VERIFY` escape hatch after fix landed
+
+### Bug Fixes
+- Batch Freshservice ticket fixes (#535, #563, #624, #633, #817)
+- Jinko manufacturer typo fixed; catalog limit raised to 2000 (#816)
+- Removed unused `teslaProductFromPartNumber` import
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
