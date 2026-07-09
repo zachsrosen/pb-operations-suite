@@ -5,6 +5,7 @@ import type { ZuperJob } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides, prisma } from "@/lib/db";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
+import { classifyPreferredSlots, getPreferredSlotsConfig } from "@/lib/preferred-slots";
 import { applyOfficeDailyCap, OFFICE_DAILY_SURVEY_CAPS } from "@/lib/scheduling-policy";
 import { isPbHoliday } from "@/lib/on-call-holidays";
 
@@ -1264,6 +1265,29 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // --- Preferred-slots annotation (positive inverse of travel warnings) ---
+  // Highlights open slots that batch a trip with an already-booked survey.
+  let nearbyDays: string[] = [];
+  if (
+    getPreferredSlotsConfig().enabled &&
+    type === "survey" &&
+    candidateAddress
+  ) {
+    try {
+      const result = await classifyPreferredSlots({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        availabilityByDate: availabilityByDate as any,
+        candidateAddress,
+        candidateProjectId: candidateProjectId || undefined,
+        location,
+      });
+      nearbyDays = result.nearbyDays;
+    } catch (err) {
+      // Fail-open: batching hints are supplementary, never block availability.
+      console.error("classifyPreferredSlots failed:", err);
+    }
+  }
+
   // Determine if dates are fully booked
   for (const dateStr in availabilityByDate) {
     const day = availabilityByDate[dateStr];
@@ -1281,6 +1305,7 @@ export async function GET(request: NextRequest) {
     location,
     candidateProjectId: candidateProjectId || undefined,
     availabilityByDate,
+    nearbyDays: nearbyDays.length ? nearbyDays : undefined,
   });
 }
 

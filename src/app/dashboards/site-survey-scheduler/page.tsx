@@ -124,6 +124,17 @@ interface DayAvailability {
       availableMinutesBefore?: number;
       availableMinutesAfter?: number;
     };
+    preferredSlot?: {
+      tier: "adjacent" | "same_day";
+      anchor: {
+        projectName: string;
+        startTime: string;
+        endTime: string;
+        driveMinutes: number;
+        userName: string;
+        address: string;
+      };
+    };
   }>;
   bookedSlots?: Array<{
     start_time: string;
@@ -151,6 +162,13 @@ interface DayAvailability {
   isFullyBooked: boolean;
   dayCapped?: boolean;
   capLimit?: number;
+  nearbyAnchors?: Array<{
+    projectName: string;
+    userName: string;
+    startTime: string;
+    driveMinutes: number;
+    address: string;
+  }>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -183,6 +201,18 @@ const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
 function isLikelyUid(value: string | null | undefined): boolean {
   if (!value) return false;
   return /^[0-9a-f-]{30,}$/i.test(String(value));
+}
+
+/**
+ * Best-effort city extraction from a "street, city, state zip" address, for the
+ * batching banner/badge. Returns null when it can't confidently parse — callers
+ * omit the city clause rather than show a raw full address.
+ */
+function parseCityFromAddress(address: string | undefined | null): string | null {
+  if (!address) return null;
+  const parts = address.split(",").map((s) => s.trim()).filter(Boolean);
+  // ["200 Anchor Ave", "Evergreen", "CO 80439"] → "Evergreen"
+  return parts.length >= 3 ? parts[1] : null;
 }
 
 function getCustomerName(fullName: string): string {
@@ -569,6 +599,9 @@ export default function SiteSurveySchedulerPage() {
   /* ---- Assisted scheduling ---- */
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [availabilityByDate, setAvailabilityByDate] = useState<Record<string, DayAvailability>>({});
+  // Days that have a batchable "anchor" survey near the candidate address (preferred-slots feature).
+  const [nearbyDays, setNearbyDays] = useState<string[]>([]);
+  const [batchBannerExpanded, setBatchBannerExpanded] = useState(false);
   const [showAvailability, setShowAvailability] = useState(true);
 
   /* ---- user role ---- */
@@ -917,6 +950,7 @@ export default function SiteSurveySchedulerPage() {
       if (data.availabilityByDate) {
         setAvailabilityByDate(data.availabilityByDate);
       }
+      setNearbyDays(Array.isArray(data.nearbyDays) ? data.nearbyDays : []);
     } catch (err) {
       console.error("Failed to fetch availability:", err);
     } finally {
@@ -2525,6 +2559,53 @@ export default function SiteSurveySchedulerPage() {
           <div className="flex-1">
             {currentView === "calendar" ? (
               <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
+                {/* Trip-batching banner: nearby already-booked surveys the new one could join */}
+                {nearbyDays.length > 0 && (() => {
+                  const sorted = [...nearbyDays].sort();
+                  const dayLabel = (d: string) => {
+                    const [y, m, dd] = d.split("-").map(Number);
+                    return new Date(y, m - 1, dd).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+                  };
+                  const jumpTo = (d: string) => {
+                    if (typeof document !== "undefined") {
+                      document.getElementById(`survey-day-${d}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                  };
+                  const anchorFor = (d: string) => availabilityByDate[d]?.nearbyAnchors?.[0];
+                  const first = sorted[0];
+                  const a = anchorFor(first);
+                  const city = a ? parseCityFromAddress(a.address) : null;
+                  return (
+                    <div className="px-3 py-2 border-b border-t-border bg-emerald-500/10">
+                      <div className="flex items-center gap-2 text-xs text-emerald-300 flex-wrap">
+                        <span aria-hidden>🧲</span>
+                        <span>
+                          Survey near this customer on{" "}
+                          <button onClick={() => jumpTo(first)} className="font-semibold underline hover:text-emerald-200">{dayLabel(first)}</button>
+                          {a && <> — {a.userName || "surveyor"}{city ? `, ${city}` : ""}, {a.driveMinutes} min away</>}. Batch the trip.
+                        </span>
+                        {sorted.length > 1 && (
+                          <button onClick={() => setBatchBannerExpanded((v) => !v)} className="text-emerald-400 hover:text-emerald-200 underline">
+                            {batchBannerExpanded ? "Show less" : `+${sorted.length - 1} more day${sorted.length - 1 !== 1 ? "s" : ""}`}
+                          </button>
+                        )}
+                      </div>
+                      {batchBannerExpanded && sorted.length > 1 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {sorted.slice(1).map((d) => {
+                            const anc = anchorFor(d);
+                            const c = anc ? parseCityFromAddress(anc.address) : null;
+                            return (
+                              <button key={d} onClick={() => jumpTo(d)} className="text-[0.7rem] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25">
+                                {dayLabel(d)}{anc ? ` — ${anc.userName || "surveyor"}${c ? `, ${c}` : ""}, ${anc.driveMinutes}m` : ""}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Calendar Header */}
                 <div className="p-2 sm:p-3 border-b border-t-border flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
@@ -2608,6 +2689,7 @@ export default function SiteSurveySchedulerPage() {
                     return (
                       <div
                         key={dateStr}
+                        id={`survey-day-${dateStr}`}
                         onDragOver={!isPast ? handleDragOver : undefined}
                         onDrop={() => handleDrop(dateStr)}
                         onClick={() => handleDateClick(dateStr)}
@@ -2634,6 +2716,17 @@ export default function SiteSurveySchedulerPage() {
                             isToday ? "text-cyan-400" : holidayLabel ? "text-red-400" : "text-muted"
                           }`}>
                             {parseInt(dateStr.split("-")[2])}
+                            {/* Trip-batching marker: a nearby survey is already booked this day */}
+                            {nearbyDays.includes(dateStr) && (() => {
+                              const a = availabilityByDate[dateStr]?.nearbyAnchors?.[0];
+                              const city = a ? parseCityFromAddress(a.address) : null;
+                              return (
+                                <span
+                                  className="ml-1 text-[0.6rem] leading-none align-middle"
+                                  title={a ? `Batches a trip — ${a.userName}${city ? ` in ${city}` : ""}, ${a.driveMinutes} min away` : "Batches a nearby survey trip"}
+                                >🧲</span>
+                              );
+                            })()}
                           </span>
                           {/* Holiday badge */}
                           {holidayLabel && (
@@ -2867,18 +2960,27 @@ export default function SiteSurveySchedulerPage() {
                                             ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 cursor-pointer border border-amber-500/30 hover:border-amber-500/50"
                                             : slot.travelWarning?.type === "unknown"
                                               ? "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-dashed border-amber-500/30 hover:border-amber-500/50"
-                                              : "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
+                                              : slot.preferredSlot?.tier === "adjacent"
+                                                ? "bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 cursor-pointer border border-emerald-400/70 ring-1 ring-emerald-400/50 font-semibold"
+                                                : slot.preferredSlot?.tier === "same_day"
+                                                  ? "bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 cursor-pointer border border-emerald-500/40"
+                                                  : "bg-emerald-500/10 hover:bg-emerald-500/30 text-emerald-400 cursor-pointer border border-emerald-500/20 hover:border-emerald-500/40"
                                           : "text-emerald-500/50"
                                       }`}
                                       title={(selectedPreSaleDeal || selectedProject)
-                                        ? slot.travelWarning?.type === "tight"
-                                          ? `⚠️ Tight travel — ${slot.travelWarning.prevJob?.travelMinutes || slot.travelWarning.nextJob?.travelMinutes || "?"}min drive between adjacent jobs`
-                                          : slot.travelWarning?.type === "unknown"
-                                            ? `❓ Travel time unverified — missing address on adjacent job`
-                                            : `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}`
+                                        ? [
+                                            slot.travelWarning?.type === "tight"
+                                              ? `⚠️ Tight travel — ${slot.travelWarning.prevJob?.travelMinutes || slot.travelWarning.nextJob?.travelMinutes || "?"}min drive between adjacent jobs`
+                                              : slot.travelWarning?.type === "unknown"
+                                                ? `❓ Travel time unverified — missing address on adjacent job`
+                                                : `Book ${surveyorName} at ${slot.display_time || `${slot.start_time}-${slot.end_time}`}`,
+                                            slot.preferredSlot
+                                              ? `🧲 Batches with ${slot.preferredSlot.anchor.userName}'s ${slot.preferredSlot.anchor.projectName} survey (${formatTime12h(slot.preferredSlot.anchor.startTime)}–${formatTime12h(slot.preferredSlot.anchor.endTime)}) — ${slot.preferredSlot.anchor.driveMinutes} min away`
+                                              : null,
+                                          ].filter(Boolean).join("\n")
                                         : "Select a project first"}
                                     >
-                                      {slot.travelWarning?.type === "tight" && "⚠️"}{slot.travelWarning?.type === "unknown" && "❓"}{slot.display_time || formatTime12h(slot.start_time)}
+                                      {slot.travelWarning?.type === "tight" && "⚠️"}{slot.travelWarning?.type === "unknown" && "❓"}{!slot.travelWarning && slot.preferredSlot && "🧲"}{slot.display_time || formatTime12h(slot.start_time)}
                                     </button>
                                   ))}
                                 </div>
@@ -3232,11 +3334,13 @@ export default function SiteSurveySchedulerPage() {
                 (() => {
                   // Look up travel warning from raw availability data
                   const dayAvail = availabilityByDate[scheduleModal.date];
-                  const selectedTravelWarning = dayAvail?.availableSlots?.find(
+                  const selectedSlotData = dayAvail?.availableSlots?.find(
                     s => s.start_time === scheduleModal.slot!.startTime
                       && s.end_time === scheduleModal.slot!.endTime
                       && s.user_name === scheduleModal.slot!.userName
-                  )?.travelWarning;
+                  );
+                  const selectedTravelWarning = selectedSlotData?.travelWarning;
+                  const selectedPreferred = selectedSlotData?.preferredSlot;
                   const tightSegments: string[] = [];
                   if (selectedTravelWarning?.prevJob) {
                     const beforeGap = selectedTravelWarning.availableMinutesBefore;
@@ -3274,6 +3378,11 @@ export default function SiteSurveySchedulerPage() {
                       {selectedTravelWarning.type === "tight"
                         ? `⚠️ Tight travel: ${tightSegments.join(" • ") || `${selectedTravelWarning.prevJob?.travelMinutes || selectedTravelWarning.nextJob?.travelMinutes || "?"}m drive needed between adjacent jobs`}`
                         : "❓ Travel time could not be verified — missing address data on adjacent job"}
+                    </p>
+                  )}
+                  {selectedPreferred && (
+                    <p className="text-[0.65rem] mt-1.5 leading-tight text-emerald-300">
+                      {`🧲 Batches with ${selectedPreferred.anchor.userName || "surveyor"}'s ${selectedPreferred.anchor.projectName || "survey"} (${formatTime12h(selectedPreferred.anchor.startTime)}–${formatTime12h(selectedPreferred.anchor.endTime)}) — ${selectedPreferred.anchor.driveMinutes} min away`}
                     </p>
                   )}
                   <button

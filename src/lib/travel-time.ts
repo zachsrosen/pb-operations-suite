@@ -90,7 +90,7 @@ const driveTimeCache = new Map<
   { estimate: TravelEstimate; ts: number }
 >();
 
-function normalizeAddress(addr: string): string {
+export function normalizeAddress(addr: string): string {
   return addr.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
@@ -192,7 +192,7 @@ export async function getDriveTime(
 // Time helpers
 // ---------------------------------------------------------------------------
 
-function timeToMinutes(time: string): number {
+export function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + (m || 0);
 }
