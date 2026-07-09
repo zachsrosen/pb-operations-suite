@@ -14,6 +14,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Action & Triage",
   },
   {
+    href: "/dashboards/rtb-review",
+    title: "RTB Review Queue",
+    description: "Permit-issued deals awaiting PM release to Ready to Build.",
+    tag: "ACTION",
+    icon: "🚦",
+    section: "Action & Triage",
+  },
+  {
     href: "/dashboards/my-tasks",
     title: "My Tasks",
     description: "Your open HubSpot tasks — grouped by due date, filter by type, priority, and queue.",

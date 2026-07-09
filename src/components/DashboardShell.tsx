@@ -145,6 +145,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/my-tickets": { href: "/suites/project-management", label: "Project Management" },
   "/dashboards/pm-accountability": { href: "/suites/project-management", label: "Project Management" },
   "/dashboards/pm-action-queue": { href: "/suites/project-management", label: "Project Management" },
+  "/dashboards/rtb-review": { href: "/suites/project-management", label: "Project Management" },
   "/dashboards/shit-show-meeting": { href: "/suites/executive", label: "Executive" },
   // Permitting & Interconnection Suite
   "/dashboards/permit-hub": { href: "/suites/permitting-interconnection", label: "P&I" },

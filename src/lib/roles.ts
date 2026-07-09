@@ -272,6 +272,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     // Scheduler v2 (flag-gated beta)
     "/dashboards/scheduler-v2",
     "/api/scheduler-v2",
+    "/dashboards/rtb-review",
+    "/api/deals/rtb-review",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -486,6 +488,8 @@ const PROJECT_MANAGER: RoleDefinition = {
     // Scheduler v2 (flag-gated beta)
     "/dashboards/scheduler-v2",
     "/api/scheduler-v2",
+    "/dashboards/rtb-review",
+    "/api/deals/rtb-review",
   ],
   landingCards: [
     { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flags assigned to you — open, acknowledged, and resolved.", tag: "PM FLAGS", tagColor: "orange" },
