@@ -22,6 +22,17 @@ function formatDate(value: string | null): string {
   return d.toLocaleDateString();
 }
 
+/**
+ * Deal names follow "PROJ-XXXX | Customer | Full address". The address makes
+ * the column blow out, so render just the project number + customer; the full
+ * name stays available as a hover tooltip.
+ */
+function dealDisplay(dealName: string): { number: string; customer: string | null } {
+  const parts = dealName.split("|").map((s) => s.trim());
+  if (parts.length < 2) return { number: dealName, customer: null };
+  return { number: parts[0], customer: parts[1] || null };
+}
+
 /** Distinct non-empty values from a field, sorted, as MultiSelect options. */
 function optionsFrom(
   items: RtbQueueItem[],
@@ -180,42 +191,42 @@ export default function RtbReviewClient() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-t-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border border-t-border overflow-x-auto">
+        <table className="w-full text-xs">
           <thead className="bg-surface-2 text-muted">
             <tr>
               {(
                 [
                   ["Deal", "dealName"],
-                  ["Project Manager", "projectManager"],
+                  ["PM", "projectManager"],
                   ["Location", "location"],
-                  ["Deal Stage", null],
-                  ["Project Type", "projectType"],
+                  ["Stage", null],
+                  ["Type", "projectType"],
                   ["Revenue", "amount"],
-                  ["Permit Issued", "permitIssueDate"],
-                  ["Interconnection Status", "interconnectionStatus"],
-                  ["RTB Blocked Notes", null],
-                  ["Construction Status", "constructionStatus"],
-                  ["Line Items", null],
-                  ["DA Paid", "daStatus"],
+                  ["Permit", "permitIssueDate"],
+                  ["IC Status", "interconnectionStatus"],
+                  ["RTB Notes", null],
+                  ["Construction", "constructionStatus"],
+                  ["Items", null],
+                  ["DA", "daStatus"],
                 ] as Array<[string, SortField | null]>
               ).map(([label, field]) =>
                 field ? (
                   <th
                     key={label}
                     onClick={() => toggleSort(field)}
-                    className="text-left px-3 py-2 font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                    className="text-left px-2 py-2 font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
                   >
                     {label}{" "}
                     <SortIcon field={field} sortField={sortField} sortDir={sortDir} />
                   </th>
                 ) : (
-                  <th key={label} className="text-left px-3 py-2 font-medium">
+                  <th key={label} className="text-left px-2 py-2 font-medium whitespace-nowrap">
                     {label}
                   </th>
                 )
               )}
-              <th className="text-right px-3 py-2 font-medium">Action</th>
+              <th className="text-right px-2 py-2 font-medium">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -243,55 +254,89 @@ export default function RtbReviewClient() {
                   key={item.dealId}
                   className="border-t border-t-border hover:bg-surface-2/40 align-top"
                 >
-                  <td className="px-3 py-2">
-                    <a
-                      href={getHubSpotDealUrl(item.dealId)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-semibold text-foreground hover:underline"
-                    >
-                      {item.dealName || item.dealId}
-                    </a>
-                    {item.driveFolderUrl && (
-                      <a
-                        href={item.driveFolderUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-xs text-muted hover:text-foreground hover:underline mt-0.5"
-                      >
-                        📁 Drive
-                      </a>
-                    )}
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {(() => {
+                      const { number, customer } = dealDisplay(
+                        item.dealName || item.dealId
+                      );
+                      return (
+                        <>
+                          <a
+                            href={getHubSpotDealUrl(item.dealId)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={item.dealName}
+                            className="font-semibold text-foreground hover:underline"
+                          >
+                            {number}
+                          </a>
+                          {customer && (
+                            <div className="text-muted max-w-36 truncate" title={item.dealName}>
+                              {customer}
+                            </div>
+                          )}
+                          {item.driveFolderUrl && (
+                            <a
+                              href={item.driveFolderUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block text-muted hover:text-foreground hover:underline mt-0.5"
+                            >
+                              📁 Drive
+                            </a>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
-                  <td className="px-3 py-2 text-muted">{item.projectManager ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted">{item.location ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
+                    {item.projectManager ?? "—"}
+                  </td>
+                  <td className="px-2 py-2 text-muted">{item.location ?? "—"}</td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
                     {item.dealStage ?? "—"}
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                  <td className="px-2 py-2 text-muted max-w-28">
                     {item.projectType ?? "—"}
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
                     {item.amount != null ? CURRENCY.format(item.amount) : "—"}
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
                     {formatDate(item.permitIssueDate)}
                   </td>
-                  <td className="px-3 py-2 text-muted">{item.interconnectionStatus ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted max-w-xs whitespace-pre-wrap">
-                    {item.rtbBlockedReason ?? "—"}
+                  <td className="px-2 py-2 text-muted max-w-32">
+                    {item.interconnectionStatus ?? "—"}
                   </td>
-                  <td className="px-3 py-2 text-muted">{item.constructionStatus ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted">
+                  <td className="px-2 py-2 text-muted">
+                    {item.rtbBlockedReason ? (
+                      <details className="group max-w-56">
+                        <summary className="cursor-pointer hover:text-foreground list-none">
+                          <span className="group-open:hidden line-clamp-2 whitespace-pre-wrap">
+                            {item.rtbBlockedReason}
+                          </span>
+                          <span className="hidden group-open:inline opacity-60">▲</span>
+                        </summary>
+                        <div className="whitespace-pre-wrap">
+                          {item.rtbBlockedReason}
+                        </div>
+                      </details>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-muted max-w-32">
+                    {item.constructionStatus ?? "—"}
+                  </td>
+                  <td className="px-2 py-2 text-muted">
                     {item.lineItems.length === 0 ? (
                       "—"
                     ) : (
                       <details>
                         <summary className="cursor-pointer whitespace-nowrap hover:text-foreground">
-                          {item.lineItems.length} item
-                          {item.lineItems.length === 1 ? "" : "s"}
+                          {item.lineItems.length}
                         </summary>
-                        <ul className="mt-1 space-y-0.5 text-xs min-w-48">
+                        <ul className="mt-1 space-y-0.5 min-w-44">
                           {item.lineItems.map((li, idx) => (
                             <li key={idx} className="whitespace-nowrap">
                               <span className="text-foreground">{li.quantity}×</span>{" "}
@@ -302,24 +347,25 @@ export default function RtbReviewClient() {
                       </details>
                     )}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 whitespace-nowrap">
                     {item.daPaid ? (
-                      <span className="text-green-500">✓ Paid</span>
+                      <span className="text-green-500" title="DA Paid In Full">✓</span>
                     ) : (
                       <span className="text-muted">{item.daStatus ?? "—"}</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-2 py-2 text-right">
                     <button
                       onClick={() => approveDeal.mutate(item.dealId)}
                       disabled={isPending || item.approved}
-                      className="text-xs px-2 py-1 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Approve — Release to Build"
+                      className="text-xs px-2 py-1 whitespace-nowrap bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {item.approved
                         ? "Approved"
                         : isPending
                           ? "Approving…"
-                          : "Approve — Release to Build"}
+                          : "Release ✓"}
                     </button>
                   </td>
                 </tr>
