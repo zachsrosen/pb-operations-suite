@@ -746,6 +746,12 @@ export async function POST(request: NextRequest) {
                 assigneeUid: conflictParams.assigneeUid,
                 assigneeName: conflictParams.assigneeName,
                 excludeJobUid: existingJob?.job_uid || null,
+                // Scope to survey categories — matches the availability grid;
+                // a surveyor on a multi-day install is not a survey conflict.
+                allowedCategoryUids: [
+                  JOB_CATEGORY_UIDS.SITE_SURVEY,
+                  JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT,
+                ],
               });
             }
           }

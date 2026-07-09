@@ -20,6 +20,13 @@ jest.mock("@/lib/db", () => ({
 
 const mockGetScheduledJobsForDateRange = jest.fn();
 jest.mock("@/lib/zuper", () => ({
+  // Real category UIDs — the guard scopes conflicts to survey categories, so a
+  // mock that dropped them would silently disable matching. (requireActual is
+  // avoided: the real module statically imports Prisma, which Jest can't load.)
+  JOB_CATEGORY_UIDS: {
+    SITE_SURVEY: "002bac33-84d3-4083-a35d-50626fc49288",
+    PRE_SALE_SITE_VISIT: "c53070e5-63fd-41bc-8803-f66ad842dbb5",
+  },
   zuper: {
     getScheduledJobsForDateRange: (...args: unknown[]) =>
       mockGetScheduledJobsForDateRange(...args),
@@ -57,6 +64,9 @@ const conflictingZuperJob = {
   scheduled_end_time: "2026-07-10 17:00:00",
   assigned_to: [{ user: { user_uid: JOE_UID, first_name: "Joe", last_name: "Lynch" } }],
   job_tags: ["hubspot-13833491464"],
+  // Survey category — the guard now scopes to survey categories only so a
+  // surveyor's multi-day install can't false-block a survey booking.
+  job_category: { category_uid: "002bac33-84d3-4083-a35d-50626fc49288", category_name: "Site Survey" },
 };
 
 beforeEach(() => {
@@ -114,6 +124,25 @@ describe("checkSurveySlotBookingConflict", () => {
   });
 
   it("returns null when neither source has a conflict", async () => {
+    const conflict = await checkSurveySlotBookingConflict(baseParams);
+    expect(conflict).toBeNull();
+  });
+
+  it("does NOT flag a surveyor's multi-day construction job (Purcell regression)", async () => {
+    mockGetScheduledJobsForDateRange.mockResolvedValue({
+      type: "success",
+      data: [
+        {
+          job_uid: "purcell-install",
+          job_title: "PROJ-7064 | Purcell, Andrew | 720 Madison St",
+          scheduled_start_time: "2026-07-09 14:00:00", // envelops the 7/10 slot
+          scheduled_end_time: "2026-07-11 22:00:00",
+          assigned_to: [{ user: { user_uid: JOE_UID, first_name: "Joe", last_name: "Lynch" } }],
+          job_tags: ["hubspot-7064"],
+          job_category: { category_uid: "f2fcb6bf-990f-408c-a66b-fba6caec6893", category_name: "Construction - Solar" },
+        },
+      ],
+    });
     const conflict = await checkSurveySlotBookingConflict(baseParams);
     expect(conflict).toBeNull();
   });

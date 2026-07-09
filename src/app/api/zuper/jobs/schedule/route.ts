@@ -917,12 +917,18 @@ export async function PUT(request: NextRequest) {
               assigneeUid: conflictParams.assigneeUid,
               assigneeName: conflictParams.assigneeName,
               excludeJobUid: existingJob?.job_uid || existingJobUid || null,
+              // Scope to survey categories — same as the availability grid.
+              // A surveyor on a multi-day install is not a survey double-book.
+              allowedCategoryUids: [
+                JOB_CATEGORY_UIDS.SITE_SURVEY,
+                JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT,
+              ],
             });
           }
         }
         if (conflict) {
           console.warn(
-            `[Zuper Schedule] BLOCKED double-book: ${conflictParams.assigneeName || conflictParams.assigneeUid} already has ${conflict.projectName} (${conflict.scheduledStart}-${conflict.scheduledEnd}) via ${conflict.source}`
+            `[Zuper Schedule] BLOCKED double-book: ${conflictParams.assigneeName || conflictParams.assigneeUid} already has survey ${conflict.projectName} (${conflict.scheduledStart}-${conflict.scheduledEnd}) via ${conflict.source}`
           );
           return NextResponse.json(
             {
