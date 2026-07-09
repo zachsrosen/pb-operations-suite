@@ -618,7 +618,10 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
 
   const finalMessage = await client.beta.messages.toolRunner({
     model: CLAUDE_MODELS.sonnet,
-    max_tokens: 1024,
+    // 1024 truncated long answers mid-sentence (e.g. an 18-deal list stopped
+    // mid-link). 2048 lets a full-length reply finish; anything over Chat's
+    // 4096-char limit is split into multiple messages by postGoogleChatMessage.
+    max_tokens: 2048,
     system: systemPrompt,
     messages,
     tools: allTools as Parameters<typeof client.beta.messages.toolRunner>[0]["tools"],
