@@ -4,6 +4,64 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-16
+
+### PE Document Tracker (Major)
+- Consolidated into a single PE dashboard ("the hub") — retired the separate pe-report behind admin
+- Documents tab redesign: collapse-by-default across Sections, By-Team, and Deals views with less visual noise
+- By-Team view: bucket filter + collapsible status sections, sub-group doc counts on collapsed rows, deals + docs counts on bucket chips
+- By-Team grouping into Rejected / Action Required / Not Uploaded; "Rejected" later folded into a unified summary
+- By-Team deals now show all outstanding docs inline (no per-deal expand)
+- Per-doc blocker notes replaced with deal-level "PE Info Needed" status; M1/M2 milestones gained editable "Waiting on Information" reason
+- Manual "Sync now" button + auto-waive of moot docs on done milestones
+- Retired the PE portal scraper webhook — it was corrupting doc statuses
+
+### PE Analytics (Major)
+- "By Document" view on the Docs page — Missing + Open Rejections per doc
+- Doc Rework folded into a unified Analytics section (dropped standalone tab)
+- Rejections-by-Document drill-downs split into open / resubmitted / approved
+- Doc Uploaders: Owner ⇄ Shared credit toggle (fractional by version), Owner/Fractional toggle for Approved-$
+- Uploads Explorer: filter Doc Uploaders by document + uploader with drill-downs everywhere
+- Click an uploader's chart segment to drill into that day's docs
+- Doc Uploaders timeline segmented by doc type with month axis and multi-select
+- Copy/CSV buttons on Analytics drill-down lists
+- Daily snapshot of Document Tracker card metrics + trend history
+- Misc analytics fixes: Paid $ split, Missing-by-Document, short-pay fix, day-scroll, open-only notes
+
+### PE Revenue Tracking
+- Recorded short-pays so PE Revenue Collected reflects actual dollars
+- Wired short-pay correction into the hub's Deals & Payments tab
+
+### PE Photo Submission Skills & Builder
+- New self-serve Photos-per-Policy builder (web tool)
+- New PE photo-submission skills: final-permit and policy-photos
+- PE Photo Builder resolves by PROJ number or customer name
+- Fixed policy-photos over-filtering — keep all required shots, label each page
+
+### Tech Ops Bot (Major)
+- New proactive daily digest DM'd to the owner
+- Scoped daily digests posted to team Google Chat rooms
+- Tailored per-room digests (intro, sections, content focus)
+- `?preview=1` query param renders digests without posting
+- Real fleet schedule pulled from `ScheduleRecord` (replaces calendar stub)
+- New `get_project_team` and `get_project_service` lookup tools
+- Rotating "thinking" ack messages
+- Tasks assigned to a named person + smarter task-vs-process-request judgment
+- Idempotency keys resolved + honest process-request email status reporting
+- Fixed: stuck-deals section empty (filter to active stages), fleet schedule filtered by deal `pb_location` (not BookedSlot), room name match handles parenthetical suffixes, `/api/cron/tech-ops-bot-digest` allowed through middleware, stop implying Zach is out of office
+
+### D&E Funnel
+- Status Funnel rendered as a branch/tree
+- New "Awaiting Site Survey" bucket; completed revisions are now dulled
+
+### Bug Fixes
+- Excluded reverted status flips from PE submission counts
+- Dropped phantom action-resolutions from uploader stats and relabeled "Unknown"
+- Excluded moot docs from Missing-by-Document
+- Removed unused `sel` var that broke the production build
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
