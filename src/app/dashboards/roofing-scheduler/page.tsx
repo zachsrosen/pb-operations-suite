@@ -9,7 +9,6 @@ import { toDateStr } from "@/lib/scheduling-utils";
 // pulls server-only modules (prisma via the call-counter). These three
 // UIDs are static and inlined here to keep this client component bundle
 // free of server deps.
-import { getInternalDealUrl } from "@/lib/external-links";
 import { pbHolidayName } from "@/lib/on-call-holidays";
 
 /* ------------------------------------------------------------------ */
@@ -572,14 +571,8 @@ export default function RoofingSchedulerPage() {
                 </a>
                 {selectedJob.hubspotDealId && (
                   <>
-                    <Link
-                      href={getInternalDealUrl(selectedJob.hubspotDealId, "roofing")}
-                      className="flex-1 text-center text-xs py-2 rounded-md bg-purple-500 text-white font-semibold hover:bg-purple-400 transition-colors"
-                    >
-                      Open Deal
-                    </Link>
                     <a
-                      href={`https://app.hubspot.com/contacts/22460157/deal/${selectedJob.hubspotDealId}`}
+                      href={`https://app.hubspot.com/contacts/21710069/deal/${selectedJob.hubspotDealId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 text-center text-xs py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-400 transition-colors"

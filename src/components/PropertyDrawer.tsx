@@ -13,7 +13,6 @@ import Link from "next/link";
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { PropertyDetail } from "@/lib/property-detail";
-import { getInternalDealUrl } from "@/lib/external-links";
 import PropertyEquipmentList from "./property/PropertyEquipmentList";
 import PropertyOwnershipList from "./property/PropertyOwnershipList";
 import PropertyActivityTimeline from "./property/PropertyActivityTimeline";
@@ -284,12 +283,6 @@ export default function PropertyDrawer({
                         className="px-4 py-2 flex items-center justify-between gap-3 text-sm"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <Link
-                            href={getInternalDealUrl(deal.id)}
-                            className="text-purple-400 hover:underline font-medium truncate"
-                          >
-                            {deal.name}
-                          </Link>
                           <a
                             href={
                               portalId
@@ -298,9 +291,9 @@ export default function PropertyDrawer({
                             }
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-orange-400 hover:underline shrink-0"
+                            className="text-orange-400 hover:underline font-medium truncate"
                           >
-                            HubSpot ↗
+                            {deal.name} ↗
                           </a>
                         </div>
                       </li>

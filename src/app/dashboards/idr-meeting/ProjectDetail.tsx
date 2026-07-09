@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
-import { getInternalDealUrl, getZuperJobUrl } from "@/lib/external-links";
+import { getZuperJobUrl } from "@/lib/external-links";
 import { getStatusDisplayName } from "@/lib/hubspot-status-display";
 import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
@@ -15,7 +14,6 @@ import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 import { AddersChecklist } from "./AddersChecklist";
 import { BomReviewSection } from "./BomReviewSection";
-import { EscalationPhotoGallery } from "./EscalationPhotoGallery";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -259,15 +257,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
         {/* ── Quick links ── */}
         <div className="flex flex-wrap gap-1.5">
-          <Link
-            href={getInternalDealUrl(item.dealId)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-0.5 rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-300 hover:bg-purple-500/20 transition-colors no-underline"
-          >
-            Deal
-            <span className="text-purple-300/70">&#8599;</span>
-          </Link>
           <QuickLink
             href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`}
             label="HubSpot"
@@ -283,7 +272,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           <DaQuickLink dealId={item.dealId} />
           {(() => {
             const allLinks: string[] = [
-              getInternalDealUrl(item.dealId),
               `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`,
               item.designFolderUrl ?? "",
               item.surveyFolderUrl ?? "",
@@ -418,11 +406,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
         {/* ── Site Photos (full width, has its own collapse toggle) ── */}
         <PhotoGalleryCard hubspotDealId={item.dealId} />
-
-        {/* ── Escalation Photos (escalation items only) ── */}
-        {item.type === "ESCALATION" && (
-          <EscalationPhotoGallery dealId={item.dealId} readOnly={readOnly} />
-        )}
       </div>
     </div>
   );

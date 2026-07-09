@@ -25,7 +25,6 @@ import {
   toDateStr,
 } from "@/lib/scheduling-utils";
 import { normalizeLocation as normalizeLocationAlias } from "@/lib/locations";
-import { getInternalDealUrl } from "@/lib/external-links";
 import { isPbHoliday, pbHolidayName } from "@/lib/on-call-holidays";
 
 /* ------------------------------------------------------------------ */
@@ -4211,14 +4210,16 @@ export default function SchedulerPage() {
                           Unsched
                         </span>
                       )}
-                      <Link
-                        href={getInternalDealUrl(p.id, "sales")}
+                      <a
+                        href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${p.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="text-[0.5rem] px-1 py-0.5 rounded bg-purple-500/30 text-purple-400 font-semibold hover:bg-purple-500/50"
-                        title="Open internal deal page"
+                        className="text-[0.5rem] px-1 py-0.5 rounded bg-orange-500/30 text-orange-400 font-semibold hover:bg-orange-500/50"
+                        title="Open in HubSpot"
                       >
-                        Deal
-                      </Link>
+                        HubSpot
+                      </a>
                       {p.zuperSubJobs && p.zuperSubJobs.length > 0 && p.zuperSubJobs.some((sj) => sj.jobUid) ? (
                         <>
                           {p.zuperSubJobs.filter((sj) => sj.jobUid).map((sj) => (
@@ -5921,13 +5922,6 @@ export default function SchedulerPage() {
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[0.7rem] text-muted w-20">Links</span>
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={getInternalDealUrl(scheduleModal.project.id, "sales")}
-                      className="text-[0.7rem] text-purple-400 hover:text-purple-300"
-                    >
-                      Deal
-                    </Link>
-                    <span className="text-muted/70">|</span>
                     <a
                       href={scheduleModal.project.hubspotUrl}
                       target="_blank"
@@ -6409,13 +6403,6 @@ export default function SchedulerPage() {
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[0.7rem] text-muted w-20">Links</span>
                   <div className="flex items-center gap-2">
-                    <Link
-                      href={getInternalDealUrl(detailModal.id, "sales")}
-                      className="text-[0.7rem] text-purple-400 hover:text-purple-300"
-                    >
-                      Deal
-                    </Link>
-                    <span className="text-muted/70">|</span>
                     <a
                       href={detailModal.hubspotUrl}
                       target="_blank"
@@ -6834,12 +6821,6 @@ export default function SchedulerPage() {
                   Remove from Schedule
                 </button>
               )}
-              <Link
-                href={getInternalDealUrl(detailModal.id, "sales")}
-                className="px-3.5 py-2 rounded-md bg-purple-600 border border-purple-600 text-white text-[0.75rem] font-semibold no-underline hover:bg-purple-700 transition-colors"
-              >
-                Open Deal
-              </Link>
               <a
                 href={detailModal.hubspotUrl}
                 target="_blank"
@@ -6961,21 +6942,6 @@ export default function SchedulerPage() {
               </a>
               {overlayDetail.hubspotDealId && (
                 <>
-                  <Link
-                    href={getInternalDealUrl(
-                      overlayDetail.hubspotDealId,
-                      overlayDetail.eventType === "service"
-                        ? "service"
-                        : overlayDetail.eventType === "dnr"
-                          ? "dnr"
-                          : overlayDetail.eventType === "roofing"
-                            ? "roofing"
-                            : "sales",
-                    )}
-                    className="px-3 py-1.5 rounded-md border border-purple-500/60 text-purple-300 text-[0.7rem] font-semibold no-underline hover:bg-purple-500/10 transition-colors"
-                  >
-                    Open Deal
-                  </Link>
                   <a
                     href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${overlayDetail.hubspotDealId}`}
                     target="_blank"

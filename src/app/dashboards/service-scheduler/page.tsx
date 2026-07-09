@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { toDateStr } from "@/lib/scheduling-utils";
-import { getInternalDealUrl } from "@/lib/external-links";
 import { isPbHoliday, pbHolidayName } from "@/lib/on-call-holidays";
 
 /* ------------------------------------------------------------------ */
@@ -1318,14 +1317,8 @@ export default function ServiceSchedulerPage() {
                 </a>
                 {selectedJob.hubspotDealId && selectedObjectType === "deal" && (
                   <>
-                    <Link
-                      href={getInternalDealUrl(selectedJob.hubspotDealId, "service")}
-                      className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-purple-500 text-white font-semibold hover:bg-purple-400 transition-colors"
-                    >
-                      Open Deal
-                    </Link>
                     <a
-                      href={`https://app.hubspot.com/contacts/${hubspotPortalId || "22460157"}/record/0-3/${selectedJob.hubspotDealId}`}
+                      href={`https://app.hubspot.com/contacts/${hubspotPortalId || "21710069"}/record/0-3/${selectedJob.hubspotDealId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-orange-500 text-black font-semibold hover:bg-orange-400 transition-colors"
@@ -1336,7 +1329,7 @@ export default function ServiceSchedulerPage() {
                 )}
                 {selectedJob.hubspotDealId && selectedObjectType === "ticket" && (
                   <a
-                    href={`https://app.hubspot.com/contacts/${hubspotPortalId || "22460157"}/ticket/${selectedJob.hubspotDealId}`}
+                    href={`https://app.hubspot.com/contacts/${hubspotPortalId || "21710069"}/ticket/${selectedJob.hubspotDealId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-cyan-500 text-black font-semibold hover:bg-cyan-400 transition-colors"
@@ -1352,7 +1345,7 @@ export default function ServiceSchedulerPage() {
                 {selectedJob.hubspotDealId && selectedObjectType && (
                   primaryContactId ? (
                     <a
-                      href={`https://app.hubspot.com/contacts/${hubspotPortalId || "22460157"}/record/0-1/${primaryContactId}`}
+                      href={`https://app.hubspot.com/contacts/${hubspotPortalId || "21710069"}/record/0-1/${primaryContactId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-orange-400 text-black font-semibold hover:bg-orange-300 transition-colors"
