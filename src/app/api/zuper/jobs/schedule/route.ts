@@ -27,6 +27,7 @@ import {
 } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { findRecordConflict, findZuperJobConflict } from "@/lib/survey-slot-conflict";
+import { closeSurveyInviteForDeal } from "@/lib/survey-invite-close";
 import { buildSurveyConflictAssigneeFilter } from "@/lib/availability-conflict-filter";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
@@ -1181,6 +1182,16 @@ export async function PUT(request: NextRequest) {
         zuperError: assignmentError,
         notes: schedule.notes,
       });
+      // Close the customer's portal invite if this is an ops-booked survey —
+      // otherwise it lingers PENDING (lets the customer double-book, inflates
+      // counts). Best-effort, non-fatal.
+      if (isSurveyLike(schedule.type)) {
+        await closeSurveyInviteForDeal(prisma, project.id, {
+          scheduledDate: schedule.date,
+          scheduledTime: schedule.startTime,
+          zuperJobUid: existingJob.job_uid,
+        });
+      }
       if (prisma) {
         await prisma.scheduleRecord.updateMany({
           where: {
@@ -1352,6 +1363,14 @@ export async function PUT(request: NextRequest) {
         zuperAssigned: !!(resolvedCrew || schedule.crew), // Assume assigned if crew was provided at creation
         notes: schedule.notes,
       });
+      // Close the customer's portal invite for ops-booked surveys (see above).
+      if (isSurveyLike(schedule.type)) {
+        await closeSurveyInviteForDeal(prisma, project.id, {
+          scheduledDate: schedule.date,
+          scheduledTime: schedule.startTime,
+          zuperJobUid: newJobUid,
+        });
+      }
       if (prisma) {
         await prisma.scheduleRecord.updateMany({
           where: {
