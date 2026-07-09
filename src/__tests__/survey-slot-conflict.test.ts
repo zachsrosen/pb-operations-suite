@@ -85,6 +85,7 @@ describe("findZuperJobConflict", () => {
     assigneeName: "Joe Lynch",
     excludeJobUid: "crane-own-job-uid",
   };
+  const SITE_SURVEY_UID = "002bac33-84d3-4083-a35d-50626fc49288";
   const branyanJob = {
     job_uid: "branyan-job-uid",
     job_title: "PROJ-10028 | Branyan, William (Bill) R | 40 Pine Tree Ln",
@@ -92,10 +93,13 @@ describe("findZuperJobConflict", () => {
     scheduled_end_time: "2026-07-10T17:00:00.000Z",
     assigned_to: [{ user: { user_uid: JOE_UID, first_name: "Joe", last_name: "Lynch" } }],
     job_tags: ["hubspot-13833491464", "proj-10028"],
+    job_category: { category_uid: SITE_SURVEY_UID, category_name: "Site Survey" },
   };
+  // Survey category allow-list, as the booking routes pass it.
+  const surveyParams = { ...params, allowedCategoryUids: [SITE_SURVEY_UID] };
 
   it("flags an overlapping Zuper job for the same assignee", () => {
-    const conflict = findZuperJobConflict([branyanJob], params);
+    const conflict = findZuperJobConflict([branyanJob], surveyParams);
     expect(conflict).not.toBeNull();
     expect(conflict!.projectId).toBe("13833491464");
     expect(conflict!.source).toBe("zuper");
@@ -103,12 +107,12 @@ describe("findZuperJobConflict", () => {
 
   it("ignores the job being rescheduled and the deal's own job", () => {
     expect(
-      findZuperJobConflict([{ ...branyanJob, job_uid: "crane-own-job-uid" }], params)
+      findZuperJobConflict([{ ...branyanJob, job_uid: "crane-own-job-uid" }], surveyParams)
     ).toBeNull();
     expect(
       findZuperJobConflict(
         [{ ...branyanJob, job_tags: ["hubspot-60456724017"] }],
-        params
+        surveyParams
       )
     ).toBeNull();
   });
@@ -117,33 +121,48 @@ describe("findZuperJobConflict", () => {
     expect(
       findZuperJobConflict(
         [{ ...branyanJob, scheduled_end_time: branyanJob.scheduled_start_time }],
-        params
+        surveyParams
       )
     ).toBeNull();
     expect(
       findZuperJobConflict(
         [{ ...branyanJob, assigned_to: [{ user: { user_uid: "someone-else" } }] }],
-        params
+        surveyParams
       )
     ).toBeNull();
     expect(
       findZuperJobConflict(
         [{ ...branyanJob, scheduled_start_time: "2026-07-10T18:00:00.000Z", scheduled_end_time: "2026-07-10T19:00:00.000Z" }],
-        params
+        surveyParams
       )
     ).toBeNull();
   });
 
-  it("catches conflicts in ANY category (survey vs install stacking)", () => {
-    const installJob = {
-      ...branyanJob,
-      job_title: "Construction - PROJ-9999 | Someone Else",
-      job_tags: ["hubspot-999"],
-      scheduled_start_time: "2026-07-10T14:00:00.000Z",
-      scheduled_end_time: "2026-07-11T22:00:00.000Z", // multi-day install spanning the slot
+  it("does NOT block on a multi-day construction job (Purcell regression)", () => {
+    // Drew Perry is on a 2-day install (7/13 8am -> 7/14 4pm MT) whose UTC
+    // span envelops a 7/14 2-3pm survey. The survey scheduler grid only
+    // considers survey-category jobs, so the guard must too — a construction
+    // overlap is not a survey double-book. Request window overlaps the span.
+    const purcellInstall = {
+      job_uid: "purcell-install",
+      job_title: "PROJ-7064 | Purcell, Andrew | 720 Madison St",
+      scheduled_start_time: "2026-07-13T14:00:00.000Z",
+      scheduled_end_time: "2026-07-14T22:00:00.000Z",
+      assigned_to: [{ user: { user_uid: JOE_UID, first_name: "Joe", last_name: "Lynch" } }],
+      job_tags: ["hubspot-7064"],
+      job_category: { category_uid: "f2fcb6bf-990f-408c-a66b-fba6caec6893", category_name: "Construction - Solar" },
     };
-    const conflict = findZuperJobConflict([installJob], params);
-    expect(conflict).not.toBeNull();
-    expect(conflict!.projectId).toBe("999");
+    const survey14th = {
+      ...surveyParams,
+      startUtc: "2026-07-14 20:00:00", // 2pm MT
+      endUtc: "2026-07-14 21:00:00",
+    };
+    // Sanity: WITHOUT the survey allow-list this construction job DOES overlap
+    // (proves the date window is genuinely conflicting) …
+    expect(
+      findZuperJobConflict([purcellInstall], { ...survey14th, allowedCategoryUids: undefined })
+    ).not.toBeNull();
+    // … but WITH the survey allow-list it's ignored.
+    expect(findZuperJobConflict([purcellInstall], survey14th)).toBeNull();
   });
 });

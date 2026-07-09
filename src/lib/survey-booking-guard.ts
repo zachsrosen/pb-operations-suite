@@ -10,14 +10,15 @@
  *
  * Two sources, cheapest first (mirrors /api/zuper/jobs/schedule):
  *  - ScheduleRecord rows (our DB — catches app + portal bookings incl. tentative)
- *  - live Zuper jobs for the date, ANY category (authoritative — catches
- *    Zuper-UI/Tray bookings; a surveyor mid-install is still busy)
+ *  - live Zuper jobs for the date, SURVEY categories only (matches the
+ *    availability grid — a surveyor on a multi-day install whose UTC span
+ *    envelops the slot is NOT a survey double-book; 7/8 Purcell/Drew incident)
  *
  * Guard failures never block bookings (fail-open, logged).
  */
 
 import { prisma } from "@/lib/db";
-import { zuper } from "@/lib/zuper";
+import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import {
   findRecordConflict,
   findZuperJobConflict,
@@ -91,6 +92,10 @@ export async function checkSurveySlotBookingConflict(
         assigneeUid: params.assigneeUid,
         assigneeName: params.assigneeName,
         excludeJobUid: params.excludeJobUid,
+        allowedCategoryUids: [
+          JOB_CATEGORY_UIDS.SITE_SURVEY,
+          JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT,
+        ],
       });
     }
 

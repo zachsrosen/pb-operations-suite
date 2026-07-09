@@ -89,6 +89,14 @@ export interface ZuperConflictParams {
   assigneeName?: string | null;
   /** The deal's own Zuper job when rescheduling — never a conflict. */
   excludeJobUid?: string | null;
+  /**
+   * Only consider jobs in these Zuper category UIDs. The survey scheduler's
+   * availability grid only models survey-category jobs, so the booking guard
+   * must match — otherwise a surveyor on a multi-day install (whose UTC span
+   * envelops the requested slot) false-blocks a survey the grid shows as free
+   * (7/8 Purcell/Drew Perry incident). Undefined = consider all categories.
+   */
+  allowedCategoryUids?: string[] | null;
 }
 
 interface ZuperJobLike {
@@ -101,6 +109,17 @@ interface ZuperJobLike {
   job_tags?: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   custom_fields?: any;
+  // job_category is a UID string (create payloads) or an object (GET responses).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  job_category?: any;
+}
+
+/** Extract the category UID from a Zuper job (handles string or object form). */
+function jobCategoryUid(job: ZuperJobLike): string | null {
+  const c = job.job_category;
+  if (!c) return null;
+  if (typeof c === "string") return c;
+  return c.category_uid || null;
 }
 
 const utcMs = (v: string): number => {
@@ -129,9 +148,18 @@ export function findZuperJobConflict(
 
   const reqStart = utcMs(params.startUtc);
   const reqEnd = utcMs(params.endUtc);
+  const allowed = params.allowedCategoryUids && params.allowedCategoryUids.length > 0
+    ? new Set(params.allowedCategoryUids)
+    : null;
 
   for (const job of jobs) {
     if (params.excludeJobUid && job.job_uid === params.excludeJobUid) continue;
+    if (allowed) {
+      const cat = jobCategoryUid(job);
+      // Exclude jobs outside the allowed categories. Unknown category (null)
+      // is excluded too — the availability grid can't see it either.
+      if (!cat || !allowed.has(cat)) continue;
+    }
     const dealId = jobDealId(job);
     if (dealId && String(dealId) === String(params.dealId)) continue; // own job
 
