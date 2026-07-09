@@ -641,7 +641,11 @@ export function createReadOnlyChatTools() {
   const countDealsByStage = betaZodTool({
     name: "count_deals_by_stage",
     description:
-      "Count active deals by stage in the project pipeline, optionally filtered to one PB location",
+      "Count active deals by stage in the project pipeline, with per-stage revenue. " +
+      "Optionally filter to one PB location and/or to Participate Energy deals only. " +
+      "Set participateEnergyOnly=true for any 'how many PE / Participate Energy deals " +
+      "in <stage>' question (e.g. 'PE jobs in Inspection', 'Participate Energy deals in " +
+      "Construction') — read the stage you want from counts/revenueByStage.",
     inputSchema: z.object({
       location: z
         .string()
@@ -650,6 +654,10 @@ export function createReadOnlyChatTools() {
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
             "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
+      participateEnergyOnly: z
+        .boolean()
+        .optional()
+        .describe("If true, count only Participate Energy (PE) deals."),
     }),
     run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
@@ -667,6 +675,9 @@ export function createReadOnlyChatTools() {
       }
 
       let projects = await fetchAllProjects({ activeOnly: true });
+      if (input.participateEnergyOnly) {
+        projects = projects.filter((p) => p.isParticipateEnergy);
+      }
       if (canonicalLocation) {
         const { normalizeLocation } = await import("@/lib/locations");
         projects = projects.filter(
@@ -685,6 +696,7 @@ export function createReadOnlyChatTools() {
       }
       return JSON.stringify({
         location: canonicalLocation ?? "all locations",
+        scope: input.participateEnergyOnly ? "Participate Energy deals only" : "all deals",
         total: projects.length,
         totalRevenue: Math.round(totalRevenue),
         counts,
@@ -734,6 +746,13 @@ export function createReadOnlyChatTools() {
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
             "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
+      participateEnergyOnly: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, break down only Participate Energy (PE) deals — e.g. 'inspection " +
+            "status of our PE jobs'. (pe_m1/pe_m2 already scope to PE automatically.)"
+        ),
     }),
     run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
@@ -773,7 +792,7 @@ export function createReadOnlyChatTools() {
         input.statusType === "pe_m1" || input.statusType === "pe_m2";
 
       let projects = await fetchAllProjects({ activeOnly: true });
-      if (isPeMilestone) {
+      if (isPeMilestone || input.participateEnergyOnly) {
         projects = projects.filter((p) => p.isParticipateEnergy);
       }
       if (canonicalLocation) {
