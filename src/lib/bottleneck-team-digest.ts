@@ -18,6 +18,7 @@ import {
 } from "@/lib/project-funnel-aggregation";
 import { statusBucket } from "@/lib/pe-milestone-bucket";
 import { STAGES, type BottleneckDealRow } from "@/lib/bottlenecks";
+import { statusLabel } from "@/lib/deal-status-labels";
 
 const HUBSPOT_PORTAL = (process.env.HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 const FUNNEL_TAB_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
@@ -47,6 +48,30 @@ const PERMIT_DESIGN_REVISION = new Set([
   "Revision Ready To Resubmit",
   "In Design For Revision",
   "Returned from Design",
+]);
+
+/**
+ * design_status raw values (any pipeline stage) where the design team owes a
+ * revision — all types: DA, permit/AHJ, utility, as-built. "…Revision Completed"
+ * is intentionally excluded (that revision is done). These deals often sit in
+ * downstream stages (Construction, Inspection, PTO), which the funnel-bucket
+ * sections don't surface — so this is a status scan across all active deals.
+ */
+const DESIGN_REVISION_STATUS = new Set([
+  "Revision Needed - DA Rejected",
+  "DA Revision In Progress",
+  "Revision Needed - Rejected by AHJ",
+  "Permit Revision In Progress",
+  "Revision Needed - Rejected by Utility",
+  "Utility Revision In Progress",
+  "Revision Needed - Rejected",
+  "As-Built Revision In Progress",
+]);
+
+/** design_status raw values that mean a design is awaiting FINAL review/stamping. */
+const DESIGN_FINAL_REVIEW_STATUS = new Set([
+  "Ready for Review", // label: Final Review/Stamping
+  "DA Approved", // label: Final Design Review
 ]);
 
 interface DigestLine {
@@ -183,13 +208,81 @@ export function buildTeamSections(
 ): DigestSection[] {
   switch (team) {
     case "design": {
-      const permitRevisions = dd.awaitingPermitIssue.filter(
-        (d) => d.status != null && PERMIT_DESIGN_REVISION.has(d.status)
+      // Revisions and final reviews live in the design_status field and can sit
+      // in ANY stage (an as-built revision is in Inspection, a utility revision
+      // in PTO) — so scan every active deal by its design_status, not just the
+      // design-stage funnel buckets. Join: drill-down deal (has designLead,
+      // stage, daysWaiting) ⨝ raw row (has design_status) by id.
+      const allDeals: ProjectFunnelDrillDownDeal[] = [
+        ...dd.awaitingSurveySchedule, ...dd.awaitingSurvey, ...dd.awaitingDaSend,
+        ...dd.awaitingApproval, ...dd.awaitingDesignComplete, ...dd.awaitingPermitSubmit,
+        ...dd.awaitingPermitIssue, ...dd.awaitingInterconnection, ...dd.awaitingReadyToBuild,
+        ...dd.awaitingConstructionSchedule, ...dd.awaitingConstructionComplete,
+        ...dd.awaitingInspection, ...dd.awaitingPto, ...dd.awaitingCloseOut,
+      ];
+      const designStatusById = new Map(peRows.map((r) => [r.hubspotDealId, r.designStatus]));
+
+      // Build a section from a design_status predicate, showing the design
+      // status label on each line (not the bucket's stage-specific status).
+      const designStatusSection = (
+        title: string,
+        match: (rawDesignStatus: string | null) => boolean,
+        followUpDays: number | null
+      ): DigestSection => {
+        const lines = allDeals
+          .filter(workable)
+          .filter((d) => match(designStatusById.get(String(d.id)) ?? null))
+          .map((d) => {
+            const line = toLine(d, leadOf(d.designLead), followUpDays);
+            line.status = statusLabel("design_status", designStatusById.get(String(d.id)) ?? null);
+            return line;
+          })
+          .sort((a, b) => b.daysWaiting - a.daysWaiting);
+        return { title, followUpDays, groupBy: "lead", lines };
+      };
+
+      // "Revisions to complete": design_status revision states (any stage) UNION
+      // the permit-workflow "back in design" deals (permitting_status) — deduped
+      // by id, so a revision surfaced by either signal shows exactly once.
+      const revisionLines: DigestLine[] = [];
+      const revisionSeen = new Set<string>();
+      const pushRevision = (d: ProjectFunnelDrillDownDeal, statusText: string | null) => {
+        if (revisionSeen.has(String(d.id))) return;
+        revisionSeen.add(String(d.id));
+        const line = toLine(d, leadOf(d.designLead), null);
+        line.status = statusText;
+        revisionLines.push(line);
+      };
+      for (const d of allDeals.filter(workable)) {
+        const ds = designStatusById.get(String(d.id)) ?? null;
+        if (ds != null && DESIGN_REVISION_STATUS.has(ds)) pushRevision(d, statusLabel("design_status", ds));
+      }
+      for (const d of dd.awaitingPermitIssue.filter(workable)) {
+        if (d.status != null && PERMIT_DESIGN_REVISION.has(d.status)) pushRevision(d, d.status);
+      }
+      revisionLines.sort((a, b) => b.daysWaiting - a.daysWaiting);
+      const revisions: DigestSection = {
+        title: "Revisions to complete",
+        followUpDays: null,
+        groupBy: "lead",
+        lines: revisionLines,
+      };
+      const finalReviews = designStatusSection(
+        "Final design reviews",
+        (ds) => ds != null && DESIGN_FINAL_REVIEW_STATUS.has(ds),
+        null
       );
+
+      // Deals already surfaced as a revision or final review shouldn't also
+      // appear in the generic DA/design-complete sections (no double-listing).
+      const claimed = new Set([...revisions.lines, ...finalReviews.lines].map((l) => l.id));
+      const notClaimed = (d: ProjectFunnelDrillDownDeal) => !claimed.has(String(d.id));
+
       return [
-        section("DAs to send", dd.awaitingDaSend, (d) => leadOf(d.designLead), null),
-        section("Designs to complete", dd.awaitingDesignComplete, (d) => leadOf(d.designLead), null),
-        section("Permit revisions in design", permitRevisions, (d) => leadOf(d.designLead), null),
+        section("DAs to send", dd.awaitingDaSend.filter(notClaimed), (d) => leadOf(d.designLead), null),
+        section("Designs to complete", dd.awaitingDesignComplete.filter(notClaimed), (d) => leadOf(d.designLead), null),
+        finalReviews,
+        revisions,
       ];
     }
     case "permitting": {
