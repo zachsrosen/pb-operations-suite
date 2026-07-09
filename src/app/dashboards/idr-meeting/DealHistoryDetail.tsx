@@ -1,18 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
-import { getInternalDealUrl } from "@/lib/external-links";
 import type { IdrNote } from "./IdrMeetingClient";
-import { reviewTypePillLabel } from "./review-type-labels";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
 interface SessionItem {
   id: string;
-  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION" | "DNR_SERVICE";
-  pipeline: string | null;
+  type: "IDR" | "ESCALATION";
   dealId: string;
   dealName: string;
   address: string | null;
@@ -111,12 +107,6 @@ export function DealHistoryDetail({ dealId, dealName, region, systemSizeKw, proj
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold text-foreground">{dealName}</h2>
-            <Link
-              href={getInternalDealUrl(dealId)}
-              className="inline-flex items-center gap-0.5 rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-300 hover:bg-purple-500/20 transition-colors no-underline"
-            >
-              Deal
-            </Link>
             <a
               href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${dealId}`}
               target="_blank"
@@ -178,7 +168,7 @@ function SessionCard({ item }: { item: SessionItem }) {
               : "bg-surface text-muted"
           }`}
         >
-          {reviewTypePillLabel(item.type, item.pipeline)}
+          {item.type}
         </span>
       </div>
 
