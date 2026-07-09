@@ -46,6 +46,10 @@ export interface RtbQueueItem {
   ownerId: string | null;
   /** Display label for the deal's pipeline stage (e.g. "RTB - Blocked"). */
   dealStage: string | null;
+  /** Project type (e.g. "Solar", "Battery"). */
+  projectType: string | null;
+  /** Deal amount in dollars. */
+  amount: number | null;
   permitIssueDate: string | null;
   /** Interconnection status, resolved to the HubSpot display label. */
   interconnectionStatus: string | null;
@@ -72,6 +76,8 @@ const PROPERTIES = [
   "hubspot_owner_id",
   "dealstage",
   "pipeline",
+  "project_type",
+  "amount",
   "permit_completion_date",
   "interconnection_status",
   "rtb_blocked_reason",
@@ -162,6 +168,8 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
           : null,
         ownerId: p.hubspot_owner_id ?? null,
         dealStage: p.dealstage ? DEAL_STAGE_MAP[p.dealstage] ?? p.dealstage : null,
+        projectType: p.project_type ?? null,
+        amount: p.amount ? Number(p.amount) || null : null,
         permitIssueDate: p.permit_completion_date ?? null,
         interconnectionStatus: statusLabel(
           "interconnection_status",
