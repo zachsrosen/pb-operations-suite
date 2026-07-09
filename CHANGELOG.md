@@ -4,6 +4,68 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-05
+
+### Google Chat OOO Bot (Major)
+- New Google Chat bot for out-of-office coverage requests, deployed as a Workspace add-on
+- JWT auth with multi-audience acceptance and multi-source JWKS fallback for Google Chat verification
+- Service account key supports both raw JSON and base64-encoded formats
+- Async response pattern uses static `waitUntil` import with DB-captured error diagnostics
+- Replies post to the main message timeline instead of nested threads
+- SOP integration so the bot can answer process questions
+- Middleware allowlist for `/api/cron/pe-doc-digest`
+
+### PE Document Digest (Major)
+- Rebuilt daily PE doc digest into 4 actionable sections with Google Drive folder links per deal
+- Mirror email matches in-app digest with deep links and clear action prompts
+- Slimmed email body to summary + tracker link (full detail in app)
+- Dropped "Today's Changes" section in favor of pure forward-looking actions
+- Replay endpoint for re-sending past digests; one-shot replay cron retired after confirmed delivery
+- Notes-only doc changes now labeled distinctly (no more "Uploaded → Uploaded" noise)
+- Merged `UPLOADED` and `UNDER_REVIEW` doc statuses into a single "In Review" state
+- Convergence transitions (`UPLOADED` → `UNDER_REVIEW`) no longer logged as changes
+- PE scraper sync: `NOT_UPLOADED` overrides to `UPLOADED` when an unknown status has a submitted date
+
+### PE Deals Dashboard
+- Multi-column sort with smarter Customer Paid sort; defaults to PE Total
+- Excludes Cancelled deals; auto-renames "Other" stage → "On Hold"
+- New Awaiting PTO segment; reverted hero card split
+- Pipeline bar split into stage buckets (Pre-Construction vs Construction+); removed report link
+- New "Customer Paid?" column after customer payment amount
+- Hero count switched from x/y to submitted total with under-review badge
+
+### Shop Health
+- New Service + D&R/Roofing sections on the Shop Health overview
+- Lightweight overview path: 1 Project fetch, no ticket sweep
+- Closed-ticket cache + fail-open behavior on new Service/D&R fetches for resilience
+- Eliminated duplicate Project pipeline fetch
+- Diagnostic surfacing for overview route errors
+
+### Master Scheduler
+- Weekend visibility toggle to show/hide Saturday + Sunday columns
+- Weekend events render in weekend cells without bleeding into Monday
+- Design spec landed for weekend install scheduling (build pending)
+
+### Activity Throughput
+- New Monthly Activity throughput dashboard for ops volume tracking
+
+### Project Funnel
+- Awaiting DA Send column now shows design approval status
+
+### Zuper Performance
+- Skip API sweep when DB cache hits; cache `/jobs/by-category` responses
+- Explicit caller attribution on `[zuper-call]` logs; slashed `useCalendarData` polling frequency
+- Inlined `JOB_CATEGORY` UIDs in roofing-scheduler to drop a client→server import
+
+### Daily Focus / EOD Summary
+- Morning snapshot now saved before sending emails (fixes stale snapshot)
+- "Morning items resolved" count now tracks actual action items
+
+### Bug Fixes
+- Admin tickets table renders cleanly when `pageUrl` is invalid
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
