@@ -21,8 +21,10 @@ describe("fetchRtbQueue", () => {
             pb_location: "Westminster",
             project_manager: "Jane PM",
             permit_completion_date: "2026-07-01T00:00:00Z",
+            interconnection_status: "Signature Acquired By Customer",
             rtb_blocked_reason: "Waiting on utility meter release",
             install_status: "Ready to Build",
+            all_document_parent_folder_id: "1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
             total_revision_count: "2",
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
@@ -39,9 +41,12 @@ describe("fetchRtbQueue", () => {
       projectManager: "Jane PM",
       dealStage: "RTB - Blocked",
       permitIssueDate: "2026-07-01T00:00:00Z",
-      rtbBlockedReason: "Waiting on utility meter release",
       // resolved to display label, not the raw value
+      interconnectionStatus: "Ready To Submit",
+      rtbBlockedReason: "Waiting on utility meter release",
       constructionStatus: "Ready to Build",
+      driveFolderUrl:
+        "https://drive.google.com/drive/folders/1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
       approved: false,
     });
     const req = mockSearchWithRetry.mock.calls[0][0];

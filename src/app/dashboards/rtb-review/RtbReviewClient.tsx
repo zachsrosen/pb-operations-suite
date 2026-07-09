@@ -7,6 +7,7 @@ import {
   MultiSelectFilter,
   type FilterOption,
 } from "@/components/ui/MultiSelectFilter";
+import { getHubSpotDealUrl } from "@/lib/external-links";
 import type { RtbQueueItem } from "@/lib/rtb-review";
 
 interface RtbQueueResponse {
@@ -126,6 +127,7 @@ export default function RtbReviewClient() {
               <th className="text-left px-3 py-2 font-medium">Location</th>
               <th className="text-left px-3 py-2 font-medium">Deal Stage</th>
               <th className="text-left px-3 py-2 font-medium">Permit Issued</th>
+              <th className="text-left px-3 py-2 font-medium">Interconnection Status</th>
               <th className="text-left px-3 py-2 font-medium">RTB Blocked Notes</th>
               <th className="text-left px-3 py-2 font-medium">Construction Status</th>
               <th className="text-left px-3 py-2 font-medium">Revisions</th>
@@ -135,14 +137,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={9} className="text-center text-muted py-8">
+                <td colSpan={10} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center text-muted py-8">
+                <td colSpan={10} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -157,8 +159,25 @@ export default function RtbReviewClient() {
                   key={item.dealId}
                   className="border-t border-t-border hover:bg-surface-2/40 align-top"
                 >
-                  <td className="px-3 py-2 font-semibold text-foreground">
-                    {item.dealName || item.dealId}
+                  <td className="px-3 py-2">
+                    <a
+                      href={getHubSpotDealUrl(item.dealId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-foreground hover:underline"
+                    >
+                      {item.dealName || item.dealId}
+                    </a>
+                    {item.driveFolderUrl && (
+                      <a
+                        href={item.driveFolderUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-xs text-muted hover:text-foreground hover:underline mt-0.5"
+                      >
+                        📁 Drive
+                      </a>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-muted">{item.projectManager ?? "—"}</td>
                   <td className="px-3 py-2 text-muted">{item.location ?? "—"}</td>
@@ -168,6 +187,7 @@ export default function RtbReviewClient() {
                   <td className="px-3 py-2 text-muted whitespace-nowrap">
                     {formatDate(item.permitIssueDate)}
                   </td>
+                  <td className="px-3 py-2 text-muted">{item.interconnectionStatus ?? "—"}</td>
                   <td className="px-3 py-2 text-muted max-w-xs whitespace-pre-wrap">
                     {item.rtbBlockedReason ?? "—"}
                   </td>
