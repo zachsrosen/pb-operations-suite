@@ -4,6 +4,192 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-06-08
+
+### PowerHub & Tesla Integration (Major)
+- Capture every Tesla telemetry signal and alert metadata from grid
+- Surface every Tesla device on site with part number and serial number
+- Push all Tesla device serials and models to Zuper Property/Job for sync
+- Show Tesla device model numbers alongside serials in HubSpot Card
+- Geo-coordinate matching via portal-imported latitude/longitude
+- Cross-system Tesla portal URL linking across HubSpot, Zuper, and Suite
+- Enrich SiteDetail with HubSpot deal, property, contacts, and system details
+- Admin linkage manager for Tesla site-to-deal associations
+- Batch telemetry and alert polls to prevent function timeout
+- Handle missing SoC signal by deriving from energy-remaining
+- Auto-link Tesla sites to HubSpot properties with greedy scoring
+- Backfill site addresses from linked HubSpot deals
+- Fleet monitoring dashboard with expandable site table
+- Cron handlers for asset sync, telemetry, and alerts
+- PowerHub alert scoring rolled into service priority queue
+- JWT auth with rate limiting for Tesla API
+- Native Tesla PowerHub UI Extension card for HubSpot Deal view
+- Compact Tesla PowerHub sidebar card showing device status
+
+### Enphase Enlighten Integration (Major)
+- Full Enphase API integration at feature parity with Tesla PowerHub
+- Partner OAuth setup route for installer authentication flow
+- DB-persisted refresh token rotation in SystemConfig
+- Token bucket rate limiter at 8 req/sec under Enphase 10/sec limit
+- Cron jobs: fleet discovery (daily), telemetry snapshots (15m), micro health (30m)
+- HMAC-signed HubSpot card showing production, battery SoC, and micro health
+- Address-hash auto-linking to Property cache
+
+### IDR Meeting Hub (Major)
+- BOM Review & Line Item Editor in meeting context
+- Previous review notes for re-reviews with richer search results
+- Resolve design/permit lead owner names and IDs via Owners API
+- Fix stale numeric lead IDs in completed snapshots
+- Recover from accidental "End without syncing" with dedup and auto-join
+- Open access to all authenticated roles (no role gating)
+- Survey Zuper link, design approval status, and tag fixes
+- Design revision toggle and auto-advance on Zuper sync
+- PandaDoc DA link and plan documents in meeting context
+- Re-review toggle with auto-appear and revision reason sync
+- IDR pricing and adders implementation with cost tiers
+- Staff assignment columns in pipeline funnel drill-downs
+- Clarify AC disconnect and production meter labels in utility codes
+
+### Shop Health Dashboard (Major)
+- Lightweight overview path with single Project fetch and no ticket queries
+- Cache closed tickets and make overview route resilient to upstream failures
+- Fail open on new Service/D&R fetches to prevent cascade failures
+- Drill-downs for customer sentiment, 5-star reviews, and response time
+- Wire contact response metrics into Customer Success section
+- Expand Preconstruction section with throughput and cycle time metrics
+- Customer Success section with sentiment scoring and 5-star review breakdowns
+- Allow multiple bottleneck entries per shop per week
+- Rename Permits Approved → Permits Issued in Preconstruction
+- Service + D&R/Roofing sections added
+
+### PE Document Digest (Major)
+- Restructured daily digest into 4 actionable sections (summary + tracker link)
+- Google Drive folder link per deal for direct document access
+- Mirror digest email with deal-specific navigation and actionable sections
+- Dropped Today's Changes to reduce noise; relabel notes-only changes
+- Instant email notifications on PE document status changes
+- Replay endpoint for delivering standout doc change batches
+- Track document status diffs between sync runs for audit trail
+- Merge UPLOADED and UNDER_REVIEW into a single "In Review" status
+- Don't log UPLOADED→UNDER_REVIEW convergence as a change
+
+### Google Chat OOO Bot (Major)
+- Full Google Chat integration for out-of-office automation
+- Support for Google Workspace add-on envelope format
+- Multiple JWT audiences and JWKS sources for auth
+- Handle base64-encoded service account keys
+- Post replies to main timeline instead of nested threads
+- Async post errors captured to database with detailed Chat API logging
+- SOP integration patterns documented
+
+### PE Deals Dashboard (Major)
+- Multi-column sort with smarter Customer Paid sorting; default to PE Total
+- Split PE Deals card into Pre-Construction vs Construction+ sections
+- Pipeline bar split into stage buckets; report link removed
+- Awaiting PTO segment for deal-status visibility
+- Customer Paid? column after customer payment amount
+- Exclude Cancelled and auto-rename Other → On Hold
+- x/y count switched to submitted total with under-review badge
+
+### Master Scheduler
+- Weekend visibility toggle with proper cell alignment
+- Fix weekend events stealing Monday slots or shifting to Saturday
+- Show orphaned resurvey/re-inspection jobs in scheduler
+- Editable date picker in drag-drop reschedule confirmation modal
+- Render pre-sale survey cards on calendar with click modal
+- Dedup pre-sale cards and add slot-matching logic
+- Show completed Zuper jobs without overdue flags
+- Preserve deal's pb_location for orphaned job assignment
+
+### Project Pipeline Funnel
+- 9-stage sales-to-construction pipeline funnel for executive visibility
+- Close-out projects column, activity table, and drill-down dates
+- Named timeframe presets (Today, This Week, This Month, etc.)
+- Monthly Activity throughput dashboard
+- Survey Scheduled stage added; hero card layout cleaned up
+- Infer funnel milestones from deal pipeline stage
+- Design approval status shown in Awaiting DA Send column
+
+### EagleView Integration
+- EagleView Orders dashboard page for order tracking
+- TrueDesign auto-pull pipeline for imaging syncs
+- Production PlaceOrder request format
+- Normalize PascalCase API response keys to camelCase
+- Sandbox integration test page for Go-Live proof
+
+### Catalog Product Management
+- Auto-add unknown brands to HubSpot manufacturer enum with TechOps notification
+- Write Zuper cross-link IDs via meta_data, not custom_fields
+- Switch Zoho writes from group_name to category_id
+- Phased HubSpot manufacturer enum enforcement across sync workflows
+- Log Sync Modal executions to ActivityLog for audit trail
+- Sync observability enums and watermark columns
+- Push product photo to Zoho Inventory on approval
+- Auto-commit custom brand on blur/click-outside in form
+- Raise catalog limit to 2000 products
+- Race-safe external-record create and link-back mechanism
+- Photo upload works against private Blob store
+- Auto-approve user submissions with photo upload
+
+### Zuper Performance & Reliability
+- Reduce API calls 97% by caching job list in lookup endpoint
+- Per-endpoint API call counter with admin read endpoint for visibility
+- Explicit caller attribution in [zuper-call] logs (source file)
+- Skip API sweep on DB-cache hits to reduce redundant calls
+- Cache /jobs/by-category endpoint
+- Drop property-sync cron from every 2h to every 6h
+- Throttle zuper-job-backfill from hourly to every 6h
+- Cut zuper-property-sync from /15m to /30m
+- Reduce sync-cache cron from /30m to every 4h
+- Fix pre-sale job creation (omit job_type, fix customer name)
+- Restore custom_fields for pre-sale jobs after rollback
+- Explicitly set primary job status to Scheduled after reschedule
+- Per-sub-type evaluation and install_status rollup integrity check
+- PM dashboard for Zuper↔HubSpot status drift detection
+
+### Customer Portal
+- Redesigned customer survey portal with brand color updates
+- Subdomain isolation matching photonbrothers.com palette
+- Inline cancel, scroll fixes, and chatbot hidden
+- Service-to-service survey invite endpoint for Olivia integration
+- Removed unrecognized phone number from footer
+- Fixed URL newline rendering issues
+
+### HubSpot Extensions & Cards
+- HubSpot card v3 signature verification with URL+body candidate sweep
+- Match HubSpot v3 sig with URL query-param values decoded correctly
+- Persisted hubspot-card sig diagnostic via GET endpoint
+- Log canonical components even when skip-sig is on
+- Use Button href prop instead of window.open with OAuth scope
+- TypeScript errors fixed in extensions via tsconfig exclusion
+- Enriched Activity tab with engagement metadata
+- HubSpot line items shown in Equipment tab
+- Resolve ticket enum values to labels with links
+
+### Property Hub Enhancements
+- Photos tab populated with Zuper job photos
+- HubSpot and Zuper external links added to Property Hub tabs
+- Full equipment summaries and revenue on header
+- Zuper link added to property overview
+
+### Daily Operations
+- Instant email notifications on PE document status changes
+- Weekly goals digest email per office
+- Save morning snapshot before sending daily focus emails
+- Track actual action items in morning snapshot for EOD comparison
+
+### Bug Fixes
+- Fix design approval status to show in Awaiting DA Send column
+- Fix completed Zuper jobs showing as overdue
+- Fix orphaned jobs showing as unscheduled in sidebar
+- Fix Jinko manufacturer typo in catalog
+- Lazy-import counter to prevent Prisma in client bundles
+- Inline JOB_CATEGORY UIDs to drop client→server imports
+- Fix OfficeGoal target revenue display rounding ($1.25M was showing as $1.3M)
+- Handle invalid pageUrl in admin ticket table rendering
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
