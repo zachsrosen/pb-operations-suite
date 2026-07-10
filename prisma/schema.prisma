@@ -321,6 +321,9 @@ enum ActivityType {
   ENPHASE_STATUS_CHANGE
   // Tech Ops bot — outbound Google Chat messages (digests, worklists, replies)
   BOT_MESSAGE_SENT
+
+  // Production-guarantee fix verification workflow transitions
+  PRODUCTION_CHECK
 }
 
 enum ClientType {
@@ -2223,6 +2226,51 @@ model SurveyInvite {
   @@index([dealId])
   @@index([customerEmail])
   @@index([status, expiresAt])
+}
+
+// Production-guarantee fix verification: designer verifies the proposed fix,
+// service lead approves (yes/no) before work is sent to Vishtik.
+// See docs/superpowers/specs/2026-07-10-production-check-guarantee-design.md
+enum ProductionCheckStatus {
+  DESIGN_REVIEW // waiting on designer to verify/propose the fix
+  PENDING_APPROVAL // waiting on service-lead yes/no
+  APPROVED // yes — Send Plans task created
+  CANCELLED // withdrawn (issue resolved another way)
+}
+
+model ProductionCheckRequest {
+  id              String                @id @default(cuid())
+  hubspotDealId   String
+  dealName        String? // snapshot for display
+  zuperJobUid     String? // optional link to the service job
+  hubspotTicketId String? // optional link to the service ticket
+  status          ProductionCheckStatus @default(DESIGN_REVIEW)
+
+  issueSummary        String // what's wrong (entered at kickoff)
+  proposedSolution    String? // designer's verified fix
+  designerEmail       String? // who submitted the solution
+  solutionSubmittedAt DateTime?
+
+  decidedByEmail  String? // who pressed yes/no
+  decidedAt       DateTime?
+  rejectionReason String? // last "No" reason
+  designCycles    Int       @default(1) // increments on each No
+
+  // Reserved for the Photon Advantage cost calculator (future follow-up).
+  estimatedCostCents Int?
+  costBreakdown      Json?
+
+  // HubSpot task ids, so transitions can auto-complete superseded tasks.
+  designTaskId    String?
+  approvalTaskId  String?
+  sendPlansTaskId String?
+
+  createdByEmail String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([hubspotDealId])
 }
 
 model IdempotencyKey {
