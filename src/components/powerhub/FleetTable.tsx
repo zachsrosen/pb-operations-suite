@@ -1,8 +1,10 @@
 "use client";
 
-import { Fragment, useState, useMemo } from "react";
+import { Fragment, useState, useMemo, useEffect } from "react";
 import SiteDetail from "./SiteDetail";
 import { getHubSpotDealUrl } from "@/lib/external-links";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
+import { sortRows, type SortDir } from "@/hooks/useSort";
 
 interface PowerhubSiteRow {
   siteId: string;
@@ -37,30 +39,147 @@ interface FleetTableProps {
   loading?: boolean;
   filter?: string;
   onFilterChange?: (filter: string) => void;
+  /** Fires with the currently visible (filtered + sorted) rows — used for CSV export. */
+  onVisibleRowsChange?: (rows: PowerhubSiteRow[]) => void;
 }
+
+type GridStatus = "on" | "off" | "unknown";
+
+function gridStatusOf(site: PowerhubSiteRow): GridStatus {
+  const s = site.telemetrySnapshot?.gridConnectedStatus;
+  if (!s) return "unknown";
+  return s === "Grid Connected" ? "on" : "off";
+}
+
+/** Severity weight so the Alerts column sorts worst-first. */
+const SEVERITY_WEIGHT: Record<string, number> = {
+  CRITICAL: 1000,
+  RMA: 100,
+  PERFORMANCE: 10,
+  INFORMATIONAL: 1,
+};
 
 export default function FleetTable({
   sites,
   loading,
   filter = "provisioned",
   onFilterChange,
+  onVisibleRowsChange,
 }: FleetTableProps) {
   const [expandedSiteId, setExpandedSiteId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [linkSel, setLinkSel] = useState<string[]>([]);
+  const [alertSel, setAlertSel] = useState<string[]>([]);
+  const [gridSel, setGridSel] = useState<string[]>([]);
+  const [stateSel, setStateSel] = useState<string[]>([]);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const filtered = useMemo(() => {
-    if (!search) return sites;
-    const q = search.toLowerCase();
-    return sites.filter(
-      (s) =>
-        s.siteName?.toLowerCase().includes(q) ||
-        s.siteId.toLowerCase().includes(q) ||
-        s.address?.toLowerCase().includes(q) ||
-        s.city?.toLowerCase().includes(q) ||
-        s.customerName?.toLowerCase().includes(q) ||
-        s.dealName?.toLowerCase().includes(q)
-    );
-  }, [sites, search]);
+  // Text columns sort A→Z on first click; numeric columns sort biggest-first.
+  const TEXT_FIELDS = ["siteName", "_customer", "_grid", "_link"];
+  const toggle = (key: string) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(TEXT_FIELDS.includes(key) ? "asc" : "desc");
+    }
+  };
+
+  // Filter options derived from the data
+  const linkOptions = useMemo(() => {
+    const methods = [...new Set(sites.map((s) => s.linkMethod).filter(Boolean))].sort();
+    return methods.map((m) => ({
+      value: m,
+      label: m === "UNLINKED" ? "Unlinked" : m,
+    }));
+  }, [sites]);
+
+  const stateOptions = useMemo(() => {
+    const states = [...new Set(sites.map((s) => s.state).filter(Boolean))].sort();
+    return states.map((st) => ({ value: st, label: st }));
+  }, [sites]);
+
+  const alertOptions = useMemo(() => {
+    const severities = [
+      ...new Set(sites.flatMap((s) => s.alerts.map((a) => a.severity))),
+    ].sort((a, b) => (SEVERITY_WEIGHT[b] || 0) - (SEVERITY_WEIGHT[a] || 0));
+    return [
+      ...severities.map((sev) => ({
+        value: sev,
+        label: sev.charAt(0) + sev.slice(1).toLowerCase(),
+      })),
+      { value: "__any__", label: "Any alert" },
+      { value: "__none__", label: "No alerts" },
+    ];
+  }, [sites]);
+
+  const gridOptions = [
+    { value: "on", label: "On-grid" },
+    { value: "off", label: "Off-grid" },
+    { value: "unknown", label: "Not reporting" },
+  ];
+
+  // Derived sortable fields per row
+  const derived = useMemo(
+    () =>
+      sites.map((s) => ({
+        ...s,
+        _customer: s.customerName || s.dealName || null,
+        _solar: s.telemetrySnapshot?.solarPowerW ?? null,
+        _soc: s.telemetrySnapshot?.batterySocPercent ?? null,
+        _alertWeight:
+          s.alerts.reduce((sum, a) => sum + (SEVERITY_WEIGHT[a.severity] || 1), 0) || null,
+        _grid: gridStatusOf(s),
+        _devices:
+          (s.totalGateways || 0) + (s.totalInverters || 0) + (s.totalBatteries || 0) || null,
+        _link: s.linkMethod,
+      })),
+    [sites]
+  );
+
+  const visible = useMemo(() => {
+    let rows = derived;
+
+    if (search) {
+      const q = search.toLowerCase();
+      rows = rows.filter(
+        (s) =>
+          s.siteName?.toLowerCase().includes(q) ||
+          s.siteId.toLowerCase().includes(q) ||
+          s.address?.toLowerCase().includes(q) ||
+          s.city?.toLowerCase().includes(q) ||
+          s.customerName?.toLowerCase().includes(q) ||
+          s.dealName?.toLowerCase().includes(q)
+      );
+    }
+
+    if (linkSel.length > 0) {
+      rows = rows.filter((s) => linkSel.includes(s.linkMethod));
+    }
+    if (stateSel.length > 0) {
+      rows = rows.filter((s) => stateSel.includes(s.state));
+    }
+    if (gridSel.length > 0) {
+      rows = rows.filter((s) => gridSel.includes(s._grid));
+    }
+    if (alertSel.length > 0) {
+      rows = rows.filter((s) => {
+        const severities = new Set(s.alerts.map((a) => a.severity));
+        return alertSel.some((sel) => {
+          if (sel === "__any__") return s.alerts.length > 0;
+          if (sel === "__none__") return s.alerts.length === 0;
+          return severities.has(sel);
+        });
+      });
+    }
+
+    return sortRows(rows, sortKey, sortDir);
+  }, [derived, search, linkSel, stateSel, gridSel, alertSel, sortKey, sortDir]);
+
+  useEffect(() => {
+    onVisibleRowsChange?.(visible);
+  }, [visible, onVisibleRowsChange]);
 
   // Stats
   const withAlerts = sites.filter((s) => s.alerts.length > 0).length;
@@ -68,6 +187,9 @@ export default function FleetTable({
   const withDevices = sites.filter(
     (s) => (s.totalGateways || 0) + (s.totalBatteries || 0) + (s.totalInverters || 0) > 0
   ).length;
+
+  const hasActiveFilters =
+    search || linkSel.length > 0 || alertSel.length > 0 || gridSel.length > 0 || stateSel.length > 0;
 
   if (loading) {
     return (
@@ -114,8 +236,57 @@ export default function FleetTable({
           className="px-3 py-1.5 rounded-lg text-sm bg-surface border border-t-border text-foreground placeholder:text-muted w-60"
         />
 
+        <MultiSelectFilter
+          label="Link"
+          options={linkOptions}
+          selected={linkSel}
+          onChange={setLinkSel}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Alerts"
+          options={alertOptions}
+          selected={alertSel}
+          onChange={setAlertSel}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Grid"
+          options={gridOptions}
+          selected={gridSel}
+          onChange={setGridSel}
+          accentColor="cyan"
+        />
+        {stateOptions.length > 1 && (
+          <MultiSelectFilter
+            label="State"
+            options={stateOptions}
+            selected={stateSel}
+            onChange={setStateSel}
+            accentColor="cyan"
+          />
+        )}
+        {hasActiveFilters && (
+          <button
+            onClick={() => {
+              setSearch("");
+              setLinkSel([]);
+              setAlertSel([]);
+              setGridSel([]);
+              setStateSel([]);
+            }}
+            className="text-xs text-muted hover:text-foreground underline"
+          >
+            Clear filters
+          </button>
+        )}
+
         <div className="ml-auto flex items-center gap-3 text-xs text-muted">
-          <span>{filtered.length} sites</span>
+          <span>
+            {visible.length === sites.length
+              ? `${sites.length} sites`
+              : `${visible.length} of ${sites.length} sites`}
+          </span>
           <span className="text-cyan-500">{withTelemetry} reporting</span>
           <span>{withDevices} with devices</span>
           {withAlerts > 0 && (
@@ -129,18 +300,18 @@ export default function FleetTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-t-border text-left text-muted">
-              <th className="pb-3 pr-4 font-medium">Site</th>
-              <th className="pb-3 pr-4 font-medium">Customer</th>
-              <th className="pb-3 pr-4 font-medium">Devices</th>
-              <th className="pb-3 pr-4 font-medium">Solar</th>
-              <th className="pb-3 pr-4 font-medium">Battery</th>
-              <th className="pb-3 pr-4 font-medium">Grid</th>
-              <th className="pb-3 pr-4 font-medium">Alerts</th>
-              <th className="pb-3 font-medium">Link</th>
+              <SortHeader label="Site" field="siteName" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Customer" field="_customer" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Devices" field="_devices" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Solar" field="_solar" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Battery" field="_soc" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Grid" field="_grid" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Alerts" field="_alertWeight" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Link" field="_link" sortKey={sortKey} sortDir={sortDir} onSort={toggle} last />
             </tr>
           </thead>
           <tbody>
-            {filtered.map((site) => {
+            {visible.map((site) => {
               const snapshot = site.telemetrySnapshot;
               const isExpanded = expandedSiteId === site.siteId;
               const criticalAlerts = site.alerts.filter(
@@ -149,6 +320,7 @@ export default function FleetTable({
               const perfAlerts = site.alerts.filter(
                 (a) => a.severity === "PERFORMANCE"
               ).length;
+              const otherAlerts = site.alerts.length - criticalAlerts - perfAlerts;
 
               // Determine if the site name is a real name or just the UUID
               const isUuidName = site.siteName === site.siteId;
@@ -240,8 +412,13 @@ export default function FleetTable({
                         </span>
                       )}
                       {perfAlerts > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 mr-1">
                           {perfAlerts}
+                        </span>
+                      )}
+                      {otherAlerts > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                          {otherAlerts}
                         </span>
                       )}
                       {site.alerts.length === 0 && (
@@ -268,14 +445,14 @@ export default function FleetTable({
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && (
+            {visible.length === 0 && (
               <tr>
                 <td
                   colSpan={8}
                   className="py-8 text-center text-muted"
                 >
-                  {search
-                    ? "No sites match your search"
+                  {hasActiveFilters
+                    ? "No sites match your filters"
                     : "No provisioned sites found"}
                 </td>
               </tr>
@@ -284,6 +461,39 @@ export default function FleetTable({
         </table>
       </div>
     </div>
+  );
+}
+
+function SortHeader({
+  label,
+  field,
+  sortKey,
+  sortDir,
+  onSort,
+  last,
+}: {
+  label: string;
+  field: string;
+  sortKey: string | null;
+  sortDir: "asc" | "desc";
+  onSort: (key: string) => void;
+  last?: boolean;
+}) {
+  const active = sortKey === field;
+  return (
+    <th className={`pb-3 font-medium ${last ? "" : "pr-4"}`}>
+      <button
+        onClick={() => onSort(field)}
+        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${
+          active ? "text-foreground" : ""
+        }`}
+      >
+        {label}
+        <span aria-hidden="true" className="text-xs w-3">
+          {active ? (sortDir === "asc" ? "↑" : "↓") : ""}
+        </span>
+      </button>
+    </th>
   );
 }
 
