@@ -350,6 +350,16 @@ export default function ServiceOverviewPage() {
   const headerRight = (
     <div className="flex items-center gap-3">
       <MultiSelectFilter
+        label="Type"
+        options={[
+          { value: "deal", label: `Deals (${typeCounts.deal})` },
+          { value: "ticket", label: `Tickets (${typeCounts.ticket})` },
+        ]}
+        selected={filterTypes}
+        onChange={(v) => setFilterTypes(v as Array<"deal" | "ticket">)}
+        accentColor="cyan"
+      />
+      <MultiSelectFilter
         label="Location"
         options={locationOptions}
         selected={filterLocations}
