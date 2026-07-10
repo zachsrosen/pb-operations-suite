@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useSSE } from "@/hooks/useSSE";
@@ -8,8 +8,34 @@ import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import FleetTable from "@/components/powerhub/FleetTable";
 
+interface VisibleSiteRow {
+  siteId: string;
+  siteName: string;
+  address: string;
+  city: string;
+  state: string;
+  linkMethod: string;
+  dealId: string | null;
+  customerName?: string | null;
+  dealName?: string | null;
+  totalGateways: number;
+  totalBatteries: number;
+  totalInverters: number;
+  telemetrySnapshot: {
+    solarPowerW: number | null;
+    batterySocPercent: number | null;
+    gridConnectedStatus: string | null;
+  } | null;
+  alerts: Array<{ severity: string; alertName: string }>;
+}
+
 export default function PowerHubDashboard() {
   const [siteFilter, setSiteFilter] = useState<string>("provisioned");
+  const [visibleRows, setVisibleRows] = useState<VisibleSiteRow[]>([]);
+  const handleVisibleRowsChange = useCallback(
+    (rows: VisibleSiteRow[]) => setVisibleRows(rows),
+    []
+  );
 
   const fleetQuery = useQuery({
     queryKey: queryKeys.powerhub.fleet(),
@@ -39,6 +65,24 @@ export default function PowerHubDashboard() {
 
   const fleet = fleetQuery.data?.fleet;
 
+  const exportRows = visibleRows.map((s) => ({
+    site: s.siteName,
+    customer: s.customerName || s.dealName || "",
+    address: s.address,
+    city: s.city,
+    state: s.state,
+    linkMethod: s.linkMethod,
+    hubspotDealId: s.dealId || "",
+    gateways: s.totalGateways,
+    inverters: s.totalInverters,
+    batteries: s.totalBatteries,
+    solarPowerW: s.telemetrySnapshot?.solarPowerW ?? "",
+    batterySocPercent: s.telemetrySnapshot?.batterySocPercent ?? "",
+    gridStatus: s.telemetrySnapshot?.gridConnectedStatus ?? "",
+    activeAlerts: s.alerts.length,
+    alertNames: s.alerts.map((a) => a.alertName).join("; "),
+  }));
+
   if (process.env.NEXT_PUBLIC_POWERHUB_ENABLED !== "true") {
     return null;
   }
@@ -47,7 +91,12 @@ export default function PowerHubDashboard() {
     <DashboardShell
       title="PowerHub Fleet Monitor"
       accentColor="cyan"
-      lastUpdated={new Date().toISOString()}
+      lastUpdated={
+        sitesQuery.dataUpdatedAt
+          ? new Date(sitesQuery.dataUpdatedAt).toISOString()
+          : undefined
+      }
+      exportData={{ data: exportRows, filename: "powerhub-fleet.csv" }}
       fullWidth
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -91,6 +140,7 @@ export default function PowerHubDashboard() {
           loading={sitesQuery.isLoading}
           filter={siteFilter}
           onFilterChange={setSiteFilter}
+          onVisibleRowsChange={handleVisibleRowsChange}
         />
       </div>
     </DashboardShell>
