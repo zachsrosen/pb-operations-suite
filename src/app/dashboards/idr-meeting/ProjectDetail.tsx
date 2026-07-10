@@ -405,13 +405,13 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           </div>
         </div>
 
-        {/* ── Site Photos (full width, has its own collapse toggle) ── */}
-        <PhotoGalleryCard hubspotDealId={item.dealId} />
-
         {/* ── Escalation Photos (escalation items only) ── */}
         {item.type === "ESCALATION" && (
           <EscalationPhotoGallery dealId={item.dealId} readOnly={readOnly} />
         )}
+
+        {/* ── Site Photos (full width, has its own collapse toggle) ── */}
+        <PhotoGalleryCard hubspotDealId={item.dealId} />
       </div>
     </div>
   );
