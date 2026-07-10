@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     // -----------------------------------------------------------------------
-    // 2. Resolve deal values + locations from HubSpotProjectCache
+    // 2. Resolve deal values + locations from the Deal mirror
     // -----------------------------------------------------------------------
     const projectIdSet = new Set<string>();
     for (const sr of scheduleRecords) if (sr.projectId) projectIdSet.add(sr.projectId);
@@ -180,12 +180,15 @@ export async function GET(request: NextRequest) {
 
     const projectCache = new Map<string, { amount: number | null; pbLocation: string | null }>();
     if (projectIdSet.size > 0) {
-      const cached = await prisma.hubSpotProjectCache.findMany({
-        where: { dealId: { in: Array.from(projectIdSet) } },
-        select: { dealId: true, amount: true, pbLocation: true },
+      const cached = await prisma.deal.findMany({
+        where: { hubspotDealId: { in: Array.from(projectIdSet) } },
+        select: { hubspotDealId: true, amount: true, pbLocation: true },
       });
       for (const c of cached) {
-        projectCache.set(c.dealId, { amount: c.amount, pbLocation: c.pbLocation });
+        projectCache.set(c.hubspotDealId, {
+          amount: c.amount !== null ? Number(c.amount) : null,
+          pbLocation: c.pbLocation,
+        });
       }
     }
 

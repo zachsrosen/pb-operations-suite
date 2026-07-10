@@ -51,16 +51,16 @@ export async function POST(request: Request) {
     take: 100,
   });
 
-  // Batch-fetch PB locations from the deal's HubSpot project cache
+  // Batch-fetch PB locations from the Deal mirror
   const orphanDealIds = orphanedJobs.map((j) => j.hubspotDealId!).filter(Boolean);
   const dealLocations: Record<string, string> = {};
   if (orphanDealIds.length > 0) {
-    const cached = await prisma.hubSpotProjectCache.findMany({
-      where: { dealId: { in: orphanDealIds } },
-      select: { dealId: true, pbLocation: true },
+    const cached = await prisma.deal.findMany({
+      where: { hubspotDealId: { in: orphanDealIds } },
+      select: { hubspotDealId: true, pbLocation: true },
     });
     for (const c of cached) {
-      if (c.pbLocation) dealLocations[c.dealId] = c.pbLocation;
+      if (c.pbLocation) dealLocations[c.hubspotDealId] = c.pbLocation;
     }
   }
 

@@ -315,13 +315,13 @@ async function upsertSite(
     }
   }
 
-  // Backfill address from deal cache for linked sites with empty addresses.
+  // Backfill address from the Deal mirror for linked sites with empty addresses.
   // Tesla API never provides addresses, so we populate them from the HubSpot
-  // deal cache once a site is linked (auto or manual).
+  // deal once a site is linked (auto or manual).
   const linkedDealId = existing?.dealId;
   if (linkedDealId && !existing?.address) {
-    const dealCache = await prisma.hubSpotProjectCache.findUnique({
-      where: { dealId: linkedDealId },
+    const dealCache = await prisma.deal.findUnique({
+      where: { hubspotDealId: linkedDealId },
       select: { address: true, city: true, state: true, zipCode: true },
     });
     if (dealCache?.address) {
@@ -346,14 +346,14 @@ async function upsertSite(
   }
 }
 
-/** Fetch all deal addresses from HubSpot project cache for linkage matching */
+/** Fetch all deal addresses from the Deal mirror for linkage matching */
 async function fetchDealAddresses(): Promise<DealAddress[]> {
-  const deals = await prisma.hubSpotProjectCache.findMany({
+  const deals = await prisma.deal.findMany({
     where: {
       address: { not: null },
     },
     select: {
-      dealId: true,
+      hubspotDealId: true,
       address: true,
       city: true,
       state: true,
@@ -363,8 +363,8 @@ async function fetchDealAddresses(): Promise<DealAddress[]> {
 
   return deals
     .filter((d: { address: string | null }) => d.address)
-    .map((d: { dealId: string; address: string | null; city: string | null; state: string | null; zipCode: string | null }) => ({
-      dealId: d.dealId,
+    .map((d: { hubspotDealId: string; address: string | null; city: string | null; state: string | null; zipCode: string | null }) => ({
+      dealId: d.hubspotDealId,
       street: normalizeAddress(d.address!),
       city: (d.city || "").toLowerCase().trim(),
       state: (d.state || "").toLowerCase().trim(),

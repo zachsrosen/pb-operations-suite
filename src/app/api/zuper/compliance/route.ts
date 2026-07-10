@@ -225,14 +225,15 @@ export async function GET(request: NextRequest) {
       excludedUserUids: COMPLIANCE_EXCLUDED_USER_UIDS,
     };
 
-    // Build deal ID → pbLocation lookup from HubSpotProjectCache
-    const projectCacheRows = await prisma.hubSpotProjectCache.findMany({
-      select: { dealId: true, pbLocation: true },
+    // Build deal ID → pbLocation lookup from the Deal mirror
+    const projectCacheRows = await prisma.deal.findMany({
+      where: { pbLocation: { not: null } },
+      select: { hubspotDealId: true, pbLocation: true },
     });
     const dealLocationMap = new Map<string, string>();
     for (const row of projectCacheRows) {
       if (row.pbLocation) {
-        dealLocationMap.set(row.dealId, row.pbLocation);
+        dealLocationMap.set(row.hubspotDealId, row.pbLocation);
       }
     }
 

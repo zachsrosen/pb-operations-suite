@@ -33,7 +33,7 @@ jest.mock("@/lib/db", () => ({
     bookedSlot: { findMany: (...a: unknown[]) => mockBookedSlotFindMany(...a) },
     zuperJobCache: { findMany: (...a: unknown[]) => mockZuperJobCacheFindMany(...a) },
     crewMember: { findMany: (...a: unknown[]) => mockCrewFindMany(...a) },
-    hubSpotProjectCache: { findMany: (...a: unknown[]) => mockProjectCacheFindMany(...a) },
+    deal: { findMany: (...a: unknown[]) => mockProjectCacheFindMany(...a) },
   },
 }));
 

@@ -8,7 +8,7 @@
 
 jest.mock("@/lib/db", () => ({
   prisma: {
-    hubSpotProjectCache: {
+    deal: {
       findMany: jest.fn().mockResolvedValue([]),
     },
   },

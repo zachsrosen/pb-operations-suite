@@ -29,7 +29,7 @@ jest.mock("@/lib/db", () => ({
     scheduleRecord: { findMany: (...a: unknown[]) => mockScheduleRecordFindMany(...a) },
     bookedSlot: { findMany: (...a: unknown[]) => mockBookedSlotFindMany(...a) },
     zuperJobCache: { findMany: (...a: unknown[]) => mockZuperJobCacheFindMany(...a) },
-    hubSpotProjectCache: { findMany: (...a: unknown[]) => mockProjectCacheFindMany(...a) },
+    deal: { findMany: (...a: unknown[]) => mockProjectCacheFindMany(...a) },
   },
 }));
 
@@ -162,7 +162,7 @@ describe("GET /api/scheduler-v2/board — happy path", () => {
     ]);
 
     mockProjectCacheFindMany.mockResolvedValue([
-      { dealId: "1001", amount: 42000, pbLocation: "Westminster" },
+      { hubspotDealId: "1001", amount: 42000, pbLocation: "Westminster" },
     ]);
 
     mockFetchAllProjects.mockResolvedValue([

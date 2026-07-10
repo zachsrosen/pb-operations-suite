@@ -161,7 +161,7 @@ export async function computeLocationCompliance(
 
   // Build deal ID → location lookup.
   // When the caller provides locationDealIds (from HubSpot), use that directly —
-  // it's always fresh. Fall back to HubSpotProjectCache for callers that don't
+  // it's always fresh. Fall back to the Deal mirror for callers that don't
   // pass deal IDs (e.g. the standalone compliance dashboard).
   const dealLocationMap = new Map<string, string>();
 
@@ -172,14 +172,15 @@ export async function computeLocationCompliance(
     }
   }
 
-  // Always supplement with the project cache (covers deals the caller may
+  // Always supplement with the Deal mirror (covers deals the caller may
   // not have, e.g. if a Zuper job links to a deal outside the main query).
-  const projectCacheRows = await prisma.hubSpotProjectCache.findMany({
-    select: { dealId: true, pbLocation: true },
+  const projectCacheRows = await prisma.deal.findMany({
+    where: { pbLocation: { not: null } },
+    select: { hubspotDealId: true, pbLocation: true },
   });
   for (const row of projectCacheRows) {
-    if (row.pbLocation && !dealLocationMap.has(row.dealId)) {
-      dealLocationMap.set(row.dealId, row.pbLocation);
+    if (row.pbLocation && !dealLocationMap.has(row.hubspotDealId)) {
+      dealLocationMap.set(row.hubspotDealId, row.pbLocation);
     }
   }
 
