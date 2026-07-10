@@ -44,9 +44,7 @@ export function mapProductionCheckError(err: unknown): NextResponse {
     const status = err.message.includes("not found") ? 404 : 400;
     return NextResponse.json({ error: err.message }, { status });
   }
+  // Never echo raw error messages (HubSpot/Prisma errors can embed internals).
   console.error("[production-check] route error:", err);
-  return NextResponse.json(
-    { error: err instanceof Error ? err.message : "Internal error" },
-    { status: 500 },
-  );
+  return NextResponse.json({ error: "Internal error" }, { status: 500 });
 }

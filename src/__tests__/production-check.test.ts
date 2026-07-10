@@ -6,7 +6,7 @@
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
 const mockFindUnique = jest.fn();
-const mockActivityCreate = jest.fn(async () => ({}));
+const mockActivityCreate = jest.fn();
 
 jest.mock("@/lib/db", () => ({
   prisma: {
@@ -26,8 +26,8 @@ jest.mock("@/lib/hubspot", () => ({
   },
 }));
 
-const mockCreateTask = jest.fn(async () => ({ id: "task-new" }));
-const mockMarkTaskComplete = jest.fn(async () => undefined);
+const mockCreateTask = jest.fn();
+const mockMarkTaskComplete = jest.fn();
 const mockResolveOwnerIdByEmail = jest.fn();
 jest.mock("@/lib/hubspot-tasks", () => ({
   createTask: (...args: unknown[]) => mockCreateTask(...args),
@@ -80,6 +80,9 @@ function baseRow(overrides: Row = {}): Row {
 beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.PRODUCTION_CHECK_TASKS_DISABLED;
+  mockActivityCreate.mockResolvedValue({});
+  mockCreateTask.mockResolvedValue({ id: "task-new" });
+  mockMarkTaskComplete.mockResolvedValue(undefined);
   mockCreate.mockImplementation(async ({ data }: { data: Row }) => ({ ...baseRow(), designTaskId: null, ...data }));
   mockUpdate.mockImplementation(async ({ data }: { data: Row }) => ({ ...baseRow(), ...data }));
   mockGetById.mockResolvedValue({
@@ -147,6 +150,26 @@ describe("createProductionCheck", () => {
 
     expect(warning).toBe("no-designer-task");
     expect(mockCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-numeric dealId", async () => {
+    await expect(
+      createProductionCheck({ ...input, dealId: "../evil" }),
+    ).rejects.toBeInstanceOf(ProductionCheckValidationError);
+    expect(mockGetById).not.toHaveBeenCalled();
+  });
+
+  it("rejects an over-length issueSummary", async () => {
+    await expect(
+      createProductionCheck({ ...input, issueSummary: "x".repeat(5001) }),
+    ).rejects.toBeInstanceOf(ProductionCheckValidationError);
+  });
+
+  it("maps a HubSpot 404 on the deal fetch to a validation error (not a raw 500)", async () => {
+    mockGetById.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: 404 }));
+    await expect(createProductionCheck(input)).rejects.toBeInstanceOf(
+      ProductionCheckValidationError,
+    );
   });
 
   it("logs a PRODUCTION_CHECK activity", async () => {

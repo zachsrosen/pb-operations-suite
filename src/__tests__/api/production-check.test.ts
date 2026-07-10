@@ -116,6 +116,17 @@ describe("POST /api/service/production-check (create)", () => {
     const res = await POST(req(payload));
     expect(res.status).toBe(400);
   });
+
+  it("does not leak raw error messages on unexpected failures", async () => {
+    asUser("jessica@x", ["SERVICE"]);
+    mockLib.createProductionCheck.mockRejectedValue(
+      new Error("connect ECONNREFUSED db.internal:5432 schema=neondb"),
+    );
+    const res = await POST(req(payload));
+    const body = await res.json();
+    expect(res.status).toBe(500);
+    expect(body.error).toBe("Internal error");
+  });
 });
 
 describe("POST /[id]/solution", () => {

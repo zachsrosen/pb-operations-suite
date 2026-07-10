@@ -46,7 +46,7 @@ async function safeCreateTask(
   input: Parameters<typeof createTask>[0],
 ): Promise<string | null> {
   if (tasksDisabled()) {
-    console.log(`[production-check] task writes disabled — skipped create: ${input.subject}`);
+    console.warn(`[production-check] task writes disabled — skipped create: ${input.subject}`);
     return null;
   }
   const { id } = await createTask(input);
@@ -56,7 +56,7 @@ async function safeCreateTask(
 async function safeCompleteTask(taskId: string | null | undefined): Promise<void> {
   if (!taskId) return;
   if (tasksDisabled()) {
-    console.log(`[production-check] task writes disabled — skipped complete: ${taskId}`);
+    console.warn(`[production-check] task writes disabled — skipped complete: ${taskId}`);
     return;
   }
   try {
@@ -67,8 +67,27 @@ async function safeCompleteTask(taskId: string | null | undefined): Promise<void
   }
 }
 
+const MAX_TEXT_LENGTH = 5000;
+
+function requireText(value: string | undefined, field: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) throw new ProductionCheckValidationError(`${field} is required`);
+  if (trimmed.length > MAX_TEXT_LENGTH) {
+    throw new ProductionCheckValidationError(`${field} exceeds ${MAX_TEXT_LENGTH} characters`);
+  }
+  return trimmed;
+}
+
 async function fetchDeal(dealId: string): Promise<{ dealName: string; designOwnerId: string | null }> {
-  const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, ["dealname", "design"]);
+  let deal: unknown;
+  try {
+    deal = await hubspotClient.crm.deals.basicApi.getById(dealId, ["dealname", "design"]);
+  } catch (err) {
+    if ((err as { code?: number }).code === 404) {
+      throw new ProductionCheckValidationError(`Deal ${dealId} not found`);
+    }
+    throw err;
+  }
   const props = (deal as { properties: Record<string, string | null> }).properties;
   return {
     dealName: props.dealname || `Deal ${dealId}`,
@@ -137,16 +156,17 @@ export async function createProductionCheck(input: {
   hubspotTicketId?: string | null;
   createdByEmail: string;
 }): Promise<ProductionCheckResult> {
-  const issueSummary = input.issueSummary?.trim();
-  if (!input.dealId?.trim() || !issueSummary) {
-    throw new ProductionCheckValidationError("dealId and issueSummary are required");
+  const dealId = input.dealId?.trim() ?? "";
+  if (!/^\d+$/.test(dealId)) {
+    throw new ProductionCheckValidationError("dealId must be a numeric HubSpot deal ID");
   }
+  const issueSummary = requireText(input.issueSummary, "issueSummary");
 
-  const { dealName, designOwnerId } = await fetchDeal(input.dealId);
+  const { dealName, designOwnerId } = await fetchDeal(dealId);
 
   let request = await prisma.productionCheckRequest.create({
     data: {
-      hubspotDealId: input.dealId,
+      hubspotDealId: dealId,
       dealName,
       zuperJobUid: input.zuperJobUid?.trim() || null,
       hubspotTicketId: input.hubspotTicketId?.trim() || null,
@@ -162,7 +182,7 @@ export async function createProductionCheck(input: {
       subject: `Verify production fix solution — ${dealName}`,
       ownerId,
       body: designerTaskBody(issueSummary),
-      associate: { dealId: input.dealId },
+      associate: { dealId },
     });
     if (taskId) {
       request = await prisma.productionCheckRequest.update({
@@ -175,7 +195,7 @@ export async function createProductionCheck(input: {
   }
 
   await logActivity({
-    dealId: input.dealId,
+    dealId,
     description: `Production check started for ${dealName}`,
     userEmail: input.createdByEmail,
     metadata: { requestId: request.id, warning },
@@ -195,10 +215,7 @@ export async function submitSolution(input: {
   proposedSolution: string;
   designerEmail: string;
 }): Promise<ProductionCheckResult> {
-  const proposedSolution = input.proposedSolution?.trim();
-  if (!proposedSolution) {
-    throw new ProductionCheckValidationError("proposedSolution is required");
-  }
+  const proposedSolution = requireText(input.proposedSolution, "proposedSolution");
 
   const row = await requireRequest(input.id);
   if (row.status !== "DESIGN_REVIEW") {
@@ -306,10 +323,7 @@ export async function decide(input: {
   }
 
   // decision === "no" — back to design with a required reason.
-  const reason = input.reason?.trim();
-  if (!reason) {
-    throw new ProductionCheckValidationError("A reason is required when sending back to design");
-  }
+  const reason = requireText(input.reason, "reason");
 
   const { designOwnerId } = await fetchDeal(row.hubspotDealId);
   const ownerId = await resolveDesignerOwnerId(designOwnerId);
