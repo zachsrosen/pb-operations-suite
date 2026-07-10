@@ -17,7 +17,7 @@ import {
   type PowerhubItemSummary,
 } from "@/lib/service-priority";
 
-type Severity = "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL";
+type Severity = "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL";
 
 export interface PowerhubEnrichmentInput {
   dealIds: string[];

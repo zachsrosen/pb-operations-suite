@@ -27,7 +27,7 @@ export interface PriorityItem {
   /** Count of currently-active PowerHub alerts across all sites linked to this deal/ticket. */
   activeAlertCount?: number;
   /** Highest severity among active PowerHub alerts (JS-side max — Prisma _max would return lexicographic). */
-  highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
+  highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null;
 }
 
 export type PriorityTier = "critical" | "high" | "medium" | "low";
@@ -198,10 +198,11 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
  * CRITICAL < INFORMATIONAL < PERFORMANCE, so a CRITICAL alert would lose to
  * a paired INFORMATIONAL alert. We rank explicitly here.
  */
-export const POWERHUB_SEVERITY_RANK: Record<"INFORMATIONAL" | "PERFORMANCE" | "CRITICAL", number> = {
+export const POWERHUB_SEVERITY_RANK: Record<"INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL", number> = {
   INFORMATIONAL: 1,
   PERFORMANCE: 2,
-  CRITICAL: 3,
+  RMA: 3,
+  CRITICAL: 4,
 };
 
 /**
@@ -210,7 +211,7 @@ export const POWERHUB_SEVERITY_RANK: Record<"INFORMATIONAL" | "PERFORMANCE" | "C
 export interface PowerhubItemSummary {
   teslaPortalUrl: string | null;
   activeAlertCount: number;
-  highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
+  highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null;
 }
 
 /**

@@ -3,11 +3,12 @@ import { PowerhubLink } from "./PowerhubLink";
 export interface SystemHealthBadgeProps {
   portalUrl: string | null | undefined;
   activeAlertCount: number;
-  highestSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
+  highestSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null;
 }
 
 const SEVERITY_COLOR: Record<string, string> = {
   CRITICAL: "bg-red-500",
+  RMA: "bg-purple-500",
   PERFORMANCE: "bg-yellow-500",
   INFORMATIONAL: "bg-blue-500",
 };

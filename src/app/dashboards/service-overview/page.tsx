@@ -35,7 +35,7 @@ interface QueueItem {
   /** Count of currently-active PowerHub alerts for the linked property. */
   activeAlertCount?: number;
   /** Highest-severity active PowerHub alert across linked sites. */
-  highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null;
+  highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null;
 }
 
 interface PriorityScore {

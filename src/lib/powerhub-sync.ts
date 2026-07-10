@@ -11,6 +11,11 @@
 
 import { computePortalUrl, createPowerHubClient, type PowerHubSiteDetail, type PowerHubTelemetrySignal } from "./tesla-powerhub";
 import {
+  buildDinToSiteIdMap,
+  normalizePowerhubSeverity,
+  type PowerhubSeverity,
+} from "./powerhub-alert-normalize";
+import {
   normalizeAddress,
   linkSite,
   type DealAddress,
@@ -638,31 +643,12 @@ export async function pollAlerts(): Promise<AlertPollResult> {
     }
     const groupId = groups[0].group_id;
 
-    // 2. Build DIN → siteId lookup from all provisioned sites
+    // 2. Build DIN → siteId lookup from ALL sites — alerts fire from
+    // meter-only and shell sites too, so no provisioned filter here.
     const sites = await prisma.powerhubSite.findMany({
-      where: {
-        OR: [
-          { totalGateways: { gt: 0 } },
-          { totalBatteries: { gt: 0 } },
-          { totalInverters: { gt: 0 } },
-        ],
-      },
       select: { siteId: true, devices: true },
     });
-
-    const dinToSiteId = new Map<string, string>();
-    for (const site of sites) {
-      const devObj = site.devices as Record<string, Array<{ din?: string }>> | null;
-      if (!devObj || typeof devObj !== "object") continue;
-      for (const category of Object.values(devObj)) {
-        if (!Array.isArray(category)) continue;
-        for (const device of category) {
-          if (device.din) {
-            dinToSiteId.set(device.din, site.siteId);
-          }
-        }
-      }
-    }
+    const dinToSiteId = buildDinToSiteIdMap(sites);
 
     // 3. Fetch alerts (paginated, up to ALERT_MAX_PAGES pages)
     const allAlerts: Array<{
@@ -672,7 +658,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
       deviceId: string;
       alertName: string;
       description: string;
-      severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL";
+      severity: PowerhubSeverity;
       reportedAt: Date;
       teslaAlertId: string | null;
       alias: string | null;
@@ -686,6 +672,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
       supportAutoTicketUrl: string | null;
     }> = [];
 
+    const unmappedByName: Record<string, number> = {};
     let cursor: string | undefined;
     // Did we read every page of active alerts? Only when fully drained is
     // `activeAlertIds` the complete fleet-wide picture (see resolution below).
@@ -705,17 +692,14 @@ export async function pollAlerts(): Promise<AlertPollResult> {
           result.alertsMapped++;
         } else {
           result.alertsUnmapped++;
+          unmappedByName[alert.alert_name] =
+            (unmappedByName[alert.alert_name] || 0) + 1;
         }
 
-        // Skip alerts we can't map to a site
+        // Skip alerts we can't map to a site (visible via the unmapped log below)
         if (!siteId) continue;
 
-        // Normalize severity to match Prisma enum
-        const rawSev = alert.severity?.toUpperCase() || "";
-        const severity: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL" =
-          rawSev === "CRITICAL" ? "CRITICAL" :
-          rawSev === "PERFORMANCE" ? "PERFORMANCE" :
-          "INFORMATIONAL"; // ReturnMerchandiseAuthorization, etc. → INFORMATIONAL
+        const severity = normalizePowerhubSeverity(alert.severity);
 
         allAlerts.push({
           alertId: alert.alert_id,
@@ -844,9 +828,16 @@ export async function pollAlerts(): Promise<AlertPollResult> {
         }
       }
     }
+    if (result.alertsUnmapped > 0) {
+      console.warn(
+        `[powerhub-alerts] ${result.alertsUnmapped} alert(s) dropped — DIN not in device map`,
+        unmappedByName
+      );
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     result.errors.push(`Alert poll: ${msg}`);
+    console.error("[powerhub-alerts] poll error:", msg);
   }
 
   // Emit SSE invalidation
