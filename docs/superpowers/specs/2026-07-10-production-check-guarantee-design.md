@@ -209,3 +209,18 @@ without a human starting it.
 2. **Send Plans task assignee**: the deal's design lead (`design` owner property).
 3. **Designer assignee**: the deal's `design` Design Lead rotation (matches #829).
 4. **UI home**: section on the `/dashboards/production-issues` page.
+
+## Rollout (manual steps, in order)
+
+1. Zach applies the migration (`prisma migrate deploy` — adds `ProductionCheckRequest`
+   + `ProductionCheckStatus` + `ActivityType.PRODUCTION_CHECK`). Until then the panel
+   shows a load error; nothing else on the page is affected.
+2. Set the approver: `SystemConfig` key `production_check_approver_email` = Jessica's
+   login email **verified against the User table** (or env `PRODUCTION_CHECK_APPROVER_EMAIL`).
+   Optional: `production_check_default_designer_email` as the designer fallback for
+   deals with no `design` owner.
+3. Live smoke test on a real deal (kickoff → submit → No → resubmit → Yes), then
+   announce to Jessica + design leads.
+
+Dev note: `PRODUCTION_CHECK_TASKS_DISABLED=1` suppresses all HubSpot task
+creates/completes (state transitions still run) for safe local testing.

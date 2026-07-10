@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import FlagProjectModal from "@/components/FlagProjectModal";
 import ServiceIssuesView from "./ServiceIssuesView";
+import ProductionCheckPanel from "./ProductionCheckPanel";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { RawProject } from "@/lib/types";
@@ -117,9 +118,10 @@ export default function ProductionIssuesPage() {
   const [flagModalOpen, setFlagModalOpen] = useState(false);
   const [unflagging, setUnflagging] = useState<string | null>(null);
 
-  // Install | Service toggle. Install is the original view (unchanged); Service
-  // renders the merged ticket+deal production-issue list from a separate endpoint.
-  const [view, setView] = useState<"install" | "service">("install");
+  // Install | Service | Checks toggle. Install is the original view (unchanged);
+  // Service renders the merged ticket+deal production-issue list; Checks is the
+  // production-guarantee fix verification/approval workflow panel.
+  const [view, setView] = useState<"install" | "service" | "checks">("install");
   const [serviceLocations, setServiceLocations] = useState<string[]>([]);
   const [serviceExport, setServiceExport] = useState<Record<string, unknown>[]>([]);
   const [serviceLastUpdated, setServiceLastUpdated] = useState<string | null>(null);
@@ -337,7 +339,7 @@ export default function ProductionIssuesPage() {
 
   const viewToggle = (
     <div className="inline-flex rounded-lg border border-t-border bg-surface-2 p-0.5 text-sm">
-      {(["install", "service"] as const).map((v) => (
+      {(["install", "service", "checks"] as const).map((v) => (
         <button
           key={v}
           onClick={() => setView(v)}
@@ -367,7 +369,9 @@ export default function ProductionIssuesPage() {
       }}
       headerRight={viewToggle}
     >
-      {view === "service" ? (
+      {view === "checks" ? (
+        <ProductionCheckPanel />
+      ) : view === "service" ? (
         <ServiceIssuesView
           selectedLocations={serviceLocations}
           onLocationsChange={setServiceLocations}
