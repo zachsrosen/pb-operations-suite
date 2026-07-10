@@ -3,12 +3,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import type { IdrNote } from "./IdrMeetingClient";
+import { reviewTypePillLabel } from "./review-type-labels";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
 interface SessionItem {
   id: string;
-  type: "IDR" | "ESCALATION";
+  type: "IDR" | "ESCALATION" | "NEW_CONSTRUCTION" | "DNR_SERVICE";
+  pipeline: string | null;
   dealId: string;
   dealName: string;
   address: string | null;
@@ -168,7 +170,7 @@ function SessionCard({ item }: { item: SessionItem }) {
               : "bg-surface text-muted"
           }`}
         >
-          {item.type}
+          {reviewTypePillLabel(item.type, item.pipeline)}
         </span>
       </div>
 
