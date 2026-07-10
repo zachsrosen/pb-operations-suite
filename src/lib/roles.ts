@@ -172,6 +172,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/dashboards/service-overview",
     "/dashboards/service-tickets",
     "/dashboards/service-catalog",
+    // Production Issues page hosts the production-check (guarantee fix approval) panel
+    "/dashboards/production-issues",
     "/dashboards/service-customers",
     "/dashboards/timeline",
     "/dashboards/bom",
@@ -667,6 +669,8 @@ const SERVICE: RoleDefinition = {
     "/dashboards/crew-schedule",
     "/api/crew-schedule",
     "/dashboards/service-catalog",
+    // Production Issues page hosts the production-check (guarantee fix approval) panel
+    "/dashboards/production-issues",
     "/dashboards/map",
     "/dashboards/deals",
     "/api/deals",
@@ -943,6 +947,7 @@ const DESIGN: RoleDefinition = {
     "/api/solar-designer",
     "/api/projects",
     "/api/service/production-issues",
+    "/api/service/production-check",
     "/api/bom",
     "/api/catalog",
     "/api/products",
@@ -1178,6 +1183,7 @@ const INTELLIGENCE: RoleDefinition = {
     "/dashboards/deals",
     "/api/projects",
     "/api/service/production-issues",
+    "/api/service/production-check",
     "/api/deals",
     "/api/forecasting",
     "/api/hubspot/qc-metrics",

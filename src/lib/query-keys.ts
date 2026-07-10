@@ -65,6 +65,10 @@ export const queryKeys = {
     propertySites: (propertyId: string) =>
       [...queryKeys.powerhub.root, "property", propertyId, "sites"] as const,
   },
+  productionCheck: {
+    root: ["productionCheck"] as const,
+    list: () => [...queryKeys.productionCheck.root, "list"] as const,
+  },
   serviceTickets: {
     root: ["serviceTickets"] as const,
     list: (params?: Record<string, unknown>) =>
