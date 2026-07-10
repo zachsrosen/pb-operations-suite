@@ -123,7 +123,24 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     categories.add("stuck_in_stage");
   }
 
-  // 4. Deal value (higher value = higher priority)
+  // 4. Total age (time since creation) — long-open items outrank fresh ones
+  // instead of tying once no-contact and stuck-in-stage plateau at 7 days
+  const daysOpen = daysBetween(item.createDate, now);
+  if (!Number.isNaN(daysOpen) && daysOpen >= 30) {
+    if (daysOpen >= 365) {
+      score += 20;
+    } else if (daysOpen >= 180) {
+      score += 15;
+    } else if (daysOpen >= 90) {
+      score += 10;
+    } else {
+      score += 5;
+    }
+    reasons.push(`Open for ${daysOpen} days`);
+    categories.add("item_age");
+  }
+
+  // 5. Deal value (higher value = higher priority)
   if (item.amount && item.amount > 10000) {
     score += 10;
     reasons.push("High-value service ($" + item.amount.toLocaleString() + ")");
@@ -133,7 +150,7 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     categories.add("high_value");
   }
 
-  // 5. Stage-specific urgency
+  // 6. Stage-specific urgency
   const urgentStages = ["Inspection", "Invoicing"];
   const activeStages = ["Site Visit Scheduling", "Work In Progress"];
   if (urgentStages.includes(item.stage)) {
@@ -146,7 +163,7 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     categories.add("stage_urgency");
   }
 
-  // 6. PowerHub alert severity
+  // 7. PowerHub alert severity
   if (item.powerhubAlertSeverity === "CRITICAL") {
     score += 25;
     reasons.push("PowerHub: Critical system alert");
