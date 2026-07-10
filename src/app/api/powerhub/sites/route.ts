@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { resolveDealSummaries } from "@/lib/powerhub-site-context";
 
 export const dynamic = "force-dynamic";
 
@@ -39,61 +40,22 @@ export async function GET(request: Request) {
     },
   });
 
-  // Fetch the deal cache for all linked sites: customer/deal names for the
-  // table, plus address backfill (Tesla API never returns addresses; they
-  // come from deal linkage).
+  // Resolve deal names live from HubSpot (server-cached, 10 min). The
+  // HubSpotProjectCache table this route previously read has no writer and
+  // sits empty in prod, so live resolution is the only working source.
   const linkedDealIds = [
     ...new Set(sites.filter((s) => s.dealId).map((s) => s.dealId as string)),
   ];
+  const dealMap = await resolveDealSummaries(linkedDealIds);
 
-  const dealMap: Record<
-    string,
-    {
-      dealName: string | null;
-      customerName: string | null;
-      address: string | null;
-      city: string | null;
-      state: string | null;
-    }
-  > = {};
-  if (linkedDealIds.length > 0) {
-    const dealCaches = await prisma.hubSpotProjectCache.findMany({
-      where: { dealId: { in: linkedDealIds } },
-      select: {
-        dealId: true,
-        dealName: true,
-        customerName: true,
-        address: true,
-        city: true,
-        state: true,
-      },
-    });
-    for (const d of dealCaches) {
-      dealMap[d.dealId] = {
-        dealName: d.dealName,
-        customerName: d.customerName,
-        address: d.address,
-        city: d.city,
-        state: d.state,
-      };
-    }
-  }
-
-  // Attach customer/deal names; backfill address when the site has none
   const enrichedSites = sites.map((s) => {
-    const deal = s.dealId ? dealMap[s.dealId] : undefined;
-    const useDealAddress = !s.address && deal?.address;
+    const deal = s.dealId ? dealMap.get(s.dealId) : undefined;
     return {
       ...s,
-      customerName: deal?.customerName ?? null,
+      // FleetTable compat: customerName was never populated by the dead
+      // cache; the deal name ("Smith, Jane - PROJ-1234") is the human label.
+      customerName: null,
       dealName: deal?.dealName ?? null,
-      ...(useDealAddress
-        ? {
-            address: deal.address || "",
-            city: deal.city || "",
-            state: deal.state || "",
-          }
-        : {}),
     };
   });
 

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import {
+  resolveDealSummaries,
+  resolveTicketSummaries,
+  resolveContactNames,
+} from "@/lib/powerhub-site-context";
 
 export const dynamic = "force-dynamic";
 
@@ -63,50 +68,41 @@ export async function GET(
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
-  // If site is linked to a HubSpot deal, fetch deal + contact summary
-  let deal: {
-    dealId: string;
-    dealName: string;
-    stage: string;
-    customerName: string | null;
-    customerEmail: string | null;
-    customerPhone: string | null;
-    address: string | null;
-    city: string | null;
-    state: string | null;
-    pbLocation: string | null;
-    closeDate: Date | null;
-    systemSizeKw: number | null;
-    batteryCount: number | null;
-    inverterCount: number | null;
-    moduleCount: number | null;
-  } | null = null;
+  // Resolve human labels live from HubSpot (the HubSpotProjectCache table
+  // this route previously read has no writer and is empty in prod). Each
+  // resolver degrades to an empty map, so the payload falls back to IDs.
+  const [dealMap, ticketMap, contactMap] = await Promise.all([
+    site.dealId ? resolveDealSummaries([site.dealId]) : Promise.resolve(new Map()),
+    site.property?.ticketLinks.length
+      ? resolveTicketSummaries(site.property.ticketLinks.map((l) => l.ticketId))
+      : Promise.resolve(new Map()),
+    site.property?.contactLinks.length
+      ? resolveContactNames(site.property.contactLinks.map((l) => l.contactId))
+      : Promise.resolve(new Map()),
+  ]);
 
-  if (site.dealId) {
-    const cached = await prisma.hubSpotProjectCache.findUnique({
-      where: { dealId: site.dealId },
-      select: {
-        dealId: true,
-        dealName: true,
-        stage: true,
-        customerName: true,
-        customerEmail: true,
-        customerPhone: true,
-        address: true,
-        city: true,
-        state: true,
-        pbLocation: true,
-        closeDate: true,
-        systemSizeKw: true,
-        batteryCount: true,
-        inverterCount: true,
-        moduleCount: true,
-      },
-    });
-    if (cached) {
-      deal = cached;
-    }
-  }
+  const dealSummary = site.dealId ? dealMap.get(site.dealId) : undefined;
+  const deal = dealSummary
+    ? {
+        dealId: site.dealId,
+        dealName: dealSummary.dealName,
+        stage: dealSummary.stageLabel,
+      }
+    : null;
 
-  return NextResponse.json({ site, deal });
+  const property = site.property
+    ? {
+        ...site.property,
+        ticketLinks: site.property.ticketLinks.map((l) => ({
+          ...l,
+          ...(ticketMap.get(l.ticketId) ?? {}),
+        })),
+        contactLinks: site.property.contactLinks.map((l) => {
+          const name = contactMap.get(l.contactId);
+          return name ? { ...l, name } : l;
+        }),
+      }
+    : null;
+
+  return NextResponse.json({ site: { ...site, property }, deal });
 }
