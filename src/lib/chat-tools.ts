@@ -1711,11 +1711,15 @@ export function createReadOnlyChatTools() {
       "submitted awaiting PE review. Use for 'how much have we been paid by " +
       "Participate', 'PE cash received in June', 'how much does PE owe us'. " +
       "PE pays per milestone: M1 (~2/3, after inspection) and M2 (~1/3, after PTO). " +
-      "For a WEEK-BY-WEEK breakdown of cash received (e.g. 'PE payments by week for " +
-      "the last 6 weeks'), pass fromDate+toDate AND groupByWeek=true — the tool " +
-      "returns a real weeklyReceived series (Monday-start UTC weeks, the same " +
-      "convention as the PE dashboard). NEVER invent weekly buckets yourself; if you " +
-      "need per-week numbers, call this with groupByWeek.",
+      "For a WEEK-BY-WEEK breakdown, pass fromDate+toDate AND groupByWeek=true (real " +
+      "Monday-start UTC weeks, the PE dashboard convention). basis picks the milestone " +
+      "EVENT the windowed total/week/location key off: received (paid, default), approved, " +
+      "submitted, or remitted — e.g. 'PE approvals in June by location' → basis:'approved', " +
+      "groupByLocation:true. groupByLocation adds a byLocation split. CRITICAL: every dollar " +
+      "here is the PE PAYMENT amount (M1=IC, M2=PC), NOT the deal amount — this is the ONLY " +
+      "correct source for PE money (received, approved, submitted, or remitted). NEVER use " +
+      "count_milestone_in_date_range's revenue for PE dollars — that's the deal amount, ~3× " +
+      "too high.",
     inputSchema: z.object({
       fromDate: z
         .string()
@@ -1729,9 +1733,22 @@ export function createReadOnlyChatTools() {
         .boolean()
         .optional()
         .describe(
-          "If true (requires fromDate+toDate), also return weeklyReceived: cash " +
-            "received bucketed by Monday-start week. Use for any per-week PE payment breakdown."
+          "If true (requires fromDate+toDate), also return a weekly series bucketed by " +
+            "Monday-start week. Use for any per-week PE payment breakdown."
         ),
+      basis: z
+        .enum(["received", "approved", "submitted", "remitted"])
+        .optional()
+        .describe(
+          "Which PE MILESTONE EVENT the windowed total/week/location breakdown is keyed to " +
+            "(default 'received'): received=paid date, approved=approval date, submitted=" +
+            "submission date, remitted=remittance date. ALL use the PE payment amount (M1=IC, " +
+            "M2=PC), never the deal amount."
+        ),
+      groupByLocation: z
+        .boolean()
+        .optional()
+        .describe("If true, also return byLocation: the windowed PE $ split by PB location."),
     }),
     run: async (input) => {
       const { searchWithRetry } = await import("@/lib/hubspot");
@@ -1755,6 +1772,16 @@ export function createReadOnlyChatTools() {
           error: "groupByWeek requires fromDate and toDate (a bounded range to bucket into weeks).",
         });
       }
+      // The windowed total/week/location breakdown keys off the basis event date;
+      // all amounts are the PE payment (IC/PC), never the deal amount.
+      const basis = input.basis ?? "received";
+      const BASIS_DATE_SUFFIX: Record<string, string> = {
+        received: "paid",
+        approved: "approval",
+        submitted: "submission",
+        remitted: "remittance",
+      };
+      const basisSuffix = BASIS_DATE_SUFFIX[basis];
       // Monday-start UTC week key — identical convention to the PE dashboard's
       // weekly charts, so a "by week" answer matches what the suite shows.
       const { weekStartUTC } = await import("@/lib/pe-analytics");
@@ -1793,6 +1820,7 @@ export function createReadOnlyChatTools() {
             "pe_m2_approval_date",
             "pe_m1_submission_date",
             "pe_m2_submission_date",
+            "pb_location",
           ],
           limit: 200,
         };
@@ -1810,17 +1838,18 @@ export function createReadOnlyChatTools() {
         return !Number.isNaN(ms) && ms >= fromMs && ms <= toMs;
       };
       const bucket = () => ({ count: 0, amount: 0 });
-      const received = { m1: bucket(), m2: bucket() };
-      const remitted = { m1: bucket(), m2: bucket() };
+      type MBucket = { m1: { count: number; amount: number }; m2: { count: number; amount: number } };
+      const windowed = { m1: bucket(), m2: bucket() };
       const inTransit = { m1: bucket(), m2: bucket() };
       const approvedNotSent = { m1: bucket(), m2: bucket() };
       const inReview = { m1: bucket(), m2: bucket() };
 
-      // weekStart → per-milestone received totals, populated only when grouping.
-      type WeekBucket = { m1: { count: number; amount: number }; m2: { count: number; amount: number } };
-      const weeklyReceived = new Map<string, WeekBucket>();
+      // basis-date-keyed breakdowns, populated only when grouping.
+      const weekly = new Map<string, MBucket>();
+      const byLocation = new Map<string, MBucket>();
 
       for (const p of rows) {
+        const loc = (p.pb_location || "").trim() || "Unknown";
         for (const m of ["m1", "m2"] as const) {
           const amount = Number(m === "m1" ? p.pe_payment_ic : p.pe_payment_pc) || 0;
           if (!amount) continue;
@@ -1828,23 +1857,30 @@ export function createReadOnlyChatTools() {
           const remit = p[`pe_${m}_remittance_date`];
           const approval = p[`pe_${m}_approval_date`];
           const submission = p[`pe_${m}_submission_date`];
-          if (paid && inWindow(paid)) {
-            received[m].count++;
-            received[m].amount += amount;
+          const basisDate = p[`pe_${m}_${basisSuffix}_date`];
+          // Windowed PE $ on the chosen basis event (paid/approved/submitted/remitted).
+          if (basisDate && inWindow(basisDate)) {
+            windowed[m].count++;
+            windowed[m].amount += amount;
             if (input.groupByWeek) {
-              const wk = weekStartUTC(new Date(Date.parse(paid)));
-              let wb = weeklyReceived.get(wk);
+              const wk = weekStartUTC(new Date(Date.parse(basisDate)));
+              let wb = weekly.get(wk);
               if (!wb) {
                 wb = { m1: bucket(), m2: bucket() };
-                weeklyReceived.set(wk, wb);
+                weekly.set(wk, wb);
               }
               wb[m].count++;
               wb[m].amount += amount;
             }
-          }
-          if (remit && inWindow(remit)) {
-            remitted[m].count++;
-            remitted[m].amount += amount;
+            if (input.groupByLocation) {
+              let lb = byLocation.get(loc);
+              if (!lb) {
+                lb = { m1: bucket(), m2: bucket() };
+                byLocation.set(loc, lb);
+              }
+              lb[m].count++;
+              lb[m].amount += amount;
+            }
           }
           // Outstanding buckets are a CURRENT snapshot — never window-scoped.
           if (remit && !paid) {
@@ -1889,7 +1925,7 @@ export function createReadOnlyChatTools() {
         const firstWeekMs = Date.parse(`${weekStartUTC(new Date(fromMs))}T00:00:00.000Z`);
         for (let wkMs = firstWeekMs; wkMs <= toMs; wkMs += 7 * 24 * 60 * 60 * 1000) {
           const wk = new Date(wkMs).toISOString().split("T")[0];
-          const wb = weeklyReceived.get(wk);
+          const wb = weekly.get(wk);
           const m1 = wb?.m1 ?? { count: 0, amount: 0 };
           const m2 = wb?.m2 ?? { count: 0, amount: 0 };
           weeklySeries.push({
@@ -1904,18 +1940,30 @@ export function createReadOnlyChatTools() {
         weeklySeries.reverse(); // most-recent week first
       }
 
+      const byLocationOut = input.groupByLocation
+        ? Object.fromEntries(
+            [...byLocation.entries()]
+              .map(([loc, b]) => [loc, roll(b)] as const)
+              .sort((a, b) => b[1].totalAmount - a[1].totalAmount)
+          )
+        : undefined;
+
       return JSON.stringify({
-        scope: hasWindow ? `payments dated ${input.fromDate} → ${input.toDate}` : "all-time",
-        received: roll(received),
-        ...(hasWindow ? { remittedInWindow: roll(remitted) } : {}),
+        basis, // received | approved | submitted | remitted
+        scope: hasWindow ? `${basis} dated ${input.fromDate} → ${input.toDate}` : `${basis}, all-time`,
+        // Windowed PE PAYMENT total on the chosen basis (M1=IC, M2=PC) — NOT deal revenue.
+        // Kept as `received` too when basis is the default, for continuity.
+        windowTotal: roll(windowed),
+        ...(basis === "received" ? { received: roll(windowed) } : {}),
         ...(weeklySeries
           ? {
-              weeklyReceived: weeklySeries,
+              weekly: weeklySeries,
               weekConvention:
                 "Weeks run Monday–Sunday. Render each row's `week` label VERBATIM and " +
                 "use its exact amounts; do NOT recompute dates, shift the weekday, or drop weeks.",
             }
           : {}),
+        ...(byLocationOut ? { byLocation: byLocationOut } : {}),
         outstanding: {
           inTransit: roll(inTransit),
           approvedNotYetSent: roll(approvedNotSent),
@@ -1924,10 +1972,12 @@ export function createReadOnlyChatTools() {
         dealsScanned: rows.length,
         ...(peTruncated ? { truncated: true } : {}),
         definitions:
-          "received = milestone paid date set (cash landed). inTransit = PE remitted, ACH not landed (~4 days). " +
-          "approvedNotYetSent = PE approved the docs but hasn't sent payment (also captures a milestone re-rejected " +
-          "after its first approval, since the approval date persists). submittedInReview = submitted but never approved, " +
-          "awaiting PE review. Outstanding buckets are today's snapshot regardless of any date window." +
+          "ALL amounts are PE PAYMENT dollars (M1 = pe_payment_ic ~2/3, M2 = pe_payment_pc ~1/3), NOT the deal amount. " +
+          "windowTotal / weekly / byLocation are keyed to the `basis` event date: received=paid, approved=approval, " +
+          "submitted=submission, remitted=remittance. Outstanding: inTransit = PE remitted, ACH not landed (~4 days); " +
+          "approvedNotYetSent = PE approved but not yet sent (also captures a milestone re-rejected after its first " +
+          "approval); submittedInReview = submitted but not approved. Outstanding buckets are today's snapshot regardless " +
+          "of any date window." +
           (peTruncated ? " WARNING: hit the scan cap — totals are a floor, not complete." : ""),
       });
     },
