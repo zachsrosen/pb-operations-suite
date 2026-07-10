@@ -14,6 +14,7 @@ import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 import { AddersChecklist } from "./AddersChecklist";
 import { BomReviewSection } from "./BomReviewSection";
+import { EscalationPhotoGallery } from "./EscalationPhotoGallery";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -406,6 +407,11 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
         {/* ── Site Photos (full width, has its own collapse toggle) ── */}
         <PhotoGalleryCard hubspotDealId={item.dealId} />
+
+        {/* ── Escalation Photos (escalation items only) ── */}
+        {item.type === "ESCALATION" && (
+          <EscalationPhotoGallery dealId={item.dealId} readOnly={readOnly} />
+        )}
       </div>
     </div>
   );
