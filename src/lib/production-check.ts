@@ -29,6 +29,16 @@ const DEFAULT_DESIGNER_ENV_KEYS = ["PRODUCTION_CHECK_DEFAULT_DESIGNER_EMAIL"];
 
 const DASHBOARD_URL = "https://pbtechops.com/dashboards/production-issues";
 
+// HubSpot REQUIRES hs_timestamp (due date) on task creation — createTask
+// only sets it from dueAt, so every call below must pass one.
+const DESIGNER_TASK_DUE_DAYS = 7; // matches the #829 production-issue SLA
+const APPROVAL_TASK_DUE_DAYS = 2;
+const SEND_PLANS_TASK_DUE_DAYS = 2;
+
+function dueInDays(days: number): string {
+  return new Date(Date.now() + days * 86400000).toISOString();
+}
+
 export type ProductionCheckWarning =
   | "no-designer-task"
   | "no-approval-task"
@@ -211,6 +221,7 @@ export async function createProductionCheck(input: {
     const taskId = await safeCreateTask({
       subject: `Verify production fix solution — ${dealName}`,
       ownerId,
+      dueAt: dueInDays(DESIGNER_TASK_DUE_DAYS),
       body: designerTaskBody(issueSummary),
       associate: { dealId },
     });
@@ -219,6 +230,8 @@ export async function createProductionCheck(input: {
         where: { id: request.id },
         data: { designTaskId: taskId },
       });
+    } else if (!tasksDisabled()) {
+      warning = "no-designer-task";
     }
   } else {
     warning = "no-designer-task";
@@ -289,6 +302,7 @@ export async function submitSolution(input: {
     approvalTaskId = await safeCreateTask({
       subject: `Production fix approval — press Yes or No — ${row.dealName ?? row.hubspotDealId}`,
       ownerId: approverOwnerId,
+      dueAt: dueInDays(APPROVAL_TASK_DUE_DAYS),
       body: [
         "Design has verified a fix for this production issue. Approve or send back:",
         "",
@@ -343,6 +357,7 @@ export async function decide(input: {
       sendPlansTaskId = await safeCreateTask({
         subject: `Send Plans — production fix — ${dealLabel}`,
         ownerId,
+        dueAt: dueInDays(SEND_PLANS_TASK_DUE_DAYS),
         body: [
           "The production fix was approved. Send the plans to Vishtik.",
           "",
@@ -382,6 +397,7 @@ export async function decide(input: {
     designTaskId = await safeCreateTask({
       subject: `Rework production fix solution — ${dealLabel}`,
       ownerId,
+      dueAt: dueInDays(DESIGNER_TASK_DUE_DAYS),
       body: designerTaskBody(row.issueSummary, `Sent back by ${input.decidedByEmail}: ${reason}`),
       associate: { dealId: row.hubspotDealId },
     });

@@ -130,6 +130,7 @@ describe("createProductionCheck", () => {
         subject: "Verify production fix solution — PROJ-1000 | Smith",
         associate: { dealId: "111" },
         body: expect.stringContaining("/dashboards/production-issues"),
+        dueAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       }),
     );
     // designTaskId persisted
@@ -172,6 +173,12 @@ describe("createProductionCheck", () => {
 
     expect(warning).toBe("no-designer-task");
     expect(mockCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a warning when the designer task creation fails (not silent)", async () => {
+    mockCreateTask.mockRejectedValueOnce(new Error("hubspot 400"));
+    const { warning } = await createProductionCheck(input);
+    expect(warning).toBe("no-designer-task");
   });
 
   it("rejects a non-numeric dealId", async () => {
@@ -231,6 +238,7 @@ describe("submitSolution", () => {
         ownerId: "owner-jessica",
         subject: "Production fix approval — press Yes or No — PROJ-1000 | Smith",
         associate: { dealId: "111" },
+        dueAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       }),
     );
     expect(mockUpdateMany).toHaveBeenCalledWith(
@@ -318,6 +326,7 @@ describe("decide", () => {
         ownerId: "owner-77",
         subject: "Send Plans — production fix — PROJ-1000 | Smith",
         associate: { dealId: "111" },
+        dueAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       }),
     );
     expect(mockUpdateMany).toHaveBeenCalledWith(
