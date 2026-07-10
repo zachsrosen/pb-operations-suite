@@ -38,6 +38,11 @@ export function getHubSpotDealUrl(dealId: string): string {
   return `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
 }
 
+export function getHubSpotTicketUrl(ticketId: string): string {
+  const portalId = env("HUBSPOT_PORTAL_ID") || DEFAULT_HUBSPOT_PORTAL_ID;
+  return `https://app.hubspot.com/contacts/${portalId}/record/0-5/${ticketId}`;
+}
+
 /**
  * Internal PB Tech Ops Suite deal detail page.
  *
