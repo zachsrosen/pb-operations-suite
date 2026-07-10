@@ -971,7 +971,7 @@ export async function getZuperJobsByLocation(
   ];
 
   // When locationDealIds is provided, filter directly by dealId set
-  // instead of joining against HubSpotProjectCache (which may be empty).
+  // instead of joining against the Deal mirror.
   const dealFilter = locationDealIds && locationDealIds.size > 0
     ? { in: [...locationDealIds] }
     : { not: null as unknown as string };
@@ -1002,15 +1002,15 @@ export async function getZuperJobsByLocation(
     },
   });
 
-  // If no locationDealIds provided, fall back to HubSpotProjectCache join
+  // If no locationDealIds provided, fall back to a Deal mirror join
   if (!locationDealIds) {
     if (jobs.length === 0) return [];
     const dealIds = jobs.map((j) => j.hubspotDealId).filter((id): id is string => id !== null);
-    const projectCache = await prisma.hubSpotProjectCache.findMany({
-      where: { dealId: { in: dealIds } },
-      select: { dealId: true, pbLocation: true },
+    const projectCache = await prisma.deal.findMany({
+      where: { hubspotDealId: { in: dealIds } },
+      select: { hubspotDealId: true, pbLocation: true },
     });
-    const dealLocationMap = new Map(projectCache.map((p) => [p.dealId, p.pbLocation]));
+    const dealLocationMap = new Map(projectCache.map((p) => [p.hubspotDealId, p.pbLocation]));
     return jobs.filter((j) => {
       const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
       return normalizeLocation(loc) === location;
@@ -1105,16 +1105,16 @@ export async function getScheduledJobsThisWeek(
 
   if (locationDealIds) return activeJobs.length;
 
-  // Fallback to HubSpotProjectCache join
+  // Fallback to a Deal mirror join
   const dealIds = activeJobs
     .map((j) => j.hubspotDealId)
     .filter((id): id is string => id !== null);
 
   if (dealIds.length === 0) return 0;
 
-  const projectCache = await prisma.hubSpotProjectCache.findMany({
-    where: { dealId: { in: dealIds } },
-    select: { dealId: true, pbLocation: true },
+  const projectCache = await prisma.deal.findMany({
+    where: { hubspotDealId: { in: dealIds } },
+    select: { hubspotDealId: true, pbLocation: true },
   });
 
   const matching = projectCache.filter(
@@ -2087,7 +2087,7 @@ export async function getOfficePerformanceData(
   });
 
   // Build dealId sets and maps from all location projects.
-  // This avoids joining against HubSpotProjectCache (which may be empty).
+  // This avoids joining against the Deal mirror.
   const dealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
   const locationDealIds = new Set(dealIds);
   const dealNameMap = new Map(

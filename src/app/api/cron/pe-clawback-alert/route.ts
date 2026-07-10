@@ -65,9 +65,9 @@ export async function GET(request: NextRequest) {
   // so an ANCHOR-raised re-rejection shows reviewer = "ANCHOR Reconciler".
   const dealIds = [...new Set(flips.map((f) => f.dealId))];
   const [cacheRows, actionRows] = await Promise.all([
-    prisma.hubSpotProjectCache.findMany({
-      where: { dealId: { in: dealIds } },
-      select: { dealId: true, dealName: true, customerName: true },
+    prisma.deal.findMany({
+      where: { hubspotDealId: { in: dealIds } },
+      select: { hubspotDealId: true, dealName: true },
     }),
     prisma.peActionItem.findMany({
       where: { dealId: { in: dealIds } },
@@ -75,14 +75,14 @@ export async function GET(request: NextRequest) {
       select: { dealId: true, reviewer: true },
     }),
   ]);
-  const nameByDeal = new Map(cacheRows.map((r) => [r.dealId, r.dealName || r.customerName || ""]));
+  const nameByDeal = new Map(cacheRows.map((r) => [r.hubspotDealId, r.dealName || ""]));
   const anchorDeals = new Set<string>();
   for (const a of actionRows) {
     if (a.dealId && a.reviewer && /anchor/i.test(a.reviewer)) anchorDeals.add(a.dealId);
   }
 
-  // Authoritative deal names + PE portal links straight from HubSpot (the cache
-  // misses many PE deals). Best-effort — never fail the alert on a HubSpot hiccup.
+  // Authoritative deal names + PE portal links straight from HubSpot (the Deal
+  // mirror can lag). Best-effort — never fail the alert on a HubSpot hiccup.
   const portalByDeal = new Map<string, string>();
   try {
     const resp = await hubspotClient.crm.deals.batchApi.read({

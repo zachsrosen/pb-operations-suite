@@ -25,9 +25,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
-  // Backfill address from the deal's HubSpot cache when linking
-  const dealCache = await prisma.hubSpotProjectCache.findUnique({
-    where: { dealId },
+  // Backfill address from the Deal mirror when linking
+  const dealCache = await prisma.deal.findUnique({
+    where: { hubspotDealId: dealId },
     select: { address: true, city: true, state: true, zipCode: true },
   });
 
