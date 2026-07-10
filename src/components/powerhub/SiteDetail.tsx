@@ -188,17 +188,26 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
             <div className="mt-3">
               <div className="text-xs text-muted mb-1">HubSpot Tickets</div>
               <div className="flex flex-wrap gap-2">
-                {property.ticketLinks.map((link: { ticketId: string }) => (
-                  <a
-                    key={link.ticketId}
-                    href={getHubSpotTicketUrl(link.ticketId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center px-2 py-1 rounded bg-surface text-xs text-cyan-500 hover:underline"
-                  >
-                    Ticket {link.ticketId} ↗
-                  </a>
-                ))}
+                {property.ticketLinks.map(
+                  (link: { ticketId: string; subject?: string; statusName?: string | null }) => (
+                    <a
+                      key={link.ticketId}
+                      href={getHubSpotTicketUrl(link.ticketId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-2 py-1 rounded bg-surface text-xs text-cyan-500 hover:underline max-w-[280px]"
+                      title={link.subject || `Ticket ${link.ticketId}`}
+                    >
+                      <span className="truncate">
+                        {link.subject || `Ticket ${link.ticketId}`}
+                      </span>
+                      {link.statusName && (
+                        <span className="text-muted ml-1 shrink-0">· {link.statusName}</span>
+                      )}
+                      <span className="ml-1 shrink-0">↗</span>
+                    </a>
+                  )
+                )}
               </div>
             </div>
           )}
@@ -214,7 +223,7 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
                     className="inline-flex items-center px-2 py-1 rounded bg-surface text-xs text-foreground"
                   >
                     <span className="text-muted mr-1">{link.label}:</span>
-                    {link.contactId}
+                    {link.name || link.contactId}
                   </span>
                 ))}
               </div>
