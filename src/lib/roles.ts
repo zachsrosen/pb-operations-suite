@@ -172,6 +172,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/dashboards/service-overview",
     "/dashboards/service-tickets",
     "/dashboards/service-catalog",
+    // Production Issues page hosts the production-check (guarantee fix approval) panel
+    "/dashboards/production-issues",
     "/dashboards/service-customers",
     "/dashboards/timeline",
     "/dashboards/bom",

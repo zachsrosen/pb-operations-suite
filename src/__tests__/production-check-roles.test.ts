@@ -29,7 +29,7 @@ describe("production-check route reachability", () => {
     expect(holes).toEqual([]);
   });
 
-  it("flow roles (SERVICE, DESIGN, TECH_OPS, PM, OPS_MGR) can call the API", () => {
+  it("flow roles (SERVICE, DESIGN, TECH_OPS, PM, OPS_MGR) can reach both the page and the API", () => {
     for (const role of [
       "SERVICE",
       "DESIGN",
@@ -37,10 +37,8 @@ describe("production-check route reachability", () => {
       "PROJECT_MANAGER",
       "OPERATIONS_MANAGER",
     ] as const) {
-      expect({ role, ok: canReach(ROLES[role].allowedRoutes, API_PATH) }).toEqual({
-        role,
-        ok: true,
-      });
+      expect({ role, api: canReach(ROLES[role].allowedRoutes, API_PATH) }).toEqual({ role, api: true });
+      expect({ role, page: canReach(ROLES[role].allowedRoutes, PAGE_PATH) }).toEqual({ role, page: true });
     }
   });
 });

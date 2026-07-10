@@ -5,6 +5,7 @@
 
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
+const mockUpdateMany = jest.fn();
 const mockFindUnique = jest.fn();
 const mockActivityCreate = jest.fn();
 
@@ -13,6 +14,7 @@ jest.mock("@/lib/db", () => ({
     productionCheckRequest: {
       create: (...args: unknown[]) => mockCreate(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
+      updateMany: (...args: unknown[]) => mockUpdateMany(...args),
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
     },
     activityLog: { create: (...args: unknown[]) => mockActivityCreate(...args) },
@@ -20,10 +22,12 @@ jest.mock("@/lib/db", () => ({
 }));
 
 const mockGetById = jest.fn();
+const mockResolveOwnerContact = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
   hubspotClient: {
     crm: { deals: { basicApi: { getById: (...args: unknown[]) => mockGetById(...args) } } },
   },
+  resolveHubSpotOwnerContact: (...args: unknown[]) => mockResolveOwnerContact(...args),
 }));
 
 const mockCreateTask = jest.fn();
@@ -85,9 +89,15 @@ beforeEach(() => {
   mockMarkTaskComplete.mockResolvedValue(undefined);
   mockCreate.mockImplementation(async ({ data }: { data: Row }) => ({ ...baseRow(), designTaskId: null, ...data }));
   mockUpdate.mockImplementation(async ({ data }: { data: Row }) => ({ ...baseRow(), ...data }));
+  mockUpdateMany.mockResolvedValue({ count: 1 });
+  // The deal `design` property stores a HubSpot userId; the owner directory
+  // maps it to the true owner id used for task assignment.
   mockGetById.mockResolvedValue({
-    properties: { dealname: "PROJ-1000 | Smith", design: "owner-77" },
+    properties: { dealname: "PROJ-1000 | Smith", design: "user-77" },
   });
+  mockResolveOwnerContact.mockImplementation(async (value: string) =>
+    value === "user-77" ? { id: "owner-77", name: "Designer", email: "designer@x" } : null,
+  );
   mockGetRuntimeConfig.mockResolvedValue(undefined);
   mockResolveOwnerIdByEmail.mockResolvedValue(null);
 });
@@ -140,6 +150,18 @@ describe("createProductionCheck", () => {
 
     expect(warning).toBeUndefined();
     expect(mockResolveOwnerIdByEmail).toHaveBeenCalledWith("designer@x");
+    expect(mockCreateTask).toHaveBeenCalledWith(expect.objectContaining({ ownerId: "owner-fallback" }));
+  });
+
+  it("falls back to the default-designer config when the design userId is not in the owner directory", async () => {
+    mockGetById.mockResolvedValueOnce({ properties: { dealname: "PROJ-1000 | Smith", design: "user-unknown" } });
+    mockGetRuntimeConfig.mockImplementation(async (key: string) =>
+      key === "production_check_default_designer_email" ? "designer@x" : undefined,
+    );
+    mockResolveOwnerIdByEmail.mockResolvedValueOnce("owner-fallback");
+
+    const { warning } = await createProductionCheck(input);
+    expect(warning).toBeUndefined();
     expect(mockCreateTask).toHaveBeenCalledWith(expect.objectContaining({ ownerId: "owner-fallback" }));
   });
 
@@ -211,8 +233,9 @@ describe("submitSolution", () => {
         associate: { dealId: "111" },
       }),
     );
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: "pc-1", status: "DESIGN_REVIEW" },
         data: expect.objectContaining({
           status: "PENDING_APPROVAL",
           proposedSolution: input.proposedSolution,
@@ -232,7 +255,7 @@ describe("submitSolution", () => {
     mockFindUnique.mockResolvedValue(baseRow());
     const { warning } = await submitSolution(input);
     expect(warning).toBe("no-approval-task");
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "PENDING_APPROVAL" }) }),
     );
     expect(mockCreateTask).not.toHaveBeenCalled();
@@ -248,6 +271,27 @@ describe("submitSolution", () => {
     const { warning } = await submitSolution(input);
     expect(warning).toBe("no-approval-task");
     expect(mockCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("throws ProductionCheckStateError when the guarded write loses a race (count 0)", async () => {
+    mockFindUnique.mockResolvedValue(baseRow());
+    mockUpdateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(submitSolution(input)).rejects.toBeInstanceOf(ProductionCheckStateError);
+  });
+
+  it("still transitions with a warning when creating the approval task fails", async () => {
+    mockFindUnique.mockResolvedValue(baseRow());
+    mockGetRuntimeConfig.mockImplementation(async (key: string) =>
+      key === "production_check_approver_email" ? "jessica@x" : undefined,
+    );
+    mockResolveOwnerIdByEmail.mockResolvedValueOnce("owner-jessica");
+    mockCreateTask.mockRejectedValueOnce(new Error("hubspot 500"));
+
+    const { warning } = await submitSolution(input);
+    expect(warning).toBe("no-approval-task");
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "PENDING_APPROVAL" }) }),
+    );
   });
 
   it("does not fail the transition when completing the old task throws", async () => {
@@ -276,8 +320,9 @@ describe("decide", () => {
         associate: { dealId: "111" },
       }),
     );
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: "pc-1", status: "PENDING_APPROVAL" },
         data: expect.objectContaining({
           status: "APPROVED",
           decidedByEmail: "jessica@x",
@@ -296,7 +341,7 @@ describe("decide", () => {
 
     expect(warning).toBe("no-send-plans-task");
     expect(mockCreateTask).not.toHaveBeenCalled();
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "APPROVED" }) }),
     );
   });
@@ -315,13 +360,15 @@ describe("decide", () => {
         body: expect.stringContaining("Wrong panel count"),
       }),
     );
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: "pc-1", status: "PENDING_APPROVAL" },
         data: expect.objectContaining({
           status: "DESIGN_REVIEW",
           designCycles: 2,
           rejectionReason: "Wrong panel count",
           designTaskId: "task-design-2",
+          approvalTaskId: null,
         }),
       }),
     );
@@ -354,7 +401,7 @@ describe("cancelProductionCheck", () => {
     mockFindUnique.mockResolvedValue(baseRow());
     await cancelProductionCheck({ id: "pc-1", cancelledByEmail: "jessica@x" });
     expect(mockMarkTaskComplete).toHaveBeenCalledWith("task-design");
-    expect(mockUpdate).toHaveBeenCalledWith(
+    expect(mockUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "CANCELLED" }) }),
     );
   });

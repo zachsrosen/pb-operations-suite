@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import {
   getApproverEmail,
+  ProductionCheckNotFoundError,
   ProductionCheckStateError,
   ProductionCheckValidationError,
 } from "@/lib/production-check";
@@ -40,9 +41,11 @@ export function mapProductionCheckError(err: unknown): NextResponse {
   if (err instanceof ProductionCheckStateError) {
     return NextResponse.json({ error: err.message }, { status: 409 });
   }
+  if (err instanceof ProductionCheckNotFoundError) {
+    return NextResponse.json({ error: err.message }, { status: 404 });
+  }
   if (err instanceof ProductionCheckValidationError) {
-    const status = err.message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: err.message }, { status });
+    return NextResponse.json({ error: err.message }, { status: 400 });
   }
   // Never echo raw error messages (HubSpot/Prisma errors can embed internals).
   console.error("[production-check] route error:", err);

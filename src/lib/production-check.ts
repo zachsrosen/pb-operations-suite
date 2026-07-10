@@ -10,15 +10,17 @@
  */
 
 import { prisma } from "@/lib/db";
-import { hubspotClient } from "@/lib/hubspot";
+import { hubspotClient, resolveHubSpotOwnerContact } from "@/lib/hubspot";
 import { createTask, markTaskComplete, resolveOwnerIdByEmail } from "@/lib/hubspot-tasks";
 import { getRuntimeConfig } from "@/lib/runtime-config-db";
 import type { ProductionCheckRequest } from "@/generated/prisma/client";
 
 /** Illegal transition for the row's current status (maps to HTTP 409). */
 export class ProductionCheckStateError extends Error {}
-/** Bad/missing input, including unknown ids (maps to HTTP 400/404). */
+/** Bad/missing input (maps to HTTP 400). */
 export class ProductionCheckValidationError extends Error {}
+/** Unknown request or deal id (maps to HTTP 404). */
+export class ProductionCheckNotFoundError extends ProductionCheckValidationError {}
 
 const APPROVER_CONFIG_KEY = "production_check_approver_email";
 const APPROVER_ENV_KEYS = ["PRODUCTION_CHECK_APPROVER_EMAIL"];
@@ -49,8 +51,14 @@ async function safeCreateTask(
     console.warn(`[production-check] task writes disabled — skipped create: ${input.subject}`);
     return null;
   }
-  const { id } = await createTask(input);
-  return id;
+  try {
+    const { id } = await createTask(input);
+    return id;
+  } catch (err) {
+    // Degrade to the warning path — a HubSpot failure must not block the transition.
+    console.warn(`[production-check] failed to create task "${input.subject}":`, err);
+    return null;
+  }
 }
 
 async function safeCompleteTask(taskId: string | null | undefined): Promise<void> {
@@ -78,20 +86,39 @@ function requireText(value: string | undefined, field: string): string {
   return trimmed;
 }
 
-async function fetchDeal(dealId: string): Promise<{ dealName: string; designOwnerId: string | null }> {
+/** Retry a HubSpot call on 429 with backoff (house convention for raw client calls). */
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if ((err as { code?: number }).code !== 429) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    }
+  }
+  throw lastErr;
+}
+
+async function fetchDeal(dealId: string): Promise<{ dealName: string; designUserId: string | null }> {
   let deal: unknown;
   try {
-    deal = await hubspotClient.crm.deals.basicApi.getById(dealId, ["dealname", "design"]);
+    deal = await withRetry(() =>
+      hubspotClient.crm.deals.basicApi.getById(dealId, ["dealname", "design"]),
+    );
   } catch (err) {
     if ((err as { code?: number }).code === 404) {
-      throw new ProductionCheckValidationError(`Deal ${dealId} not found`);
+      throw new ProductionCheckNotFoundError(`Deal ${dealId} not found`);
     }
     throw err;
   }
   const props = (deal as { properties: Record<string, string | null> }).properties;
   return {
     dealName: props.dealname || `Deal ${dealId}`,
-    designOwnerId: props.design?.trim() || null,
+    // NOTE: the `design` enumeration property stores a HubSpot userId, NOT an
+    // owner id (see hubspot.ts owner-directory comment) — resolve before use.
+    designUserId: props.design?.trim() || null,
   };
 }
 
@@ -99,8 +126,11 @@ async function fetchDeal(dealId: string): Promise<{ dealName: string; designOwne
  * Resolve who should receive designer-facing tasks: the deal's Design Lead
  * (`design` owner property), else the configured default designer email.
  */
-async function resolveDesignerOwnerId(designOwnerId: string | null): Promise<string | null> {
-  if (designOwnerId) return designOwnerId;
+async function resolveDesignerOwnerId(designUserId: string | null): Promise<string | null> {
+  if (designUserId) {
+    const contact = await resolveHubSpotOwnerContact(designUserId);
+    if (contact?.id) return contact.id;
+  }
   const fallbackEmail = await getRuntimeConfig(DEFAULT_DESIGNER_CONFIG_KEY, DEFAULT_DESIGNER_ENV_KEYS);
   if (!fallbackEmail?.trim()) return null;
   return resolveOwnerIdByEmail(fallbackEmail.trim());
@@ -162,7 +192,7 @@ export async function createProductionCheck(input: {
   }
   const issueSummary = requireText(input.issueSummary, "issueSummary");
 
-  const { dealName, designOwnerId } = await fetchDeal(dealId);
+  const { dealName, designUserId } = await fetchDeal(dealId);
 
   let request = await prisma.productionCheckRequest.create({
     data: {
@@ -176,7 +206,7 @@ export async function createProductionCheck(input: {
   });
 
   let warning: ProductionCheckWarning | undefined;
-  const ownerId = await resolveDesignerOwnerId(designOwnerId);
+  const ownerId = await resolveDesignerOwnerId(designUserId);
   if (ownerId) {
     const taskId = await safeCreateTask({
       subject: `Verify production fix solution — ${dealName}`,
@@ -206,8 +236,33 @@ export async function createProductionCheck(input: {
 
 async function requireRequest(id: string): Promise<ProductionCheckRequest> {
   const row = await prisma.productionCheckRequest.findUnique({ where: { id } });
-  if (!row) throw new ProductionCheckValidationError(`Production check ${id} not found`);
+  if (!row) throw new ProductionCheckNotFoundError(`Production check ${id} not found`);
   return row;
+}
+
+type Status = ProductionCheckRequest["status"];
+
+/**
+ * Status-guarded write: the WHERE clause re-checks the expected current
+ * status, so a concurrent double-submit loses the race (count 0 → 409)
+ * instead of firing side effects twice.
+ */
+async function guardedTransition(
+  id: string,
+  fromStatuses: Status[],
+  data: Record<string, unknown>,
+): Promise<ProductionCheckRequest> {
+  const res = await prisma.productionCheckRequest.updateMany({
+    where: { id, status: fromStatuses.length === 1 ? fromStatuses[0] : { in: fromStatuses } },
+    data: data as never,
+  });
+  if (res.count === 0) {
+    const row = await requireRequest(id);
+    throw new ProductionCheckStateError(
+      `Request is ${row.status}; expected ${fromStatuses.join(" or ")}`,
+    );
+  }
+  return requireRequest(id);
 }
 
 export async function submitSolution(input: {
@@ -247,15 +302,12 @@ export async function submitSolution(input: {
   }
   if (!approvalTaskId && !tasksDisabled()) warning = "no-approval-task";
 
-  const request = await prisma.productionCheckRequest.update({
-    where: { id: row.id },
-    data: {
-      status: "PENDING_APPROVAL",
-      proposedSolution,
-      designerEmail: input.designerEmail,
-      solutionSubmittedAt: new Date(),
-      ...(approvalTaskId ? { approvalTaskId } : {}),
-    },
+  const request = await guardedTransition(row.id, ["DESIGN_REVIEW"], {
+    status: "PENDING_APPROVAL",
+    proposedSolution,
+    designerEmail: input.designerEmail,
+    solutionSubmittedAt: new Date(),
+    ...(approvalTaskId ? { approvalTaskId } : {}),
   });
 
   await logActivity({
@@ -284,8 +336,8 @@ export async function decide(input: {
 
   if (input.decision === "yes") {
     let warning: ProductionCheckWarning | undefined;
-    const { designOwnerId } = await fetchDeal(row.hubspotDealId);
-    const ownerId = await resolveDesignerOwnerId(designOwnerId);
+    const { designUserId } = await fetchDeal(row.hubspotDealId);
+    const ownerId = await resolveDesignerOwnerId(designUserId);
     let sendPlansTaskId: string | null = null;
     if (ownerId) {
       sendPlansTaskId = await safeCreateTask({
@@ -302,14 +354,11 @@ export async function decide(input: {
     }
     if (!sendPlansTaskId && !tasksDisabled()) warning = "no-send-plans-task";
 
-    const request = await prisma.productionCheckRequest.update({
-      where: { id: row.id },
-      data: {
-        status: "APPROVED",
-        decidedByEmail: input.decidedByEmail,
-        decidedAt: new Date(),
-        ...(sendPlansTaskId ? { sendPlansTaskId } : {}),
-      },
+    const request = await guardedTransition(row.id, ["PENDING_APPROVAL"], {
+      status: "APPROVED",
+      decidedByEmail: input.decidedByEmail,
+      decidedAt: new Date(),
+      ...(sendPlansTaskId ? { sendPlansTaskId } : {}),
     });
 
     await logActivity({
@@ -325,8 +374,8 @@ export async function decide(input: {
   // decision === "no" — back to design with a required reason.
   const reason = requireText(input.reason, "reason");
 
-  const { designOwnerId } = await fetchDeal(row.hubspotDealId);
-  const ownerId = await resolveDesignerOwnerId(designOwnerId);
+  const { designUserId } = await fetchDeal(row.hubspotDealId);
+  const ownerId = await resolveDesignerOwnerId(designUserId);
   let designTaskId: string | null = null;
   let warning: ProductionCheckWarning | undefined;
   if (ownerId) {
@@ -339,16 +388,14 @@ export async function decide(input: {
   }
   if (!designTaskId && !tasksDisabled()) warning = "no-designer-task";
 
-  const request = await prisma.productionCheckRequest.update({
-    where: { id: row.id },
-    data: {
-      status: "DESIGN_REVIEW",
-      designCycles: row.designCycles + 1,
-      rejectionReason: reason,
-      decidedByEmail: input.decidedByEmail,
-      decidedAt: new Date(),
-      ...(designTaskId ? { designTaskId } : {}),
-    },
+  const request = await guardedTransition(row.id, ["PENDING_APPROVAL"], {
+    status: "DESIGN_REVIEW",
+    designCycles: row.designCycles + 1,
+    rejectionReason: reason,
+    decidedByEmail: input.decidedByEmail,
+    decidedAt: new Date(),
+    approvalTaskId: null,
+    ...(designTaskId ? { designTaskId } : {}),
   });
 
   await logActivity({
@@ -372,9 +419,8 @@ export async function cancelProductionCheck(input: {
 
   await safeCompleteTask(row.status === "DESIGN_REVIEW" ? row.designTaskId : row.approvalTaskId);
 
-  const request = await prisma.productionCheckRequest.update({
-    where: { id: row.id },
-    data: { status: "CANCELLED" },
+  const request = await guardedTransition(row.id, ["DESIGN_REVIEW", "PENDING_APPROVAL"], {
+    status: "CANCELLED",
   });
 
   await logActivity({

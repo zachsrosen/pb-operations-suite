@@ -359,14 +359,18 @@ export default function ProductionIssuesPage() {
     <DashboardShell
       title="Production Issues"
       accentColor="red"
-      lastUpdated={view === "service" ? serviceLastUpdated : lastUpdated}
-      exportData={{
-        data: view === "service" ? serviceExport : exportRows,
-        filename:
-          view === "service"
-            ? "service-production-issues.csv"
-            : "production-issues.csv",
-      }}
+      lastUpdated={view === "service" ? serviceLastUpdated : view === "checks" ? undefined : lastUpdated}
+      exportData={
+        view === "checks"
+          ? undefined
+          : {
+              data: view === "service" ? serviceExport : exportRows,
+              filename:
+                view === "service"
+                  ? "service-production-issues.csv"
+                  : "production-issues.csv",
+            }
+      }
       headerRight={viewToggle}
     >
       {view === "checks" ? (

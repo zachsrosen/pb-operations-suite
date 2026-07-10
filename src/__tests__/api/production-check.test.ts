@@ -20,9 +20,11 @@ const mockLib = {
 jest.mock("@/lib/production-check", () => {
   class ProductionCheckStateError extends Error {}
   class ProductionCheckValidationError extends Error {}
+  class ProductionCheckNotFoundError extends ProductionCheckValidationError {}
   return {
     ProductionCheckStateError,
     ProductionCheckValidationError,
+    ProductionCheckNotFoundError,
     createProductionCheck: (...args: unknown[]) => mockLib.createProductionCheck(...args),
     submitSolution: (...args: unknown[]) => mockLib.submitSolution(...args),
     decide: (...args: unknown[]) => mockLib.decide(...args),

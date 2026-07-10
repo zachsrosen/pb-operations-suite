@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
 import { getHubSpotDealUrl } from "@/lib/external-links";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Production-check ("Photon Advantage" production-guarantee fix) workflow panel.
@@ -52,14 +53,12 @@ function ageLabel(iso: string): string {
   return `${days}d ago`;
 }
 
-const QUERY_KEY = ["service", "production-check"];
-
 export default function ProductionCheckPanel() {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: QUERY_KEY,
+    queryKey: queryKeys.productionCheck.list(),
     queryFn: async () => {
       const res = await fetch("/api/service/production-check");
       if (!res.ok) throw new Error(`Failed to load production checks (${res.status})`);
@@ -73,11 +72,17 @@ export default function ProductionCheckPanel() {
   async function post(path: string, body?: Record<string, unknown>): Promise<boolean> {
     setBusy(true);
     try {
-      const res = await fetch(path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body ?? {}),
-      });
+      let res: Response;
+      try {
+        res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body ?? {}),
+        });
+      } catch {
+        addToast({ type: "error", title: "Production check", message: "Network error — request not saved. Try again." });
+        return false;
+      }
       if (!res.ok) {
         const err = (await res.json().catch(() => null)) as { error?: string } | null;
         addToast({ type: "error", title: "Production check", message: err?.error ?? `Request failed (${res.status})` });
@@ -91,7 +96,7 @@ export default function ProductionCheckPanel() {
           message: `Reason: ${payload.warning}. Check the design lead / approver configuration.`,
         });
       }
-      await queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.productionCheck.root });
       return true;
     } finally {
       setBusy(false);
