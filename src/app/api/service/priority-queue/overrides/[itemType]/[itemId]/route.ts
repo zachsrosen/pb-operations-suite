@@ -4,7 +4,7 @@ import { getUserByEmail, prisma } from "@/lib/db";
 import { appCache } from "@/lib/cache";
 import { QUEUE_CACHE_KEY } from "@/lib/service-priority-cache";
 
-const ALLOWED_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
+const ALLOWED_ROLES = ["ADMIN"];
 
 export async function DELETE(
   request: NextRequest,
