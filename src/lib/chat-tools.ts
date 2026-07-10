@@ -1222,8 +1222,13 @@ export function createReadOnlyChatTools() {
       "Examples: {filters:[{field:'da_status',op:'equals',value:'Pending Sales Changes'}]," +
       "groupBy:'owner'}; {filters:[{field:'sales_closed',op:'gte',value:'2026-01-01'}," +
       "{field:'sales_closed',op:'lte',value:'2026-12-31'}],groupBy:'stage'," +
-      "includeInactive:true}. If a filter value matches nothing, the tool returns the " +
-      "available values for that field so you can pick the right one — never guess or fabricate.",
+      "includeInactive:true}. PIPELINE: defaults to the Project pipeline; pass " +
+      "pipeline:'sales'|'dnr'|'roofing'|'service' to query those instead (non-project " +
+      "pipelines support only the common fields: stage, location, owner, amount, " +
+      "sales_closed, project_number). TWO-LEVEL grouping: pass groupBy AND groupBy2 for a " +
+      "matrix (e.g. groupBy:'stage', groupBy2:'location' → byGroup2[stage][location]). " +
+      "If a filter value matches nothing, the tool returns the available values for that " +
+      "field so you can pick the right one — never guess or fabricate.",
     inputSchema: z.object({
       filters: z
         .array(
@@ -1242,15 +1247,29 @@ export function createReadOnlyChatTools() {
         .string()
         .optional()
         .describe("Optional field to group the rollup by, e.g. 'owner', 'design_lead', 'location', 'stage'."),
+      groupBy2: z
+        .string()
+        .optional()
+        .describe("Optional SECOND group field for a two-level breakdown (e.g. groupBy 'stage' + groupBy2 'location' = stage × location). Requires groupBy."),
       includeInactive: z
         .boolean()
         .optional()
         .describe("Include terminal/cancelled deals too (default false = active only)."),
+      pipeline: z
+        .enum(["project", "sales", "dnr", "roofing", "service"])
+        .optional()
+        .describe("Which HubSpot pipeline to query (default 'project'). Non-project pipelines support only the common fields: stage, location, owner, amount, sales_closed, project_number."),
     }),
     run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
       const { statusLabel } = await import("@/lib/deal-status-labels");
       const { normalizeLocation } = await import("@/lib/locations");
+
+      const pipeline = input.pipeline ?? "project";
+      // Fields available outside the Project pipeline (others are project-only).
+      const CROSS_PIPELINE_FIELDS = new Set([
+        "stage", "location", "owner", "amount", "sales_closed", "project_number",
+      ]);
 
       type P = Record<string, unknown>;
       const FIELDS: Record<
@@ -1310,8 +1329,34 @@ export function createReadOnlyChatTools() {
       if (input.groupBy && !FIELDS[input.groupBy]) {
         return JSON.stringify({ error: `Unknown groupBy "${input.groupBy}"`, knownFields });
       }
+      if (input.groupBy2 && !FIELDS[input.groupBy2]) {
+        return JSON.stringify({ error: `Unknown groupBy2 "${input.groupBy2}"`, knownFields });
+      }
+      if (input.groupBy2 && !input.groupBy) {
+        return JSON.stringify({ error: "groupBy2 requires groupBy (a primary group field)." });
+      }
 
-      const projects = (await fetchAllProjects({ activeOnly: !input.includeInactive })) as unknown as P[];
+      // Non-project pipelines only carry the common fields.
+      if (pipeline !== "project") {
+        const used = [
+          ...filters.map((f) => f.field),
+          ...(input.groupBy ? [input.groupBy] : []),
+          ...(input.groupBy2 ? [input.groupBy2] : []),
+        ];
+        const projectOnly = used.filter((f) => !CROSS_PIPELINE_FIELDS.has(f));
+        if (projectOnly.length > 0) {
+          return JSON.stringify({
+            error: `On the '${pipeline}' pipeline these fields aren't available: ${[...new Set(projectOnly)].join(", ")}. Cross-pipeline fields: ${[...CROSS_PIPELINE_FIELDS].join(", ")}.`,
+          });
+        }
+      }
+
+      const projects =
+        pipeline === "project"
+          ? ((await fetchAllProjects({ activeOnly: !input.includeInactive })) as unknown as P[])
+          : ((await (
+              await import("@/lib/deals-pipeline")
+            ).fetchPipelineDeals(pipeline, { activeOnly: !input.includeInactive })) as unknown as P[]);
 
       const matchOne = (p: P, f: { field: string; op: string; value?: unknown }): boolean => {
         const spec = FIELDS[f.field];
@@ -1390,17 +1435,39 @@ export function createReadOnlyChatTools() {
       let totalRevenue = 0;
       for (const p of matched) totalRevenue += Number(p.amount) || 0;
 
-      let byGroup: Record<string, { count: number; revenue: number }> | undefined;
+      type Bucket = { count: number; revenue: number };
+      const sortByRevenue = <T extends Record<string, Bucket>>(g: T) =>
+        Object.fromEntries(Object.entries(g).sort((a, b) => b[1].revenue - a[1].revenue));
+
+      let byGroup: Record<string, Bucket> | undefined;
+      let byGroup2: Record<string, Record<string, Bucket>> | undefined;
       if (input.groupBy) {
-        const spec = FIELDS[input.groupBy];
-        const g: Record<string, { count: number; revenue: number }> = {};
+        const spec1 = FIELDS[input.groupBy];
+        const g: Record<string, Bucket> = {};
         for (const p of matched) {
-          const key = displayOf(spec, spec.get(p)) || "(none)";
+          const key = displayOf(spec1, spec1.get(p)) || "(none)";
           g[key] = g[key] ?? { count: 0, revenue: 0 };
           g[key].count++;
           g[key].revenue = Math.round(g[key].revenue + (Number(p.amount) || 0));
         }
-        byGroup = Object.fromEntries(Object.entries(g).sort((a, b) => b[1].revenue - a[1].revenue));
+        byGroup = sortByRevenue(g);
+
+        // Two-level breakdown: primary → secondary → {count, revenue}.
+        if (input.groupBy2) {
+          const spec2 = FIELDS[input.groupBy2];
+          const nested: Record<string, Record<string, Bucket>> = {};
+          for (const p of matched) {
+            const k1 = displayOf(spec1, spec1.get(p)) || "(none)";
+            const k2 = displayOf(spec2, spec2.get(p)) || "(none)";
+            nested[k1] = nested[k1] ?? {};
+            nested[k1][k2] = nested[k1][k2] ?? { count: 0, revenue: 0 };
+            nested[k1][k2].count++;
+            nested[k1][k2].revenue = Math.round(nested[k1][k2].revenue + (Number(p.amount) || 0));
+          }
+          byGroup2 = Object.fromEntries(
+            Object.keys(byGroup).map((k1) => [k1, sortByRevenue(nested[k1] ?? {})])
+          );
+        }
       }
 
       const CAP = 60;
@@ -1423,12 +1490,15 @@ export function createReadOnlyChatTools() {
         }));
 
       return JSON.stringify({
-        scope: input.includeInactive ? "all deals (incl. terminal)" : "active project deals",
+        pipeline,
+        scope: input.includeInactive ? "all deals (incl. terminal)" : "active deals",
         filters,
         groupBy: input.groupBy ?? null,
+        groupBy2: input.groupBy2 ?? null,
         total: matched.length,
         totalRevenue: Math.round(totalRevenue),
         ...(byGroup ? { byGroup } : {}),
+        ...(byGroup2 ? { byGroup2 } : {}),
         deals,
         ...(matched.length > CAP
           ? { note: `Showing top ${CAP} of ${matched.length} deals by revenue; total + byGroup cover ALL of them.` }
