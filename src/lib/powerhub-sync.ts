@@ -779,10 +779,13 @@ export async function pollAlerts(): Promise<AlertPollResult> {
         result.alertsCreated++;
       } else {
         // Backfill richer fields onto pre-existing rows so a one-time
-        // upgrade doesn't require a separate migration script.
+        // upgrade doesn't require a separate migration script. Severity is
+        // included so rows stored before a severity mapping existed (e.g.
+        // RMA coerced to INFORMATIONAL) self-correct on the next poll.
         await prisma.powerhubAlert.update({
           where: { id: existing.id },
           data: {
+            severity: alert.severity,
             teslaAlertId: alert.teslaAlertId,
             alias: alert.alias,
             ecuPart: alert.ecuPart,
