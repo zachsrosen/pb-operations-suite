@@ -5,7 +5,10 @@ import SiteDetail from "@/components/powerhub/SiteDetail";
 const TICKET_URL =
   "https://ion.tesla.com/energy/concern/update-concern?ref=ABC-123&site=STE456";
 
-function mockSiteResponse(alerts: Array<Record<string, unknown>>) {
+function mockSiteResponse(
+  alerts: Array<Record<string, unknown>>,
+  property: Record<string, unknown> | null = null
+) {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
     json: async () => ({
@@ -23,7 +26,7 @@ function mockSiteResponse(alerts: Array<Record<string, unknown>>) {
         totalBatteries: 1,
         totalInverters: 1,
         telemetrySnapshot: null,
-        property: null,
+        property,
         alerts,
       },
       deal: null,
@@ -83,5 +86,47 @@ describe("SiteDetail Tesla ticket link", () => {
     expect(
       screen.queryByRole("link", { name: /tesla ticket/i })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("SiteDetail HubSpot ticket links", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const baseProperty = {
+    id: "prop-1",
+    fullAddress: "123 Main St, Denver, CO",
+    openTicketsCount: 1,
+    hasBattery: true,
+    hasEvCharger: false,
+    associatedDealsCount: 1,
+    pbLocation: "DTC",
+    contactLinks: [],
+  };
+
+  it("links the property's HubSpot tickets when present", async () => {
+    mockSiteResponse([], {
+      ...baseProperty,
+      ticketLinks: [{ ticketId: "5551234" }],
+    });
+
+    renderSiteDetail();
+
+    const link = await screen.findByRole("link", { name: /5551234/ });
+    expect(link).toHaveAttribute(
+      "href",
+      expect.stringContaining("/record/0-5/5551234")
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("renders no ticket section when the property has no ticket links", async () => {
+    mockSiteResponse([], { ...baseProperty, ticketLinks: [] });
+
+    renderSiteDetail();
+
+    await screen.findAllByText(/123 Main St/);
+    expect(screen.queryByText(/hubspot tickets/i)).not.toBeInTheDocument();
   });
 });

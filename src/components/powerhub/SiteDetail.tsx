@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import { getHubSpotTicketUrl } from "@/lib/external-links";
 
 interface SiteDetailProps {
   siteId: string;
@@ -181,6 +182,26 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
               value={property.pbLocation || "—"}
             />
           </div>
+
+          {/* HubSpot tickets associated with the property */}
+          {property.ticketLinks?.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-muted mb-1">HubSpot Tickets</div>
+              <div className="flex flex-wrap gap-2">
+                {property.ticketLinks.map((link: { ticketId: string }) => (
+                  <a
+                    key={link.ticketId}
+                    href={getHubSpotTicketUrl(link.ticketId)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-2 py-1 rounded bg-surface text-xs text-cyan-500 hover:underline"
+                  >
+                    Ticket {link.ticketId} ↗
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Property contacts */}
           {property.contactLinks?.length > 0 && (

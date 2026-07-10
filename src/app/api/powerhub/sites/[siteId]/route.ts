@@ -47,6 +47,13 @@ export async function GET(
             },
             take: 5,
           },
+          ticketLinks: {
+            select: {
+              ticketId: true,
+            },
+            orderBy: { associatedAt: "desc" },
+            take: 10,
+          },
         },
       },
     },
