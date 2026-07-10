@@ -6,7 +6,7 @@ import { QUEUE_CACHE_KEY } from "@/lib/service-priority-cache";
 
 const VALID_PRIORITIES = ["critical", "high", "medium", "low"];
 const VALID_TYPES = ["deal", "ticket"];
-const ALLOWED_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
+const ALLOWED_ROLES = ["ADMIN"];
 
 export async function POST(request: NextRequest) {
   try {
