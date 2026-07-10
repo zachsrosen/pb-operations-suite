@@ -1355,7 +1355,7 @@ export function createReadOnlyChatTools() {
         pipeline === "project"
           ? ((await fetchAllProjects({ activeOnly: !input.includeInactive })) as unknown as P[])
           : ((await (
-              await import("@/lib/deals-pipeline")
+              await import("@/lib/pipeline-deals-fetch")
             ).fetchPipelineDeals(pipeline, { activeOnly: !input.includeInactive })) as unknown as P[]);
 
       const matchOne = (p: P, f: { field: string; op: string; value?: unknown }): boolean => {
