@@ -1507,6 +1507,200 @@ export function createReadOnlyChatTools() {
     },
   });
 
+  const queryJobs = betaZodTool({
+    name: "query_jobs",
+    description:
+      "Flexible ZUPER FIELD-JOB query — the query_projects equivalent for field work " +
+      "(site surveys, installs/construction, inspections, service visits, D&R). Over the " +
+      "nightly-synced job cache. Filters (all ANDed) + optional groupBy/groupBy2; returns " +
+      "counts (jobs have no dollar amount, so no revenue). Fields: category (Site Survey, " +
+      "Inspection, Construction / Construction - Solar|Battery|EV, Service Visit, Service " +
+      "Revisit, Additional Visit, Detach, Reset, …), status (New, Ready To Schedule, " +
+      "Scheduled, Started, Construction Complete, Passed, Failed, Completed, …), crew " +
+      "(assigned user names — a job can have several), team, scheduled (true/false = has a " +
+      "scheduled date), scheduled_date (YYYY-MM-DD, use gte/lte/gt/lt), state, city, " +
+      "has_deal (true/false = linked to a HubSpot deal), priority, project. Ops: equals, " +
+      "in (value=array), not, contains, present, blank (+ date ops for scheduled_date). " +
+      "groupBy any field → per-group count; groupBy2 for a matrix. Examples: 'how many " +
+      "installs are unscheduled' → filters:[{field:'category',op:'contains',value:" +
+      "'Construction'},{field:'scheduled',op:'equals',value:false}]; 'inspections ready to " +
+      "schedule by state' → filters:[{field:'category',op:'equals',value:'Inspection'}," +
+      "{field:'status',op:'contains',value:'Ready to Schedule'}], groupBy:'state'. " +
+      "CAVEAT: on Construction jobs the assigned crew is the DIRECTOR (who reassigns), NOT " +
+      "the physical crew — say so when grouping construction by crew. Data is as of the " +
+      "last nightly sync (say 'as of last sync' for scheduling questions).",
+    inputSchema: z.object({
+      filters: z
+        .array(
+          z.object({
+            field: z.string().describe("A job field (see the tool description)."),
+            op: z.enum(["equals", "in", "not", "contains", "gt", "lt", "gte", "lte", "present", "blank"]),
+            value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).optional(),
+          })
+        )
+        .optional(),
+      groupBy: z.string().optional().describe("Field to group counts by (e.g. 'category', 'status', 'crew', 'state')."),
+      groupBy2: z.string().optional().describe("Optional second group field for a matrix. Requires groupBy."),
+    }),
+    run: async (input) => {
+      const { prisma } = await import("@/lib/db");
+      if (!prisma) return JSON.stringify({ error: "database unavailable" });
+
+      type Row = {
+        jobUid: string; jobTitle: string; jobCategory: string; jobStatus: string;
+        jobPriority: string | null; scheduledStart: Date | null; assignedUsers: unknown;
+        assignedTeam: string | null; customerAddress: unknown; hubspotDealId: string | null;
+        projectName: string | null; lastSyncedAt: Date;
+      };
+      const crewNames = (au: unknown): string[] =>
+        Array.isArray(au)
+          ? (au as { user_name?: string }[]).map((u) => (u?.user_name || "").trim()).filter(Boolean)
+          : [];
+      const addrPart = (addr: unknown, key: "state" | "city"): string =>
+        addr && typeof addr === "object" ? String((addr as Record<string, unknown>)[key] ?? "").trim() : "";
+      const ymd = (d: Date | null): string => (d ? d.toISOString().split("T")[0] : "");
+
+      // kind "multi" = crew (array of names); others are scalar.
+      const FIELDS: Record<string, { get: (r: Row) => unknown; kind: "string" | "bool" | "date" | "multi" }> = {
+        category: { get: (r) => r.jobCategory, kind: "string" },
+        status: { get: (r) => r.jobStatus, kind: "string" },
+        crew: { get: (r) => crewNames(r.assignedUsers), kind: "multi" },
+        team: { get: (r) => r.assignedTeam, kind: "string" },
+        scheduled: { get: (r) => Boolean(r.scheduledStart), kind: "bool" },
+        scheduled_date: { get: (r) => ymd(r.scheduledStart), kind: "date" },
+        state: { get: (r) => addrPart(r.customerAddress, "state"), kind: "string" },
+        city: { get: (r) => addrPart(r.customerAddress, "city"), kind: "string" },
+        has_deal: { get: (r) => Boolean(r.hubspotDealId), kind: "bool" },
+        priority: { get: (r) => r.jobPriority, kind: "string" },
+        project: { get: (r) => r.projectName, kind: "string" },
+      };
+      const knownFields = Object.keys(FIELDS);
+
+      const filters = input.filters ?? [];
+      for (const f of filters) if (!FIELDS[f.field]) return JSON.stringify({ error: `Unknown field "${f.field}"`, knownFields });
+      if (input.groupBy && !FIELDS[input.groupBy]) return JSON.stringify({ error: `Unknown groupBy "${input.groupBy}"`, knownFields });
+      if (input.groupBy2 && !FIELDS[input.groupBy2]) return JSON.stringify({ error: `Unknown groupBy2 "${input.groupBy2}"`, knownFields });
+      if (input.groupBy2 && !input.groupBy) return JSON.stringify({ error: "groupBy2 requires groupBy." });
+
+      const rows = (await prisma.zuperJobCache.findMany({
+        select: {
+          jobUid: true, jobTitle: true, jobCategory: true, jobStatus: true, jobPriority: true,
+          scheduledStart: true, assignedUsers: true, assignedTeam: true, customerAddress: true,
+          hubspotDealId: true, projectName: true, lastSyncedAt: true,
+        },
+      })) as unknown as Row[];
+
+      const matchOne = (r: Row, f: { field: string; op: string; value?: unknown }): boolean => {
+        const spec = FIELDS[f.field];
+        const raw = spec.get(r);
+        if (spec.kind === "multi") {
+          const names = (raw as string[]).map((n) => n.toLowerCase());
+          if (f.op === "present") return names.length > 0;
+          if (f.op === "blank") return names.length === 0;
+          const v = typeof f.value === "string" ? f.value.toLowerCase() : "";
+          switch (f.op) {
+            case "equals": return names.includes(v);
+            case "not": return !names.includes(v);
+            case "contains": return names.some((n) => n.includes(v));
+            case "in": return Array.isArray(f.value) ? f.value.some((x) => names.includes(String(x).toLowerCase())) : false;
+            default: return false;
+          }
+        }
+        if (f.op === "present") return raw != null && String(raw).trim() !== "";
+        if (f.op === "blank") return raw == null || String(raw).trim() === "";
+        if (spec.kind === "bool") {
+          const want = f.value === true || String(f.value).toLowerCase() === "true";
+          return Boolean(raw) === want;
+        }
+        if (spec.kind === "date") {
+          if (!raw) return false;
+          const d = Date.parse(String(raw)), v = Date.parse(String(f.value));
+          if (Number.isNaN(d) || Number.isNaN(v)) return false;
+          switch (f.op) {
+            case "gt": return d > v; case "lt": return d < v; case "gte": return d >= v; case "lte": return d <= v;
+            case "equals": return String(raw).slice(0, 10) === String(f.value).slice(0, 10);
+            case "not": return String(raw).slice(0, 10) !== String(f.value).slice(0, 10);
+            default: return false;
+          }
+        }
+        const cur = raw == null ? "" : String(raw).toLowerCase();
+        switch (f.op) {
+          case "equals": return typeof f.value === "string" ? cur === f.value.toLowerCase() : false;
+          case "not": return typeof f.value === "string" ? cur !== f.value.toLowerCase() : true;
+          case "contains": return typeof f.value === "string" ? cur.includes(f.value.toLowerCase()) : false;
+          case "in": return Array.isArray(f.value) ? f.value.some((x) => cur === String(x).toLowerCase()) : false;
+          default: return false;
+        }
+      };
+
+      const matched = rows.filter((r) => filters.every((f) => matchOne(r, f)));
+
+      // Group keys for a row (crew yields several keys; one job → several buckets).
+      const keysFor = (r: Row, field: string): string[] => {
+        const spec = FIELDS[field];
+        if (spec.kind === "multi") {
+          const names = spec.get(r) as string[];
+          return names.length ? names : ["(unassigned)"];
+        }
+        if (spec.kind === "bool") return [spec.get(r) ? "yes" : "no"];
+        const v = String(spec.get(r) ?? "").trim();
+        return [v || "(none)"];
+      };
+      const sortCounts = (o: Record<string, number>) =>
+        Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]));
+
+      let byGroup: Record<string, number> | undefined;
+      let byGroup2: Record<string, Record<string, number>> | undefined;
+      let crewMultiCounted = false;
+      if (input.groupBy) {
+        const g: Record<string, number> = {};
+        for (const r of matched) for (const k of keysFor(r, input.groupBy)) g[k] = (g[k] ?? 0) + 1;
+        byGroup = sortCounts(g);
+        if (FIELDS[input.groupBy].kind === "multi") crewMultiCounted = true;
+        if (input.groupBy2) {
+          const nested: Record<string, Record<string, number>> = {};
+          for (const r of matched)
+            for (const k1 of keysFor(r, input.groupBy))
+              for (const k2 of keysFor(r, input.groupBy2)) {
+                nested[k1] = nested[k1] ?? {};
+                nested[k1][k2] = (nested[k1][k2] ?? 0) + 1;
+              }
+          if (FIELDS[input.groupBy2].kind === "multi") crewMultiCounted = true;
+          byGroup2 = Object.fromEntries(Object.keys(byGroup).map((k1) => [k1, sortCounts(nested[k1] ?? {})]));
+        }
+      }
+
+      const CAP = 60;
+      const jobs = matched.slice(0, CAP).map((r) => ({
+        jobUid: r.jobUid,
+        title: r.jobTitle,
+        category: r.jobCategory,
+        status: r.jobStatus,
+        scheduled: r.scheduledStart ? r.scheduledStart.toISOString().split("T")[0] : null,
+        crew: crewNames(r.assignedUsers),
+        project: r.projectName ?? "",
+        dealId: r.hubspotDealId ?? "",
+      }));
+      const dataAsOf = rows.reduce<Date | null>((m, r) => (!m || r.lastSyncedAt > m ? r.lastSyncedAt : m), null);
+
+      return JSON.stringify({
+        source: "Zuper job cache (field jobs)",
+        dataAsOf: dataAsOf ? dataAsOf.toISOString() : null,
+        filters,
+        groupBy: input.groupBy ?? null,
+        groupBy2: input.groupBy2 ?? null,
+        total: matched.length,
+        ...(byGroup ? { byGroup } : {}),
+        ...(byGroup2 ? { byGroup2 } : {}),
+        jobs,
+        ...(crewMultiCounted
+          ? { note: "Grouped by crew: a job with multiple assignees counts under each, so group counts can exceed the total. On Construction jobs the assignee is the director, not the physical crew." }
+          : {}),
+        ...(matched.length > CAP ? { listNote: `Showing ${CAP} of ${matched.length} jobs; total + byGroup cover ALL of them.` } : {}),
+      });
+    },
+  });
+
   const getPePayments = betaZodTool({
     name: "get_pe_payments",
     description:
@@ -1808,6 +2002,7 @@ export function createReadOnlyChatTools() {
     countDealsByStage,
     countDealsByStatus,
     queryProjects,
+    queryJobs,
     countMilestoneInDateRange,
     getPePayments,
     getRevenueGoals,
