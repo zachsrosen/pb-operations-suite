@@ -319,6 +319,7 @@ function SeverityBadge({ severity }: { severity: string }) {
   const colors: Record<string, string> = {
     CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
     PERFORMANCE: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+    RMA: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
     INFORMATIONAL: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   };
   return (

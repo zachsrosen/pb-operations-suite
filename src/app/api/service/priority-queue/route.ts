@@ -194,8 +194,8 @@ export async function GET(request: NextRequest) {
         // Joined via PropertyDealLink/PropertyTicketLink → HubSpotPropertyCache →
         // PowerhubSite → PowerhubAlert. Falls back to nulls/0 on any DB error
         // so the queue still renders.
-        let powerhubByDealId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null }>();
-        let powerhubByTicketId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL" | null }>();
+        let powerhubByDealId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null }>();
+        let powerhubByTicketId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null }>();
         try {
           const result = await fetchPowerhubItemSummaries({
             dealIds: deals.map(d => d.id),

@@ -320,7 +320,11 @@ export default function FleetTable({
               const perfAlerts = site.alerts.filter(
                 (a) => a.severity === "PERFORMANCE"
               ).length;
-              const otherAlerts = site.alerts.length - criticalAlerts - perfAlerts;
+              const rmaAlerts = site.alerts.filter(
+                (a) => a.severity === "RMA"
+              ).length;
+              const otherAlerts =
+                site.alerts.length - criticalAlerts - perfAlerts - rmaAlerts;
 
               // Determine if the site name is a real name or just the UUID
               const isUuidName = site.siteName === site.siteId;
@@ -414,6 +418,11 @@ export default function FleetTable({
                       {perfAlerts > 0 && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 mr-1">
                           {perfAlerts}
+                        </span>
+                      )}
+                      {rmaAlerts > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 mr-1">
+                          {rmaAlerts} RMA
                         </span>
                       )}
                       {otherAlerts > 0 && (

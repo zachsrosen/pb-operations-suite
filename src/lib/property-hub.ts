@@ -365,7 +365,7 @@ export interface MonitoringSitePayload {
   activeAlerts: Array<{
     id: string;
     alertName: string;
-    severity: "INFORMATIONAL" | "PERFORMANCE" | "CRITICAL";
+    severity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL";
     reportedAt: Date;
     /** Tesla-provided device identifiers (only when alert isn't site-level). */
     ecuSerial: string | null;

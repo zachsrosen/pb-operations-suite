@@ -4397,6 +4397,7 @@ enum PowerhubSiteStatus {
 enum PowerhubAlertSeverity {
   INFORMATIONAL
   PERFORMANCE
+  RMA
   CRITICAL
 }
 
