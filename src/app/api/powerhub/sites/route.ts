@@ -39,37 +39,62 @@ export async function GET(request: Request) {
     },
   });
 
-  // For linked sites with empty addresses, backfill from the HubSpot deal cache.
-  // Tesla API never returns addresses; they come from deal linkage.
-  const linkedDealIds = sites
-    .filter((s) => s.dealId && !s.address)
-    .map((s) => s.dealId as string);
+  // Fetch the deal cache for all linked sites: customer/deal names for the
+  // table, plus address backfill (Tesla API never returns addresses; they
+  // come from deal linkage).
+  const linkedDealIds = [
+    ...new Set(sites.filter((s) => s.dealId).map((s) => s.dealId as string)),
+  ];
 
-  let dealAddressMap: Record<string, { address: string; city: string | null; state: string | null; zipCode: string | null }> = {};
+  const dealMap: Record<
+    string,
+    {
+      dealName: string | null;
+      customerName: string | null;
+      address: string | null;
+      city: string | null;
+      state: string | null;
+    }
+  > = {};
   if (linkedDealIds.length > 0) {
     const dealCaches = await prisma.hubSpotProjectCache.findMany({
-      where: { dealId: { in: linkedDealIds }, address: { not: null } },
-      select: { dealId: true, address: true, city: true, state: true, zipCode: true },
+      where: { dealId: { in: linkedDealIds } },
+      select: {
+        dealId: true,
+        dealName: true,
+        customerName: true,
+        address: true,
+        city: true,
+        state: true,
+      },
     });
     for (const d of dealCaches) {
-      if (d.address) {
-        dealAddressMap[d.dealId] = { address: d.address, city: d.city, state: d.state, zipCode: d.zipCode };
-      }
+      dealMap[d.dealId] = {
+        dealName: d.dealName,
+        customerName: d.customerName,
+        address: d.address,
+        city: d.city,
+        state: d.state,
+      };
     }
   }
 
-  // Enrich sites with deal address when site address is empty
+  // Attach customer/deal names; backfill address when the site has none
   const enrichedSites = sites.map((s) => {
-    if (!s.address && s.dealId && dealAddressMap[s.dealId]) {
-      const deal = dealAddressMap[s.dealId];
-      return {
-        ...s,
-        address: deal.address || "",
-        city: deal.city || "",
-        state: deal.state || "",
-      };
-    }
-    return s;
+    const deal = s.dealId ? dealMap[s.dealId] : undefined;
+    const useDealAddress = !s.address && deal?.address;
+    return {
+      ...s,
+      customerName: deal?.customerName ?? null,
+      dealName: deal?.dealName ?? null,
+      ...(useDealAddress
+        ? {
+            address: deal.address || "",
+            city: deal.city || "",
+            state: deal.state || "",
+          }
+        : {}),
+    };
   });
 
   // Sort: sites with alerts first, then sites with telemetry, then rest

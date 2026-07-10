@@ -2,6 +2,7 @@
 
 import { Fragment, useState, useMemo } from "react";
 import SiteDetail from "./SiteDetail";
+import { getHubSpotDealUrl } from "@/lib/external-links";
 
 interface PowerhubSiteRow {
   siteId: string;
@@ -13,6 +14,8 @@ interface PowerhubSiteRow {
   linkMethod: string;
   linkConfidence: string;
   dealId: string | null;
+  customerName?: string | null;
+  dealName?: string | null;
   totalGateways: number;
   totalBatteries: number;
   totalInverters: number;
@@ -53,7 +56,9 @@ export default function FleetTable({
         s.siteName?.toLowerCase().includes(q) ||
         s.siteId.toLowerCase().includes(q) ||
         s.address?.toLowerCase().includes(q) ||
-        s.city?.toLowerCase().includes(q)
+        s.city?.toLowerCase().includes(q) ||
+        s.customerName?.toLowerCase().includes(q) ||
+        s.dealName?.toLowerCase().includes(q)
     );
   }, [sites, search]);
 
@@ -125,6 +130,7 @@ export default function FleetTable({
           <thead>
             <tr className="border-b border-t-border text-left text-muted">
               <th className="pb-3 pr-4 font-medium">Site</th>
+              <th className="pb-3 pr-4 font-medium">Customer</th>
               <th className="pb-3 pr-4 font-medium">Devices</th>
               <th className="pb-3 pr-4 font-medium">Solar</th>
               <th className="pb-3 pr-4 font-medium">Battery</th>
@@ -189,6 +195,22 @@ export default function FleetTable({
                         </div>
                       )}
                     </td>
+                    <td className="py-3 pr-4">
+                      {site.dealId && (site.customerName || site.dealName) ? (
+                        <a
+                          href={getHubSpotDealUrl(site.dealId)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-cyan-500 hover:underline truncate inline-block max-w-[180px] align-middle"
+                          title={site.dealName || site.customerName || undefined}
+                        >
+                          {site.customerName || site.dealName}
+                        </a>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className="py-3 pr-4 text-xs text-muted">
                       {deviceSummary}
                     </td>
@@ -238,7 +260,7 @@ export default function FleetTable({
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={7} className="bg-surface-2 p-4">
+                      <td colSpan={8} className="bg-surface-2 p-4">
                         <SiteDetail siteId={site.siteId} />
                       </td>
                     </tr>
@@ -249,7 +271,7 @@ export default function FleetTable({
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="py-8 text-center text-muted"
                 >
                   {search

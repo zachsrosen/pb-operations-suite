@@ -226,6 +226,16 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
                     ? `Device: ${alert.deviceId?.slice(0, 8)}...`
                     : "Site-level"}
                 </span>
+                {alert.supportAutoTicketUrl && (
+                  <a
+                    href={alert.supportAutoTicketUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-2 py-0.5 rounded bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 shrink-0 whitespace-nowrap"
+                  >
+                    Tesla Ticket ↗
+                  </a>
+                )}
               </div>
             ))}
           </div>
