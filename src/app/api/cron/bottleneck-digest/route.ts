@@ -3,6 +3,7 @@ import { runBottleneckDigest } from "@/lib/bottleneck-digest";
 import {
   runTeamDigest,
   runPersonalWorklists,
+  runManagerWorklists,
   TEAM_DIGEST_LABELS,
   type TeamDigestKey,
 } from "@/lib/bottleneck-team-digest";
@@ -72,7 +73,10 @@ export async function GET(request: NextRequest) {
     const personal = preview
       ? { results: [], unmatched: [], skipped: "preview" }
       : await runPersonalWorklists({ mode: "live" });
-    return NextResponse.json({ daily, personal });
+    const managers = preview
+      ? { results: [], skipped: "preview" }
+      : await runManagerWorklists({ mode: "live" });
+    return NextResponse.json({ daily, personal, managers });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     console.error("[bottleneck-digest] failed:", message);
