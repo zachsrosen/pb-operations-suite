@@ -926,3 +926,149 @@ export async function runPersonalWorklists(opts: {
 
   return { results, unmatched };
 }
+
+// ---------------------------------------------------------------------------
+// Manager worklists — cross-team ROLLUPS for a manager (not the per-person
+// pivot). Config: SystemConfig `bottleneck_manager_worklists` = JSON array of
+// { email, view }. Views: "da_pending_sales_changes" = every deal with
+// layout_status "Pending Sales Changes", grouped by sales rep (owner).
+// ---------------------------------------------------------------------------
+
+interface ManagerWorklistConfig { email: string; view: string }
+
+function firstNameFromEmail(email: string): string {
+  const local = (email.split("@")[0] || email).split(/[._]/)[0] || email;
+  return local.charAt(0).toUpperCase() + local.slice(1);
+}
+
+type PscProject = { id: number | string; name: string; amount: number; pbLocation: string; dealOwner: string; layoutStatus: string | null };
+
+/** All "Pending Sales Changes" DAs, grouped by rep, with revenue + deal links. */
+function renderDaPendingSalesChanges(
+  projects: PscProject[],
+  recipientName: string,
+  nowMs: number
+): { text: string; total: number } {
+  const psc = projects.filter((p) => (p.layoutStatus || "") === "Pending Sales Changes");
+  const day = new Date(nowMs).toLocaleDateString("en-US", {
+    timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
+  });
+  const totalRev = psc.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+  const byRep = new Map<string, typeof psc>();
+  for (const p of psc) {
+    const rep = (p.dealOwner || "").trim() || "Unassigned";
+    if (!byRep.has(rep)) byRep.set(rep, []);
+    byRep.get(rep)!.push(p);
+  }
+  const reps = [...byRep.entries()]
+    .map(([rep, ds]) => ({ rep, ds, rev: ds.reduce((s, p) => s + (Number(p.amount) || 0), 0) }))
+    .sort((a, b) => b.rev - a.rev);
+
+  const out: string[] = [
+    `👋 ${recipientName} — DAs pending sales changes across the team, ${day}`,
+    `${psc.length} deal${psc.length === 1 ? "" : "s"} — $${Math.round(totalRev).toLocaleString()} total, by rep:`,
+    "",
+  ];
+  let used = out.join("\n").length + 200;
+  let cut = 0;
+  for (const { rep, ds, rev } of reps) {
+    const header = `*${rep}* — ${ds.length} deal${ds.length === 1 ? "" : "s"} | $${Math.round(rev).toLocaleString()}`;
+    if (used + header.length > CHAT_CHAR_BUDGET) { cut += ds.length; continue; }
+    out.push(header); used += header.length + 1;
+    for (const p of [...ds].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))) {
+      const line = `• ${dealLink(String(p.id), p.name)}${p.pbLocation ? ` (${p.pbLocation})` : ""} — $${Math.round(Number(p.amount) || 0).toLocaleString()}`;
+      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
+      out.push(line); used += line.length + 1;
+    }
+    out.push(""); used += 1;
+  }
+  if (cut > 0) out.push(`…${cut} more didn't fit — ask me "list all pending sales changes" for the rest.`);
+  return { text: out.join("\n"), total: psc.length };
+}
+
+export interface ManagerSendResult {
+  email: string;
+  total?: number;
+  sent?: boolean;
+  reason?: string;
+  preview?: string;
+}
+
+/**
+ * Send configured manager rollup worklists. Live delivery reuses the personal-
+ * worklist gate (bottleneck_personal_worklists_enabled + recorded DM spaces)
+ * and mirrors to the owner tracking space.
+ */
+export async function runManagerWorklists(opts: {
+  mode: "preview" | "live";
+  nowMs?: number;
+}): Promise<{ results: ManagerSendResult[] }> {
+  if (!prisma) return { results: [] };
+  const nowMs = opts.nowMs ?? Date.now();
+
+  const cfgRow = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_manager_worklists" } });
+  let managers: ManagerWorklistConfig[] = [];
+  try {
+    const arr = cfgRow?.value ? JSON.parse(cfgRow.value) : [];
+    if (Array.isArray(arr)) managers = arr;
+  } catch { /* ignore malformed config */ }
+  if (managers.length === 0) return { results: [] };
+
+  if (opts.mode === "live") {
+    const flag = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_personal_worklists_enabled" } });
+    if (flag?.value !== "true") {
+      return { results: managers.map((m) => ({ email: m.email, sent: false, reason: "worklists disabled" })) };
+    }
+  }
+
+  // Active-only projects (excludes terminal/cancelled) — matches exactly what
+  // query_projects shows for "pending sales changes", so the daily worklist and
+  // the ad-hoc bot answer never disagree.
+  const { fetchAllProjects } = await import("@/lib/hubspot");
+  const projects = (await fetchAllProjects({ activeOnly: true })) as unknown as PscProject[];
+
+  const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
+  const { getUserDmSpaces } = await import("@/lib/tech-ops-bot-proactive");
+  const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
+  let mirrorSpace: string | null = null;
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "techops_bot_mirror_space" } });
+    mirrorSpace = row?.value?.trim() || null;
+  } catch { /* best effort */ }
+
+  const results: ManagerSendResult[] = [];
+  for (const m of managers) {
+    let rendered: { text: string; total: number };
+    if (m.view === "da_pending_sales_changes") {
+      rendered = renderDaPendingSalesChanges(projects, firstNameFromEmail(m.email), nowMs);
+    } else {
+      results.push({ email: m.email, reason: `unknown view "${m.view}"` });
+      continue;
+    }
+
+    if (opts.mode === "preview") {
+      results.push({ email: m.email, total: rendered.total, preview: rendered.text });
+      continue;
+    }
+    const space = dmSpaces[m.email] || dmSpaces[m.email.toLowerCase()];
+    if (!space) {
+      results.push({ email: m.email, total: rendered.total, sent: false, reason: "no DM space recorded" });
+      continue;
+    }
+    try {
+      await postGoogleChatMessage({ spaceName: space, text: rendered.text });
+      if (mirrorSpace && mirrorSpace !== space) {
+        await postGoogleChatMessage({
+          spaceName: mirrorSpace,
+          text: `📋 Manager worklist → ${m.email} (${rendered.total} deals):\n\n${rendered.text}`,
+        }).catch((e) => console.warn("[manager-worklists] mirror failed:", e));
+      }
+      results.push({ email: m.email, total: rendered.total, sent: true });
+    } catch (e) {
+      results.push({ email: m.email, total: rendered.total, sent: false, reason: e instanceof Error ? e.message.slice(0, 160) : "send failed" });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return { results };
+}
