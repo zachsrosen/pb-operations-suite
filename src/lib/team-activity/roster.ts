@@ -8,8 +8,8 @@
  * lookup will do so when these are absent. Edit this list freely — it is the
  * single source of truth for who the report covers.
  *
- * Default = Zach's precon team + Natasha (Ops Mgr/PM). Caleb & Patrick are IT,
- * intentionally excluded.
+ * Default = Zach's precon team + the PM group (Natasha, Wes; the other PMs
+ * are already precon members). Caleb & Patrick are IT, intentionally excluded.
  */
 
 export interface RosterMember {
@@ -36,6 +36,7 @@ export const DEFAULT_ROSTER: RosterMember[] = [
   { email: "kristofer.stuhff@photonbrothers.com", name: "Kristofer Stuhff" },
   { email: "elliott.gunning@photonbrothers.com", name: "Elliott Gunning" },
   { email: "natasha.sanford@photonbrothers.com", name: "Natasha Wooten Sanford", hubspotUserId: "77265642", aircallId: "1522029" },
+  { email: "wes.benscoter@photonbrothers.com", name: "Wes Benscoter" },
 ];
 
 /** All lowercase addresses a roster member is known by (canonical + aliases). */
