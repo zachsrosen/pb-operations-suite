@@ -384,3 +384,15 @@ describe("parsePtoSummary", () => {
     expect(parsePtoSummary("")).toBe(null);
   });
 });
+
+describe("matchRosterByDisplayName nameAliases", () => {
+  const { matchRosterByDisplayName: match } = jest.requireActual("@/lib/team-activity/roster");
+  const roster = [
+    { email: "alexis@photonbrothers.com", name: "Alexis Severson", nameAliases: ["Lexie Severson"] },
+  ];
+
+  it("matches HR nicknames declared as nameAliases (Lexie -> Alexis)", () => {
+    expect(match(roster, "Lexie Severson")).toBe("alexis@photonbrothers.com");
+    expect(match(roster, "Alexis Severson")).toBe("alexis@photonbrothers.com");
+  });
+});
