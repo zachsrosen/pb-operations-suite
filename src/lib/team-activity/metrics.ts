@@ -24,6 +24,13 @@ export interface ActivityEvent {
   kind?: string;
   /** human-readable description for the drilldown, when the source has one */
   label?: string;
+  /**
+   * Deal attribution for the deals-touched metric — set ONLY by the hubspot
+   * adapter (engagements + audit DEAL edits). One entry per attributed deal
+   * with its active-at-touch-time verdict. Other adapters never populate this,
+   * so Zuper/PE `DEAL:`-keyed events don't feed the deal counts.
+   */
+  deals?: { id: string; active: boolean }[];
 }
 
 export interface TalkTimeRecord {
@@ -48,6 +55,10 @@ export interface PersonDayMetric {
   talkMinutes: number;
   callCount: number;
   googleSpanHours: number; // span from google-source events only
+  /** distinct deals with an active-at-touch-time hubspot touch this day */
+  dealsTouched: number;
+  /** distinct deals touched regardless of stage/age (Test Pipeline excluded upstream) */
+  dealsTouchedAll: number;
 }
 
 export type Verdict = "marathon" | "full-day" | "full-day / light-app" | "light";
@@ -62,6 +73,7 @@ export interface PersonSummary {
   avgInteractions: number;
   avgEvents: number;
   avgGoogleSpanHours: number;
+  avgDealsTouched: number;
   totalTalkMinutes: number;
   totalCalls: number;
   avgStartMinute: number | null;
@@ -100,6 +112,42 @@ export function isWeekday(day: string): boolean {
   // Parse as noon UTC to avoid tz roll; the day string is already local.
   const dow = new Date(`${day}T12:00:00Z`).getUTCDay();
   return dow !== 0 && dow !== 6;
+}
+
+/**
+ * Deals-touched stage rule (see 2026-07-10 deals-touched spec §Definitions).
+ * Stage `metadata.isClosed` is useless in PB's portal (every post-sale stage is
+ * closed), so terminal-ness is matched by label.
+ */
+export const TERMINAL_STAGE_LABELS = new Set([
+  "cancelled",
+  "on-hold",
+  "onhold",
+  "project complete",
+  "complete",
+  "completed",
+  "closed lost",
+  "closed won",
+]);
+
+/**
+ * Returns:
+ *  - `true`  — deal counts as ACTIVE at touch time (non-terminal stage, or the
+ *              touch is < bufferDays after the deal entered its terminal stage)
+ *  - `false` — deal is terminal past the buffer (counts only in the all-count)
+ *  - `null`  — deal is excluded from BOTH counts (Test Pipeline)
+ */
+export function isTouchOnActiveDeal(
+  stageLabel: string,
+  pipelineLabel: string,
+  enteredTerminalAt: Date | null,
+  touchAt: Date,
+  bufferDays = 3,
+): boolean | null {
+  if (pipelineLabel.trim().toLowerCase() === "test pipeline") return null;
+  if (!TERMINAL_STAGE_LABELS.has(stageLabel.trim().toLowerCase())) return true;
+  if (!enteredTerminalAt) return false;
+  return touchAt.getTime() < enteredTerminalAt.getTime() + bufferDays * 86_400_000;
 }
 
 /**
@@ -174,6 +222,15 @@ export function computePersonDays(
     const t = talkByKey.get(key);
     const perSource = emptyPerSource();
     for (const e of evs) perSource[e.source]++;
+    const activeDeals = new Set<string>();
+    const allDeals = new Set<string>();
+    for (const e of evs) {
+      if (e.source !== "hubspot" || !e.deals) continue;
+      for (const d of e.deals) {
+        allDeals.add(d.id);
+        if (d.active) activeDeals.add(d.id);
+      }
+    }
     const minutes = times.map(denverMinutes);
     const googleTimes = evs.filter((e) => e.source === "google").map((e) => denverMinutes(e.timestamp));
 
@@ -194,6 +251,8 @@ export function computePersonDays(
       talkMinutes: t ? Math.round(t.talkSec / 60) : 0,
       callCount: t ? t.calls : 0,
       googleSpanHours: googleTimes.length ? (Math.max(...googleTimes) - Math.min(...googleTimes)) / 60 : 0,
+      dealsTouched: activeDeals.size,
+      dealsTouchedAll: allDeals.size,
     });
   }
   return out.sort((a, b) => (a.email === b.email ? a.day.localeCompare(b.day) : a.email.localeCompare(b.email)));
@@ -236,6 +295,7 @@ export function rollupByPerson(personDays: PersonDayMetric[]): PersonSummary[] {
       avgInteractions: avg(weekdays.map((d) => d.interactions)),
       avgEvents: avg(weekdays.map((d) => d.eventCount)),
       avgGoogleSpanHours,
+      avgDealsTouched: avg(weekdays.map((d) => d.dealsTouched)),
       totalTalkMinutes: days.reduce((s, d) => s + d.talkMinutes, 0),
       totalCalls: days.reduce((s, d) => s + d.callCount, 0),
       avgStartMinute: weekdays.length ? avg(weekdays.map((d) => d.firstMinute)) : null,
