@@ -30,12 +30,19 @@ stage is not terminal, OR the touch happened less than 3 days after the deal
 entered its terminal stage (`hs_v2_date_entered_<stageId>`).
 
 **Terminal stages** are matched by label (case-insensitive): `Cancelled`,
-`On-Hold`/`On-hold`, `Project Complete`, `Complete`, `Completed`, `Closed lost`.
-Deals in the `Test Pipeline` never count. Stage `metadata.isClosed` is *not*
-usable — every post-sale pipeline stage in PB's portal has `isClosed=true`.
+`On-Hold`/`On-hold`, `Project Complete`, `Complete`, `Completed`, `Closed lost`,
+`Closed won` (a Sales-pipeline deal that closed won either graduates to the
+Project Pipeline or is done). Deals in the `Test Pipeline` never count. Stage
+`metadata.isClosed` is *not* usable — every post-sale pipeline stage in PB's
+portal has `isClosed=true`.
 
 **Deals touched (all)** = same distinct count with no stage/age exclusions
 (surfaced in the per-day detail, not the headline).
+
+Both counts consider **only hubspot-source events**. The Zuper and PE adapters
+also emit `DEAL:<id>` objectKeys; those represent field/document activity, not
+the person working the deal in HubSpot, and are excluded from both counts (they
+continue to feed the existing interaction/per-source metrics unchanged).
 
 Validated against the 2026-07-10 ad-hoc run: PMs ≈ 12–40 active deals/day each;
 ~90% of orphaned PM emails are notification noise (noreply@notifications.hubspot.com,
@@ -75,28 +82,39 @@ pipelines once for stage labels; for terminal-stage deals batch-read
 `hs_v2_date_entered_<stageId>`. Classification is a pure helper (see §2) so the
 adapter only orchestrates I/O.
 
-**e. Event emission.** Each engagement-deal pair emits an `ActivityEvent`:
-`source: "hubspot"`, `objectKey: "DEAL:<id>"`, `kind: "engagement/<type>"`,
-`label` for the drilldown. Reusing the `DEAL:<id>` objectKey means the existing
-10-minute `interactionCount` dedup collapses an engagement with its own audit
-rows instead of double-counting. Audit `DEAL` events keep their current shape.
-Both engagement and audit `DEAL:` events gain `dealActive: boolean`.
+**e. Event emission.** Each engagement emits **one** `ActivityEvent`
+(`source: "hubspot"`, `kind: "engagement/<type>"`, `label` for the drilldown),
+regardless of how many deals it attributes to — so `interactions` and
+`eventCount` see one real-world action, not a fan-out. Deal attribution rides a
+new optional field `deals?: { id: string; active: boolean }[]` listing every
+attributed deal with its active-at-touch-time verdict. `objectKey` is set to
+`DEAL:<first attributed deal>` so the existing 10-minute `interactionCount`
+dedup collapses an engagement with its own audit rows instead of
+double-counting. Audit `DEAL` rows keep their current shape and gain the same
+single-element `deals` field.
+
+**Accepted baseline shift:** engagement events are new rows in the shared
+event stream, so `interactions`, `avgEvents`, `activeHours`, and
+`perSource.hubspot` will read higher for everyone than before this change.
+That is real activity that was previously invisible (audit logs only), not
+noise; no compensation is attempted.
 
 ### 2. Metrics (`src/lib/team-activity/metrics.ts` — pure, Jest-covered)
 
-- `ActivityEvent` gains optional `dealActive?: boolean` (present only on
-  `DEAL:` events from the hubspot adapter).
+- `ActivityEvent` gains optional `deals?: { id: string; active: boolean }[]`
+  (set only by the hubspot adapter; other adapters never populate it).
 - New pure helper `isTouchOnActiveDeal(stageLabel, pipelineLabel, enteredTerminalAt, touchAt, bufferDays=3)`
   used by the adapter for stamping — lives here so the terminal-label set and
   buffer logic are unit-testable without I/O.
-- `PersonDayMetric` gains `dealsTouched: number` (distinct deal ids among that
-  day's events with `dealActive === true`) and `dealsTouchedAll: number`
-  (distinct deal ids regardless of `dealActive`).
+- `PersonDayMetric` gains `dealsTouched: number` (distinct `deals[].id` among
+  that day's `source === "hubspot"` events where `active === true`) and
+  `dealsTouchedAll: number` (same, regardless of `active`).
 - `PersonSummary` gains `avgDealsTouched: number` (mean of `dealsTouched` over
   active weekdays, consistent with the other averages).
 
-Events without an objectKey or with a non-`DEAL:` objectKey never affect the
-new counts. Non-hubspot sources are unaffected.
+The counts read ONLY the `deals` field on hubspot-source events. Events without
+it (all other adapters, hubspot logins, non-DEAL audit rows) never affect the
+new counts, even though Zuper/PE events carry `DEAL:` objectKeys.
 
 ### 3. UI (`src/app/dashboards/admin/team-activity/TeamActivityClient.tsx`)
 
@@ -104,13 +122,19 @@ new counts. Non-hubspot sources are unaffected.
   1 decimal).
 - Expandable per-day detail: `dealsTouched` per day, with `dealsTouchedAll` in
   parentheses when it differs (e.g. `14 (16)`).
-- Day drilldown: engagement events appear as labeled rows (existing events
-  endpoint passes them through — `kind: engagement/<type>`).
-- CSV export: `avgDealsTouched` on the summary sheet; `dealsTouched` +
-  `dealsTouchedAll` on the per-day rows.
+- Day drilldown: engagement events appear as labeled rows (the events endpoint
+  passes adapter events through generically — no endpoint change). Note the
+  drilldown route re-runs the hubspot adapter for one person/day, so each click
+  now also performs the engagement pull + stamping (~2–4s added; acceptable).
+- CSV export: the dashboard's existing export is a single summary CSV — it
+  gains an `avgDealsTouched` column. Per-day columns are NOT added to the
+  dashboard export.
 
 The CLI report (`scripts/team-activity-report.ts`) shares adapters + metrics
-and inherits the metric in its console table + CSV with the same column names.
+but hardcodes its console table and CSV header lists — it needs explicit edits:
+`avgDealsTouched` in the console table + summary CSV, `dealsTouched` +
+`dealsTouchedAll` in the daily CSV (and add the missing `pe` per-source column
+there in passing).
 
 ### 4. Roster (`src/lib/team-activity/roster.ts`)
 
@@ -138,8 +162,10 @@ ADMIN dashboard; no caching added until it hurts.
   the run proceeds (matches existing per-member audit-log behavior).
 - Missing `hs_v2_date_entered_*` for a terminal-stage deal → treat touches on
   it as **not** active (conservative), count in `dealsTouchedAll`.
-- Engagement search chunk hitting the 10k cap → log to the source-status
-  banner; counts for that chunk are floor values.
+- Engagement search chunk hitting the 10k cap → surfaced via a new optional
+  `warning?: string` on `AdapterResult` (today it only supports `skipped`);
+  the API response and the dashboard source-status banner pass it through as a
+  yellow "ran with warning" state. Counts for that chunk are floor values.
 - Any systemic scope error keeps the existing `skipped` reporting path.
 
 ## Testing
@@ -148,9 +174,10 @@ Jest (pure layer):
 - `isTouchOnActiveDeal`: active stage; terminal within buffer; terminal past
   buffer; missing entered date; Test Pipeline; label case/hyphen variants.
 - `computePersonDays`: `dealsTouched` distinct-count vs `dealsTouchedAll`;
-  multiple touches on one deal in a day count once; events without
-  `dealActive` excluded from headline but present in all-count only when
-  `DEAL:`-keyed.
+  multiple touches on one deal in a day count once; a multi-deal engagement
+  counts each attributed deal once but stays one event/interaction; events
+  without a `deals` field (incl. Zuper/PE `DEAL:`-keyed events) affect neither
+  count.
 - `rollupByPerson`: `avgDealsTouched` weekday averaging.
 
 Verification: CLI run against live HubSpot for the default roster + Wes;
