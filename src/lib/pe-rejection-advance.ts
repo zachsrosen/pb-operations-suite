@@ -23,9 +23,9 @@ import { hubspotClient } from "@/lib/hubspot";
 //   Onboarding (M1):    "Onboarding Rejected" → "Onboarding Ready to Resubmit"
 //   Internal QC:        "Internally Rejected" → "Ready to Submit"  (pre-PE state)
 const REJECTED = "Rejected";
-const READY = "Ready to Resubmit";
+export const READY = "Ready to Resubmit";
 const ONBOARDING_REJECTED = "Onboarding Rejected";
-const ONBOARDING_READY = "Onboarding Ready to Resubmit";
+export const ONBOARDING_READY = "Onboarding Ready to Resubmit";
 const INTERNALLY_REJECTED = "Internally Rejected";
 const READY_TO_SUBMIT = "Ready to Submit";
 const OPEN_STATUSES = new Set(["NOT_STARTED", "IN_PROGRESS", "WAITING"]);
