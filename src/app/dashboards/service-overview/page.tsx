@@ -9,6 +9,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { SystemHealthBadge } from "@/components/powerhub/SystemHealthBadge";
 import { useSSE } from "@/hooks/useSSE";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useSession } from "next-auth/react";
+import { useToast } from "@/contexts/ToastContext";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -209,6 +211,16 @@ export default function ServiceOverviewPage() {
 
   // ---- Override handler -----------------------------------------------------
 
+  // Manual priority overrides are ADMIN-only, enforced server-side on
+  // /api/service/priority-queue/overrides. Mirror that gate in the UI so
+  // non-admins don't get a control that silently 403s.
+  const { data: session } = useSession();
+  const isAdmin = useMemo(
+    () => (session?.user?.roles ?? []).includes("ADMIN"),
+    [session?.user?.roles]
+  );
+  const { addToast } = useToast();
+
   const handleOverride = useCallback(
     async (item: QueueItem, priority: PriorityTier) => {
       setOverrideLoading(true);
@@ -229,12 +241,20 @@ export default function ServiceOverviewPage() {
         await fetchData();
       } catch (err) {
         console.error("[ServiceOverview] Override failed:", err);
+        addToast({
+          type: "error",
+          title: "Override failed",
+          message:
+            err instanceof Error && /403|forbidden/i.test(err.message)
+              ? "Only admins can override priority."
+              : "Could not update priority. Please try again.",
+        });
       } finally {
         setOverrideLoading(false);
         setOverridingId(null);
       }
     },
-    [fetchData]
+    [fetchData, addToast]
   );
 
   // ---- Derived data ---------------------------------------------------------
@@ -681,34 +701,42 @@ export default function ServiceOverviewPage() {
 
                   {/* Right: tier badge + score + override */}
                   <div className="flex flex-col items-end gap-2 shrink-0">
-                    {/* Tier badge / override trigger */}
+                    {/* Tier badge / override trigger (override is ADMIN-only) */}
                     <div className="relative">
-                      <button
-                        onClick={() =>
-                          setOverridingId(
-                            overridingId === `${item.type}:${item.id}`
-                              ? null
-                              : `${item.type}:${item.id}`
-                          )
-                        }
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${cfg.badge} cursor-pointer hover:opacity-80 transition-opacity`}
-                        title="Click to override priority"
-                      >
-                        {cfg.label}
-                        <svg
-                          className="w-3 h-3 opacity-60"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+                      {isAdmin ? (
+                        <button
+                          onClick={() =>
+                            setOverridingId(
+                              overridingId === `${item.type}:${item.id}`
+                                ? null
+                                : `${item.type}:${item.id}`
+                            )
+                          }
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${cfg.badge} cursor-pointer hover:opacity-80 transition-opacity`}
+                          title="Click to override priority"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 9l-7 7-7-7"
-                          />
-                        </svg>
-                      </button>
+                          {cfg.label}
+                          <svg
+                            className="w-3 h-3 opacity-60"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
+                        </button>
+                      ) : (
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${cfg.badge}`}
+                        >
+                          {cfg.label}
+                        </span>
+                      )}
 
                       {/* Override dropdown */}
                       {overridingId === `${item.type}:${item.id}` && (
