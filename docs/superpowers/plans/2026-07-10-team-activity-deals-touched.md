@@ -22,10 +22,11 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `src/__tests__/team-activity-metrics.test.ts`:
+In `src/__tests__/team-activity-metrics.test.ts`: add `isTouchOnActiveDeal` to
+the EXISTING top-of-file metrics import (don't add a second import statement —
+`import/first` lint). Then append:
 
 ```ts
-import { isTouchOnActiveDeal } from "@/lib/team-activity/metrics";
 
 describe("isTouchOnActiveDeal", () => {
   const t = (iso: string) => new Date(iso);
@@ -492,17 +493,13 @@ async function fetchDealStatuses(dealIds: string[], token: string): Promise<Map<
 
 Add `TERMINAL_STAGE_LABELS, isTouchOnActiveDeal` to the metrics import at the top of the file.
 
-- [ ] **Step 4: Typecheck**
+- [ ] **Step 4: Typecheck (expect unused-symbol errors ONLY)**
 
 Run: `npx tsc --noEmit 2>&1 | head -20`
-Expected: no errors (unused-symbol warnings acceptable until Task 4 wires them in; if `noUnusedLocals` complains, proceed to Task 4 before committing).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/lib/team-activity/adapters.ts
-git commit -m "feat(team-activity): hubspot engagement/deal-status helpers + AdapterResult.warning"
-```
+Expected: TS6133 "declared but never used" for the new helpers (the repo sets
+`noUnusedLocals`) and NOTHING else. Any other error class means a real bug —
+fix before proceeding. Do NOT commit yet; Task 4 wires the helpers in and both
+tasks commit together there.
 
 ### Task 4: Wire the pull into `hubspotAdapter`
 
@@ -525,16 +522,33 @@ Inside `hubspotAdapter`, after the existing audit/login `perMember` block builds
     const ownerIds = await hsResolveOwnerIds(roster, token);
     const emailByOwner = new Map([...ownerIds.entries()].map(([email, id]) => [id, email] as const));
     const ownerList = [...new Set(ownerIds.values())];
+    // A portal-wide owners failure must not silently floor the metric to
+    // audit-only — surface it.
+    if (roster.length && !ownerList.length) {
+      warning = "no roster members resolved to a HubSpot owner — deals-touched reflects audit-log edits only";
+    }
 
     const engagementTouches: { hit: EngagementHit; dealIds: string[] }[] = [];
     if (ownerList.length) {
       const capped: string[] = [];
+      const failed: string[] = [];
+      // Per-type catch: one failing engagement type (e.g. a missing scope)
+      // degrades that type only, not the whole metric.
       const perType = await mapPool([...ENGAGEMENT_TYPES], 3, async (type) => {
-        const { hits, capped: hitCap } = await searchEngagements(type, ownerList, range, token);
-        if (hitCap) capped.push(type);
-        return { type, hits };
+        try {
+          const { hits, capped: hitCap } = await searchEngagements(type, ownerList, range, token);
+          if (hitCap) capped.push(type);
+          return { type, hits };
+        } catch (e) {
+          failed.push(`${type} (${msg(e).slice(0, 80)})`);
+          return { type, hits: [] as EngagementHit[] };
+        }
       });
-      if (capped.length) warning = `engagement search cap hit for ${capped.join(", ")} — deal counts are floor values`;
+      const notes = [
+        ...(capped.length ? [`search cap hit for ${capped.join(", ")}`] : []),
+        ...(failed.length ? [`search failed for ${failed.join("; ")}`] : []),
+      ];
+      if (notes.length) warning = `engagement pull degraded: ${notes.join("; ")} — deal counts are floor values`;
 
       for (const { type, hits } of perType) {
         if (!hits.length) continue;
@@ -560,9 +574,12 @@ Inside `hubspotAdapter`, after the existing audit/login `perMember` block builds
     }
 
     // Distinct deals from engagements + already-emitted audit DEAL rows.
-    const allDealIds = new Set<string>(engagementTouches.flatMap((t) => t.dealIds));
+    // Numeric ids only — audit rows can yield "DEAL:undefined", and one
+    // malformed id 400s the whole batch read.
+    const allDealIds = new Set<string>(engagementTouches.flatMap((t) => t.dealIds).filter((id) => /^\d+$/.test(id)));
     for (const ev of events) {
-      if (ev.objectKey?.startsWith("DEAL:")) allDealIds.add(ev.objectKey.slice(5));
+      const id = ev.objectKey?.startsWith("DEAL:") ? ev.objectKey.slice(5) : null;
+      if (id && /^\d+$/.test(id)) allDealIds.add(id);
     }
     const statuses = await fetchDealStatuses([...allDealIds], token);
     const verdict = (dealId: string, ts: Date): boolean | null => {
@@ -607,9 +624,9 @@ Note: `emailByOwner` maps ownerId→canonical email. Two roster members can't sh
 - [ ] **Step 2: Typecheck + full test suite**
 
 Run: `npx tsc --noEmit && npx jest team-activity 2>&1 | tail -5`
-Expected: clean tsc, all Jest green.
+Expected: clean tsc (the Task 3 helpers are now used), all Jest green.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Commit (covers Tasks 3+4)**
 
 ```bash
 git add src/lib/team-activity/adapters.ts
@@ -746,13 +763,7 @@ and the row mapper inserts `d.dealsTouched, d.dealsTouchedAll,` after `d.interac
 
 3. Console table (lines ~138–142): insert `${pad("Deals/d", 7)}` after the `Intx/d` header cell and `${pad(s.avgDealsTouched.toFixed(1), 7)}` after the interactions cell.
 
-4. Warning display — after the `Sources skipped:` line (~133), add:
-
-```ts
-  const warned = chosen.map((a) => a.key); // populated below
-```
-
-Actually simpler: extend the run loop (lines ~88–98) to record warnings:
+4. Warning display — extend the run loop (lines ~88–98) so warnings print with the source status:
 
 ```ts
       if (r.skipped) skipped.push(`${a.key}: ${r.skipped}`);
@@ -793,6 +804,12 @@ Run: `npx tsx --env-file=.env scripts/team-activity-report.ts --from 2026-06-26 
 (The worktree has no `.env` — copy it first: `cp "/Users/zach/Downloads/Dev Projects/PB-Operations-Suite/.env" .env` — it is gitignored; verify with `git status --short | grep -c "\.env$"` → 0.)
 
 Expected: hubspot source runs (no skip), console table shows a `Deals/d` column with non-zero values for Kaitlyn (~35–40), Alexis (~25–30), Kat (~10–12), Natasha (~10–12, includes buffer), near-zero for Wes. Cross-check against the 2026-07-10 ad-hoc analysis: same ballpark ±20% (window-boundary drift is expected; a 2x discrepancy means an attribution bug — stop and debug).
+
+Wes caveat: near-zero for Wes is expected but ALSO what a wrong email would
+produce. Confirm his roster entry actually resolves before accepting the run:
+
+Run: `source <(grep '^HUBSPOT_ACCESS_TOKEN=' .env | sed 's/^/export /') && curl -s "https://api.hubapi.com/crm/v3/owners?email=wes.benscoter@photonbrothers.com" -H "Authorization: Bearer $HUBSPOT_ACCESS_TOKEN" | head -c 200`
+Expected: a result with `"id": "169921517"` (verified 2026-07-10).
 
 - [ ] **Step 3: Daily CSV spot-check**
 
