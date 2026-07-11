@@ -4,7 +4,7 @@ import { Fragment, useState, useMemo, useEffect } from "react";
 import SiteDetail from "./SiteDetail";
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
-import { sortRows, type SortDir } from "@/hooks/useSort";
+import { type SortDir } from "@/hooks/useSort";
 
 interface PowerhubSiteRow {
   siteId: string;
@@ -74,7 +74,8 @@ export default function FleetTable({
   const [alertSel, setAlertSel] = useState<string[]>([]);
   const [gridSel, setGridSel] = useState<string[]>([]);
   const [stateSel, setStateSel] = useState<string[]>([]);
-  const [sortKey, setSortKey] = useState<string | null>(null);
+  // Default: worst alerts first, visibly indicated on the Alerts header.
+  const [sortKey, setSortKey] = useState<string | null>("_alertWeight");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // Text columns sort A→Z on first click; numeric columns sort biggest-first.
@@ -176,7 +177,7 @@ export default function FleetTable({
       });
     }
 
-    return sortRows(rows, sortKey, sortDir);
+    return sortStable(rows, sortKey, sortDir);
   }, [derived, search, linkSel, stateSel, gridSel, alertSel, sortKey, sortDir]);
 
   useEffect(() => {
@@ -302,8 +303,7 @@ export default function FleetTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-t-border text-left text-muted">
-              <SortHeader label="Site" field="siteName" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
-              <SortHeader label="Customer" field="_customer" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Customer / Site" field="_customer" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Devices" field="_devices" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Solar" field="_solar" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Battery" field="_soc" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
@@ -360,20 +360,6 @@ export default function FleetTable({
                     }
                   >
                     <td className="py-3 pr-4">
-                      <div
-                        className={`font-medium ${
-                          isUuidName ? "text-muted" : "text-foreground"
-                        }`}
-                      >
-                        {displayName}
-                      </div>
-                      {location && (
-                        <div className="text-xs text-muted truncate max-w-[200px]">
-                          {location}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3 pr-4">
                       {(site.dealId || site.resolvedDealId) &&
                       (site.customerName || site.dealName) ? (
                         <a
@@ -381,14 +367,26 @@ export default function FleetTable({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-cyan-500 hover:underline truncate inline-block max-w-[180px] align-middle"
+                          className="font-medium text-cyan-500 hover:underline truncate inline-block max-w-[240px]"
                           title={site.dealName || site.customerName || undefined}
                         >
                           {site.customerName || site.dealName}
                         </a>
                       ) : (
-                        <span className="text-muted">—</span>
+                        <div
+                          className={`font-medium ${
+                            isUuidName ? "text-muted" : "text-foreground"
+                          }`}
+                        >
+                          {displayName}
+                        </div>
                       )}
+                      <div className="text-xs text-muted truncate max-w-[240px]">
+                        {(site.dealId || site.resolvedDealId) &&
+                        (site.customerName || site.dealName)
+                          ? [displayName, location].filter(Boolean).join(" · ")
+                          : location}
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-xs text-muted">
                       {deviceSummary}
@@ -449,7 +447,7 @@ export default function FleetTable({
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={8} className="bg-surface-2 p-4">
+                      <td colSpan={7} className="bg-surface-2 p-4">
                         <SiteDetail siteId={site.siteId} />
                       </td>
                     </tr>
@@ -460,7 +458,7 @@ export default function FleetTable({
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={7}
                   className="py-8 text-center text-muted"
                 >
                   {hasActiveFilters
@@ -507,6 +505,35 @@ function SortHeader({
       </button>
     </th>
   );
+}
+
+/**
+ * sortRows + a stable siteId tiebreak so rows with equal sort values never
+ * swap places when the server response arrives in a different order
+ * (the every-5-min SSE refetch used to visibly reshuffle the table).
+ */
+function sortStable<T extends { siteId: string }>(
+  rows: T[],
+  key: string | null,
+  dir: SortDir
+): T[] {
+  if (!key) return [...rows].sort((a, b) => a.siteId.localeCompare(b.siteId));
+  return [...rows].sort((a, b) => {
+    const av = (a as Record<string, unknown>)[key];
+    const bv = (b as Record<string, unknown>)[key];
+    let cmp = 0;
+    if (av == null && bv == null) cmp = 0;
+    else if (av == null) return 1;
+    else if (bv == null) return -1;
+    else if (typeof av === "number" && typeof bv === "number")
+      cmp = dir === "asc" ? av - bv : bv - av;
+    else
+      cmp =
+        dir === "asc"
+          ? String(av).localeCompare(String(bv))
+          : String(bv).localeCompare(String(av));
+    return cmp !== 0 ? cmp : a.siteId.localeCompare(b.siteId);
+  });
 }
 
 function formatPower(watts: number): string {
