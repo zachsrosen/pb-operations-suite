@@ -339,3 +339,48 @@ describe("PTO-aware computePersonDays + rollupByPerson", () => {
     expect(s.ptoDays).toBe(0);
   });
 });
+
+describe("matchRosterByDisplayName", () => {
+  const { matchRosterByDisplayName } = jest.requireActual("@/lib/team-activity/roster");
+  const roster = [
+    { email: "kat@photonbrothers.com", name: "Katlyyn Arnoldi" },
+    { email: "natasha.sanford@photonbrothers.com", name: "Natasha Wooten Sanford" },
+    { email: "kaitlyn@photonbrothers.com", name: "Kaitlyn Martinez" },
+    { email: "kristofer.stuhff@photonbrothers.com", name: "Kristofer Stuhff" },
+  ];
+
+  it("matches exact names", () => {
+    expect(matchRosterByDisplayName(roster, "Kaitlyn Martinez")).toBe("kaitlyn@photonbrothers.com");
+  });
+
+  it("matches nickname prefixes (HR 'Kat' vs roster 'Katlyyn')", () => {
+    expect(matchRosterByDisplayName(roster, "Kat Arnoldi")).toBe("kat@photonbrothers.com");
+  });
+
+  it("ignores dropped middle names (HR 'Natasha Sanford')", () => {
+    expect(matchRosterByDisplayName(roster, "Natasha Sanford")).toBe("natasha.sanford@photonbrothers.com");
+  });
+
+  it("returns null for non-roster people and single tokens", () => {
+    expect(matchRosterByDisplayName(roster, "Sam D")).toBe(null);
+    expect(matchRosterByDisplayName(roster, "Kristofer")).toBe(null);
+  });
+
+  it("requires >=3-char prefix so initials don't match", () => {
+    expect(matchRosterByDisplayName(roster, "Ka Arnoldi")).toBe(null);
+  });
+});
+
+describe("parsePtoSummary", () => {
+  const { parsePtoSummary } = jest.requireActual("@/lib/team-activity/adapters");
+
+  it("parses both HR summary formats", () => {
+    expect(parsePtoSummary("Kaitlyn Martinez on Vacation")).toBe("Kaitlyn Martinez");
+    expect(parsePtoSummary("Kat Arnoldi is Out of Office")).toBe("Kat Arnoldi");
+  });
+
+  it("returns null for unrecognized summaries", () => {
+    expect(parsePtoSummary("Company Holiday")).toBe(null);
+    expect(parsePtoSummary("")).toBe(null);
+  });
+});
