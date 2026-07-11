@@ -40,6 +40,28 @@ describe("FleetTable customer column", () => {
     expect(link).toHaveAttribute("target", "_blank");
   });
 
+  it("links via resolvedDealId for GEO-linked sites without a direct dealId", () => {
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            dealId: null,
+            resolvedDealId: "555000",
+            customerName: null,
+            dealName: "Jones, Bob - PROJ-9999",
+            linkMethod: "GEO",
+          }),
+        ]}
+      />
+    );
+
+    const link = screen.getByRole("link", { name: /jones, bob/i });
+    expect(link).toHaveAttribute(
+      "href",
+      expect.stringContaining("/record/0-3/555000")
+    );
+  });
+
   it("falls back to the deal name when customer name is missing", () => {
     render(
       <FleetTable

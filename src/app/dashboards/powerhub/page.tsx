@@ -16,6 +16,7 @@ interface VisibleSiteRow {
   state: string;
   linkMethod: string;
   dealId: string | null;
+  resolvedDealId?: string | null;
   customerName?: string | null;
   dealName?: string | null;
   totalGateways: number;
@@ -72,7 +73,7 @@ export default function PowerHubDashboard() {
     city: s.city,
     state: s.state,
     linkMethod: s.linkMethod,
-    hubspotDealId: s.dealId || "",
+    hubspotDealId: s.dealId || s.resolvedDealId || "",
     gateways: s.totalGateways,
     inverters: s.totalInverters,
     batteries: s.totalBatteries,

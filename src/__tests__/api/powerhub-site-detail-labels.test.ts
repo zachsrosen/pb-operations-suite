@@ -1,6 +1,7 @@
 jest.mock("@/lib/db", () => ({
   prisma: {
     powerhubSite: { findUnique: jest.fn() },
+    propertyDealLink: { findFirst: jest.fn() },
   },
 }));
 jest.mock("@/lib/powerhub-site-context", () => ({
@@ -79,6 +80,21 @@ describe("GET /api/powerhub/sites/[siteId] label resolution", () => {
       statusName: "New",
     });
     expect(body.site.property.contactLinks[0].name).toBe("Jane Smith");
+  });
+
+  it("resolves the deal through PropertyDealLink when the site has no dealId", async () => {
+    mockFindUnique.mockResolvedValue(
+      makeSite({ dealId: null, propertyId: "prop-1" })
+    );
+    const mockDealLinkFindFirst = prisma.propertyDealLink.findFirst as jest.Mock;
+    mockDealLinkFindFirst.mockResolvedValue({ propertyId: "prop-1", dealId: "555000" });
+    mockDeals.mockResolvedValue(
+      new Map([["555000", { dealName: "Jones, Bob - PROJ-9999", stageLabel: "PTO" }]])
+    );
+
+    const body = await (await call()).json();
+    expect(body.deal.dealName).toBe("Jones, Bob - PROJ-9999");
+    expect(body.deal.dealId).toBe("555000");
   });
 
   it("degrades to bare IDs when resolution returns nothing", async () => {
