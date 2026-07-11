@@ -12,7 +12,13 @@
 
 import type { PrismaClient } from "../../generated/prisma/client";
 import { getServiceAccountToken } from "../google-auth";
-import { denverDay, type ActivityEvent, type TalkTimeRecord } from "./metrics";
+import {
+  denverDay,
+  isTouchOnActiveDeal,
+  TERMINAL_STAGE_LABELS,
+  type ActivityEvent,
+  type TalkTimeRecord,
+} from "./metrics";
 import { buildEmailIndex, memberEmails, type RosterMember } from "./roster";
 
 export interface DateRange {
@@ -23,6 +29,8 @@ export interface AdapterResult {
   events: ActivityEvent[];
   talk?: TalkTimeRecord[];
   skipped?: string;
+  /** Source ran but with degraded coverage (e.g. search cap hit, engagement pull failed). */
+  warning?: string;
 }
 
 const lc = (s: string | null | undefined) => (s ?? "").toLowerCase();
@@ -185,8 +193,22 @@ export async function peAdapter(
 // ---------------------------------------------------------------------------
 // HubSpot — account-info activity API (scope: account-info.security.read)
 // ---------------------------------------------------------------------------
+async function hsFetch(path: string, token: string, init?: RequestInit, retries = 5): Promise<Response> {
+  for (let i = 0; ; i++) {
+    const res = await fetch(`https://api.hubapi.com${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
+    if (res.status === 429 && i < retries) {
+      await new Promise((r) => setTimeout(r, 1_000 * (i + 1)));
+      continue;
+    }
+    return res;
+  }
+}
+
 async function hsGet(path: string, token: string): Promise<Response> {
-  return fetch(`https://api.hubapi.com${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  return hsFetch(path, token);
 }
 
 interface HsPage<T> {
@@ -229,6 +251,188 @@ async function hsResolveUserIds(roster: RosterMember[], token: string): Promise<
     if (canonical && !resolved.has(canonical)) resolved.set(canonical, String(u.id));
   }
   return resolved;
+}
+
+// ---------------------------------------------------------------------------
+// Deals-touched: engagement pull + active-deal stamping
+// (see docs/superpowers/specs/2026-07-10-team-activity-deals-touched-design.md)
+// ---------------------------------------------------------------------------
+const ENGAGEMENT_TYPES = ["notes", "calls", "emails", "meetings", "tasks", "communications"] as const;
+type EngagementType = (typeof ENGAGEMENT_TYPES)[number];
+const SEARCH_CAP = 9_800; // CRM search hard-stops at 10k results per query
+const OWNER_CHUNK = 5; // owners per search — keeps each query's volume under the cap
+
+interface HsOwner { id: number | string; email?: string }
+
+/** Resolve roster members -> HubSpot OWNER id (engagements filter on this, not userId). */
+async function hsResolveOwnerIds(roster: RosterMember[], token: string): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>(); // canonical email -> ownerId
+  await mapPool(roster, 5, async (m) => {
+    for (const email of memberEmails(m)) {
+      const res = await hsFetch(`/crm/v3/owners?email=${encodeURIComponent(email)}`, token);
+      if (!res.ok) continue;
+      const data = (await res.json()) as { results?: HsOwner[] };
+      const id = data.results?.[0]?.id;
+      if (id != null) {
+        resolved.set(m.email.toLowerCase(), String(id));
+        return;
+      }
+    }
+  });
+  return resolved;
+}
+
+interface EngagementHit { id: string; ownerId: string; ts: Date; type: EngagementType }
+
+/** Search one engagement type for all owners (chunked); ascending hs_timestamp. */
+async function searchEngagements(
+  type: EngagementType,
+  ownerIds: string[],
+  range: DateRange,
+  token: string,
+): Promise<{ hits: EngagementHit[]; capped: boolean }> {
+  const hits: EngagementHit[] = [];
+  let capped = false;
+  for (let i = 0; i < ownerIds.length; i += OWNER_CHUNK) {
+    const chunk = ownerIds.slice(i, i + OWNER_CHUNK);
+    let after: string | undefined;
+    let got = 0;
+    for (;;) {
+      const res = await hsFetch(`/crm/v3/objects/${type}/search`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          filterGroups: [
+            {
+              filters: [
+                { propertyName: "hubspot_owner_id", operator: "IN", values: chunk },
+                {
+                  propertyName: "hs_timestamp",
+                  operator: "BETWEEN",
+                  value: String(range.from.getTime()),
+                  highValue: String(range.to.getTime()),
+                },
+              ],
+            },
+          ],
+          properties: ["hubspot_owner_id", "hs_timestamp"],
+          sorts: [{ propertyName: "hs_timestamp", direction: "ASCENDING" }],
+          limit: 100,
+          ...(after ? { after } : {}),
+        }),
+      });
+      if (!res.ok) throw new Error(`${type} search HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+      const data = (await res.json()) as HsPage<{ id: string; properties?: Record<string, string> }>;
+      for (const r of data.results ?? []) {
+        const ownerId = r.properties?.hubspot_owner_id;
+        const ts = new Date(r.properties?.hs_timestamp ?? NaN);
+        if (!ownerId || isNaN(+ts)) continue;
+        hits.push({ id: r.id, ownerId, ts, type });
+        got++;
+      }
+      const next = data.paging?.next?.after;
+      if (!next) break;
+      if (got >= SEARCH_CAP) {
+        capped = true;
+        break;
+      }
+      after = next;
+      await new Promise((r) => setTimeout(r, 40));
+    }
+  }
+  return { hits, capped };
+}
+
+/** v4 batch association read, chunked at 100. Returns fromId -> toIds. */
+async function batchAssocRead(
+  fromType: string,
+  toType: string,
+  ids: string[],
+  token: string,
+): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  const uniq = [...new Set(ids)];
+  for (let i = 0; i < uniq.length; i += 100) {
+    const chunk = uniq.slice(i, i + 100);
+    const res = await hsFetch(`/crm/v4/associations/${fromType}/${toType}/batch/read`, token, {
+      method: "POST",
+      body: JSON.stringify({ inputs: chunk.map((id) => ({ id })) }),
+    });
+    if (!res.ok) throw new Error(`${fromType}->${toType} assoc HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    const data = (await res.json()) as {
+      results?: { from: { id: string | number }; to?: { toObjectId: string | number }[] }[];
+    };
+    for (const r of data.results ?? []) {
+      const key = String(r.from.id);
+      map.set(key, [...(map.get(key) ?? []), ...(r.to ?? []).map((t) => String(t.toObjectId))]);
+    }
+  }
+  return map;
+}
+
+interface DealStatus { stageLabel: string; pipelineLabel: string; enteredTerminalAt: Date | null }
+
+/**
+ * Stage + (for terminal stages) entered-date for each deal. Deals the batch
+ * read doesn't return (deleted/archived) are absent from the map — the caller
+ * excludes their touches from both counts.
+ */
+async function fetchDealStatuses(dealIds: string[], token: string): Promise<Map<string, DealStatus>> {
+  const out = new Map<string, DealStatus>();
+  if (!dealIds.length) return out;
+
+  const pipesRes = await hsFetch("/crm/v3/pipelines/deals", token);
+  if (!pipesRes.ok) throw new Error(`pipelines HTTP ${pipesRes.status}`);
+  const pipes = (await pipesRes.json()) as { results?: { label: string; stages: { id: string; label: string }[] }[] };
+  const stageMeta = new Map<string, { label: string; pipeline: string }>();
+  for (const p of pipes.results ?? []) {
+    for (const s of p.stages) stageMeta.set(String(s.id), { label: s.label, pipeline: p.label });
+  }
+
+  const stageByDeal = new Map<string, string>();
+  for (let i = 0; i < dealIds.length; i += 100) {
+    const chunk = dealIds.slice(i, i + 100);
+    const res = await hsFetch("/crm/v3/objects/deals/batch/read", token, {
+      method: "POST",
+      body: JSON.stringify({ inputs: chunk.map((id) => ({ id })), properties: ["dealstage"] }),
+    });
+    if (!res.ok) throw new Error(`deals batch read HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    const data = (await res.json()) as { results?: { id: string | number; properties?: Record<string, string> }[] };
+    for (const r of data.results ?? []) {
+      if (r.properties?.dealstage) stageByDeal.set(String(r.id), r.properties.dealstage);
+    }
+  }
+
+  // Terminal-stage deals need hs_v2_date_entered_<stageId> (the un-prefixed
+  // hs_date_entered_* props do NOT exist in PB's portal).
+  const terminal: { id: string; stageId: string }[] = [];
+  for (const [id, stageId] of stageByDeal) {
+    const meta = stageMeta.get(stageId);
+    if (meta && TERMINAL_STAGE_LABELS.has(meta.label.trim().toLowerCase())) terminal.push({ id, stageId });
+  }
+  const enteredByDeal = new Map<string, Date>();
+  if (terminal.length) {
+    const props = [...new Set(terminal.map((t) => `hs_v2_date_entered_${t.stageId}`))];
+    for (let i = 0; i < terminal.length; i += 100) {
+      const chunk = terminal.slice(i, i + 100);
+      const res = await hsFetch("/crm/v3/objects/deals/batch/read", token, {
+        method: "POST",
+        body: JSON.stringify({ inputs: chunk.map((t) => ({ id: t.id })), properties: ["dealstage", ...props] }),
+      });
+      if (!res.ok) throw new Error(`entered-date batch read HTTP ${res.status}`);
+      const data = (await res.json()) as { results?: { id: string | number; properties?: Record<string, string> }[] };
+      for (const r of data.results ?? []) {
+        const entered = r.properties?.[`hs_v2_date_entered_${r.properties?.dealstage}`];
+        if (entered) enteredByDeal.set(String(r.id), new Date(entered));
+      }
+    }
+  }
+
+  for (const [id, stageId] of stageByDeal) {
+    const meta = stageMeta.get(stageId);
+    if (!meta) continue;
+    out.set(id, { stageLabel: meta.label, pipelineLabel: meta.pipeline, enteredTerminalAt: enteredByDeal.get(id) ?? null });
+  }
+  return out;
 }
 
 export async function hubspotAdapter(range: DateRange, roster: RosterMember[]): Promise<AdapterResult> {
@@ -284,7 +488,110 @@ export async function hubspotAdapter(range: DateRange, roster: RosterMember[]): 
   });
   const events = perMember.flat();
   if (scopeError && events.length === 0) return { events, skipped: scopeError };
-  return { events };
+
+  // --- deals-touched: engagement pull + active-deal stamping ---------------
+  // Failure here degrades to a warning: audit/login events still render, only
+  // the deals-touched numbers are missing/floored.
+  let warning: string | undefined;
+  try {
+    const ownerIds = await hsResolveOwnerIds(roster, token);
+    const emailByOwner = new Map([...ownerIds.entries()].map(([email, id]) => [id, email] as const));
+    const ownerList = [...new Set(ownerIds.values())];
+    // A portal-wide owners failure must not silently floor the metric to
+    // audit-only — surface it.
+    if (roster.length && !ownerList.length) {
+      warning = "no roster members resolved to a HubSpot owner — deals-touched reflects audit-log edits only";
+    }
+
+    const engagementTouches: { hit: EngagementHit; dealIds: string[] }[] = [];
+    if (ownerList.length) {
+      const capped: string[] = [];
+      const failed: string[] = [];
+      // Per-type catch: one failing engagement type (e.g. a missing scope)
+      // degrades that type only, not the whole metric.
+      const perType = await mapPool([...ENGAGEMENT_TYPES], 3, async (type) => {
+        try {
+          const { hits, capped: hitCap } = await searchEngagements(type, ownerList, range, token);
+          if (hitCap) capped.push(type);
+          return { type, hits };
+        } catch (e) {
+          failed.push(`${type} (${msg(e).slice(0, 80)})`);
+          return { type, hits: [] as EngagementHit[] };
+        }
+      });
+      const notes = [
+        ...(capped.length ? [`search cap hit for ${capped.join(", ")}`] : []),
+        ...(failed.length ? [`search failed for ${failed.join("; ")}`] : []),
+      ];
+      if (notes.length) warning = `engagement pull degraded: ${notes.join("; ")} — deal counts are floor values`;
+
+      for (const { type, hits } of perType) {
+        if (!hits.length) continue;
+        const dealAssoc = await batchAssocRead(type, "deals", hits.map((h) => h.id), token);
+        const orphans = hits.filter((h) => !(dealAssoc.get(h.id) ?? []).length);
+        let contactAssoc = new Map<string, string[]>();
+        let contactDeals = new Map<string, string[]>();
+        if (orphans.length) {
+          contactAssoc = await batchAssocRead(type, "contacts", orphans.map((h) => h.id), token);
+          const contactIds = [...new Set([...contactAssoc.values()].flat())];
+          if (contactIds.length) contactDeals = await batchAssocRead("contacts", "deals", contactIds, token);
+        }
+        for (const hit of hits) {
+          let dealIds = dealAssoc.get(hit.id) ?? [];
+          if (!dealIds.length) {
+            dealIds = [...new Set((contactAssoc.get(hit.id) ?? []).flatMap((c) => contactDeals.get(c) ?? []))];
+          }
+          if (dealIds.length) engagementTouches.push({ hit, dealIds });
+          // No deal even via contacts -> noise (notification emails) or
+          // non-deal work; dropped per spec.
+        }
+      }
+    }
+
+    // Distinct deals from engagements + already-emitted audit DEAL rows.
+    // Numeric ids only — audit rows can yield "DEAL:undefined", and one
+    // malformed id 400s the whole batch read.
+    const allDealIds = new Set<string>(engagementTouches.flatMap((t) => t.dealIds).filter((id) => /^\d+$/.test(id)));
+    for (const ev of events) {
+      const id = ev.objectKey?.startsWith("DEAL:") ? ev.objectKey.slice(5) : null;
+      if (id && /^\d+$/.test(id)) allDealIds.add(id);
+    }
+    const statuses = await fetchDealStatuses([...allDealIds], token);
+    const verdict = (dealId: string, ts: Date): boolean | null => {
+      const st = statuses.get(dealId);
+      if (!st) return null; // unreadable deal — exclude from both counts
+      return isTouchOnActiveDeal(st.stageLabel, st.pipelineLabel, st.enteredTerminalAt, ts);
+    };
+
+    // Emit ONE event per engagement, with all attributed deals on it.
+    for (const { hit, dealIds } of engagementTouches) {
+      const email = emailByOwner.get(hit.ownerId);
+      if (!email) continue; // engagement owned by a non-roster owner in the chunk
+      const deals = dealIds
+        .map((id) => ({ id, active: verdict(id, hit.ts) }))
+        .filter((d): d is { id: string; active: boolean } => d.active !== null);
+      events.push({
+        email,
+        timestamp: hit.ts,
+        source: "hubspot",
+        kind: `engagement/${hit.type}`,
+        objectKey: deals[0] ? `DEAL:${deals[0].id}` : undefined,
+        deals: deals.length ? deals : undefined,
+      });
+    }
+
+    // Stamp the audit-log DEAL edits so they feed the same counts.
+    for (const ev of events) {
+      if (ev.deals || !ev.objectKey?.startsWith("DEAL:")) continue;
+      const id = ev.objectKey.slice(5);
+      const v = verdict(id, ev.timestamp);
+      if (v !== null) ev.deals = [{ id, active: v }];
+    }
+  } catch (e) {
+    warning = `engagement pull failed (${msg(e)}) — deals-touched unavailable for this run`;
+  }
+
+  return { events, warning };
 }
 
 // ---------------------------------------------------------------------------
