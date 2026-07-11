@@ -503,22 +503,74 @@ async function resolveDealRef(
 export function createReadOnlyChatTools() {
   const getDeal = betaZodTool({
     name: "get_deal",
-    description: "Get HubSpot deal properties for a specific deal by ID",
+    description:
+      "Full status snapshot for ONE deal by HubSpot deal ID: stage plus every workstream " +
+      "status — DA (layout_status), design, permitting, interconnection, site survey, " +
+      "construction, inspection, PTO — all resolved to display labels, plus the milestone " +
+      "dates, amount, location, project number, and PE milestone statuses. Use for " +
+      "'what's the DA/design/permit status on this deal', 'where is this project'. (For " +
+      "the customer/PM/owner use get_project_team; for jobs/tickets use get_project_service.)",
     inputSchema: z.object({
       dealId: z.string().describe("HubSpot deal ID"),
     }),
     run: async (input) => {
-      const { hubspotClient } = await import("@/lib/hubspot");
-      const deal = await hubspotClient.crm.deals.basicApi.getById(
-        input.dealId,
-        [
-          "dealname", "dealstage", "amount", "pb_location",
-          "design_status", "permitting_status", "site_survey_status",
-          "install_date", "inspection_date", "pto_date",
-          "hubspot_owner_id", "closedate",
-        ]
-      );
-      return JSON.stringify(deal.properties);
+      const { hubspotClient, DEAL_STAGE_MAP } = await import("@/lib/hubspot");
+      const { statusLabel } = await import("@/lib/deal-status-labels");
+      const deal = await hubspotClient.crm.deals.basicApi.getById(input.dealId, [
+        "dealname", "dealstage", "amount", "pb_location", "project_number", "project_type",
+        "hubspot_owner_id", "closedate",
+        // Workstream statuses (raw values → labeled below)
+        "layout_status", "design_status", "permitting_status", "interconnection_status",
+        "site_survey_status", "install_status", "final_inspection_status", "pto_status",
+        "pe_m1_status", "pe_m2_status",
+        // Milestone dates
+        "site_survey_date", "design_approval_sent_date", "layout_approval_date",
+        "design_completion_date", "permit_submit_date", "permit_completion_date",
+        "interconnections_submit_date", "interconnections_completion_date", "ready_to_build_date",
+        "construction_complete_date", "inspections_completion_date", "pto_start_date", "pto_completion_date",
+      ]);
+      const p = deal.properties as Record<string, string | null>;
+      const lbl = (key: string, raw: string | null | undefined) =>
+        raw ? statusLabel(key, raw) || raw : null;
+      return JSON.stringify({
+        dealId: input.dealId,
+        projectNumber: p.project_number || null,
+        name: p.dealname || null,
+        stage: DEAL_STAGE_MAP[p.dealstage || ""] || p.dealstage || null,
+        amount: Number(p.amount) || 0,
+        location: p.pb_location || null,
+        projectType: p.project_type || null,
+        ownerId: p.hubspot_owner_id || null,
+        statuses: {
+          da: lbl("layout_status", p.layout_status),
+          design: lbl("design_status", p.design_status),
+          permitting: lbl("permitting_status", p.permitting_status),
+          interconnection: lbl("interconnection_status", p.interconnection_status),
+          siteSurvey: lbl("site_survey_status", p.site_survey_status),
+          construction: lbl("install_status", p.install_status),
+          inspection: lbl("final_inspection_status", p.final_inspection_status),
+          pto: lbl("pto_status", p.pto_status),
+          peM1: p.pe_m1_status || null,
+          peM2: p.pe_m2_status || null,
+        },
+        dates: {
+          closed: p.closedate || null,
+          surveyCompleted: p.site_survey_date || null,
+          daSent: p.design_approval_sent_date || null,
+          daApproved: p.layout_approval_date || null,
+          designComplete: p.design_completion_date || null,
+          permitSubmitted: p.permit_submit_date || null,
+          permitIssued: p.permit_completion_date || null,
+          icSubmitted: p.interconnections_submit_date || null,
+          icApproved: p.interconnections_completion_date || null,
+          rtb: p.ready_to_build_date || null,
+          constructionComplete: p.construction_complete_date || null,
+          inspectionPassed: p.inspections_completion_date || null,
+          ptoSubmitted: p.pto_start_date || null,
+          ptoGranted: p.pto_completion_date || null,
+        },
+        note: "Statuses are resolved display labels. For people use get_project_team; for jobs/tickets use get_project_service.",
+      });
     },
   });
 
