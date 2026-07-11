@@ -209,6 +209,51 @@ interface CachedToken {
   expiresAt: number; // Unix ms
 }
 
+/**
+ * Tokens are shared across serverless instances via SystemConfig. Tesla
+ * throttles token issuance (403s stalled the alerts cron twice on
+ * 2026-07-10) — with per-instance in-memory caching only, every cold start
+ * requested a fresh token. Lookup order: memory (L1) → SystemConfig (L2) →
+ * network. DB errors degrade silently to network-only, and prisma is
+ * imported lazily so this module stays usable without a DB (tests, edge).
+ */
+const TOKEN_CONFIG_KEY = "powerhub_access_token";
+
+async function readPersistedToken(): Promise<CachedToken | null> {
+  try {
+    const { prisma } = await import("./db");
+    const row = await prisma.systemConfig.findUnique({
+      where: { key: TOKEN_CONFIG_KEY },
+    });
+    if (!row?.value) return null;
+    const parsed = JSON.parse(row.value) as CachedToken;
+    if (
+      typeof parsed?.jwt === "string" &&
+      typeof parsed?.expiresAt === "number" &&
+      parsed.expiresAt > Date.now() + 60_000
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function persistToken(token: CachedToken): Promise<void> {
+  try {
+    const { prisma } = await import("./db");
+    const value = JSON.stringify(token);
+    await prisma.systemConfig.upsert({
+      where: { key: TOKEN_CONFIG_KEY },
+      create: { key: TOKEN_CONFIG_KEY, value },
+      update: { value },
+    });
+  } catch {
+    // Best-effort — an unpersisted token still works for this instance.
+  }
+}
+
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 500;
 
@@ -229,6 +274,9 @@ export function createPowerHubClient(): PowerHubClient {
 
   let cachedToken: CachedToken | null = null;
   let tokenPromise: Promise<string> | null = null;
+  // Set after a 401 so the re-auth skips the (revoked) persisted token
+  // instead of reading it straight back from the DB.
+  let skipPersistedOnce = false;
   const rateLimiter = new TokenBucket(4); // 4 req/sec (under Tesla's 5 limit)
 
   async function getToken(): Promise<string> {
@@ -244,6 +292,16 @@ export function createPowerHubClient(): PowerHubClient {
 
     tokenPromise = (async () => {
       try {
+        // L2: another instance may already hold a valid token in the DB.
+        if (!skipPersistedOnce) {
+          const persisted = await readPersistedToken();
+          if (persisted) {
+            cachedToken = persisted;
+            return cachedToken.jwt;
+          }
+        }
+        skipPersistedOnce = false;
+
         // OAuth2 client_credentials grant per Tesla PowerHub docs:
         // POST /v1/auth/token with Basic Auth (client_id:client_secret)
         // Response: { meta, data: { access_token, token_type }, links }
@@ -278,6 +336,7 @@ export function createPowerHubClient(): PowerHubClient {
         }
 
         cachedToken = { jwt, expiresAt };
+        await persistToken(cachedToken);
         return cachedToken.jwt;
       } finally {
         tokenPromise = null;
@@ -289,6 +348,16 @@ export function createPowerHubClient(): PowerHubClient {
 
   function clearToken(): void {
     cachedToken = null;
+    skipPersistedOnce = true;
+    // Best-effort: remove the revoked token so other instances re-auth too.
+    void (async () => {
+      try {
+        const { prisma } = await import("./db");
+        await prisma.systemConfig.deleteMany({ where: { key: TOKEN_CONFIG_KEY } });
+      } catch {
+        // ignore — skipPersistedOnce already protects this instance
+      }
+    })();
   }
 
   /**
