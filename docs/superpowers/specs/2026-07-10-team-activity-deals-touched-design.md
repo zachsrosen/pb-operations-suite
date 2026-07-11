@@ -37,7 +37,8 @@ Project Pipeline or is done). Deals in the `Test Pipeline` never count. Stage
 portal has `isClosed=true`.
 
 **Deals touched (all)** = same distinct count with no stage/age exclusions
-(surfaced in the per-day detail, not the headline).
+(surfaced in the per-day detail, not the headline). Test Pipeline deals are
+dropped before counting and appear in **neither** count.
 
 Both counts consider **only hubspot-source events**. The Zuper and PE adapters
 also emit `DEAL:<id>` objectKeys; those represent field/document activity, not
@@ -97,7 +98,11 @@ single-element `deals` field.
 event stream, so `interactions`, `avgEvents`, `activeHours`, and
 `perSource.hubspot` will read higher for everyone than before this change.
 That is real activity that was previously invisible (audit logs only), not
-noise; no compensation is attempted.
+noise; no compensation is attempted. Two known dedup imprecisions are accepted
+as minor: a multi-deal engagement dedups only against its *first* deal's audit
+rows, and `DEAL:<id>` keys are shared with Zuper/PE events so cross-source
+collapses within the 10-minute window are possible (pre-existing behavior,
+just more frequent).
 
 ### 2. Metrics (`src/lib/team-activity/metrics.ts` — pure, Jest-covered)
 
