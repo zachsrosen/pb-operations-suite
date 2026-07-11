@@ -118,7 +118,7 @@ describe("FleetTable customer column", () => {
       target: { value: "bob jones" },
     });
 
-    expect(screen.getByText("Jones Residence")).toBeInTheDocument();
-    expect(screen.queryByText("Smith Residence")).not.toBeInTheDocument();
+    expect(screen.getByText(/Jones Residence/)).toBeInTheDocument();
+    expect(screen.queryByText(/Smith Residence/)).not.toBeInTheDocument();
   });
 });

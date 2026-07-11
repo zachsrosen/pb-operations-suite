@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useSSE } from "@/hooks/useSSE";
 import DashboardShell from "@/components/DashboardShell";
@@ -45,6 +45,10 @@ export default function PowerHubDashboard() {
       if (!res.ok) throw new Error("Failed to fetch fleet data");
       return res.json();
     },
+    // Keep the page still during background updates
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const sitesQuery = useQuery({
@@ -54,6 +58,11 @@ export default function PowerHubDashboard() {
       if (!res.ok) throw new Error("Failed to fetch sites");
       return res.json();
     },
+    // Hold the previous rows during refetches so the table never flashes
+    // empty or reflows mid-read; client-side sort keeps order stable.
+    placeholderData: keepPreviousData,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   useSSE(

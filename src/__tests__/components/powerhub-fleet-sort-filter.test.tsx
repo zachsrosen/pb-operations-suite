@@ -73,7 +73,7 @@ describe("FleetTable sorting", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^customer$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^customer \/ site$/i }));
     expect(firstRowText()).toContain("A-Site");
   });
 });
@@ -93,8 +93,8 @@ describe("FleetTable filters", () => {
     const dropdown = screen.getByPlaceholderText("Search...").closest("div")!.parentElement!;
     fireEvent.click(within(dropdown).getByRole("button", { name: /unlinked/i }));
 
-    expect(screen.getByText("OrphanSite")).toBeInTheDocument();
-    expect(screen.queryByText("LinkedSite")).not.toBeInTheDocument();
+    expect(screen.getByText(/OrphanSite/)).toBeInTheDocument();
+    expect(screen.queryByText(/LinkedSite/)).not.toBeInTheDocument();
   });
 
   it("filters by alert severity", () => {
@@ -114,8 +114,8 @@ describe("FleetTable filters", () => {
     const dropdown = screen.getByPlaceholderText("Search...").closest("div")!.parentElement!;
     fireEvent.click(within(dropdown).getByRole("button", { name: /critical/i }));
 
-    expect(screen.getByText("CriticalSite")).toBeInTheDocument();
-    expect(screen.queryByText("QuietSite")).not.toBeInTheDocument();
+    expect(screen.getByText(/CriticalSite/)).toBeInTheDocument();
+    expect(screen.queryByText(/QuietSite/)).not.toBeInTheDocument();
   });
 
   it("filters by grid status", () => {
@@ -140,8 +140,8 @@ describe("FleetTable filters", () => {
     const dropdown = screen.getByPlaceholderText("Search...").closest("div")!.parentElement!;
     fireEvent.click(within(dropdown).getByRole("button", { name: /off-grid/i }));
 
-    expect(screen.getByText("OffGridSite")).toBeInTheDocument();
-    expect(screen.queryByText("OnGridSite")).not.toBeInTheDocument();
+    expect(screen.getByText(/OffGridSite/)).toBeInTheDocument();
+    expect(screen.queryByText(/OnGridSite/)).not.toBeInTheDocument();
   });
 
   it("reports the filtered rows for export via onVisibleRowsChange", () => {
