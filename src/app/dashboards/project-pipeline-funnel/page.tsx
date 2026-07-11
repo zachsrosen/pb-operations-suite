@@ -109,6 +109,7 @@ function ProjectPipelineFunnelInner() {
   const pe: "all" | "pe" | "non-pe" = peParam === "pe" || peParam === "non-pe" ? peParam : "all";
   const includeOnHold = searchParams.get("oh") !== "0";
   const includeRejected = searchParams.get("pr") !== "0";
+  const includeCancelled = searchParams.get("cx") !== "0";
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
@@ -157,7 +158,7 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected],
+    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
@@ -166,6 +167,7 @@ function ProjectPipelineFunnelInner() {
       if (pe !== "all") params.set("pe", pe);
       if (!includeOnHold) params.set("onhold", "0");
       if (!includeRejected) params.set("rejected", "0");
+      if (!includeCancelled) params.set("cancelled", "0");
       if (useActiveScope) {
         // Funnel tab: live snapshot of all active deals, no date window.
         params.set("scope", "active");
@@ -303,6 +305,15 @@ function ProjectPipelineFunnelInner() {
           title={includeRejected ? "Project-rejected deals included — click to hide" : "Project-rejected deals hidden — click to show"}
         >
           {includeRejected ? "Rejected: shown" : "Rejected: hidden"}
+        </button>
+        {/* Cancelled toggle */}
+        <button
+          type="button"
+          onClick={() => setParam("cx", includeCancelled ? "0" : "")}
+          className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeCancelled ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-zinc-500/40 bg-zinc-500/10 text-zinc-300"}`}
+          title={includeCancelled ? "Cancelled deals included — click to hide" : "Cancelled deals hidden — click to show"}
+        >
+          {includeCancelled ? "Cancelled: shown" : "Cancelled: hidden"}
         </button>
         {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">
@@ -1182,11 +1193,12 @@ function BacklogSection({
   // its status in the pre-construction backlogs so blockers are visible.
   const ICSTATUS: StaffCol = { key: "interconnectionStatus", label: "IC Status" };
 
-  // Deals that cancelled AT this gate = the difference between the funnel
-  // card-to-card drop (which counts cancelled) and the live backlog bar (which
-  // doesn't). Equals cancelledCount(prior milestone) − cancelledCount(this
-  // milestone); summed across gates it equals the total cancelled. Shown inline
-  // so the gap between the cards and the backlog is explained, not mysterious.
+  // Deals that cancelled AT this gate (reached the prior milestone but not this
+  // one) = cancelledCount(prior) − cancelledCount(this). The drill-down places
+  // each cancelled deal in the same bucket, so adding this to the active count
+  // keeps the bar count equal to the row list — and the funnel card-to-card
+  // drop = the backlog exactly. All zero when cancelled deals are hidden (they
+  // are filtered up front) and on the active-scope tabs (never included).
   const cancelledAtGate = (prior: ProjectFunnelStageKey, cur: ProjectFunnelStageKey) =>
     Math.max(0, summary[prior].cancelledCount - summary[cur].cancelledCount);
 
@@ -1194,29 +1206,28 @@ function BacklogSection({
     key: string;
     label: string;
     count: number;
-    cancelled: number;
     color: string;
     deals: ProjectFunnelDrillDownDeal[];
     staffCols: StaffCol[];
   }> = [
-    { key: "awaitingSurveySchedule", label: "Awaiting Survey Schedule", count: summary.salesClosed.count - summary.surveyScheduled.count, cancelled: cancelledAtGate("salesClosed", "surveyScheduled"), color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule, staffCols: [PM, OWNER] },
-    { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count, cancelled: cancelledAtGate("surveyScheduled", "surveyDone"), color: "bg-amber-500", deals: drillDown.awaitingSurvey, staffCols: [PM, OWNER, SURVEYOR] },
-    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count, cancelled: cancelledAtGate("surveyDone", "daSent"), color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, OWNER, DESIGN] },
-    { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count, cancelled: cancelledAtGate("daSent", "daApproved"), color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, OWNER, DESIGN] },
-    { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count, cancelled: cancelledAtGate("daApproved", "designCompleted"), color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete, staffCols: [PM, OWNER, DESIGN] },
-    { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count, cancelled: cancelledAtGate("designCompleted", "permitsSubmitted"), color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
-    { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count, cancelled: cancelledAtGate("permitsSubmitted", "permitsIssued"), color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
-    { key: "awaitingInterconnection", label: "Awaiting Interconnection Approval", count: drillDown.awaitingInterconnection.length, cancelled: 0, color: "bg-fuchsia-500", deals: drillDown.awaitingInterconnection, staffCols: [PM, OWNER, IC, ICSTATUS] },
-    { key: "awaitingReadyToBuild", label: "Awaiting Ready to Build", count: drillDown.awaitingReadyToBuild.length, cancelled: 0, color: "bg-cyan-600", deals: drillDown.awaitingReadyToBuild, staffCols: [PM, OWNER, IC, ICSTATUS] },
-    { key: "awaitingConstructionSchedule", label: "Awaiting Construction Schedule", count: drillDown.awaitingConstructionSchedule.length, cancelled: cancelledAtGate("permitsIssued", "constructionScheduled"), color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OWNER, OPS, ICSTATUS] },
-    { key: "awaitingConstructionComplete", label: "Awaiting Construction Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count, cancelled: cancelledAtGate("constructionScheduled", "constructionComplete"), color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OWNER, OPS] },
-    { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count, cancelled: cancelledAtGate("constructionComplete", "inspectionPassed"), color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OWNER, INSP] },
-    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count, cancelled: cancelledAtGate("inspectionPassed", "ptoGranted"), color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC, ICSTATUS] },
-    { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, cancelled: 0, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM, OWNER] },
+    { key: "awaitingSurveySchedule", label: "Awaiting Survey Schedule", count: summary.salesClosed.count - summary.surveyScheduled.count + cancelledAtGate("salesClosed", "surveyScheduled"), color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule, staffCols: [PM, OWNER] },
+    { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count + cancelledAtGate("surveyScheduled", "surveyDone"), color: "bg-amber-500", deals: drillDown.awaitingSurvey, staffCols: [PM, OWNER, SURVEYOR] },
+    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count + cancelledAtGate("surveyDone", "daSent"), color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, OWNER, DESIGN] },
+    { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count + cancelledAtGate("daSent", "daApproved"), color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, OWNER, DESIGN] },
+    { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count + cancelledAtGate("daApproved", "designCompleted"), color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete, staffCols: [PM, OWNER, DESIGN] },
+    { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count + cancelledAtGate("designCompleted", "permitsSubmitted"), color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
+    { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count + cancelledAtGate("permitsSubmitted", "permitsIssued"), color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
+    { key: "awaitingInterconnection", label: "Awaiting Interconnection Approval", count: drillDown.awaitingInterconnection.length, color: "bg-fuchsia-500", deals: drillDown.awaitingInterconnection, staffCols: [PM, OWNER, IC, ICSTATUS] },
+    { key: "awaitingReadyToBuild", label: "Awaiting Ready to Build", count: drillDown.awaitingReadyToBuild.length, color: "bg-cyan-600", deals: drillDown.awaitingReadyToBuild, staffCols: [PM, OWNER, IC, ICSTATUS] },
+    { key: "awaitingConstructionSchedule", label: "Awaiting Construction Schedule", count: drillDown.awaitingConstructionSchedule.length, color: "bg-cyan-500", deals: drillDown.awaitingConstructionSchedule, staffCols: [PM, OWNER, OPS, ICSTATUS] },
+    { key: "awaitingConstructionComplete", label: "Awaiting Construction Complete", count: summary.constructionScheduled.count - summary.constructionComplete.count + cancelledAtGate("constructionScheduled", "constructionComplete"), color: "bg-green-500", deals: drillDown.awaitingConstructionComplete, staffCols: [PM, OWNER, OPS] },
+    { key: "awaitingInspection", label: "Awaiting Inspection", count: summary.constructionComplete.count - summary.inspectionPassed.count + cancelledAtGate("constructionComplete", "inspectionPassed"), color: "bg-emerald-500", deals: drillDown.awaitingInspection, staffCols: [PM, OWNER, INSP] },
+    { key: "awaitingPto", label: "Awaiting PTO", count: summary.inspectionPassed.count - summary.ptoGranted.count + cancelledAtGate("inspectionPassed", "ptoGranted"), color: "bg-teal-500", deals: drillDown.awaitingPto, staffCols: [PM, OWNER, IC, ICSTATUS] },
+    { key: "awaitingCloseOut", label: "Awaiting Close Out", count: drillDown.awaitingCloseOut.length, color: "bg-sky-500", deals: drillDown.awaitingCloseOut, staffCols: [PM, OWNER] },
   ];
 
   const maxBacklog = Math.max(1, ...backlogs.map((b) => b.count));
-  const anyCancelled = backlogs.some((b) => b.cancelled > 0);
+  const anyCancelled = backlogs.some((b) => b.deals.some((d) => d.flag?.label === "Cancelled"));
 
   // Revenue per backlog = sum of its drill-down deals (the bucket membership).
   const backlogRevenue = (b: { deals: ProjectFunnelDrillDownDeal[] }) =>
@@ -1231,9 +1242,9 @@ function BacklogSection({
   // Average days the pending deals have been waiting at this stage. Clamp each
   // deal at 0 so future-dated references (e.g. construction scheduled ahead)
   // don't produce a negative "days in stage".
-  // Average excludes only "parked" deals (On Hold) — a genuine pause we don't
-  // hold against the clock. RTB-Blocked and Sales Change still count: we want to
-  // see how long they've been blocked/pending.
+  // Average excludes only "parked" deals (On Hold, Cancelled) — pauses/dead ends
+  // we don't hold against the clock. RTB-Blocked and Sales Change still count: we
+  // want to see how long they've been blocked/pending.
   const avgDaysInStage = (deals: ProjectFunnelDrillDownDeal[]): number | null => {
     const days = deals
       .filter((d) => !d.flag?.parked)
@@ -1266,8 +1277,8 @@ function BacklogSection({
       </div>
       {anyCancelled ? (
         <p className="text-[11px] text-muted/70 mb-4">
-          Live deals stuck before each milestone. A funnel card&apos;s drop to the next stage also counts deals
-          that <span className="text-red-400/70">cancelled at that gate</span> — shown here in red — so the card drop = this backlog + cancelled.
+          Deals stuck before each milestone. Deals that <span className="text-red-400/70">cancelled at a gate</span> are
+          included in that bucket and flagged red in the drill-down — use the Cancelled toggle above to drop them.
         </p>
       ) : (
         <div className="mb-4" />
@@ -1327,7 +1338,7 @@ function BacklogSection({
                   </span>
                 )}
                 {b.count > 0 && avgDays != null && (
-                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the actionable (non-on-hold) deals have been at this stage">
+                  <span className="text-xs text-muted/70 shrink-0 tabular-nums" title="Average days the actionable (non-parked) deals have been at this stage">
                     {avgDays}d in stage
                   </span>
                 )}
@@ -1344,20 +1355,12 @@ function BacklogSection({
                     key={f.label}
                     className={`text-xs shrink-0 tabular-nums ${FLAG_TEXT[f.tone] || "text-muted"}`}
                     title={f.parked
-                      ? "On hold — counted in this bucket but parked, so excluded from the average above"
+                      ? `${f.label} — counted in this bucket but parked, so excluded from the average above`
                       : "Counted in this bucket and in the average; flagged so you can see why it's been waiting"}
                   >
                     · {f.count} {f.label.toLowerCase()}
                   </span>
                 ))}
-                {b.cancelled > 0 && (
-                  <span
-                    className="text-xs text-red-400/70 shrink-0 tabular-nums"
-                    title="Deals that cancelled at this gate — they're counted in the funnel card drop but not in this live backlog"
-                  >
-                    {b.count > 0 ? "· " : ""}{b.cancelled} cancelled here
-                  </span>
-                )}
               </div>
             </button>
             {/* Per-status counts, aligned under the bar. */}
