@@ -232,6 +232,19 @@ describe("dealsTouched metrics", () => {
     expect(days[0].dealsTouchedAll).toBe(0);
   });
 
+  it("task engagements (due-date-timed) don't stretch span/active-hours but still count deals", () => {
+    const days = computePersonDays([
+      hsEv({ deals: [{ id: "1", active: true }], kind: "engagement/emails", timestamp: new Date("2026-07-01T17:00:00Z") }), // 11:00 Denver
+      hsEv({ deals: [{ id: "1", active: true }], kind: "engagement/emails", timestamp: new Date("2026-07-01T18:00:00Z") }), // 12:00 Denver
+      hsEv({ deals: [{ id: "2", active: true }], kind: "engagement/tasks", timestamp: new Date("2026-07-02T05:59:00Z") }), // 23:59 Denver Jul 1 (due date)
+    ]);
+    expect(days).toHaveLength(1);
+    expect(days[0].dealsTouched).toBe(2); // task's deal still counts
+    expect(days[0].eventCount).toBe(3);
+    expect(days[0].spanHours).toBeCloseTo(1); // 11:00-12:00; the 23:59 due date is ignored
+    expect(days[0].lastMinute).toBe(12 * 60);
+  });
+
   it("rollupByPerson averages dealsTouched over active weekdays", () => {
     const days = computePersonDays([
       hsEv({ deals: [{ id: "1", active: true }, { id: "2", active: true }] }), // Wed 7/1

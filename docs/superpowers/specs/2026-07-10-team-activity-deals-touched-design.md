@@ -98,7 +98,12 @@ single-element `deals` field.
 event stream, so `interactions`, `avgEvents`, `activeHours`, and
 `perSource.hubspot` will read higher for everyone than before this change.
 That is real activity that was previously invisible (audit logs only), not
-noise; no compensation is attempted. Two known dedup imprecisions are accepted
+noise; no compensation is attempted. One exception: `tasks` engagements carry
+their DUE date as `hs_timestamp` (not an activity time), so task events are
+excluded from the time-shape metrics (`firstMinute`/`lastMinute`/`spanHours`/
+`activeHours`) in `computePersonDays` — a workflow-created 6am task must not
+stretch anyone's day or flip a verdict. They still count for
+events/interactions/deals. Two known dedup imprecisions are accepted
 as minor: a multi-deal engagement dedups only against its *first* deal's audit
 rows, and `DEAL:<id>` keys are shared with Zuper/PE events so cross-source
 collapses within the 10-minute window are possible (pre-existing behavior,

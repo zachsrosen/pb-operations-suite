@@ -218,7 +218,12 @@ export function computePersonDays(
   const out: PersonDayMetric[] = [];
   for (const [key, evs] of groups) {
     const [email, day] = key.split(" ");
-    const times = evs.map((e) => e.timestamp);
+    // Task engagements are due-date-timed (hs_timestamp = due date, not when
+    // anyone acted), so keep them out of the time-shape metrics — a
+    // workflow-created 6am task must not stretch span/active-hours or flip a
+    // verdict. They still count for events/interactions/deals.
+    const timeShaped = evs.filter((e) => e.kind !== "engagement/tasks");
+    const times = timeShaped.map((e) => e.timestamp);
     const t = talkByKey.get(key);
     const perSource = emptyPerSource();
     for (const e of evs) perSource[e.source]++;
