@@ -164,8 +164,8 @@ export interface ProjectFunnelDrillDownDeal {
   interconnectionStatus: string | null;
   /**
    * Set when the deal is parked / blocked / waiting on someone else — kept in its
-   * bucket but flagged as not-actionable, with the reason. Covers On Hold,
-   * RTB-Blocked, and "Pending Sales Changes" (the requested change).
+   * bucket but flagged as not-actionable, with the reason. Covers Cancelled,
+   * On Hold, RTB-Blocked, and "Pending Sales Changes" (the requested change).
    */
   flag?: ProjectFunnelDrillDownFlag | null;
 }
@@ -419,6 +419,14 @@ function toDrillDown(
   status: string | null,
   extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
 ): ProjectFunnelDrillDownDeal {
+  // A cancelled deal's wait ended at cancellation, not today — show how long it
+  // sat at this gate before dying, and pin its workstream status to "Cancelled"
+  // so the bucket's status segments call it out instead of a stale sub-status.
+  const cancelled = p.stageId === CANCELLED_STAGE_ID;
+  const daysUntilDead =
+    cancelled && p.cancelledDate
+      ? Math.max(0, daysWaiting - daysBetween(p.cancelledDate, todayStr()))
+      : daysWaiting;
   return {
     id: p.id,
     name: p.name,
@@ -428,8 +436,8 @@ function toDrillDown(
     closeDate: p.closeDate!,
     stage: p.stage,
     url: p.url,
-    daysWaiting,
-    status,
+    daysWaiting: daysUntilDead,
+    status: cancelled ? "Cancelled" : status,
     ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
     ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
     projectManager: p.projectManager || "",
@@ -451,6 +459,12 @@ function toDrillDown(
 
 /** Flag a deal that's parked/blocked/awaiting-someone, with the reason to show. */
 function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
+  if (p.stageId === CANCELLED_STAGE_ID) {
+    // Cancelled deals only reach the drill-down when the cancelled toggle
+    // includes them. Parked: their wait is history, not an actionable clock.
+    const reason = p.salesCommunicationReason || p.pbShitShowReason || p.katsNotes || null;
+    return { label: "Cancelled", tone: "red", reason, note: null, parked: true };
+  }
   if (p.stageId === ON_HOLD_STAGE_ID) {
     return { label: "On hold", tone: "yellow", reason: p.onHoldReason || null, note: p.onHoldNotes || null, parked: true };
   }
@@ -1325,7 +1339,9 @@ export function buildProjectFunnelData(
   };
 
   for (const p of filtered) {
-    if (p.stageId === CANCELLED_STAGE_ID) continue;
+    // Cancelled deals flow into the bucket where they stalled (flagged red by
+    // drillDownFlag). The cancelled toggle drops them from `projects` up front
+    // when hidden, and the active scope never contains them.
     const m = resolveMilestones(p);
 
     if (!m.hasSurveyScheduled) {
