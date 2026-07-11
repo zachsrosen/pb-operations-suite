@@ -17,6 +17,7 @@ import {
   zuperAdapter,
   hubspotAdapter,
   googleAdapter,
+  googlePtoAdapter,
   peAdapter,
   type AdapterResult,
   type DateRange,
@@ -88,6 +89,13 @@ export async function GET(request: Request) {
   const ran: { source: string; events: number; warning?: string }[] = [];
   const skipped: { source: string; reason: string }[] = [];
 
+  // PTO (calendar OOO days) is not an event source — it runs alongside the
+  // adapters and feeds the metrics so PTO days drop out of the averages.
+  const ptoPromise = googlePtoAdapter(range, roster).catch((e) => ({
+    pto: new Map<string, Set<string>>(),
+    skipped: `ERROR ${e instanceof Error ? e.message : String(e)}`,
+  }));
+
   const results = await Promise.all(
     chosen.map(async (a) => {
       try {
@@ -97,6 +105,9 @@ export async function GET(request: Request) {
       }
     }),
   );
+  const ptoResult = await ptoPromise;
+  if (ptoResult.skipped) skipped.push({ source: "pto", reason: ptoResult.skipped });
+
   for (const r of results) {
     if ("error" in r && r.error) {
       skipped.push({ source: r.key, reason: `ERROR ${r.error}` });
@@ -109,8 +120,8 @@ export async function GET(request: Request) {
     else ran.push({ source: r.key, events: res.events.length, ...(res.warning ? { warning: res.warning } : {}) });
   }
 
-  const personDays = computePersonDays(events, talk);
-  const summaries = rollupByPerson(personDays);
+  const personDays = computePersonDays(events, talk, ptoResult.pto);
+  const summaries = rollupByPerson(personDays, ptoResult.pto);
   const nameOf = (email: string) =>
     roster.find((m) => m.email.toLowerCase() === email)?.name ?? email;
 

@@ -41,10 +41,14 @@ export interface TalkTimeRecord {
   calls: number;
 }
 
+/** Canonical lowercase email -> set of Denver-local YYYY-MM-DD PTO days. */
+export type PtoDaysByEmail = Map<string, Set<string>>;
+
 export interface PersonDayMetric {
   email: string;
   day: string; // Denver-local YYYY-MM-DD
   weekday: boolean;
+  pto: boolean;
   firstMinute: number; // minutes since Denver-local midnight
   lastMinute: number;
   spanHours: number;
@@ -78,6 +82,8 @@ export interface PersonSummary {
   totalCalls: number;
   avgStartMinute: number | null;
   avgEndMinute: number | null;
+  /** Weekday PTO days in range (from calendar OOO), including fully-offline ones. */
+  ptoDays: number;
   verdict: Verdict;
 }
 
@@ -187,6 +193,28 @@ export function interactionCount(events: ActivityEvent[], windowMinutes = 10): n
   return count + noKey;
 }
 
+/**
+ * Convert out-of-office calendar spans into Denver PTO days. A day counts as
+ * PTO only when OOO covers >= `minHours` of it, so a short afternoon-off block
+ * doesn't erase a worked morning. Hours are attributed by stepping through the
+ * span in 30-min slices, which keeps day boundaries DST-correct via denverDay.
+ */
+export function ptoDaysFromOooEvents(
+  spans: { start: Date; end: Date }[],
+  minHours = 6,
+): Set<string> {
+  const STEP_MS = 30 * 60_000;
+  const hoursByDay = new Map<string, number>();
+  for (const { start, end } of spans) {
+    for (let t = start.getTime(); t < end.getTime(); t += STEP_MS) {
+      const sliceMs = Math.min(STEP_MS, end.getTime() - t);
+      const day = denverDay(new Date(t));
+      hoursByDay.set(day, (hoursByDay.get(day) ?? 0) + sliceMs / 3_600_000);
+    }
+  }
+  return new Set([...hoursByDay].filter(([, h]) => h >= minHours).map(([d]) => d));
+}
+
 const emptyPerSource = (): Record<ActivitySource, number> => ({
   pbops: 0,
   aircall: 0,
@@ -200,6 +228,7 @@ const emptyPerSource = (): Record<ActivitySource, number> => ({
 export function computePersonDays(
   events: ActivityEvent[],
   talk: TalkTimeRecord[] = [],
+  pto?: PtoDaysByEmail,
 ): PersonDayMetric[] {
   const groups = new Map<string, ActivityEvent[]>();
   for (const e of events) {
@@ -246,6 +275,7 @@ export function computePersonDays(
       email,
       day,
       weekday: isWeekday(day),
+      pto: pto?.get(email)?.has(day) ?? false,
       firstMinute,
       lastMinute,
       spanHours: minutes.length ? (lastMinute - firstMinute) / 60 : 0,
@@ -278,15 +308,22 @@ export function verdictFor(s: {
   return "light";
 }
 
-/** Roll up per-day metrics into one summary per person. */
-export function rollupByPerson(personDays: PersonDayMetric[]): PersonSummary[] {
+/**
+ * Roll up per-day metrics into one summary per person. Weekday averages are
+ * taken over non-PTO weekdays only, so a stray touch on a PTO day (glancing at
+ * email from the beach) doesn't drag the averages down. `ptoDays` counts
+ * weekday PTO days from the calendar, including fully-offline ones that never
+ * produce a PersonDayMetric.
+ */
+export function rollupByPerson(personDays: PersonDayMetric[], pto?: PtoDaysByEmail): PersonSummary[] {
   const byEmail = new Map<string, PersonDayMetric[]>();
   for (const d of personDays) {
     (byEmail.get(d.email) ?? byEmail.set(d.email, []).get(d.email)!).push(d);
   }
   const out: PersonSummary[] = [];
   for (const [email, days] of byEmail) {
-    const weekdays = days.filter((d) => d.weekday);
+    const weekdays = days.filter((d) => d.weekday && !d.pto);
+    const ptoDays = [...(pto?.get(email) ?? [])].filter(isWeekday).length;
     const avgSpanHours = avg(weekdays.map((d) => d.spanHours));
     const avgActiveHours = avg(weekdays.map((d) => d.activeHours));
     const avgGoogleSpanHours = avg(weekdays.map((d) => d.googleSpanHours));
@@ -294,7 +331,7 @@ export function rollupByPerson(personDays: PersonDayMetric[]): PersonSummary[] {
       email,
       activeDays: days.length,
       weekdayActiveDays: weekdays.length,
-      weekendActiveDays: days.length - weekdays.length,
+      weekendActiveDays: days.filter((d) => !d.weekday).length,
       avgActiveHours,
       avgSpanHours,
       avgInteractions: avg(weekdays.map((d) => d.interactions)),
@@ -305,6 +342,7 @@ export function rollupByPerson(personDays: PersonDayMetric[]): PersonSummary[] {
       totalCalls: days.reduce((s, d) => s + d.callCount, 0),
       avgStartMinute: weekdays.length ? avg(weekdays.map((d) => d.firstMinute)) : null,
       avgEndMinute: weekdays.length ? avg(weekdays.map((d) => d.lastMinute)) : null,
+      ptoDays,
       verdict: verdictFor({ avgSpanHours, avgActiveHours, avgGoogleSpanHours }),
     });
   }
