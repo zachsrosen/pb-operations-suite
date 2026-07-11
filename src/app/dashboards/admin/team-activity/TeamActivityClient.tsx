@@ -24,7 +24,7 @@ interface DayRow extends PersonDayMetric {
 }
 interface ApiResponse {
   range: { from: string; to: string };
-  sources: { ran: { source: string; events: number }[]; skipped: { source: string; reason: string }[] };
+  sources: { ran: { source: string; events: number; warning?: string }[]; skipped: { source: string; reason: string }[] };
   totalEvents: number;
   summaries: SummaryRow[];
   personDays: DayRow[];
@@ -58,6 +58,7 @@ const HEADERS = [
   "Active/day",
   "Span/day",
   "Interactions/day",
+  "Deals/day",
   "Talk (min)",
   "Google span",
   "Start",
@@ -156,7 +157,7 @@ function ActivityTable({
         <thead>
           <tr className="text-left text-xs text-muted border-b border-t-border">
             {HEADERS.map((h, i) => (
-              <th key={h} className={`px-3 py-2 font-medium ${i >= 1 && i <= 8 ? "text-right" : ""}`}>
+              <th key={h} className={`px-3 py-2 font-medium ${i >= 1 && i <= 9 ? "text-right" : ""}`}>
                 {h}
               </th>
             ))}
@@ -196,6 +197,7 @@ function ActivityTable({
                   <td className="px-3 py-2 text-right">{h1(s.avgActiveHours)}h</td>
                   <td className="px-3 py-2 text-right text-muted">{h1(s.avgSpanHours)}h</td>
                   <td className="px-3 py-2 text-right">{s.avgInteractions.toFixed(0)}</td>
+                  <td className="px-3 py-2 text-right">{s.avgDealsTouched ? h1(s.avgDealsTouched) : "\u2014"}</td>
                   <td className="px-3 py-2 text-right">{s.totalTalkMinutes || "—"}</td>
                   <td className="px-3 py-2 text-right text-muted">
                     {s.avgGoogleSpanHours ? `${h1(s.avgGoogleSpanHours)}h` : "—"}
@@ -208,13 +210,13 @@ function ActivityTable({
                 </tr>
                 {open && (
                   <tr className="bg-surface-2/50">
-                    <td colSpan={10} className="px-3 py-3">
+                    <td colSpan={11} className="px-3 py-3">
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs min-w-[720px]">
                           <thead>
                             <tr className="text-left text-muted">
-                              {["Day", "Events", "Interactions", "Span", "Active", "Talk", "First", "Last", "Sources"].map((h, i) => (
-                                <th key={h} className={`px-2 py-1 font-medium ${i >= 1 && i <= 7 ? "text-right" : ""}`}>
+                              {["Day", "Events", "Interactions", "Deals", "Span", "Active", "Talk", "First", "Last", "Sources"].map((h, i) => (
+                                <th key={h} className={`px-2 py-1 font-medium ${i >= 1 && i <= 8 ? "text-right" : ""}`}>
                                   {h}
                                 </th>
                               ))}
@@ -237,6 +239,12 @@ function ActivityTable({
                                     </td>
                                     <td className="px-2 py-1 text-right">{d.eventCount}</td>
                                     <td className="px-2 py-1 text-right">{d.interactions}</td>
+                                    <td className="px-2 py-1 text-right">
+                                      {d.dealsTouched}
+                                      {d.dealsTouchedAll !== d.dealsTouched && (
+                                        <span className="text-muted"> ({d.dealsTouchedAll})</span>
+                                      )}
+                                    </td>
                                     <td className="px-2 py-1 text-right">{h1(d.spanHours)}h</td>
                                     <td className="px-2 py-1 text-right">{h1(d.activeHours)}h</td>
                                     <td className="px-2 py-1 text-right">{d.talkMinutes || "—"}</td>
@@ -250,7 +258,7 @@ function ActivityTable({
                                   </tr>
                                   {drilled && (
                                     <tr>
-                                      <td colSpan={9} className="px-2 pb-2">
+                                      <td colSpan={10} className="px-2 pb-2">
                                         {drill.loading && <div className="text-muted py-1">Loading events…</div>}
                                         {drill.error && <div className="text-amber-400 py-1">{drill.error}</div>}
                                         {!drill.loading && !drill.error && (
@@ -303,7 +311,7 @@ function ActivityTable({
           })}
           {summaries.length === 0 && (
             <tr>
-              <td colSpan={10} className="px-3 py-6 text-center text-muted">
+              <td colSpan={11} className="px-3 py-6 text-center text-muted">
                 {emptyText}
               </td>
             </tr>
@@ -440,6 +448,7 @@ export default function TeamActivityClient() {
     avgActiveHours: h1(s.avgActiveHours),
     avgSpanHours: h1(s.avgSpanHours),
     avgInteractions: s.avgInteractions.toFixed(0),
+    avgDealsTouched: h1(s.avgDealsTouched),
     avgEvents: s.avgEvents.toFixed(0),
     avgGoogleSpanHours: h1(s.avgGoogleSpanHours),
     totalTalkMinutes: s.totalTalkMinutes,
@@ -525,9 +534,15 @@ export default function TeamActivityClient() {
           {data.sources.ran.map((s) => (
             <span
               key={s.source}
-              className="text-xs px-2 py-1 rounded-md border bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+              title={s.warning}
+              className={`text-xs px-2 py-1 rounded-md border ${
+                s.warning
+                  ? "bg-amber-500/10 text-amber-300 border-amber-500/30 cursor-help"
+                  : "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+              }`}
             >
               {SOURCE_LABEL[s.source as ActivitySource] ?? s.source} · {s.events.toLocaleString()} events
+              {s.warning ? " \u26a0" : ""}
             </span>
           ))}
           {data.sources.skipped.map((s) => (
@@ -620,7 +635,7 @@ export default function TeamActivityClient() {
       </div>
 
       <p className="text-xs text-muted mt-6">
-        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. Times are
+        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. Times are
         America/Denver. &ldquo;Verdict&rdquo; is a convenience label, not a judgment — the numbers are the source of truth, and
         activity outside these systems (email/docs, meetings, PTO) is not captured.
       </p>
