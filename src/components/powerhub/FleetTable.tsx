@@ -16,6 +16,8 @@ interface PowerhubSiteRow {
   linkMethod: string;
   linkConfidence: string;
   dealId: string | null;
+  /** Deal resolved via the property when the site has no direct dealId. */
+  resolvedDealId?: string | null;
   customerName?: string | null;
   dealName?: string | null;
   totalGateways: number;
@@ -372,9 +374,10 @@ export default function FleetTable({
                       )}
                     </td>
                     <td className="py-3 pr-4">
-                      {site.dealId && (site.customerName || site.dealName) ? (
+                      {(site.dealId || site.resolvedDealId) &&
+                      (site.customerName || site.dealName) ? (
                         <a
-                          href={getHubSpotDealUrl(site.dealId)}
+                          href={getHubSpotDealUrl(site.dealId || site.resolvedDealId!)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}

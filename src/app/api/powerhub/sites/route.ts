@@ -37,25 +37,68 @@ export async function GET(request: Request) {
         where: { isActive: true },
         select: { id: true, severity: true, alertName: true },
       },
+      property: {
+        select: {
+          fullAddress: true,
+          streetAddress: true,
+          city: true,
+          state: true,
+        },
+      },
     },
   });
 
-  // Resolve deal names live from HubSpot (server-cached, 10 min). The
-  // HubSpotProjectCache table this route previously read has no writer and
-  // sits empty in prod, so live resolution is the only working source.
-  const linkedDealIds = [
-    ...new Set(sites.filter((s) => s.dealId).map((s) => s.dealId as string)),
+  // Nearly the whole fleet is GEO-linked to a *property* with no direct
+  // dealId (only a handful of sites carry one) — the customer must be
+  // resolved through PropertyDealLink: site → property → most recent deal.
+  const propertyIdsNeedingDeal = [
+    ...new Set(
+      sites
+        .filter((s) => !s.dealId && s.propertyId)
+        .map((s) => s.propertyId as string)
+    ),
   ];
-  const dealMap = await resolveDealSummaries(linkedDealIds);
+  const propertyDealMap = new Map<string, string>();
+  if (propertyIdsNeedingDeal.length > 0) {
+    const links = await prisma.propertyDealLink.findMany({
+      where: { propertyId: { in: propertyIdsNeedingDeal } },
+      orderBy: { associatedAt: "desc" },
+      select: { propertyId: true, dealId: true },
+    });
+    for (const link of links) {
+      // Ordered newest-first; keep the first (most recent) deal per property
+      if (!propertyDealMap.has(link.propertyId)) {
+        propertyDealMap.set(link.propertyId, link.dealId);
+      }
+    }
+  }
+
+  const effectiveDealId = (s: { dealId: string | null; propertyId: string | null }) =>
+    s.dealId ?? (s.propertyId ? propertyDealMap.get(s.propertyId) ?? null : null);
+
+  const allDealIds = [
+    ...new Set(sites.map(effectiveDealId).filter((id): id is string => Boolean(id))),
+  ];
+  const dealMap = await resolveDealSummaries(allDealIds);
 
   const enrichedSites = sites.map((s) => {
-    const deal = s.dealId ? dealMap.get(s.dealId) : undefined;
+    const resolvedDealId = effectiveDealId(s);
+    const deal = resolvedDealId ? dealMap.get(resolvedDealId) : undefined;
+    const usePropertyAddress = !s.address && s.property?.fullAddress;
     return {
       ...s,
-      // FleetTable compat: customerName was never populated by the dead
-      // cache; the deal name ("Smith, Jane - PROJ-1234") is the human label.
       customerName: null,
       dealName: deal?.dealName ?? null,
+      resolvedDealId,
+      ...(usePropertyAddress
+        ? {
+            address: s.property?.streetAddress || s.property?.fullAddress || "",
+            city: s.property?.city || "",
+            state: s.property?.state || "",
+          }
+        : {}),
+      // Trim the joined property payload back out of the response
+      property: undefined,
     };
   });
 

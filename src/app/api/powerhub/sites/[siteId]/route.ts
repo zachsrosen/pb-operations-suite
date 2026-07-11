@@ -68,11 +68,23 @@ export async function GET(
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
+  // Nearly all sites are GEO-linked to a property with no direct dealId —
+  // resolve the deal through the property's most recent PropertyDealLink.
+  let effectiveDealId = site.dealId;
+  if (!effectiveDealId && site.propertyId) {
+    const link = await prisma.propertyDealLink.findFirst({
+      where: { propertyId: site.propertyId },
+      orderBy: { associatedAt: "desc" },
+      select: { dealId: true },
+    });
+    effectiveDealId = link?.dealId ?? null;
+  }
+
   // Resolve human labels live from HubSpot (the HubSpotProjectCache table
   // this route previously read has no writer and is empty in prod). Each
   // resolver degrades to an empty map, so the payload falls back to IDs.
   const [dealMap, ticketMap, contactMap] = await Promise.all([
-    site.dealId ? resolveDealSummaries([site.dealId]) : Promise.resolve(new Map()),
+    effectiveDealId ? resolveDealSummaries([effectiveDealId]) : Promise.resolve(new Map()),
     site.property?.ticketLinks.length
       ? resolveTicketSummaries(site.property.ticketLinks.map((l) => l.ticketId))
       : Promise.resolve(new Map()),
@@ -81,10 +93,10 @@ export async function GET(
       : Promise.resolve(new Map()),
   ]);
 
-  const dealSummary = site.dealId ? dealMap.get(site.dealId) : undefined;
+  const dealSummary = effectiveDealId ? dealMap.get(effectiveDealId) : undefined;
   const deal = dealSummary
     ? {
-        dealId: site.dealId,
+        dealId: effectiveDealId,
         dealName: dealSummary.dealName,
         stage: dealSummary.stageLabel,
       }
