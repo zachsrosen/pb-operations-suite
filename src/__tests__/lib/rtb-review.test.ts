@@ -10,6 +10,9 @@ jest.mock("@/lib/hubspot", () => ({
 
 import { fetchRtbQueue } from "@/lib/rtb-review";
 
+// entered RTB-Blocked exactly 10 days before the test runs
+const ENTERED_STAGE_AT = new Date(Date.now() - 10 * 86_400_000).toISOString();
+
 describe("fetchRtbQueue", () => {
   beforeEach(() => {
     mockSearchWithRetry.mockReset();
@@ -38,6 +41,7 @@ describe("fetchRtbQueue", () => {
             project_type: "Solar",
             amount: "30105.6",
             da_invoice_status: "Paid In Full",
+            hs_v2_date_entered_71052436: ENTERED_STAGE_AT,
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
           },
@@ -74,6 +78,8 @@ describe("fetchRtbQueue", () => {
         "https://drive.google.com/drive/folders/1PVPgD83LcjB4iUHHYrHhZeyYCdJakMRk",
       projectType: "Solar",
       amount: 30105.6,
+      enteredStageAt: ENTERED_STAGE_AT,
+      daysInStage: 10,
       daStatus: "Paid In Full",
       daPaid: true,
       approved: false,

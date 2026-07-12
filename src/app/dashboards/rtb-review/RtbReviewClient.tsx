@@ -63,7 +63,8 @@ type SortField =
   | "permitIssueDate"
   | "interconnectionStatus"
   | "constructionStatus"
-  | "daStatus";
+  | "daStatus"
+  | "daysInStage";
 
 /** Per-field comparable value; null/undefined sort last in either direction. */
 function sortValue(item: RtbQueueItem, field: SortField): string | number | null {
@@ -201,6 +202,7 @@ export default function RtbReviewClient() {
                   ["PM", "projectManager"],
                   ["Location", "location"],
                   ["Stage", null],
+                  ["Days", "daysInStage"],
                   ["Type", "projectType"],
                   ["Revenue", "amount"],
                   ["Permit", "permitIssueDate"],
@@ -232,14 +234,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={13} className="text-center text-muted py-8">
+                <td colSpan={14} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={13} className="text-center text-muted py-8">
+                <td colSpan={14} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -296,6 +298,16 @@ export default function RtbReviewClient() {
                   <td className="px-2 py-2 text-muted whitespace-nowrap">
                     {item.dealStage ?? "—"}
                   </td>
+                  <td
+                    className="px-2 py-2 whitespace-nowrap text-foreground"
+                    title={
+                      item.enteredStageAt
+                        ? `Entered RTB - Blocked ${formatDate(item.enteredStageAt)}`
+                        : undefined
+                    }
+                  >
+                    {item.daysInStage ?? "—"}
+                  </td>
                   <td className="px-2 py-2 text-muted max-w-28">
                     {item.projectType ?? "—"}
                   </td>
@@ -332,19 +344,14 @@ export default function RtbReviewClient() {
                     {item.lineItems.length === 0 ? (
                       "—"
                     ) : (
-                      <details>
-                        <summary className="cursor-pointer whitespace-nowrap hover:text-foreground">
-                          {item.lineItems.length}
-                        </summary>
-                        <ul className="mt-1 space-y-0.5 min-w-44">
-                          {item.lineItems.map((li, idx) => (
-                            <li key={idx} className="whitespace-nowrap">
-                              <span className="text-foreground">{li.quantity}×</span>{" "}
-                              {li.name}
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
+                      <ul className="space-y-0.5 min-w-44">
+                        {item.lineItems.map((li, idx) => (
+                          <li key={idx} className="whitespace-nowrap">
+                            <span className="text-foreground">{li.quantity}×</span>{" "}
+                            {li.name}
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </td>
                   <td className="px-2 py-2 whitespace-nowrap">

@@ -61,12 +61,27 @@ export interface RtbQueueItem {
   daStatus: string | null;
   /** True when the DA milestone is Paid In Full. */
   daPaid: boolean;
+  /** When the deal entered RTB - Blocked (hs_v2_date_entered_71052436). */
+  enteredStageAt: string | null;
+  /** Whole days the deal has sat in RTB - Blocked (null when entry date unknown). */
+  daysInStage: number | null;
   /** Link to the project's Google Drive folder, or null when unset. */
   driveFolderUrl: string | null;
   /** HubSpot line items on the deal (equipment the PM is releasing to build). */
   lineItems: RtbLineItem[];
   approved: boolean;
   lastModified: string | null;
+}
+
+/** HubSpot's auto-tracked "date entered RTB - Blocked" property. */
+const ENTERED_STAGE_PROP = `hs_v2_date_entered_${RTB_BLOCKED_STAGE}`;
+
+/** Whole days elapsed since the given ISO timestamp; null for missing/invalid. */
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
 const PROPERTIES = [
@@ -86,6 +101,7 @@ const PROPERTIES = [
   "da_invoice_status",
   "pm_rtb_approved",
   "hs_lastmodifieddate",
+  ENTERED_STAGE_PROP,
 ];
 
 export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
@@ -179,6 +195,8 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         constructionStatus: statusLabel("install_status", p.install_status),
         daStatus: p.da_invoice_status ?? null,
         daPaid: p.da_invoice_status === "Paid In Full",
+        enteredStageAt: p[ENTERED_STAGE_PROP] ?? null,
+        daysInStage: daysSince(p[ENTERED_STAGE_PROP]),
         driveFolderUrl: driveFolderUrl(p.all_document_parent_folder_id),
         lineItems: lineItemsByDeal.get(r.id) ?? [],
         approved: p.pm_rtb_approved === "true",
