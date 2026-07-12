@@ -187,6 +187,9 @@ export async function peAdapter(
       source: "pe",
       kind: `uploaded ${r.docName} v${r.version}`,
       objectKey: r.dealId ? `DEAL:${r.dealId}` : `pe:${r.peProjectId}`,
+      // A milestone-doc upload is live work on that deal by definition; no
+      // stage screen (that applies to HubSpot touches only, see spec).
+      deals: r.dealId ? [{ id: r.dealId, active: true }] : undefined,
     });
   }
   return { events };
