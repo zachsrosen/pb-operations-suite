@@ -130,6 +130,25 @@ export default function RtbReviewClient() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rtb-review"] }),
   });
 
+  const [editingNotes, setEditingNotes] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+
+  const saveNotes = useMutation({
+    mutationFn: async (vars: { dealId: string; notes: string }) => {
+      const res = await fetch(`/api/deals/rtb-review/${vars.dealId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: vars.notes }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      setEditingNotes(null);
+      queryClient.invalidateQueries({ queryKey: ["rtb-review"] });
+    },
+  });
+
   const items = useMemo(() => data?.items ?? [], [data]);
 
   const [selectedPMs, setSelectedPMs] = useState<string[]>([]);
@@ -241,7 +260,7 @@ export default function RtbReviewClient() {
                   ["Permit", "permittingStatus"],
                   ["IC", "interconnectionStatus"],
                   ["Constr", "constructionStatus"],
-                  ["RTB Notes", null],
+                  ["RTB - Blocked Notes", null],
                   ["Items", null],
                   ["DA", "daStatus"],
                   ["Payment", "paymentMethod"],
@@ -370,20 +389,65 @@ export default function RtbReviewClient() {
                     {item.constructionStatus ?? "—"}
                   </td>
                   <td className="px-2 py-2 text-muted">
-                    {item.rtbBlockedReason ? (
-                      <details className="group max-w-72">
-                        <summary className="cursor-pointer hover:text-foreground list-none">
-                          <span className="group-open:hidden line-clamp-2 whitespace-pre-wrap">
-                            {item.rtbBlockedReason}
-                          </span>
-                          <span className="hidden group-open:inline opacity-60">▲</span>
-                        </summary>
-                        <div className="whitespace-pre-wrap">
-                          {item.rtbBlockedReason}
+                    {editingNotes === item.dealId ? (
+                      <div className="w-64">
+                        <textarea
+                          value={notesDraft}
+                          onChange={(e) => setNotesDraft(e.target.value)}
+                          rows={4}
+                          autoFocus
+                          className="w-full text-xs p-1.5 rounded border border-t-border bg-surface text-foreground"
+                        />
+                        <div className="flex gap-1 mt-1">
+                          <button
+                            onClick={() =>
+                              saveNotes.mutate({
+                                dealId: item.dealId,
+                                notes: notesDraft,
+                              })
+                            }
+                            disabled={saveNotes.isPending}
+                            className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50"
+                          >
+                            {saveNotes.isPending ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            onClick={() => setEditingNotes(null)}
+                            disabled={saveNotes.isPending}
+                            className="text-xs px-2 py-0.5 text-muted rounded hover:bg-surface-2"
+                          >
+                            Cancel
+                          </button>
                         </div>
-                      </details>
+                      </div>
                     ) : (
-                      "—"
+                      <div className="group/notes flex items-start gap-1 max-w-72">
+                        {item.rtbBlockedReason ? (
+                          <details className="group min-w-0">
+                            <summary className="cursor-pointer hover:text-foreground list-none">
+                              <span className="group-open:hidden line-clamp-2 whitespace-pre-wrap">
+                                {item.rtbBlockedReason}
+                              </span>
+                              <span className="hidden group-open:inline opacity-60">▲</span>
+                            </summary>
+                            <div className="whitespace-pre-wrap">
+                              {item.rtbBlockedReason}
+                            </div>
+                          </details>
+                        ) : (
+                          <span>—</span>
+                        )}
+                        <button
+                          onClick={() => {
+                            setEditingNotes(item.dealId);
+                            setNotesDraft(item.rtbBlockedReason ?? "");
+                          }}
+                          title="Edit RTB - Blocked notes"
+                          className="opacity-0 group-hover/notes:opacity-60 hover:!opacity-100 shrink-0"
+                        >
+                          ✎
+                        </button>
+                      </div>
                     )}
                   </td>
                   <td className="px-2 py-2 text-muted">
