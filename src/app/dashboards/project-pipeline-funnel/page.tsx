@@ -84,7 +84,6 @@ function ProjectPipelineFunnelInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const timeframe = searchParams.get("tf") || "6";
   const locations = useMemo(() => (searchParams.get("loc") || "").split(",").filter(Boolean), [searchParams]);
   const pms = useMemo(() => (searchParams.get("pm") || "").split(",").filter(Boolean), [searchParams]);
   const owners = useMemo(() => (searchParams.get("own") || "").split(",").filter(Boolean), [searchParams]);
@@ -100,7 +99,6 @@ function ProjectPipelineFunnelInner() {
     },
     [searchParams, router, pathname]
   );
-  const setTimeframe = useCallback((v: string) => setParam("tf", v === "6" ? "" : v), [setParam]);
   const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
   const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
@@ -122,6 +120,16 @@ function ProjectPipelineFunnelInner() {
   const setTab = useCallback(
     (v: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts" | "incoming") => setParam("tab", v === "funnel" ? "" : v),
     [setParam]
+  );
+  // The Sales Funnel tab defaults to the current calendar year (the sales
+  // cohort people ask about is "this year's closes"); the other time-based
+  // tabs keep the rolling 6-month lookback. An explicit tf param wins, and
+  // picking the tab's own default clears the param to keep URLs clean.
+  const defaultTimeframe = tab === "sales-funnel" ? "this-year" : "6";
+  const timeframe = searchParams.get("tf") || defaultTimeframe;
+  const setTimeframe = useCallback(
+    (v: string) => setParam("tf", v === defaultTimeframe ? "" : v),
+    [setParam, defaultTimeframe]
   );
   // The Funnel tab + Bottlenecks are the live active-pipeline snapshot (no date
   // window). Sales Funnel, Analysis, and Monthly Activity are time-based: Sales
