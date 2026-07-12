@@ -26,7 +26,12 @@ per-deal work by a known person and must count.
   set `deals`, so field noise stays excluded — the gate is now "which
   adapters attribute deals", enforced at the adapter layer.
 - Dashboard footnote + spec language change from "HubSpot deals with logged
-  activity or edits" to "…activity, edits, or PE document submissions".
+  activity or edits" to "…activity, edits, or PE document submissions" (PE
+  uploads count regardless of deal stage; the active/3-day-buffer screen
+  applies to HubSpot touches only).
+- Update the now-false doc comments in `metrics.ts`: `ActivityEvent.deals`
+  ("set ONLY by the hubspot adapter"), `dealsTouched` ("hubspot touch"), and
+  the inline source-gate comment in `computePersonDays`.
 - Tests: replace the "only hubspot-source events feed the counts" case with
   the new rule (pe events with `deals` count; zuper `DEAL:`-keyed events
   without `deals` still don't).
@@ -39,12 +44,21 @@ existing export. Opening it fetches the PREVIOUS period of equal length
 endpoint, builds the text client-side, and renders it in a `<pre>` panel with
 a Copy button (reusing the drilldown's clipboard fallback). No new endpoint.
 
+**API addition**: the route's response gains `roster: { email: string; name:
+string; ptoWeekdays: number }[]` — the applied roster with each member's
+weekday-PTO count from the PTO adapter's map. This exists because summaries
+and personDays only contain people WITH tracked events; a fully-offline
+person on PTO the whole period appears in neither, and the card must still
+render them ("on PTO the full period"). The report card covers the main
+roster table only; "Look up anyone" extras are excluded.
+
 **New pure module** `src/lib/team-activity/report-card.ts`:
 
 ```ts
 buildReportCard(current: ReportPeriod, previous: ReportPeriod | null): string
 // ReportPeriod = { range: {from, to}; summaries: (PersonSummary & {name})[];
 //                  personDays: (PersonDayMetric & {name})[];
+//                  roster: {email, name, ptoWeekdays}[];
 //                  sources: { ran: {source, events, warning?}[];
 //                             skipped: {source, reason}[] } }
 ```
@@ -55,18 +69,26 @@ no em dashes — enforced by a test) shaped for leadership:
 1. **Header**: `Team Activity Report Card: <Mon D> - <Mon D> (vs <prior range>)`.
 2. **Per-person lines**, sorted by current `avgDealsTouched` desc:
    `<Name>: <N> deals/day (<up from M | down from M | steady at M | new this period>), <H>h active/day, <PTO note>`.
-   - Deltas compare `avgDealsTouched` (already PTO-adjusted); "steady" when
-     within ±10%. A person missing from the prior period gets "new this
-     period"; prior period missing entirely (null) drops the parenthetical.
+   - Deltas compare `avgDealsTouched` (already PTO-adjusted). Rules, total:
+     prior period null -> no parenthetical; person absent from prior
+     summaries AND prior roster -> "new this period"; person absent from
+     prior summaries but on prior roster -> treat prior value as 0;
+     `|cur - prev| <= 0.10 * max(prev, 1)` -> "(steady)" (no number, avoids
+     prior-vs-current ambiguity); otherwise "(up from M)" / "(down from M)"
+     with M = prior value at 1 decimal ("up from 0" is valid).
    - PTO note: "no PTO", "N PTO day(s)", or "N of M weekdays on PTO" when
-     N/M ≥ half. People with zero activity AND full-period PTO render as
-     `<Name>: on PTO the full period`.
+     N/M ≥ half (N from `roster[].ptoWeekdays`, M = weekdays in range).
+     Roster members with no summary row and `ptoWeekdays >= all weekdays in
+     range` render as `<Name>: on PTO the full period`; no summary row and
+     partial/zero PTO render as `<Name>: no tracked activity this period`.
 3. **Notes section** (auto-generated, only lines that apply):
    - Metric definition one-liner: "Deals/day counts distinct deals a person
      worked that day (HubSpot activity or edits, or PE document submissions)
      while the deal was in flight."
    - **Data-driven channel callouts** (this replaces any hardcoded role
-     assumptions): for each person whose hubspot+pe share of tracked events
+     assumptions): suppressed entirely unless both `hubspot` and `pe` are
+     among the ran sources (deselected sources would make every share 0%).
+     Otherwise, for each person whose hubspot+pe share of tracked events
      is under 25% but total events ≥ 50, emit
      "<Name>'s tracked work is mostly <source label>; deals/day understates
      them." Source labels in plain English ("the PB Ops app", "Zuper field
@@ -80,8 +102,10 @@ no em dashes — enforced by a test) shaped for leadership:
 
 **Client wiring** (`TeamActivityClient.tsx`): "Report card" button beside the
 range controls. On first open per (range, sources) it issues one extra
-`useQuery` for the previous window (`prevFrom = from - periodLen`,
-`prevTo = from - 1 day`), passes both `ApiResponse`s to `buildReportCard`,
+`useQuery` for the previous window. Both bounds are inclusive day strings, so
+the equal-length prior window is: `periodDays = daysBetween(from, to) + 1`,
+`prevTo = from - 1 day`, `prevFrom = from - periodDays` (a 14-day window gets
+a 14-day prior window, not 13). It passes both `ApiResponse`s to `buildReportCard`,
 and shows the panel (loading state while the prior fetch runs, error state
 if it fails — the card still renders with `previous = null` and no deltas).
 Copy button labels flip to "Copied!" like the drilldown's.
