@@ -233,13 +233,19 @@ export default function RtbReviewClient() {
               {(
                 [
                   ["Deal", "dealName"],
-                  ["PM / Office", "projectManager"],
+                  ["PM", "projectManager"],
+                  ["Office", "location"],
                   ["Days", "daysInStage"],
-                  ["Type / $", "amount"],
-                  ["Permit / IC / Constr", "permittingStatus"],
+                  ["Type", "projectType"],
+                  ["Revenue", "amount"],
+                  ["Permit", "permittingStatus"],
+                  ["IC", "interconnectionStatus"],
+                  ["Constr", "constructionStatus"],
                   ["RTB Notes", null],
                   ["Items", null],
-                  ["Payment", "loanStatus"],
+                  ["DA", "daStatus"],
+                  ["Payment", "paymentMethod"],
+                  ["Loan", "loanStatus"],
                   ["Avail", "earliestInstallDate"],
                 ] as Array<[string, SortField | null]>
               ).map(([label, field]) =>
@@ -264,14 +270,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={10} className="text-center text-muted py-8">
+                <td colSpan={16} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="text-center text-muted py-8">
+                <td colSpan={16} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -321,12 +327,10 @@ export default function RtbReviewClient() {
                       );
                     })()}
                   </td>
-                  <td className="px-2 py-2">
-                    <div className="text-muted whitespace-nowrap">
-                      {item.projectManager ?? "—"}
-                    </div>
-                    <div className="text-muted opacity-70">{item.location ?? "—"}</div>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
+                    {item.projectManager ?? "—"}
                   </td>
+                  <td className="px-2 py-2 text-muted">{item.location ?? "—"}</td>
                   <td
                     className="px-2 py-2 whitespace-nowrap text-foreground"
                     title={
@@ -337,32 +341,27 @@ export default function RtbReviewClient() {
                   >
                     {item.daysInStage ?? "—"}
                   </td>
-                  <td className="px-2 py-2">
-                    <div className="text-muted max-w-24">{item.projectType ?? "—"}</div>
-                    <div className="text-foreground whitespace-nowrap">
-                      {item.amount != null ? CURRENCY.format(item.amount) : "—"}
-                    </div>
+                  <td className="px-2 py-2 text-muted max-w-24">
+                    {item.projectType ?? "—"}
                   </td>
-                  <td className="px-2 py-2 max-w-40">
-                    <div
-                      className="text-muted"
-                      title={
-                        item.permitIssueDate
-                          ? `Permit issued ${formatDate(item.permitIssueDate)}`
-                          : "Permitting status"
-                      }
-                    >
-                      <span className="opacity-50">Permit:</span>{" "}
-                      {item.permittingStatus ?? "—"}
-                    </div>
-                    <div className="text-muted" title="Interconnection status">
-                      <span className="opacity-50">IC:</span>{" "}
-                      {item.interconnectionStatus ?? "—"}
-                    </div>
-                    <div className="text-muted" title="Construction status">
-                      <span className="opacity-50">Constr:</span>{" "}
-                      {item.constructionStatus ?? "—"}
-                    </div>
+                  <td className="px-2 py-2 text-foreground whitespace-nowrap">
+                    {item.amount != null ? CURRENCY.format(item.amount) : "—"}
+                  </td>
+                  <td
+                    className="px-2 py-2 text-muted max-w-28"
+                    title={
+                      item.permitIssueDate
+                        ? `Permit issued ${formatDate(item.permitIssueDate)}`
+                        : undefined
+                    }
+                  >
+                    {item.permittingStatus ?? "—"}
+                  </td>
+                  <td className="px-2 py-2 text-muted max-w-28">
+                    {item.interconnectionStatus ?? "—"}
+                  </td>
+                  <td className="px-2 py-2 text-muted max-w-28">
+                    {item.constructionStatus ?? "—"}
                   </td>
                   <td className="px-2 py-2 text-muted">
                     {item.rtbBlockedReason ? (
@@ -399,30 +398,20 @@ export default function RtbReviewClient() {
                       </ul>
                     )}
                   </td>
-                  <td className="px-2 py-2">
-                    <div
-                      className="text-muted max-w-28 truncate"
-                      title={item.paymentMethod ?? undefined}
-                    >
+                  <td className="px-2 py-2 whitespace-nowrap">
+                    {item.daPaid ? (
+                      <span className="text-green-500" title="DA Paid In Full">✓</span>
+                    ) : (
+                      <span className="text-muted">{item.daStatus ?? "—"}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-muted">
+                    <div className="max-w-24 truncate" title={item.paymentMethod ?? undefined}>
                       {item.paymentMethod ?? "—"}
                     </div>
-                    <div className="whitespace-nowrap">
-                      {item.daPaid ? (
-                        <span className="text-green-500" title="DA Paid In Full">
-                          DA ✓
-                        </span>
-                      ) : (
-                        <span className="text-muted" title="DA invoice status">
-                          DA {item.daStatus ?? "—"}
-                        </span>
-                      )}
-                      {item.loanStatus && (
-                        <span className="text-muted" title="Loan status">
-                          {" · Loan: "}
-                          {item.loanStatus}
-                        </span>
-                      )}
-                    </div>
+                  </td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
+                    {item.loanStatus ?? "—"}
                   </td>
                   <td
                     className="px-2 py-2 whitespace-nowrap text-foreground"
