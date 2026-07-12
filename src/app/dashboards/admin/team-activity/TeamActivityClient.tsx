@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import DashboardShell from "@/components/DashboardShell";
 import type { PersonSummary, PersonDayMetric, Verdict, ActivitySource } from "@/lib/team-activity/metrics";
+import { buildReportCard, type ReportPeriod } from "@/lib/team-activity/report-card";
 
 const ALL_SOURCES: ActivitySource[] = ["pbops", "aircall", "zuper", "hubspot", "google", "pe"];
 const SOURCE_LABEL: Record<ActivitySource, string> = {
@@ -30,6 +31,7 @@ interface ApiResponse {
   totalEvents: number;
   summaries: SummaryRow[];
   personDays: DayRow[];
+  roster?: { email: string; name: string; ptoWeekdays: number }[];
   lastUpdated: string;
 }
 interface DirectoryUser {
@@ -46,6 +48,28 @@ const clock = (min: number | null) => {
 };
 const h1 = (n: number) => n.toFixed(1);
 const looksLikeEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+/** Day-string arithmetic via UTC noon (DST-safe): shiftDay("2026-07-01", -1) -> "2026-06-30". */
+const shiftDay = (day: string, delta: number) =>
+  new Date(new Date(`${day}T12:00:00Z`).getTime() + delta * 86_400_000).toISOString().slice(0, 10);
+
+async function writeClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+    } catch {
+      /* no-op */
+    }
+    document.body.removeChild(ta);
+  }
+}
 
 const VERDICT_STYLE: Record<Verdict, string> = {
   marathon: "bg-purple-500/15 text-purple-300 border-purple-500/30",
@@ -113,23 +137,7 @@ function ActivityTable({
           .replace(/\t+$/, ""),
       ),
     ];
-    const text = lines.join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } catch {
-        /* no-op */
-      }
-      document.body.removeChild(ta);
-    }
+    await writeClipboard(lines.join("\n"));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -347,6 +355,38 @@ export default function TeamActivityClient() {
     },
   });
 
+  // --- Report card (copy-paste summary vs the prior equal-length window) ---
+  const [cardOpen, setCardOpen] = useState(false);
+  const [cardCopied, setCardCopied] = useState(false);
+  const periodDays =
+    Math.round(
+      (new Date(`${applied.to}T12:00:00Z`).getTime() - new Date(`${applied.from}T12:00:00Z`).getTime()) / 86_400_000,
+    ) + 1;
+  const prevTo = shiftDay(applied.from, -1);
+  const prevFrom = shiftDay(applied.from, -periodDays);
+  const {
+    data: prevData,
+    isFetching: prevFetching,
+    error: prevError,
+  } = useQuery<ApiResponse>({
+    queryKey: ["team-activity-prev", prevFrom, prevTo, applied.sources.join(",")],
+    enabled: cardOpen && applied.sources.length > 0,
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/team-activity?from=${prevFrom}&to=${prevTo}${onlyParam}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `HTTP ${res.status}`);
+      return res.json();
+    },
+  });
+  const toPeriod = (r: ApiResponse): ReportPeriod => ({
+    range: r.range,
+    summaries: r.summaries,
+    personDays: r.personDays,
+    roster: r.roster ?? [],
+    sources: r.sources,
+  });
+  const cardText =
+    cardOpen && data ? buildReportCard(toPeriod(data), prevData && !prevError ? toPeriod(prevData) : null) : "";
+
   const toggleSource = (s: ActivitySource) =>
     setSources((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
 
@@ -501,6 +541,13 @@ export default function TeamActivityClient() {
         >
           {isFetching ? "Running…" : "Run"}
         </button>
+        <button
+          onClick={() => setCardOpen((v) => !v)}
+          disabled={!data}
+          className="bg-surface border border-t-border hover:bg-surface-2 disabled:opacity-50 text-foreground text-sm font-medium rounded-md px-4 py-2 transition-colors"
+        >
+          {cardOpen ? "Hide report card" : "Report card"}
+        </button>
         {data && (
           <span className="text-xs text-muted self-center">
             {data.totalEvents.toLocaleString()} events · {data.summaries.length} people
@@ -559,6 +606,31 @@ export default function TeamActivityClient() {
               {CHIP_LABEL[s.source] ?? s.source} skipped ⓘ
             </span>
           ))}
+        </div>
+      )}
+
+      {cardOpen && data && (
+        <div className="mb-4">
+          {prevFetching && !prevData ? (
+            <div className="text-xs text-muted">Building report card (fetching prior period for comparison)…</div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-muted">Copy-paste ready{prevError ? " (prior-period fetch failed; no deltas)" : ""}</span>
+                <button
+                  onClick={async () => {
+                    await writeClipboard(cardText);
+                    setCardCopied(true);
+                    setTimeout(() => setCardCopied(false), 1500);
+                  }}
+                  className="text-xs text-purple-300 hover:text-purple-200"
+                >
+                  {cardCopied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <pre className="bg-surface border border-t-border rounded-lg p-4 text-xs whitespace-pre-wrap text-foreground">{cardText}</pre>
+            </>
+          )}
         </div>
       )}
 
@@ -640,7 +712,7 @@ export default function TeamActivityClient() {
       </div>
 
       <p className="text-xs text-muted mt-6">
-        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. Times are
+        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. PE submission activity is reported separately. Times are
         America/Denver. Days covered by a PTO-calendar or out-of-office block (≥6h of the day) count as PTO and are excluded
         from the averages. &ldquo;Verdict&rdquo; is a convenience label, not a judgment — the numbers are the source of truth,
         and activity outside these systems (email/docs, meetings) is not captured.

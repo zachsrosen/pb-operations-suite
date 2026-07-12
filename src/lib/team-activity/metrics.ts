@@ -28,7 +28,8 @@ export interface ActivityEvent {
    * Deal attribution for the deals-touched metric — set ONLY by the hubspot
    * adapter (engagements + audit DEAL edits). One entry per attributed deal
    * with its active-at-touch-time verdict. Other adapters never populate this,
-   * so Zuper/PE `DEAL:`-keyed events don't feed the deal counts.
+   * so Zuper/PE `DEAL:`-keyed events don't feed the deal counts (PE activity
+   * is reported separately; decision 2026-07-11).
    */
   deals?: { id: string; active: boolean }[];
 }

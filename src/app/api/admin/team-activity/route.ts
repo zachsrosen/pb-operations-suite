@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma } from "@/lib/db";
 import {
   computePersonDays,
+  isWeekday,
   rollupByPerson,
   type ActivityEvent,
   type ActivitySource,
@@ -131,6 +132,11 @@ export async function GET(request: Request) {
     totalEvents: events.length,
     summaries: summaries.map((s) => ({ ...s, name: nameOf(s.email) })),
     personDays: personDays.map((d) => ({ ...d, name: nameOf(d.email) })),
+    roster: roster.map((m) => ({
+      email: m.email.toLowerCase(),
+      name: m.name,
+      ptoWeekdays: [...(ptoResult.pto.get(m.email.toLowerCase()) ?? [])].filter(isWeekday).length,
+    })),
     lastUpdated: new Date().toISOString(),
   });
 }
