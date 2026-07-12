@@ -92,21 +92,45 @@ KEY CONTEXT:
 - STAGE ORDER: whenever you present deals/counts/revenue broken down BY STAGE (a table or a list), order the rows by this pipeline sequence (early → late, then the off-flow/terminal ones last) — NOT by count or revenue. Tools return stage groups sorted by size; reorder them into pipeline order yourself before showing them. A "Total" row, if any, goes at the bottom.
 - VOCABULARY (do not confuse): "Close Out" is the FINAL PROJECT stage (the install is done and the project is being wrapped up) — it is NOT a sales "closed"/"closed-won" deal. "Closed" or "sales closed" (the closedate / sales_closed milestone) means a NEW SALE was won at the front of the funnel. These are opposite ends of the lifecycle. Construction-complete revenue is work FINISHED in the field; it does not "flow through to close" or represent deals about to be sold — don't describe it that way. When someone says "closed", judge from context which they mean and don't equate the two.`;
 
-export function buildTechOpsBotSystemPrompt(params: SystemPromptParams): string {
+// The stable prefix: identity + playbook. This is large and identical across a
+// reply's tool-use iterations (and across replies within the cache TTL), so it's
+// the part we mark cacheable. Keep all per-request/volatile content OUT of here.
+function buildStaticSystem(params: SystemPromptParams): string {
   let prompt = IDENTITY_PROMPT;
-
-  // Layer 2: Playbook
   if (params.playbook.trim()) {
     prompt += `\n\n--- ZACH'S PLAYBOOK ---\n${params.playbook}`;
   }
-
-  // Layer 3: Live context
-  prompt += `\n\n--- CURRENT CONTEXT ---`;
-  prompt += `\nCurrent date/time: ${new Date().toLocaleString("en-US", { timeZone: "America/Denver" })}`;
-  prompt += `\nMessage from: ${params.senderName} (${params.senderEmail})`;
-  prompt += `\nSpace: ${params.spaceDisplayName || "Direct Message"}`;
-
   return prompt;
+}
+
+// The volatile tail: current time + who's asking. Changes every request, so it
+// sits AFTER the cache breakpoint and is billed at full price (it's tiny).
+function buildDynamicContext(params: SystemPromptParams): string {
+  let ctx = `\n\n--- CURRENT CONTEXT ---`;
+  ctx += `\nCurrent date/time: ${new Date().toLocaleString("en-US", { timeZone: "America/Denver" })}`;
+  ctx += `\nMessage from: ${params.senderName} (${params.senderEmail})`;
+  ctx += `\nSpace: ${params.spaceDisplayName || "Direct Message"}`;
+  return ctx;
+}
+
+export function buildTechOpsBotSystemPrompt(params: SystemPromptParams): string {
+  return buildStaticSystem(params) + buildDynamicContext(params);
+}
+
+// System as cache-aware content blocks for the Anthropic call. The breakpoint on
+// the static block caches tools + the whole static prompt together (render order
+// is tools -> system -> messages), so every tool-use iteration after the first
+// reads that prefix at ~10% cost instead of re-billing the full system + tool
+// schemas. The volatile context block after it is never cached.
+export function buildTechOpsBotSystemBlocks(params: SystemPromptParams) {
+  return [
+    {
+      type: "text" as const,
+      text: buildStaticSystem(params),
+      cache_control: { type: "ephemeral" as const },
+    },
+    { type: "text" as const, text: buildDynamicContext(params) },
+  ];
 }
 
 // ── Message Processor ──
@@ -153,8 +177,8 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
     }));
   }
 
-  // ── Build system prompt ──
-  const systemPrompt = buildTechOpsBotSystemPrompt({
+  // ── Build system prompt (cache-aware blocks: static prefix is cached) ──
+  const systemPrompt = buildTechOpsBotSystemBlocks({
     playbook,
     senderName,
     senderEmail,
