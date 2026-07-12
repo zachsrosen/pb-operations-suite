@@ -201,6 +201,20 @@ const INTERCONNECTION_STATUS: StatusMap = {
   "As-Built Resubmitted": "As-Built Resubmitted",
 };
 
+const LOAN_STATUS: StatusMap = {
+  "Funding Secured": "Approved",
+  Canceled: "Canceled",
+  "Cash Project": "Cash Project",
+  Delayed: "Delayed",
+  "Loan Not Needed": "Loan Not Needed",
+  "Not Started": "Not Started",
+  Ready: "Ready",
+  Rejected: "Rejected",
+  Requested: "Requested",
+  Submitted: "Submitted",
+  "Waiting on Approval": "Waiting on Approval",
+};
+
 const STATUS_MAPS: Record<string, StatusMap> = {
   site_survey_status: SITE_SURVEY_STATUS,
   layout_status: LAYOUT_STATUS,
@@ -210,6 +224,7 @@ const STATUS_MAPS: Record<string, StatusMap> = {
   final_inspection_status: FINAL_INSPECTION_STATUS,
   pto_status: PTO_STATUS,
   interconnection_status: INTERCONNECTION_STATUS,
+  loan_status: LOAN_STATUS,
 };
 
 /**

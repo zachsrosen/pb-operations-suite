@@ -15,6 +15,7 @@ import {
   DEAL_STAGE_MAP,
 } from "@/lib/hubspot";
 import { statusLabel } from "@/lib/deal-status-labels";
+import { earliestInstallAvailability } from "@/lib/install-availability";
 
 const PROJECT_PIPELINE = "6900017";
 const RTB_BLOCKED_STAGE = "71052436";
@@ -61,6 +62,12 @@ export interface RtbQueueItem {
   daStatus: string | null;
   /** True when the DA milestone is Paid In Full. */
   daPaid: boolean;
+  /** Payment method (e.g. "Cash", loan product name). */
+  paymentMethod: string | null;
+  /** Loan status, resolved to the HubSpot display label. */
+  loanStatus: string | null;
+  /** Earliest open install date for this deal's location (YYYY-MM-DD). */
+  earliestInstallDate: string | null;
   /** When the deal entered RTB - Blocked (hs_v2_date_entered_71052436). */
   enteredStageAt: string | null;
   /** Whole days the deal has sat in RTB - Blocked (null when entry date unknown). */
@@ -99,6 +106,8 @@ const PROPERTIES = [
   "install_status",
   "all_document_parent_folder_id",
   "da_invoice_status",
+  "payment_method",
+  "loan_status",
   "pm_rtb_approved",
   "hs_lastmodifieddate",
   ENTERED_STAGE_PROP,
@@ -173,6 +182,17 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
     })
   );
 
+  // Earliest open install date per distinct location (local tables only;
+  // the helper swallows failures into nulls).
+  const queueLocations = [
+    ...new Set(
+      results
+        .map((r) => (r.properties?.pb_location ?? "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  const availabilityByLocation = await earliestInstallAvailability(queueLocations);
+
   return results.map((r) => {
       const p = r.properties ?? {};
       return {
@@ -195,6 +215,11 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         constructionStatus: statusLabel("install_status", p.install_status),
         daStatus: p.da_invoice_status ?? null,
         daPaid: p.da_invoice_status === "Paid In Full",
+        paymentMethod: p.payment_method ?? null,
+        loanStatus: statusLabel("loan_status", p.loan_status),
+        earliestInstallDate: p.pb_location
+          ? availabilityByLocation.get(p.pb_location.trim()) ?? null
+          : null,
         enteredStageAt: p[ENTERED_STAGE_PROP] ?? null,
         daysInStage: daysSince(p[ENTERED_STAGE_PROP]),
         driveFolderUrl: driveFolderUrl(p.all_document_parent_folder_id),
