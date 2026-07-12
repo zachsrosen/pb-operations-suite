@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { resolveDealSummaries } from "@/lib/powerhub-site-context";
+import { getTicketSummaries, buildSiteTickets } from "@/lib/powerhub-tickets";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,28 @@ export async function GET(request: Request) {
   ];
   const dealMap = await resolveDealSummaries(allDealIds);
 
+  // Open service tickets per property (best-effort HubSpot enrichment —
+  // getTicketSummaries returns {} on any failure and never throws).
+  const linkedPropertyIds = [
+    ...new Set(sites.map((s) => s.propertyId).filter((id): id is string => Boolean(id))),
+  ];
+  const propertyTicketIds = new Map<string, string[]>();
+  if (linkedPropertyIds.length > 0) {
+    const ticketLinks = await prisma.propertyTicketLink.findMany({
+      where: { propertyId: { in: linkedPropertyIds } },
+      orderBy: { associatedAt: "desc" },
+      select: { propertyId: true, ticketId: true },
+    });
+    for (const link of ticketLinks) {
+      const arr = propertyTicketIds.get(link.propertyId) || [];
+      arr.push(link.ticketId);
+      propertyTicketIds.set(link.propertyId, arr);
+    }
+  }
+  const ticketSummaries = await getTicketSummaries(
+    [...propertyTicketIds.values()].flat()
+  );
+
   const enrichedSites = sites.map((s) => {
     const resolvedDealId = effectiveDealId(s);
     const deal = resolvedDealId ? dealMap.get(resolvedDealId) : undefined;
@@ -90,6 +113,9 @@ export async function GET(request: Request) {
       customerName: null,
       dealName: deal?.dealName ?? null,
       resolvedDealId,
+      tickets: s.propertyId
+        ? buildSiteTickets(propertyTicketIds.get(s.propertyId) || [], ticketSummaries)
+        : [],
       ...(usePropertyAddress
         ? {
             address: s.property?.streetAddress || s.property?.fullAddress || "",
