@@ -43,7 +43,7 @@ import {
   GEO_PREFILTER_DEG,
   type PropertyCandidate,
 } from "@/lib/powerhub-geo-match";
-import { resolvePrimarySite } from "@/lib/powerhub-crosslink";
+import { resolvePrimarySite, pushToHubSpotForProperty } from "@/lib/powerhub-crosslink";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -228,10 +228,17 @@ export async function POST(request: Request) {
   }
 
   // Re-resolve primary for every affected property so teslaPortalUrl /
-  // teslaSiteId on HubSpotPropertyCache reflects the new linkage.
+  // teslaSiteId on HubSpotPropertyCache reflects the new linkage, then push
+  // the Tesla fields to the HubSpot Property + linked deals/tickets.
+  // resolvePrimarySite must run even when POWERHUB_CROSSLINK_ENABLED is off
+  // (it owns primaryForProperty + the denormalized cache fields), so this is
+  // two calls rather than enqueueCrossSystemPush, whose flag check would skip
+  // both. pushToHubSpotForProperty no-ops itself when the flag is off — same
+  // shape as /api/powerhub/link.
   if (!dryRun) {
     for (const propertyId of propertyIdsTouched) {
       await resolvePrimarySite(propertyId);
+      await pushToHubSpotForProperty(propertyId);
     }
   }
 
