@@ -232,20 +232,14 @@ export default function RtbReviewClient() {
               {(
                 [
                   ["Deal", "dealName"],
-                  ["PM", "projectManager"],
-                  ["Location", "location"],
-                  ["Stage", null],
+                  ["PM / Office", "projectManager"],
                   ["Days", "daysInStage"],
-                  ["Type", "projectType"],
-                  ["Revenue", "amount"],
+                  ["Type / $", "amount"],
                   ["Permit", "permitIssueDate"],
-                  ["IC Status", "interconnectionStatus"],
+                  ["IC / Constr", "interconnectionStatus"],
                   ["RTB Notes", null],
-                  ["Construction", "constructionStatus"],
                   ["Items", null],
-                  ["DA", "daStatus"],
-                  ["Payment", "paymentMethod"],
-                  ["Loan", "loanStatus"],
+                  ["Payment", "loanStatus"],
                   ["Avail", "earliestInstallDate"],
                 ] as Array<[string, SortField | null]>
               ).map(([label, field]) =>
@@ -270,14 +264,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={17} className="text-center text-muted py-8">
+                <td colSpan={11} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={17} className="text-center text-muted py-8">
+                <td colSpan={11} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -327,38 +321,40 @@ export default function RtbReviewClient() {
                       );
                     })()}
                   </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">
-                    {item.projectManager ?? "—"}
-                  </td>
-                  <td className="px-2 py-2 text-muted">{item.location ?? "—"}</td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">
-                    {item.dealStage ?? "—"}
+                  <td className="px-2 py-2">
+                    <div className="text-muted whitespace-nowrap">
+                      {item.projectManager ?? "—"}
+                    </div>
+                    <div className="text-muted opacity-70">{item.location ?? "—"}</div>
                   </td>
                   <td
                     className="px-2 py-2 whitespace-nowrap text-foreground"
                     title={
                       item.enteredStageAt
-                        ? `Entered RTB - Blocked ${formatDate(item.enteredStageAt)}`
+                        ? `Entered ${item.dealStage ?? "stage"} ${formatDate(item.enteredStageAt)}`
                         : undefined
                     }
                   >
                     {item.daysInStage ?? "—"}
                   </td>
-                  <td className="px-2 py-2 text-muted max-w-28">
-                    {item.projectType ?? "—"}
-                  </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">
-                    {item.amount != null ? CURRENCY.format(item.amount) : "—"}
+                  <td className="px-2 py-2">
+                    <div className="text-muted max-w-24">{item.projectType ?? "—"}</div>
+                    <div className="text-foreground whitespace-nowrap">
+                      {item.amount != null ? CURRENCY.format(item.amount) : "—"}
+                    </div>
                   </td>
                   <td className="px-2 py-2 text-muted whitespace-nowrap">
                     {formatDate(item.permitIssueDate)}
                   </td>
-                  <td className="px-2 py-2 text-muted max-w-32">
-                    {item.interconnectionStatus ?? "—"}
+                  <td className="px-2 py-2 max-w-32">
+                    <div className="text-muted">{item.interconnectionStatus ?? "—"}</div>
+                    <div className="text-muted opacity-70">
+                      {item.constructionStatus ?? "—"}
+                    </div>
                   </td>
                   <td className="px-2 py-2 text-muted">
                     {item.rtbBlockedReason ? (
-                      <details className="group max-w-56">
+                      <details className="group max-w-72">
                         <summary className="cursor-pointer hover:text-foreground list-none">
                           <span className="group-open:hidden line-clamp-2 whitespace-pre-wrap">
                             {item.rtbBlockedReason}
@@ -373,16 +369,17 @@ export default function RtbReviewClient() {
                       "—"
                     )}
                   </td>
-                  <td className="px-2 py-2 text-muted max-w-32">
-                    {item.constructionStatus ?? "—"}
-                  </td>
                   <td className="px-2 py-2 text-muted">
                     {item.lineItems.length === 0 ? (
                       "—"
                     ) : (
-                      <ul className="space-y-0.5 min-w-44">
+                      <ul className="space-y-0.5">
                         {item.lineItems.map((li, idx) => (
-                          <li key={idx} className="whitespace-nowrap">
+                          <li
+                            key={idx}
+                            className="whitespace-nowrap max-w-40 truncate"
+                            title={`${li.quantity}× ${li.name}`}
+                          >
                             <span className="text-foreground">{li.quantity}×</span>{" "}
                             {li.name}
                           </li>
@@ -390,20 +387,30 @@ export default function RtbReviewClient() {
                       </ul>
                     )}
                   </td>
-                  <td className="px-2 py-2 whitespace-nowrap">
-                    {item.daPaid ? (
-                      <span className="text-green-500" title="DA Paid In Full">✓</span>
-                    ) : (
-                      <span className="text-muted">{item.daStatus ?? "—"}</span>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 text-muted">
-                    <div className="max-w-28 truncate" title={item.paymentMethod ?? undefined}>
+                  <td className="px-2 py-2">
+                    <div
+                      className="text-muted max-w-28 truncate"
+                      title={item.paymentMethod ?? undefined}
+                    >
                       {item.paymentMethod ?? "—"}
                     </div>
-                  </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">
-                    {item.loanStatus ?? "—"}
+                    <div className="whitespace-nowrap">
+                      {item.daPaid ? (
+                        <span className="text-green-500" title="DA Paid In Full">
+                          DA ✓
+                        </span>
+                      ) : (
+                        <span className="text-muted" title="DA invoice status">
+                          DA {item.daStatus ?? "—"}
+                        </span>
+                      )}
+                      {item.loanStatus && (
+                        <span className="text-muted" title="Loan status">
+                          {" · "}
+                          {item.loanStatus}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td
                     className="px-2 py-2 whitespace-nowrap text-foreground"
