@@ -29,6 +29,16 @@ const SOURCE_PLAIN_LABEL: Record<string, string> = {
   pe: "PE submissions",
 };
 
+/** Proper names for caveat lines ("HubSpot ran with partial data..."). */
+const CAVEAT_LABEL: Record<string, string> = {
+  pbops: "PB Ops",
+  aircall: "Aircall",
+  zuper: "Zuper",
+  hubspot: "HubSpot",
+  google: "Google",
+  pe: "PE",
+};
+
 const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 /** "2026-06-29T..." -> "Jun 29". Day-precision; parse at UTC noon to avoid tz roll. */
@@ -141,14 +151,14 @@ export function buildReportCard(current: ReportPeriod, previous: ReportPeriod | 
 
   if (!previous) notes.push("Prior-period comparison unavailable for this run.");
 
-  for (const s of current.sources.skipped) notes.push(`${s.source} did not run this period; numbers may be partial.`);
+  for (const s of current.sources.skipped) notes.push(`${CAVEAT_LABEL[s.source] ?? s.source} did not run this period; numbers may be partial.`);
   for (const r of current.sources.ran) {
-    if (r.warning) notes.push(`${r.source} ran with partial data this period (${r.warning}).`);
+    if (r.warning) notes.push(`${CAVEAT_LABEL[r.source] ?? r.source} ran with partial data this period (${r.warning}).`);
   }
   if (previous) {
-    for (const s of previous.sources.skipped) notes.push(`${s.source} did not run in the prior period; comparisons may be partial.`);
+    for (const s of previous.sources.skipped) notes.push(`${CAVEAT_LABEL[s.source] ?? s.source} did not run in the prior period; comparisons may be partial.`);
     for (const r of previous.sources.ran) {
-      if (r.warning) notes.push(`${r.source} ran with partial data in the prior period.`);
+      if (r.warning) notes.push(`${CAVEAT_LABEL[r.source] ?? r.source} ran with partial data in the prior period.`);
     }
   }
 
