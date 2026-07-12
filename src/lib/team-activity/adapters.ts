@@ -625,6 +625,21 @@ export async function googleAdapter(
   const APPS = ["login", "drive", "meet", "chat"] as const;
   const PAGE_CAP = 5; // up to 5k events per (user, app) — guards runaway Drive volume
 
+  /**
+   * OAuth integrations that act AS a user on Drive around the clock (verified
+   * 2026-07-11 via Admin Reports drive+token logs — AWS IPs, mass
+   * move/rename/ACL churn under patrick@). Their events are machine traffic,
+   * not human activity, and are dropped from the google source. Keys are the
+   * Google Cloud project numbers the drive audit log reports as
+   * `originating_app_id`.
+   */
+  const INTEGRATION_APP_IDS = new Set([
+    "654020450961", // Zuper GDrive Integration (job attachments -> Drive; AWS ap-south-1)
+    "766098389391", // Read AI (meeting recordings/notes -> Drive)
+    "346384273333", // Tray.ai - Drive connector (Caleb's Tray workflows)
+    "344106271962", // PE Worklist Automation
+  ]);
+
   let authError: string | null = null;
   const tasks = roster.flatMap((m) => APPS.map((app) => ({ m, app })));
   const perTask = await mapPool(tasks, 5, async ({ m, app }) => {
@@ -646,6 +661,10 @@ export async function googleAdapter(
           const ts = new Date(item.id?.time ?? NaN);
           if (isNaN(+ts) || ts < range.from || ts > range.to) continue;
           const ev = item.events?.[0];
+          if (app === "drive") {
+            const originApp = paramOf(ev, "originating_app_id");
+            if (originApp && INTEGRATION_APP_IDS.has(originApp)) continue; // machine traffic
+          }
           const name = ev?.name;
           const docTitle = app === "drive" ? paramOf(ev, "doc_title") : undefined;
           const docId = app === "drive" ? paramOf(ev, "doc_id") : undefined;
