@@ -7,8 +7,10 @@ import {
   computePersonDays,
   rollupByPerson,
   verdictFor,
+  ptoDaysFromOooEvents,
   type ActivityEvent,
   type TalkTimeRecord,
+  type PtoDaysByEmail,
 } from "@/lib/team-activity/metrics";
 
 const ev = (
@@ -253,5 +255,144 @@ describe("dealsTouched metrics", () => {
     ]);
     const [s] = rollupByPerson(days);
     expect(s.avgDealsTouched).toBeCloseTo(1.5); // (2 + 1) / 2 weekdays
+  });
+});
+
+describe("ptoDaysFromOooEvents", () => {
+  // July MDT = UTC-6. A Denver day runs 06:00Z -> 06:00Z next day.
+  it("marks a full-day OOO as a PTO day", () => {
+    const days = ptoDaysFromOooEvents([
+      { start: new Date("2026-07-01T06:00:00Z"), end: new Date("2026-07-02T06:00:00Z") },
+    ]);
+    expect([...days]).toEqual(["2026-07-01"]);
+  });
+
+  it("ignores a short partial-day OOO (afternoon off is not full PTO)", () => {
+    // 13:00-17:00 Denver = 4h, below the 6h threshold.
+    const days = ptoDaysFromOooEvents([
+      { start: new Date("2026-07-01T19:00:00Z"), end: new Date("2026-07-01T23:00:00Z") },
+    ]);
+    expect(days.size).toBe(0);
+  });
+
+  it("expands a multi-day OOO into every covered Denver day", () => {
+    // Mon 00:00 Denver -> Thu 00:00 Denver = Jul 6,7,8.
+    const days = ptoDaysFromOooEvents([
+      { start: new Date("2026-07-06T06:00:00Z"), end: new Date("2026-07-09T06:00:00Z") },
+    ]);
+    expect([...days].sort()).toEqual(["2026-07-06", "2026-07-07", "2026-07-08"]);
+  });
+
+  it("counts a 9-17 style OOO (8h within one day) as PTO", () => {
+    const days = ptoDaysFromOooEvents([
+      { start: new Date("2026-07-01T15:00:00Z"), end: new Date("2026-07-01T23:00:00Z") },
+    ]);
+    expect([...days]).toEqual(["2026-07-01"]);
+  });
+});
+
+describe("PTO-aware computePersonDays + rollupByPerson", () => {
+  const pto: PtoDaysByEmail = new Map([["a@x.com", new Set(["2026-07-01"])]]);
+
+  it("flags person-days that fall on a PTO day", () => {
+    const events = [
+      ev("a@x.com", "2026-07-01T16:00:00Z", "hubspot", "deal:1"), // PTO day (glanced at email)
+      ev("a@x.com", "2026-07-02T16:00:00Z", "hubspot", "deal:2"),
+    ];
+    const days = computePersonDays(events, [], pto);
+    expect(days.find((d) => d.day === "2026-07-01")!.pto).toBe(true);
+    expect(days.find((d) => d.day === "2026-07-02")!.pto).toBe(false);
+  });
+
+  it("excludes PTO days from weekday averages so a PTO-day email glance doesn't drag them down", () => {
+    const events = [
+      // Wed Jul 1 (PTO): a single touch -> would average in as a ~0h day.
+      ev("a@x.com", "2026-07-01T16:00:00Z", "hubspot", "deal:1"),
+      // Thu Jul 2: a real ~4h day.
+      ev("a@x.com", "2026-07-02T15:00:00Z", "hubspot", "deal:2"),
+      ev("a@x.com", "2026-07-02T19:00:00Z", "hubspot", "deal:3"),
+    ];
+    const days = computePersonDays(events, [], pto);
+    const [withPto] = rollupByPerson(days, pto);
+    const [without] = rollupByPerson(computePersonDays(events));
+    // Without PTO awareness the Jul 1 zero-hour day halves the average.
+    expect(without.avgActiveHours).toBeCloseTo(0.5, 3);
+    expect(withPto.avgActiveHours).toBeCloseTo(1, 3);
+    expect(withPto.avgSpanHours).toBeCloseTo(4, 3);
+  });
+
+  it("counts weekday PTO days in the summary, including fully-offline ones", () => {
+    const ptoWeek: PtoDaysByEmail = new Map([
+      // Wed + Thu + Sat; Sat is weekend so only 2 should count.
+      ["a@x.com", new Set(["2026-07-01", "2026-07-02", "2026-07-04"])],
+    ]);
+    // Only activity is on Friday — the PTO days themselves have zero events.
+    const days = computePersonDays([ev("a@x.com", "2026-07-03T16:00:00Z", "hubspot", "deal:1")], [], ptoWeek);
+    const [s] = rollupByPerson(days, ptoWeek);
+    expect(s.ptoDays).toBe(2);
+  });
+
+  it("defaults ptoDays to 0 and pto flag to false when no PTO data is supplied", () => {
+    const days = computePersonDays([ev("a@x.com", "2026-07-01T16:00:00Z", "hubspot", "deal:1")]);
+    expect(days[0].pto).toBe(false);
+    const [s] = rollupByPerson(days);
+    expect(s.ptoDays).toBe(0);
+  });
+});
+
+describe("matchRosterByDisplayName", () => {
+  const { matchRosterByDisplayName } = jest.requireActual("@/lib/team-activity/roster");
+  const roster = [
+    { email: "kat@photonbrothers.com", name: "Katlyyn Arnoldi" },
+    { email: "natasha.sanford@photonbrothers.com", name: "Natasha Wooten Sanford" },
+    { email: "kaitlyn@photonbrothers.com", name: "Kaitlyn Martinez" },
+    { email: "kristofer.stuhff@photonbrothers.com", name: "Kristofer Stuhff" },
+  ];
+
+  it("matches exact names", () => {
+    expect(matchRosterByDisplayName(roster, "Kaitlyn Martinez")).toBe("kaitlyn@photonbrothers.com");
+  });
+
+  it("matches nickname prefixes (HR 'Kat' vs roster 'Katlyyn')", () => {
+    expect(matchRosterByDisplayName(roster, "Kat Arnoldi")).toBe("kat@photonbrothers.com");
+  });
+
+  it("ignores dropped middle names (HR 'Natasha Sanford')", () => {
+    expect(matchRosterByDisplayName(roster, "Natasha Sanford")).toBe("natasha.sanford@photonbrothers.com");
+  });
+
+  it("returns null for non-roster people and single tokens", () => {
+    expect(matchRosterByDisplayName(roster, "Sam D")).toBe(null);
+    expect(matchRosterByDisplayName(roster, "Kristofer")).toBe(null);
+  });
+
+  it("requires >=3-char prefix so initials don't match", () => {
+    expect(matchRosterByDisplayName(roster, "Ka Arnoldi")).toBe(null);
+  });
+});
+
+describe("parsePtoSummary", () => {
+  const { parsePtoSummary } = jest.requireActual("@/lib/team-activity/adapters");
+
+  it("parses both HR summary formats", () => {
+    expect(parsePtoSummary("Kaitlyn Martinez on Vacation")).toBe("Kaitlyn Martinez");
+    expect(parsePtoSummary("Kat Arnoldi is Out of Office")).toBe("Kat Arnoldi");
+  });
+
+  it("returns null for unrecognized summaries", () => {
+    expect(parsePtoSummary("Company Holiday")).toBe(null);
+    expect(parsePtoSummary("")).toBe(null);
+  });
+});
+
+describe("matchRosterByDisplayName nameAliases", () => {
+  const { matchRosterByDisplayName: match } = jest.requireActual("@/lib/team-activity/roster");
+  const roster = [
+    { email: "alexis@photonbrothers.com", name: "Alexis Severson", nameAliases: ["Lexie Severson"] },
+  ];
+
+  it("matches HR nicknames declared as nameAliases (Lexie -> Alexis)", () => {
+    expect(match(roster, "Lexie Severson")).toBe("alexis@photonbrothers.com");
+    expect(match(roster, "Alexis Severson")).toBe("alexis@photonbrothers.com");
   });
 });

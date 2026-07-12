@@ -15,11 +15,13 @@ import { getServiceAccountToken } from "../google-auth";
 import {
   denverDay,
   isTouchOnActiveDeal,
+  ptoDaysFromOooEvents,
   TERMINAL_STAGE_LABELS,
   type ActivityEvent,
+  type PtoDaysByEmail,
   type TalkTimeRecord,
 } from "./metrics";
-import { buildEmailIndex, memberEmails, type RosterMember } from "./roster";
+import { buildEmailIndex, matchRosterByDisplayName, memberEmails, type RosterMember } from "./roster";
 
 export interface DateRange {
   from: Date;
@@ -667,4 +669,179 @@ export async function googleAdapter(
   const events = perTask.flat();
   if (authError && events.length === 0) return { events, skipped: authError };
   return { events };
+}
+
+// ---------------------------------------------------------------------------
+// PTO days. Primary source: the shared HR-fed "PTO calendar for Photon
+// Brothers" (an @import.calendar.google.com ICS feed) — one read covers the
+// whole company, including people who never set a Gmail OOO. That calendar is
+// PRIVATE TO ITS SUBSCRIBERS: only the configured reader account can see it
+// (others 404), so the read impersonates PTO_CALENDAR_READER. Fallback when
+// the shared calendar is unreadable: each member's primary-calendar OOO
+// blocks (the original source). calendar.events scope is already
+// DWD-delegated for scheduling sync.
+// ---------------------------------------------------------------------------
+export interface PtoAdapterResult {
+  pto: PtoDaysByEmail;
+  skipped?: string;
+}
+
+const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
+/** The YYYY-MM-DD after `day` (steps via UTC noon to avoid tz roll). */
+const dayAfter = (day: string) =>
+  new Date(new Date(`${day}T12:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+
+/** Add every YYYY-MM-DD in [startDay, endDayExclusive) to `out` (all-day OOO). */
+function addAllDaySpan(out: Set<string>, startDay: string, endDayExclusive: string) {
+  // All-day dates are calendar-local already; step via UTC noon to avoid tz roll.
+  for (
+    let t = new Date(`${startDay}T12:00:00Z`).getTime();
+    ;
+    t += 86_400_000
+  ) {
+    const day = new Date(t).toISOString().slice(0, 10);
+    if (day >= endDayExclusive) break;
+    out.add(day);
+  }
+}
+
+async function perMemberOooPto(range: DateRange, roster: RosterMember[]): Promise<PtoAdapterResult> {
+  interface GcalTime { date?: string; dateTime?: string }
+  interface GcalEvent { start?: GcalTime; end?: GcalTime; status?: string }
+
+  let authError: string | null = null;
+  let anyOk = false;
+  const pto: PtoDaysByEmail = new Map();
+
+  await mapPool(roster, 5, async (m) => {
+    const email = m.email.toLowerCase();
+    try {
+      const token = await getServiceAccountToken([CALENDAR_SCOPE], m.email);
+      const qs = new URLSearchParams({
+        eventTypes: "outOfOffice",
+        singleEvents: "true",
+        timeMin: range.from.toISOString(),
+        timeMax: range.to.toISOString(),
+        maxResults: "250",
+      });
+      const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          authError = `Google Calendar API ${res.status} — ${CALENDAR_SCOPE} not authorized for impersonation`;
+        }
+        return;
+      }
+      anyOk = true;
+      const data = (await res.json()) as { items?: GcalEvent[] };
+      const days = new Set<string>();
+      const timedSpans: { start: Date; end: Date }[] = [];
+      // Clamp to the report range so a months-long leave doesn't count PTO
+      // days outside it (day strings compare lexicographically).
+      const firstDay = denverDay(range.from);
+      const rangeEndEx = dayAfter(denverDay(range.to));
+      for (const ev of data.items ?? []) {
+        if (ev.status === "cancelled") continue;
+        if (ev.start?.date && ev.end?.date) {
+          const startDay = ev.start.date > firstDay ? ev.start.date : firstDay;
+          const endDayEx = ev.end.date < rangeEndEx ? ev.end.date : rangeEndEx;
+          addAllDaySpan(days, startDay, endDayEx);
+        } else if (ev.start?.dateTime && ev.end?.dateTime) {
+          // Clamp to the report range so a months-long OOO doesn't expand past it.
+          const start = new Date(Math.max(+new Date(ev.start.dateTime), +range.from));
+          const end = new Date(Math.min(+new Date(ev.end.dateTime), +range.to));
+          if (start < end) timedSpans.push({ start, end });
+        }
+      }
+      for (const d of ptoDaysFromOooEvents(timedSpans)) days.add(d);
+      if (days.size) pto.set(email, days);
+    } catch (e) {
+      authError = `Google Calendar token failed for ${email}: ${msg(e)}`;
+    }
+  });
+
+  if (!anyOk && authError) return { pto, skipped: authError };
+  return { pto };
+}
+
+// Calendar id is not a secret (useless without ACL); env overrides for testing.
+const PTO_CALENDAR_ID =
+  process.env.PTO_CALENDAR_ID ?? "6k6rc71rh6oa3q8hlj6chvo5rcpc1c71@import.calendar.google.com";
+const PTO_CALENDAR_READER = process.env.PTO_CALENDAR_READER ?? "zach@photonbrothers.com";
+
+/** "Kaitlyn Martinez on Vacation" / "Kat Arnoldi is Out of Office" -> name. */
+export function parsePtoSummary(summary: string): string | null {
+  const m = /^(.+?)\s+(?:on vacation|is out of office)\s*$/i.exec(summary);
+  return m ? m[1].trim() : null;
+}
+
+export async function googlePtoAdapter(range: DateRange, roster: RosterMember[]): Promise<PtoAdapterResult> {
+  interface GcalTime { date?: string; dateTime?: string }
+  interface GcalEvent { summary?: string; start?: GcalTime; end?: GcalTime; status?: string }
+
+  let token: string;
+  try {
+    token = await getServiceAccountToken([CALENDAR_SCOPE], PTO_CALENDAR_READER);
+  } catch {
+    return perMemberOooPto(range, roster); // reader impersonation failed — fall back
+  }
+
+  const firstDay = denverDay(range.from);
+  const rangeEndEx = dayAfter(denverDay(range.to));
+  const pto: PtoDaysByEmail = new Map();
+  // Collect per-person spans first so the >=6h threshold applies across
+  // multiple partial-day blocks on the same day.
+  const allDayByEmail = new Map<string, Set<string>>();
+  const timedByEmail = new Map<string, { start: Date; end: Date }[]>();
+
+  let pageToken: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const qs = new URLSearchParams({
+      singleEvents: "true",
+      timeMin: range.from.toISOString(),
+      timeMax: range.to.toISOString(),
+      maxResults: "250",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(PTO_CALENDAR_ID)}/events?${qs}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      // 404 = reader not subscribed / calendar gone; any failure -> fallback.
+      return perMemberOooPto(range, roster);
+    }
+    const data = (await res.json()) as { items?: GcalEvent[]; nextPageToken?: string };
+    for (const ev of data.items ?? []) {
+      if (ev.status === "cancelled" || !ev.summary) continue;
+      const name = parsePtoSummary(ev.summary);
+      if (!name) continue;
+      const email = matchRosterByDisplayName(roster, name);
+      if (!email) continue; // not a roster member (or ambiguous)
+      if (ev.start?.date && ev.end?.date) {
+        const days = allDayByEmail.get(email) ?? allDayByEmail.set(email, new Set()).get(email)!;
+        const startDay = ev.start.date > firstDay ? ev.start.date : firstDay;
+        const endDayEx = ev.end.date < rangeEndEx ? ev.end.date : rangeEndEx;
+        addAllDaySpan(days, startDay, endDayEx);
+      } else if (ev.start?.dateTime && ev.end?.dateTime) {
+        const start = new Date(Math.max(+new Date(ev.start.dateTime), +range.from));
+        const end = new Date(Math.min(+new Date(ev.end.dateTime), +range.to));
+        if (start < end) {
+          (timedByEmail.get(email) ?? timedByEmail.set(email, []).get(email)!).push({ start, end });
+        }
+      }
+    }
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  for (const [email, days] of allDayByEmail) pto.set(email, days);
+  for (const [email, spans] of timedByEmail) {
+    const days = pto.get(email) ?? new Set<string>();
+    for (const d of ptoDaysFromOooEvents(spans)) days.add(d);
+    if (days.size) pto.set(email, days);
+  }
+  return { pto };
 }

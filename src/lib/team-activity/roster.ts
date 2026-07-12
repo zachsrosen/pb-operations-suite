@@ -20,6 +20,8 @@ export interface RosterMember {
   aircallId?: string;
   /** Zuper user_name as it appears in ZuperJobCache.assignedUsers (low-signal source). */
   zuperName?: string;
+  /** Extra display names external feeds use for this person (e.g. HR PTO calendar nicknames). */
+  nameAliases?: string[];
 }
 
 // Identities verified against the User table + Aircall on 2026-07-02. Canonical
@@ -27,7 +29,7 @@ export interface RosterMember {
 // variants. HubSpot resolves via directory lookup on these + aliases.
 export const DEFAULT_ROSTER: RosterMember[] = [
   { email: "zach@photonbrothers.com", name: "Zach Rosen", aliases: ["zach.rosen@photonbrothers.com"] },
-  { email: "alexis@photonbrothers.com", name: "Alexis Severson", aircallId: "965988" },
+  { email: "alexis@photonbrothers.com", name: "Alexis Severson", aircallId: "965988", nameAliases: ["Lexie Severson"] },
   { email: "peter.zaun@photonbrothers.com", name: "Peter Zaun" },
   { email: "kaitlyn@photonbrothers.com", name: "Kaitlyn Martinez", aircallId: "966000" },
   { email: "jacob.campbell@photonbrothers.com", name: "Jacob Campbell" },
@@ -49,4 +51,35 @@ export function buildEmailIndex(roster: RosterMember[]): Map<string, string> {
   const idx = new Map<string, string>();
   for (const m of roster) for (const e of memberEmails(m)) idx.set(e, m.email.toLowerCase());
   return idx;
+}
+
+/**
+ * Match an HR-feed display name (e.g. "Kat Arnoldi", "Natasha Sanford") to a
+ * roster member. HR names drift from roster names — nicknames ("Kat" vs
+ * "Katlyyn") and dropped middle names ("Natasha Sanford" vs "Natasha Wooten
+ * Sanford") — so match on last token equality plus first-token equality or a
+ * >=3-char prefix in either direction. Returns the canonical email, or null
+ * when nothing (or more than one member) matches.
+ */
+export function matchRosterByDisplayName(roster: RosterMember[], displayName: string): string | null {
+  const tokens = (s: string) =>
+    s
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.replace(/[^a-z]/g, ""))
+      .filter(Boolean);
+  const cand = tokens(displayName);
+  if (cand.length < 2) return null;
+  const [candFirst, candLast] = [cand[0], cand[cand.length - 1]];
+  const firstMatches = (a: string, b: string) =>
+    a === b || (a.length >= 3 && b.startsWith(a)) || (b.length >= 3 && a.startsWith(b));
+
+  const hits = roster.filter((m) =>
+    [m.name, ...(m.nameAliases ?? [])].some((name) => {
+      const t = tokens(name);
+      if (t.length < 2) return false;
+      return t[t.length - 1] === candLast && firstMatches(t[0], candFirst);
+    }),
+  );
+  return hits.length === 1 ? hits[0].email.toLowerCase() : null;
 }

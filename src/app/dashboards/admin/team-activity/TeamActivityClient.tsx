@@ -15,6 +15,8 @@ const SOURCE_LABEL: Record<ActivitySource, string> = {
   google: "Google",
   pe: "Participate",
 };
+// Status chips can also carry the PTO feed, which is not an event source.
+const CHIP_LABEL: Record<string, string> = { ...SOURCE_LABEL, pto: "PTO (calendar OOO)" };
 
 interface SummaryRow extends PersonSummary {
   name: string;
@@ -193,6 +195,7 @@ function ActivityTable({
                   <td className="px-3 py-2 text-right">
                     {s.weekdayActiveDays}
                     {s.weekendActiveDays > 0 && <span className="text-muted"> +{s.weekendActiveDays}w</span>}
+                    {s.ptoDays > 0 && <span className="text-cyan-400/80" title="Weekday PTO days (calendar out-of-office), excluded from averages"> · {s.ptoDays} PTO</span>}
                   </td>
                   <td className="px-3 py-2 text-right">{h1(s.avgActiveHours)}h</td>
                   <td className="px-3 py-2 text-right text-muted">{h1(s.avgSpanHours)}h</td>
@@ -230,12 +233,13 @@ function ActivityTable({
                                 <Fragment key={d.day}>
                                   <tr
                                     onClick={() => openDrill(s.email, d.day)}
-                                    className={`cursor-pointer hover:bg-surface-2 ${d.weekday ? "" : "text-muted"}`}
+                                    className={`cursor-pointer hover:bg-surface-2 ${d.weekday && !d.pto ? "" : "text-muted"}`}
                                   >
                                     <td className="px-2 py-1">
                                       <span className="text-muted mr-1">{drilled ? "▾" : "▸"}</span>
                                       {d.day}
                                       {d.weekday ? "" : " (wknd)"}
+                                      {d.pto && <span className="text-cyan-400/80"> (PTO)</span>}
                                     </td>
                                     <td className="px-2 py-1 text-right">{d.eventCount}</td>
                                     <td className="px-2 py-1 text-right">{d.interactions}</td>
@@ -445,6 +449,7 @@ export default function TeamActivityClient() {
     name: s.name,
     email: s.email,
     activeWeekdays: s.weekdayActiveDays,
+    ptoDays: s.ptoDays,
     avgActiveHours: h1(s.avgActiveHours),
     avgSpanHours: h1(s.avgSpanHours),
     avgInteractions: s.avgInteractions.toFixed(0),
@@ -541,7 +546,7 @@ export default function TeamActivityClient() {
                   : "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
               }`}
             >
-              {SOURCE_LABEL[s.source as ActivitySource] ?? s.source} · {s.events.toLocaleString()} events
+              {CHIP_LABEL[s.source] ?? s.source} · {s.events.toLocaleString()} events
               {s.warning ? " \u26a0" : ""}
             </span>
           ))}
@@ -551,7 +556,7 @@ export default function TeamActivityClient() {
               title={s.reason}
               className="text-xs px-2 py-1 rounded-md border bg-amber-500/10 text-amber-300 border-amber-500/30 cursor-help"
             >
-              {SOURCE_LABEL[s.source as ActivitySource] ?? s.source} skipped ⓘ
+              {CHIP_LABEL[s.source] ?? s.source} skipped ⓘ
             </span>
           ))}
         </div>
@@ -636,8 +641,9 @@ export default function TeamActivityClient() {
 
       <p className="text-xs text-muted mt-6">
         Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. Times are
-        America/Denver. &ldquo;Verdict&rdquo; is a convenience label, not a judgment — the numbers are the source of truth, and
-        activity outside these systems (email/docs, meetings, PTO) is not captured.
+        America/Denver. Days covered by a PTO-calendar or out-of-office block (≥6h of the day) count as PTO and are excluded
+        from the averages. &ldquo;Verdict&rdquo; is a convenience label, not a judgment — the numbers are the source of truth,
+        and activity outside these systems (email/docs, meetings) is not captured.
       </p>
     </DashboardShell>
   );
