@@ -1,7 +1,7 @@
 // src/__tests__/vishtik-parse.test.ts
 import { parseProjNumber, detailUrl } from "@/lib/vishtik";
 import { CookieJar } from "@/lib/vishtik";
-import { fetchAllProjects, type VishtikTransport } from "@/lib/vishtik";
+import { fetchAllProjects, getProjectParams, type VishtikTransport } from "@/lib/vishtik";
 
 describe("parseProjNumber", () => {
   it("extracts PROJ token from standard name", () => {
@@ -43,32 +43,77 @@ describe("CookieJar", () => {
   });
 });
 
-function fakeTransport(pages: Record<number, { data: { id: string; customer_name: string; status: string }[]; total_page: number; current_page: number; total_row: number }>): VishtikTransport {
+/** Fake server: a fixed row list served by offset/limit, like live Vishtik. */
+function fakeTransport(
+  rows: { id: string; customer_name: string; status: string }[],
+  overrides?: { serveOffset?: (offset: number) => number },
+): VishtikTransport & { calls: { offset: number; limit: number }[] } {
+  const calls: { offset: number; limit: number }[] = [];
   return {
+    calls,
     async login() {/* no-op */},
-    async getProjectPage({ cntr }) {
-      return pages[cntr] ?? { data: [], total_page: 1, current_page: cntr, total_row: 0 };
+    async getProjectPage({ offset, limit }) {
+      calls.push({ offset, limit });
+      const effective = overrides?.serveOffset ? overrides.serveOffset(offset) : offset;
+      return {
+        data: rows.slice(effective, effective + limit),
+        total_page: Math.ceil(rows.length / limit),
+        current_page: Math.floor(effective / limit) + 1,
+        total_row: rows.length,
+      };
     },
   };
 }
 
+function makeRows(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    id: String(i + 1),
+    customer_name: `PROJ-${i + 1} | Customer ${i + 1}`,
+    status: "4",
+  }));
+}
+
 describe("fetchAllProjects", () => {
-  it("collects projects across normal cntr pages and de-dupes by id", async () => {
-    const t = fakeTransport({
-      1: { data: [{ id: "1", customer_name: "PROJ-1 | A", status: "4" }], total_page: 2, current_page: 1, total_row: 2 },
-      2: { data: [{ id: "2", customer_name: "PROJ-2 | B", status: "16" }], total_page: 2, current_page: 2, total_row: 2 },
-    });
+  it("collects the full list across offset pages, including rows past the old ~2280 tile cap", async () => {
+    const rows = makeRows(2500);
+    const t = fakeTransport(rows);
     const { projects, complete } = await fetchAllProjects(t);
     expect(complete).toBe(true);
-    expect(projects.map((p) => p.vishtikId).sort()).toEqual(["1", "2"]);
+    expect(projects).toHaveLength(2500);
     expect(projects.find((p) => p.vishtikId === "1")?.projNumber).toBe("PROJ-1");
+    expect(projects.find((p) => p.vishtikId === "2500")).toBeDefined();
+    // Pages advance by offset, not by a page counter.
+    expect(t.calls[0]).toEqual({ offset: 0, limit: 100 });
+    expect(t.calls[1]).toEqual({ offset: 100, limit: 100 });
   });
 
   it("marks complete:false when fetched rows fall well short of total_row", async () => {
-    const t = fakeTransport({
-      1: { data: [{ id: "1", customer_name: "PROJ-1 | A", status: "4" }], total_page: 1, current_page: 1, total_row: 1000 },
-    });
+    const rows = makeRows(1000);
+    // Server ignores the offset and always serves the head page.
+    const t = fakeTransport(rows, { serveOffset: () => 0 });
     const { complete } = await fetchAllProjects(t);
     expect(complete).toBe(false);
+  });
+
+  it("stops fetching (rather than looping) when the server ignores the offset", async () => {
+    const rows = makeRows(1000);
+    const t = fakeTransport(rows, { serveOffset: () => 0 });
+    await fetchAllProjects(t);
+    expect(t.calls.length).toBe(2); // first page + one stuck page, then bail
+  });
+
+  it("handles an empty project list", async () => {
+    const t = fakeTransport([]);
+    const { projects, complete } = await fetchAllProjects(t);
+    expect(projects).toHaveLength(0);
+    expect(complete).toBe(true);
+  });
+});
+
+describe("getProjectParams", () => {
+  it("maps offset to recorddata and limit to showtotal (the original sync bug reversed this)", () => {
+    const p = getProjectParams(400, 200);
+    expect(p.recorddata).toBe("400");
+    expect(p.showtotal).toBe("200");
   });
 });

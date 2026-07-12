@@ -56,11 +56,15 @@ export interface ProjectPage {
 
 export interface VishtikTransport {
   login(): Promise<void>;
-  /** One Get-Project call. `cntr` = page number, `showtotal` = page size. */
-  getProjectPage(args: { cntr: number; showtotal: number }): Promise<ProjectPage>;
+  /** One Get-Project call. `offset` = 0-based row offset, `limit` = page size. */
+  getProjectPage(args: { offset: number; limit: number }): Promise<ProjectPage>;
 }
 
 const COMPLETENESS_TOLERANCE = 0.95; // fetched must reach ≥95% of total_row
+// 100 is the largest page size verified against the live server (2026-07-10);
+// don't raise without re-testing — an over-cap `showtotal` could silently clamp
+// while the offset keeps striding, skipping alternate windows.
+const PAGE_SIZE = 100;
 
 function toProjects(rows: ProjectPage["data"]): VishtikProject[] {
   return rows.map((r) => ({
@@ -72,19 +76,19 @@ function toProjects(rows: ProjectPage["data"]): VishtikProject[] {
 }
 
 /**
- * Fetch the entire Vishtik project list. Strategy:
- *  1. Page through with cntr=1..total_page at showtotal=100.
- *  2. If the server's cursor is stuck (it ignores `cntr` and keeps returning one
- *     fixed page — detected when page 2 does not report `current_page === 2`),
- *     fall back to a best-effort showtotal tiling: requesting page 2 of size S
- *     returns the window [S+1, 2S], and a halving sequence of S values is unioned
- *     to cover the list. A separate cntr:1 call at the largest S grabs the head
- *     [1, S] in case the stuck page happens to be page 1 (which the cntr:2 tiles
- *     would miss). This is a best-effort union validated empirically at rollout,
- *     not a guaranteed-complete enumeration; the `complete` gate below is the
- *     safety net.
- * Returns {complete:false} if coverage < tolerance of total_row (so the caller
- * suppresses writes rather than under-matching on a partial scrape).
+ * Fetch the entire Vishtik project list via offset pagination.
+ *
+ * Confirmed live semantics (2026-07-10, tested logged-in in the browser):
+ * `recorddata` is the 0-based ROW OFFSET and `showtotal` is the PAGE SIZE;
+ * `cntr` is ignored by the server. (The previous implementation sent
+ * recorddata=showtotal, which pinned every request to one offset and forced a
+ * halving-tile fallback that hard-capped coverage at ~2,280 rows — silently
+ * dropping the oldest projects as the list grew past that.)
+ *
+ * Guard: if a page returns no rows the list didn't know about, the server's
+ * offset semantics have drifted again — stop fetching and let the `complete`
+ * gate below report a partial scrape so the caller suppresses writes rather
+ * than under-matching.
  */
 export async function fetchAllProjects(
   t: VishtikTransport,
@@ -94,38 +98,16 @@ export async function fetchAllProjects(
   const ingest = (rows: ProjectPage["data"]) =>
     toProjects(rows).forEach((p) => byId.set(p.vishtikId, p));
 
-  const first = await t.getProjectPage({ cntr: 1, showtotal: 100 });
+  const first = await t.getProjectPage({ offset: 0, limit: PAGE_SIZE });
   ingest(first.data);
   const totalRow = first.total_row;
 
-  // Detect whether cntr paginates by comparing ROW IDENTITY across pages. A
-  // working cursor returns different rows for page 2. The live Vishtik server is
-  // known to ignore cntr and serve one fixed page — and it lies, reporting
-  // current_page:2 even for cntr:1 — so we must NOT trust current_page; we check
-  // whether page 2 actually contains rows page 1 didn't.
-  let cursorWorks = false;
-  if (first.total_page > 1) {
-    const second = await t.getProjectPage({ cntr: 2, showtotal: 100 });
-    const firstIds = new Set(first.data.map((r) => String(r.id)));
-    cursorWorks = second.data.some((r) => !firstIds.has(String(r.id)));
-    ingest(second.data); // keep page 2's rows regardless of detection outcome
-    if (cursorWorks) {
-      for (let p = 3; p <= first.total_page; p++) {
-        ingest((await t.getProjectPage({ cntr: p, showtotal: 100 })).data);
-      }
-    }
-  }
-
-  if (first.total_page > 1 && !cursorWorks) {
-    // Stuck cursor: the server serves one fixed page ("page 2") regardless of
-    // cntr, where page 2 of size S is the window [S+1, 2S]. A halving sequence
-    // of S unions (de-duped by id via `ingest`) to cover rows 2..total_row.
-    // Row 1 (the single newest project) is unreachable — no page-2 window starts
-    // at row 1 — which the completeness tolerance below accommodates.
-    const sizes = [1140, 570, 285, 143, 72, 36, 18, 9, 5, 3, 2, 1];
-    for (const S of sizes) {
-      ingest((await t.getProjectPage({ cntr: 2, showtotal: S })).data);
-    }
+  for (let offset = PAGE_SIZE; offset < totalRow; offset += PAGE_SIZE) {
+    const page = await t.getProjectPage({ offset, limit: PAGE_SIZE });
+    if (page.data.length === 0) break; // ran past the end (total_row shrank mid-scan)
+    const sizeBefore = byId.size;
+    ingest(page.data);
+    if (byId.size === sizeBefore) break; // offset ignored/stuck — bail to the completeness gate
   }
 
   const projects = [...byId.values()];
@@ -135,6 +117,22 @@ export async function fetchAllProjects(
 }
 
 const TIMEZONE = "America/Denver";
+
+/**
+ * Get-Project form params. Exported for the regression test: `recorddata` must
+ * carry the row OFFSET and `showtotal` the page size — the original sync bug
+ * was sending recorddata=showtotal, which pinned every request to one window.
+ */
+export function getProjectParams(offset: number, limit: number): Record<string, string> {
+  return {
+    cntr: "1", // ignored by the server; kept for form-shape compatibility
+    recorddata: String(offset),
+    showtotal: String(limit),
+    search: "", status: "", servicetype: "",
+    startdate: "", enddate: "", bylastdate: "", pe_stamp: "",
+    allproject: "1", assigned_user: "", assigned_me: "0", created_user: "",
+  };
+}
 
 /**
  * Resolve Vishtik credentials. Prefers env vars (local dev / dry-run); falls
@@ -207,15 +205,8 @@ export function fetchTransport(): VishtikTransport {
     async login() {
       if (!loggedIn) await doLogin();
     },
-    async getProjectPage({ cntr, showtotal }) {
-      const params = new URLSearchParams({
-        cntr: String(cntr),
-        recorddata: String(showtotal),
-        showtotal: String(showtotal),
-        search: "", status: "", servicetype: "",
-        startdate: "", enddate: "", bylastdate: "", pe_stamp: "",
-        allproject: "1", assigned_user: "", assigned_me: "0", created_user: "",
-      });
+    async getProjectPage({ offset, limit }) {
+      const params = new URLSearchParams(getProjectParams(offset, limit));
       const csrf = jar.csrfToken();
       if (csrf) params.set("ci_csrf_token", csrf);
       const call = () =>
