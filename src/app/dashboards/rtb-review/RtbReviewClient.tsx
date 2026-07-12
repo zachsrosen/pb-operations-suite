@@ -69,6 +69,7 @@ type SortField =
   | "projectType"
   | "amount"
   | "permitIssueDate"
+  | "permittingStatus"
   | "interconnectionStatus"
   | "constructionStatus"
   | "daStatus"
@@ -133,9 +134,9 @@ export default function RtbReviewClient() {
 
   const [selectedPMs, setSelectedPMs] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
-  // Default: longest-waiting first (oldest permit issue date at the top).
-  const [sortField, setSortField] = useState<SortField>("permitIssueDate");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  // Default: longest-parked first (most days in stage at the top).
+  const [sortField, setSortField] = useState<SortField>("daysInStage");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -235,8 +236,7 @@ export default function RtbReviewClient() {
                   ["PM / Office", "projectManager"],
                   ["Days", "daysInStage"],
                   ["Type / $", "amount"],
-                  ["Permit", "permitIssueDate"],
-                  ["IC / Constr", "interconnectionStatus"],
+                  ["Permit / IC / Constr", "permittingStatus"],
                   ["RTB Notes", null],
                   ["Items", null],
                   ["Payment", "loanStatus"],
@@ -264,14 +264,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={11} className="text-center text-muted py-8">
+                <td colSpan={10} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={11} className="text-center text-muted py-8">
+                <td colSpan={10} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -343,12 +343,24 @@ export default function RtbReviewClient() {
                       {item.amount != null ? CURRENCY.format(item.amount) : "—"}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">
-                    {formatDate(item.permitIssueDate)}
-                  </td>
-                  <td className="px-2 py-2 max-w-32">
-                    <div className="text-muted">{item.interconnectionStatus ?? "—"}</div>
-                    <div className="text-muted opacity-70">
+                  <td className="px-2 py-2 max-w-40">
+                    <div
+                      className="text-muted"
+                      title={
+                        item.permitIssueDate
+                          ? `Permit issued ${formatDate(item.permitIssueDate)}`
+                          : "Permitting status"
+                      }
+                    >
+                      <span className="opacity-50">Permit:</span>{" "}
+                      {item.permittingStatus ?? "—"}
+                    </div>
+                    <div className="text-muted" title="Interconnection status">
+                      <span className="opacity-50">IC:</span>{" "}
+                      {item.interconnectionStatus ?? "—"}
+                    </div>
+                    <div className="text-muted" title="Construction status">
+                      <span className="opacity-50">Constr:</span>{" "}
                       {item.constructionStatus ?? "—"}
                     </div>
                   </td>
@@ -406,7 +418,7 @@ export default function RtbReviewClient() {
                       )}
                       {item.loanStatus && (
                         <span className="text-muted" title="Loan status">
-                          {" · "}
+                          {" · Loan: "}
                           {item.loanStatus}
                         </span>
                       )}
