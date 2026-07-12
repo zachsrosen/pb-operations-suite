@@ -433,11 +433,14 @@ export default function FleetTable({
                         {sortedAlerts.slice(0, 2).map((alert) => (
                           <span
                             key={alert.id}
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium max-w-[150px] truncate ${
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium max-w-[150px] ${
                               ALERT_CHIP_COLORS[alert.severity] || ALERT_CHIP_COLORS.INFORMATIONAL
                             }`}
                           >
-                            {alert.severity === "RMA" ? `RMA ${alert.alertName}` : alert.alertName}
+                            {/* truncate needs a block/inline-block child — it has no effect on the flex container itself */}
+                            <span className="truncate">
+                              {alert.severity === "RMA" ? `RMA ${alert.alertName}` : alert.alertName}
+                            </span>
                           </span>
                         ))}
                         {sortedAlerts.length > 2 && (
