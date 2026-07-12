@@ -43,7 +43,9 @@ describe("FleetTable RMA alert chip", () => {
       />
     );
 
-    expect(screen.getByText(/2 RMA/)).toBeInTheDocument();
+    // Inline alert-name chips: each RMA alert renders its name with an RMA prefix
+    expect(screen.getByText("RMA Powerwall RMA")).toBeInTheDocument();
+    expect(screen.getByText("RMA Gateway RMA")).toBeInTheDocument();
   });
 
   it("shows no RMA chip when there are none", () => {
