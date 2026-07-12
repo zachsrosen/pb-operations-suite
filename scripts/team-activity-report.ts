@@ -91,7 +91,7 @@ async function main() {
       events.push(...r.events);
       if (r.talk) talk.push(...r.talk);
       if (r.skipped) skipped.push(`${a.key}: ${r.skipped}`);
-      else ran.push(`${a.key} (${r.events.length} events)`);
+      else ran.push(`${a.key} (${r.events.length} events${r.warning ? `; WARN ${r.warning}` : ""})`);
     } catch (e) {
       skipped.push(`${a.key}: ERROR ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -109,20 +109,21 @@ async function main() {
 
   writeCsv(
     dailyFile,
-    ["email", "name", "day", "weekday", "events", "interactions", "spanHours", "activeHours", "talkMinutes", "calls", "googleSpanHours", "pbops", "aircall", "zuper", "hubspot", "google", "firstLocal", "lastLocal"],
+    ["email", "name", "day", "weekday", "events", "interactions", "dealsTouched", "dealsTouchedAll", "spanHours", "activeHours", "talkMinutes", "calls", "googleSpanHours", "pbops", "aircall", "zuper", "hubspot", "google", "pe", "firstLocal", "lastLocal"],
     personDays.map((d) => [
       d.email, nameOf(d.email), d.day, d.weekday ? "Y" : "N", d.eventCount, d.interactions,
+      d.dealsTouched, d.dealsTouchedAll,
       d.spanHours.toFixed(2), d.activeHours.toFixed(2), d.talkMinutes, d.callCount, d.googleSpanHours.toFixed(2),
-      d.perSource.pbops, d.perSource.aircall, d.perSource.zuper, d.perSource.hubspot, d.perSource.google,
+      d.perSource.pbops, d.perSource.aircall, d.perSource.zuper, d.perSource.hubspot, d.perSource.google, d.perSource.pe,
       clock(d.firstMinute), clock(d.lastMinute),
     ]),
   );
   writeCsv(
     summaryFile,
-    ["email", "name", "activeDays", "weekdayDays", "avgActiveHours", "avgSpanHours", "avgInteractions", "avgEvents", "avgGoogleSpanHours", "totalTalkMinutes", "totalCalls", "avgStart", "avgEnd", "verdict"],
+    ["email", "name", "activeDays", "weekdayDays", "avgActiveHours", "avgSpanHours", "avgInteractions", "avgDealsTouched", "avgEvents", "avgGoogleSpanHours", "totalTalkMinutes", "totalCalls", "avgStart", "avgEnd", "verdict"],
     summaries.map((s) => [
       s.email, nameOf(s.email), s.activeDays, s.weekdayActiveDays, s.avgActiveHours.toFixed(2), s.avgSpanHours.toFixed(2),
-      s.avgInteractions.toFixed(1), s.avgEvents.toFixed(1), s.avgGoogleSpanHours.toFixed(2), s.totalTalkMinutes, s.totalCalls,
+      s.avgInteractions.toFixed(1), s.avgDealsTouched.toFixed(1), s.avgEvents.toFixed(1), s.avgGoogleSpanHours.toFixed(2), s.totalTalkMinutes, s.totalCalls,
       clock(s.avgStartMinute), clock(s.avgEndMinute), s.verdict,
     ]),
   );
@@ -135,10 +136,10 @@ async function main() {
 
   const pad = (s: string | number, n: number) => String(s).padStart(n);
   const padR = (s: string, n: number) => s.padEnd(n);
-  console.log(`${padR("Name", 20)} ${pad("Days", 4)} ${pad("Act/d", 6)} ${pad("Span/d", 7)} ${pad("Intx/d", 7)} ${pad("Talk", 5)} ${pad("GSpan", 6)} ${pad("Start", 6)} ${pad("End", 6)}  Verdict`);
+  console.log(`${padR("Name", 20)} ${pad("Days", 4)} ${pad("Act/d", 6)} ${pad("Span/d", 7)} ${pad("Intx/d", 7)} ${pad("Deals/d", 7)} ${pad("Talk", 5)} ${pad("GSpan", 6)} ${pad("Start", 6)} ${pad("End", 6)}  Verdict`);
   for (const s of summaries) {
     console.log(
-      `${padR(nameOf(s.email).slice(0, 20), 20)} ${pad(s.weekdayActiveDays, 4)} ${pad(s.avgActiveHours.toFixed(1), 6)} ${pad(s.avgSpanHours.toFixed(1), 7)} ${pad(s.avgInteractions.toFixed(0), 7)} ${pad(s.totalTalkMinutes, 5)} ${pad(s.avgGoogleSpanHours.toFixed(1), 6)} ${pad(clock(s.avgStartMinute), 6)} ${pad(clock(s.avgEndMinute), 6)}  ${s.verdict}`,
+      `${padR(nameOf(s.email).slice(0, 20), 20)} ${pad(s.weekdayActiveDays, 4)} ${pad(s.avgActiveHours.toFixed(1), 6)} ${pad(s.avgSpanHours.toFixed(1), 7)} ${pad(s.avgInteractions.toFixed(0), 7)} ${pad(s.avgDealsTouched.toFixed(1), 7)} ${pad(s.totalTalkMinutes, 5)} ${pad(s.avgGoogleSpanHours.toFixed(1), 6)} ${pad(clock(s.avgStartMinute), 6)} ${pad(clock(s.avgEndMinute), 6)}  ${s.verdict}`,
     );
   }
   console.log(`\nCSVs written:\n  ${dailyFile}\n  ${summaryFile}`);

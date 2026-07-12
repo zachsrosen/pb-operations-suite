@@ -85,7 +85,7 @@ export async function GET(request: Request) {
   const chosen = adapters.filter((a) => !only || only.includes(a.key));
   const events: ActivityEvent[] = [];
   const talk: TalkTimeRecord[] = [];
-  const ran: { source: string; events: number }[] = [];
+  const ran: { source: string; events: number; warning?: string }[] = [];
   const skipped: { source: string; reason: string }[] = [];
 
   const results = await Promise.all(
@@ -106,7 +106,7 @@ export async function GET(request: Request) {
     events.push(...res.events);
     if (res.talk) talk.push(...res.talk);
     if (res.skipped) skipped.push({ source: r.key, reason: res.skipped });
-    else ran.push({ source: r.key, events: res.events.length });
+    else ran.push({ source: r.key, events: res.events.length, ...(res.warning ? { warning: res.warning } : {}) });
   }
 
   const personDays = computePersonDays(events, talk);
