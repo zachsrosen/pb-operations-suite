@@ -139,7 +139,7 @@ async function main() {
   console.log(`${padR("Name", 20)} ${pad("Days", 4)} ${pad("Act/d", 6)} ${pad("Span/d", 7)} ${pad("Intx/d", 7)} ${pad("Deals/d", 7)} ${pad("Tasks/d", 7)} ${pad("Props/d", 7)} ${pad("Talk", 5)} ${pad("GSpan", 6)} ${pad("Start", 6)} ${pad("End", 6)}  Verdict`);
   for (const s of summaries) {
     console.log(
-      `${padR(nameOf(s.email).slice(0, 20), 20)} ${pad(s.weekdayActiveDays, 4)} ${pad(s.avgActiveHours.toFixed(1), 6)} ${pad(s.avgSpanHours.toFixed(1), 7)} ${pad(s.avgInteractions.toFixed(0), 7)} ${pad(s.avgDealsTouched.toFixed(1), s.avgTasksCompleted.toFixed(1), s.avgPropertyUpdates.toFixed(1), 7)} ${pad(s.totalTalkMinutes, 5)} ${pad(s.avgGoogleSpanHours.toFixed(1), 6)} ${pad(clock(s.avgStartMinute), 6)} ${pad(clock(s.avgEndMinute), 6)}  ${s.verdict}`,
+      `${padR(nameOf(s.email).slice(0, 20), 20)} ${pad(s.weekdayActiveDays, 4)} ${pad(s.avgActiveHours.toFixed(1), 6)} ${pad(s.avgSpanHours.toFixed(1), 7)} ${pad(s.avgInteractions.toFixed(0), 7)} ${pad(s.avgDealsTouched.toFixed(1), 7)} ${pad(s.avgTasksCompleted.toFixed(1), 7)} ${pad(s.avgPropertyUpdates.toFixed(1), 7)} ${pad(s.totalTalkMinutes, 5)} ${pad(s.avgGoogleSpanHours.toFixed(1), 6)} ${pad(clock(s.avgStartMinute), 6)} ${pad(clock(s.avgEndMinute), 6)}  ${s.verdict}`,
     );
   }
   console.log(`\nCSVs written:\n  ${dailyFile}\n  ${summaryFile}`);
