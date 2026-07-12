@@ -61,6 +61,8 @@ export interface RtbQueueItem {
   /** Deal amount in dollars. */
   amount: number | null;
   permitIssueDate: string | null;
+  /** Permitting status, resolved to the HubSpot display label. */
+  permittingStatus: string | null;
   /** Interconnection status, resolved to the HubSpot display label. */
   interconnectionStatus: string | null;
   /** Free-text RTB - Blocked Reason from the deal (why it's parked). */
@@ -112,6 +114,7 @@ const PROPERTIES = [
   "project_type",
   "amount",
   "permit_completion_date",
+  "permitting_status",
   "interconnection_status",
   "rtb_blocked_reason",
   "install_status",
@@ -221,6 +224,7 @@ export async function fetchRtbQueue(
         projectType: p.project_type ?? null,
         amount: p.amount ? Number(p.amount) || null : null,
         permitIssueDate: p.permit_completion_date ?? null,
+        permittingStatus: statusLabel("permitting_status", p.permitting_status),
         interconnectionStatus: statusLabel(
           "interconnection_status",
           p.interconnection_status

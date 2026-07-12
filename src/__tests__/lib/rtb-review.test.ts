@@ -41,6 +41,7 @@ describe("fetchRtbQueue", () => {
             pb_location: "Westminster",
             project_manager: "212300959",
             permit_completion_date: "2026-07-01T00:00:00Z",
+            permitting_status: "Complete",
             interconnection_status: "Signature Acquired By Customer",
             rtb_blocked_reason: "Waiting on utility meter release",
             install_status: "Ready to Build",
@@ -83,6 +84,8 @@ describe("fetchRtbQueue", () => {
       dealStage: "RTB - Blocked",
       permitIssueDate: "2026-07-01T00:00:00Z",
       // resolved to display label, not the raw value
+      // permitting_status value "Complete" displays as "Permit Issued"
+      permittingStatus: "Permit Issued",
       interconnectionStatus: "Ready To Submit",
       rtbBlockedReason: "Waiting on utility meter release",
       constructionStatus: "Ready to Build",
