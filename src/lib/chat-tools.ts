@@ -1453,7 +1453,11 @@ export function createReadOnlyChatTools() {
       "sales_closed, project_number). TWO-LEVEL grouping: pass groupBy AND groupBy2 for a " +
       "matrix (e.g. groupBy:'stage', groupBy2:'location' → byGroup2[stage][location]). " +
       "If a filter value matches nothing, the tool returns the available values for that " +
-      "field so you can pick the right one — never guess or fabricate.",
+      "field so you can pick the right one — never guess or fabricate. REASONS IN BULK: set " +
+      "includeReason:true to get each deal's verbatim reason note inline (cancellation reason " +
+      "for cancelled, on-hold reason for on-hold, sales-change/rejection/blocked/revision/" +
+      "loose-end reason otherwise). Use this for 'what are the cancellation/on-hold/rejection " +
+      "reasons for all of these' — it is ONE call; never loop get_deal across a list of deals.",
     inputSchema: z.object({
       filters: z
         .array(
@@ -1484,6 +1488,10 @@ export function createReadOnlyChatTools() {
         .enum(["project", "sales", "dnr", "roofing", "service"])
         .optional()
         .describe("Which HubSpot pipeline to query (default 'project'). Non-project pipelines support only the common fields: stage, location, owner, amount, sales_closed, project_number."),
+      includeReason: z
+        .boolean()
+        .optional()
+        .describe("Attach each deal's current state reason note (verbatim) as a `reason` field — the cancellation reason for cancelled deals, on-hold reason for on-hold, sales-change/rejection/RTB-blocked/revision/loose-end reason otherwise. Use this for 'what are the cancellation/on-hold/rejection reasons for all of these' — ONE call, do NOT loop get_deal per deal. Project pipeline only."),
     }),
     run: async (input) => {
       const { fetchAllProjects } = await import("@/lib/hubspot");
@@ -1695,6 +1703,38 @@ export function createReadOnlyChatTools() {
         }
       }
 
+      // The deal's current best-known reason note (verbatim). Stage-gates the
+      // stage-level states (cancelled/on-hold notes go stale after a deal moves
+      // on), then falls back through the workstream reasons by priority. For the
+      // full per-state breakdown on a single deal, use get_deal's stateContext.
+      const reasonOf = (p: P): string | null => {
+        const stage = String(p.stage || "");
+        const v = (x: unknown) => {
+          const s = x == null ? "" : String(x).trim();
+          return s || null;
+        };
+        const join = (...xs: unknown[]) => xs.map(v).filter(Boolean).join(" — ") || null;
+        if (/cancel/i.test(stage)) return v(p.cancellationReason);
+        if (/on.?hold/i.test(stage)) return join(p.onHoldReason, p.onHoldNotes);
+        return (
+          v(p.salesChangeOrderNotes) ||
+          v(p.pmRejectionReason) ||
+          v(p.rtbBlockedReason) ||
+          v(p.katsNotes) ||
+          v(p.daRejectionReason) ||
+          v(p.designRevisionReason) ||
+          join(p.permitRejectionReason, p.causeOfPermitRejection) ||
+          join(p.interconnectionRejectionReason, p.causeOfInterconnectionRejection) ||
+          v(p.idrRevisionReason) ||
+          v(p.inspectionFailureReason) ||
+          v(p.asBuiltRevisionReason) ||
+          join(p.looseEndsRemaining, p.looseEndNotes) ||
+          v(p.salesCommunicationReason) ||
+          v(p.pbShitShowReason) ||
+          null
+        );
+      };
+
       const CAP = 60;
       const deals = matched
         .slice()
@@ -1712,6 +1752,7 @@ export function createReadOnlyChatTools() {
           participateEnergy: Boolean(p.isParticipateEnergy),
           revenue: Math.round(Number(p.amount) || 0),
           url: (p.url as string) || "",
+          ...(input.includeReason ? { reason: reasonOf(p) } : {}),
         }));
 
       return JSON.stringify({

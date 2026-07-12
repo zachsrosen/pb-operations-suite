@@ -516,6 +516,18 @@ export interface Project {
   salesCommunicationReason: string | null; // fallback reason field
   pbShitShowReason: string | null; // last-resort reason fallback
   katsNotes: string | null; // RTB-Blocked reason fallback
+  // Per-state reason notes (bulk: query_projects includeReason)
+  cancellationReason: string | null; // Cancelled stage
+  daRejectionReason: string | null; // DA rejected
+  designRevisionReason: string | null; // engineering design revision
+  permitRejectionReason: string | null; // permit bounced
+  causeOfPermitRejection: string | null; // permit rejection cause (dropdown)
+  interconnectionRejectionReason: string | null; // interconnection bounced
+  causeOfInterconnectionRejection: string | null; // IC rejection cause (dropdown)
+  idrRevisionReason: string | null; // IDR revision requested
+  asBuiltRevisionReason: string | null; // current as-built revision reason
+  looseEndsRemaining: string | null; // Close Out: loose-ends selection
+  looseEndNotes: string | null; // Close Out: loose-end notes
 
   // Priority & Scoring
   priorityScore: number;
@@ -792,6 +804,18 @@ const DEAL_PROPERTIES = [
   "sales_communication_reason", // fallback reason when the dedicated field is blank
   "pb_shit_show_reason",        // free-text rationale; last-resort reason fallback
   "kats_notes",                 // general ops note; RTB-Blocked reason fallback
+  // Per-state reason notes (bulk: query_projects includeReason)
+  "cancellation_reason",              // Cancelled stage: why the deal was cancelled
+  "design_approval_rejection_reason", // DA rejected
+  "design_revision_reason",           // engineering design revision
+  "permit_rejection_reason",          // permit bounced
+  "cause_of_permit_rejection_",       // permit rejection cause (dropdown)
+  "interconnection_rejection_reason", // interconnection bounced
+  "cause_of_interconnection_rejection_", // IC rejection cause (dropdown)
+  "idr_revision_reason",              // IDR revision requested
+  "inspection_rejection_reason",      // current as-built revision reason
+  "loose_ends_remaining_",            // Close Out: loose-ends selection
+  "loose_end_notes_",                 // Close Out: loose-end notes
 
   // Forecasted dates
   "forecasted_installation_date",
@@ -1194,6 +1218,18 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     salesCommunicationReason: deal.sales_communication_reason ? String(deal.sales_communication_reason) : null,
     pbShitShowReason: deal.pb_shit_show_reason ? String(deal.pb_shit_show_reason) : null,
     katsNotes: deal.kats_notes ? String(deal.kats_notes) : null,
+    // Per-state reason notes (bulk: query_projects includeReason)
+    cancellationReason: deal.cancellation_reason ? String(deal.cancellation_reason) : null,
+    daRejectionReason: deal.design_approval_rejection_reason ? String(deal.design_approval_rejection_reason) : null,
+    designRevisionReason: deal.design_revision_reason ? String(deal.design_revision_reason) : null,
+    permitRejectionReason: deal.permit_rejection_reason ? String(deal.permit_rejection_reason) : null,
+    causeOfPermitRejection: deal.cause_of_permit_rejection_ ? String(deal.cause_of_permit_rejection_) : null,
+    interconnectionRejectionReason: deal.interconnection_rejection_reason ? String(deal.interconnection_rejection_reason) : null,
+    causeOfInterconnectionRejection: deal.cause_of_interconnection_rejection_ ? String(deal.cause_of_interconnection_rejection_) : null,
+    idrRevisionReason: deal.idr_revision_reason ? String(deal.idr_revision_reason) : null,
+    asBuiltRevisionReason: deal.inspection_rejection_reason ? String(deal.inspection_rejection_reason) : null,
+    looseEndsRemaining: deal.loose_ends_remaining_ ? String(deal.loose_ends_remaining_) : null,
+    looseEndNotes: deal.loose_end_notes_ ? String(deal.loose_end_notes_) : null,
 
     // Priority
     priorityScore,

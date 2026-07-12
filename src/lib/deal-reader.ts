@@ -343,6 +343,18 @@ export function dealToProject(deal: PrismaDeal): Project {
     salesCommunicationReason: null,
     pbShitShowReason: null,
     katsNotes: null,
+    // Per-state reason notes (not mirrored in the project cache)
+    cancellationReason: null,
+    daRejectionReason: null,
+    designRevisionReason: null,
+    permitRejectionReason: null,
+    causeOfPermitRejection: null,
+    interconnectionRejectionReason: null,
+    causeOfInterconnectionRejection: null,
+    idrRevisionReason: null,
+    asBuiltRevisionReason: null,
+    looseEndsRemaining: null,
+    looseEndNotes: null,
 
     // Priority
     priorityScore,
