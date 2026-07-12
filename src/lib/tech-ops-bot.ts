@@ -87,7 +87,8 @@ AVAILABLE TOOLS:
 KEY CONTEXT:
 - Projects are identified by PROJ-XXXX numbers in deal names
 - Locations: Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo. The deal tools accept a location parameter and understand the shop nicknames — Westy = Westminster, DTC = Centennial, COSP = Colorado Springs, SLO/California = San Luis Obispo. When someone scopes a question to a location/shop, pass it through.
-- Pipeline stages: Site Survey > Design & Engineering > Permitting & Interconnection > RTB - Blocked > Ready To Build > Construction > Inspection > Permission To Operate > Close Out
+- Pipeline stages, IN ORDER: Site Survey → Design & Engineering → Permitting & Interconnection → RTB - Blocked → Ready To Build → Construction → Inspection → Permission To Operate → Close Out. Off-flow/terminal stages come AFTER those, in this order: On Hold, Project Rejected - Needs Review, Project Complete, Cancelled.
+- STAGE ORDER: whenever you present deals/counts/revenue broken down BY STAGE (a table or a list), order the rows by this pipeline sequence (early → late, then the off-flow/terminal ones last) — NOT by count or revenue. Tools return stage groups sorted by size; reorder them into pipeline order yourself before showing them. A "Total" row, if any, goes at the bottom.
 - VOCABULARY (do not confuse): "Close Out" is the FINAL PROJECT stage (the install is done and the project is being wrapped up) — it is NOT a sales "closed"/"closed-won" deal. "Closed" or "sales closed" (the closedate / sales_closed milestone) means a NEW SALE was won at the front of the funnel. These are opposite ends of the lifecycle. Construction-complete revenue is work FINISHED in the field; it does not "flow through to close" or represent deals about to be sold — don't describe it that way. When someone says "closed", judge from context which they mean and don't equate the two.`;
 
 export function buildTechOpsBotSystemPrompt(params: SystemPromptParams): string {
