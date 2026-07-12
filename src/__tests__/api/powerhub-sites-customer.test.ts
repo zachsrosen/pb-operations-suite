@@ -2,19 +2,29 @@ jest.mock("@/lib/db", () => ({
   prisma: {
     powerhubSite: { findMany: jest.fn() },
     propertyDealLink: { findMany: jest.fn() },
+    propertyTicketLink: { findMany: jest.fn() },
   },
 }));
 jest.mock("@/lib/powerhub-site-context", () => ({
   resolveDealSummaries: jest.fn(),
 }));
+jest.mock("@/lib/powerhub-tickets", () => ({
+  ...jest.requireActual("@/lib/powerhub-tickets"),
+  // Only the HubSpot fetch is mocked; buildSiteTickets stays real so the
+  // route's property → tickets wiring is exercised.
+  getTicketSummaries: jest.fn(),
+}));
 
 import { GET } from "@/app/api/powerhub/sites/route";
 import { prisma } from "@/lib/db";
 import { resolveDealSummaries } from "@/lib/powerhub-site-context";
+import { getTicketSummaries } from "@/lib/powerhub-tickets";
 
 const mockSiteFindMany = prisma.powerhubSite.findMany as jest.Mock;
 const mockDealLinkFindMany = prisma.propertyDealLink.findMany as jest.Mock;
+const mockTicketLinkFindMany = prisma.propertyTicketLink.findMany as jest.Mock;
 const mockResolveDeals = resolveDealSummaries as jest.Mock;
+const mockGetTicketSummaries = getTicketSummaries as jest.Mock;
 
 function makeSite(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,6 +53,8 @@ describe("GET /api/powerhub/sites deal-name enrichment", () => {
     jest.clearAllMocks();
     process.env.POWERHUB_ENABLED = "true";
     mockDealLinkFindMany.mockResolvedValue([]);
+    mockTicketLinkFindMany.mockResolvedValue([]);
+    mockGetTicketSummaries.mockResolvedValue({});
     mockResolveDeals.mockResolvedValue(new Map());
   });
 
@@ -110,6 +122,30 @@ describe("GET /api/powerhub/sites deal-name enrichment", () => {
 
     expect(body.sites[0].address).toBe("42 Solar Way");
     expect(body.sites[0].city).toBe("Boulder");
+  });
+
+  it("attaches open tickets for linked sites and none for unlinked", async () => {
+    mockSiteFindMany.mockResolvedValue([
+      makeSite({ siteId: "linked", dealId: null, propertyId: "prop-1", linkMethod: "GEO" }),
+      makeSite({ siteId: "unlinked", dealId: null, propertyId: null, linkMethod: "UNLINKED" }),
+    ]);
+    mockTicketLinkFindMany.mockResolvedValue([
+      { propertyId: "prop-1", ticketId: "t-open" },
+      { propertyId: "prop-1", ticketId: "t-closed" },
+    ]);
+    mockGetTicketSummaries.mockResolvedValue({
+      "t-open": { subject: "Inverter fault follow-up", isOpen: true },
+      "t-closed": { subject: "Old visit", isOpen: false },
+    });
+
+    const res = await GET(new Request("http://localhost:3000/api/powerhub/sites"));
+    const body = await res.json();
+
+    const linked = body.sites.find((s: { siteId: string }) => s.siteId === "linked");
+    const unlinked = body.sites.find((s: { siteId: string }) => s.siteId === "unlinked");
+    expect(mockGetTicketSummaries).toHaveBeenCalledWith(["t-open", "t-closed"]);
+    expect(linked.tickets).toEqual([{ id: "t-open", subject: "Inverter fault follow-up" }]);
+    expect(unlinked.tickets).toEqual([]);
   });
 
   it("leaves dealName and resolvedDealId null for unlinked sites", async () => {

@@ -2,7 +2,7 @@
 
 import { Fragment, useState, useMemo, useEffect } from "react";
 import SiteDetail from "./SiteDetail";
-import { getHubSpotDealUrl } from "@/lib/external-links";
+import { getHubSpotDealUrl, getHubSpotTicketUrl } from "@/lib/external-links";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { type SortDir } from "@/hooks/useSort";
 
@@ -35,6 +35,11 @@ interface PowerhubSiteRow {
     severity: string;
     alertName: string;
   }>;
+  /** Open HubSpot service tickets on the linked property (server-enriched). */
+  tickets?: Array<{
+    id: string;
+    subject: string;
+  }>;
 }
 
 interface FleetTableProps {
@@ -64,6 +69,14 @@ const SEVERITY_WEIGHT: Record<string, number> = {
   RMA: 100,
   PERFORMANCE: 10,
   INFORMATIONAL: 1,
+};
+
+/** Chip colors per severity — keeps the pre-existing RMA purple distinction. */
+const ALERT_CHIP_COLORS: Record<string, string> = {
+  CRITICAL: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+  RMA: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+  PERFORMANCE: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+  INFORMATIONAL: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
 };
 
 export default function FleetTable({
@@ -138,6 +151,7 @@ export default function FleetTable({
         _soc: s.telemetrySnapshot?.batterySocPercent ?? null,
         _alertWeight:
           s.alerts.reduce((sum, a) => sum + (SEVERITY_WEIGHT[a.severity] || 1), 0) || null,
+        _tickets: s.tickets?.length || null,
         _grid: gridStatusOf(s),
         _devices:
           (s.totalGateways || 0) + (s.totalInverters || 0) + (s.totalBatteries || 0) || null,
@@ -314,6 +328,7 @@ export default function FleetTable({
               <SortHeader label="Battery" field="_soc" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Grid" field="_grid" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Alerts" field="_alertWeight" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Tickets" field="_tickets" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Link" field="_link" sortKey={sortKey} sortDir={sortDir} onSort={toggle} last />
             </tr>
           </thead>
@@ -321,17 +336,15 @@ export default function FleetTable({
             {visible.map((site) => {
               const snapshot = site.telemetrySnapshot;
               const isExpanded = expandedSiteId === site.siteId;
-              const criticalAlerts = site.alerts.filter(
-                (a) => a.severity === "CRITICAL"
-              ).length;
-              const perfAlerts = site.alerts.filter(
-                (a) => a.severity === "PERFORMANCE"
-              ).length;
-              const rmaAlerts = site.alerts.filter(
-                (a) => a.severity === "RMA"
-              ).length;
-              const otherAlerts =
-                site.alerts.length - criticalAlerts - perfAlerts - rmaAlerts;
+              // Worst-severity-first for inline display + tooltip
+              const sortedAlerts = [...site.alerts].sort(
+                (a, b) =>
+                  (SEVERITY_WEIGHT[b.severity] || 1) - (SEVERITY_WEIGHT[a.severity] || 1)
+              );
+              const alertTooltip = sortedAlerts
+                .map((a) => `${a.severity} ${a.alertName}`)
+                .join("\n");
+              const tickets = site.tickets || [];
 
               // Determine if the site name is a real name or just the UUID
               const isUuidName = site.siteName === site.siteId;
@@ -415,30 +428,55 @@ export default function FleetTable({
                         "—"
                       )}
                     </td>
+                    <td className="py-3 pr-4" title={alertTooltip || undefined}>
+                      <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
+                        {sortedAlerts.slice(0, 2).map((alert) => (
+                          <span
+                            key={alert.id}
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium max-w-[150px] ${
+                              ALERT_CHIP_COLORS[alert.severity] || ALERT_CHIP_COLORS.INFORMATIONAL
+                            }`}
+                          >
+                            {/* truncate needs a block/inline-block child — it has no effect on the flex container itself */}
+                            <span className="truncate">
+                              {alert.severity === "RMA" ? `RMA ${alert.alertName}` : alert.alertName}
+                            </span>
+                          </span>
+                        ))}
+                        {sortedAlerts.length > 2 && (
+                          <span className="text-xs text-muted">
+                            +{sortedAlerts.length - 2}
+                          </span>
+                        )}
+                        {sortedAlerts.length === 0 && (
+                          <span className="text-muted">—</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3 pr-4">
-                      {criticalAlerts > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 mr-1">
-                          {criticalAlerts}
-                        </span>
-                      )}
-                      {perfAlerts > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 mr-1">
-                          {perfAlerts}
-                        </span>
-                      )}
-                      {rmaAlerts > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 mr-1">
-                          {rmaAlerts} RMA
-                        </span>
-                      )}
-                      {otherAlerts > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                          {otherAlerts}
-                        </span>
-                      )}
-                      {site.alerts.length === 0 && (
-                        <span className="text-muted">—</span>
-                      )}
+                      <div className="flex flex-col gap-0.5 max-w-[200px]">
+                        {tickets.slice(0, 2).map((ticket) => (
+                          <a
+                            key={ticket.id}
+                            href={getHubSpotTicketUrl(ticket.id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-cyan-500 hover:underline truncate"
+                            title={ticket.subject || `Ticket ${ticket.id}`}
+                          >
+                            {ticket.subject || `Ticket ${ticket.id}`} ↗
+                          </a>
+                        ))}
+                        {tickets.length > 2 && (
+                          <span className="text-xs text-muted">
+                            +{tickets.length - 2} more
+                          </span>
+                        )}
+                        {tickets.length === 0 && (
+                          <span className="text-muted">—</span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3">
                       {site.linkMethod === "UNLINKED" ? (
@@ -452,7 +490,7 @@ export default function FleetTable({
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={7} className="bg-surface-2 p-4">
+                      <td colSpan={8} className="bg-surface-2 p-4">
                         <SiteDetail siteId={site.siteId} />
                       </td>
                     </tr>
@@ -463,7 +501,7 @@ export default function FleetTable({
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="py-8 text-center text-muted"
                 >
                   {hasActiveFilters

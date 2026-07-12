@@ -252,6 +252,34 @@ export async function batchReadDealsWithRetry(
   throw new Error("Max retries exceeded");
 }
 
+/** Batch-read HubSpot Tickets by id, with 429 retry. */
+export async function batchReadTicketsWithRetry(
+  ids: string[],
+  properties: string[],
+  maxRetries = 5
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await hubspotClient.crm.tickets.batchApi.read({
+        inputs: ids.map((id) => ({ id })),
+        properties,
+        propertiesWithHistory: [],
+      });
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+      if ((isRateLimit || statusCode === 429 || (statusCode != null && statusCode >= 500)) && attempt < maxRetries - 1) {
+        await sleep(Math.round(Math.pow(2, attempt) * 1100 + Math.random() * 400));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
 /** Batch-read HubSpot Tasks by id (returns hs_task_subject), with 429 retry. */
 export async function batchReadTasksWithRetry(ids: string[], maxRetries = 5) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
