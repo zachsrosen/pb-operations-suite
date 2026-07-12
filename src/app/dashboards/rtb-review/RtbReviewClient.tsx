@@ -341,8 +341,14 @@ export default function RtbReviewClient() {
                   >
                     {item.daysInStage ?? "—"}
                   </td>
-                  <td className="px-2 py-2 text-muted max-w-24">
-                    {item.projectType ?? "—"}
+                  <td className="px-2 py-2 text-muted">
+                    {item.projectType
+                      ? item.projectType.split(";").map((t, i) => (
+                          <div key={i} className="whitespace-nowrap">
+                            {t.trim()}
+                          </div>
+                        ))
+                      : "—"}
                   </td>
                   <td className="px-2 py-2 text-foreground whitespace-nowrap">
                     {item.amount != null ? CURRENCY.format(item.amount) : "—"}
