@@ -8,6 +8,11 @@ jest.mock("@/lib/hubspot", () => ({
   DEAL_STAGE_MAP: { "71052436": "RTB - Blocked", "22580871": "Ready To Build" },
 }));
 
+const mockEarliestInstallAvailability = jest.fn();
+jest.mock("@/lib/install-availability", () => ({
+  earliestInstallAvailability: (...a: unknown[]) => mockEarliestInstallAvailability(...a),
+}));
+
 import { fetchRtbQueue } from "@/lib/rtb-review";
 
 // entered RTB-Blocked exactly 10 days before the test runs
@@ -20,6 +25,8 @@ describe("fetchRtbQueue", () => {
     mockFetchLineItemsForDeals.mockResolvedValue([]);
     mockResolveOwner.mockReset();
     mockResolveOwner.mockResolvedValue(null);
+    mockEarliestInstallAvailability.mockReset();
+    mockEarliestInstallAvailability.mockResolvedValue(new Map());
   });
 
   it("shapes RTB-Blocked deals into queue rows with resolved labels", async () => {
@@ -41,6 +48,8 @@ describe("fetchRtbQueue", () => {
             project_type: "Solar",
             amount: "30105.6",
             da_invoice_status: "Paid In Full",
+            payment_method: "Wheelhouse 12 year 4.49%",
+            loan_status: "Funding Secured",
             hs_v2_date_entered_71052436: ENTERED_STAGE_AT,
             pm_rtb_approved: "false",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
@@ -58,6 +67,9 @@ describe("fetchRtbQueue", () => {
       name: "Jane PM",
       email: "jane@photonbrothers.com",
     });
+    mockEarliestInstallAvailability.mockResolvedValue(
+      new Map([["Westminster", "2026-07-15"]])
+    );
 
     const rows = await fetchRtbQueue();
     expect(rows).toHaveLength(1);
@@ -80,6 +92,10 @@ describe("fetchRtbQueue", () => {
       amount: 30105.6,
       enteredStageAt: ENTERED_STAGE_AT,
       daysInStage: 10,
+      paymentMethod: "Wheelhouse 12 year 4.49%",
+      // loan_status value "Funding Secured" displays as "Approved"
+      loanStatus: "Approved",
+      earliestInstallDate: "2026-07-15",
       daStatus: "Paid In Full",
       daPaid: true,
       approved: false,

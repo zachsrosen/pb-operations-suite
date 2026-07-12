@@ -22,6 +22,14 @@ function formatDate(value: string | null): string {
   return d.toLocaleDateString();
 }
 
+/** Format a bare YYYY-MM-DD without Date parsing (avoids UTC off-by-one). */
+function formatYmd(value: string | null): string {
+  if (!value) return "—";
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return value;
+  return `${Number(m[2])}/${Number(m[3])}/${m[1]}`;
+}
+
 /**
  * Deal names follow "PROJ-XXXX | Customer | Full address". The address makes
  * the column blow out, so render just the project number + customer; the full
@@ -64,7 +72,10 @@ type SortField =
   | "interconnectionStatus"
   | "constructionStatus"
   | "daStatus"
-  | "daysInStage";
+  | "daysInStage"
+  | "paymentMethod"
+  | "loanStatus"
+  | "earliestInstallDate";
 
 /** Per-field comparable value; null/undefined sort last in either direction. */
 function sortValue(item: RtbQueueItem, field: SortField): string | number | null {
@@ -211,6 +222,9 @@ export default function RtbReviewClient() {
                   ["Construction", "constructionStatus"],
                   ["Items", null],
                   ["DA", "daStatus"],
+                  ["Payment", "paymentMethod"],
+                  ["Loan", "loanStatus"],
+                  ["Avail", "earliestInstallDate"],
                 ] as Array<[string, SortField | null]>
               ).map(([label, field]) =>
                 field ? (
@@ -234,14 +248,14 @@ export default function RtbReviewClient() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={14} className="text-center text-muted py-8">
+                <td colSpan={17} className="text-center text-muted py-8">
                   Loading…
                 </td>
               </tr>
             )}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={14} className="text-center text-muted py-8">
+                <td colSpan={17} className="text-center text-muted py-8">
                   {items.length === 0
                     ? "No deals awaiting RTB review"
                     : "No deals match the selected filters"}
@@ -360,6 +374,24 @@ export default function RtbReviewClient() {
                     ) : (
                       <span className="text-muted">{item.daStatus ?? "—"}</span>
                     )}
+                  </td>
+                  <td className="px-2 py-2 text-muted">
+                    <div className="max-w-28 truncate" title={item.paymentMethod ?? undefined}>
+                      {item.paymentMethod ?? "—"}
+                    </div>
+                  </td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
+                    {item.loanStatus ?? "—"}
+                  </td>
+                  <td
+                    className="px-2 py-2 whitespace-nowrap text-foreground"
+                    title={
+                      item.earliestInstallDate
+                        ? `Earliest open install day for ${item.location ?? "this location"}`
+                        : undefined
+                    }
+                  >
+                    {formatYmd(item.earliestInstallDate)}
                   </td>
                   <td className="px-2 py-2 text-right">
                     <button
