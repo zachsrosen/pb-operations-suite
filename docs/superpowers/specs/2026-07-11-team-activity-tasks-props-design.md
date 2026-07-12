@@ -72,6 +72,20 @@ conditional omission). Roster-only lines (full-period PTO / no activity)
 unchanged. Metric-definition note gains: "Tasks/day counts tasks completed
 that day; property updates counts field changes on any HubSpot record."
 
+## Accepted imprecisions
+
+- A task both due and completed in-window yields one `engagement/tasks` event
+  (deal attribution, time-shape-excluded) and one `task_completed` event —
+  different objectKeys, no dedup between them; worst case +1 interaction.
+- Automation-completed tasks (e.g. the pending PE task auto-completion) stamp
+  completion at machine time under the owner; those will count as the owner's
+  completions and enter time-shape metrics. Accepted until an automation
+  completer is actually live; revisit then.
+- Warning wording on the degraded search path must mention tasks as well as
+  deals ("deal/task counts are floor values").
+- Bump the table min-widths (main 860 -> 980, detail 720 -> 820) for the two
+  extra columns.
+
 ## Testing
 
 - Metrics: counts for both kinds (twin `CRM_OBJECT/UPDATE` rows ignored;
@@ -79,8 +93,12 @@ that day; property updates counts field changes on any HubSpot record."
 - Report card: updated line template across existing fixtures; zero-value
   rendering.
 - Live: CLI run over the last 14 days; spot-check one person's
-  tasksCompleted against a direct `hs_task_completion_date` search count and
-  propertyUpdates against their audit-log PROPERTY_VALUE/UPDATE count.
+  tasksCompleted against a direct `hs_task_completion_date` search count.
+  For propertyUpdates, enumerate the distinct `category/action` pairs in one
+  person's audit rows (confirm UPDATE is the only property-edit action and
+  the `CRM_OBJECT/UPDATE` twin is ~1:1, i.e. no double/missed counting), and
+  verify a completed task's audit row keys `TASK:<same id>` near the
+  completion timestamp (the interaction-dedup claim).
 
 ## Out of scope
 
