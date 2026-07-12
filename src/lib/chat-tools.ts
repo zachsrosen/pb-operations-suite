@@ -504,30 +504,76 @@ export function createReadOnlyChatTools() {
   const getDeal = betaZodTool({
     name: "get_deal",
     description:
-      "Full status snapshot for ONE deal by HubSpot deal ID: stage plus every workstream " +
-      "status — DA (layout_status), design, permitting, interconnection, site survey, " +
-      "construction, inspection, PTO — all resolved to display labels, plus the milestone " +
-      "dates, amount, location, project number, PE milestone statuses, AND changeReason: " +
-      "the verbatim note for WHY the deal is pending sales changes / rejected / blocked. " +
-      "Use for 'what's the DA/design/permit status on this deal', 'where is this project', " +
-      "and 'why is this pending sales changes / rejected' (read changeReason verbatim). " +
-      "(For the customer/PM/owner use get_project_team; for jobs/tickets use get_project_service.)",
+      "Full state snapshot for ONE deal — accepts a PROJ number, customer name/address, or " +
+      "HubSpot deal ID: stage, every workstream status " +
+      "(DA/design/permitting/interconnection/site survey/construction/inspection/PTO) as " +
+      "display labels, milestone dates, revision counts, and stateContext — the VERBATIM " +
+      "reason a deal is in whatever state it's in: pending sales changes, on hold, cancelled, " +
+      "RTB blocked, project rejected, DA/permit/interconnection rejected, design/IDR/as-built " +
+      "revision, inspection failed, loose ends remaining. For PE (Participate Energy) deals it " +
+      "also returns a `pe` block: rejection comments, info needed, per-team rejection notes " +
+      "(ops/design/permitting/interconnection/sales/accounting/compliance), and per-document " +
+      "notes. Use for 'where is this project', 'what's the DA/permit status', 'why is this " +
+      "<state>' (read the reason verbatim), 'what does <team> need to fix for PE', 'what's PE " +
+      "waiting on'. For customer/PM/owner use get_project_team; for jobs/tickets use get_project_service.",
     inputSchema: z.object({
-      dealId: z.string().describe("HubSpot deal ID"),
+      project: z
+        .string()
+        .describe("PROJ number, customer name/address, or HubSpot deal ID"),
     }),
     run: async (input) => {
       const { hubspotClient, DEAL_STAGE_MAP } = await import("@/lib/hubspot");
       const { statusLabel } = await import("@/lib/deal-status-labels");
-      const deal = await hubspotClient.crm.deals.basicApi.getById(input.dealId, [
+      const ref = await resolveDealRef(input.project);
+      if ("notFound" in ref)
+        return JSON.stringify({ error: `No deal found for "${input.project}".` });
+      if ("candidates" in ref)
+        return JSON.stringify({
+          needsClarification: true,
+          message: `"${input.project}" matches ${ref.candidates.length} deals — which one?`,
+          candidates: ref.candidates,
+        });
+      const dealId = ref.dealId;
+      const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
         "dealname", "dealstage", "amount", "pb_location", "project_number", "project_type",
         "hubspot_owner_id", "closedate",
         // Workstream statuses (raw values → labeled below)
         "layout_status", "design_status", "permitting_status", "interconnection_status",
         "site_survey_status", "install_status", "final_inspection_status", "pto_status",
         "pe_m1_status", "pe_m2_status",
-        // Reason notes (why a deal is blocked / pending sales changes / rejected)
-        "sales_change_order_notes", "pm_rejection_reason", "sales_communication_reason",
-        "pb_shit_show_reason", "kats_notes",
+        // State reason notes — the verbatim "why" for each state a deal can sit in.
+        "sales_change_order_notes", "pm_rejection_reason", "rtb_blocked_reason", "kats_notes",
+        "on_hold_selection", "on_hold_reason", "cancellation_reason",
+        "design_approval_rejection_reason", "design_revision_reason",
+        "permit_rejection_reason", "cause_of_permit_rejection_",
+        "interconnection_rejection_reason", "cause_of_interconnection_rejection_",
+        "idr_revision_reason", "idr_revision_type",
+        "inspection_failure_reason", "inspection_fail_count",
+        // As-built: inspection_rejection_reason is the current field; numbered ones are history.
+        "inspection_rejection_reason", "fourth_asbuilt_revision_reason",
+        "third_as_built_revision_reason", "second_as_built_revision_reason",
+        "first_as_built_rejection_reason",
+        "loose_ends_remaining_", "loose_end_notes_",
+        "sales_communication_reason", "pb_shit_show_reason", "additional_visit_reason",
+        // Revision counters
+        "da_revision_counter", "permit_revision_counter", "interconnection_revision_counter",
+        "as_built_revision_counter", "idr_revision_counter", "total_revision_count",
+        // PE (Participate Energy) — surfaced only for PE deals, populated fields only.
+        "participate_energy_status", "participate_change_order_needed",
+        "pe_rejection_comments", "pe_info_needed", "pe_rejection_owner",
+        "pe_rejection_date", "pe_m1_rejection_date", "pe_m2_rejection_date",
+        "pe_rejection_notes_for_ops", "pe_rejection_notes_for_design",
+        "pe_rejection_notes_for_permitting", "pe_rejection_notes_for_intercocnnection",
+        "pe_rejection_notes_for_sales", "pe_rejection_notes_for_accounting",
+        "pe_rejection_notes_for_compliance", "pe_doc_blocker_notes",
+        "pe_doc_access_to_monitoring_notes", "pe_doc_attestation_customer_payment_notes",
+        "pe_doc_bill_of_materials_notes", "pe_doc_certificate_of_acceptance_notes",
+        "pe_doc_conditional_lien_waiver_notes", "pe_doc_conditional_waiver_final_notes",
+        "pe_doc_customer_agreement_notes", "pe_doc_design_plan_notes",
+        "pe_doc_installation_order_notes", "pe_doc_permission_to_operate_notes",
+        "pe_doc_photos_per_policy_notes", "pe_doc_signed_final_permit_notes",
+        "pe_doc_signed_interconnection_notes", "pe_doc_signed_proposal_notes",
+        "pe_doc_state_disclosures_notes", "pe_doc_utility_bill_notes",
         // Milestone dates
         "site_survey_date", "design_approval_sent_date", "layout_approval_date",
         "design_completion_date", "permit_submit_date", "permit_completion_date",
@@ -535,13 +581,128 @@ export function createReadOnlyChatTools() {
         "construction_complete_date", "inspections_completion_date", "pto_start_date", "pto_completion_date",
       ]);
       const p = deal.properties as Record<string, string | null>;
+      const stageName = DEAL_STAGE_MAP[p.dealstage || ""] || p.dealstage || "";
       const lbl = (key: string, raw: string | null | undefined) =>
         raw ? statusLabel(key, raw) || raw : null;
+      // A trimmed, non-empty value or null.
+      const val = (k: string) => {
+        const v = p[k];
+        return v != null && String(v).trim() !== "" ? String(v).trim() : null;
+      };
+      // Join a reason note with its dropdown/cause, skipping blanks.
+      const joined = (...keys: string[]) =>
+        keys.map(val).filter(Boolean).join(" — ") || null;
+
+      // stateContext: the verbatim "why" for each state, populated fields only.
+      // Keys are self-describing so the bot can map a status → its reason. Every
+      // value is the note exactly as entered in HubSpot — quote it, don't paraphrase.
+      const stateContext: Record<string, string> = {};
+      const ctx = (key: string, v: string | null) => {
+        if (v) stateContext[key] = v;
+      };
+      // "Pending Sales Changes": the sales rep must reach the customer to complete the change.
+      ctx("pendingSalesChanges", val("sales_change_order_notes"));
+      ctx("projectRejected", val("pm_rejection_reason"));
+      ctx("rtbBlocked", val("rtb_blocked_reason") || val("kats_notes"));
+      // onHold/cancelled are stage-level with no workstream status to cross-check,
+      // and their note fields keep stale text after the deal moves on — only surface
+      // them when the deal's stage actually is On-Hold / Cancelled.
+      ctx("onHold", /on.?hold/i.test(stageName) ? joined("on_hold_selection", "on_hold_reason") : null);
+      ctx("cancelled", /cancel/i.test(stageName) ? val("cancellation_reason") : null);
+      ctx("daRejected", val("design_approval_rejection_reason"));
+      ctx("designRevision", val("design_revision_reason"));
+      ctx("permitRejected", joined("permit_rejection_reason", "cause_of_permit_rejection_"));
+      ctx(
+        "interconnectionRejected",
+        joined("interconnection_rejection_reason", "cause_of_interconnection_rejection_")
+      );
+      ctx("idrRevision", joined("idr_revision_reason", "idr_revision_type"));
+      ctx("inspectionFailed", val("inspection_failure_reason"));
+      // As-built: current field first, then the most recent numbered history entry.
+      ctx(
+        "asBuiltRevision",
+        val("inspection_rejection_reason") ||
+          val("fourth_asbuilt_revision_reason") ||
+          val("third_as_built_revision_reason") ||
+          val("second_as_built_revision_reason") ||
+          val("first_as_built_rejection_reason")
+      );
+      ctx("looseEnds", joined("loose_ends_remaining_", "loose_end_notes_"));
+      ctx("salesCommunication", val("sales_communication_reason"));
+      ctx("blocked", val("pb_shit_show_reason"));
+      ctx("additionalVisit", val("additional_visit_reason"));
+
+      // Revision counts (only where a bounce has happened).
+      const revisionCounts: Record<string, number> = {};
+      const cnt = (k: string, name: string) => {
+        const n = Number(p[k]);
+        if (n > 0) revisionCounts[name] = n;
+      };
+      cnt("da_revision_counter", "da");
+      cnt("permit_revision_counter", "permit");
+      cnt("interconnection_revision_counter", "interconnection");
+      cnt("as_built_revision_counter", "asBuilt");
+      cnt("idr_revision_counter", "idr");
+      cnt("total_revision_count", "total");
+
+      // PE block — only for PE deals (any PE field populated), populated fields only.
+      const pe: Record<string, unknown> = {};
+      const peAdd = (key: string, v: string | null) => {
+        if (v) pe[key] = v;
+      };
+      peAdd("status", val("participate_energy_status"));
+      peAdd("m1Status", val("pe_m1_status"));
+      peAdd("m2Status", val("pe_m2_status"));
+      if (val("participate_change_order_needed") === "true") pe.changeOrderNeeded = true;
+      peAdd("rejectionComments", val("pe_rejection_comments"));
+      peAdd("infoNeeded", val("pe_info_needed"));
+      peAdd("rejectionOwner", val("pe_rejection_owner"));
+      peAdd("rejectionDate", val("pe_rejection_date"));
+      peAdd("m1RejectionDate", val("pe_m1_rejection_date"));
+      peAdd("m2RejectionDate", val("pe_m2_rejection_date"));
+      const teamNotes: Record<string, string> = {};
+      const teamNote = (name: string, k: string) => {
+        const v = val(k);
+        if (v) teamNotes[name] = v;
+      };
+      teamNote("ops", "pe_rejection_notes_for_ops");
+      teamNote("design", "pe_rejection_notes_for_design");
+      teamNote("permitting", "pe_rejection_notes_for_permitting");
+      // Property name is misspelled in HubSpot ("intercocnnection") — use it verbatim.
+      teamNote("interconnection", "pe_rejection_notes_for_intercocnnection");
+      teamNote("sales", "pe_rejection_notes_for_sales");
+      teamNote("accounting", "pe_rejection_notes_for_accounting");
+      teamNote("compliance", "pe_rejection_notes_for_compliance");
+      if (Object.keys(teamNotes).length > 0) pe.rejectionNotesByTeam = teamNotes;
+      const docNotes: Record<string, string> = {};
+      const docNote = (name: string, k: string) => {
+        const v = val(k);
+        if (v) docNotes[name] = v;
+      };
+      docNote("accessToMonitoring", "pe_doc_access_to_monitoring_notes");
+      docNote("attestationOfPayment", "pe_doc_attestation_customer_payment_notes");
+      docNote("billOfMaterials", "pe_doc_bill_of_materials_notes");
+      docNote("certificateOfAcceptance", "pe_doc_certificate_of_acceptance_notes");
+      docNote("conditionalLienWaiver", "pe_doc_conditional_lien_waiver_notes");
+      docNote("conditionalWaiverFinal", "pe_doc_conditional_waiver_final_notes");
+      docNote("customerAgreement", "pe_doc_customer_agreement_notes");
+      docNote("designPlan", "pe_doc_design_plan_notes");
+      docNote("installationOrder", "pe_doc_installation_order_notes");
+      docNote("permissionToOperate", "pe_doc_permission_to_operate_notes");
+      docNote("photosPerPolicy", "pe_doc_photos_per_policy_notes");
+      docNote("signedFinalPermit", "pe_doc_signed_final_permit_notes");
+      docNote("signedInterconnection", "pe_doc_signed_interconnection_notes");
+      docNote("signedProposal", "pe_doc_signed_proposal_notes");
+      docNote("stateDisclosures", "pe_doc_state_disclosures_notes");
+      docNote("utilityBill", "pe_doc_utility_bill_notes");
+      if (Object.keys(docNotes).length > 0) pe.docNotes = docNotes;
+      peAdd("docBlockerNotes", val("pe_doc_blocker_notes"));
+
       return JSON.stringify({
-        dealId: input.dealId,
+        dealId,
         projectNumber: p.project_number || null,
         name: p.dealname || null,
-        stage: DEAL_STAGE_MAP[p.dealstage || ""] || p.dealstage || null,
+        stage: stageName || null,
         amount: Number(p.amount) || 0,
         location: p.pb_location || null,
         projectType: p.project_type || null,
@@ -574,24 +735,14 @@ export function createReadOnlyChatTools() {
           ptoSubmitted: p.pto_start_date || null,
           ptoGranted: p.pto_completion_date || null,
         },
-        // Why the deal is blocked / pending sales changes / rejected. changeReason
-        // is the best single reason (same priority the pipeline funnel uses):
-        // sales-change note first, then PM rejection, then the generic fallbacks.
-        changeReason:
-          p.sales_change_order_notes ||
-          p.pm_rejection_reason ||
-          p.sales_communication_reason ||
-          p.pb_shit_show_reason ||
-          p.kats_notes ||
-          null,
-        reasons: {
-          salesChange: p.sales_change_order_notes || null,
-          projectRejection: p.pm_rejection_reason || null,
-          salesCommunication: p.sales_communication_reason || null,
-          blocked: p.pb_shit_show_reason || null,
-          rtbBlocked: p.kats_notes || null,
-        },
-        note: "Statuses are resolved display labels. changeReason is the sales-change / rejection / blocked reason note (verbatim). For people use get_project_team; for jobs/tickets use get_project_service.",
+        // The verbatim reason for whatever state(s) the deal sits in. Populated keys
+        // only — an absent key means that state doesn't apply. Read notes verbatim;
+        // "pendingSalesChanges" means the sales rep must reach the customer to
+        // complete the change. Correlate a key with its status above.
+        stateContext,
+        ...(Object.keys(revisionCounts).length > 0 ? { revisionCounts } : {}),
+        ...(Object.keys(pe).length > 0 ? { pe } : {}),
+        note: "Statuses are resolved display labels. stateContext holds the verbatim reason notes for each state the deal is in (quote them). For people use get_project_team; for jobs/tickets use get_project_service.",
       });
     },
   });
