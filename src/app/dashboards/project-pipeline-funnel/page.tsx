@@ -16,7 +16,6 @@ import type {
   ProjectFunnelDrillDownDeal,
   ProjectFunnelDrillDown,
   ProjectFunnelStageGroup,
-  ProjectFunnelStageDeal,
   MilestoneCohortResponse,
   MilestoneCohortBucket,
   ProjectFunnelCapacity,
@@ -85,7 +84,6 @@ function ProjectPipelineFunnelInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const timeframe = searchParams.get("tf") || "6";
   const locations = useMemo(() => (searchParams.get("loc") || "").split(",").filter(Boolean), [searchParams]);
   const pms = useMemo(() => (searchParams.get("pm") || "").split(",").filter(Boolean), [searchParams]);
   const owners = useMemo(() => (searchParams.get("own") || "").split(",").filter(Boolean), [searchParams]);
@@ -101,7 +99,6 @@ function ProjectPipelineFunnelInner() {
     },
     [searchParams, router, pathname]
   );
-  const setTimeframe = useCallback((v: string) => setParam("tf", v === "6" ? "" : v), [setParam]);
   const setLocations = useCallback((v: string[]) => setParam("loc", v), [setParam]);
   const setPms = useCallback((v: string[]) => setParam("pm", v), [setParam]);
   const setOwners = useCallback((v: string[]) => setParam("own", v), [setParam]);
@@ -123,6 +120,16 @@ function ProjectPipelineFunnelInner() {
   const setTab = useCallback(
     (v: "funnel" | "sales-funnel" | "bottlenecks" | "activity" | "cohorts" | "incoming") => setParam("tab", v === "funnel" ? "" : v),
     [setParam]
+  );
+  // The Sales Funnel tab defaults to the current calendar year (the sales
+  // cohort people ask about is "this year's closes"); the other time-based
+  // tabs keep the rolling 6-month lookback. An explicit tf param wins, and
+  // picking the tab's own default clears the param to keep URLs clean.
+  const defaultTimeframe = tab === "sales-funnel" ? "this-year" : "6";
+  const timeframe = searchParams.get("tf") || defaultTimeframe;
+  const setTimeframe = useCallback(
+    (v: string) => setParam("tf", v === defaultTimeframe ? "" : v),
+    [setParam, defaultTimeframe]
   );
   // The Funnel tab + Bottlenecks are the live active-pipeline snapshot (no date
   // window). Sales Funnel, Analysis, and Monthly Activity are time-based: Sales
@@ -1166,6 +1173,21 @@ function IncomingView({ data }: { data: ProjectFunnelResponse }) {
 }
 
 
+// Staff columns for the shared drill-down table — used by both the Pipeline
+// Backlog buckets and the Current Pipeline Position stages.
+type StaffCol = { key: keyof ProjectFunnelDrillDownDeal; label: string };
+const PM: StaffCol = { key: "projectManager", label: "PM" };
+const OWNER: StaffCol = { key: "dealOwner", label: "Owner" };
+const SURVEYOR: StaffCol = { key: "siteSurveyor", label: "Surveyor" };
+const DESIGN: StaffCol = { key: "designLead", label: "Design" };
+const PERMIT: StaffCol = { key: "permitLead", label: "Permit" };
+const OPS: StaffCol = { key: "operationsManager", label: "Ops Lead" };
+const INSP: StaffCol = { key: "inspectionsLead", label: "Inspection Lead" };
+const IC: StaffCol = { key: "interconnectionsLead", label: "IC Lead" };
+// Interconnection runs parallel to permitting before construction — surface
+// its status in the pre-construction backlogs so blockers are visible.
+const ICSTATUS: StaffCol = { key: "interconnectionStatus", label: "IC Status" };
+
 function BacklogSection({
   summary,
   drillDown,
@@ -1179,19 +1201,6 @@ function BacklogSection({
   expanded: string | null;
   onToggle: (key: string | null) => void;
 }) {
-
-  type StaffCol = { key: keyof ProjectFunnelDrillDownDeal; label: string };
-  const PM: StaffCol = { key: "projectManager", label: "PM" };
-  const OWNER: StaffCol = { key: "dealOwner", label: "Owner" };
-  const SURVEYOR: StaffCol = { key: "siteSurveyor", label: "Surveyor" };
-  const DESIGN: StaffCol = { key: "designLead", label: "Design" };
-  const PERMIT: StaffCol = { key: "permitLead", label: "Permit" };
-  const OPS: StaffCol = { key: "operationsManager", label: "Ops Lead" };
-  const INSP: StaffCol = { key: "inspectionsLead", label: "Inspection Lead" };
-  const IC: StaffCol = { key: "interconnectionsLead", label: "IC Lead" };
-  // Interconnection runs parallel to permitting before construction — surface
-  // its status in the pre-construction backlogs so blockers are visible.
-  const ICSTATUS: StaffCol = { key: "interconnectionStatus", label: "IC Status" };
 
   // Deals that cancelled AT this gate (reached the prior milestone but not this
   // one) = cancelledCount(prior) − cancelledCount(this). The drill-down places
@@ -1212,8 +1221,8 @@ function BacklogSection({
   }> = [
     { key: "awaitingSurveySchedule", label: "Awaiting Survey Schedule", count: summary.salesClosed.count - summary.surveyScheduled.count + cancelledAtGate("salesClosed", "surveyScheduled"), color: "bg-orange-500", deals: drillDown.awaitingSurveySchedule, staffCols: [PM, OWNER] },
     { key: "awaitingSurvey", label: "Awaiting Survey Complete", count: summary.surveyScheduled.count - summary.surveyDone.count + cancelledAtGate("surveyScheduled", "surveyDone"), color: "bg-amber-500", deals: drillDown.awaitingSurvey, staffCols: [PM, OWNER, SURVEYOR] },
-    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count + cancelledAtGate("surveyDone", "daSent"), color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, OWNER, DESIGN] },
-    { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count + cancelledAtGate("daSent", "daApproved"), color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, OWNER, DESIGN] },
+    { key: "awaitingDaSend", label: "Awaiting DA Send", count: summary.surveyDone.count - summary.daSent.count + cancelledAtGate("surveyDone", "daSent"), color: "bg-lime-500", deals: drillDown.awaitingDaSend, staffCols: [PM, OWNER, SURVEYOR, DESIGN] },
+    { key: "awaitingApproval", label: "Awaiting DA Approval", count: summary.daSent.count - summary.daApproved.count + cancelledAtGate("daSent", "daApproved"), color: "bg-blue-500", deals: drillDown.awaitingApproval, staffCols: [PM, OWNER, SURVEYOR, DESIGN] },
     { key: "awaitingDesignComplete", label: "Awaiting Design Complete", count: summary.daApproved.count - summary.designCompleted.count + cancelledAtGate("daApproved", "designCompleted"), color: "bg-indigo-500", deals: drillDown.awaitingDesignComplete, staffCols: [PM, OWNER, DESIGN] },
     { key: "awaitingPermitSubmit", label: "Awaiting Permit Submit", count: summary.designCompleted.count - summary.permitsSubmitted.count + cancelledAtGate("designCompleted", "permitsSubmitted"), color: "bg-purple-500", deals: drillDown.awaitingPermitSubmit, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
     { key: "awaitingPermitIssue", label: "Awaiting Permit Issue", count: summary.permitsSubmitted.count - summary.permitsIssued.count + cancelledAtGate("permitsSubmitted", "permitsIssued"), color: "bg-violet-500", deals: drillDown.awaitingPermitIssue, staffCols: [PM, OWNER, PERMIT, ICSTATUS] },
@@ -1775,8 +1784,17 @@ function CohortTable({ cohorts }: { cohorts: ProjectFunnelResponse["cohorts"] })
   );
 }
 
-/** RTB-Blocked and On Hold break down by reason, so label the drill-down column "Reason". */
-const REASON_STAGES = new Set(["RTB - Blocked", "On Hold"]);
+/** Stage-relevant staff columns for each stage's drill-down, mirroring the backlog buckets. */
+const STAGE_STAFF_COLS: Record<string, StaffCol[]> = {
+  "Site Survey": [PM, OWNER, SURVEYOR],
+  "Design & Engineering": [PM, OWNER, SURVEYOR, DESIGN],
+  "Permitting & Interconnection": [PM, OWNER, PERMIT, ICSTATUS],
+  "RTB - Blocked": [PM, OWNER, OPS, ICSTATUS],
+  "Ready To Build": [PM, OWNER, OPS, ICSTATUS],
+  "Construction": [PM, OWNER, OPS],
+  "Inspection": [PM, OWNER, INSP],
+  "Permission To Operate": [PM, OWNER, IC, ICSTATUS],
+};
 
 function StageDistribution({
   stages,
@@ -1822,7 +1840,6 @@ function StageDistribution({
           const segs = stage.statusBreakdown.length ? stage.statusBreakdown : [{ status: "No status", count: stage.count }];
           const segTotal = stage.count || 1;
           const hasRealStatus = stage.statusBreakdown.some((s) => s.status !== "No status");
-          const isReasonStage = REASON_STAGES.has(stage.stageName);
           return (
             <div key={stage.stageId} id={`stage-${stage.stageId}`} className="scroll-mt-24">
               <button
@@ -1871,57 +1888,12 @@ function StageDistribution({
                 </div>
               )}
               {expanded === stage.stageId && stage.deals.length > 0 && (
-                <StagePositionTable deals={stage.deals} detailLabel={isReasonStage ? "Reason" : "Status"} />
+                <DrillDownTable deals={stage.deals} staffCols={STAGE_STAFF_COLS[stage.stageName] || [PM, OWNER]} />
               )}
             </div>
           );
         })}
       </div>
-    </div>
-  );
-}
-
-/** Drill-down table for one stage in the Current Pipeline Position chart. */
-function StagePositionTable({
-  deals,
-  detailLabel,
-}: {
-  deals: ProjectFunnelStageDeal[];
-  detailLabel: string;
-}) {
-  return (
-    <div className="pl-[11.75rem] pt-1 pb-2 overflow-x-auto">
-      <table className="w-full text-xs border-collapse">
-        <thead>
-          <tr className="text-muted border-b border-t-border">
-            <th className="text-left font-medium py-1 pr-3">Project</th>
-            <th className="text-left font-medium py-1 pr-3">Owner</th>
-            <th className="text-left font-medium py-1 pr-3">PM</th>
-            <th className="text-right font-medium py-1 pr-3">Amount</th>
-            <th className="text-right font-medium py-1 pr-3">Days in stage</th>
-            <th className="text-left font-medium py-1">{detailLabel}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {deals.map((d) => (
-            <tr key={d.id} className="border-b border-t-border/40 hover:bg-surface-2/40">
-              <td className="py-1 pr-3 whitespace-nowrap">
-                <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 font-medium hover:text-cyan-400">
-                  {d.projectNumber || d.name}
-                </a>
-              </td>
-              <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.dealOwner || "—"}</td>
-              <td className="py-1 pr-3 text-muted whitespace-nowrap">{d.projectManager || "—"}</td>
-              <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{formatCurrencyCompact(d.amount)}</td>
-              <td className="py-1 pr-3 text-right tabular-nums text-muted whitespace-nowrap">{d.daysInStage}d</td>
-              <td className="py-1 text-foreground/80" title={d.notes || undefined}>
-                {d.detail}
-                {d.notes && <span className="text-muted/70 italic"> · {d.notes}</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
