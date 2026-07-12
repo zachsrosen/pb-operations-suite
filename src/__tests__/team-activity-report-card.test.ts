@@ -250,6 +250,34 @@ describe("buildReportCard", () => {
     expect(text).toContain("No tracked activity in this range.");
   });
 
+  it("lists PE submissions separately for people with 10+ uploads, never in deals/day", () => {
+    const text = buildReportCard(
+      period({
+        summaries: [summary("Pe Person", "pp@x.com", { avgDealsTouched: 2 })],
+        personDays: [
+          day("pp@x.com", "Pe Person", "2026-07-01", { perSource: { pbops: 0, aircall: 0, zuper: 0, hubspot: 5, google: 0, pe: 8 } }),
+          day("pp@x.com", "Pe Person", "2026-07-02", { perSource: { pbops: 0, aircall: 0, zuper: 0, hubspot: 5, google: 0, pe: 7 } }),
+        ],
+        roster: [rosterEntry("Pe Person", "pp@x.com")],
+      }),
+      null,
+    );
+    expect(text).toContain("Pe Person submitted 15 PE documents this period (tracked separately from deals/day).");
+    expect(text).toContain("Pe Person: 2 deals/day");
+  });
+
+  it("suppresses the PE-submissions note under 10 uploads", () => {
+    const text = buildReportCard(
+      period({
+        summaries: [summary("Light Pe", "lp@x.com")],
+        personDays: [day("lp@x.com", "Light Pe", "2026-07-01", { perSource: { pbops: 0, aircall: 0, zuper: 0, hubspot: 50, google: 0, pe: 9 } })],
+        roster: [rosterEntry("Light Pe", "lp@x.com")],
+      }),
+      null,
+    );
+    expect(text).not.toContain("PE documents this period");
+  });
+
   it("contains no em dashes and no email addresses in a rich fixture", () => {
     const text = buildReportCard(
       period({

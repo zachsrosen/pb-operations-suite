@@ -228,13 +228,10 @@ describe("dealsTouched metrics", () => {
     expect(days[0].dealsTouchedAll).toBe(0);
   });
 
-  it("pe events with a deals field count; zuper never sets deals so field noise stays out", () => {
-    const days = computePersonDays([
-      hsEv({ source: "pe", deals: [{ id: "7", active: true }], objectKey: "DEAL:7", kind: "uploaded Site Plan v2" }),
-      hsEv({ source: "zuper", objectKey: "DEAL:9", kind: "job status" }), // no deals field
-    ]);
-    expect(days[0].dealsTouched).toBe(1);
-    expect(days[0].dealsTouchedAll).toBe(1);
+  it("only hubspot-source events feed the counts even if deals is present", () => {
+    const days = computePersonDays([hsEv({ source: "zuper", deals: [{ id: "1", active: true }] })]);
+    expect(days[0].dealsTouched).toBe(0);
+    expect(days[0].dealsTouchedAll).toBe(0);
   });
 
   it("task engagements (due-date-timed) don't stretch span/active-hours but still count deals", () => {

@@ -25,11 +25,11 @@ export interface ActivityEvent {
   /** human-readable description for the drilldown, when the source has one */
   label?: string;
   /**
-   * Deal attribution for the deals-touched metric — set by the hubspot adapter
-   * (engagements + audit DEAL edits, active-at-touch verdicts) and the pe
-   * adapter (doc uploads, always active). The gate is "which adapters
-   * attribute deals": zuper never sets this, so its `DEAL:`-keyed field noise
-   * stays out of the counts.
+   * Deal attribution for the deals-touched metric — set ONLY by the hubspot
+   * adapter (engagements + audit DEAL edits). One entry per attributed deal
+   * with its active-at-touch-time verdict. Other adapters never populate this,
+   * so Zuper/PE `DEAL:`-keyed events don't feed the deal counts (PE activity
+   * is reported separately; decision 2026-07-11).
    */
   deals?: { id: string; active: boolean }[];
 }
@@ -60,7 +60,7 @@ export interface PersonDayMetric {
   talkMinutes: number;
   callCount: number;
   googleSpanHours: number; // span from google-source events only
-  /** distinct deals with an active hubspot touch or a PE doc upload this day */
+  /** distinct deals with an active-at-touch-time hubspot touch this day */
   dealsTouched: number;
   /** distinct deals touched regardless of stage/age (Test Pipeline excluded upstream) */
   dealsTouchedAll: number;
@@ -260,7 +260,7 @@ export function computePersonDays(
     const activeDeals = new Set<string>();
     const allDeals = new Set<string>();
     for (const e of evs) {
-      if (!e.deals) continue; // only deal-attributing adapters (hubspot, pe) set this
+      if (e.source !== "hubspot" || !e.deals) continue;
       for (const d of e.deals) {
         allDeals.add(d.id);
         if (d.active) activeDeals.add(d.id);

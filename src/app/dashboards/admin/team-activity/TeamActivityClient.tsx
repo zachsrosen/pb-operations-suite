@@ -712,7 +712,7 @@ export default function TeamActivityClient() {
       </div>
 
       <p className="text-xs text-muted mt-6">
-        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct deals a person worked that day: HubSpot activity or edits while the deal was active (3-day grace after completion), plus PE document submissions (counted regardless of stage); the grey parenthetical in the detail includes completed/old deals. Times are
+        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. PE submission activity is reported separately. Times are
         America/Denver. Days covered by a PTO-calendar or out-of-office block (≥6h of the day) count as PTO and are excluded
         from the averages. &ldquo;Verdict&rdquo; is a convenience label, not a judgment — the numbers are the source of truth,
         and activity outside these systems (email/docs, meetings) is not captured.

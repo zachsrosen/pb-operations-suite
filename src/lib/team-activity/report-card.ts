@@ -123,8 +123,25 @@ export function buildReportCard(current: ReportPeriod, previous: ReportPeriod | 
   // ---- Notes ---------------------------------------------------------------
   const notes: string[] = [];
   notes.push(
-    "Deals/day counts distinct deals a person worked that day (HubSpot activity or edits, or PE document submissions) while the deal was in flight.",
+    "Deals/day counts distinct HubSpot deals a person worked that day (logged activity or edits) while the deal was in flight. PE submission work is listed separately below.",
   );
+
+  // PE submissions are deliberately NOT in deals/day (decision 2026-07-11);
+  // surface them as their own line so PE-heavy people are visible.
+  {
+    const peByPerson = new Map<string, { name: string; count: number }>();
+    for (const d of current.personDays) {
+      const n = d.perSource.pe ?? 0;
+      if (!n) continue;
+      const p = peByPerson.get(d.email) ?? { name: d.name, count: 0 };
+      p.count += n;
+      peByPerson.set(d.email, p);
+    }
+    for (const p of [...peByPerson.values()].sort((a, b) => b.count - a.count)) {
+      if (p.count < 10) continue;
+      notes.push(`${p.name} submitted ${p.count} PE documents this period (tracked separately from deals/day).`);
+    }
+  }
 
   // Channel callouts: only meaningful when both deal-attributing sources ran.
   const ranKeys = new Set(current.sources.ran.map((r) => r.source));

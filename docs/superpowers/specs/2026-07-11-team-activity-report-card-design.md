@@ -16,6 +16,12 @@ per-deal work by a known person and must count.
 
 ## Part 1: PE uploads count toward deals-touched
 
+**REVERSED 2026-07-11 (Zach): PE submissions do NOT count toward Deals/day.**
+Deals/day stays HubSpot-only; PE activity is visible separately (pe source
+column, and the report card lists "<Name> submitted N PE documents this
+period" for anyone with 10+ uploads). The section below is retained for
+history; none of it is implemented.
+
 - `peAdapter` (`src/lib/team-activity/adapters.ts`) stamps
   `deals: [{ id: dealId, active: true }]` on events that have a `dealId`.
   Rationale for unconditional `active: true`: uploading a milestone document
@@ -82,9 +88,12 @@ no em dashes — enforced by a test) shaped for leadership:
      range` render as `<Name>: on PTO the full period`; no summary row and
      partial/zero PTO render as `<Name>: no tracked activity this period`.
 3. **Notes section** (auto-generated, only lines that apply):
-   - Metric definition one-liner: "Deals/day counts distinct deals a person
-     worked that day (HubSpot activity or edits, or PE document submissions)
-     while the deal was in flight."
+   - Metric definition one-liner: "Deals/day counts distinct HubSpot deals a
+     person worked that day (logged activity or edits) while the deal was in
+     flight. PE submission work is listed separately below."
+   - **PE submissions note**: for each person with 10+ pe-source events in
+     the period: "<Name> submitted N PE documents this period (tracked
+     separately from deals/day)." Sorted by count descending.
    - **Data-driven channel callouts** (this replaces any hardcoded role
      assumptions): suppressed entirely unless both `hubspot` and `pe` are
      among the ran sources (deselected sources would make every share 0%).
