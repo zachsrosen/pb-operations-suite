@@ -107,23 +107,6 @@ export interface ProjectMonthlyActivity {
   cancelledAmount: number;
 }
 
-/** One deal in a current-stage drill-down (Current Pipeline Position chart). */
-export interface ProjectFunnelStageDeal {
-  id: number;
-  name: string;
-  projectNumber: string;
-  amount: number;
-  pbLocation: string;
-  url: string;
-  daysInStage: number;
-  projectManager: string;
-  dealOwner: string;
-  /** Stage-relevant status, or the blocked / on-hold reason for those stages. */
-  detail: string;
-  /** Free-text on-hold notes, if any (On Hold stage only). */
-  notes: string | null;
-}
-
 export interface ProjectFunnelStageGroup {
   stageId: string;
   stageName: string;
@@ -131,8 +114,13 @@ export interface ProjectFunnelStageGroup {
   amount: number;
   /** Deals in this current stage broken down by their stage-relevant status. */
   statusBreakdown: Array<{ status: string; count: number }>;
-  /** The deals sitting in this stage right now, for drill-down. */
-  deals: ProjectFunnelStageDeal[];
+  /**
+   * The deals sitting in this stage right now, for drill-down. Same row shape
+   * as the Pipeline Backlog buckets so the page renders both with the shared
+   * table; daysWaiting holds days-in-stage and status holds the stage-relevant
+   * status (or the blocked / on-hold reason for those stages).
+   */
+  deals: ProjectFunnelDrillDownDeal[];
 }
 
 export interface ProjectFunnelDrillDownDeal {
@@ -417,14 +405,25 @@ function toDrillDown(
   p: Project,
   daysWaiting: number,
   status: string | null,
-  extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
+  extra?: {
+    scheduledDate?: string | null;
+    extraDate?: string | null;
+    extraLabel?: string;
+    /**
+     * Keep daysWaiting as passed for cancelled deals instead of freezing the
+     * clock at cancellation. The backlog freezes (the wait ended when the deal
+     * died); the current-stage view passes days-in-stage, which for the
+     * Cancelled stage row is already measured from the cancellation itself.
+     */
+    liveDays?: boolean;
+  },
 ): ProjectFunnelDrillDownDeal {
   // A cancelled deal's wait ended at cancellation, not today — show how long it
   // sat at this gate before dying, and pin its workstream status to "Cancelled"
   // so the bucket's status segments call it out instead of a stale sub-status.
   const cancelled = p.stageId === CANCELLED_STAGE_ID;
   const daysUntilDead =
-    cancelled && p.cancelledDate
+    cancelled && p.cancelledDate && !extra?.liveDays
       ? Math.max(0, daysWaiting - daysBetween(p.cancelledDate, todayStr()))
       : daysWaiting;
   return {
@@ -1295,25 +1294,16 @@ export function buildProjectFunnelData(
     const sm = stageStatusMap.get(sid)!;
     sm.set(detail, (sm.get(detail) || 0) + 1);
 
-    sg.deals.push({
-      id: p.id,
-      name: p.name,
-      projectNumber: p.projectNumber,
-      amount: p.amount || 0,
-      pbLocation: p.pbLocation,
-      url: p.url,
-      daysInStage: Math.max(0, p.daysSinceStageMovement || 0),
-      projectManager: p.projectManager || "",
-      dealOwner: p.dealOwner || "",
-      detail,
-      notes: sid === ON_HOLD_STAGE_ID ? p.onHoldNotes?.trim() || null : null,
-    });
+    // detail (status or blocked/on-hold reason) becomes the Status column;
+    // reasons and on-hold notes also surface via the row flag. liveDays keeps
+    // "days in stage" a real clock for the Cancelled stage row.
+    sg.deals.push(toDrillDown(p, Math.max(0, p.daysSinceStageMovement || 0), detail, { liveDays: true }));
   }
   for (const [sid, sg] of stageMap) {
     sg.statusBreakdown = [...stageStatusMap.get(sid)!.entries()]
       .map(([status, count]) => ({ status, count }))
       .sort((a, b) => b.count - a.count);
-    sg.deals.sort((a, b) => b.daysInStage - a.daysInStage);
+    sg.deals.sort((a, b) => b.daysWaiting - a.daysWaiting);
   }
   const stageDistribution = [...stageMap.values()].sort(
     (a, b) => (STAGE_PRIORITY_MAP[a.stageId] ?? 99) - (STAGE_PRIORITY_MAP[b.stageId] ?? 99)
