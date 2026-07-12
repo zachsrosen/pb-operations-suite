@@ -109,6 +109,7 @@ export function buildReportCard(current: ReportPeriod, previous: ReportPeriod | 
     const pto = ptoByEmail.get(s.email) ?? s.ptoDays;
     lines.push(
       `${s.name}: ${fmt1(s.avgDealsTouched)} deals/day${deltaPhrase(s.avgDealsTouched, previous, s.email)}, ` +
+        `${fmt1(s.avgTasksCompleted)} tasks/day, ${fmt1(s.avgPropertyUpdates)} property updates/day, ` +
         `${fmt1(s.avgActiveHours)}h active/day, ${ptoNote(pto, weekdays)}`,
     );
   }
@@ -123,7 +124,7 @@ export function buildReportCard(current: ReportPeriod, previous: ReportPeriod | 
   // ---- Notes ---------------------------------------------------------------
   const notes: string[] = [];
   notes.push(
-    "Deals/day counts distinct HubSpot deals a person worked that day (logged activity or edits) while the deal was in flight. PE submission work is listed separately below.",
+    "Deals/day counts distinct HubSpot deals a person worked that day (logged activity or edits) while the deal was in flight. Tasks/day counts tasks completed that day; property updates counts field changes on any HubSpot record. PE submission work is listed separately below.",
   );
 
   // PE submissions are deliberately NOT in deals/day (decision 2026-07-11);

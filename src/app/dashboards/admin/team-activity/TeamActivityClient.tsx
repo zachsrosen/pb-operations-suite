@@ -85,6 +85,8 @@ const HEADERS = [
   "Span/day",
   "Interactions/day",
   "Deals/day",
+  "Tasks/day",
+  "Props/day",
   "Talk (min)",
   "Google span",
   "Start",
@@ -163,11 +165,11 @@ function ActivityTable({
 
   return (
     <div className="bg-surface border border-t-border rounded-lg overflow-x-auto">
-      <table className="w-full text-sm min-w-[860px]">
+      <table className="w-full text-sm min-w-[980px]">
         <thead>
           <tr className="text-left text-xs text-muted border-b border-t-border">
             {HEADERS.map((h, i) => (
-              <th key={h} className={`px-3 py-2 font-medium ${i >= 1 && i <= 9 ? "text-right" : ""}`}>
+              <th key={h} className={`px-3 py-2 font-medium ${i >= 1 && i <= 11 ? "text-right" : ""}`}>
                 {h}
               </th>
             ))}
@@ -209,6 +211,8 @@ function ActivityTable({
                   <td className="px-3 py-2 text-right text-muted">{h1(s.avgSpanHours)}h</td>
                   <td className="px-3 py-2 text-right">{s.avgInteractions.toFixed(0)}</td>
                   <td className="px-3 py-2 text-right">{s.avgDealsTouched ? h1(s.avgDealsTouched) : "\u2014"}</td>
+                  <td className="px-3 py-2 text-right">{s.avgTasksCompleted ? h1(s.avgTasksCompleted) : "\u2014"}</td>
+                  <td className="px-3 py-2 text-right">{s.avgPropertyUpdates ? h1(s.avgPropertyUpdates) : "\u2014"}</td>
                   <td className="px-3 py-2 text-right">{s.totalTalkMinutes || "—"}</td>
                   <td className="px-3 py-2 text-right text-muted">
                     {s.avgGoogleSpanHours ? `${h1(s.avgGoogleSpanHours)}h` : "—"}
@@ -221,13 +225,13 @@ function ActivityTable({
                 </tr>
                 {open && (
                   <tr className="bg-surface-2/50">
-                    <td colSpan={11} className="px-3 py-3">
+                    <td colSpan={13} className="px-3 py-3">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-xs min-w-[720px]">
+                        <table className="w-full text-xs min-w-[820px]">
                           <thead>
                             <tr className="text-left text-muted">
-                              {["Day", "Events", "Interactions", "Deals", "Span", "Active", "Talk", "First", "Last", "Sources"].map((h, i) => (
-                                <th key={h} className={`px-2 py-1 font-medium ${i >= 1 && i <= 8 ? "text-right" : ""}`}>
+                              {["Day", "Events", "Interactions", "Deals", "Tasks", "Props", "Span", "Active", "Talk", "First", "Last", "Sources"].map((h, i) => (
+                                <th key={h} className={`px-2 py-1 font-medium ${i >= 1 && i <= 10 ? "text-right" : ""}`}>
                                   {h}
                                 </th>
                               ))}
@@ -257,6 +261,8 @@ function ActivityTable({
                                         <span className="text-muted"> ({d.dealsTouchedAll})</span>
                                       )}
                                     </td>
+                                    <td className="px-2 py-1 text-right">{d.tasksCompleted || "\u2014"}</td>
+                                    <td className="px-2 py-1 text-right">{d.propertyUpdates || "\u2014"}</td>
                                     <td className="px-2 py-1 text-right">{h1(d.spanHours)}h</td>
                                     <td className="px-2 py-1 text-right">{h1(d.activeHours)}h</td>
                                     <td className="px-2 py-1 text-right">{d.talkMinutes || "—"}</td>
@@ -270,7 +276,7 @@ function ActivityTable({
                                   </tr>
                                   {drilled && (
                                     <tr>
-                                      <td colSpan={10} className="px-2 pb-2">
+                                      <td colSpan={12} className="px-2 pb-2">
                                         {drill.loading && <div className="text-muted py-1">Loading events…</div>}
                                         {drill.error && <div className="text-amber-400 py-1">{drill.error}</div>}
                                         {!drill.loading && !drill.error && (
@@ -323,7 +329,7 @@ function ActivityTable({
           })}
           {summaries.length === 0 && (
             <tr>
-              <td colSpan={11} className="px-3 py-6 text-center text-muted">
+              <td colSpan={13} className="px-3 py-6 text-center text-muted">
                 {emptyText}
               </td>
             </tr>
@@ -494,6 +500,8 @@ export default function TeamActivityClient() {
     avgSpanHours: h1(s.avgSpanHours),
     avgInteractions: s.avgInteractions.toFixed(0),
     avgDealsTouched: h1(s.avgDealsTouched),
+    avgTasksCompleted: h1(s.avgTasksCompleted),
+    avgPropertyUpdates: h1(s.avgPropertyUpdates),
     avgEvents: s.avgEvents.toFixed(0),
     avgGoogleSpanHours: h1(s.avgGoogleSpanHours),
     totalTalkMinutes: s.totalTalkMinutes,
@@ -712,7 +720,7 @@ export default function TeamActivityClient() {
       </div>
 
       <p className="text-xs text-muted mt-6">
-        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. PE submission activity is reported separately. Times are
+        Active-hours cap idle gaps at 60 min; interactions dedup repeat touches of the same record within 10 min. &ldquo;Deals/day&rdquo; counts distinct HubSpot deals with logged activity or edits that day, only while the deal was active (3-day grace after completion); the grey parenthetical in the detail includes completed/old deals. PE submission activity is reported separately. Tasks/day counts tasks completed that day (by completion time, not due date); Props/day counts field changes the person made on any HubSpot record. Times are
         America/Denver. Days covered by a PTO-calendar or out-of-office block (≥6h of the day) count as PTO and are excluded
         from the averages. &ldquo;Verdict&rdquo; is a convenience label, not a judgment — the numbers are the source of truth,
         and activity outside these systems (email/docs, meetings) is not captured.
