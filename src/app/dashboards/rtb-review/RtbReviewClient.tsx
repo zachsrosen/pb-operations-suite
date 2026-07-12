@@ -8,7 +8,7 @@ import {
   type FilterOption,
 } from "@/components/ui/MultiSelectFilter";
 import { getHubSpotDealUrl } from "@/lib/external-links";
-import type { RtbQueueItem } from "@/lib/rtb-review";
+import type { RtbQueueItem, RtbQueueStage } from "@/lib/rtb-review";
 
 interface RtbQueueResponse {
   items: RtbQueueItem[];
@@ -100,13 +100,19 @@ function SortIcon({
   );
 }
 
+const TABS: Array<{ key: RtbQueueStage; label: string }> = [
+  { key: "blocked", label: "RTB - Blocked" },
+  { key: "ready", label: "Ready to Build" },
+];
+
 export default function RtbReviewClient() {
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<RtbQueueStage>("blocked");
 
   const { data, isLoading } = useQuery<RtbQueueResponse>({
-    queryKey: ["rtb-review"],
+    queryKey: ["rtb-review", tab],
     queryFn: async () => {
-      const res = await fetch("/api/deals/rtb-review");
+      const res = await fetch(`/api/deals/rtb-review?stage=${tab}`);
       if (!res.ok) throw new Error("Failed to load RTB review queue");
       return res.json();
     },
@@ -181,6 +187,22 @@ export default function RtbReviewClient() {
       fullWidth
       lastUpdated={data?.lastUpdated}
     >
+      <div className="flex items-center gap-1 mb-3">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={
+              tab === t.key
+                ? "text-xs px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 font-medium"
+                : "text-xs px-3 py-1.5 rounded-full text-muted hover:text-foreground hover:bg-surface-2"
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <MultiSelectFilter
           label="Project Manager"
@@ -198,8 +220,8 @@ export default function RtbReviewClient() {
         />
         <div className="text-xs text-muted ml-auto">
           {filtered.length}
-          {filtered.length !== items.length ? ` of ${items.length}` : ""} deals
-          awaiting review
+          {filtered.length !== items.length ? ` of ${items.length}` : ""}{" "}
+          {tab === "blocked" ? "deals awaiting review" : "deals in Ready to Build"}
         </div>
       </div>
 
@@ -394,18 +416,27 @@ export default function RtbReviewClient() {
                     {formatYmd(item.earliestInstallDate)}
                   </td>
                   <td className="px-2 py-2 text-right">
-                    <button
-                      onClick={() => approveDeal.mutate(item.dealId)}
-                      disabled={isPending || item.approved}
-                      title="Approve — Release to Build"
-                      className="text-xs px-2 py-1 whitespace-nowrap bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {item.approved
-                        ? "Approved"
-                        : isPending
-                          ? "Approving…"
-                          : "Release ✓"}
-                    </button>
+                    {tab === "ready" ? (
+                      <span
+                        className="text-green-500 whitespace-nowrap"
+                        title={item.approved ? "Released via PM approval" : "Moved without the approval flag"}
+                      >
+                        {item.approved ? "Released ✓" : "—"}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => approveDeal.mutate(item.dealId)}
+                        disabled={isPending || item.approved}
+                        title="Approve — Release to Build"
+                        className="text-xs px-2 py-1 whitespace-nowrap bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {item.approved
+                          ? "Approved"
+                          : isPending
+                            ? "Approving…"
+                            : "Release ✓"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

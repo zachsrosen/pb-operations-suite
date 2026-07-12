@@ -19,6 +19,15 @@ import { earliestInstallAvailability } from "@/lib/install-availability";
 
 const PROJECT_PIPELINE = "6900017";
 const RTB_BLOCKED_STAGE = "71052436";
+const READY_TO_BUILD_STAGE = "22580871";
+
+/** Which pipeline stage the queue lists. */
+export type RtbQueueStage = "blocked" | "ready";
+
+const STAGE_IDS: Record<RtbQueueStage, string> = {
+  blocked: RTB_BLOCKED_STAGE,
+  ready: READY_TO_BUILD_STAGE,
+};
 
 /**
  * Build a Google Drive folder URL from the `all_document_parent_folder_id`
@@ -68,7 +77,7 @@ export interface RtbQueueItem {
   loanStatus: string | null;
   /** Earliest open install date for this deal's location (YYYY-MM-DD). */
   earliestInstallDate: string | null;
-  /** When the deal entered RTB - Blocked (hs_v2_date_entered_71052436). */
+  /** When the deal entered the listed stage (hs_v2_date_entered_<stage>). */
   enteredStageAt: string | null;
   /** Whole days the deal has sat in RTB - Blocked (null when entry date unknown). */
   daysInStage: number | null;
@@ -80,8 +89,10 @@ export interface RtbQueueItem {
   lastModified: string | null;
 }
 
-/** HubSpot's auto-tracked "date entered RTB - Blocked" property. */
-const ENTERED_STAGE_PROP = `hs_v2_date_entered_${RTB_BLOCKED_STAGE}`;
+/** HubSpot's auto-tracked "date entered <stage>" property. */
+function enteredStageProp(stageId: string): string {
+  return `hs_v2_date_entered_${stageId}`;
+}
 
 /** Whole days elapsed since the given ISO timestamp; null for missing/invalid. */
 function daysSince(iso: string | null | undefined): number | null {
@@ -110,10 +121,13 @@ const PROPERTIES = [
   "loan_status",
   "pm_rtb_approved",
   "hs_lastmodifieddate",
-  ENTERED_STAGE_PROP,
 ];
 
-export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
+export async function fetchRtbQueue(
+  stage: RtbQueueStage = "blocked"
+): Promise<RtbQueueItem[]> {
+  const stageId = STAGE_IDS[stage] ?? RTB_BLOCKED_STAGE;
+  const enteredProp = enteredStageProp(stageId);
   const response = await searchWithRetry({
     filterGroups: [
       {
@@ -126,12 +140,12 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
           {
             propertyName: "dealstage",
             operator: FilterOperatorEnum.Eq,
-            value: RTB_BLOCKED_STAGE,
+            value: stageId,
           },
         ],
       },
     ],
-    properties: PROPERTIES,
+    properties: [...PROPERTIES, enteredProp],
     limit: 200,
     sorts: ["hs_lastmodifieddate"],
   } as unknown as Parameters<typeof searchWithRetry>[0]);
@@ -220,8 +234,8 @@ export async function fetchRtbQueue(): Promise<RtbQueueItem[]> {
         earliestInstallDate: p.pb_location
           ? availabilityByLocation.get(p.pb_location.trim()) ?? null
           : null,
-        enteredStageAt: p[ENTERED_STAGE_PROP] ?? null,
-        daysInStage: daysSince(p[ENTERED_STAGE_PROP]),
+        enteredStageAt: p[enteredProp] ?? null,
+        daysInStage: daysSince(p[enteredProp]),
         driveFolderUrl: driveFolderUrl(p.all_document_parent_folder_id),
         lineItems: lineItemsByDeal.get(r.id) ?? [],
         approved: p.pm_rtb_approved === "true",
