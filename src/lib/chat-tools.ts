@@ -507,9 +507,11 @@ export function createReadOnlyChatTools() {
       "Full status snapshot for ONE deal by HubSpot deal ID: stage plus every workstream " +
       "status — DA (layout_status), design, permitting, interconnection, site survey, " +
       "construction, inspection, PTO — all resolved to display labels, plus the milestone " +
-      "dates, amount, location, project number, and PE milestone statuses. Use for " +
-      "'what's the DA/design/permit status on this deal', 'where is this project'. (For " +
-      "the customer/PM/owner use get_project_team; for jobs/tickets use get_project_service.)",
+      "dates, amount, location, project number, PE milestone statuses, AND changeReason: " +
+      "the verbatim note for WHY the deal is pending sales changes / rejected / blocked. " +
+      "Use for 'what's the DA/design/permit status on this deal', 'where is this project', " +
+      "and 'why is this pending sales changes / rejected' (read changeReason verbatim). " +
+      "(For the customer/PM/owner use get_project_team; for jobs/tickets use get_project_service.)",
     inputSchema: z.object({
       dealId: z.string().describe("HubSpot deal ID"),
     }),
@@ -523,6 +525,9 @@ export function createReadOnlyChatTools() {
         "layout_status", "design_status", "permitting_status", "interconnection_status",
         "site_survey_status", "install_status", "final_inspection_status", "pto_status",
         "pe_m1_status", "pe_m2_status",
+        // Reason notes (why a deal is blocked / pending sales changes / rejected)
+        "sales_change_order_notes", "pm_rejection_reason", "sales_communication_reason",
+        "pb_shit_show_reason", "kats_notes",
         // Milestone dates
         "site_survey_date", "design_approval_sent_date", "layout_approval_date",
         "design_completion_date", "permit_submit_date", "permit_completion_date",
@@ -569,7 +574,24 @@ export function createReadOnlyChatTools() {
           ptoSubmitted: p.pto_start_date || null,
           ptoGranted: p.pto_completion_date || null,
         },
-        note: "Statuses are resolved display labels. For people use get_project_team; for jobs/tickets use get_project_service.",
+        // Why the deal is blocked / pending sales changes / rejected. changeReason
+        // is the best single reason (same priority the pipeline funnel uses):
+        // sales-change note first, then PM rejection, then the generic fallbacks.
+        changeReason:
+          p.sales_change_order_notes ||
+          p.pm_rejection_reason ||
+          p.sales_communication_reason ||
+          p.pb_shit_show_reason ||
+          p.kats_notes ||
+          null,
+        reasons: {
+          salesChange: p.sales_change_order_notes || null,
+          projectRejection: p.pm_rejection_reason || null,
+          salesCommunication: p.sales_communication_reason || null,
+          blocked: p.pb_shit_show_reason || null,
+          rtbBlocked: p.kats_notes || null,
+        },
+        note: "Statuses are resolved display labels. changeReason is the sales-change / rejection / blocked reason note (verbatim). For people use get_project_team; for jobs/tickets use get_project_service.",
       });
     },
   });
