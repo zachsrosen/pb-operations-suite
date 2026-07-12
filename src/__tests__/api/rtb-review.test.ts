@@ -1,5 +1,5 @@
 const mockFetchRtbQueue = jest.fn();
-jest.mock("@/lib/rtb-review", () => ({ fetchRtbQueue: () => mockFetchRtbQueue() }));
+jest.mock("@/lib/rtb-review", () => ({ fetchRtbQueue: (...a: unknown[]) => mockFetchRtbQueue(...a) }));
 jest.mock("@/lib/api-auth", () => ({
   requireApiAuth: jest.fn().mockResolvedValue({ email: "pm@x" }),
 }));
@@ -16,4 +16,14 @@ it("returns the queue as JSON", async () => {
   const body = await res.json();
   expect(body.items).toHaveLength(1);
   expect(body.items[0].dealId).toBe("111");
+});
+
+it("passes the stage query param through (defaulting to blocked)", async () => {
+  mockFetchRtbQueue.mockResolvedValue([]);
+  await GET(new NextRequest("http://localhost/api/deals/rtb-review?stage=ready"));
+  expect(mockFetchRtbQueue).toHaveBeenLastCalledWith("ready");
+  await GET(new NextRequest("http://localhost/api/deals/rtb-review?stage=bogus"));
+  expect(mockFetchRtbQueue).toHaveBeenLastCalledWith("blocked");
+  await GET(new NextRequest("http://localhost/api/deals/rtb-review"));
+  expect(mockFetchRtbQueue).toHaveBeenLastCalledWith("blocked");
 });

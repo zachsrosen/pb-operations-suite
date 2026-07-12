@@ -128,4 +128,34 @@ describe("fetchRtbQueue", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].lineItems).toEqual([]);
   });
+
+  it("targets the Ready To Build stage when stage='ready'", async () => {
+    const entered = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    mockSearchWithRetry.mockResolvedValue({
+      results: [
+        {
+          id: "222",
+          properties: {
+            dealname: "PROJ-2000 - Jones",
+            dealstage: "22580871",
+            hs_v2_date_entered_22580871: entered,
+            pm_rtb_approved: "true",
+          },
+        },
+      ],
+    });
+
+    const rows = await fetchRtbQueue("ready");
+
+    const req = mockSearchWithRetry.mock.calls[0][0];
+    const flat = JSON.stringify(req.filterGroups);
+    expect(flat).toContain("22580871");
+    expect(flat).not.toContain("71052436");
+    expect(rows[0]).toMatchObject({
+      dealId: "222",
+      dealStage: "Ready To Build",
+      daysInStage: 3,
+      approved: true,
+    });
+  });
 });
