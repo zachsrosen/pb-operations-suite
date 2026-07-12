@@ -26,6 +26,7 @@ interface VisibleSiteRow {
     solarPowerW: number | null;
     batterySocPercent: number | null;
     gridConnectedStatus: string | null;
+    gridVoltageV: number | null;
   } | null;
   alerts: Array<{ severity: string; alertName: string }>;
 }
@@ -88,7 +89,12 @@ export default function PowerHubDashboard() {
     batteries: s.totalBatteries,
     solarPowerW: s.telemetrySnapshot?.solarPowerW ?? "",
     batterySocPercent: s.telemetrySnapshot?.batterySocPercent ?? "",
-    gridStatus: s.telemetrySnapshot?.gridConnectedStatus ?? "",
+    gridStatus:
+      s.telemetrySnapshot?.gridVoltageV == null
+        ? ""
+        : s.telemetrySnapshot.gridVoltageV > 0
+          ? "on-grid"
+          : "off-grid",
     activeAlerts: s.alerts.length,
     alertNames: s.alerts.map((a) => a.alertName).join("; "),
   }));
