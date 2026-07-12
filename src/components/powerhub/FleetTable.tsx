@@ -23,7 +23,12 @@ interface PowerhubSiteRow {
   totalGateways: number;
   totalBatteries: number;
   totalInverters: number;
+  totalBatteryEnergy?: number | null;
+  /** From the linked property (server-enriched). */
+  systemSizeKwDc?: number | null;
+  installDate?: string | null;
   telemetrySnapshot: {
+    timestamp?: string | null;
     solarPowerW: number | null;
     batterySocPercent: number | null;
     gridPowerW: number | null;
@@ -152,6 +157,12 @@ export default function FleetTable({
         _alertWeight:
           s.alerts.reduce((sum, a) => sum + (SEVERITY_WEIGHT[a.severity] || 1), 0) || null,
         _tickets: s.tickets?.length || null,
+        _lastReport: s.telemetrySnapshot?.timestamp
+          ? Date.parse(s.telemetrySnapshot.timestamp)
+          : null,
+        _battKwh: s.totalBatteryEnergy ? s.totalBatteryEnergy / 1000 : null,
+        _sizeKw: s.systemSizeKwDc ?? null,
+        _installDate: s.installDate ? Date.parse(s.installDate) : null,
         _grid: gridStatusOf(s),
         _devices:
           (s.totalGateways || 0) + (s.totalInverters || 0) + (s.totalBatteries || 0) || null,
@@ -248,6 +259,18 @@ export default function FleetTable({
           >
             All Sites
           </button>
+          <button
+            onClick={() =>
+              setAlertSel((sel) => (sel.includes("__any__") ? [] : ["__any__"]))
+            }
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              alertSel.includes("__any__")
+                ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                : "bg-surface text-muted border border-t-border"
+            }`}
+          >
+            Active Alerts
+          </button>
         </div>
 
         <input
@@ -329,7 +352,10 @@ export default function FleetTable({
               <SortHeader label="Grid" field="_grid" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Alerts" field="_alertWeight" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Tickets" field="_tickets" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
-              <SortHeader label="Link" field="_link" sortKey={sortKey} sortDir={sortDir} onSort={toggle} last />
+              <SortHeader label="Size" field="_sizeKw" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Capacity" field="_battKwh" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Installed" field="_installDate" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <SortHeader label="Last Report" field="_lastReport" sortKey={sortKey} sortDir={sortDir} onSort={toggle} last />
             </tr>
           </thead>
           <tbody>
@@ -420,9 +446,10 @@ export default function FleetTable({
                         : "—"}
                     </td>
                     <td className="py-3 pr-4">
-                      {snapshot?.gridConnectedStatus === "Grid Connected" ? (
+                      {/* grid_connected_status is dead fleet-wide; voltage is the real signal (see gridStatusOf) */}
+                      {site._grid === "on" ? (
                         <span className="text-green-500 text-xs">✓ On-grid</span>
-                      ) : snapshot?.gridConnectedStatus ? (
+                      ) : site._grid === "off" ? (
                         <span className="text-red-500 text-xs">⚠ Off-grid</span>
                       ) : (
                         "—"
@@ -478,19 +505,34 @@ export default function FleetTable({
                         )}
                       </div>
                     </td>
-                    <td className="py-3">
-                      {site.linkMethod === "UNLINKED" ? (
-                        <span className="text-yellow-500 text-xs">Unlinked</span>
-                      ) : (
-                        <span className="text-green-500 text-xs">
-                          ✓ {site.linkMethod}
-                        </span>
-                      )}
+                    <td className="py-3 pr-4 text-xs">
+                      {site._sizeKw != null ? `${site._sizeKw} kW` : "—"}
+                    </td>
+                    <td className="py-3 pr-4 text-xs">
+                      {site._battKwh != null ? `${site._battKwh.toFixed(1)} kWh` : "—"}
+                    </td>
+                    <td className="py-3 pr-4 text-xs text-muted">
+                      {formatInstallDate(site.installDate)}
+                    </td>
+                    <td className="py-3 text-xs">
+                      {(() => {
+                        const lr = formatLastReport(site._lastReport);
+                        return lr ? (
+                          <span
+                            className={lr.stale ? "text-red-400" : "text-muted"}
+                            title={new Date(site._lastReport!).toLocaleString()}
+                          >
+                            {lr.label}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        );
+                      })()}
                     </td>
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={8} className="bg-surface-2 p-4">
+                      <td colSpan={11} className="bg-surface-2 p-4">
                         <SiteDetail siteId={site.siteId} />
                       </td>
                     </tr>
@@ -501,7 +543,7 @@ export default function FleetTable({
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={11}
                   className="py-8 text-center text-muted"
                 >
                   {hasActiveFilters
@@ -582,4 +624,28 @@ function sortStable<T extends { siteId: string }>(
 function formatPower(watts: number): string {
   if (Math.abs(watts) >= 1000) return `${(watts / 1000).toFixed(1)} kW`;
   return `${Math.round(watts)} W`;
+}
+
+function formatInstallDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+const STALE_REPORT_MS = 24 * 60 * 60 * 1000;
+
+/** Relative "last telemetry" age; stale once the site has been dark >24h. */
+function formatLastReport(timestampMs: number | null): {
+  label: string;
+  stale: boolean;
+} | null {
+  if (timestampMs == null) return null;
+  const ageMs = Date.now() - timestampMs;
+  let label: string;
+  if (ageMs < 60_000) label = "just now";
+  else if (ageMs < 3_600_000) label = `${Math.round(ageMs / 60_000)}m ago`;
+  else if (ageMs < 86_400_000) label = `${Math.round(ageMs / 3_600_000)}h ago`;
+  else label = `${Math.round(ageMs / 86_400_000)}d ago`;
+  return { label, stale: ageMs > STALE_REPORT_MS };
 }

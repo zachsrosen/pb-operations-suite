@@ -22,13 +22,18 @@ interface VisibleSiteRow {
   totalGateways: number;
   totalBatteries: number;
   totalInverters: number;
+  totalBatteryEnergy?: number | null;
+  systemSizeKwDc?: number | null;
+  installDate?: string | null;
   telemetrySnapshot: {
+    timestamp?: string | null;
     solarPowerW: number | null;
     batterySocPercent: number | null;
     gridConnectedStatus: string | null;
     gridVoltageV: number | null;
   } | null;
   alerts: Array<{ severity: string; alertName: string }>;
+  tickets?: Array<{ id: string; subject: string }>;
 }
 
 export default function PowerHubDashboard() {
@@ -97,6 +102,12 @@ export default function PowerHubDashboard() {
           : "off-grid",
     activeAlerts: s.alerts.length,
     alertNames: s.alerts.map((a) => a.alertName).join("; "),
+    openTickets: s.tickets?.length ?? 0,
+    ticketSubjects: (s.tickets ?? []).map((t) => t.subject).join("; "),
+    systemSizeKw: s.systemSizeKwDc ?? "",
+    batteryCapacityKwh: s.totalBatteryEnergy ? s.totalBatteryEnergy / 1000 : "",
+    installDate: s.installDate ? s.installDate.slice(0, 10) : "",
+    lastReportAt: s.telemetrySnapshot?.timestamp ?? "",
   }));
 
   if (process.env.NEXT_PUBLIC_POWERHUB_ENABLED !== "true") {
