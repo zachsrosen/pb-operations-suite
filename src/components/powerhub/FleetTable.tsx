@@ -28,6 +28,7 @@ interface PowerhubSiteRow {
     batterySocPercent: number | null;
     gridPowerW: number | null;
     gridConnectedStatus: string | null;
+    gridVoltageV: number | null;
   } | null;
   alerts: Array<{
     id: string;
@@ -48,9 +49,13 @@ interface FleetTableProps {
 type GridStatus = "on" | "off" | "unknown";
 
 function gridStatusOf(site: PowerhubSiteRow): GridStatus {
-  const s = site.telemetrySnapshot?.gridConnectedStatus;
-  if (!s) return "unknown";
-  return s === "Grid Connected" ? "on" : "off";
+  // grid_connected_status is only sent by ~1% of gateways (and as "0"/"1", not
+  // "Grid Connected"), so it's useless fleet-wide. Grid VOLTAGE is what the fleet
+  // actually reports: present (>0) = on-grid, ~0 = off-grid/islanded, absent =
+  // status unknown. (Adjust here if a canonical Tesla on-grid field is confirmed.)
+  const v = site.telemetrySnapshot?.gridVoltageV;
+  if (v == null) return "unknown";
+  return v > 0 ? "on" : "off";
 }
 
 /** Severity weight so the Alerts column sorts worst-first. */

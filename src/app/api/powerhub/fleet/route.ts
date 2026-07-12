@@ -31,6 +31,7 @@ export async function GET() {
         solarPowerW: true,
         batterySocPercent: true,
         gridConnectedStatus: true,
+        gridVoltageV: true,
       },
     }),
     prisma.powerhubAlert.count({ where: { isActive: true } }),
@@ -46,8 +47,10 @@ export async function GET() {
       ? socValues.reduce((sum, s) => sum + (s.batterySocPercent || 0), 0) /
         socValues.length
       : null;
+  // On-grid = grid voltage present. grid_connected_status is null on ~99% of
+  // gateways (and "0"/"1" on the rest), so it can't be used fleet-wide.
   const gridConnectedCount = snapshots.filter(
-    (s) => s.gridConnectedStatus === "Grid Connected"
+    (s) => (s.gridVoltageV ?? 0) > 0
   ).length;
 
   return NextResponse.json({
