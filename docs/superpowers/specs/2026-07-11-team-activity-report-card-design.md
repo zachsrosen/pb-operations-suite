@@ -68,7 +68,7 @@ no em dashes — enforced by a test) shaped for leadership:
 
 1. **Header**: `Team Activity Report Card: <Mon D> - <Mon D> (vs <prior range>)`.
 2. **Per-person lines**, sorted by current `avgDealsTouched` desc:
-   `<Name>: <N> deals/day (<up from M | down from M | steady at M | new this period>), <H>h active/day, <PTO note>`.
+   `<Name>: <N> deals/day (<up from M | down from M | steady | new this period>), <H>h active/day, <PTO note>`.
    - Deltas compare `avgDealsTouched` (already PTO-adjusted). Rules, total:
      prior period null -> no parenthetical; person absent from prior
      summaries AND prior roster -> "new this period"; person absent from
