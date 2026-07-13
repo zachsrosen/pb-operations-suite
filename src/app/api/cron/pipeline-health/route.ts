@@ -21,6 +21,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // ── Deal-sync freshness (runs every day, incl. weekends) ─────────────────
+  // The Deal mirror silently froze for 5 days (7/8–7/13) because its cron was
+  // never added to vercel.json and nothing watched it. Guard it: max(lastSyncedAt)
+  // is when the sync last touched any deal; if that's too old, the sync has
+  // stalled — and ~33 features read this table.
+  const DEAL_SYNC_STALE_HOURS = 6;
+  try {
+    const newest = await prisma.deal.findFirst({
+      where: { pipeline: "PROJECT" },
+      orderBy: { lastSyncedAt: "desc" },
+      select: { lastSyncedAt: true },
+    });
+    const last = newest?.lastSyncedAt ?? null;
+    const hoursSince = last ? (Date.now() - last.getTime()) / 3_600_000 : Infinity;
+    if (hoursSince > DEAL_SYNC_STALE_HOURS) {
+      await sendCronHealthAlert(
+        "deal-sync",
+        `Deal mirror is stale: PROJECT last synced ${last ? last.toISOString() : "never"} ` +
+          `(${Number.isFinite(hoursSince) ? Math.round(hoursSince) + "h" : "∞"} ago), ` +
+          `threshold ${DEAL_SYNC_STALE_HOURS}h. The /api/cron/deal-sync job may be ` +
+          `unscheduled or timing out — worklists, PM tracker, dashboards and ~30 other ` +
+          `features read this table. Check vercel.json crons + Vercel logs for /api/cron/deal-sync.`
+      );
+    }
+  } catch (err) {
+    console.error("[pipeline-health] deal-sync freshness check failed:", err);
+  }
+
   // Skip weekends — no plansets are processed Sat/Sun
   const denverNow = new Date(
     new Date().toLocaleString("en-US", { timeZone: "America/Denver" })
