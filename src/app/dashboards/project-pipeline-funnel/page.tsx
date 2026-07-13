@@ -1420,6 +1420,7 @@ function DrillDownTable({
   /** Avg days this stage takes; deals waiting longer are flagged "late". */
   benchmark?: number | null;
 }) {
+  const hasSince = deals.some((d) => d.waitingSince);
   const hasScheduled = deals.some((d) => d.scheduledDate);
   const hasExtra = deals.some((d) => d.extraDate);
   const extraLabel = deals.find((d) => d.extraLabel)?.extraLabel || "Extra";
@@ -1434,6 +1435,7 @@ function DrillDownTable({
       case "amount": return d.amount || 0;
       case "location": return (d.pbLocation || "").toLowerCase();
       case "stage": return (d.stage || "").toLowerCase();
+      case "since": return d.waitingSince || "";
       case "scheduled": return d.scheduledDate || "";
       case "extra": return d.extraDate || "";
       case "days": return d.daysWaiting;
@@ -1501,6 +1503,7 @@ function DrillDownTable({
             {renderTh("location", "Location")}
             {renderTh("stage", "Stage")}
             {staffCols.map((sc) => renderTh(String(sc.key), sc.label))}
+            {hasSince && renderTh("since", "Since", "left", "asc")}
             {hasScheduled && renderTh("scheduled", "Scheduled", "left", "desc")}
             {hasExtra && renderTh("extra", extraLabel, "left", "desc")}
             {renderTh("days", "Days", "right", "desc")}
@@ -1547,6 +1550,11 @@ function DrillDownTable({
                   </td>
                 );
               })}
+              {hasSince && (
+                <td className="py-1 px-1.5 text-muted whitespace-nowrap" title="Reached the prior milestone — when this wait started">
+                  {d.waitingSince ? formatShortDate(d.waitingSince) : <span className="italic text-muted/60">—</span>}
+                </td>
+              )}
               {hasScheduled && (
                 <td className="py-1 px-1.5 text-muted whitespace-nowrap">
                   {d.scheduledDate ? formatShortDate(d.scheduledDate) : <span className="italic text-muted/60">—</span>}
@@ -1573,7 +1581,7 @@ function DrillDownTable({
             </tr>
             {d.flag && (
               <tr className="border-b border-t-border/30">
-                <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
+                <td colSpan={6 + staffCols.length + (hasSince ? 1 : 0) + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
                   <span className={`text-[11px] ${FLAG_TEXT[d.flag.tone] || "text-muted"}`}>↳ {d.flag.label}</span>
                   {d.flag.reason ? (
                     <span className="text-[11px] text-muted/80"> · {d.flag.reason}</span>

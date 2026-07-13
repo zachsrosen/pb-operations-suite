@@ -39,6 +39,8 @@ describe("project funnel — cancelled deals in the backlog drill-down", () => {
     expect(deal.flag).toMatchObject({ label: "Cancelled", tone: "red", parked: true });
     // Its wait ends at cancellation: survey done 45d ago, cancelled 10d ago → 35d.
     expect(deal.daysWaiting).toBe(35);
+    // The wait started when it hit the prior milestone (survey completion).
+    expect(deal.waitingSince).toBe(iso(45));
     // Counted as cancelled (not active) at the milestones it reached.
     expect(result.summary.salesClosed.cancelledCount).toBe(1);
     expect(result.summary.salesClosed.count).toBe(0);

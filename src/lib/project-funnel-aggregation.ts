@@ -134,6 +134,12 @@ export interface ProjectFunnelDrillDownDeal {
   url: string;
   daysWaiting: number;
   status: string | null;
+  /**
+   * Date the deal reached the prior milestone — the day the current wait
+   * started (daysWaiting counts from here). Set on backlog buckets; absent on
+   * the current-stage drill-down, which counts days-in-stage instead.
+   */
+  waitingSince?: string;
   /** Optional scheduled / milestone date to display (e.g. survey date, construction date) */
   scheduledDate?: string | null;
   /** Optional second date with context label (e.g. inspection fail date) */
@@ -406,6 +412,8 @@ function toDrillDown(
   daysWaiting: number,
   status: string | null,
   extra?: {
+    /** Date the current wait started (the prior-milestone date) — see the field doc. */
+    waitingSince?: string | null;
     scheduledDate?: string | null;
     extraDate?: string | null;
     extraLabel?: string;
@@ -437,6 +445,7 @@ function toDrillDown(
     url: p.url,
     daysWaiting: daysUntilDead,
     status: cancelled ? "Cancelled" : status,
+    ...(extra?.waitingSince ? { waitingSince: extra.waitingSince } : {}),
     ...(extra?.scheduledDate ? { scheduledDate: extra.scheduledDate } : {}),
     ...(extra?.extraDate ? { extraDate: extra.extraDate, extraLabel: extra.extraLabel } : {}),
     projectManager: p.projectManager || "",
@@ -1330,6 +1339,15 @@ export function buildProjectFunnelData(
     awaitingCloseOut: [],
   };
 
+  // Backlog row: daysWaiting counts from waitSince (the prior-milestone date),
+  // which is also carried on the row so the UI can show the actual date.
+  const toBacklogRow = (
+    p: Project,
+    waitSince: string,
+    status: string | null,
+    extra?: { scheduledDate?: string | null; extraDate?: string | null; extraLabel?: string },
+  ) => toDrillDown(p, daysBetween(waitSince, today), status, { ...extra, waitingSince: waitSince });
+
   for (const p of filtered) {
     // Cancelled deals flow into the bucket where they stalled (flagged red by
     // drillDownFlag). The cancelled toggle drops them from `projects` up front
@@ -1338,40 +1356,40 @@ export function buildProjectFunnelData(
 
     if (!m.hasSurveyScheduled) {
       drillDown.awaitingSurveySchedule.push(
-        toDrillDown(p, daysBetween(p.closeDate!, today), statusLabel("site_survey_status", p.siteSurveyStatus))
+        toBacklogRow(p, p.closeDate!, statusLabel("site_survey_status", p.siteSurveyStatus))
       );
     } else if (!m.hasSurvey) {
       // Use close date as "waiting since" — the scheduled date may be in the
       // future, which would produce negative days.
       drillDown.awaitingSurvey.push(
-        toDrillDown(p, daysBetween(p.closeDate!, today), statusLabel("site_survey_status", p.siteSurveyStatus), {
+        toBacklogRow(p, p.closeDate!, statusLabel("site_survey_status", p.siteSurveyStatus), {
           scheduledDate: p.siteSurveyScheduleDate,
         })
       );
     } else if (!m.hasDaSent) {
       const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
       drillDown.awaitingDaSend.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("layout_status", p.layoutStatus))
+        toBacklogRow(p, waitSince, statusLabel("layout_status", p.layoutStatus))
       );
     } else if (!m.hasDaApproved) {
       const waitSince = p.designApprovalSentDate || p.closeDate!;
       drillDown.awaitingApproval.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("layout_status", p.layoutStatus))
+        toBacklogRow(p, waitSince, statusLabel("layout_status", p.layoutStatus))
       );
     } else if (!m.hasDesignComplete) {
       const waitSince = p.designApprovalDate || p.closeDate!;
       drillDown.awaitingDesignComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("design_status", p.designStatus))
+        toBacklogRow(p, waitSince, statusLabel("design_status", p.designStatus))
       );
     } else if (!m.hasPermitSubmit) {
       const waitSince = p.designCompletionDate || p.closeDate!;
       drillDown.awaitingPermitSubmit.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+        toBacklogRow(p, waitSince, statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasPermitIssued) {
       const waitSince = p.permitSubmitDate || p.closeDate!;
       drillDown.awaitingPermitIssue.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("permitting_status", p.permittingStatus))
+        toBacklogRow(p, waitSince, statusLabel("permitting_status", p.permittingStatus))
       );
     } else if (!m.hasReadyToBuild) {
       // Permit issued but not yet at the Ready-To-Build stage. A deal only stays
@@ -1385,32 +1403,32 @@ export function buildProjectFunnelData(
         // Genuinely waiting on the utility — show the interconnection status.
         const waitSince = p.permitIssueDate || p.closeDate!;
         drillDown.awaitingInterconnection.push(
-          toDrillDown(p, daysBetween(waitSince, today), statusLabel("interconnection_status", p.interconnectionStatus))
+          toBacklogRow(p, waitSince, statusLabel("interconnection_status", p.interconnectionStatus))
         );
       } else {
         // IC cleared or waived — the remaining blocker is construction-side.
         const waitSince = p.interconnectionApprovalDate || p.permitIssueDate || p.closeDate!;
         drillDown.awaitingReadyToBuild.push(
-          toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
+          toBacklogRow(p, waitSince, statusLabel("install_status", p.constructionStatus))
         );
       }
     } else if (!m.hasConstructionScheduled) {
       // Shovel-ready bench — anchor on the ready-to-build date ("time in RTB").
       const waitSince = p.readyToBuildDate || p.permitIssueDate || p.closeDate!;
       drillDown.awaitingConstructionSchedule.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus))
+        toBacklogRow(p, waitSince, statusLabel("install_status", p.constructionStatus))
       );
     } else if (!m.hasConstructionComplete) {
       const waitSince = p.constructionScheduleDate || p.closeDate!;
       drillDown.awaitingConstructionComplete.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("install_status", p.constructionStatus), {
+        toBacklogRow(p, waitSince, statusLabel("install_status", p.constructionStatus), {
           scheduledDate: p.constructionScheduleDate,
         })
       );
     } else if (!m.hasInspectionPassed) {
       const waitSince = p.constructionCompleteDate || p.closeDate!;
       drillDown.awaitingInspection.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("final_inspection_status", p.finalInspectionStatus), {
+        toBacklogRow(p, waitSince, statusLabel("final_inspection_status", p.finalInspectionStatus), {
           scheduledDate: p.inspectionScheduleDate,
           extraDate: p.inspectionFailDate,
           extraLabel: "Failed",
@@ -1419,7 +1437,7 @@ export function buildProjectFunnelData(
     } else if (!m.hasPtoGranted) {
       const waitSince = p.inspectionPassDate || p.closeDate!;
       drillDown.awaitingPto.push(
-        toDrillDown(p, daysBetween(waitSince, today), statusLabel("pto_status", p.ptoStatus))
+        toBacklogRow(p, waitSince, statusLabel("pto_status", p.ptoStatus))
       );
     } else {
       // In Close Out stage (priority 9) but not yet Project Complete
@@ -1427,7 +1445,7 @@ export function buildProjectFunnelData(
       if (sp === 9) {
         const waitSince = p.ptoGrantedDate || p.closeDate!;
         drillDown.awaitingCloseOut.push(
-          toDrillDown(p, daysBetween(waitSince, today), null)
+          toBacklogRow(p, waitSince, null)
         );
       }
     }
