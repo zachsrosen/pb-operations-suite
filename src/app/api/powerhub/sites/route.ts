@@ -44,6 +44,8 @@ export async function GET(request: Request) {
           streetAddress: true,
           city: true,
           state: true,
+          systemSizeKwDc: true,
+          mostRecentInstallDate: true,
         },
       },
     },
@@ -116,6 +118,8 @@ export async function GET(request: Request) {
       tickets: s.propertyId
         ? buildSiteTickets(propertyTicketIds.get(s.propertyId) || [], ticketSummaries)
         : [],
+      systemSizeKwDc: s.property?.systemSizeKwDc ?? null,
+      installDate: s.property?.mostRecentInstallDate ?? null,
       ...(usePropertyAddress
         ? {
             address: s.property?.streetAddress || s.property?.fullAddress || "",

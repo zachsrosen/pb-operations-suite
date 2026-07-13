@@ -29,6 +29,8 @@ function makeSite(overrides: Record<string, unknown> = {}) {
       batterySocPercent: 50,
       gridPowerW: 0,
       gridConnectedStatus: "Grid Connected",
+      // Grid status is voltage-based (grid_connected_status is dead fleet-wide)
+      gridVoltageV: 240,
     },
     alerts: [],
     ...overrides,
@@ -118,6 +120,28 @@ describe("FleetTable filters", () => {
     expect(screen.queryByText(/QuietSite/)).not.toBeInTheDocument();
   });
 
+  it("Active Alerts toggle shows only alerted sites and toggles back off", () => {
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            siteName: "AlertedSite",
+            alerts: [{ id: "a1", severity: "PERFORMANCE", alertName: "X" }],
+          }),
+          makeSite({ siteName: "QuietSite", alerts: [] }),
+        ]}
+      />
+    );
+
+    const toggleBtn = screen.getByRole("button", { name: "Active Alerts" });
+    fireEvent.click(toggleBtn);
+    expect(screen.getByText(/AlertedSite/)).toBeInTheDocument();
+    expect(screen.queryByText(/QuietSite/)).not.toBeInTheDocument();
+
+    fireEvent.click(toggleBtn);
+    expect(screen.getByText(/QuietSite/)).toBeInTheDocument();
+  });
+
   it("filters by grid status", () => {
     render(
       <FleetTable
@@ -130,6 +154,7 @@ describe("FleetTable filters", () => {
               batterySocPercent: 20,
               gridPowerW: 0,
               gridConnectedStatus: "Islanded",
+              gridVoltageV: 0,
             },
           }),
         ]}
