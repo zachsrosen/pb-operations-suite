@@ -505,17 +505,17 @@ export default function RtbReviewClient() {
                     {tab === "ready" ? (
                       <span
                         className={
-                          item.releasedDate
+                          item.released
                             ? "text-green-500 whitespace-nowrap"
                             : "text-muted whitespace-nowrap"
                         }
                         title={
-                          item.releasedDate
+                          item.released
                             ? `Released via PM approval ${formatHsDate(item.releasedDate)}`
-                            : "Reached Ready to Build without going through the PM release gate"
+                            : "Reached Ready to Build without a PM release this stint — press Release if it re-blocked"
                         }
                       >
-                        {item.releasedDate ? "Released ✓" : "—"}
+                        {item.released ? "Released ✓" : "—"}
                       </span>
                     ) : (
                       <button

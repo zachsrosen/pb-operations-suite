@@ -76,6 +76,9 @@ export interface RtbQueueItem {
   /** pm_rtb_approved_date — durable "released via PM gate" marker (stamped by
    *  a HubSpot workflow on reaching Ready to Build; survives the flag reset). */
   releasedDate: string | null;
+  /** True only on the Ready tab when the approval date is at/after the current
+   *  Ready to Build entry (re-blocked-then-returned deals read false). */
+  released: boolean;
   /** Payment method (e.g. "Cash", loan product name). */
   paymentMethod: string | null;
   /** Loan status, resolved to the HubSpot display label. */
@@ -105,6 +108,36 @@ function daysSince(iso: string | null | undefined): number | null {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return null;
   return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+}
+
+/** Parse a HubSpot date value (epoch-millis string or ISO) to ms; null if invalid. */
+function parseHsMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = /^\d+$/.test(value) ? Number(value) : Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Whether a deal is "released via the PM gate" for display purposes.
+ *
+ * Only meaningful on the Ready to Build stage. A deal counts as released only
+ * when its approval date (pm_rtb_approved_date) is at/after it entered its
+ * CURRENT Ready to Build stint — so a deal that was released, bounced back to
+ * RTB - Blocked, and returned to Ready without a fresh Release press reads as
+ * un-released (its stale approval date predates the re-entry). One day of
+ * tolerance absorbs same-workflow stamp/stage-move clock skew.
+ */
+function computeReleased(
+  stage: RtbQueueStage,
+  approvedDate: string | null | undefined,
+  enteredStageAt: string | null | undefined
+): boolean {
+  if (stage !== "ready") return false;
+  const released = parseHsMs(approvedDate);
+  if (released == null) return false;
+  const entered = parseHsMs(enteredStageAt);
+  if (entered == null) return true; // no entry date to compare — trust the stamp
+  return released >= entered - 86_400_000;
 }
 
 const PROPERTIES = [
@@ -238,6 +271,7 @@ export async function fetchRtbQueue(
         daStatus: p.da_invoice_status ?? null,
         daPaid: p.da_invoice_status === "Paid In Full",
         releasedDate: p.pm_rtb_approved_date ?? null,
+        released: computeReleased(stage, p.pm_rtb_approved_date, p[enteredProp]),
         paymentMethod: p.payment_method ?? null,
         loanStatus: statusLabel("loan_status", p.loan_status),
         earliestInstallDate: p.pb_location
