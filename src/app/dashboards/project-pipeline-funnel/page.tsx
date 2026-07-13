@@ -107,6 +107,7 @@ function ProjectPipelineFunnelInner() {
   const includeOnHold = searchParams.get("oh") !== "0";
   const includeRejected = searchParams.get("pr") !== "0";
   const includeCancelled = searchParams.get("cx") !== "0";
+  const includeBlocked = searchParams.get("bl") !== "0";
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
@@ -165,7 +166,7 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled],
+    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled, includeBlocked],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
@@ -175,6 +176,7 @@ function ProjectPipelineFunnelInner() {
       if (!includeOnHold) params.set("onhold", "0");
       if (!includeRejected) params.set("rejected", "0");
       if (!includeCancelled) params.set("cancelled", "0");
+      if (!includeBlocked) params.set("blocked", "0");
       if (useActiveScope) {
         // Funnel tab: live snapshot of all active deals, no date window.
         params.set("scope", "active");
@@ -321,6 +323,15 @@ function ProjectPipelineFunnelInner() {
           title={includeCancelled ? "Cancelled deals included — click to hide" : "Cancelled deals hidden — click to show"}
         >
           {includeCancelled ? "Cancelled: shown" : "Cancelled: hidden"}
+        </button>
+        {/* RTB-blocked toggle */}
+        <button
+          type="button"
+          onClick={() => setParam("bl", includeBlocked ? "0" : "")}
+          className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeBlocked ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-orange-500/40 bg-orange-500/10 text-orange-300"}`}
+          title={includeBlocked ? "RTB-blocked deals included — click to hide" : "RTB-blocked deals hidden — click to show"}
+        >
+          {includeBlocked ? "Blocked: shown" : "Blocked: hidden"}
         </button>
         {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">

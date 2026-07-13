@@ -741,22 +741,24 @@ export function buildProjectFunnelData(
    * when any milestone happened — a snapshot of the live pipeline. Default
    * "cohort" windows deals by close date as before.
    */
-  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean; includeRejected?: boolean; includeCancelled?: boolean; cohortGranularity?: "week" | "month" }
+  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean; includeRejected?: boolean; includeCancelled?: boolean; includeBlocked?: boolean; cohortGranularity?: "week" | "month" }
 ): ProjectFunnelResponse {
   // Global deal-set filters applied up front so they flow through every section
   // (summary, backlog, capacity, forecast, …): Participate-Energy, on-hold,
-  // project-rejected, and cancelled.
+  // project-rejected, cancelled, and RTB-blocked.
   const peFilter = options?.pe ?? "all";
   const includeOnHold = options?.includeOnHold !== false;
   const includeRejected = options?.includeRejected !== false;
   const includeCancelled = options?.includeCancelled !== false;
-  if (peFilter !== "all" || !includeOnHold || !includeRejected || !includeCancelled) {
+  const includeBlocked = options?.includeBlocked !== false;
+  if (peFilter !== "all" || !includeOnHold || !includeRejected || !includeCancelled || !includeBlocked) {
     projects = projects.filter((p) => {
       if (peFilter === "pe" && !p.isParticipateEnergy) return false;
       if (peFilter === "non-pe" && p.isParticipateEnergy) return false;
       if (!includeOnHold && p.stageId === ON_HOLD_STAGE_ID) return false;
       if (!includeRejected && p.stageId === PROJECT_REJECTED_STAGE_ID) return false;
       if (!includeCancelled && p.stageId === CANCELLED_STAGE_ID) return false;
+      if (!includeBlocked && p.stageId === RTB_BLOCKED_STAGE_ID) return false;
       return true;
     });
   }
