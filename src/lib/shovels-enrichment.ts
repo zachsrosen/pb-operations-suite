@@ -16,6 +16,12 @@ import {
 } from "@/lib/shovels";
 import { updateProperty } from "@/lib/hubspot-property";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import {
+  fromApiPermit,
+  contractorIdsForRollups,
+  computePermitRollups,
+  contractorLabelFrom,
+} from "@/lib/shovels-permit-rollups";
 
 // ─── Match Verification ─────────────────────────────────────────────────────
 
@@ -291,20 +297,10 @@ export async function enrichPropertyFromShovels(
     // 6. Extract property data (best-available merge)
     const propData = extractPropertyData(allPermits);
 
-    // Count solar permits
+    // Count solar permits (persisted to the shovelsSolarPermitCount DB column).
     const solarPermitCount = allPermits.filter(
       (p) => p.tags?.some((t) => t === "solar" || t === "solar_battery_storage") ?? false,
     ).length;
-
-    // Roofing rollup — used to backdate roofing permits on the HubSpot property
-    // object. Uses the Shovels canonical "roofing" tag (matches the solar approach).
-    const roofingPermits = allPermits.filter((p) => p.tags?.includes("roofing") ?? false);
-    const roofingPermitCount = roofingPermits.length;
-    // Most-recent roofing permit by issue date (fall back to file date).
-    const latestRoofing = roofingPermits
-      .map((p) => ({ p, when: p.issue_date ?? p.file_date ?? null }))
-      .filter((x): x is { p: (typeof roofingPermits)[number]; when: string } => x.when != null)
-      .sort((a, b) => b.when.localeCompare(a.when))[0]?.p;
 
     // 7. Resident lookup
     let residents: { name: string | null; personalEmail: string | null; phone: string | null; linkedinUrl: string | null; netWorth: string | null; incomeRange: string | null; isHomeowner: boolean | null }[] = [];
@@ -412,15 +408,31 @@ export async function enrichPropertyFromShovels(
       // decision before it can be pushed; propData.propertyType still persists to the DB.
       if (propData.assessedValue != null) hubspotProps.assessed_value = propData.assessedValue;
       if (propData.publicRecordOwnerName != null) hubspotProps.public_record_owner_name = propData.publicRecordOwnerName;
-      hubspotProps.solar_permit_count = solarPermitCount;
-      hubspotProps.roofing_permit_count = roofingPermitCount;
-      if (latestRoofing) {
-        // HubSpot date properties take a YYYY-MM-DD string (see toDateString in property-sync.ts).
-        const when = latestRoofing.issue_date ?? latestRoofing.file_date;
-        if (when) hubspotProps.latest_roofing_permit_date = when.slice(0, 10);
-        if (latestRoofing.number) hubspotProps.latest_roofing_permit_number = latestRoofing.number;
-        if (latestRoofing.jurisdiction) hubspotProps.latest_roofing_permit_jurisdiction = latestRoofing.jurisdiction;
+
+      // Per-type permit rollups for ALL tags (count + latest date/number/jurisdiction/
+      // contractor) — see shovels-permit-rollups.ts. Sets solar_permit_count,
+      // roofing_permit_count, etc. Fetch just the latest-per-tag contractors (blocking)
+      // so contractor names are available at push time.
+      const rollupPermits = allPermits.map(fromApiPermit);
+      const rollupContractorIds = contractorIdsForRollups(rollupPermits);
+      if (rollupContractorIds.length > 0) {
+        try {
+          await fetchContractors(rollupContractorIds);
+        } catch {
+          // Best-effort — rollup contractor fields fall back to blank.
+        }
       }
+      const rollupContractors = rollupContractorIds.length > 0
+        ? await prisma.shovelsContractor.findMany({
+            where: { shovelsId: { in: rollupContractorIds } },
+            select: { shovelsId: true, name: true, license: true },
+          })
+        : [];
+      const rollupContractorMap = new Map(rollupContractors.map((c) => [c.shovelsId, c]));
+      Object.assign(
+        hubspotProps,
+        computePermitRollups(rollupPermits, (id) => contractorLabelFrom(rollupContractorMap.get(id))),
+      );
 
       if (Object.keys(hubspotProps).length > 0) {
         await updateProperty(property.hubspotObjectId, hubspotProps);
