@@ -1787,6 +1787,19 @@ for (const def of Object.values(ROLES)) {
 }
 
 /**
+ * The Deal-mirror freshness read (a single timestamp, no deal data) powers the
+ * "deals synced N ago" staleness badge on dashboards — reachable by every
+ * authenticated role so staleness is visible everywhere the badge renders.
+ */
+const DEAL_SYNC_FRESHNESS_ROUTE = "/api/deal-sync/freshness";
+for (const def of Object.values(ROLES)) {
+  if (def.allowedRoutes.includes("*")) continue;
+  if (!def.allowedRoutes.includes(DEAL_SYNC_FRESHNESS_ROUTE)) {
+    def.allowedRoutes.push(DEAL_SYNC_FRESHNESS_ROUTE);
+  }
+}
+
+/**
  * Routes that require ADMIN role even if the role's allowedRoutes would otherwise
  * permit access. Non-admin roles can be granted exceptions via ADMIN_ONLY_EXCEPTIONS.
  */

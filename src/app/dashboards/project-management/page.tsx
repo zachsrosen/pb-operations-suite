@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
+import { useDealSyncFreshness } from "@/hooks/useDealSyncFreshness";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
@@ -444,6 +445,7 @@ export default function ProjectManagementPage() {
       accentColor="green"
       lastUpdated={lastUpdated}
       exportData={{ data: exportRows, filename: "project-management.csv" }}
+      syncMeta={useDealSyncFreshness()}
     >
       {loading && projects.length === 0 ? (
         <div className="space-y-6">

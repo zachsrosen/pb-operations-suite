@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
 import DashboardShell from "@/components/DashboardShell";
+import { useDealSyncFreshness } from "@/hooks/useDealSyncFreshness";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import type { FilterOption } from "@/components/ui/MultiSelectFilter";
 import DealsTable from "./DealsTable";
@@ -260,6 +261,7 @@ function DealsPageInner() {
       lastUpdated={lastUpdated}
       fullWidth={true}
       exportData={exportData}
+      syncMeta={useDealSyncFreshness()}
     >
       {/* Filter Bar */}
       <div className="flex items-center gap-3 flex-wrap mb-4">

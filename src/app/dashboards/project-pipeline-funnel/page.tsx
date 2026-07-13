@@ -4,6 +4,7 @@ import { Suspense, Fragment, useCallback, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import { useDealSyncFreshness } from "@/hooks/useDealSyncFreshness";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
@@ -213,6 +214,7 @@ function ProjectPipelineFunnelInner() {
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString()
     : null;
+  const dealSyncMeta = useDealSyncFreshness();
 
   if (error) {
     return (
@@ -230,6 +232,7 @@ function ProjectPipelineFunnelInner() {
       accentColor="cyan"
       fullWidth
       lastUpdated={lastUpdated}
+      syncMeta={dealSyncMeta}
     >
       {/* Tabs */}
       <div className="flex gap-1 mb-4 border-b border-t-border">
