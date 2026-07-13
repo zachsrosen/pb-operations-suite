@@ -510,6 +510,7 @@ export interface Project {
   ptoSubmitDate: string | null;
   ptoGrantedDate: string | null;
   ptoStatus: string | null;
+  closeOutStatus: string | null;
 
   // Forecasted dates
   forecastedInstallDate: string | null;
@@ -818,6 +819,7 @@ const DEAL_PROPERTIES = [
   "pto_start_date", // submit date
   "pto_completion_date", // granted date
   "pto_status",
+  "close_out_status",
 
   // Status fields for dashboards
   "install_status", // labeled "Construction Status" in HubSpot
@@ -1212,6 +1214,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     ptoSubmitDate: parseDate(deal.pto_start_date),
     ptoGrantedDate: parseDate(deal.pto_completion_date),
     ptoStatus: deal.pto_status ? String(deal.pto_status) : null,
+    closeOutStatus: deal.close_out_status ? String(deal.close_out_status) : null,
 
     // Project completion
     projectCompleteDate: parseDate(deal.hs_v2_date_entered_20440343),
