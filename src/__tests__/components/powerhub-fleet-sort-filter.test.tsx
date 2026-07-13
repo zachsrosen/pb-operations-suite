@@ -120,6 +120,33 @@ describe("FleetTable filters", () => {
     expect(screen.queryByText(/QuietSite/)).not.toBeInTheDocument();
   });
 
+  it("filters by specific alert type (name)", () => {
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            siteName: "CommsSite",
+            alerts: [{ id: "a1", severity: "PERFORMANCE", alertName: "Solar Meter Comms" }],
+          }),
+          makeSite({
+            siteName: "ArcFaultSite",
+            alerts: [{ id: "a2", severity: "CRITICAL", alertName: "Arc Fault Soft Lockout" }],
+          }),
+          makeSite({ siteName: "QuietSite", alerts: [] }),
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /alert type:/i }));
+    const dropdown = screen.getByPlaceholderText("Search...").closest("div")!.parentElement!;
+    // Option label includes the fleet count, e.g. "Solar Meter Comms (1)"
+    fireEvent.click(within(dropdown).getByRole("button", { name: /Solar Meter Comms/i }));
+
+    expect(screen.getByText(/CommsSite/)).toBeInTheDocument();
+    expect(screen.queryByText(/ArcFaultSite/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/QuietSite/)).not.toBeInTheDocument();
+  });
+
   it("Active Alerts toggle shows only alerted sites and toggles back off", () => {
     render(
       <FleetTable

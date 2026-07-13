@@ -95,6 +95,7 @@ export default function FleetTable({
   const [search, setSearch] = useState("");
   const [linkSel, setLinkSel] = useState<string[]>([]);
   const [alertSel, setAlertSel] = useState<string[]>([]);
+  const [alertNameSel, setAlertNameSel] = useState<string[]>([]);
   const [gridSel, setGridSel] = useState<string[]>([]);
   const [stateSel, setStateSel] = useState<string[]>([]);
   // Default: worst alerts first, visibly indicated on the Alerts header.
@@ -138,6 +139,20 @@ export default function FleetTable({
       { value: "__any__", label: "Any alert" },
       { value: "__none__", label: "No alerts" },
     ];
+  }, [sites]);
+
+  // Distinct alert names present in the fleet, most-common first, so the team
+  // can filter to a specific fault (e.g. all "Solar Meter Comms" sites).
+  const alertNameOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of sites) {
+      for (const a of s.alerts) {
+        counts.set(a.alertName, (counts.get(a.alertName) || 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ value: name, label: `${name} (${count})` }));
   }, [sites]);
 
   const gridOptions = [
@@ -206,9 +221,12 @@ export default function FleetTable({
         });
       });
     }
+    if (alertNameSel.length > 0) {
+      rows = rows.filter((s) => s.alerts.some((a) => alertNameSel.includes(a.alertName)));
+    }
 
     return sortStable(rows, sortKey, sortDir);
-  }, [derived, search, linkSel, stateSel, gridSel, alertSel, sortKey, sortDir]);
+  }, [derived, search, linkSel, stateSel, gridSel, alertSel, alertNameSel, sortKey, sortDir]);
 
   useEffect(() => {
     onVisibleRowsChange?.(visible);
@@ -222,7 +240,12 @@ export default function FleetTable({
   ).length;
 
   const hasActiveFilters =
-    search || linkSel.length > 0 || alertSel.length > 0 || gridSel.length > 0 || stateSel.length > 0;
+    search ||
+    linkSel.length > 0 ||
+    alertSel.length > 0 ||
+    alertNameSel.length > 0 ||
+    gridSel.length > 0 ||
+    stateSel.length > 0;
 
   if (loading) {
     return (
@@ -295,6 +318,15 @@ export default function FleetTable({
           onChange={setAlertSel}
           accentColor="cyan"
         />
+        {alertNameOptions.length > 0 && (
+          <MultiSelectFilter
+            label="Alert Type"
+            options={alertNameOptions}
+            selected={alertNameSel}
+            onChange={setAlertNameSel}
+            accentColor="cyan"
+          />
+        )}
         <MultiSelectFilter
           label="Grid"
           options={gridOptions}
@@ -317,6 +349,7 @@ export default function FleetTable({
               setSearch("");
               setLinkSel([]);
               setAlertSel([]);
+              setAlertNameSel([]);
               setGridSel([]);
               setStateSel([]);
             }}
