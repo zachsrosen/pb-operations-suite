@@ -427,6 +427,8 @@ export interface Project {
   // Tags
   tags: string[];
   isParticipateEnergy: boolean;
+  /** Deal is a New Construction project (tag value "Waiting on Site Construction"). */
+  isNewConstruction: boolean;
   participateEnergyStatus: string | null;
   peM1Status: string | null;
   peM2Status: string | null;
@@ -1055,6 +1057,9 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
 
   const tags = parseTags(deal.tags);
   const isPE = tags.includes("Participate Energy");
+  // New Construction is the tag whose stored VALUE is "Waiting on Site
+  // Construction" (its label in HubSpot is "New Construction").
+  const isNewConstruction = tags.includes("Waiting on Site Construction");
   const isRTB = stageName === "Ready To Build";
   const isBlocked = stageName === "RTB - Blocked" || stageName === "On Hold";
   const isSchedulable = SCHEDULABLE_STAGES.includes(stageName);
@@ -1131,6 +1136,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     // Tags
     tags,
     isParticipateEnergy: isPE,
+    isNewConstruction,
     participateEnergyStatus: deal.participate_energy_status ? String(deal.participate_energy_status) : null,
     peM1Status: deal.pe_m1_status ? String(deal.pe_m1_status) : null,
     peM2Status: deal.pe_m2_status ? String(deal.pe_m2_status) : null,

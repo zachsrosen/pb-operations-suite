@@ -109,6 +109,7 @@ function ProjectPipelineFunnelInner() {
   const includeRejected = searchParams.get("pr") !== "0";
   const includeCancelled = searchParams.get("cx") !== "0";
   const includeBlocked = searchParams.get("bl") !== "0";
+  const includeNewConstruction = searchParams.get("nc") !== "0";
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
@@ -167,7 +168,7 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled, includeBlocked],
+    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled, includeBlocked, includeNewConstruction],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
@@ -178,6 +179,7 @@ function ProjectPipelineFunnelInner() {
       if (!includeRejected) params.set("rejected", "0");
       if (!includeCancelled) params.set("cancelled", "0");
       if (!includeBlocked) params.set("blocked", "0");
+      if (!includeNewConstruction) params.set("newconstruction", "0");
       if (useActiveScope) {
         // Funnel tab: live snapshot of all active deals, no date window.
         params.set("scope", "active");
@@ -335,6 +337,15 @@ function ProjectPipelineFunnelInner() {
           title={includeBlocked ? "RTB-blocked deals included — click to hide" : "RTB-blocked deals hidden — click to show"}
         >
           {includeBlocked ? "Blocked: shown" : "Blocked: hidden"}
+        </button>
+        {/* New Construction toggle */}
+        <button
+          type="button"
+          onClick={() => setParam("nc", includeNewConstruction ? "0" : "")}
+          className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeNewConstruction ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-blue-500/40 bg-blue-500/10 text-blue-300"}`}
+          title={includeNewConstruction ? "New Construction deals included — click to hide" : "New Construction deals hidden — click to show"}
+        >
+          {includeNewConstruction ? "New Construction: shown" : "New Construction: hidden"}
         </button>
         {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">
@@ -860,11 +871,13 @@ const FLAG_PILL: Record<string, string> = {
   yellow: "bg-yellow-500/20 text-yellow-300",
   red: "bg-red-500/20 text-red-300",
   orange: "bg-orange-500/20 text-orange-300",
+  blue: "bg-blue-500/20 text-blue-300",
 };
 const FLAG_TEXT: Record<string, string> = {
   yellow: "text-yellow-400/80",
   red: "text-red-400/80",
   orange: "text-orange-400/80",
+  blue: "text-blue-400/80",
 };
 
 // ── Capacity & Backlog row (Active Pipeline tab) ─────────────────────────────
