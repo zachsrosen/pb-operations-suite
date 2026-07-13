@@ -286,12 +286,17 @@ async function hsResolveOwnerIds(roster: RosterMember[], token: string): Promise
 
 interface EngagementHit { id: string; ownerId: string; ts: Date; type: EngagementType }
 
-/** Search one engagement type for all owners (chunked); ascending hs_timestamp. */
+/**
+ * Search one engagement type for all owners (chunked); ascending by
+ * `timestampProperty` (default hs_timestamp = activity/due time; the task
+ * completion pull passes hs_task_completion_date instead).
+ */
 async function searchEngagements(
   type: EngagementType,
   ownerIds: string[],
   range: DateRange,
   token: string,
+  timestampProperty = "hs_timestamp",
 ): Promise<{ hits: EngagementHit[]; capped: boolean }> {
   const hits: EngagementHit[] = [];
   let capped = false;
@@ -308,7 +313,7 @@ async function searchEngagements(
               filters: [
                 { propertyName: "hubspot_owner_id", operator: "IN", values: chunk },
                 {
-                  propertyName: "hs_timestamp",
+                  propertyName: timestampProperty,
                   operator: "BETWEEN",
                   value: String(range.from.getTime()),
                   highValue: String(range.to.getTime()),
@@ -316,8 +321,8 @@ async function searchEngagements(
               ],
             },
           ],
-          properties: ["hubspot_owner_id", "hs_timestamp"],
-          sorts: [{ propertyName: "hs_timestamp", direction: "ASCENDING" }],
+          properties: ["hubspot_owner_id", timestampProperty],
+          sorts: [{ propertyName: timestampProperty, direction: "ASCENDING" }],
           limit: 100,
           ...(after ? { after } : {}),
         }),
@@ -326,7 +331,7 @@ async function searchEngagements(
       const data = (await res.json()) as HsPage<{ id: string; properties?: Record<string, string> }>;
       for (const r of data.results ?? []) {
         const ownerId = r.properties?.hubspot_owner_id;
-        const ts = new Date(r.properties?.hs_timestamp ?? NaN);
+        const ts = new Date(r.properties?.[timestampProperty] ?? NaN);
         if (!ownerId || isNaN(+ts)) continue;
         hits.push({ id: r.id, ownerId, ts, type });
         got++;
@@ -521,11 +526,37 @@ export async function hubspotAdapter(range: DateRange, roster: RosterMember[]): 
           return { type, hits: [] as EngagementHit[] };
         }
       });
+      // Completed tasks: same search machinery, but windowed on the completion
+      // timestamp (real activity time) instead of the workflow-noise due date.
+      try {
+        const { hits, capped: hitCap } = await searchEngagements(
+          "tasks",
+          ownerList,
+          range,
+          token,
+          "hs_task_completion_date",
+        );
+        if (hitCap) capped.push("task completions");
+        for (const hit of hits) {
+          const email = emailByOwner.get(hit.ownerId);
+          if (!email) continue;
+          events.push({
+            email,
+            timestamp: hit.ts,
+            source: "hubspot",
+            kind: "task_completed",
+            objectKey: `TASK:${hit.id}`,
+          });
+        }
+      } catch (e) {
+        failed.push(`task completions (${msg(e).slice(0, 80)})`);
+      }
+
       const notes = [
         ...(capped.length ? [`search cap hit for ${capped.join(", ")}`] : []),
         ...(failed.length ? [`search failed for ${failed.join("; ")}`] : []),
       ];
-      if (notes.length) warning = `engagement pull degraded: ${notes.join("; ")} — deal counts are floor values`;
+      if (notes.length) warning = `engagement pull degraded: ${notes.join("; ")} — deal/task counts are floor values`;
 
       for (const { type, hits } of perType) {
         if (!hits.length) continue;

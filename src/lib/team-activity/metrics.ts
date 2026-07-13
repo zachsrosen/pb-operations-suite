@@ -64,6 +64,10 @@ export interface PersonDayMetric {
   dealsTouched: number;
   /** distinct deals touched regardless of stage/age (Test Pipeline excluded upstream) */
   dealsTouchedAll: number;
+  /** HubSpot tasks completed this day (bucketed by completion time, not due date) */
+  tasksCompleted: number;
+  /** HubSpot property edits this day (audit PROPERTY_VALUE/UPDATE rows, any object type) */
+  propertyUpdates: number;
 }
 
 export type Verdict = "marathon" | "full-day" | "full-day / light-app" | "light";
@@ -79,6 +83,8 @@ export interface PersonSummary {
   avgEvents: number;
   avgGoogleSpanHours: number;
   avgDealsTouched: number;
+  avgTasksCompleted: number;
+  avgPropertyUpdates: number;
   totalTalkMinutes: number;
   totalCalls: number;
   avgStartMinute: number | null;
@@ -257,6 +263,15 @@ export function computePersonDays(
     const t = talkByKey.get(key);
     const perSource = emptyPerSource();
     for (const e of evs) perSource[e.source]++;
+    let tasksCompleted = 0;
+    let propertyUpdates = 0;
+    for (const e of evs) {
+      if (e.source !== "hubspot") continue;
+      if (e.kind === "task_completed") tasksCompleted++;
+      // Each property edit emits a CRM_OBJECT/UPDATE twin row too — count only
+      // the PROPERTY_VALUE row to avoid doubling.
+      else if (e.kind === "PROPERTY_VALUE/UPDATE") propertyUpdates++;
+    }
     const activeDeals = new Set<string>();
     const allDeals = new Set<string>();
     for (const e of evs) {
@@ -289,6 +304,8 @@ export function computePersonDays(
       googleSpanHours: googleTimes.length ? (Math.max(...googleTimes) - Math.min(...googleTimes)) / 60 : 0,
       dealsTouched: activeDeals.size,
       dealsTouchedAll: allDeals.size,
+      tasksCompleted,
+      propertyUpdates,
     });
   }
   return out.sort((a, b) => (a.email === b.email ? a.day.localeCompare(b.day) : a.email.localeCompare(b.email)));
@@ -339,6 +356,8 @@ export function rollupByPerson(personDays: PersonDayMetric[], pto?: PtoDaysByEma
       avgEvents: avg(weekdays.map((d) => d.eventCount)),
       avgGoogleSpanHours,
       avgDealsTouched: avg(weekdays.map((d) => d.dealsTouched)),
+      avgTasksCompleted: avg(weekdays.map((d) => d.tasksCompleted)),
+      avgPropertyUpdates: avg(weekdays.map((d) => d.propertyUpdates)),
       totalTalkMinutes: days.reduce((s, d) => s + d.talkMinutes, 0),
       totalCalls: days.reduce((s, d) => s + d.callCount, 0),
       avgStartMinute: weekdays.length ? avg(weekdays.map((d) => d.firstMinute)) : null,

@@ -396,3 +396,46 @@ describe("matchRosterByDisplayName nameAliases", () => {
     expect(match(roster, "Alexis Severson")).toBe("alexis@photonbrothers.com");
   });
 });
+
+describe("tasksCompleted / propertyUpdates", () => {
+  const hsEv2 = (over: Partial<ActivityEvent>): ActivityEvent => ({
+    email: "pm@photonbrothers.com",
+    timestamp: new Date("2026-07-01T17:00:00Z"), // Wed, 11:00 Denver
+    source: "hubspot",
+    ...over,
+  });
+
+  it("counts task_completed and PROPERTY_VALUE/UPDATE events per day", () => {
+    const days = computePersonDays([
+      hsEv2({ kind: "task_completed", objectKey: "TASK:1" }),
+      hsEv2({ kind: "task_completed", objectKey: "TASK:2", timestamp: new Date("2026-07-01T18:00:00Z") }),
+      hsEv2({ kind: "PROPERTY_VALUE/UPDATE", objectKey: "DEAL:9" }),
+      hsEv2({ kind: "CRM_OBJECT/UPDATE", objectKey: "DEAL:9" }), // twin row, not counted
+      hsEv2({ kind: "engagement/tasks", objectKey: "DEAL:9" }), // due-date task, not a completion
+    ]);
+    expect(days).toHaveLength(1);
+    expect(days[0].tasksCompleted).toBe(2);
+    expect(days[0].propertyUpdates).toBe(1);
+  });
+
+  it("ignores non-hubspot sources for both counts", () => {
+    const days = computePersonDays([
+      hsEv2({ source: "pbops", kind: "task_completed" }),
+      hsEv2({ source: "zuper", kind: "PROPERTY_VALUE/UPDATE" }),
+    ]);
+    expect(days[0].tasksCompleted).toBe(0);
+    expect(days[0].propertyUpdates).toBe(0);
+  });
+
+  it("rolls up weekday averages", () => {
+    const days = computePersonDays([
+      hsEv2({ kind: "task_completed" }), // Wed
+      hsEv2({ kind: "task_completed", timestamp: new Date("2026-07-02T17:00:00Z") }), // Thu
+      hsEv2({ kind: "task_completed", timestamp: new Date("2026-07-02T18:00:00Z") }), // Thu
+      hsEv2({ kind: "PROPERTY_VALUE/UPDATE", timestamp: new Date("2026-07-02T19:00:00Z") }), // Thu
+    ]);
+    const [s] = rollupByPerson(days);
+    expect(s.avgTasksCompleted).toBeCloseTo(1.5); // (1 + 2) / 2
+    expect(s.avgPropertyUpdates).toBeCloseTo(0.5); // (0 + 1) / 2
+  });
+});

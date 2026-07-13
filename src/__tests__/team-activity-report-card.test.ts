@@ -13,6 +13,8 @@ const summary = (name: string, email: string, over: Partial<ReportPeriod["summar
   avgEvents: 60,
   avgGoogleSpanHours: 0,
   avgDealsTouched: 20,
+  avgTasksCompleted: 5,
+  avgPropertyUpdates: 12,
   totalTalkMinutes: 0,
   totalCalls: 0,
   avgStartMinute: 480,
@@ -40,6 +42,8 @@ const day = (email: string, name: string, d: string, over: Partial<ReportPeriod[
   googleSpanHours: 0,
   dealsTouched: 20,
   dealsTouchedAll: 22,
+  tasksCompleted: 5,
+  propertyUpdates: 12,
   ...over,
 });
 
@@ -122,7 +126,7 @@ describe("buildReportCard", () => {
 
   it("null previous drops parentheticals and adds the comparison caveat", () => {
     const text = buildReportCard(period(), null);
-    expect(text).toContain("Kaitlyn Martinez: 20 deals/day, 6.2h active/day");
+    expect(text).toContain("Kaitlyn Martinez: 20 deals/day, 5 tasks/day, 12 property updates/day, 6.2h active/day");
     expect(text).not.toContain("(up from");
     expect(text).toContain("Prior-period comparison unavailable for this run.");
   });
@@ -139,9 +143,9 @@ describe("buildReportCard", () => {
       }),
       null,
     );
-    expect(text).toContain("No Pto: 20 deals/day, 6.2h active/day, no PTO");
-    expect(text).toContain("Some Pto: 20 deals/day, 6.2h active/day, 2 PTO days");
-    expect(text).toContain("Half Pto: 20 deals/day, 6.2h active/day, 6 of 10 weekdays on PTO");
+    expect(text).toContain("No Pto: 20 deals/day, 5 tasks/day, 12 property updates/day, 6.2h active/day, no PTO");
+    expect(text).toContain("Some Pto: 20 deals/day, 5 tasks/day, 12 property updates/day, 6.2h active/day, 2 PTO days");
+    expect(text).toContain("Half Pto: 20 deals/day, 5 tasks/day, 12 property updates/day, 6.2h active/day, 6 of 10 weekdays on PTO");
   });
 
   it("roster members without a summary row: full-period PTO vs no tracked activity", () => {
@@ -289,6 +293,14 @@ describe("buildReportCard", () => {
     );
     expect(text).not.toContain("—");
     expect(text).not.toContain("@");
+  });
+
+  it("renders zero tasks/props explicitly", () => {
+    const text = buildReportCard(
+      period({ summaries: [summary("Zero Person", "z@x.com", { avgTasksCompleted: 0, avgPropertyUpdates: 0 })] , roster: [rosterEntry("Zero Person", "z@x.com")] }),
+      null,
+    );
+    expect(text).toContain("Zero Person: 20 deals/day, 0 tasks/day, 0 property updates/day");
   });
 
   it("orders ranked people by deals/day descending", () => {
