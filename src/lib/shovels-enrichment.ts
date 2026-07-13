@@ -405,7 +405,11 @@ export async function enrichPropertyFromShovels(
       if (propData.squareFootage != null) hubspotProps.square_footage = propData.squareFootage;
       if (propData.lotSizeSqft != null) hubspotProps.lot_size_sqft = propData.lotSizeSqft;
       if (propData.stories != null) hubspotProps.stories = propData.stories;
-      if (propData.propertyType != null) hubspotProps.property_type = propData.propertyType;
+      // NOTE: property_type intentionally NOT pushed. HubSpot's property_type is an
+      // enumeration [residential, multi_family, commercial, land, other], but Shovels
+      // returns 87+ freeform compound values ("residential / Single Family"), which
+      // HubSpot rejects — and one invalid value 400s the whole batch. Needs a mapping
+      // decision before it can be pushed; propData.propertyType still persists to the DB.
       if (propData.assessedValue != null) hubspotProps.assessed_value = propData.assessedValue;
       if (propData.publicRecordOwnerName != null) hubspotProps.public_record_owner_name = propData.publicRecordOwnerName;
       hubspotProps.solar_permit_count = solarPermitCount;

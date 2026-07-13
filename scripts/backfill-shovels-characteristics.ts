@@ -50,7 +50,8 @@ async function main() {
     if (p.squareFootage != null) props.square_footage = p.squareFootage;
     if (p.lotSizeSqft != null) props.lot_size_sqft = p.lotSizeSqft;
     if (p.stories != null) props.stories = p.stories;
-    if (p.propertyType != null) props.property_type = p.propertyType;
+    // property_type intentionally NOT pushed — see shovels-enrichment.ts note. HubSpot's
+    // enumeration rejects Shovels' 87+ freeform values and 400s the whole batch.
     if (p.assessedValue != null) props.assessed_value = p.assessedValue;
     if (p.publicRecordOwnerName != null) props.public_record_owner_name = p.publicRecordOwnerName;
     // solar_permit_count is always meaningful (0 is a real value) when we have a count.
