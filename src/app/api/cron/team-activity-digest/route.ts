@@ -30,8 +30,11 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const weekKey = isoWeekKey(now);
 
-  // Idempotency: atomic claim, so the Tuesday retry (or a manual re-hit) never
-  // double-sends once Monday succeeds.
+  // Idempotency: atomic claim, so the Tuesday retry never double-sends once
+  // Monday succeeds. But a Monday that TIMED OUT/crashed leaves a stale
+  // "processing" row (the catch below can't run) — the Tuesday retry must be
+  // able to reclaim that, or the week's digest is silently lost. So on
+  // conflict: skip only if already "completed"; otherwise reclaim and re-run.
   try {
     await prisma.idempotencyKey.create({
       data: {
@@ -42,12 +45,21 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
-    if ((err as { code?: string }).code === "P2002") {
-      return NextResponse.json({ ok: true, skipped: "already handled this week", weekKey });
+    if ((err as { code?: string }).code !== "P2002") throw err;
+    const existing = await prisma.idempotencyKey.findUnique({
+      where: { key_scope: { key: weekKey, scope: SCOPE } },
+    });
+    if (existing?.status === "completed") {
+      return NextResponse.json({ ok: true, skipped: "already sent this week", weekKey });
     }
-    throw err;
+    // Stale "processing" (timed-out Monday) or "failed" — reclaim for this run.
+    await prisma.idempotencyKey.update({
+      where: { key_scope: { key: weekKey, scope: SCOPE } },
+      data: { status: "processing", expiresAt: new Date(now.getTime() + 7 * DAY_MS) },
+    });
   }
 
+  let sent = false;
   try {
     const { current, previous } = denverWeekBounds(now);
     const reportsAdmin = await getReportsAdminEmail();
@@ -85,7 +97,10 @@ export async function GET(request: NextRequest) {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")}</pre>`;
 
-    await sendEmailMessage({
+    // sendEmailMessage does NOT throw on delivery failure — it returns
+    // { success: false }. Treat that as a failure so the key is released and
+    // the Tuesday retry re-sends (otherwise a failed send is marked completed).
+    const result = await sendEmailMessage({
       to: RECIPIENT,
       subject,
       text: card,
@@ -94,6 +109,8 @@ export async function GET(request: NextRequest) {
       debugFallbackBody: card,
       suppressConfiguredBcc: true, // per-person productivity data — recipient only
     });
+    if (!result.success) throw new Error(`email send failed: ${result.error ?? "unknown"}`);
+    sent = true;
 
     await prisma.idempotencyKey.update({
       where: { key_scope: { key: weekKey, scope: SCOPE } },
@@ -101,7 +118,16 @@ export async function GET(request: NextRequest) {
     });
     return NextResponse.json({ ok: true, weekKey, sent: RECIPIENT, subject });
   } catch (e) {
-    // Delete the claim so the Tuesday retry / a manual re-hit can re-run.
+    if (sent) {
+      // Email already went out; a later failure (e.g. the completion update)
+      // must NOT delete the key, or the retry would double-send. Best-effort
+      // mark completed and report success.
+      await prisma.idempotencyKey
+        .update({ where: { key_scope: { key: weekKey, scope: SCOPE } }, data: { status: "completed" } })
+        .catch(() => {});
+      return NextResponse.json({ ok: true, weekKey, sent: RECIPIENT, warning: "post-send step failed" });
+    }
+    // Not sent — release the claim so the Tuesday retry / a manual re-hit re-runs.
     await prisma.idempotencyKey
       .delete({ where: { key_scope: { key: weekKey, scope: SCOPE } } })
       .catch(() => {});
