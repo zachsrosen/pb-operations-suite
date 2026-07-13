@@ -400,6 +400,7 @@ const STAGE_STATUS_SOURCE: Record<string, { field: keyof Project; labelKey: stri
   "20440342": { field: "constructionStatus", labelKey: "install_status" },          // Construction
   "22580872": { field: "finalInspectionStatus", labelKey: "final_inspection_status" }, // Inspection
   "20461940": { field: "ptoStatus", labelKey: "pto_status" },                       // Permission To Operate
+  "24743347": { field: "closeOutStatus", labelKey: "close_out_status" },            // Close Out
 };
 
 function todayStr(): string {
@@ -1445,7 +1446,7 @@ export function buildProjectFunnelData(
       if (sp === 9) {
         const waitSince = p.ptoGrantedDate || p.closeDate!;
         drillDown.awaitingCloseOut.push(
-          toBacklogRow(p, waitSince, null)
+          toBacklogRow(p, waitSince, statusLabel("close_out_status", p.closeOutStatus))
         );
       }
     }

@@ -215,6 +215,13 @@ const LOAN_STATUS: StatusMap = {
   "Waiting on Approval": "Waiting on Approval",
 };
 
+// close_out_status is a radio whose option values already equal their labels.
+const CLOSE_OUT_STATUS: StatusMap = {
+  "Waiting on Payment": "Waiting on Payment",
+  "Ready to Close Out": "Ready to Close Out",
+  "Closed Out": "Closed Out",
+};
+
 const STATUS_MAPS: Record<string, StatusMap> = {
   site_survey_status: SITE_SURVEY_STATUS,
   layout_status: LAYOUT_STATUS,
@@ -225,6 +232,7 @@ const STATUS_MAPS: Record<string, StatusMap> = {
   pto_status: PTO_STATUS,
   interconnection_status: INTERCONNECTION_STATUS,
   loan_status: LOAN_STATUS,
+  close_out_status: CLOSE_OUT_STATUS,
 };
 
 /**

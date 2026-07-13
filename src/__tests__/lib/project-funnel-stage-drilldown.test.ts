@@ -93,4 +93,26 @@ describe("project funnel — Current Pipeline Position drill-down rows", () => {
     expect(row.status).toBe("Cancelled");
     expect(row.flag).toMatchObject({ label: "Cancelled", parked: true });
   });
+
+  it("uses close_out_status for the Close Out stage row and the Awaiting Close Out backlog", () => {
+    const result = buildProjectFunnelData(
+      [
+        makeProject({
+          stageId: "24743347", // Close Out
+          daysSinceStageMovement: 12,
+          ptoGrantedDate: iso(30),
+          closeOutStatus: "Waiting on Payment",
+        }),
+      ],
+      6
+    );
+    // Current Pipeline Position: the stage row + its status breakdown.
+    const stage = result.stageDistribution.find((s) => s.stageId === "24743347");
+    expect(stage).toBeDefined();
+    expect(stage!.deals[0].status).toBe("Waiting on Payment");
+    expect(stage!.statusBreakdown).toEqual([{ status: "Waiting on Payment", count: 1 }]);
+    // Awaiting Close Out backlog bucket carries the same status.
+    expect(result.drillDown.awaitingCloseOut).toHaveLength(1);
+    expect(result.drillDown.awaitingCloseOut[0].status).toBe("Waiting on Payment");
+  });
 });

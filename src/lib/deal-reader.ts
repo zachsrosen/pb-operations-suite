@@ -308,6 +308,10 @@ export function dealToProject(deal: PrismaDeal): Project {
     ptoSubmitDate: dateToDateString(deal.ptoStartDate),
     ptoGrantedDate: dateToDateString(deal.ptoCompletionDate),
     ptoStatus: deal.ptoStatus ?? null,
+    // The Deal mirror doesn't sync close_out_status yet; the live HubSpot fetch
+    // (fetchAllProjects) populates it for the funnel page. Null here means the
+    // email digest just omits the close-out sub-status, same as before.
+    closeOutStatus: null,
 
     // Project complete / cancelled (not yet in Deal cache — populated only via HubSpot API path)
     projectCompleteDate: null,
