@@ -167,7 +167,7 @@ export interface ProjectFunnelDrillDownDeal {
 export interface ProjectFunnelDrillDownFlag {
   /** Short label for the pill, e.g. "On hold" | "RTB blocked" | "Sales change". */
   label: string;
-  tone: "yellow" | "red" | "orange";
+  tone: "yellow" | "red" | "orange" | "blue";
   /** Primary reason (dropdown reason / blocked reason / requested change). */
   reason: string | null;
   /** Optional secondary free-text note (on-hold notes). */
@@ -498,6 +498,12 @@ function drillDownFlag(p: Project): ProjectFunnelDrillDownFlag | null {
     const reason = p.salesChangeOrderNotes || p.salesCommunicationReason || p.pbShitShowReason || null;
     return { label: "Sales change", tone: "orange", reason, note: null, parked: false };
   }
+  // Lowest priority: a New Construction deal with no more urgent flag. Parked —
+  // it's waiting on the home being built (external), so its long wait shouldn't
+  // skew the stage average or read as "late". A real blocker above wins.
+  if (p.isNewConstruction) {
+    return { label: "New Construction", tone: "blue", reason: null, note: null, parked: true };
+  }
   return null;
 }
 
@@ -751,17 +757,18 @@ export function buildProjectFunnelData(
    * when any milestone happened — a snapshot of the live pipeline. Default
    * "cohort" windows deals by close date as before.
    */
-  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean; includeRejected?: boolean; includeCancelled?: boolean; includeBlocked?: boolean; cohortGranularity?: "week" | "month" }
+  options?: { scope?: "cohort" | "active"; pe?: "all" | "pe" | "non-pe"; includeOnHold?: boolean; includeRejected?: boolean; includeCancelled?: boolean; includeBlocked?: boolean; includeNewConstruction?: boolean; cohortGranularity?: "week" | "month" }
 ): ProjectFunnelResponse {
   // Global deal-set filters applied up front so they flow through every section
   // (summary, backlog, capacity, forecast, …): Participate-Energy, on-hold,
-  // project-rejected, cancelled, and RTB-blocked.
+  // project-rejected, cancelled, RTB-blocked, and New Construction.
   const peFilter = options?.pe ?? "all";
   const includeOnHold = options?.includeOnHold !== false;
   const includeRejected = options?.includeRejected !== false;
   const includeCancelled = options?.includeCancelled !== false;
   const includeBlocked = options?.includeBlocked !== false;
-  if (peFilter !== "all" || !includeOnHold || !includeRejected || !includeCancelled || !includeBlocked) {
+  const includeNewConstruction = options?.includeNewConstruction !== false;
+  if (peFilter !== "all" || !includeOnHold || !includeRejected || !includeCancelled || !includeBlocked || !includeNewConstruction) {
     projects = projects.filter((p) => {
       if (peFilter === "pe" && !p.isParticipateEnergy) return false;
       if (peFilter === "non-pe" && p.isParticipateEnergy) return false;
@@ -769,6 +776,7 @@ export function buildProjectFunnelData(
       if (!includeRejected && p.stageId === PROJECT_REJECTED_STAGE_ID) return false;
       if (!includeCancelled && p.stageId === CANCELLED_STAGE_ID) return false;
       if (!includeBlocked && p.stageId === RTB_BLOCKED_STAGE_ID) return false;
+      if (!includeNewConstruction && p.isNewConstruction) return false;
       return true;
     });
   }

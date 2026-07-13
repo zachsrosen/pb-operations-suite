@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
     const includeCancelled = searchParams.get("cancelled") !== "0";
     // blocked=0 hides RTB-blocked deals; default includes them.
     const includeBlocked = searchParams.get("blocked") !== "0";
+    // newconstruction=0 hides New Construction deals; default includes them.
+    const includeNewConstruction = searchParams.get("newconstruction") !== "0";
     // granularity=month bins the cohort/lifecycle charts by month; default week.
     const cohortGranularity = searchParams.get("granularity") === "month" ? "month" : "week";
 
@@ -73,7 +75,7 @@ export async function GET(request: NextRequest) {
       locations.length > 0 ? locations : undefined,
       range,
       filters,
-      { scope, pe, includeOnHold, includeRejected, includeCancelled, includeBlocked, cohortGranularity }
+      { scope, pe, includeOnHold, includeRejected, includeCancelled, includeBlocked, includeNewConstruction, cohortGranularity }
     );
 
     return NextResponse.json({

@@ -222,6 +222,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     // Tags
     tags,
     isParticipateEnergy: isPE,
+    isNewConstruction: tags.includes("Waiting on Site Construction"),
     participateEnergyStatus: deal.participateEnergyStatus ?? null,
     // PE milestone statuses aren't mirrored into the DB cache; only the live
     // HubSpot fetch (fetchAllProjects / fetchDealsByPipelines) carries them.
