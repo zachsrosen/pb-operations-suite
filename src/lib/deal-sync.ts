@@ -60,9 +60,40 @@ function getAccessToken(): string {
 }
 
 /** Safe JSON comparison — handles Dates, nulls, and objects */
+// Stable (sorted-key) JSON so a field like departmentLeads doesn't read as
+// "changed" just because its object keys serialize in a different order.
+function stableStringify(val: unknown): string {
+  if (val === null || val === undefined) return "null";
+  if (val instanceof Date) return JSON.stringify(val.toISOString());
+  if (typeof val !== "object") return JSON.stringify(val);
+  if (Array.isArray(val)) return `[${val.map(stableStringify).join(",")}]`;
+  const o = val as Record<string, unknown>;
+  return `{${Object.keys(o)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`)
+    .join(",")}}`;
+}
+
 function valueToComparable(val: unknown): string {
   if (val instanceof Date) return val.toISOString();
   if (val === null || val === undefined) return "null";
+  // HubSpot numerics arrive as numbers but several DB columns store them as
+  // strings ("9758"), so a fresh sync would diff "9758" vs 9758 forever. Compare
+  // numbers and cleanly-numeric strings by their numeric value.
+  if (typeof val === "number") return Number.isFinite(val) ? String(val) : "null";
+  if (typeof val === "string") {
+    const t = val.trim();
+    if (t !== "" && Number.isFinite(Number(t)) && String(Number(t)) === t) {
+      return String(Number(t));
+    }
+    return JSON.stringify(val);
+  }
+  // Prisma Decimal (amount, systemSizeKw*, etc.) is an object; compare by number.
+  if (val && typeof val === "object" && typeof (val as { toNumber?: unknown }).toNumber === "function") {
+    const n = Number((val as { toString(): string }).toString());
+    return Number.isFinite(n) ? String(n) : "null";
+  }
+  if (typeof val === "object") return stableStringify(val);
   return JSON.stringify(val);
 }
 
@@ -808,11 +839,14 @@ export async function batchSyncPipeline(
     // Track max observed hubspotUpdatedAt for watermark
     let maxUpdatedAt: Date | null = null;
 
-    // Process each deal
-    console.log(`[DealSync] Upserting ${dealPropertiesMap.size} deals`);
+    // Phase 3: build every record first, then write in BULK. The old path did
+    // findUnique + update + a DealSyncLog row PER DEAL (even unchanged ones),
+    // so a full 6,886-deal sync took ~1.5h and couldn't finish inside a 300s
+    // cron. Now we diff against a single findMany and write with
+    // createMany / chunked $transaction / updateMany.
+    console.log(`[DealSync] Building ${dealPropertiesMap.size} records`);
+    const built: Array<{ hsId: string; data: Record<string, unknown> }> = [];
     for (const [hsId, properties] of dealPropertiesMap) {
-      const dealStart = Date.now();
-
       try {
         // Map properties
         const mapped = mapHubSpotToDeal(properties);
@@ -881,92 +915,11 @@ export async function batchSyncPipeline(
           rawProperties: properties,
         };
 
-        // Check for existing deal and diff
-        const existing = await prisma.deal.findUnique({
-          where: { hubspotDealId: hsId },
-        });
-
-        if (existing) {
-          // Build a comparable snapshot from existing record
-          const existingSnapshot: Record<string, unknown> = {};
-          const incomingSnapshot: Record<string, unknown> = {};
-
-          for (const key of Object.keys(upsertData)) {
-            if (
-              key === "lastSyncedAt" ||
-              key === "syncSource" ||
-              key === "rawProperties"
-            )
-              continue;
-            existingSnapshot[key] = (existing as Record<string, unknown>)[key];
-            incomingSnapshot[key] = upsertData[key];
-          }
-
-          const diff = diffDealProperties(existingSnapshot, incomingSnapshot);
-
-          if (Object.keys(diff).length === 0) {
-            // No changes — update lastSyncedAt only
-            await prisma.deal.update({
-              where: { hubspotDealId: hsId },
-              data: { lastSyncedAt: new Date() },
-            });
-            result.skipped++;
-
-            // Log skip
-            await prisma.dealSyncLog.create({
-              data: {
-                dealId: existing.id,
-                hubspotDealId: hsId,
-                syncType,
-                source: `batch:${pipeline}`,
-                status: "SKIPPED",
-                durationMs: Date.now() - dealStart,
-              },
-            });
-          } else {
-            // Changes detected — upsert
-            await prisma.deal.update({
-              where: { hubspotDealId: hsId },
-              data: upsertData as Parameters<typeof prisma.deal.update>[0]["data"],
-            });
-            result.upserted++;
-
-            // Log changes
-            await prisma.dealSyncLog.create({
-              data: {
-                dealId: existing.id,
-                hubspotDealId: hsId,
-                syncType,
-                source: `batch:${pipeline}`,
-                status: "SUCCESS",
-                changesDetected: JSON.parse(JSON.stringify(diff)),
-                durationMs: Date.now() - dealStart,
-              },
-            });
-          }
-        } else {
-          // New deal — create
-          // Ensure required dealName has a fallback
-          if (!upsertData.dealName) {
-            upsertData.dealName = `Deal ${hsId}`;
-          }
-
-          const created = await prisma.deal.create({
-            data: upsertData as Parameters<typeof prisma.deal.create>[0]["data"],
-          });
-          result.upserted++;
-
-          await prisma.dealSyncLog.create({
-            data: {
-              dealId: created.id,
-              hubspotDealId: hsId,
-              syncType,
-              source: `batch:${pipeline}`,
-              status: "SUCCESS",
-              durationMs: Date.now() - dealStart,
-            },
-          });
+        // Ensure required dealName has a fallback (used if this becomes an insert).
+        if (!upsertData.dealName) {
+          upsertData.dealName = `Deal ${hsId}`;
         }
+        built.push({ hsId, data: upsertData });
 
         // Track max watermark
         const updatedAt = mapped.hubspotUpdatedAt as Date | null;
@@ -975,7 +928,7 @@ export async function batchSyncPipeline(
         }
       } catch (err) {
         result.errors++;
-        console.error(`[DealSync] Error processing deal ${hsId}:`, err);
+        console.error(`[DealSync] Error building deal ${hsId}:`, err);
 
         try {
           await prisma.dealSyncLog.create({
@@ -986,7 +939,7 @@ export async function batchSyncPipeline(
               status: "FAILED",
               errorMessage:
                 err instanceof Error ? err.message : String(err),
-              durationMs: Date.now() - dealStart,
+              durationMs: 0,
             },
           });
         } catch {
@@ -995,7 +948,122 @@ export async function batchSyncPipeline(
       }
     }
 
-    // Deletion detection (full sync only)
+    // ── Phase 4: bulk write ────────────────────────────────────────────────
+    // Diff every built record against the existing rows fetched in ONE query,
+    // then write in bulk. Unchanged deals get a single updateMany to touch
+    // lastSyncedAt (and are no longer logged — that was the write amplification
+    // that made a full sync take ~1.5h). Chunked so no single statement is huge.
+    const chunk = <T>(arr: T[], size: number): T[][] => {
+      const out: T[][] = [];
+      for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+      return out;
+    };
+    const now = new Date();
+
+    const existingRows = await prisma.deal.findMany({
+      where: { hubspotDealId: { in: built.map((b) => b.hsId) } },
+    });
+    const existingByHs = new Map(existingRows.map((d) => [d.hubspotDealId, d]));
+
+    const toCreate: Record<string, unknown>[] = [];
+    const toUpdate: Array<{ hsId: string; dealId: string; data: Record<string, unknown>; diff: Record<string, unknown> }> = [];
+    const unchangedIds: string[] = [];
+
+    for (const b of built) {
+      const existing = existingByHs.get(b.hsId);
+      if (!existing) {
+        toCreate.push(b.data);
+        continue;
+      }
+      const existingSnapshot: Record<string, unknown> = {};
+      const incomingSnapshot: Record<string, unknown> = {};
+      for (const key of Object.keys(b.data)) {
+        if (key === "lastSyncedAt" || key === "syncSource" || key === "rawProperties") continue;
+        existingSnapshot[key] = (existing as Record<string, unknown>)[key];
+        incomingSnapshot[key] = b.data[key];
+      }
+      const diff = diffDealProperties(existingSnapshot, incomingSnapshot);
+      if (Object.keys(diff).length === 0) {
+        unchangedIds.push(b.hsId);
+      } else {
+        toUpdate.push({ hsId: b.hsId, dealId: existing.id, data: b.data, diff });
+      }
+    }
+
+    // Creates — createMany, then look up the new ids to log them.
+    for (const c of chunk(toCreate, 500)) {
+      try {
+        await prisma.deal.createMany({
+          data: c as NonNullable<Parameters<typeof prisma.deal.createMany>[0]>["data"],
+          skipDuplicates: true,
+        });
+        result.upserted += c.length;
+      } catch (err) {
+        result.errors += c.length;
+        console.error(`[DealSync] createMany chunk failed for ${pipeline}:`, err);
+      }
+    }
+    if (toCreate.length > 0) {
+      const createdHsIds = toCreate.map((c) => String(c.hubspotDealId));
+      const createdRows = await prisma.deal.findMany({
+        where: { hubspotDealId: { in: createdHsIds } },
+        select: { id: true, hubspotDealId: true },
+      });
+      const createLogs = createdRows.map((r) => ({
+        dealId: r.id,
+        hubspotDealId: r.hubspotDealId,
+        syncType,
+        source: `batch:${pipeline}`,
+        status: "SUCCESS" as const,
+        durationMs: 0,
+      }));
+      for (const lc of chunk(createLogs, 1000)) await prisma.dealSyncLog.createMany({ data: lc });
+    }
+
+    // Updates — chunked $transaction. Keep chunks small and raise the txn
+    // timeout above Prisma's 5s default (100-update chunks blew it on a cold,
+    // all-changed pipeline; steady-state most deals are unchanged and skip this).
+    for (const c of chunk(toUpdate, 50)) {
+      try {
+        await prisma.$transaction(
+          async (tx) => {
+            for (const u of c) {
+              await tx.deal.update({
+                where: { hubspotDealId: u.hsId },
+                data: u.data as Parameters<typeof prisma.deal.update>[0]["data"],
+              });
+            }
+          },
+          { timeout: 60_000, maxWait: 15_000 }
+        );
+        result.upserted += c.length;
+        await prisma.dealSyncLog.createMany({
+          data: c.map((u) => ({
+            dealId: u.dealId,
+            hubspotDealId: u.hsId,
+            syncType,
+            source: `batch:${pipeline}`,
+            status: "SUCCESS" as const,
+            changesDetected: JSON.parse(JSON.stringify(u.diff)),
+            durationMs: 0,
+          })),
+        });
+      } catch (err) {
+        result.errors += c.length;
+        console.error(`[DealSync] update chunk failed for ${pipeline}:`, err);
+      }
+    }
+
+    // Unchanged — one updateMany per chunk to touch lastSyncedAt; not logged.
+    for (const c of chunk(unchangedIds, 1000)) {
+      await prisma.deal.updateMany({
+        where: { hubspotDealId: { in: c } },
+        data: { lastSyncedAt: now },
+      });
+    }
+    result.skipped += unchangedIds.length;
+
+    // Deletion detection (full sync only) — bulk updateMany for the missing set.
     if (!isIncremental) {
       try {
         const fetchedIds = new Set(dealPropertiesMap.keys());
@@ -1003,28 +1071,25 @@ export async function batchSyncPipeline(
           where: { pipeline, stage: { not: "DELETED" } },
           select: { id: true, hubspotDealId: true },
         });
-
-        for (const dbDeal of dbDeals) {
-          if (!fetchedIds.has(dbDeal.hubspotDealId)) {
-            await prisma.deal.update({
-              where: { id: dbDeal.id },
-              data: { stage: "DELETED", lastSyncedAt: new Date() },
-            });
-            result.deleted++;
-
-            await prisma.dealSyncLog.create({
-              data: {
-                dealId: dbDeal.id,
-                hubspotDealId: dbDeal.hubspotDealId,
-                syncType,
-                source: `batch:${pipeline}`,
-                status: "SUCCESS",
-                changesDetected: { stage: ["(previous)", "DELETED"] } as Record<string, string[]>,
-                durationMs: 0,
-              },
-            });
-          }
+        const missing = dbDeals.filter((d) => !fetchedIds.has(d.hubspotDealId));
+        for (const c of chunk(missing, 500)) {
+          await prisma.deal.updateMany({
+            where: { id: { in: c.map((d) => d.id) } },
+            data: { stage: "DELETED", lastSyncedAt: now },
+          });
+          await prisma.dealSyncLog.createMany({
+            data: c.map((d) => ({
+              dealId: d.id,
+              hubspotDealId: d.hubspotDealId,
+              syncType,
+              source: `batch:${pipeline}`,
+              status: "SUCCESS" as const,
+              changesDetected: { stage: ["(previous)", "DELETED"] } as Record<string, string[]>,
+              durationMs: 0,
+            })),
+          });
         }
+        result.deleted += missing.length;
       } catch (err) {
         console.error(`[DealSync] Deletion detection error for ${pipeline}:`, err);
       }
