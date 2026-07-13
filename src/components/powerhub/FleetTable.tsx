@@ -520,9 +520,24 @@ export default function FleetTable({
                             </span>
                           );
                         })}
-                        {sortedAlerts.length === 0 && (
-                          <span className="text-muted">—</span>
-                        )}
+                        {sortedAlerts.length === 0 &&
+                          (site.portalUrl ? (
+                            // No active alerts — still offer a jump to the site's
+                            // live monitoring so every row has a path to it.
+                            <a
+                              href={site.portalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 text-xs text-muted hover:text-foreground transition-colors"
+                              title="Open live monitoring"
+                            >
+                              Monitor
+                              <span aria-hidden="true">↗</span>
+                            </a>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          ))}
                       </div>
                     </td>
                     <td className="py-3 pr-4">
