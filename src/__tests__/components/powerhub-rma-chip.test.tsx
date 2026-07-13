@@ -48,6 +48,30 @@ describe("FleetTable RMA alert chip", () => {
     expect(screen.getByText("RMA Gateway RMA")).toBeInTheDocument();
   });
 
+  it("renders every alert chip (no +N overflow) for sites with many alerts", () => {
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            alerts: [
+              { id: "a1", severity: "CRITICAL", alertName: "System shutdown" },
+              { id: "a2", severity: "PERFORMANCE", alertName: "Solar Meter Comms" },
+              { id: "a3", severity: "PERFORMANCE", alertName: "Battery Comms" },
+              { id: "a4", severity: "PERFORMANCE", alertName: "No Solar Production" },
+            ],
+          }),
+        ]}
+      />
+    );
+
+    expect(screen.getByText("System shutdown")).toBeInTheDocument();
+    expect(screen.getByText("Solar Meter Comms")).toBeInTheDocument();
+    expect(screen.getByText("Battery Comms")).toBeInTheDocument();
+    expect(screen.getByText("No Solar Production")).toBeInTheDocument();
+    // No truncation indicator like "+2"
+    expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
+  });
+
   it("shows no RMA chip when there are none", () => {
     render(
       <FleetTable
