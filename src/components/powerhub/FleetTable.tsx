@@ -490,7 +490,7 @@ export default function FleetTable({
                     </td>
                     <td className="py-3 pr-4" title={alertTooltip || undefined}>
                       <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
-                        {sortedAlerts.slice(0, 2).map((alert) => (
+                        {sortedAlerts.map((alert) => (
                           <span
                             key={alert.id}
                             className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium max-w-[150px] ${
@@ -503,11 +503,6 @@ export default function FleetTable({
                             </span>
                           </span>
                         ))}
-                        {sortedAlerts.length > 2 && (
-                          <span className="text-xs text-muted">
-                            +{sortedAlerts.length - 2}
-                          </span>
-                        )}
                         {sortedAlerts.length === 0 && (
                           <span className="text-muted">—</span>
                         )}
