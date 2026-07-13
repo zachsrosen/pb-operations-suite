@@ -390,7 +390,8 @@ export default function FleetTable({
               <SortHeader label="Size" field="_sizeKw" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Capacity" field="_battKwh" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
               <SortHeader label="Installed" field="_installDate" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
-              <SortHeader label="Last Report" field="_lastReport" sortKey={sortKey} sortDir={sortDir} onSort={toggle} last />
+              <SortHeader label="Last Report" field="_lastReport" sortKey={sortKey} sortDir={sortDir} onSort={toggle} />
+              <th className="pb-3 font-medium">Monitor</th>
             </tr>
           </thead>
           <tbody>
@@ -493,51 +494,23 @@ export default function FleetTable({
                     <td className="py-3 pr-4" title={alertTooltip || undefined}>
                       <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
                         {sortedAlerts.map((alert) => {
-                          const chipClass = `inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-medium max-w-[160px] ${
-                            ALERT_CHIP_COLORS[alert.severity] || ALERT_CHIP_COLORS.INFORMATIONAL
-                          }`;
                           const label =
                             alert.severity === "RMA" ? `RMA ${alert.alertName}` : alert.alertName;
-                          // Each alert links to the site's Tesla PowerHub live-monitoring
-                          // page so you can jump straight from the alert to the live data.
-                          return site.portalUrl ? (
-                            <a
+                          return (
+                            <span
                               key={alert.id}
-                              href={site.portalUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className={`${chipClass} hover:opacity-80 transition-opacity`}
-                              title={`Open live monitoring — ${label}`}
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium max-w-[160px] ${
+                                ALERT_CHIP_COLORS[alert.severity] || ALERT_CHIP_COLORS.INFORMATIONAL
+                              }`}
                             >
                               {/* truncate needs a block/inline-block child */}
-                              <span className="truncate">{label}</span>
-                              <span aria-hidden="true">↗</span>
-                            </a>
-                          ) : (
-                            <span key={alert.id} className={chipClass}>
                               <span className="truncate">{label}</span>
                             </span>
                           );
                         })}
-                        {sortedAlerts.length === 0 &&
-                          (site.portalUrl ? (
-                            // No active alerts — still offer a jump to the site's
-                            // live monitoring so every row has a path to it.
-                            <a
-                              href={site.portalUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-0.5 text-xs text-muted hover:text-foreground transition-colors"
-                              title="Open live monitoring"
-                            >
-                              Monitor
-                              <span aria-hidden="true">↗</span>
-                            </a>
-                          ) : (
-                            <span className="text-muted">—</span>
-                          ))}
+                        {sortedAlerts.length === 0 && (
+                          <span className="text-muted">—</span>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 pr-4">
@@ -574,7 +547,7 @@ export default function FleetTable({
                     <td className="py-3 pr-4 text-xs text-muted">
                       {formatInstallDate(site.installDate)}
                     </td>
-                    <td className="py-3 text-xs">
+                    <td className="py-3 pr-4 text-xs">
                       {(() => {
                         const lr = formatLastReport(site._lastReport);
                         return lr ? (
@@ -589,10 +562,27 @@ export default function FleetTable({
                         );
                       })()}
                     </td>
+                    <td className="py-3 text-xs">
+                      {site.portalUrl ? (
+                        <a
+                          href={site.portalUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-0.5 text-cyan-500 hover:underline"
+                          title="Open live monitoring in Tesla PowerHub"
+                        >
+                          Monitor
+                          <span aria-hidden="true">↗</span>
+                        </a>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={11} className="bg-surface-2 p-4">
+                      <td colSpan={12} className="bg-surface-2 p-4">
                         <SiteDetail siteId={site.siteId} />
                       </td>
                     </tr>
@@ -603,7 +593,7 @@ export default function FleetTable({
             {visible.length === 0 && (
               <tr>
                 <td
-                  colSpan={11}
+                  colSpan={12}
                   className="py-8 text-center text-muted"
                 >
                   {hasActiveFilters

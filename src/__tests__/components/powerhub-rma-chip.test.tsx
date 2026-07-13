@@ -73,7 +73,7 @@ describe("FleetTable RMA alert chip", () => {
     expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
   });
 
-  it("links each alert chip to the site's Tesla monitoring portal", () => {
+  it("keeps alert chips as plain status (not links)", () => {
     render(
       <FleetTable
         sites={[
@@ -87,49 +87,41 @@ describe("FleetTable RMA alert chip", () => {
       />
     );
 
+    // Alerts are separate from the Monitor link — chips are not anchors.
+    expect(screen.getByText("System shutdown").closest("a")).toBeNull();
+    expect(screen.getByText("Battery Comms").closest("a")).toBeNull();
+  });
+
+  it("shows the same Monitor link on every site (alerted and quiet)", () => {
     const portal = "https://powerhub.energy.tesla.com/site/11111111-2222-3333-4444-555555555555";
-    for (const name of ["System shutdown", "Battery Comms"]) {
-      const link = screen.getByText(name).closest("a");
-      expect(link).not.toBeNull();
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            siteId: "site-a",
+            alerts: [{ id: "a1", severity: "CRITICAL", alertName: "System shutdown" }],
+          }),
+          makeSite({ siteId: "site-b", alerts: [] }),
+        ]}
+      />
+    );
+
+    // getAllByRole excludes the "Monitor" column header (a <th>, not a link).
+    const links = screen.getAllByRole("link", { name: /Monitor/ });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
       expect(link).toHaveAttribute("href", portal);
       expect(link).toHaveAttribute("target", "_blank");
     }
   });
 
-  it("shows a Monitor link for sites with no alerts", () => {
-    render(
-      <FleetTable sites={[makeSite({ alerts: [] })]} />
-    );
-
-    const link = screen.getByText("Monitor").closest("a");
-    expect(link).toHaveAttribute(
-      "href",
-      "https://powerhub.energy.tesla.com/site/11111111-2222-3333-4444-555555555555"
-    );
-    expect(link).toHaveAttribute("target", "_blank");
-  });
-
-  it("shows a dash (no Monitor link) when a quiet site has no portal URL", () => {
+  it("shows a dash (no Monitor link) when a site has no portal URL", () => {
     render(
       <FleetTable sites={[makeSite({ alerts: [], portalUrl: null })]} />
     );
 
-    expect(screen.queryByText("Monitor")).not.toBeInTheDocument();
-  });
-
-  it("renders alerts as plain chips (no link) when the site has no portal URL", () => {
-    render(
-      <FleetTable
-        sites={[
-          makeSite({
-            portalUrl: null,
-            alerts: [{ id: "a1", severity: "CRITICAL", alertName: "System shutdown" }],
-          }),
-        ]}
-      />
-    );
-
-    expect(screen.getByText("System shutdown").closest("a")).toBeNull();
+    // The "Monitor" column header still renders; only the row link is absent.
+    expect(screen.queryByRole("link", { name: /Monitor/ })).not.toBeInTheDocument();
   });
 
   it("shows no RMA chip when there are none", () => {
