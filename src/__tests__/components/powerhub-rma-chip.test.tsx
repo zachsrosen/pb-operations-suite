@@ -17,6 +17,7 @@ function makeSite(overrides: Record<string, unknown> = {}) {
     linkMethod: "ADDRESS",
     linkConfidence: "HIGH",
     dealId: "9876543210",
+    portalUrl: "https://powerhub.energy.tesla.com/site/11111111-2222-3333-4444-555555555555",
     customerName: "Jane Smith",
     dealName: "Smith, Jane - PROJ-1234",
     totalGateways: 1,
@@ -70,6 +71,44 @@ describe("FleetTable RMA alert chip", () => {
     expect(screen.getByText("No Solar Production")).toBeInTheDocument();
     // No truncation indicator like "+2"
     expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument();
+  });
+
+  it("links each alert chip to the site's Tesla monitoring portal", () => {
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            alerts: [
+              { id: "a1", severity: "CRITICAL", alertName: "System shutdown" },
+              { id: "a2", severity: "PERFORMANCE", alertName: "Battery Comms" },
+            ],
+          }),
+        ]}
+      />
+    );
+
+    const portal = "https://powerhub.energy.tesla.com/site/11111111-2222-3333-4444-555555555555";
+    for (const name of ["System shutdown", "Battery Comms"]) {
+      const link = screen.getByText(name).closest("a");
+      expect(link).not.toBeNull();
+      expect(link).toHaveAttribute("href", portal);
+      expect(link).toHaveAttribute("target", "_blank");
+    }
+  });
+
+  it("renders alerts as plain chips (no link) when the site has no portal URL", () => {
+    render(
+      <FleetTable
+        sites={[
+          makeSite({
+            portalUrl: null,
+            alerts: [{ id: "a1", severity: "CRITICAL", alertName: "System shutdown" }],
+          }),
+        ]}
+      />
+    );
+
+    expect(screen.getByText("System shutdown").closest("a")).toBeNull();
   });
 
   it("shows no RMA chip when there are none", () => {

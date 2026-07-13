@@ -40,6 +40,8 @@ interface PowerhubSiteRow {
     severity: string;
     alertName: string;
   }>;
+  /** Tesla PowerHub live-monitoring page for this site (computed from siteId). */
+  portalUrl?: string | null;
   /** Open HubSpot service tickets on the linked property (server-enriched). */
   tickets?: Array<{
     id: string;
@@ -490,19 +492,34 @@ export default function FleetTable({
                     </td>
                     <td className="py-3 pr-4" title={alertTooltip || undefined}>
                       <div className="flex flex-wrap items-center gap-1 max-w-[260px]">
-                        {sortedAlerts.map((alert) => (
-                          <span
-                            key={alert.id}
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium max-w-[150px] ${
-                              ALERT_CHIP_COLORS[alert.severity] || ALERT_CHIP_COLORS.INFORMATIONAL
-                            }`}
-                          >
-                            {/* truncate needs a block/inline-block child — it has no effect on the flex container itself */}
-                            <span className="truncate">
-                              {alert.severity === "RMA" ? `RMA ${alert.alertName}` : alert.alertName}
+                        {sortedAlerts.map((alert) => {
+                          const chipClass = `inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-medium max-w-[160px] ${
+                            ALERT_CHIP_COLORS[alert.severity] || ALERT_CHIP_COLORS.INFORMATIONAL
+                          }`;
+                          const label =
+                            alert.severity === "RMA" ? `RMA ${alert.alertName}` : alert.alertName;
+                          // Each alert links to the site's Tesla PowerHub live-monitoring
+                          // page so you can jump straight from the alert to the live data.
+                          return site.portalUrl ? (
+                            <a
+                              key={alert.id}
+                              href={site.portalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className={`${chipClass} hover:opacity-80 transition-opacity`}
+                              title={`Open live monitoring — ${label}`}
+                            >
+                              {/* truncate needs a block/inline-block child */}
+                              <span className="truncate">{label}</span>
+                              <span aria-hidden="true">↗</span>
+                            </a>
+                          ) : (
+                            <span key={alert.id} className={chipClass}>
+                              <span className="truncate">{label}</span>
                             </span>
-                          </span>
-                        ))}
+                          );
+                        })}
                         {sortedAlerts.length === 0 && (
                           <span className="text-muted">—</span>
                         )}
