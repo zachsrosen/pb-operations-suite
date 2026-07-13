@@ -127,7 +127,7 @@
   "crons": [
     {
       "path": "/api/cron/deal-sync",
-      "schedule": "*/30 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/pe-clawback-alert",

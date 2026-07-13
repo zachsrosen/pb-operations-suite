@@ -183,7 +183,7 @@ interface Breadcrumb {
   href?: string;
 }
 
-interface SyncMeta {
+export interface SyncMeta {
   source: string;
   lastSyncedAt: string;
   staleness: string;
@@ -222,9 +222,10 @@ function StalenessIndicator({ syncMeta }: { syncMeta: SyncMeta }) {
   let dotColor: string;
   let label: string | null = null;
 
-  if (minutesAgo < 15) {
+  if (minutesAgo < 20) {
     dotColor = "bg-green-400";
-  } else if (minutesAgo < 30) {
+    label = `Synced ${syncMeta.staleness}`;
+  } else if (minutesAgo < 45) {
     dotColor = "bg-yellow-400";
     label = `Synced ${syncMeta.staleness}`;
   } else {

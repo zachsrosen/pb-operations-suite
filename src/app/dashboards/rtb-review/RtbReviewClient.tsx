@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import { useDealSyncFreshness } from "@/hooks/useDealSyncFreshness";
 import {
   MultiSelectFilter,
   type FilterOption,
@@ -214,6 +215,7 @@ export default function RtbReviewClient() {
       accentColor="red"
       fullWidth
       lastUpdated={data?.lastUpdated}
+      syncMeta={useDealSyncFreshness()}
     >
       <div className="flex items-center gap-1 mb-3">
         {TABS.map((t) => (

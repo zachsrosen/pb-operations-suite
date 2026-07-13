@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import { useDealSyncFreshness } from "@/hooks/useDealSyncFreshness";
 import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { queryKeys } from "@/lib/query-keys";
@@ -256,6 +257,7 @@ export default function PipelineTrackerPage() {
       accentColor="orange"
       lastUpdated={data?.lastUpdated}
       fullWidth
+      syncMeta={useDealSyncFreshness()}
     >
       {/* Hero Stats */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
