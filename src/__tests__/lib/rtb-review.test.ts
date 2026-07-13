@@ -101,6 +101,7 @@ describe("fetchRtbQueue", () => {
       loanStatus: "Approved",
       earliestInstallDate: "2026-07-15",
       releasedDate: "1751500800000",
+      released: false, // blocked stage: never "released" regardless of stale date
       daStatus: "Paid In Full",
       daPaid: true,
       approved: false,
@@ -144,6 +145,8 @@ describe("fetchRtbQueue", () => {
             dealname: "PROJ-2000 - Jones",
             dealstage: "22580871",
             hs_v2_date_entered_22580871: entered,
+            // approved the same day it entered Ready to Build
+            pm_rtb_approved_date: entered,
             pm_rtb_approved: "true",
           },
         },
@@ -161,6 +164,29 @@ describe("fetchRtbQueue", () => {
       dealStage: "Ready To Build",
       daysInStage: 3,
       approved: true,
+      released: true,
     });
+  });
+
+  it("is NOT released when Ready re-entry is newer than the approval date", async () => {
+    const releasedLongAgo = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    const reEnteredRecently = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    mockSearchWithRetry.mockResolvedValue({
+      results: [
+        {
+          id: "333",
+          properties: {
+            dealname: "PROJ-3000 - Re-Entered",
+            dealstage: "22580871",
+            hs_v2_date_entered_22580871: reEnteredRecently,
+            pm_rtb_approved_date: releasedLongAgo, // stale, never cleared
+          },
+        },
+      ],
+    });
+    const rows = await fetchRtbQueue("ready");
+    expect(rows[0].released).toBe(false);
+    // the raw date still passes through for reference
+    expect(rows[0].releasedDate).toBe(releasedLongAgo);
   });
 });
