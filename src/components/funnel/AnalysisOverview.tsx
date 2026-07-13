@@ -32,6 +32,11 @@ const FINAL_STRETCH = new Set(["awaitingInspection", "awaitingPto", "awaitingClo
 const dealDays = (d: ProjectFunnelDrillDownDeal) => Math.max(0, d.daysWaiting);
 const statusOf = (d: ProjectFunnelDrillDownDeal) => (d.status && d.status.trim() ? d.status : "No status");
 
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 /**
  * Analysis overview: where the live pipeline is stuck (bottlenecks) plus a few
  * positive highlights. Always fetches the active pipeline (no date window) so
@@ -191,7 +196,10 @@ export function AnalysisOverview({
 
         <div className="bg-surface rounded-xl border border-t-border p-5">
           <h3 className="text-sm font-semibold text-foreground/80 mb-1">Oldest stuck deals</h3>
-          <p className="text-xs text-muted mb-3">Longest-waiting deals right now — the ones to chase.</p>
+          <p className="text-xs text-muted mb-3">
+            Longest-waiting deals right now — the ones to chase. &ldquo;Since&rdquo; is the day the deal
+            hit its previous milestone and the wait started.
+          </p>
           <div className="space-y-1">
             {c.oldest.map(({ deal, stageLabel }) => (
               <a
@@ -206,7 +214,17 @@ export function AnalysisOverview({
                   <span className="text-muted"> · {stageLabel}</span>
                   {deal.status ? <span className="text-muted/70"> · {deal.status}</span> : null}
                 </span>
-                <span className="shrink-0 tabular-nums text-red-400/90 font-semibold">{dealDays(deal)}d</span>
+                <span className="shrink-0 tabular-nums">
+                  {deal.waitingSince && (
+                    <span className="text-muted" title="Reached the prior milestone — when this wait started">
+                      since {formatShortDate(deal.waitingSince)}
+                    </span>
+                  )}
+                  {deal.scheduledDate && (
+                    <span className="text-cyan-400/80" title="Scheduled date"> · sched {formatShortDate(deal.scheduledDate)}</span>
+                  )}
+                  <span className="text-red-400/90 font-semibold"> · {dealDays(deal)}d</span>
+                </span>
               </a>
             ))}
           </div>

@@ -107,6 +107,7 @@ function ProjectPipelineFunnelInner() {
   const includeOnHold = searchParams.get("oh") !== "0";
   const includeRejected = searchParams.get("pr") !== "0";
   const includeCancelled = searchParams.get("cx") !== "0";
+  const includeBlocked = searchParams.get("bl") !== "0";
   const heroView: "cards" | "loc" = searchParams.get("hv") === "loc" ? "loc" : "cards";
   const setHeroView = useCallback((v: "cards" | "loc") => setParam("hv", v === "loc" ? "loc" : ""), [setParam]);
   const tabParam = searchParams.get("tab");
@@ -165,7 +166,7 @@ function ProjectPipelineFunnelInner() {
   );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<ProjectFunnelResponse>({
-    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled],
+    queryKey: [...queryKeys.funnel.projectPipeline(months, locations, useActiveScope ? "active" : timeframe, pms, owners), pe, includeOnHold, includeRejected, includeCancelled, includeBlocked],
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
       if (locations.length > 0) params.set("locations", locations.join(","));
@@ -175,6 +176,7 @@ function ProjectPipelineFunnelInner() {
       if (!includeOnHold) params.set("onhold", "0");
       if (!includeRejected) params.set("rejected", "0");
       if (!includeCancelled) params.set("cancelled", "0");
+      if (!includeBlocked) params.set("blocked", "0");
       if (useActiveScope) {
         // Funnel tab: live snapshot of all active deals, no date window.
         params.set("scope", "active");
@@ -321,6 +323,15 @@ function ProjectPipelineFunnelInner() {
           title={includeCancelled ? "Cancelled deals included — click to hide" : "Cancelled deals hidden — click to show"}
         >
           {includeCancelled ? "Cancelled: shown" : "Cancelled: hidden"}
+        </button>
+        {/* RTB-blocked toggle */}
+        <button
+          type="button"
+          onClick={() => setParam("bl", includeBlocked ? "0" : "")}
+          className={`px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${includeBlocked ? "border-t-border bg-surface text-muted hover:text-foreground" : "border-orange-500/40 bg-orange-500/10 text-orange-300"}`}
+          title={includeBlocked ? "RTB-blocked deals included — click to hide" : "RTB-blocked deals hidden — click to show"}
+        >
+          {includeBlocked ? "Blocked: shown" : "Blocked: hidden"}
         </button>
         {tab === "funnel" || tab === "bottlenecks" || tab === "incoming" ? (
           <span className="text-xs text-muted font-medium px-1">
@@ -1409,6 +1420,7 @@ function DrillDownTable({
   /** Avg days this stage takes; deals waiting longer are flagged "late". */
   benchmark?: number | null;
 }) {
+  const hasSince = deals.some((d) => d.waitingSince);
   const hasScheduled = deals.some((d) => d.scheduledDate);
   const hasExtra = deals.some((d) => d.extraDate);
   const extraLabel = deals.find((d) => d.extraLabel)?.extraLabel || "Extra";
@@ -1423,6 +1435,7 @@ function DrillDownTable({
       case "amount": return d.amount || 0;
       case "location": return (d.pbLocation || "").toLowerCase();
       case "stage": return (d.stage || "").toLowerCase();
+      case "since": return d.waitingSince || "";
       case "scheduled": return d.scheduledDate || "";
       case "extra": return d.extraDate || "";
       case "days": return d.daysWaiting;
@@ -1490,6 +1503,7 @@ function DrillDownTable({
             {renderTh("location", "Location")}
             {renderTh("stage", "Stage")}
             {staffCols.map((sc) => renderTh(String(sc.key), sc.label))}
+            {hasSince && renderTh("since", "Since", "left", "asc")}
             {hasScheduled && renderTh("scheduled", "Scheduled", "left", "desc")}
             {hasExtra && renderTh("extra", extraLabel, "left", "desc")}
             {renderTh("days", "Days", "right", "desc")}
@@ -1536,6 +1550,11 @@ function DrillDownTable({
                   </td>
                 );
               })}
+              {hasSince && (
+                <td className="py-1 px-1.5 text-muted whitespace-nowrap" title="Reached the prior milestone — when this wait started">
+                  {d.waitingSince ? formatShortDate(d.waitingSince) : <span className="italic text-muted/60">—</span>}
+                </td>
+              )}
               {hasScheduled && (
                 <td className="py-1 px-1.5 text-muted whitespace-nowrap">
                   {d.scheduledDate ? formatShortDate(d.scheduledDate) : <span className="italic text-muted/60">—</span>}
@@ -1562,7 +1581,7 @@ function DrillDownTable({
             </tr>
             {d.flag && (
               <tr className="border-b border-t-border/30">
-                <td colSpan={6 + staffCols.length + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
+                <td colSpan={6 + staffCols.length + (hasSince ? 1 : 0) + (hasScheduled ? 1 : 0) + (hasExtra ? 1 : 0)} className="px-1.5 pb-1.5 pt-0">
                   <span className={`text-[11px] ${FLAG_TEXT[d.flag.tone] || "text-muted"}`}>↳ {d.flag.label}</span>
                   {d.flag.reason ? (
                     <span className="text-[11px] text-muted/80"> · {d.flag.reason}</span>
