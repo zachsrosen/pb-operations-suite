@@ -427,9 +427,14 @@ export default function RtbReviewClient() {
                             Cancel
                           </button>
                         </div>
+                        {saveNotes.isError && (
+                          <div className="text-xs text-red-400 mt-1">
+                            Save failed — try again.
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="group/notes flex items-start gap-1 max-w-72">
+                      <div className="flex items-start gap-1.5 max-w-72">
                         {item.rtbBlockedReason ? (
                           <details className="group min-w-0">
                             <summary className="cursor-pointer hover:text-foreground list-none">
@@ -442,18 +447,16 @@ export default function RtbReviewClient() {
                               {item.rtbBlockedReason}
                             </div>
                           </details>
-                        ) : (
-                          <span>—</span>
-                        )}
+                        ) : null}
                         <button
                           onClick={() => {
                             setEditingNotes(item.dealId);
                             setNotesDraft(item.rtbBlockedReason ?? "");
                           }}
                           title="Edit RTB - Blocked notes"
-                          className="opacity-0 group-hover/notes:opacity-60 hover:!opacity-100 shrink-0"
+                          className="shrink-0 text-xs px-1.5 py-0.5 rounded border border-t-border text-muted hover:text-foreground hover:bg-surface-2 whitespace-nowrap"
                         >
-                          ✎
+                          {item.rtbBlockedReason ? "✎ Edit" : "＋ Add note"}
                         </button>
                       </div>
                     )}
