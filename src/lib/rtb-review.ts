@@ -73,6 +73,9 @@ export interface RtbQueueItem {
   daStatus: string | null;
   /** True when the DA milestone is Paid In Full. */
   daPaid: boolean;
+  /** pm_rtb_approved_date — durable "released via PM gate" marker (stamped by
+   *  a HubSpot workflow on reaching Ready to Build; survives the flag reset). */
+  releasedDate: string | null;
   /** Payment method (e.g. "Cash", loan product name). */
   paymentMethod: string | null;
   /** Loan status, resolved to the HubSpot display label. */
@@ -123,6 +126,7 @@ const PROPERTIES = [
   "payment_method",
   "loan_status",
   "pm_rtb_approved",
+  "pm_rtb_approved_date",
   "hs_lastmodifieddate",
 ];
 
@@ -233,6 +237,7 @@ export async function fetchRtbQueue(
         constructionStatus: statusLabel("install_status", p.install_status),
         daStatus: p.da_invoice_status ?? null,
         daPaid: p.da_invoice_status === "Paid In Full",
+        releasedDate: p.pm_rtb_approved_date ?? null,
         paymentMethod: p.payment_method ?? null,
         loanStatus: statusLabel("loan_status", p.loan_status),
         earliestInstallDate: p.pb_location
