@@ -50,7 +50,6 @@ export default function AlertsPage() {
   const dangerCount = alerts.filter((a) => a.type === "danger").length;
   const warningCount = alerts.filter((a) => a.type === "warning").length;
   const peRelated = alerts.filter((a) => a.title.includes("PE")).length;
-  const powerhubEnabled = process.env.NEXT_PUBLIC_POWERHUB_ENABLED === "true";
 
   if (!accessChecked) {
     return (
@@ -66,17 +65,6 @@ export default function AlertsPage() {
       subtitle={`${alerts.length} active alerts`}
       accentColor="red"
       lastUpdated={lastUpdated}
-      headerRight={
-        powerhubEnabled ? (
-          <a
-            href="/dashboards/powerhub"
-            className="inline-flex items-center gap-2 rounded-lg border border-t-border bg-surface px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
-          >
-            <span aria-hidden="true">⚡</span>
-            PowerHub Fleet Monitor
-          </a>
-        ) : undefined
-      }
     >
       {loading && projects.length === 0 ? (
         <LoadingSpinner color="red" message="Loading alerts..." />
