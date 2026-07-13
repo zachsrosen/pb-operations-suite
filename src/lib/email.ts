@@ -398,6 +398,12 @@ export async function sendEmailMessage(params: {
   attachments?: MimeAttachment[];
   fromOverride?: string;
   senderEmailOverride?: string;
+  /**
+   * Skip the global SCHEDULING_NOTIFICATION_BCC auto-merge. Set for sensitive
+   * sends that must reach only their explicit recipients (e.g. per-person
+   * productivity digests) rather than the shared scheduling-notification list.
+   */
+  suppressConfiguredBcc?: boolean;
 }): Promise<SendResult> {
   const normalizedTo = (Array.isArray(params.to) ? params.to : [params.to || ""])
     .map((value) => parseEmailAddress(value))
@@ -405,7 +411,9 @@ export async function sendEmailMessage(params: {
   const requestedBcc = (params.bcc || [])
     .map((email) => parseEmailAddress(email))
     .filter((email): email is string => !!email);
-  const configuredBcc = parseEmailList(process.env.SCHEDULING_NOTIFICATION_BCC);
+  const configuredBcc = params.suppressConfiguredBcc
+    ? []
+    : parseEmailList(process.env.SCHEDULING_NOTIFICATION_BCC);
   let mergedBcc = dedupeEmails([...configuredBcc, ...requestedBcc]);
 
   const primaryToList = [...normalizedTo];

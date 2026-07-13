@@ -74,6 +74,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/zuper-job-backfill", // Zuper job cache backfill — CRON_SECRET validated in route
   "/api/cron/zuper-field-activity-sync", // Zuper field activity → ExternalActivity — CRON_SECRET validated in route
   "/api/cron/product-sync", // Catalog product sync — CRON_SECRET validated in route
+  "/api/cron/team-activity-digest", // Weekly team-activity report card email — CRON_SECRET validated in route
   "/api/cron/office-performance-warm", // Office performance cache warmer — CRON_SECRET validated in route
   "/api/cron/powerhub-assets",     // PowerHub asset sync — CRON_SECRET validated in route
   "/api/cron/powerhub-telemetry",  // PowerHub telemetry poll — CRON_SECRET validated in route
