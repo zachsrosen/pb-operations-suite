@@ -53,6 +53,7 @@ describe("fetchRtbQueue", () => {
             loan_status: "Funding Secured",
             hs_v2_date_entered_71052436: ENTERED_STAGE_AT,
             pm_rtb_approved: "false",
+            pm_rtb_approved_date: "1751500800000",
             hs_lastmodifieddate: "2026-07-06T00:00:00Z",
           },
         },
@@ -99,6 +100,7 @@ describe("fetchRtbQueue", () => {
       // loan_status value "Funding Secured" displays as "Approved"
       loanStatus: "Approved",
       earliestInstallDate: "2026-07-15",
+      releasedDate: "1751500800000",
       daStatus: "Paid In Full",
       daPaid: true,
       approved: false,

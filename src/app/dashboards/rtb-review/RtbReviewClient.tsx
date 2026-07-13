@@ -22,6 +22,14 @@ function formatDate(value: string | null): string {
   return d.toLocaleDateString();
 }
 
+/** Format a HubSpot date value (epoch-millis string or ISO) as a local date. */
+function formatHsDate(value: string | null): string {
+  if (!value) return "—";
+  const ms = /^\d+$/.test(value) ? Number(value) : Date.parse(value);
+  if (Number.isNaN(ms)) return "—";
+  return new Date(ms).toLocaleDateString();
+}
+
 /** Format a bare YYYY-MM-DD without Date parsing (avoids UTC off-by-one). */
 function formatYmd(value: string | null): string {
   if (!value) return "—";
@@ -496,10 +504,18 @@ export default function RtbReviewClient() {
                   <td className="px-2 py-2 text-right">
                     {tab === "ready" ? (
                       <span
-                        className="text-green-500 whitespace-nowrap"
-                        title={item.approved ? "Released via PM approval" : "Moved without the approval flag"}
+                        className={
+                          item.releasedDate
+                            ? "text-green-500 whitespace-nowrap"
+                            : "text-muted whitespace-nowrap"
+                        }
+                        title={
+                          item.releasedDate
+                            ? `Released via PM approval ${formatHsDate(item.releasedDate)}`
+                            : "Reached Ready to Build without going through the PM release gate"
+                        }
                       >
-                        {item.approved ? "Released ✓" : "—"}
+                        {item.releasedDate ? "Released ✓" : "—"}
                       </span>
                     ) : (
                       <button
