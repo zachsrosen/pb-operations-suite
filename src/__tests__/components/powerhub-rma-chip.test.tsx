@@ -96,6 +96,27 @@ describe("FleetTable RMA alert chip", () => {
     }
   });
 
+  it("shows a Monitor link for sites with no alerts", () => {
+    render(
+      <FleetTable sites={[makeSite({ alerts: [] })]} />
+    );
+
+    const link = screen.getByText("Monitor").closest("a");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://powerhub.energy.tesla.com/site/11111111-2222-3333-4444-555555555555"
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("shows a dash (no Monitor link) when a quiet site has no portal URL", () => {
+    render(
+      <FleetTable sites={[makeSite({ alerts: [], portalUrl: null })]} />
+    );
+
+    expect(screen.queryByText("Monitor")).not.toBeInTheDocument();
+  });
+
   it("renders alerts as plain chips (no link) when the site has no portal URL", () => {
     render(
       <FleetTable
