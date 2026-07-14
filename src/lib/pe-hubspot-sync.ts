@@ -120,21 +120,26 @@ export function normalizeActionItemDocName(docLabel: string): string {
 export function actionItemNotesByDoc(
   items: { dealId: string; docLabel: string; notes: string | null }[],
 ): Map<string, string> {
+  // Group each doc's OWN action-item notes, keeping each item's block intact.
   const byKey = new Map<string, string[]>();
   for (const it of items) {
     const note = (it.notes ?? "").trim();
     if (!note) continue;
     const key = `${it.dealId}::${normalizeActionItemDocName(it.docLabel)}`;
-    const lines = note
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const arr = byKey.get(key) ?? [];
-    arr.push(...lines);
-    byKey.set(key, arr);
+    (byKey.get(key) ?? byKey.set(key, []).get(key)!).push(note);
   }
   const out = new Map<string, string>();
-  for (const [k, lines] of byKey) out.set(k, [...new Set(lines)].join("\n"));
+  for (const [k, notes] of byKey) {
+    // Sort whole note blocks deterministically BEFORE flattening to lines. The
+    // caller's DB query order isn't guaranteed, so without this the composed
+    // value reorders between syncs (same content, different order). That churn
+    // re-triggers the "Rejected by PE" notifier workflow (re-enrolls on
+    // pe_doc_*_notes → IS_KNOWN) and re-sends the email every sync. Sorting by
+    // the note text keeps each item's lines contiguous and the output stable.
+    notes.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const lines = notes.flatMap((n) => n.split("\n").map((l) => l.trim()).filter(Boolean));
+    out.set(k, [...new Set(lines)].join("\n"));
+  }
   return out;
 }
 

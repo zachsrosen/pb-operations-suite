@@ -68,4 +68,21 @@ describe("actionItemNotesByDoc", () => {
     expect(m.get("1::Design Plan")).toBe("a");
     expect(m.get("2::Design Plan")).toBe("b");
   });
+
+  it("is ORDER-INDEPENDENT — same items in any input order → identical output", () => {
+    // The He (PROJ-8449) case: two near-duplicate INCOR-INCENTIVE-AMT items, one
+    // whose note has an embedded newline. Input query order isn't guaranteed, so
+    // the composed value must not depend on it — otherwise it churns every sync
+    // and re-fires the "Rejected by PE" notifier workflow.
+    const items = [
+      { dealId: "1", docLabel: "Customer Agreement (PPA/ESA)", notes: "Page 5 — [H046] checkbox not selected" },
+      { dealId: "1", docLabel: "Customer Agreement (PPA/ESA)", notes: 'Only the Powerwall 3 - Xcel Rebate is approved' },
+      { dealId: "1", docLabel: "Customer Agreement (PPA/ESA)", notes: 'Only the Powerwall 3\n- Xcel Rebate is approved' },
+    ];
+    const forward = actionItemNotesByDoc(items).get("1::Customer Agreement (PPA/ESA)");
+    const reversed = actionItemNotesByDoc([...items].reverse()).get("1::Customer Agreement (PPA/ESA)");
+    const shuffled = actionItemNotesByDoc([items[1], items[2], items[0]]).get("1::Customer Agreement (PPA/ESA)");
+    expect(reversed).toBe(forward);
+    expect(shuffled).toBe(forward);
+  });
 });
