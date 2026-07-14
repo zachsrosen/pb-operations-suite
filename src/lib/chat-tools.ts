@@ -2249,6 +2249,184 @@ export function createReadOnlyChatTools() {
     },
   });
 
+  const getPeDocs = betaZodTool({
+    name: "get_pe_docs",
+    description:
+      "Participate Energy (PE) DOCUMENT tracker — bulk lookup of PE deals by an individual " +
+      "document's status. Every PE deal has 16 required docs, each with a status: Not Uploaded, " +
+      "Uploaded, Under Review, Action Required, Rejected, Approved (BOM also 'Not Required'). " +
+      "Use this for 'which PE deals have <doc> in action required / rejected', 'all deals where " +
+      "customer agreement + installation order + signed proposal are action required', 'PE docs " +
+      "needing action for sales'. Returns each matching deal with its owner and the matching " +
+      "docs + their verbatim notes (why it needs action). This is the ONE-CALL way to filter PE " +
+      "docs across the whole PE book — NEVER loop get_deal per deal for this. " +
+      "docs (optional): restrict to specific documents by name (customer agreement, installation " +
+      "order, signed proposal, state disclosures, design plan, bill of materials, PTO, photos per " +
+      "policy, signed final permit, interconnection, utility bill, certificate of acceptance, " +
+      "progress lien waiver, final payment waiver, attestation of payment, access to monitoring); " +
+      "omit to check ALL 16. status: the document status to find (default 'Action Required').",
+    inputSchema: z.object({
+      status: z
+        .enum(["Not Uploaded", "Uploaded", "Under Review", "Action Required", "Rejected", "Approved", "Not Required"])
+        .optional()
+        .describe("Which document status to find. Default 'Action Required'."),
+      docs: z
+        .array(z.string())
+        .optional()
+        .describe("Restrict to these documents by name/alias. Omit to check all 16 PE docs."),
+      location: z
+        .string()
+        .optional()
+        .describe("Optional PB location filter (Westminster/Westy, Centennial/DTC, COSP, SLO, Camarillo)."),
+    }),
+    run: async (input) => {
+      const { searchWithRetry, fetchAllOwnersMinimal } = await import("@/lib/hubspot");
+      const status = input.status ?? "Action Required";
+
+      // 16 PE documents: friendly key -> {status prop, notes prop, label, aliases}.
+      const DOCS: Array<{ key: string; prop: string; label: string; aliases: string[] }> = [
+        { key: "customer_agreement", prop: "pe_doc_customer_agreement", label: "Customer Agreement (PPA/ESA)", aliases: ["customer agreement", "ppa", "esa", "agreement"] },
+        { key: "installation_order", prop: "pe_doc_installation_order", label: "Installation Order", aliases: ["installation order", "install order"] },
+        { key: "signed_proposal", prop: "pe_doc_signed_proposal", label: "Signed Proposal", aliases: ["signed proposal", "proposal"] },
+        { key: "state_disclosures", prop: "pe_doc_state_disclosures", label: "State Disclosures", aliases: ["state disclosures", "disclosures"] },
+        { key: "design_plan", prop: "pe_doc_design_plan", label: "Design Plan", aliases: ["design plan", "design"] },
+        { key: "bill_of_materials", prop: "pe_doc_bill_of_materials", label: "Bill of Materials", aliases: ["bill of materials", "bom"] },
+        { key: "permission_to_operate", prop: "pe_doc_permission_to_operate", label: "Permission to Operate (PTO)", aliases: ["pto", "permission to operate"] },
+        { key: "photos_per_policy", prop: "pe_doc_photos_per_policy", label: "Photos per Policy", aliases: ["photos per policy", "photos", "policy photos"] },
+        { key: "signed_final_permit", prop: "pe_doc_signed_final_permit", label: "Signed Final Permit", aliases: ["signed final permit", "final permit", "permit"] },
+        { key: "signed_interconnection", prop: "pe_doc_signed_interconnection", label: "Signed Interconnection Agreement", aliases: ["interconnection", "signed interconnection", "ic agreement"] },
+        { key: "utility_bill", prop: "pe_doc_utility_bill", label: "Utility Bill", aliases: ["utility bill", "utility"] },
+        { key: "certificate_of_acceptance", prop: "pe_doc_certificate_of_acceptance", label: "Certificate of Acceptance", aliases: ["certificate of acceptance", "coa", "acceptance"] },
+        { key: "conditional_lien_waiver", prop: "pe_doc_conditional_lien_waiver", label: "Conditional Progress Lien Waiver", aliases: ["progress lien waiver", "lien waiver", "conditional progress lien"] },
+        { key: "conditional_waiver_final", prop: "pe_doc_conditional_waiver_final", label: "Conditional Waiver — Final Payment", aliases: ["final payment waiver", "conditional waiver final", "final waiver"] },
+        { key: "attestation_customer_payment", prop: "pe_doc_attestation_customer_payment", label: "Attestation of Customer Payment", aliases: ["attestation", "attestation of payment", "customer payment"] },
+        { key: "access_to_monitoring", prop: "pe_doc_access_to_monitoring", label: "Access to Monitoring", aliases: ["access to monitoring", "monitoring"] },
+      ];
+
+      // Resolve requested doc names to the DOCS set (fuzzy on aliases). Empty = all.
+      let selected = DOCS;
+      const unmatched: string[] = [];
+      if (input.docs && input.docs.length > 0) {
+        const picked = new Set<string>();
+        for (const raw of input.docs) {
+          const n = raw.trim().toLowerCase();
+          const hit = DOCS.find((d) =>
+            d.key === n ||
+            d.label.toLowerCase() === n ||
+            d.aliases.some((a) => a === n || n.includes(a) || a.includes(n))
+          );
+          if (hit) picked.add(hit.key);
+          else unmatched.push(raw);
+        }
+        if (picked.size > 0) selected = DOCS.filter((d) => picked.has(d.key));
+      }
+
+      let canonicalLocation: string | null = null;
+      if (input.location) {
+        const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
+        canonicalLocation = normalizeLocation(input.location);
+        if (!canonicalLocation) {
+          return JSON.stringify({ error: `Unknown location: ${input.location}`, knownLocations: CANONICAL_LOCATIONS });
+        }
+      }
+
+      // One paginated scan of every PE deal (pe_m1_status present = PE deal),
+      // pulling the selected doc status + notes props.
+      const props = [
+        "dealname", "hubspot_owner_id", "pb_location", "pe_m1_status", "pe_m2_status", "pe_info_needed",
+        ...selected.map((d) => d.prop),
+        ...selected.map((d) => `${d.prop}_notes`),
+      ];
+      const rows: Record<string, string | null | undefined>[] = [];
+      let after: string | undefined;
+      const PAGE_CAP = 30; // 30 × 200 = 6,000 PE deals
+      let truncated = false;
+      for (let page = 0; page < PAGE_CAP; page++) {
+        const req: { filterGroups: { filters: unknown[] }[]; properties: string[]; limit: number; after?: string } = {
+          filterGroups: [
+            {
+              filters: [
+                { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
+                { propertyName: "pe_m1_status", operator: FilterOperatorEnum.HasProperty },
+              ],
+            },
+          ],
+          properties: props,
+          limit: 200,
+        };
+        if (after) req.after = after;
+        const res = await searchWithRetry(req as Parameters<typeof searchWithRetry>[0]);
+        for (const d of res.results) rows.push({ ...(d.properties ?? {}), __hsid: d.id });
+        after = res.paging?.next?.after;
+        if (!after) break;
+        if (page === PAGE_CAP - 1) truncated = true;
+      }
+      const portalId = process.env.HUBSPOT_PORTAL_ID || "";
+
+      // Owner id -> name.
+      const ownerMap: Record<string, string> = {};
+      try {
+        for (const o of await fetchAllOwnersMinimal()) {
+          const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim();
+          if (o.id && name) ownerMap[String(o.id)] = name;
+        }
+      } catch { /* owners API optional */ }
+
+      const { normalizeLocation } = await import("@/lib/locations");
+      const projOf = (name: string | null | undefined) => (name || "").match(/PROJ-\d+/)?.[0] || null;
+      // HubSpot select stores the internal VALUE ("action_required"), not the
+      // label ("Action Required") — normalize both sides before comparing.
+      const norm = (s: string) => s.toLowerCase().replace(/[\s_]+/g, "");
+      const wantStatus = norm(status);
+
+      const matches: Array<{
+        proj: string | null; name: string; url: string; owner: string; location: string;
+        m1: string | null; m2: string | null;
+        docs: Array<{ document: string; status: string; note: string | null }>;
+      }> = [];
+
+      for (const r of rows) {
+        if (canonicalLocation && normalizeLocation(String(r.pb_location || "")) !== canonicalLocation) continue;
+        const hitDocs: Array<{ document: string; status: string; note: string | null }> = [];
+        for (const d of selected) {
+          const st = (r[d.prop] || "").toString().trim();
+          if (st && norm(st) === wantStatus) {
+            const note = (r[`${d.prop}_notes`] || "").toString().trim() || null;
+            hitDocs.push({ document: d.label, status, note });
+          }
+        }
+        if (hitDocs.length === 0) continue;
+        const hsid = (r as { __hsid?: string }).__hsid;
+        matches.push({
+          proj: projOf(r.dealname),
+          name: (r.dealname || "").toString(),
+          url: hsid && portalId ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${hsid}` : "",
+          owner: (r.hubspot_owner_id && ownerMap[String(r.hubspot_owner_id)]) || "(unassigned)",
+          location: (r.pb_location || "").toString(),
+          m1: (r.pe_m1_status || null) as string | null,
+          m2: (r.pe_m2_status || null) as string | null,
+          docs: hitDocs,
+        });
+      }
+
+      // Sort by number of flagged docs desc, then proj.
+      matches.sort((a, b) => b.docs.length - a.docs.length || (a.proj || "").localeCompare(b.proj || ""));
+      const CAP = 60;
+      return JSON.stringify({
+        status,
+        documentsChecked: selected.map((d) => d.label),
+        ...(unmatched.length ? { unmatchedDocNames: unmatched } : {}),
+        location: canonicalLocation ?? "all locations",
+        peDealsScanned: rows.length,
+        totalMatches: matches.length,
+        deals: matches.slice(0, CAP),
+        ...(matches.length > CAP ? { note: `Showing ${CAP} of ${matches.length}. Narrow by docs or location for the rest.` } : {}),
+        ...(truncated ? { warning: "Hit the PE scan cap — results may be incomplete." } : {}),
+        readNote: "Each deal lists the documents in the requested status plus their verbatim notes (the reason/what's needed). Owner is the HubSpot deal owner.",
+      });
+    },
+  });
+
   const getRevenueGoals = betaZodTool({
     name: "get_revenue_goals",
     description:
@@ -2321,6 +2499,7 @@ export function createReadOnlyChatTools() {
     queryJobs,
     countMilestoneInDateRange,
     getPePayments,
+    getPeDocs,
     getRevenueGoals,
     getProjectTeam,
     getProjectService,
