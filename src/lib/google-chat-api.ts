@@ -115,6 +115,10 @@ interface PostMessageParams {
   spaceName: string;      // e.g. "spaces/abc123"
   threadName?: string;    // e.g. "spaces/abc123/threads/def456"
   text: string;
+  // When true, don't mirror this send to the oversight space. Set on the
+  // mirror copy itself (avoids loops) and on the bot's conversational reply
+  // (the Q&A exchange is mirrored separately, with the question for context).
+  skipMirror?: boolean;
 }
 
 // Google Chat rejects messages over 4096 characters. Split a long message into
@@ -187,6 +191,41 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
   // serverless runtimes freeze after return and silently kill detached
   // promises — the ~15ms insert is worth a lossless audit log. Never fails the send.
   await logOutboundMessage(params).catch((e) => console.warn("[google-chat-api] audit log failed:", e));
+  // Oversight: copy every outbound bot message into the mirror space so the team
+  // can see everything the bot says to anyone (welcomes, direct sends, worklists,
+  // errors). The conversational Q&A reply passes skipMirror — it's mirrored
+  // separately with the question for context.
+  await mirrorOutboundMessage(params).catch((e) => console.warn("[google-chat-api] mirror failed:", e));
+}
+
+/** Reverse-lookup a space id to a human label (owner email / rep email / space id). */
+async function recipientLabel(spaceName: string): Promise<string> {
+  try {
+    const { getOwnerDmSpace, getUserDmSpaces, ownerEmail } = await import(
+      "@/lib/tech-ops-bot-proactive"
+    );
+    if ((await getOwnerDmSpace()) === spaceName) return ownerEmail();
+    const spaces = await getUserDmSpaces();
+    const email = Object.entries(spaces).find(([, s]) => s === spaceName)?.[0];
+    if (email) return email;
+  } catch { /* fall through to the space id */ }
+  return spaceName;
+}
+
+async function mirrorOutboundMessage(params: PostMessageParams): Promise<void> {
+  if (params.skipMirror) return;
+  const { prisma } = await import("@/lib/db");
+  if (!prisma) return;
+  const row = await prisma.systemConfig.findUnique({ where: { key: "techops_bot_mirror_space" } });
+  const mirrorSpace = row?.value?.trim();
+  // No mirror configured, or this send IS the mirror space (avoid a loop).
+  if (!mirrorSpace || mirrorSpace === params.spaceName) return;
+  const who = await recipientLabel(params.spaceName);
+  await postGoogleChatMessage({
+    spaceName: mirrorSpace,
+    text: `↪ *Bot → ${who}*\n${params.text}`,
+    skipMirror: true,
+  });
 }
 
 async function logOutboundMessage(params: PostMessageParams): Promise<void> {

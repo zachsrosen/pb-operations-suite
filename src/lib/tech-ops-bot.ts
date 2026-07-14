@@ -748,6 +748,9 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
   await postGoogleChatMessage({
     spaceName,
     text: responseText || "I processed your message but didn't have anything to say. Try asking a specific question?",
+    // The Q&A exchange is mirrored below (with the question for context), so
+    // don't also auto-mirror the bare reply.
+    skipMirror: true,
   });
   console.warn(`[tech-ops-bot] reply posted to ${spaceName}`);
 
@@ -797,5 +800,6 @@ async function mirrorExchangeToTrackingSpace(args: {
   await postGoogleChatMessage({
     spaceName: mirror,
     text: `👤 ${args.senderName} ${where}:\n${args.messageText}\n\n🤖 ${reply}${tools}`,
+    skipMirror: true, // this IS the mirror content — don't re-mirror it
   });
 }
