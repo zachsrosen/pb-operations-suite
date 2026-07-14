@@ -500,7 +500,43 @@ async function resolveDealRef(
   };
 }
 
-export function createReadOnlyChatTools() {
+/**
+ * Restriction for a sales rep: they may only see their OWN deals and are blocked
+ * from company-wide aggregates. ownerId matches HubSpot hubspot_owner_id (for
+ * search/get_deal filters); ownerName matches the resolved dealOwner name (for
+ * query_projects, which filters over cleaned Project objects by owner name).
+ */
+export interface ChatToolsRestriction {
+  ownerId: string;
+  ownerName: string;
+}
+
+export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | null) {
+  const rep = restriction ?? null;
+  // Standard refusal for company-wide tools when the requester is scoped to their
+  // own deals. Kept friendly + actionable so the bot relays it as-is.
+  const BLOCKED_AGGREGATE = JSON.stringify({
+    restricted: true,
+    message:
+      "That's a company-wide view, which isn't available at your access level — I can only " +
+      "pull YOUR deals. Ask me about one of your projects, your pending items, or your PE docs.",
+  });
+  // For a restricted rep, verify a deal is theirs before returning its detail.
+  // Returns a refusal JSON string if not owned, or null to proceed.
+  const refuseIfNotOwned = async (dealId: string): Promise<string | null> => {
+    if (!rep) return null;
+    const { hubspotClient } = await import("@/lib/hubspot");
+    try {
+      const d = await hubspotClient.crm.deals.basicApi.getById(dealId, ["hubspot_owner_id"]);
+      if (String(d.properties?.hubspot_owner_id ?? "") !== rep.ownerId) {
+        return JSON.stringify({ error: "That deal isn't one of yours — I can only pull details on projects you own." });
+      }
+    } catch {
+      return JSON.stringify({ error: "Couldn't verify that deal is yours — I can only pull your own projects." });
+    }
+    return null;
+  };
+
   const getDeal = betaZodTool({
     name: "get_deal",
     description:
@@ -581,6 +617,12 @@ export function createReadOnlyChatTools() {
         "construction_complete_date", "inspections_completion_date", "pto_start_date", "pto_completion_date",
       ]);
       const p = deal.properties as Record<string, string | null>;
+      // Sales reps may only look up their own deals.
+      if (rep && p.hubspot_owner_id && String(p.hubspot_owner_id) !== rep.ownerId) {
+        return JSON.stringify({
+          error: "That deal isn't one of yours — I can only look up projects you own.",
+        });
+      }
       const stageName = DEAL_STAGE_MAP[p.dealstage || ""] || p.dealstage || "";
       const lbl = (key: string, raw: string | null | undefined) =>
         raw ? statusLabel(key, raw) || raw : null;
@@ -758,10 +800,13 @@ export function createReadOnlyChatTools() {
       const response = await hubspotClient.crm.deals.searchApi.doSearch({
         query: input.query,
         limit: 10,
-        properties: ["dealname", "dealstage", "amount", "pb_location"],
+        properties: ["dealname", "dealstage", "amount", "pb_location", "hubspot_owner_id"],
         sorts: ["createdate"],
       });
-      return JSON.stringify(response.results.map((r) => r.properties));
+      let results = response.results;
+      // Sales reps: only surface deals they own.
+      if (rep) results = results.filter((r) => String(r.properties?.hubspot_owner_id ?? "") === rep.ownerId);
+      return JSON.stringify(results.map((r) => r.properties));
     },
   });
 
@@ -782,6 +827,7 @@ export function createReadOnlyChatTools() {
         ),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { DEAL_STAGE_MAP, searchWithRetry } = await import("@/lib/hubspot");
       const normalizedStage = input.stage.trim().toLowerCase();
       const stageEntry = Object.entries(DEAL_STAGE_MAP).find(
@@ -885,6 +931,7 @@ export function createReadOnlyChatTools() {
         .describe("If true, count only Participate Energy (PE) deals."),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { fetchAllProjects } = await import("@/lib/hubspot");
 
       let canonicalLocation: string | null = null;
@@ -980,6 +1027,7 @@ export function createReadOnlyChatTools() {
         ),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { fetchAllProjects } = await import("@/lib/hubspot");
       const { statusLabel } = await import("@/lib/deal-status-labels");
       const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
@@ -1157,6 +1205,7 @@ export function createReadOnlyChatTools() {
         ),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { searchWithRetry } = await import("@/lib/hubspot");
 
       // Milestone → HubSpot date property (names verified against the
@@ -1312,6 +1361,11 @@ export function createReadOnlyChatTools() {
           candidates: ref.candidates,
         });
 
+      if (rep) {
+        const notMine = await refuseIfNotOwned(ref.dealId);
+        if (notMine) return notMine;
+      }
+
       const {
         getDealOwnerContact,
         getDealProjectManagerContact,
@@ -1386,6 +1440,11 @@ export function createReadOnlyChatTools() {
           message: `"${input.project}" matches ${ref.candidates.length} deals — which one?`,
           candidates: ref.candidates,
         });
+
+      if (rep) {
+        const notMine = await refuseIfNotOwned(ref.dealId);
+        if (notMine) return notMine;
+      }
 
       const { fetchPrimaryContactId } = await import("@/lib/hubspot");
       const contactId = await fetchPrimaryContactId(ref.dealId);
@@ -1556,6 +1615,10 @@ export function createReadOnlyChatTools() {
       };
 
       const filters = input.filters ?? [];
+      // Sales reps: force-scope to their own deals (matched by owner name).
+      if (rep) {
+        filters.push({ field: "owner", op: "equals" as const, value: rep.ownerName });
+      }
       for (const f of filters) {
         if (!FIELDS[f.field]) return JSON.stringify({ error: `Unknown field "${f.field}"`, knownFields });
       }
@@ -1809,6 +1872,7 @@ export function createReadOnlyChatTools() {
       groupBy2: z.string().optional().describe("Optional second group field for a matrix. Requires groupBy."),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { prisma } = await import("@/lib/db");
       if (!prisma) return JSON.stringify({ error: "database unavailable" });
 
@@ -2017,6 +2081,7 @@ export function createReadOnlyChatTools() {
         .describe("If true, also return byLocation: the windowed PE $ split by PB location."),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { searchWithRetry } = await import("@/lib/hubspot");
 
       const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -2348,6 +2413,8 @@ export function createReadOnlyChatTools() {
               filters: [
                 { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
                 { propertyName: "pe_m1_status", operator: FilterOperatorEnum.HasProperty },
+                // Sales reps: only their own PE deals.
+                ...(rep ? [{ propertyName: "hubspot_owner_id", operator: FilterOperatorEnum.Eq, value: rep.ownerId }] : []),
               ],
             },
           ],
@@ -2440,6 +2507,7 @@ export function createReadOnlyChatTools() {
       year: z.number().optional().describe("Calendar year; defaults to the current year"),
     }),
     run: async (input) => {
+      if (rep) return BLOCKED_AGGREGATE;
       const { getRevenueGoalSnapshot } = await import("@/lib/revenue-goals");
       const now = new Date();
       const currentYear = now.getUTCFullYear();

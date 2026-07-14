@@ -10,7 +10,7 @@
  */
 
 import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
-import { createReadOnlyChatTools } from "@/lib/chat-tools";
+import { createReadOnlyChatTools, type ChatToolsRestriction } from "@/lib/chat-tools";
 import { createTechOpsBotTools } from "@/lib/tech-ops-bot-tools";
 import { postGoogleChatMessage } from "@/lib/google-chat-api";
 import { sendBugReportEmail } from "@/lib/email";
@@ -28,6 +28,8 @@ interface SystemPromptParams {
   senderName: string;
   senderEmail: string;
   spaceDisplayName?: string;
+  /** True when the requester is a sales rep scoped to only their own deals. */
+  scopedToOwnDeals?: boolean;
 }
 
 const IDENTITY_PROMPT = `You are Zach's AI assistant for Zach's team at Photon Brothers (a solar installation company). You're always on — the team can reach you any time. Zach is here and working as normal — he is NOT out of office. NEVER say or imply that he's away, "out," or that someone "will see this when he's back." You are a permanent always-on assistant, not an out-of-office stand-in.
@@ -112,6 +114,9 @@ function buildDynamicContext(params: SystemPromptParams): string {
   ctx += `\nCurrent date/time: ${new Date().toLocaleString("en-US", { timeZone: "America/Denver" })}`;
   ctx += `\nMessage from: ${params.senderName} (${params.senderEmail})`;
   ctx += `\nSpace: ${params.spaceDisplayName || "Direct Message"}`;
+  if (params.scopedToOwnDeals) {
+    ctx += `\nACCESS SCOPE: this user is a sales rep restricted to THEIR OWN deals. Every deal tool automatically returns only their deals, and company-wide tools (counts, stage/status breakdowns, PE payments, revenue goals, jobs) return {restricted:true}. Frame all answers around THEIR deals — never company totals. If a tool returns {restricted:true}, relay that message plainly and do NOT retry other tools to get around it. Do not reveal or discuss deals they don't own.`;
+  }
   return ctx;
 }
 
@@ -179,12 +184,49 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
     }));
   }
 
+  // ── Per-user restriction: sales reps see only their own deals and are
+  // blocked from company-wide aggregates. Anyone with an elevated role (PM,
+  // ops, sales manager, admin, etc.) is unrestricted. On any lookup error we
+  // default to unrestricted (fail-open) so a transient DB blip doesn't break
+  // the bot for everyone; a rep whose owner ID can't be resolved still gets an
+  // empty scope (sees nothing), which is the safe direction for the scoping.
+  let restriction: ChatToolsRestriction | null = null;
+  try {
+    const { getUserByEmail } = await import("@/lib/db");
+    const user = await getUserByEmail(senderEmail);
+    const roles = (user?.roles ?? []) as string[];
+    const ELEVATED = [
+      "ADMIN", "OWNER", "PROJECT_MANAGER", "OPERATIONS_MANAGER", "OPERATIONS",
+      "SALES_MANAGER", "INTELLIGENCE", "TECH_OPS", "DESIGN", "PERMIT",
+      "INTERCONNECT", "SERVICE", "ROOFING", "ACCOUNTING", "MARKETING",
+    ];
+    const isRep = roles.includes("SALES") && !roles.some((r) => ELEVATED.includes(r));
+    if (isRep) {
+      const { resolveOwnerIdByEmail } = await import("@/lib/hubspot-tasks");
+      const { fetchAllOwnersMinimal } = await import("@/lib/hubspot");
+      const ownerId = (await resolveOwnerIdByEmail(senderEmail, senderName)) ?? "";
+      let ownerName = senderName;
+      try {
+        const owners = await fetchAllOwnersMinimal();
+        const o =
+          owners.find((x) => (x.email ?? "").toLowerCase() === senderEmail.toLowerCase()) ??
+          owners.find((x) => String(x.id) === String(ownerId));
+        if (o) ownerName = [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || senderName;
+      } catch { /* owner name best-effort */ }
+      restriction = { ownerId, ownerName };
+      console.warn(`[tech-ops-bot] rep-scoped: ${senderEmail} -> owner ${ownerId} (${ownerName})`);
+    }
+  } catch (err) {
+    console.error("[tech-ops-bot] restriction resolution failed (defaulting to unrestricted):", err);
+  }
+
   // ── Build system prompt (cache-aware blocks: static prefix is cached) ──
   const systemPrompt = buildTechOpsBotSystemBlocks({
     playbook,
     senderName,
     senderEmail,
     spaceDisplayName,
+    scopedToOwnDeals: !!restriction,
   });
 
   // ── Build messages ──
@@ -193,8 +235,8 @@ export async function processTechOpsBotMessage(params: ProcessMessageParams): Pr
     { role: "user", content: messageText },
   ];
 
-  // ── Build tools ──
-  const readOnlyTools = createReadOnlyChatTools();
+  // ── Build tools (restriction resolved above) ──
+  const readOnlyTools = createReadOnlyChatTools(restriction);
   const rawBotTools = createTechOpsBotTools();
 
   // Wrap the escalate + submit_process_request tools to inject request
