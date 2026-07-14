@@ -34,7 +34,12 @@ function keepAlive(promise: Promise<void>) {
 }
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// The heavy queries ("all rejected + on-hold deals with reasons") run
+// query_projects with includeInactive, which fetches all ~6,900 deals across
+// ~69 HubSpot pages — that runs past 60s and the function is killed mid-answer
+// (no reply, no saved row, no error). 300s (matching the other data-heavy
+// routes) lets those complete.
+export const maxDuration = 300;
 
 // ── Google Chat shapes (subset we read) ──
 
