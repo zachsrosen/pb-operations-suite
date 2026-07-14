@@ -4,6 +4,65 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-07-13
+
+### PowerHub Fleet Monitor (Major)
+- Persist Tesla OAuth token in SystemConfig row to stop token-endpoint throttling under concurrent polls
+- Resolve site → customer via `PropertyDealLink` for GEO-linked installs (was falling back to raw site name)
+- Refresh severity on existing alert rows during poll instead of only setting on insert
+- Calm fleet-monitor UI: stable row order, customer-first identity column, visible sort indicator
+- Derive grid status from measured grid voltage (the `grid_connected_status` signal is dead)
+- Fleet table info columns, voltage-based Grid cell, and Active Alerts toggle
+- Alert Type filter and inline alert names with open-ticket links on the fleet table
+- Show every alert chip per row (dropped the `+N` overflow) and Monitor link for sites with no active alerts
+- Dedicated Monitor column on every row; alert chips returned to plain form after the header-link approach was reverted (#1434 → #1439)
+
+### Ready to Build (Review Queue)
+- New "Ready to Build" tab on the review queue with released-date, line items, and days-in-stage
+- `Released` state now reads `pm_rtb_approved_date` rather than the boolean flag (so re-blocked deals correctly re-enter Blocked)
+- Editable RTB-Blocked notes with clarified header and always-visible edit control
+- Added payment method, loan status, earliest install availability, and permitting status columns
+- Fully sortable un-merged columns; queue condensed from 17 to 11 columns
+- Semicolon-separated project types now stack one-per-line
+
+### Sales Funnel
+- New Construction indicator + hide/show toggle on the funnel
+- Blocked toggle plus waiting-since / scheduled dates surfaced in drill-downs
+- Close Out stage and its backlog now driven by Close Out Status
+- "Hide cancelled" toggle (mirrors on-hold / rejected toggles)
+- Default range set to This Year; drill-down polish across stages
+- Fixed a `total:0` empty-search response that was blanking the pipeline
+
+### Team Activity / Report Card
+- Weekly report-card email digest
+- Tasks/day and Property updates/day metrics
+- Deals-touched-per-day metric; PE uploads now count as deal touches
+- Copy-paste report card format
+- PTO days (calendar OOO) excluded from daily averages
+- Dropped integration-app Drive events from the google-source counter (was double-counting)
+
+### Chat Bot / AI Assistant
+- Prompt-caches the system prompt and tool schemas on the tool runner
+- `query_projects` gained `includeReason` for bulk state reasons (removes per-deal fan-out)
+- `get_deal` now returns full labeled status snapshot (including DA / layout_status) and exposes the sales-change / rejection reason
+- `get_deal` answers "why is PROJ-X <any state>" from the real reason fields
+- Stage breakdowns ordered by pipeline sequence rather than size
+- Polish: no markdown tables in Chat, monospace code blocks used for real tables, plus a help/menu reply
+- Fixed cross-question list contamination, mid-list doubt injection, and truncation
+
+### Deal Sync
+- 15-minute cron schedule with a visible "deals synced N ago" freshness badge
+- Batched writes, stabilized diff output, and a staleness alert when the cron falls behind
+
+### Vishtik / Manager Worklists
+- `Get-Project` uses offset pagination — lifts the silent ~2,280-row fetch cap
+- Manager rollup worklists (Ben gets all DAs pending sales changes)
+
+### Bug Fixes
+- Middleware allowlists the `zuper-field-activity-sync` and `product-sync` cron routes
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
