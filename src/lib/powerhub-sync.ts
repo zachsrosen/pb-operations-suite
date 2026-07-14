@@ -24,6 +24,7 @@ import { enqueueCrossSystemPush } from "./powerhub-crosslink";
 import { prisma } from "./db";
 import { Prisma } from "@/generated/prisma/client";
 import { appCache } from "./cache";
+import { computeDeviceCounts } from "./powerhub-devices";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -224,10 +225,17 @@ async function upsertSite(
   dealAddresses: DealAddress[],
   result: AssetSyncResult
 ): Promise<void> {
-  // Real Tesla API returns equipment in typed sub-objects, not a flat array
-  const gatewayCount = detail.gateway?.total_gateways ?? detail.gateway?.gateways?.length ?? 0;
-  const batteryCount = detail.battery?.batteries?.length ?? 0;
-  const inverterCount = Array.isArray(detail.inverter) ? detail.inverter.length : 0;
+  // Real Tesla API returns equipment in typed sub-objects, not a flat array.
+  // Build the snapshot first, then classify: Powerwall 3 units land in Tesla's
+  // gateway list (a PW3 contains the system gateway) but are batteries — see
+  // computeDeviceCounts.
+  const rawSnapshot = {
+    gateways: detail.gateway?.gateways ?? [],
+    batteries: detail.battery?.batteries ?? [],
+    inverters: detail.inverter ?? [],
+  };
+  const { totalGateways: gatewayCount, totalBatteries: batteryCount, totalInverters: inverterCount } =
+    computeDeviceCounts(rawSnapshot, detail.gateway?.total_gateways ?? null);
 
   const totalBatteryEnergy = detail.battery?.total_nameplate_energy ?? 0;
   const totalBatteryPower = detail.battery?.total_nameplate_max_discharge_power ?? 0;

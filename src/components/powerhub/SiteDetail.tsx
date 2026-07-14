@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { getHubSpotTicketUrl } from "@/lib/external-links";
+import { isPowerwallInGatewayList } from "@/lib/powerhub-devices";
 
 interface SiteDetailProps {
   siteId: string;
@@ -35,7 +36,12 @@ export default function SiteDetail({ siteId }: SiteDetailProps) {
       ? site.devices
       : {};
   const devices = [
-    ...(deviceObj.gateways || []).map((d: any) => ({ ...d, device_type: "gateway" })),
+    // Powerwall 3 units sit in Tesla's gateway list but are batteries — label
+    // them accordingly (see lib/powerhub-devices).
+    ...(deviceObj.gateways || []).map((d: any) => ({
+      ...d,
+      device_type: isPowerwallInGatewayList(d) ? "battery" : "gateway",
+    })),
     ...(deviceObj.batteries || []).map((d: any) => ({ ...d, device_type: "battery" })),
     ...(deviceObj.inverters || []).map((d: any) => ({ ...d, device_type: "inverter" })),
     ...(deviceObj.meters || []).map((d: any) => ({ ...d, device_type: "meter" })),
