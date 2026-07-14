@@ -1468,15 +1468,20 @@ export async function fetchAllProjects(options?: {
   console.log(`[HubSpot] Phase 1 complete: ${allDealIds.length} IDs collected in ${pageCount} pages (HubSpot total: ${searchTotal})`);
 
   if (allDealIds.length === 0) {
-    // Search reported deals but we collected none → a transient HubSpot failure,
-    // not a genuinely empty pipeline. Throw so callers/cache keep their last-good
-    // value instead of treating it as "0 deals" (which blanked the pipeline page).
-    if (searchTotal > 0) {
-      throw new Error(
-        `fetchAllProjects: HubSpot search reported ${searchTotal} deals but returned 0 IDs — treating as transient failure`
-      );
-    }
-    return [];
+    // The Project pipeline is never genuinely empty, and every caller queries the
+    // whole pipeline (activeOnly true/false — the `stages` option is unused). So
+    // zero IDs here is ALWAYS a transient HubSpot search failure: index lag, load,
+    // OR a spurious total:0 page. Throw so the empty is never cached — coalescedFetch
+    // only caches on resolve, and backgroundRefresh swallows the error and keeps the
+    // last-good data. Returning [] would poison the shared PROJECTS_ALL cache and
+    // blank every dashboard for the cache TTL.
+    //
+    // The earlier fix (#1239) only guarded `searchTotal > 0`; HubSpot also returns
+    // total:0 with an empty page transiently, which slipped through and re-blanked
+    // the pipeline. Guarding all empties closes that gap.
+    throw new Error(
+      `fetchAllProjects: HubSpot search returned 0 deal IDs (reported total: ${searchTotal}) — treating as a transient failure, not caching`
+    );
   }
 
   // ── Phase 2: Batch-read full properties ──
