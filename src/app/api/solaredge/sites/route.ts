@@ -53,6 +53,11 @@ export async function GET(request: Request) {
       openAlertCount: true,
       portalUrl: true,
       lastSyncAt: true,
+      // Named alerts (from the portal export — the API key can't read them).
+      alerts: {
+        select: { alertType: true, component: true, impact: true, status: true, rmaStatus: true, rmaCaseNumber: true },
+        orderBy: [{ impact: "desc" }, { alertType: "asc" }],
+      },
     },
     orderBy: [{ highestAlertImpact: "desc" }, { openAlertCount: "desc" }, { siteName: "asc" }],
   });
@@ -89,14 +94,26 @@ export async function GET(request: Request) {
       : [],
   }));
 
+  // Distinct alert-type list for the fleet filter (worst impact first).
+  const typeImpact = new Map<string, number>();
+  for (const s of enriched) {
+    for (const a of s.alerts) {
+      typeImpact.set(a.alertType, Math.max(typeImpact.get(a.alertType) ?? 0, a.impact));
+    }
+  }
+  const alertTypes = [...typeImpact.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([alertType, impact]) => ({ alertType, impact }));
+
   const fleet = {
     totalSites: enriched.length,
     withOpenAlerts: enriched.filter((s) => s.openAlertCount > 0).length,
+    withNamedAlerts: enriched.filter((s) => s.alerts.length > 0).length,
     criticalSites: enriched.filter((s) => s.highestAlertImpact >= 7).length,
     linkedSites: enriched.filter((s) => s.dealId).length,
     openTickets: enriched.reduce((n, s) => n + s.tickets.length, 0),
     lastUpdated: enriched[0]?.lastSyncAt ?? null,
   };
 
-  return NextResponse.json({ sites: enriched, fleet, meta: { total: enriched.length, filter } });
+  return NextResponse.json({ sites: enriched, fleet, alertTypes, meta: { total: enriched.length, filter } });
 }

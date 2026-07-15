@@ -3,13 +3,18 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
-import SolarEdgeFleetTable, { type SolarEdgeSiteRow } from "@/components/solaredge/SolarEdgeFleetTable";
+import SolarEdgeFleetTable, {
+  type SolarEdgeSiteRow,
+  type SolarEdgeAlertType,
+} from "@/components/solaredge/SolarEdgeFleetTable";
 
 interface FleetResponse {
   sites: SolarEdgeSiteRow[];
+  alertTypes: SolarEdgeAlertType[];
   fleet: {
     totalSites: number;
     withOpenAlerts: number;
+    withNamedAlerts: number;
     criticalSites: number;
     linkedSites: number;
     openTickets: number;
@@ -71,7 +76,7 @@ export default function SolarEdgeDashboard() {
             ))}
           </div>
         ) : (
-          <SolarEdgeFleetTable sites={query.data?.sites ?? []} />
+          <SolarEdgeFleetTable sites={query.data?.sites ?? []} alertTypes={query.data?.alertTypes ?? []} />
         )}
       </div>
     </DashboardShell>
