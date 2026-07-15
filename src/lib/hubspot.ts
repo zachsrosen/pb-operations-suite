@@ -580,6 +580,8 @@ export interface Project {
   projectManager: string;
   operationsManager: string;
   dealOwner: string;
+  /** HubSpot owner id — stable key for owner-scoping (dealOwner is a name). */
+  hubspotOwnerId: string | null;
   siteSurveyor: string;
 
   // Department leads (resolved via owner map)
@@ -1296,6 +1298,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
       return ownerMap?.[raw] || surveyorMap?.[raw] || raw;
     })(),
     dealOwner: ownerMap?.[String(deal.hubspot_owner_id || "")] || "",
+    hubspotOwnerId: deal.hubspot_owner_id ? String(deal.hubspot_owner_id) : null,
     siteSurveyor: (() => {
       const raw = String(deal.site_surveyor || "");
       if (!raw) return "";

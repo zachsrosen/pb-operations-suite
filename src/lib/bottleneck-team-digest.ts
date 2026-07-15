@@ -13,12 +13,15 @@ import { prisma } from "@/lib/db";
 import { dealToProject } from "@/lib/deal-reader";
 import {
   buildProjectFunnelData,
+  resolveMilestones,
   type ProjectFunnelDrillDown,
   type ProjectFunnelDrillDownDeal,
 } from "@/lib/project-funnel-aggregation";
+import type { Project } from "@/lib/hubspot";
 import { statusBucket } from "@/lib/pe-milestone-bucket";
 import { STAGES, type BottleneckDealRow } from "@/lib/bottlenecks";
 import { statusLabel } from "@/lib/deal-status-labels";
+import { PE_DOC_TO_TEAM_FIELD } from "@/lib/pe-rejection-notes";
 
 const HUBSPOT_PORTAL = (process.env.HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 const FUNNEL_TAB_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
@@ -440,8 +443,6 @@ function shortName(name: string): string {
 const dealLink = (id: string, name: string) =>
   `<https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-3/${id}|${shortName(name)}>`;
 
-/** Google Chat text messages cap at 4,096 chars — leave headroom for safety. */
-const CHAT_CHAR_BUDGET = 3900;
 
 export function renderTeamDigest(
   team: TeamDigestKey,
@@ -460,23 +461,14 @@ export function renderTeamDigest(
   out.push(`${total} deal${total === 1 ? "" : "s"} waiting on your team`);
   out.push("");
 
-  // Show every deal that fits; once the Chat char budget runs out, stop and
-  // say how many were cut. Budget counts rendered chars incl. link markup.
-  let used = out.join("\n").length + footer.length + 64; // slack for cut-notes
-  let cut = 0;
-
-  const push = (line: string): boolean => {
-    if (used + line.length + 1 > CHAT_CHAR_BUDGET) return false;
-    out.push(line);
-    used += line.length + 1;
-    return true;
-  };
-
+  // No length cap — postGoogleChatMessage splits over-limit messages at line
+  // boundaries, so the full worklist always delivers (across multiple messages
+  // if long) rather than being truncated.
   for (const s of sections) {
     if (s.lines.length === 0) continue;
     const flagged = s.followUpDays != null ? s.lines.filter((l) => l.needsFollowUp).length : 0;
     const followNote = s.followUpDays != null ? ` — ${flagged} past ${s.followUpDays}d` : "";
-    if (!push(`${s.title} (${s.lines.length}${followNote})`)) { cut += s.lines.length; continue; }
+    out.push(`${s.title} (${s.lines.length}${followNote})`);
 
     // Group by the responsible party (lead) or office, biggest group first;
     // within a group, oldest first.
@@ -492,7 +484,7 @@ export function renderTeamDigest(
     );
 
     for (const [who, lines] of ordered) {
-      if (!push(`${who} (${lines.length})`)) { cut += lines.length; continue; }
+      out.push(`${who} (${lines.length})`);
       for (const l of lines) {
         const status = l.status ? ` — ${l.status}` : "";
         const stage = l.stage ? ` — ${l.stage}` : "";
@@ -500,15 +492,12 @@ export function renderTeamDigest(
         const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
         // Location shown per line only when the grouping isn't already location.
         const where = s.groupBy !== "location" && l.location ? ` (${l.location})` : "";
-        if (!push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`)) {
-          cut++;
-        }
+        out.push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`);
       }
     }
-    push("");
+    out.push("");
   }
 
-  if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
   out.push(footer);
   return out.join("\n");
 }
@@ -660,25 +649,20 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
     `${w.totalDeals} of your deals ${w.totalDeals === 1 ? "needs" : "need"} a next step`,
     "",
   ];
-  let used = out.join("\n").length + 200;
-  let cut = 0;
+  // No length cap — postGoogleChatMessage splits over-limit messages at line
+  // boundaries, so the full worklist always delivers.
   for (const { team, section: s } of w.sections) {
-    const header = `${TEAM_DIGEST_LABELS[team]} — ${s.title} (${s.lines.length})`;
-    if (used + header.length > CHAT_CHAR_BUDGET) { cut += s.lines.length; continue; }
-    out.push(header); used += header.length + 1;
+    out.push(`${TEAM_DIGEST_LABELS[team]} — ${s.title} (${s.lines.length})`);
     for (const l of [...s.lines].sort((a, b) => b.daysWaiting - a.daysWaiting)) {
       const status = l.status ? ` — ${l.status}` : "";
       const stage = l.stage ? ` — ${l.stage}` : "";
       const mark = l.needsFollowUp ? " ⚠" : "";
       const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
       const where = l.location ? ` (${l.location})` : "";
-      const line = `• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`;
-      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
-      out.push(line); used += line.length + 1;
+      out.push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`);
     }
-    out.push(""); used += 1;
+    out.push("");
   }
-  if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
   // Deep-link to the personal worklist view — the dashboard renders exactly
   // this list (same pivot), not the generic queue view.
   out.push(`Dashboard: ${FUNNEL_TAB_URL}&view=personal&person=${encodeURIComponent(w.person)}`);
@@ -863,7 +847,10 @@ export async function runPersonalWorklists(opts: {
     if (!email) unmatched.push(w.person);
     const base: PersonalSendResult = { person: w.person, email, deals: w.totalDeals, sent: false };
 
-    if (email && excluded.has(email)) {
+    // Lowercase before testing: emailByName carries User.email as-is, but the
+    // excluded set is lowercased — a mixed-case email would slip the guard and
+    // (for reps) produce a double DM.
+    if (email && excluded.has(email.trim().toLowerCase())) {
       results.push({ ...base, reason: "excluded" });
       continue;
     }
@@ -970,20 +957,15 @@ function renderDaPendingSalesChanges(
     `${psc.length} deal${psc.length === 1 ? "" : "s"} — $${Math.round(totalRev).toLocaleString()} total, by rep:`,
     "",
   ];
-  let used = out.join("\n").length + 200;
-  let cut = 0;
+  // No length cap — postGoogleChatMessage splits over-limit messages at line
+  // boundaries, so the full rollup always delivers.
   for (const { rep, ds, rev } of reps) {
-    const header = `*${rep}* — ${ds.length} deal${ds.length === 1 ? "" : "s"} | $${Math.round(rev).toLocaleString()}`;
-    if (used + header.length > CHAT_CHAR_BUDGET) { cut += ds.length; continue; }
-    out.push(header); used += header.length + 1;
+    out.push(`*${rep}* — ${ds.length} deal${ds.length === 1 ? "" : "s"} | $${Math.round(rev).toLocaleString()}`);
     for (const p of [...ds].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))) {
-      const line = `• ${dealLink(String(p.id), p.name)}${p.pbLocation ? ` (${p.pbLocation})` : ""} — $${Math.round(Number(p.amount) || 0).toLocaleString()}`;
-      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
-      out.push(line); used += line.length + 1;
+      out.push(`• ${dealLink(String(p.id), p.name)}${p.pbLocation ? ` (${p.pbLocation})` : ""} — $${Math.round(Number(p.amount) || 0).toLocaleString()}`);
     }
-    out.push(""); used += 1;
+    out.push("");
   }
-  if (cut > 0) out.push(`…${cut} more didn't fit — ask me "list all pending sales changes" for the rest.`);
   return { text: out.join("\n"), total: psc.length };
 }
 
@@ -1071,4 +1053,384 @@ export async function runManagerWorklists(opts: {
     await new Promise((r) => setTimeout(r, 400));
   }
   return { results };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rep worklists — a per-sales-rep daily digest scoped to their OWN deals.
+//
+// Sales reps are blocked from company aggregates in the bot; this is their
+// proactive counterpart: four sections of things only they can move forward.
+// Unlike the personal worklists (mirror-backed funnel buckets), reps need the
+// reason NOTES — what change to communicate, why a deal is on hold, which PE
+// doc was kicked back — which only live in HubSpot. So this path pulls live
+// projects + one PE-docs scan per run and slices them per rep.
+//
+// Reps are excluded from runPersonalWorklists (the cron passes the roster as
+// `exclude`) so nobody gets two DMs: this worklist is the superset.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * PE documents a rep sees — SALES-owned ONLY. Reps must never see another
+ * team's PE rejections, so this is restricted to the customer-facing package
+ * Sales owns. Labels are the canonical names in PE_DOC_TO_TEAM_FIELD
+ * (pe-rejection-notes.ts); the assertion below fails the build if any entry is
+ * not actually routed to Sales, so the two can't drift apart.
+ */
+const REP_PE_DOCS: Array<{ prop: string; label: string }> = [
+  { prop: "pe_doc_customer_agreement", label: "Customer Agreement (PPA/ESA)" },
+  { prop: "pe_doc_signed_proposal", label: "Signed Proposal" },
+  { prop: "pe_doc_state_disclosures", label: "State Disclosures" },
+  { prop: "pe_doc_installation_order", label: "Installation Order" },
+  { prop: "pe_doc_utility_bill", label: "Utility Bill" },
+];
+// Guard: every rep-visible PE doc must be Sales-owned per the canonical map.
+const NON_SALES_REP_DOC = REP_PE_DOCS.find(
+  (d) => PE_DOC_TO_TEAM_FIELD[d.label] !== "pe_rejection_notes_for_sales"
+);
+if (NON_SALES_REP_DOC) {
+  throw new Error(
+    `REP_PE_DOCS includes a non-Sales PE doc: "${NON_SALES_REP_DOC.label}" ` +
+      `(routes to ${PE_DOC_TO_TEAM_FIELD[NON_SALES_REP_DOC.label] ?? "unknown"})`
+  );
+}
+
+type RepPeDeal = {
+  id: string;
+  name: string;
+  pbLocation: string;
+  docs: Array<{ label: string; note: string | null }>;
+};
+
+/**
+ * All PE-pipeline deals with at least one document in "Action Required",
+ * grouped by HubSpot owner id. One paginated scan for the whole run; each rep
+ * gets their slice by owner id (never by name — avoids the Roland/Rolando trap).
+ */
+async function fetchPeDocsActionRequiredByOwner(): Promise<Map<string, RepPeDeal[]>> {
+  const { searchWithRetry } = await import("@/lib/hubspot");
+  const { FilterOperatorEnum } = await import("@hubspot/api-client/lib/codegen/crm/deals");
+  const props = [
+    "dealname", "hubspot_owner_id", "pb_location", "pe_m1_status",
+    ...REP_PE_DOCS.map((d) => d.prop),
+    ...REP_PE_DOCS.map((d) => `${d.prop}_notes`),
+  ];
+  const rows: Array<Record<string, string | null | undefined> & { __hsid: string }> = [];
+  let after: string | undefined;
+  const PAGE_CAP = 30; // 30 × 200 = 6,000 PE deals
+  for (let page = 0; page < PAGE_CAP; page++) {
+    const req: { filterGroups: { filters: unknown[] }[]; properties: string[]; limit: number; after?: string } = {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
+            { propertyName: "pe_m1_status", operator: FilterOperatorEnum.HasProperty },
+          ],
+        },
+      ],
+      properties: props,
+      limit: 200,
+    };
+    if (after) req.after = after;
+    const res = await searchWithRetry(req as Parameters<typeof searchWithRetry>[0]);
+    for (const d of res.results) rows.push({ ...(d.properties ?? {}), __hsid: d.id });
+    after = res.paging?.next?.after;
+    if (!after) break;
+    if (page === PAGE_CAP - 1) {
+      console.warn(`[rep-worklists] PE-docs scan hit the ${PAGE_CAP}-page cap (${rows.length} deals) — some reps' PE section may be incomplete.`);
+    }
+  }
+
+  // HubSpot select fields store the internal VALUE ("action_required"), not the
+  // label ("Action Required") — normalize both sides before comparing.
+  const norm = (s: string) => s.toLowerCase().replace(/[\s_]+/g, "");
+  const want = norm("action_required");
+  const byOwner = new Map<string, RepPeDeal[]>();
+  for (const r of rows) {
+    const ownerId = String(r.hubspot_owner_id || "").trim();
+    if (!ownerId) continue;
+    const docs: Array<{ label: string; note: string | null }> = [];
+    for (const d of REP_PE_DOCS) {
+      const st = r[d.prop] ? String(r[d.prop]) : "";
+      if (st && norm(st) === want) {
+        const noteRaw = r[`${d.prop}_notes`];
+        docs.push({ label: d.label, note: noteRaw ? String(noteRaw) : null });
+      }
+    }
+    if (docs.length === 0) continue;
+    if (!byOwner.has(ownerId)) byOwner.set(ownerId, []);
+    byOwner.get(ownerId)!.push({
+      id: r.__hsid,
+      name: String(r.dealname || "(unnamed)"),
+      pbLocation: String(r.pb_location || ""),
+      docs,
+    });
+  }
+  return byOwner;
+}
+
+/** Roster of rep emails from SystemConfig `bottleneck_rep_worklists`
+ *  (JSON array of email strings). Empty/absent → no rep worklists run. */
+export async function getRepWorklistRoster(): Promise<string[]> {
+  if (!prisma) return [];
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_rep_worklists" } });
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.map((e) => String(e).trim().toLowerCase()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export interface RepSendResult {
+  email: string;
+  name?: string;
+  total?: number;
+  sent?: boolean;
+  reason?: string;
+  preview?: string;
+}
+
+/** Collapse whitespace to keep a note on one line — full text, no length cap
+ *  (postGoogleChatMessage splits any over-limit message at line boundaries). */
+function repNote(s: string | null | undefined): string {
+  return (s || "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * One rep's four-section worklist, scoped to their own deals. `projects` must
+ * already be filtered to this rep (by owner name); `pe` to this rep (by owner id).
+ */
+function renderRepWorklist(
+  repName: string,
+  projects: Project[],
+  pe: RepPeDeal[],
+  surveyEligibleStages: readonly string[],
+  nowMs: number
+): { text: string; total: number } {
+  const day = new Date(nowMs).toLocaleDateString("en-US", {
+    timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
+  });
+  const loc = (p: Project) => (p.pbLocation ? ` (${p.pbLocation})` : "");
+
+  const pendingSalesChanges = projects.filter((p) => (p.layoutStatus || "") === "Pending Sales Changes");
+  // Survey-eligible stage with no survey scheduled yet — the scheduler's own
+  // definition (`resolveMilestones`), so this never disagrees with the calendar.
+  const surveysToSchedule = projects.filter(
+    (p) => surveyEligibleStages.includes(p.stage) && !resolveMilestones(p).hasSurveyScheduled
+  );
+  const onHold = projects.filter((p) => p.stage === "On Hold");
+
+  const sections: Array<{ title: string; lines: string[] }> = [];
+  if (pendingSalesChanges.length) {
+    sections.push({
+      title: `📝 Pending sales changes — reach the customer (${pendingSalesChanges.length})`,
+      lines: pendingSalesChanges.map((p) => {
+        const note = repNote(p.salesChangeOrderNotes);
+        return `• ${dealLink(String(p.id), p.name)}${loc(p)}${note ? ` — ${note}` : ""}`;
+      }),
+    });
+  }
+  if (surveysToSchedule.length) {
+    sections.push({
+      title: `📅 Surveys to schedule (${surveysToSchedule.length})`,
+      lines: surveysToSchedule.map((p) => {
+        const st = p.siteSurveyStatus ? statusLabel("site_survey_status", p.siteSurveyStatus) : "";
+        return `• ${dealLink(String(p.id), p.name)}${loc(p)}${st ? ` — ${st}` : ""}`;
+      }),
+    });
+  }
+  if (pe.length) {
+    sections.push({
+      title: `📄 PE rejections — sales docs to fix (${pe.length})`,
+      lines: pe.map((d) => {
+        const docs = d.docs.map((x) => x.label).join(", ");
+        const firstNote = repNote(d.docs.find((x) => x.note)?.note);
+        return `• ${dealLink(d.id, d.name)}${d.pbLocation ? ` (${d.pbLocation})` : ""} — ${docs}${firstNote ? `: ${firstNote}` : ""}`;
+      }),
+    });
+  }
+  if (onHold.length) {
+    sections.push({
+      title: `⏸️ On-hold — follow up (${onHold.length})`,
+      lines: onHold.map((p) => {
+        const reason = repNote([p.onHoldReason, p.onHoldNotes].filter(Boolean).join(" — "));
+        return `• ${dealLink(String(p.id), p.name)}${loc(p)}${reason ? ` — ${reason}` : ""}`;
+      }),
+    });
+  }
+
+  const total = pendingSalesChanges.length + surveysToSchedule.length + pe.length + onHold.length;
+  const first = repName.split(" ")[0] || repName;
+  const out: string[] = [
+    `👋 ${first} — your worklist for ${day}`,
+    total === 0
+      ? "You're all clear — nothing needs your attention right now. 🎉"
+      : `${total} item${total === 1 ? "" : "s"} need your attention:`,
+    "",
+  ];
+  // No length cap here — postGoogleChatMessage splits anything over Chat's
+  // limit at line boundaries, so the full worklist always delivers (across
+  // multiple messages if long) rather than being truncated.
+  for (const s of sections) {
+    out.push(s.title);
+    for (const line of s.lines) out.push(line);
+    out.push("");
+  }
+  out.push("Reply here anytime to ask about any of your deals.");
+  return { text: out.join("\n"), total };
+}
+
+/**
+ * Send each configured rep their own daily worklist. Live delivery reuses the
+ * personal-worklist gate (`bottleneck_personal_worklists_enabled` + recorded DM
+ * spaces), honors standing exclusions, and mirrors to the owner tracking space.
+ * - preview: JSON summaries + rendered text, nothing posted.
+ * - dryrun: every worklist posted to the OWNER DM, labeled (no rep is messaged).
+ * - live: real DMs to each rep.
+ */
+export async function runRepWorklists(opts: {
+  mode: "preview" | "dryrun" | "live";
+  nowMs?: number;
+}): Promise<{ results: RepSendResult[]; roster: string[] }> {
+  if (!prisma) return { results: [], roster: [] };
+  const nowMs = opts.nowMs ?? Date.now();
+
+  const roster = await getRepWorklistRoster();
+  if (roster.length === 0) return { results: [], roster: [] };
+
+  if (opts.mode === "live") {
+    const flag = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_personal_worklists_enabled" } });
+    if (flag?.value !== "true") {
+      return { results: roster.map((email) => ({ email, sent: false, reason: "worklists disabled" })), roster };
+    }
+  }
+
+  // Standing exclusions (people who must never receive a worklist).
+  let standing: string[] = [];
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_delivery_exclusions" } });
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    if (Array.isArray(arr)) standing = arr.map((e) => String(e).trim().toLowerCase());
+  } catch { /* best effort */ }
+  const excluded = new Set(standing);
+
+  const { fetchAllProjects, fetchAllOwnersMinimal, SURVEY_ELIGIBLE_STAGES } = await import("@/lib/hubspot");
+  const { resolveOwnerIdByEmail } = await import("@/lib/hubspot-tasks");
+  const [projects, owners, peByOwner, users] = await Promise.all([
+    fetchAllProjects({ activeOnly: true }),
+    fetchAllOwnersMinimal(),
+    fetchPeDocsActionRequiredByOwner(),
+    prisma.user.findMany({ where: { email: { in: roster } }, select: { email: true, name: true } }),
+  ]);
+
+  // email -> canonical HubSpot owner {id, name}. dealOwner on projects is this
+  // same name, so slicing by it is exact even when the User table spells it
+  // differently. ownerById backs the alias fallback below.
+  const ownerByEmail = new Map<string, { id: string; name: string }>();
+  const ownerById = new Map<string, string>();
+  for (const o of owners) {
+    const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim();
+    ownerById.set(String(o.id), name);
+    if (o.email) ownerByEmail.set(o.email.trim().toLowerCase(), { id: String(o.id), name });
+  }
+  const nameByEmail = new Map(users.filter((u) => u.name).map((u) => [u.email.trim().toLowerCase(), u.name!]));
+
+  // Owner name -> id(s), derived from the deals themselves. Captures reps who
+  // are DEACTIVATED in HubSpot's Owners API (so email/alias lookup misses them)
+  // but still own active deals — e.g. Ryan Montgomery, 29 deals, no owner row.
+  const idsByOwnerName = new Map<string, Set<string>>();
+  for (const p of projects) {
+    const nm = (p.dealOwner || "").trim().toLowerCase();
+    if (!nm || !p.hubspotOwnerId) continue;
+    if (!idsByOwnerName.has(nm)) idsByOwnerName.set(nm, new Set());
+    idsByOwnerName.get(nm)!.add(p.hubspotOwnerId);
+  }
+
+  // Resolve a rep email to their HubSpot owner {id, name}, in order:
+  //   1. exact owner-email match, 2. first.last@domain alias (the bot's own
+  //   rep-scoping path), 3. deactivated-owner fallback — match the User's
+  //   display name to deal owners. An ambiguous name (two owners share it)
+  //   returns null so a rep can never be shown someone else's deals.
+  async function resolveOwner(email: string): Promise<{ id: string; name: string } | null> {
+    const direct = ownerByEmail.get(email);
+    if (direct) return direct;
+    const aliasId = await resolveOwnerIdByEmail(email, nameByEmail.get(email) ?? null);
+    if (aliasId) {
+      const name = ownerById.get(String(aliasId));
+      if (name) return { id: String(aliasId), name };
+    }
+    const userName = nameByEmail.get(email);
+    if (userName) {
+      const ids = idsByOwnerName.get(userName.trim().toLowerCase());
+      if (ids && ids.size === 1) return { id: [...ids][0], name: userName };
+    }
+    return null;
+  }
+
+  const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
+  const { getOwnerDmSpace, getUserDmSpaces } = await import("@/lib/tech-ops-bot-proactive");
+  const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
+  let mirrorSpace: string | null = null;
+  if (opts.mode !== "preview") {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "techops_bot_mirror_space" } });
+    mirrorSpace = row?.value?.trim() || null;
+  }
+
+  const results: RepSendResult[] = [];
+  for (const email of roster) {
+    if (excluded.has(email)) {
+      results.push({ email, sent: false, reason: "excluded" });
+      continue;
+    }
+    const owner = await resolveOwner(email);
+    if (!owner) {
+      results.push({ email, sent: false, reason: "no HubSpot owner match" });
+      continue;
+    }
+    // Slice by owner id (not name) so identically-named owners can't cross-leak.
+    const mine = projects.filter((p) => p.hubspotOwnerId === owner.id);
+    const myPe = peByOwner.get(owner.id) ?? [];
+    const rendered = renderRepWorklist(owner.name, mine, myPe, SURVEY_ELIGIBLE_STAGES, nowMs);
+    const base: RepSendResult = { email, name: owner.name, total: rendered.total };
+
+    if (opts.mode === "preview") {
+      results.push({ ...base, preview: rendered.text });
+      continue;
+    }
+    // Nothing to say — skip rather than DM an empty worklist.
+    if (rendered.total === 0) {
+      results.push({ ...base, sent: false, reason: "no items" });
+      continue;
+    }
+
+    try {
+      if (opts.mode === "dryrun") {
+        const ownerSpace = await getOwnerDmSpace();
+        if (!ownerSpace) { results.push({ ...base, sent: false, reason: "owner DM space missing" }); continue; }
+        await postGoogleChatMessage({
+          spaceName: ownerSpace,
+          text: `🧪 TEST — would DM ${owner.name} <${email}> (${rendered.total} items)\n\n${rendered.text}`,
+          skipMirror: true,
+        });
+        results.push({ ...base, sent: true });
+      } else {
+        const space = dmSpaces[email] || dmSpaces[email.toLowerCase()];
+        if (!space) { results.push({ ...base, sent: false, reason: "no DM space recorded" }); continue; }
+        await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
+        if (mirrorSpace && mirrorSpace !== space) {
+          await postGoogleChatMessage({
+            spaceName: mirrorSpace,
+            text: `🧾 Rep worklist → ${owner.name} <${email}> (${rendered.total} items):\n\n${rendered.text}`,
+            skipMirror: true,
+          }).catch((e) => console.warn("[rep-worklists] mirror failed:", e));
+        }
+        results.push({ ...base, sent: true });
+      }
+    } catch (e) {
+      results.push({ ...base, sent: false, reason: e instanceof Error ? e.message.slice(0, 160) : "send failed" });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return { results, roster };
 }

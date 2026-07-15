@@ -4,6 +4,8 @@ import {
   runTeamDigest,
   runPersonalWorklists,
   runManagerWorklists,
+  runRepWorklists,
+  getRepWorklistRoster,
   TEAM_DIGEST_LABELS,
   type TeamDigestKey,
 } from "@/lib/bottleneck-team-digest";
@@ -19,7 +21,9 @@ import {
  * digest's change-detection snapshot.
  */
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Heavy live path: the default run now does two fetchAllProjects (managers +
+// reps) plus a PE-docs scan on top of the mirror-backed digests.
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -54,6 +58,23 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // ?reps=preview|dryrun|live — per-sales-rep worklists (their own deals only).
+  // Same gate as personal worklists; dryrun posts all to the owner DM.
+  const reps = request.nextUrl.searchParams.get("reps");
+  if (reps) {
+    if (!["preview", "dryrun", "live"].includes(reps)) {
+      return NextResponse.json({ error: "reps must be preview|dryrun|live" }, { status: 400 });
+    }
+    try {
+      const out = await runRepWorklists({ mode: reps as "preview" | "dryrun" | "live" });
+      return NextResponse.json(out);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.error("[bottleneck-digest] rep worklists failed:", message);
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
   const teamParam = request.nextUrl.searchParams.get("team");
   if (teamParam && !(teamParam in TEAM_DIGEST_LABELS)) {
     return NextResponse.json(
@@ -70,13 +91,19 @@ export async function GET(request: NextRequest) {
     // worklists (live mode is flag-gated, honors standing exclusions and
     // coverage redirects, and only reaches recorded DM spaces).
     const daily = await runBottleneckDigest({ preview });
+    // Reps get their own richer worklist (runRepWorklists), so keep them out of
+    // the generic personal worklist — otherwise they'd receive two DMs.
+    const repRoster = preview ? [] : await getRepWorklistRoster();
     const personal = preview
       ? { results: [], unmatched: [], skipped: "preview" }
-      : await runPersonalWorklists({ mode: "live" });
+      : await runPersonalWorklists({ mode: "live", exclude: repRoster });
     const managers = preview
       ? { results: [], skipped: "preview" }
       : await runManagerWorklists({ mode: "live" });
-    return NextResponse.json({ daily, personal, managers });
+    const repWorklists = preview
+      ? { results: [], roster: [], skipped: "preview" }
+      : await runRepWorklists({ mode: "live" });
+    return NextResponse.json({ daily, personal, managers, repWorklists });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     console.error("[bottleneck-digest] failed:", message);

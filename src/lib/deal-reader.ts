@@ -381,6 +381,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     projectManager: deal.projectManager ?? "",
     operationsManager: deal.operationsManager ?? "",
     dealOwner: deal.dealOwnerName ?? "",
+    hubspotOwnerId: deal.hubspotOwnerId ?? null,
     siteSurveyor: deal.siteSurveyor ?? "",
 
     // Department leads
