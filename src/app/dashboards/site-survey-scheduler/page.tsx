@@ -491,7 +491,8 @@ export default function SiteSurveySchedulerPage() {
   const [portalInvitePhone, setPortalInvitePhone] = useState("");
   const [portalInviteSending, setPortalInviteSending] = useState(false);
   const [portalInviteResult, setPortalInviteResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [, setPortalInviteStatuses] = useState<Record<string, string>>({});
+  const [portalInviteLink, setPortalInviteLink] = useState<string | null>(null);
+  const [portalInviteStatuses, setPortalInviteStatuses] = useState<Record<string, string>>({});
   const [, setPortalInviteIds] = useState<Record<string, string>>({}); // dealId → inviteId
   const [portalInviteLoadingEmail, setPortalInviteLoadingEmail] = useState(false);
 
@@ -2171,7 +2172,39 @@ export default function SiteSurveySchedulerPage() {
           </span>
         )}
         <span className="flex-1" />
-        {/* TEMPORARILY DISABLED - portal invite buttons */}
+        {!portalInviteStatuses[project.id] ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setPortalInviteProject(project);
+              setPortalInviteEmail("");
+              setPortalInvitePhone("");
+              setPortalInviteResult(null);
+              setPortalInviteLink(null);
+            }}
+            className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/30 font-medium"
+            title="Send customer self-scheduling link"
+          >
+            Invite
+          </button>
+        ) : (
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+              portalInviteStatuses[project.id] === "SCHEDULED"
+                ? "bg-green-500/20 text-green-400"
+                : portalInviteStatuses[project.id] === "PENDING"
+                  ? "bg-orange-500/20 text-orange-400"
+                  : "bg-zinc-500/20 text-muted"
+            }`}
+            title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+          >
+            {portalInviteStatuses[project.id] === "SCHEDULED"
+              ? "Booked"
+              : portalInviteStatuses[project.id] === "PENDING"
+                ? "Invited"
+                : portalInviteStatuses[project.id]}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -3039,7 +3072,38 @@ export default function SiteSurveySchedulerPage() {
                                     >
                                       Schedule
                                     </button>
-                                    {/* TEMPORARILY DISABLED - portal invite buttons */}
+                                    {!portalInviteStatuses[project.id] ? (
+                                      <button
+                                        onClick={() => {
+                                          setPortalInviteProject(project);
+                                          setPortalInviteEmail("");
+                                          setPortalInvitePhone("");
+                                          setPortalInviteResult(null);
+                                          setPortalInviteLink(null);
+                                        }}
+                                        className="text-xs text-orange-400 hover:text-orange-300"
+                                        title="Send customer self-scheduling link"
+                                      >
+                                        Invite
+                                      </button>
+                                    ) : (
+                                      <span
+                                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                          portalInviteStatuses[project.id] === "SCHEDULED"
+                                            ? "bg-green-500/20 text-green-400"
+                                            : portalInviteStatuses[project.id] === "PENDING"
+                                              ? "bg-orange-500/20 text-orange-400"
+                                              : "bg-zinc-500/20 text-muted"
+                                        }`}
+                                        title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+                                      >
+                                        {portalInviteStatuses[project.id] === "SCHEDULED"
+                                          ? "Booked"
+                                          : portalInviteStatuses[project.id] === "PENDING"
+                                            ? "Invited"
+                                            : portalInviteStatuses[project.id]}
+                                      </span>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -3535,8 +3599,8 @@ export default function SiteSurveySchedulerPage() {
         </div>
       )}
 
-      {/* TEMPORARILY DISABLED - Portal Invite Modal */}
-      {false && portalInviteProject && (
+      {/* Portal Invite Modal */}
+      {portalInviteProject && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000]">
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-md w-[90%]">
             <h3 className="text-lg font-semibold text-foreground mb-1">Send Survey Invite</h3>
@@ -3599,6 +3663,27 @@ export default function SiteSurveySchedulerPage() {
                   {portalInviteResult!.message}
                 </div>
               )}
+
+              {/* Shareable scheduling link — for PMs to copy/text the customer */}
+              {portalInviteResult?.success && portalInviteLink && (
+                <div className="rounded-lg bg-surface-2 p-3">
+                  <p className="text-xs text-muted mb-1.5">Scheduling link</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={portalInviteLink}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="flex-1 min-w-0 rounded border border-t-border bg-background px-2 py-1.5 text-xs text-foreground"
+                    />
+                    <button
+                      onClick={() => { navigator.clipboard?.writeText(portalInviteLink); showToast("Link copied", "success"); }}
+                      className="shrink-0 px-2.5 py-1.5 text-xs rounded-lg font-medium bg-orange-500 hover:bg-orange-600 text-white"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 mt-4">
@@ -3636,8 +3721,9 @@ export default function SiteSurveySchedulerPage() {
                           success: true,
                           message: data.emailSent
                             ? `Invite sent to ${portalInviteEmail}`
-                            : "Invite created (email sending is not configured)",
+                            : "Invite created — copy the link below to share it.",
                         });
+                        setPortalInviteLink(data.portalUrl || null);
                         setPortalInviteStatuses((prev) => ({ ...prev, [portalInviteProject.id]: "PENDING" }));
                       } else {
                         setPortalInviteResult({ success: false, message: data.error || "Failed to send invite" });
