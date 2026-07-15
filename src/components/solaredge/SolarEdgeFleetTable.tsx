@@ -9,6 +9,15 @@ export interface SolarEdgeTicket {
   subject: string;
 }
 
+export interface SolarEdgeNamedAlert {
+  alertType: string;
+  component: string | null;
+  impact: number;
+  status: string;
+  rmaStatus: string | null;
+  rmaCaseNumber: string | null;
+}
+
 export interface SolarEdgeSiteRow {
   siteId: number;
   siteName: string;
@@ -22,6 +31,7 @@ export interface SolarEdgeSiteRow {
   dealName: string | null;
   stageLabel: string | null;
   tickets: SolarEdgeTicket[];
+  alerts: SolarEdgeNamedAlert[];
   inverterCount: number;
   optimizerCount: number;
   batteryCount: number;
@@ -29,6 +39,11 @@ export interface SolarEdgeSiteRow {
   highestAlertImpact: number;
   openAlertCount: number;
   portalUrl: string | null;
+}
+
+export interface SolarEdgeAlertType {
+  alertType: string;
+  impact: number;
 }
 
 type SortKey = "impact" | "installed" | "customer";
@@ -64,10 +79,17 @@ function deviceSummary(s: SolarEdgeSiteRow): string {
   return bits.join(" · ") || "—";
 }
 
-export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow[] }) {
+export default function SolarEdgeFleetTable({
+  sites,
+  alertTypes = [],
+}: {
+  sites: SolarEdgeSiteRow[];
+  alertTypes?: SolarEdgeAlertType[];
+}) {
   const [search, setSearch] = useState("");
   const [statusSel, setStatusSel] = useState<string[]>([]);
   const [alertSel, setAlertSel] = useState<string[]>([]);
+  const [typeSel, setTypeSel] = useState<string[]>([]);
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "impact", dir: "desc" });
 
@@ -80,6 +102,10 @@ export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow
     { value: "__none__", label: "No alerts" },
     { value: "__critical__", label: "Critical (impact ≥7)" },
   ];
+  const typeOptions = useMemo(
+    () => alertTypes.map((t) => ({ value: t.alertType, label: t.alertType })),
+    [alertTypes]
+  );
 
   function toggleSort(key: SortKey) {
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "customer" ? "asc" : "desc" }));
@@ -107,6 +133,9 @@ export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow
         )
       );
     }
+    if (typeSel.length) {
+      rows = rows.filter((s) => s.alerts.some((a) => typeSel.includes(a.alertType)));
+    }
 
     const dir = sort.dir === "asc" ? 1 : -1;
     const sorted = [...rows].sort((a, b) => {
@@ -126,7 +155,7 @@ export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow
       return a.siteName.localeCompare(b.siteName);
     });
     return sorted;
-  }, [sites, search, statusSel, alertSel, alertsOnly, sort]);
+  }, [sites, search, statusSel, alertSel, typeSel, alertsOnly, sort]);
 
   return (
     <div>
@@ -142,6 +171,9 @@ export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow
           <MultiSelectFilter label="Status" options={statusOptions} selected={statusSel} onChange={setStatusSel} accentColor="cyan" />
         )}
         <MultiSelectFilter label="Alerts" options={alertOptions} selected={alertSel} onChange={setAlertSel} accentColor="cyan" />
+        {typeOptions.length > 0 && (
+          <MultiSelectFilter label="Alert type" options={typeOptions} selected={typeSel} onChange={setTypeSel} accentColor="cyan" />
+        )}
         <button
           type="button"
           onClick={() => setAlertsOnly((v) => !v)}
@@ -218,6 +250,21 @@ export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow
                       )}
                       {s.openAlertCount > 1 && <span className="text-xs text-muted">×{s.openAlertCount}</span>}
                     </div>
+                    {s.alerts.length > 0 && (
+                      <div className="mt-1 flex flex-col gap-0.5">
+                        {s.alerts.slice(0, 4).map((a, i) => (
+                          <span
+                            key={`${a.alertType}-${a.component ?? ""}-${i}`}
+                            className="text-xs text-muted truncate max-w-[220px]"
+                            title={[a.alertType, a.component, a.rmaStatus && `RMA: ${a.rmaStatus}`].filter(Boolean).join(" · ")}
+                          >
+                            {a.alertType}
+                            {a.component ? <span className="text-muted/70"> · {a.component}</span> : null}
+                          </span>
+                        ))}
+                        {s.alerts.length > 4 && <span className="text-xs text-muted/70">+{s.alerts.length - 4} more</span>}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 pr-4 text-xs">
                     {s.tickets.length > 0 ? (
@@ -265,7 +312,9 @@ export default function SolarEdgeFleetTable({ sites }: { sites: SolarEdgeSiteRow
             {visible.length === 0 && (
               <tr>
                 <td colSpan={8} className="py-8 text-center text-muted">
-                  {search || statusSel.length || alertSel.length || alertsOnly ? "No sites match your filters" : "No sites"}
+                  {search || statusSel.length || alertSel.length || typeSel.length || alertsOnly
+                    ? "No sites match your filters"
+                    : "No sites"}
                 </td>
               </tr>
             )}
