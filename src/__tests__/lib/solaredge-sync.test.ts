@@ -8,9 +8,10 @@ describe("apiSiteToRow", () => {
       peakPower: 9.99,
       type: "Residential",
       status: "Active",
-      location: { address: "7556 South Elk Court", city: "Denver", state: "CO", zip: "80016" },
+      location: { address: "7556 South Elk Court, ", city: "Denver", stateCode: "CO", zip: "80016" },
       alertQuantity: 3,
-      alertSeverity: "HIGH",
+      highestImpact: 4,
+      installationDate: "2022-04-26",
     });
     expect(row).toMatchObject({
       siteId: 123456,
@@ -21,8 +22,10 @@ describe("apiSiteToRow", () => {
       peakPowerKw: 9.99,
       city: "Denver",
       projNumber: "PROJ-2166",
-      highestAlertImpact: 9,
+      highestAlertImpact: 4,
       openAlertCount: 3,
+      address: "7556 South Elk Court",
+      installDate: new Date("2022-04-26").toISOString(),
     });
   });
 

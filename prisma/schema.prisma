@@ -4559,6 +4559,8 @@ model SolarEdgeSite {
   state   String?
   zip     String?
 
+  installDate DateTime?
+
   // Linkage to the HubSpot property object
   projNumber     String? // extracted from siteName, e.g. "PROJ-2166"
   propertyId     String?

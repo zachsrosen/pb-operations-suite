@@ -14,6 +14,7 @@ CREATE TABLE "SolarEdgeSite" (
     "city" TEXT,
     "state" TEXT,
     "zip" TEXT,
+    "installDate" TIMESTAMP(3),
     "projNumber" TEXT,
     "propertyId" TEXT,
     "dealId" TEXT,

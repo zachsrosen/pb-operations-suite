@@ -29,7 +29,7 @@ export async function syncSolarEdgeSites(): Promise<SolarEdgeSyncResult> {
       if (row.projNumber) result.withProj++;
       await prisma.solarEdgeSite.upsert({
         where: { siteId: row.siteId },
-        create: { ...row, linkMethod: "UNLINKED", lastSyncAt: now },
+        create: { ...row, installDate: row.installDate ? new Date(row.installDate) : null, linkMethod: "UNLINKED", lastSyncAt: now },
         // Preserve linkage fields (propertyId/dealId/linkMethod) across syncs.
         update: {
           siteName: row.siteName,
@@ -41,6 +41,7 @@ export async function syncSolarEdgeSites(): Promise<SolarEdgeSyncResult> {
           city: row.city,
           state: row.state,
           zip: row.zip,
+          installDate: row.installDate ? new Date(row.installDate) : null,
           projNumber: row.projNumber,
           highestAlertImpact: row.highestAlertImpact,
           openAlertCount: row.openAlertCount,

@@ -29,11 +29,13 @@ export interface SolarEdgeApiSite {
     address2?: string;
     city?: string;
     state?: string;
+    stateCode?: string;
     zip?: string;
     country?: string;
   };
   alertQuantity?: number;
-  alertSeverity?: string; // "NONE" | "LOW" | "MEDIUM" | "HIGH"
+  highestImpact?: number; // 0-9 (verified: this is populated; alertSeverity is not)
+  installationDate?: string; // "YYYY-MM-DD"
   primaryModule?: { manufacturerName?: string; modelName?: string };
 }
 
@@ -52,14 +54,11 @@ export function computeSolarEdgePortalUrl(siteId: number): string {
   return template.replaceAll("{siteId}", String(siteId));
 }
 
-/** Map SolarEdge alertSeverity → a 0-9 impact, matching the export's scale. */
-export function alertSeverityToImpact(severity?: string | null): number {
-  switch ((severity || "").toUpperCase()) {
-    case "HIGH": return 9;
-    case "MEDIUM": return 5;
-    case "LOW": return 2;
-    default: return 0; // NONE / unknown
-  }
+/** Parse SolarEdge's "YYYY-MM-DD" install date to an ISO string, or null. */
+export function parseSolarEdgeDate(raw?: string | null): string | null {
+  if (!raw) return null;
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
 import { extractProjNumber } from "@/lib/solaredge-linkage";
@@ -75,6 +74,7 @@ export interface SolarEdgeRowInput {
   city: string | null;
   state: string | null;
   zip: string | null;
+  installDate: string | null;
   projNumber: string | null;
   highestAlertImpact: number;
   openAlertCount: number;
@@ -86,15 +86,16 @@ export function apiSiteToRow(site: SolarEdgeApiSite): SolarEdgeRowInput {
     siteId: site.id,
     siteName: site.name,
     portalUrl: computeSolarEdgePortalUrl(site.id),
-    siteType: site.type ?? null,
+    siteType: site.type || null, // sites/list returns "" — leave null
     activationStatus: site.status ?? null,
-    peakPowerKw: site.peakPower ?? null,
-    address: site.location?.address ?? null,
+    peakPowerKw: site.peakPower || null, // sites/list returns 0 — treat as unset
+    address: site.location?.address?.trim().replace(/,\s*$/, "") || null,
     city: site.location?.city ?? null,
-    state: site.location?.state ?? null,
+    state: site.location?.stateCode ?? site.location?.state ?? null,
     zip: site.location?.zip ?? null,
+    installDate: parseSolarEdgeDate(site.installationDate),
     projNumber: extractProjNumber(site.name),
-    highestAlertImpact: alertSeverityToImpact(site.alertSeverity),
+    highestAlertImpact: site.highestImpact ?? 0,
     openAlertCount: site.alertQuantity ?? 0,
   };
 }

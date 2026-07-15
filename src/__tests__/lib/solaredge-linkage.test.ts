@@ -21,7 +21,7 @@ describe("extractProjNumber", () => {
   });
 });
 
-import { computeSolarEdgePortalUrl, alertSeverityToImpact } from "@/lib/solaredge";
+import { computeSolarEdgePortalUrl, parseSolarEdgeDate } from "@/lib/solaredge";
 
 describe("computeSolarEdgePortalUrl", () => {
   it("builds the per-site portal URL", () => {
@@ -31,8 +31,13 @@ describe("computeSolarEdgePortalUrl", () => {
   });
 });
 
-describe("alertSeverityToImpact", () => {
-  it.each([["HIGH", 9], ["MEDIUM", 5], ["LOW", 2], ["NONE", 0], ["", 0], [undefined, 0]])(
-    "%s -> %i", (sev, impact) => expect(alertSeverityToImpact(sev as string)).toBe(impact)
-  );
+describe("parseSolarEdgeDate", () => {
+  it("parses YYYY-MM-DD to ISO", () => {
+    expect(parseSolarEdgeDate("2022-04-26")).toBe(new Date("2022-04-26").toISOString());
+  });
+  it("returns null for empty/invalid", () => {
+    expect(parseSolarEdgeDate(null)).toBeNull();
+    expect(parseSolarEdgeDate("")).toBeNull();
+    expect(parseSolarEdgeDate("nope")).toBeNull();
+  });
 });
