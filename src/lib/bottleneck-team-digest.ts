@@ -865,7 +865,10 @@ export async function runPersonalWorklists(opts: {
     if (!email) unmatched.push(w.person);
     const base: PersonalSendResult = { person: w.person, email, deals: w.totalDeals, sent: false };
 
-    if (email && excluded.has(email)) {
+    // Lowercase before testing: emailByName carries User.email as-is, but the
+    // excluded set is lowercased — a mixed-case email would slip the guard and
+    // (for reps) produce a double DM.
+    if (email && excluded.has(email.trim().toLowerCase())) {
       results.push({ ...base, reason: "excluded" });
       continue;
     }
@@ -1152,6 +1155,9 @@ async function fetchPeDocsActionRequiredByOwner(): Promise<Map<string, RepPeDeal
     for (const d of res.results) rows.push({ ...(d.properties ?? {}), __hsid: d.id });
     after = res.paging?.next?.after;
     if (!after) break;
+    if (page === PAGE_CAP - 1) {
+      console.warn(`[rep-worklists] PE-docs scan hit the ${PAGE_CAP}-page cap (${rows.length} deals) — some reps' PE section may be incomplete.`);
+    }
   }
 
   // HubSpot select fields store the internal VALUE ("action_required"), not the
@@ -1335,20 +1341,56 @@ export async function runRepWorklists(opts: {
   const excluded = new Set(standing);
 
   const { fetchAllProjects, fetchAllOwnersMinimal, SURVEY_ELIGIBLE_STAGES } = await import("@/lib/hubspot");
-  const [projects, owners, peByOwner] = await Promise.all([
+  const { resolveOwnerIdByEmail } = await import("@/lib/hubspot-tasks");
+  const [projects, owners, peByOwner, users] = await Promise.all([
     fetchAllProjects({ activeOnly: true }),
     fetchAllOwnersMinimal(),
     fetchPeDocsActionRequiredByOwner(),
+    prisma.user.findMany({ where: { email: { in: roster } }, select: { email: true, name: true } }),
   ]);
 
   // email -> canonical HubSpot owner {id, name}. dealOwner on projects is this
   // same name, so slicing by it is exact even when the User table spells it
-  // differently.
+  // differently. ownerById backs the alias fallback below.
   const ownerByEmail = new Map<string, { id: string; name: string }>();
+  const ownerById = new Map<string, string>();
   for (const o of owners) {
-    if (!o.email) continue;
     const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim();
-    ownerByEmail.set(o.email.trim().toLowerCase(), { id: String(o.id), name });
+    ownerById.set(String(o.id), name);
+    if (o.email) ownerByEmail.set(o.email.trim().toLowerCase(), { id: String(o.id), name });
+  }
+  const nameByEmail = new Map(users.filter((u) => u.name).map((u) => [u.email.trim().toLowerCase(), u.name!]));
+
+  // Owner name -> id(s), derived from the deals themselves. Captures reps who
+  // are DEACTIVATED in HubSpot's Owners API (so email/alias lookup misses them)
+  // but still own active deals — e.g. Ryan Montgomery, 29 deals, no owner row.
+  const idsByOwnerName = new Map<string, Set<string>>();
+  for (const p of projects) {
+    const nm = (p.dealOwner || "").trim().toLowerCase();
+    if (!nm || !p.hubspotOwnerId) continue;
+    if (!idsByOwnerName.has(nm)) idsByOwnerName.set(nm, new Set());
+    idsByOwnerName.get(nm)!.add(p.hubspotOwnerId);
+  }
+
+  // Resolve a rep email to their HubSpot owner {id, name}, in order:
+  //   1. exact owner-email match, 2. first.last@domain alias (the bot's own
+  //   rep-scoping path), 3. deactivated-owner fallback — match the User's
+  //   display name to deal owners. An ambiguous name (two owners share it)
+  //   returns null so a rep can never be shown someone else's deals.
+  async function resolveOwner(email: string): Promise<{ id: string; name: string } | null> {
+    const direct = ownerByEmail.get(email);
+    if (direct) return direct;
+    const aliasId = await resolveOwnerIdByEmail(email, nameByEmail.get(email) ?? null);
+    if (aliasId) {
+      const name = ownerById.get(String(aliasId));
+      if (name) return { id: String(aliasId), name };
+    }
+    const userName = nameByEmail.get(email);
+    if (userName) {
+      const ids = idsByOwnerName.get(userName.trim().toLowerCase());
+      if (ids && ids.size === 1) return { id: [...ids][0], name: userName };
+    }
+    return null;
   }
 
   const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
@@ -1366,13 +1408,13 @@ export async function runRepWorklists(opts: {
       results.push({ email, sent: false, reason: "excluded" });
       continue;
     }
-    const owner = ownerByEmail.get(email);
+    const owner = await resolveOwner(email);
     if (!owner) {
       results.push({ email, sent: false, reason: "no HubSpot owner match" });
       continue;
     }
-    const nameKey = owner.name.trim().toLowerCase();
-    const mine = projects.filter((p) => (p.dealOwner || "").trim().toLowerCase() === nameKey);
+    // Slice by owner id (not name) so identically-named owners can't cross-leak.
+    const mine = projects.filter((p) => p.hubspotOwnerId === owner.id);
     const myPe = peByOwner.get(owner.id) ?? [];
     const rendered = renderRepWorklist(owner.name, mine, myPe, SURVEY_ELIGIBLE_STAGES, nowMs);
     const base: RepSendResult = { email, name: owner.name, total: rendered.total };
