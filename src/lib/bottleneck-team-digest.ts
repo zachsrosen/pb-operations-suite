@@ -1293,18 +1293,14 @@ function renderRepWorklist(
       : `${total} item${total === 1 ? "" : "s"} need your attention:`,
     "",
   ];
-  let used = out.join("\n").length + 200;
-  let cut = 0;
+  // No length cap here — postGoogleChatMessage splits anything over Chat's
+  // limit at line boundaries, so the full worklist always delivers (across
+  // multiple messages if long) rather than being truncated.
   for (const s of sections) {
-    if (used + s.title.length > CHAT_CHAR_BUDGET) { cut += s.lines.length; continue; }
-    out.push(s.title); used += s.title.length + 1;
-    for (const line of s.lines) {
-      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
-      out.push(line); used += line.length + 1;
-    }
-    out.push(""); used += 1;
+    out.push(s.title);
+    for (const line of s.lines) out.push(line);
+    out.push("");
   }
-  if (cut > 0) out.push(`…${cut} more didn't fit — reply and ask me to list them.`);
   out.push("Reply here anytime to ask about any of your deals.");
   return { text: out.join("\n"), total };
 }
