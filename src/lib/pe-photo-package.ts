@@ -262,9 +262,14 @@ export async function appendImagePage(
   caption?: string,
   font?: PDFFont,
 ): Promise<void> {
-  // Normalize to PNG so pdf-lib embeds reliably regardless of source format.
-  const png = await sharp(img).rotate().png().toBuffer();
-  const embedded = await doc.embedPng(png);
+  // Normalize to JPEG (capped at 2400px) so assembled PDFs stay under PE's
+  // 50MB upload limit. `.rotate()` honors EXIF orientation before resize.
+  const jpeg = await sharp(img)
+    .rotate()
+    .resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 82, mozjpeg: true })
+    .toBuffer();
+  const embedded = await doc.embedJpg(jpeg);
   const { width, height } = embedded;
   const barH = caption && font ? Math.max(34, Math.round(width * 0.04)) : 0;
   const page = doc.addPage([width, height + barH]);
