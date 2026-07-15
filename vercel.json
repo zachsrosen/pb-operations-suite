@@ -78,6 +78,9 @@
     "src/app/api/cron/enphase-assets/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/cron/solaredge-sync/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/api/cron/enphase-telemetry/route.ts": {
       "maxDuration": 120
     },
@@ -260,6 +263,10 @@
     {
       "path": "/api/cron/enphase-assets",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/solaredge-sync",
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/enphase-telemetry",
