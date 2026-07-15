@@ -7,10 +7,18 @@ import SolarEdgeFleetTable, { type SolarEdgeSiteRow } from "@/components/solared
 
 interface FleetResponse {
   sites: SolarEdgeSiteRow[];
-  fleet: { totalSites: number; withOpenAlerts: number; criticalSites: number; lastUpdated: string | null };
+  fleet: {
+    totalSites: number;
+    withOpenAlerts: number;
+    criticalSites: number;
+    linkedSites: number;
+    openTickets: number;
+    lastUpdated: string | null;
+  };
 }
 
 export default function SolarEdgeDashboard() {
+  const viewEnabled = process.env.NEXT_PUBLIC_UI_SOLAREDGE_VIEWS_ENABLED === "true";
   const query = useQuery({
     queryKey: ["solaredge", "sites"],
     queryFn: async () => {
@@ -19,9 +27,10 @@ export default function SolarEdgeDashboard() {
       return res.json() as Promise<FleetResponse>;
     },
     placeholderData: keepPreviousData,
+    enabled: viewEnabled,
   });
 
-  if (process.env.NEXT_PUBLIC_UI_SOLAREDGE_VIEWS_ENABLED !== "true") {
+  if (!viewEnabled) {
     return null;
   }
 
@@ -34,7 +43,7 @@ export default function SolarEdgeDashboard() {
       lastUpdated={fleet?.lastUpdated ?? undefined}
       fullWidth
     >
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <StatCard label="Sites" value={fleet ? String(fleet.totalSites) : "—"} color="cyan" />
         <StatCard
           label="With Open Alerts"
@@ -45,6 +54,12 @@ export default function SolarEdgeDashboard() {
           label="Critical (impact ≥7)"
           value={fleet ? String(fleet.criticalSites) : "—"}
           color={fleet && fleet.criticalSites > 0 ? "red" : "green"}
+        />
+        <StatCard label="Linked to HubSpot" value={fleet ? String(fleet.linkedSites) : "—"} color="cyan" />
+        <StatCard
+          label="Open Tickets"
+          value={fleet ? String(fleet.openTickets) : "—"}
+          color={fleet && fleet.openTickets > 0 ? "orange" : "green"}
         />
       </div>
 
