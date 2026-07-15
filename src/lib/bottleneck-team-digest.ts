@@ -1215,11 +1215,10 @@ export interface RepSendResult {
   preview?: string;
 }
 
-/** Collapse whitespace and cap a note so one deal never floods the digest. */
-function repNote(s: string | null | undefined, max = 140): string {
-  const t = (s || "").replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+/** Collapse whitespace to keep a note on one line — full text, no length cap
+ *  (the message-level CHAT_CHAR_BUDGET still guards the digest as a whole). */
+function repNote(s: string | null | undefined): string {
+  return (s || "").replace(/\s+/g, " ").trim();
 }
 
 /**
