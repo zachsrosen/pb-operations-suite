@@ -894,13 +894,17 @@ export async function runPersonalWorklists(opts: {
         const text = isFirst
           ? `👋 Hi! I'm the PB Tech Ops Bot — I'll DM you a worklist like this when deals are waiting on you, and you can reply here with questions about any of them (or anything pipeline-related).\n\n${message}`
           : message;
-        await postGoogleChatMessage({ spaceName: space, text });
+        // skipMirror: the labeled mirror below already copies this to the
+        // oversight space — without it the global auto-mirror (google-chat-api)
+        // would post a SECOND copy, doubling every worklist in that space.
+        await postGoogleChatMessage({ spaceName: space, text, skipMirror: true });
         if (isFirst) await markWelcomed(email);
         // Copy into the owner's tracking space so they can see what was sent.
         if (mirrorSpace && mirrorSpace !== space) {
           await postGoogleChatMessage({
             spaceName: mirrorSpace,
             text: `📋 Worklist → ${w.person}${email ? ` <${email}>` : ""} (${w.totalDeals} deals):\n\n${message}`,
+            skipMirror: true,
           }).catch((e) => console.warn("[worklists] mirror copy failed:", e));
         }
         results.push({ ...base, sent: true });
@@ -1039,11 +1043,14 @@ export async function runManagerWorklists(opts: {
       continue;
     }
     try {
-      await postGoogleChatMessage({ spaceName: space, text: rendered.text });
+      // skipMirror: the labeled mirror below is the single oversight copy —
+      // without it the global auto-mirror would post a duplicate.
+      await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
       if (mirrorSpace && mirrorSpace !== space) {
         await postGoogleChatMessage({
           spaceName: mirrorSpace,
           text: `📋 Manager worklist → ${m.email} (${rendered.total} deals):\n\n${rendered.text}`,
+          skipMirror: true,
         }).catch((e) => console.warn("[manager-worklists] mirror failed:", e));
       }
       results.push({ email: m.email, total: rendered.total, sent: true });
