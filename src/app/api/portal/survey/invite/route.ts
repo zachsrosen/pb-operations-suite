@@ -23,6 +23,11 @@ const InviteSchema = z.object({
   pbLocation: z.string().min(1),
   systemSize: z.number().positive().optional(),
   customerPhone: z.string().optional(),
+  // When false, create the invite + return the link WITHOUT emailing the
+  // customer — for reps who just want a link to share themselves (customer
+  // messaging is owned by the Olivia channel). Defaults to true for any
+  // existing caller that relies on the email being sent.
+  sendEmail: z.boolean().optional().default(true),
 });
 
 export async function POST(request: NextRequest) {
@@ -88,9 +93,10 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send invite email via Google Workspace (falls back to Resend)
+    // Send invite email via Google Workspace (falls back to Resend) — unless
+    // the caller only wants the link (sendEmail: false).
     let emailSent = false;
-    try {
+    if (body.sendEmail !== false) try {
       const html = await render(
         SurveyInviteEmail({
           customerName: body.customerName,
