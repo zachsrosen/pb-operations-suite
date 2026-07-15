@@ -188,6 +188,18 @@ export async function searchTicketsWithRetry(
  * Transform a HubSpot ticket into the PriorityItem shape used by the scoring engine.
  * Pure function — safe to unit test.
  */
+/**
+ * HubSpot returns `hs_date_entered_<stageId>` as epoch-milliseconds (a numeric
+ * string), unlike hs_lastmodifieddate which is ISO. Normalize to ISO, or null.
+ */
+export function parseStageEnteredDate(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const ms = Number(raw);
+  if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+  const parsed = Date.parse(raw); // tolerate an ISO value too
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
 export function transformTicketToPriorityItem(
   ticket: HubSpotTicket,
   stageMap: Record<string, string>
@@ -201,6 +213,7 @@ export function transformTicketToPriorityItem(
     title: props.subject || "Untitled Ticket",
     stage: stageMap[stageId] || stageId || "Unknown",
     lastModified: props.hs_lastmodifieddate || props.createdate || new Date().toISOString(),
+    stageEnteredDate: parseStageEnteredDate(props[`hs_date_entered_${stageId}`]),
     lastContactDate: props.notes_last_contacted || null,
     createDate: props.createdate || new Date().toISOString(),
     amount: null, // Tickets don't have amounts
@@ -299,6 +312,12 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
   try {
     const { map: stageMap } = await getTicketStageMap();
 
+    // Request the per-stage entry timestamps (hs_date_entered_<stageId>) so the
+    // priority engine can measure true time-in-stage. Built from the live stage
+    // map since stage IDs aren't known statically.
+    const stageEnteredProps = Object.keys(stageMap).map((id) => `hs_date_entered_${id}`);
+    const ticketProperties = [...TICKET_PROPERTIES, ...stageEnteredProps];
+
     // Get all closed/resolved stage IDs to EXCLUDE them server-side
     // Convention: stages whose label contains "Closed", "Done", "Resolved", or "Completed"
     const closedStageIds = Object.entries(stageMap)
@@ -330,7 +349,7 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
 
       const searchRequest = {
         filterGroups: [{ filters }],
-        properties: TICKET_PROPERTIES,
+        properties: ticketProperties,
         limit: 100,
         ...(after ? { after } : {}),
       };

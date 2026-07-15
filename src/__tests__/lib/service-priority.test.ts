@@ -43,6 +43,44 @@ describe("scorePriorityItem", () => {
     expect(result.score).toBeLessThan(50);
   });
 
+  it("measures stage duration from stageEnteredDate, not the re-stamped lastModified (Jessica's bug)", () => {
+    const item: PriorityItem = {
+      id: "ticket-stuck",
+      type: "ticket",
+      title: "Carolyn Wilson - SE Inverter failure",
+      stage: "Waiting on Equipment Delivery",
+      lastModified: new Date("2026-03-06T12:00:00Z").toISOString(), // 10 days ago (re-stamped)
+      stageEnteredDate: new Date("2025-08-08T12:00:00Z").toISOString(), // ~220 days ago (true)
+      lastContactDate: null,
+      createDate: new Date("2025-07-01T12:00:00Z").toISOString(),
+      amount: null,
+      url: "https://app.hubspot.com/ticket/1",
+    };
+    const result = scorePriorityItem(item, now);
+    const stageReason = result.reasons.find((r) => r.startsWith("Stuck in"));
+    expect(stageReason).toBeDefined();
+    // Uses the true ~220-day duration, not 10 days, and includes the "since" date.
+    expect(stageReason).toMatch(/Stuck in "Waiting on Equipment Delivery" for 2\d\d days \(since Aug \d+, 2025\)/);
+    expect(result.reasonCategories).toContain("stuck_in_stage");
+  });
+
+  it("falls back to lastModified when stageEnteredDate is absent", () => {
+    const item: PriorityItem = {
+      id: "ticket-nofallback",
+      type: "ticket",
+      title: "No stage date",
+      stage: "Acknowledgement",
+      lastModified: new Date("2026-03-06T12:00:00Z").toISOString(), // 10 days ago
+      lastContactDate: null,
+      createDate: new Date("2026-02-01T12:00:00Z").toISOString(),
+      amount: null,
+      url: "https://app.hubspot.com/ticket/2",
+    };
+    const result = scorePriorityItem(item, now);
+    const stageReason = result.reasons.find((r) => r.startsWith("Stuck in"));
+    expect(stageReason).toBe('Stuck in "Acknowledgement" for 10 days');
+  });
+
   it("scores a deal with no contact >7 days + stuck in stage as high priority", () => {
     const item: PriorityItem = {
       id: "deal-2",
