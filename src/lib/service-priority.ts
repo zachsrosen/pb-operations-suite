@@ -13,6 +13,14 @@ export interface PriorityItem {
   title: string;
   stage: string;
   lastModified: string;
+  /**
+   * ISO timestamp the item entered its CURRENT stage (HubSpot
+   * hs_date_entered_<stageId>). This is the reliable "time in stage" signal —
+   * hs_lastmodifieddate gets re-stamped by automations/calc props, so a ticket
+   * parked in a stage for a year can read "modified 10 days ago". Null when the
+   * stage-entry date is unavailable (falls back to lastModified).
+   */
+  stageEnteredDate?: string | null;
   lastContactDate?: string | null;
   createDate: string;
   amount?: number | null;
@@ -54,6 +62,13 @@ function daysBetween(dateStr: string, now: Date): number {
   const ms = new Date(dateStr).getTime();
   if (!Number.isFinite(ms)) return NaN;
   return Math.floor((now.getTime() - ms) / (1000 * 60 * 60 * 24));
+}
+
+/** "Aug 8, 2025" — the date an item entered its current stage, for the badge. */
+function formatSince(dateStr: string): string | null {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function tierFromScore(score: number): PriorityTier {
@@ -110,16 +125,24 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     }
   }
 
-  // 3. Stage duration (time stuck)
+  // 3. Stage duration (time stuck) — measured from when the item ENTERED its
+  // current stage, not from hs_lastmodifieddate (which automations re-stamp, so
+  // a year-stuck ticket wrongly read "10 days"). Falls back to lastModified
+  // only when the stage-entry date is unavailable.
   const daysSinceModified = daysBetween(item.lastModified, now);
-  const daysSinceModifiedValid = !Number.isNaN(daysSinceModified);
-  if (daysSinceModifiedValid && daysSinceModified >= 7) {
+  const daysInStage = item.stageEnteredDate
+    ? daysBetween(item.stageEnteredDate, now)
+    : daysSinceModified;
+  const daysInStageValid = !Number.isNaN(daysInStage);
+  const stageSince = item.stageEnteredDate ? formatSince(item.stageEnteredDate) : null;
+  const sinceSuffix = stageSince ? ` (since ${stageSince})` : "";
+  if (daysInStageValid && daysInStage >= 7) {
     score += 20;
-    reasons.push(`Stuck in "${item.stage}" for ${daysSinceModified} days`);
+    reasons.push(`Stuck in "${item.stage}" for ${daysInStage} days${sinceSuffix}`);
     categories.add("stuck_in_stage");
-  } else if (daysSinceModifiedValid && daysSinceModified >= 3) {
+  } else if (daysInStageValid && daysInStage >= 3) {
     score += 10;
-    reasons.push(`In "${item.stage}" for ${daysSinceModified} days`);
+    reasons.push(`In "${item.stage}" for ${daysInStage} days${sinceSuffix}`);
     categories.add("stuck_in_stage");
   }
 
@@ -157,7 +180,7 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     score += 5;
     categories.add("stage_urgency");
   }
-  if (activeStages.includes(item.stage) && daysSinceModifiedValid && daysSinceModified >= 5) {
+  if (activeStages.includes(item.stage) && daysInStageValid && daysInStage >= 5) {
     score += 10;
     reasons.push(`"${item.stage}" overdue`);
     categories.add("stage_urgency");

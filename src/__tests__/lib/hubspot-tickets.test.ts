@@ -1,4 +1,37 @@
-import { transformTicketToPriorityItem, type HubSpotTicket } from "@/lib/hubspot-tickets";
+import { transformTicketToPriorityItem, parseStageEnteredDate, type HubSpotTicket } from "@/lib/hubspot-tickets";
+
+describe("parseStageEnteredDate", () => {
+  it("parses HubSpot epoch-milliseconds to ISO", () => {
+    // 1675401577399 = 2023-02-03
+    expect(parseStageEnteredDate("1675401577399")).toBe(new Date(1675401577399).toISOString());
+  });
+  it("tolerates an ISO string", () => {
+    expect(parseStageEnteredDate("2025-08-08T00:00:00Z")).toBe("2025-08-08T00:00:00.000Z");
+  });
+  it("returns null for empty/invalid", () => {
+    expect(parseStageEnteredDate(undefined)).toBeNull();
+    expect(parseStageEnteredDate("")).toBeNull();
+    expect(parseStageEnteredDate("not-a-date")).toBeNull();
+  });
+});
+
+describe("transformTicketToPriorityItem stageEnteredDate", () => {
+  it("reads hs_date_entered_<currentStageId> for the current stage", () => {
+    const ticket: HubSpotTicket = {
+      id: "t1",
+      properties: {
+        hs_object_id: "t1",
+        subject: "Stuck ticket",
+        hs_pipeline_stage: "32235449",
+        hs_lastmodifieddate: "2026-07-04T00:00:00Z",
+        createdate: "2025-01-01T00:00:00Z",
+        hs_date_entered_32235449: "1754611200000", // 2025-08-08
+      },
+    };
+    const result = transformTicketToPriorityItem(ticket, { "32235449": "Waiting on Equipment Delivery" });
+    expect(result.stageEnteredDate).toBe(new Date(1754611200000).toISOString());
+  });
+});
 
 describe("transformTicketToPriorityItem", () => {
   it("transforms a HubSpot ticket to a PriorityItem", () => {
@@ -32,6 +65,7 @@ describe("transformTicketToPriorityItem", () => {
       title: "AC not working after install",
       stage: "New",
       lastModified: "2026-03-14T12:00:00Z",
+      stageEnteredDate: null,
       lastContactDate: "2026-03-13T12:00:00Z",
       createDate: "2026-03-10T12:00:00Z",
       amount: null,

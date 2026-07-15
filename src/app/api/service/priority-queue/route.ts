@@ -7,7 +7,7 @@ import { initPriorityQueueCascade, QUEUE_CACHE_KEY } from "@/lib/service-priorit
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES } from "@/lib/deals-pipeline";
 import { hubspotClient } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
-import { fetchServiceTickets } from "@/lib/hubspot-tickets";
+import { fetchServiceTickets, parseStageEnteredDate } from "@/lib/hubspot-tickets";
 import { enrichServiceItems, type EnrichmentInput, ALL_REASON_CATEGORIES } from "@/lib/service-enrichment";
 import { fetchPowerhubItemSummaries } from "@/lib/powerhub-priority-enrichment";
 import { chunk } from "@/lib/utils";
@@ -20,11 +20,15 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
   const stageMap = STAGE_MAPS.service;
   const activeStageNames = new Set(ACTIVE_STAGES.service);
 
+  // Per-stage entry timestamps (hs_date_entered_<stageId>) for true
+  // time-in-stage — hs_lastmodifieddate is re-stamped and unreliable.
+  const stageEnteredProps = Object.keys(stageMap).map((id) => `hs_date_entered_${id}`);
   const properties = [
     "hs_object_id", "dealname", "amount", "dealstage", "pipeline",
     "closedate", "createdate", "hs_lastmodifieddate",
     "pb_location", "hubspot_owner_id", "notes_last_contacted",
     "service_type",
+    ...stageEnteredProps,
   ];
 
   const activeStageIds = Object.entries(stageMap)
@@ -60,6 +64,9 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
           title: deal.properties.dealname || "Untitled Deal",
           stage: stageMap[dealstage] || dealstage || "Unknown",
           lastModified: deal.properties.hs_lastmodifieddate || deal.properties.createdate || new Date().toISOString(),
+          stageEnteredDate: parseStageEnteredDate(
+            (deal.properties as Record<string, string | undefined>)[`hs_date_entered_${dealstage}`]
+          ),
           lastContactDate: deal.properties.notes_last_contacted || null,
           createDate: deal.properties.createdate || new Date().toISOString(),
           amount: deal.properties.amount ? parseFloat(deal.properties.amount) : null,
