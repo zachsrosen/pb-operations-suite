@@ -13,9 +13,11 @@ import { prisma } from "@/lib/db";
 import { dealToProject } from "@/lib/deal-reader";
 import {
   buildProjectFunnelData,
+  resolveMilestones,
   type ProjectFunnelDrillDown,
   type ProjectFunnelDrillDownDeal,
 } from "@/lib/project-funnel-aggregation";
+import type { Project } from "@/lib/hubspot";
 import { statusBucket } from "@/lib/pe-milestone-bucket";
 import { STAGES, type BottleneckDealRow } from "@/lib/bottlenecks";
 import { statusLabel } from "@/lib/deal-status-labels";
@@ -1071,4 +1073,347 @@ export async function runManagerWorklists(opts: {
     await new Promise((r) => setTimeout(r, 400));
   }
   return { results };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rep worklists — a per-sales-rep daily digest scoped to their OWN deals.
+//
+// Sales reps are blocked from company aggregates in the bot; this is their
+// proactive counterpart: four sections of things only they can move forward.
+// Unlike the personal worklists (mirror-backed funnel buckets), reps need the
+// reason NOTES — what change to communicate, why a deal is on hold, which PE
+// doc was kicked back — which only live in HubSpot. So this path pulls live
+// projects + one PE-docs scan per run and slices them per rep.
+//
+// Reps are excluded from runPersonalWorklists (the cron passes the roster as
+// `exclude`) so nobody gets two DMs: this worklist is the superset.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** PE documents surfaced in the "action required" section, matched to
+ *  `get_pe_docs` in chat-tools.ts so the daily push and the ad-hoc bot answer
+ *  never name different documents. */
+const REP_PE_DOCS: Array<{ prop: string; label: string }> = [
+  { prop: "pe_doc_customer_agreement", label: "Customer Agreement" },
+  { prop: "pe_doc_installation_order", label: "Installation Order" },
+  { prop: "pe_doc_signed_proposal", label: "Signed Proposal" },
+  { prop: "pe_doc_state_disclosures", label: "State Disclosures" },
+  { prop: "pe_doc_design_plan", label: "Design Plan" },
+  { prop: "pe_doc_bill_of_materials", label: "Bill of Materials" },
+  { prop: "pe_doc_permission_to_operate", label: "Permission to Operate" },
+  { prop: "pe_doc_photos_per_policy", label: "Photos per Policy" },
+  { prop: "pe_doc_signed_final_permit", label: "Signed Final Permit" },
+  { prop: "pe_doc_signed_interconnection", label: "Signed Interconnection Agreement" },
+  { prop: "pe_doc_utility_bill", label: "Utility Bill" },
+  { prop: "pe_doc_certificate_of_acceptance", label: "Certificate of Acceptance" },
+  { prop: "pe_doc_conditional_lien_waiver", label: "Conditional Progress Lien Waiver" },
+  { prop: "pe_doc_conditional_waiver_final", label: "Conditional Waiver — Final Payment" },
+  { prop: "pe_doc_attestation_customer_payment", label: "Attestation of Customer Payment" },
+  { prop: "pe_doc_access_to_monitoring", label: "Access to Monitoring" },
+];
+
+type RepPeDeal = {
+  id: string;
+  name: string;
+  pbLocation: string;
+  docs: Array<{ label: string; note: string | null }>;
+};
+
+/**
+ * All PE-pipeline deals with at least one document in "Action Required",
+ * grouped by HubSpot owner id. One paginated scan for the whole run; each rep
+ * gets their slice by owner id (never by name — avoids the Roland/Rolando trap).
+ */
+async function fetchPeDocsActionRequiredByOwner(): Promise<Map<string, RepPeDeal[]>> {
+  const { searchWithRetry } = await import("@/lib/hubspot");
+  const { FilterOperatorEnum } = await import("@hubspot/api-client/lib/codegen/crm/deals");
+  const props = [
+    "dealname", "hubspot_owner_id", "pb_location", "pe_m1_status",
+    ...REP_PE_DOCS.map((d) => d.prop),
+    ...REP_PE_DOCS.map((d) => `${d.prop}_notes`),
+  ];
+  const rows: Array<Record<string, string | null | undefined> & { __hsid: string }> = [];
+  let after: string | undefined;
+  const PAGE_CAP = 30; // 30 × 200 = 6,000 PE deals
+  for (let page = 0; page < PAGE_CAP; page++) {
+    const req: { filterGroups: { filters: unknown[] }[]; properties: string[]; limit: number; after?: string } = {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
+            { propertyName: "pe_m1_status", operator: FilterOperatorEnum.HasProperty },
+          ],
+        },
+      ],
+      properties: props,
+      limit: 200,
+    };
+    if (after) req.after = after;
+    const res = await searchWithRetry(req as Parameters<typeof searchWithRetry>[0]);
+    for (const d of res.results) rows.push({ ...(d.properties ?? {}), __hsid: d.id });
+    after = res.paging?.next?.after;
+    if (!after) break;
+  }
+
+  // HubSpot select fields store the internal VALUE ("action_required"), not the
+  // label ("Action Required") — normalize both sides before comparing.
+  const norm = (s: string) => s.toLowerCase().replace(/[\s_]+/g, "");
+  const want = norm("action_required");
+  const byOwner = new Map<string, RepPeDeal[]>();
+  for (const r of rows) {
+    const ownerId = String(r.hubspot_owner_id || "").trim();
+    if (!ownerId) continue;
+    const docs: Array<{ label: string; note: string | null }> = [];
+    for (const d of REP_PE_DOCS) {
+      const st = r[d.prop] ? String(r[d.prop]) : "";
+      if (st && norm(st) === want) {
+        const noteRaw = r[`${d.prop}_notes`];
+        docs.push({ label: d.label, note: noteRaw ? String(noteRaw) : null });
+      }
+    }
+    if (docs.length === 0) continue;
+    if (!byOwner.has(ownerId)) byOwner.set(ownerId, []);
+    byOwner.get(ownerId)!.push({
+      id: r.__hsid,
+      name: String(r.dealname || "(unnamed)"),
+      pbLocation: String(r.pb_location || ""),
+      docs,
+    });
+  }
+  return byOwner;
+}
+
+/** Roster of rep emails from SystemConfig `bottleneck_rep_worklists`
+ *  (JSON array of email strings). Empty/absent → no rep worklists run. */
+export async function getRepWorklistRoster(): Promise<string[]> {
+  if (!prisma) return [];
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_rep_worklists" } });
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.map((e) => String(e).trim().toLowerCase()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export interface RepSendResult {
+  email: string;
+  name?: string;
+  total?: number;
+  sent?: boolean;
+  reason?: string;
+  preview?: string;
+}
+
+/** Collapse whitespace and cap a note so one deal never floods the digest. */
+function repNote(s: string | null | undefined, max = 140): string {
+  const t = (s || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+/**
+ * One rep's four-section worklist, scoped to their own deals. `projects` must
+ * already be filtered to this rep (by owner name); `pe` to this rep (by owner id).
+ */
+function renderRepWorklist(
+  repName: string,
+  projects: Project[],
+  pe: RepPeDeal[],
+  surveyEligibleStages: readonly string[],
+  nowMs: number
+): { text: string; total: number } {
+  const day = new Date(nowMs).toLocaleDateString("en-US", {
+    timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
+  });
+  const loc = (p: Project) => (p.pbLocation ? ` (${p.pbLocation})` : "");
+
+  const pendingSalesChanges = projects.filter((p) => (p.layoutStatus || "") === "Pending Sales Changes");
+  // Survey-eligible stage with no survey scheduled yet — the scheduler's own
+  // definition (`resolveMilestones`), so this never disagrees with the calendar.
+  const surveysToSchedule = projects.filter(
+    (p) => surveyEligibleStages.includes(p.stage) && !resolveMilestones(p).hasSurveyScheduled
+  );
+  const onHold = projects.filter((p) => p.stage === "On Hold");
+
+  const sections: Array<{ title: string; lines: string[] }> = [];
+  if (pendingSalesChanges.length) {
+    sections.push({
+      title: `📝 Pending sales changes — reach the customer (${pendingSalesChanges.length})`,
+      lines: pendingSalesChanges.map((p) => {
+        const note = repNote(p.salesChangeOrderNotes);
+        return `• ${dealLink(String(p.id), p.name)}${loc(p)}${note ? ` — ${note}` : ""}`;
+      }),
+    });
+  }
+  if (surveysToSchedule.length) {
+    sections.push({
+      title: `📅 Surveys to schedule (${surveysToSchedule.length})`,
+      lines: surveysToSchedule.map((p) => {
+        const st = p.siteSurveyStatus ? statusLabel("site_survey_status", p.siteSurveyStatus) : "";
+        return `• ${dealLink(String(p.id), p.name)}${loc(p)}${st ? ` — ${st}` : ""}`;
+      }),
+    });
+  }
+  if (pe.length) {
+    sections.push({
+      title: `📄 PE docs — action required (${pe.length})`,
+      lines: pe.map((d) => {
+        const docs = d.docs.map((x) => x.label).join(", ");
+        const firstNote = repNote(d.docs.find((x) => x.note)?.note);
+        return `• ${dealLink(d.id, d.name)}${d.pbLocation ? ` (${d.pbLocation})` : ""} — ${docs}${firstNote ? `: ${firstNote}` : ""}`;
+      }),
+    });
+  }
+  if (onHold.length) {
+    sections.push({
+      title: `⏸️ On-hold — follow up (${onHold.length})`,
+      lines: onHold.map((p) => {
+        const reason = repNote([p.onHoldReason, p.onHoldNotes].filter(Boolean).join(" — "));
+        return `• ${dealLink(String(p.id), p.name)}${loc(p)}${reason ? ` — ${reason}` : ""}`;
+      }),
+    });
+  }
+
+  const total = pendingSalesChanges.length + surveysToSchedule.length + pe.length + onHold.length;
+  const first = repName.split(" ")[0] || repName;
+  const out: string[] = [
+    `👋 ${first} — your worklist for ${day}`,
+    total === 0
+      ? "You're all clear — nothing needs your attention right now. 🎉"
+      : `${total} item${total === 1 ? "" : "s"} need your attention:`,
+    "",
+  ];
+  let used = out.join("\n").length + 200;
+  let cut = 0;
+  for (const s of sections) {
+    if (used + s.title.length > CHAT_CHAR_BUDGET) { cut += s.lines.length; continue; }
+    out.push(s.title); used += s.title.length + 1;
+    for (const line of s.lines) {
+      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
+      out.push(line); used += line.length + 1;
+    }
+    out.push(""); used += 1;
+  }
+  if (cut > 0) out.push(`…${cut} more didn't fit — reply and ask me to list them.`);
+  out.push("Reply here anytime to ask about any of your deals.");
+  return { text: out.join("\n"), total };
+}
+
+/**
+ * Send each configured rep their own daily worklist. Live delivery reuses the
+ * personal-worklist gate (`bottleneck_personal_worklists_enabled` + recorded DM
+ * spaces), honors standing exclusions, and mirrors to the owner tracking space.
+ * - preview: JSON summaries + rendered text, nothing posted.
+ * - dryrun: every worklist posted to the OWNER DM, labeled (no rep is messaged).
+ * - live: real DMs to each rep.
+ */
+export async function runRepWorklists(opts: {
+  mode: "preview" | "dryrun" | "live";
+  nowMs?: number;
+}): Promise<{ results: RepSendResult[]; roster: string[] }> {
+  if (!prisma) return { results: [], roster: [] };
+  const nowMs = opts.nowMs ?? Date.now();
+
+  const roster = await getRepWorklistRoster();
+  if (roster.length === 0) return { results: [], roster: [] };
+
+  if (opts.mode === "live") {
+    const flag = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_personal_worklists_enabled" } });
+    if (flag?.value !== "true") {
+      return { results: roster.map((email) => ({ email, sent: false, reason: "worklists disabled" })), roster };
+    }
+  }
+
+  // Standing exclusions (people who must never receive a worklist).
+  let standing: string[] = [];
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_delivery_exclusions" } });
+    const arr = row?.value ? JSON.parse(row.value) : [];
+    if (Array.isArray(arr)) standing = arr.map((e) => String(e).trim().toLowerCase());
+  } catch { /* best effort */ }
+  const excluded = new Set(standing);
+
+  const { fetchAllProjects, fetchAllOwnersMinimal, SURVEY_ELIGIBLE_STAGES } = await import("@/lib/hubspot");
+  const [projects, owners, peByOwner] = await Promise.all([
+    fetchAllProjects({ activeOnly: true }),
+    fetchAllOwnersMinimal(),
+    fetchPeDocsActionRequiredByOwner(),
+  ]);
+
+  // email -> canonical HubSpot owner {id, name}. dealOwner on projects is this
+  // same name, so slicing by it is exact even when the User table spells it
+  // differently.
+  const ownerByEmail = new Map<string, { id: string; name: string }>();
+  for (const o of owners) {
+    if (!o.email) continue;
+    const name = [o.firstName, o.lastName].filter(Boolean).join(" ").trim();
+    ownerByEmail.set(o.email.trim().toLowerCase(), { id: String(o.id), name });
+  }
+
+  const { postGoogleChatMessage } = await import("@/lib/google-chat-api");
+  const { getOwnerDmSpace, getUserDmSpaces } = await import("@/lib/tech-ops-bot-proactive");
+  const dmSpaces = opts.mode === "live" ? await getUserDmSpaces() : {};
+  let mirrorSpace: string | null = null;
+  if (opts.mode !== "preview") {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "techops_bot_mirror_space" } });
+    mirrorSpace = row?.value?.trim() || null;
+  }
+
+  const results: RepSendResult[] = [];
+  for (const email of roster) {
+    if (excluded.has(email)) {
+      results.push({ email, sent: false, reason: "excluded" });
+      continue;
+    }
+    const owner = ownerByEmail.get(email);
+    if (!owner) {
+      results.push({ email, sent: false, reason: "no HubSpot owner match" });
+      continue;
+    }
+    const nameKey = owner.name.trim().toLowerCase();
+    const mine = projects.filter((p) => (p.dealOwner || "").trim().toLowerCase() === nameKey);
+    const myPe = peByOwner.get(owner.id) ?? [];
+    const rendered = renderRepWorklist(owner.name, mine, myPe, SURVEY_ELIGIBLE_STAGES, nowMs);
+    const base: RepSendResult = { email, name: owner.name, total: rendered.total };
+
+    if (opts.mode === "preview") {
+      results.push({ ...base, preview: rendered.text });
+      continue;
+    }
+    // Nothing to say — skip rather than DM an empty worklist.
+    if (rendered.total === 0) {
+      results.push({ ...base, sent: false, reason: "no items" });
+      continue;
+    }
+
+    try {
+      if (opts.mode === "dryrun") {
+        const ownerSpace = await getOwnerDmSpace();
+        if (!ownerSpace) { results.push({ ...base, sent: false, reason: "owner DM space missing" }); continue; }
+        await postGoogleChatMessage({
+          spaceName: ownerSpace,
+          text: `🧪 TEST — would DM ${owner.name} <${email}> (${rendered.total} items)\n\n${rendered.text}`,
+          skipMirror: true,
+        });
+        results.push({ ...base, sent: true });
+      } else {
+        const space = dmSpaces[email] || dmSpaces[email.toLowerCase()];
+        if (!space) { results.push({ ...base, sent: false, reason: "no DM space recorded" }); continue; }
+        await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
+        if (mirrorSpace && mirrorSpace !== space) {
+          await postGoogleChatMessage({
+            spaceName: mirrorSpace,
+            text: `🧾 Rep worklist → ${owner.name} <${email}> (${rendered.total} items):\n\n${rendered.text}`,
+            skipMirror: true,
+          }).catch((e) => console.warn("[rep-worklists] mirror failed:", e));
+        }
+        results.push({ ...base, sent: true });
+      }
+    } catch (e) {
+      results.push({ ...base, sent: false, reason: e instanceof Error ? e.message.slice(0, 160) : "send failed" });
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return { results, roster };
 }
