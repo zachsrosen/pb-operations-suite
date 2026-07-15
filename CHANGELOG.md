@@ -4,6 +4,80 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-07-12
+
+### Ready to Build Review Queue (Major)
+- New "Ready to Build" tab on the review queue, alongside Blocked
+- Ready tab "Released" state now reads `pm_rtb_approved_date` instead of the boolean flag, so a re-blocked deal correctly reads un-released until Release is pressed again
+- Editable RTB-Blocked notes with a clarified header
+- Payment method, loan status, and earliest install availability columns
+- Permitting status column added; all un-merged columns now fully sortable
+- Always-visible line items and a days-in-stage column
+- Review queue condensed from 17 to 11 columns
+- Semicolon-separated project types now stack one per line
+
+### PowerHub Fleet Monitor (Major)
+- Sortable columns, filters, and CSV export on the fleet monitor
+- Fleet table info columns, voltage-based grid cell, and Active Alerts toggle
+- Inline alert names + open-ticket links on the fleet table
+- Tesla concern ticket links and a customer column
+- Live HubSpot label resolution — real deal names, ticket subjects, contact names, stage labels
+- Grid status now derived from grid voltage instead of the dead `grid_connected_status` signal
+- Calmer UI: stable rows, customer-first identity, visible sort
+- Customer resolution via `PropertyDealLink` for GEO-linked sites
+- Alert severity refreshes on existing rows during polling
+- Tesla RMA severity captured; unmapped alerts no longer dropped
+- Tesla auth token persisted in `SystemConfig` to stop token-endpoint throttling
+
+### Chat Bot / AI Assistant
+- `get_deal` returns a full labeled status snapshot (including DA / layout_status) and answers "why is PROJ-X <any state>" from the real reason fields
+- `get_deal` exposes the sales-change / rejection reason note
+- Bulk state reasons via `query_projects includeReason` — no per-deal fan-out
+- PE dollars use payment amount, not deal amount (`get_pe_payments` basis/location)
+- Stage breakdowns ordered by pipeline sequence, not by size
+- Real tables via monospace code blocks (markdown tables banned in chat rendering)
+- Polish: no markdown tables in chat + a help/menu reply
+- Fixed cross-question list contamination, mid-list doubt, and truncation
+- Prompt-cached the system prompt and tool schemas in the toolRunner for faster responses
+
+### Team Activity
+- Weekly report-card email digest
+- New Tasks/day and Property updates/day metrics
+- Deals-touched per day metric
+- Copy-paste report card; PE uploads count as deal touches
+- PTO days (calendar OOO) excluded from averages
+- Dropped integration-app Drive events from the Google source
+
+### Sales Funnel
+- Blocked toggle + waiting-since / scheduled dates in drill-downs
+- Sales Funnel now defaults to This Year with drill-down polish
+- "Hide cancelled" toggle (mirrors on-hold / rejected)
+
+### Service
+- Ticket age scored in the priority queue
+- Type dropdown filter on the service overview header
+- Priority-queue overrides restricted to ADMIN only
+
+### Worklists
+- Manager rollup worklists: Ben Minarick now receives every active deal with layout_status "Pending Sales Changes" grouped by rep, sourced from `SystemConfig.bottleneck_manager_worklists`
+- Active-only fetch keeps the daily worklist and ad-hoc bot answers in sync
+- Bottleneck managers excluded from per-rep delivery to avoid duplicate views
+
+### Production Guarantee
+- Production-guarantee fix verification & approval workflow
+- Required due date now passed on task creation
+
+### IDR Detail Panel
+- Escalation photos shown above site photos
+- Restored escalation gallery and D&R / Service pills clobbered by #1356
+
+### Bug Fixes & Infrastructure
+- Repointed `HubSpotProjectCache` readers to the Deal mirror table — the old cache had never had a writer, so crew-schedule / scheduler-v2 / zuper compliance / orphaned jobs / office-performance / powerhub-sync / pe-clawback-alert were all silently degraded
+- Vishtik `Get-Project` uses offset pagination, lifting a silent ~2,280-row fetch cap
+- Middleware allowlist covers `zuper-field-activity-sync` and `product-sync` crons
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
