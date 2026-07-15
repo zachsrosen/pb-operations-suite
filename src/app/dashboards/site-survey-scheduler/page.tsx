@@ -2183,9 +2183,9 @@ export default function SiteSurveySchedulerPage() {
               setPortalInviteLink(null);
             }}
             className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 border border-orange-500/30 font-medium"
-            title="Send customer self-scheduling link"
+            title="Get a self-scheduling link to share with the customer"
           >
-            Invite
+            Get link
           </button>
         ) : (
           <span
@@ -3082,9 +3082,9 @@ export default function SiteSurveySchedulerPage() {
                                           setPortalInviteLink(null);
                                         }}
                                         className="text-xs text-orange-400 hover:text-orange-300"
-                                        title="Send customer self-scheduling link"
+                                        title="Get a self-scheduling link to share with the customer"
                                       >
-                                        Invite
+                                        Get link
                                       </button>
                                     ) : (
                                       <span
@@ -3603,9 +3603,9 @@ export default function SiteSurveySchedulerPage() {
       {portalInviteProject && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000]">
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-md w-[90%]">
-            <h3 className="text-lg font-semibold text-foreground mb-1">Send Survey Invite</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-1">Get Scheduling Link</h3>
             <p className="text-xs text-muted mb-4">
-              Customer will receive an email with a link to self-schedule their site survey.
+              Generates a self-scheduling link to copy and share with the customer. No email is sent.
             </p>
 
             <div className="space-y-3">
@@ -3713,20 +3713,21 @@ export default function SiteSurveySchedulerPage() {
                           pbLocation: portalInviteProject.location,
                           systemSize: portalInviteProject.systemSize || undefined,
                           customerPhone: portalInvitePhone.trim() || undefined,
+                          // Link-only: create the invite + return the link, no
+                          // customer email (Olivia owns customer messaging).
+                          sendEmail: false,
                         }),
                       });
                       const data = await res.json();
                       if (res.ok) {
                         setPortalInviteResult({
                           success: true,
-                          message: data.emailSent
-                            ? `Invite sent to ${portalInviteEmail}`
-                            : "Invite created — copy the link below to share it.",
+                          message: "Link ready — copy it below to share with the customer.",
                         });
                         setPortalInviteLink(data.portalUrl || null);
                         setPortalInviteStatuses((prev) => ({ ...prev, [portalInviteProject.id]: "PENDING" }));
                       } else {
-                        setPortalInviteResult({ success: false, message: data.error || "Failed to send invite" });
+                        setPortalInviteResult({ success: false, message: data.error || "Failed to create link" });
                       }
                     } catch {
                       setPortalInviteResult({ success: false, message: "Failed to connect. Try again." });
@@ -3737,7 +3738,7 @@ export default function SiteSurveySchedulerPage() {
                   disabled={portalInviteSending || !portalInviteEmail.trim()}
                   className="px-4 py-2 text-sm rounded-lg font-medium bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50"
                 >
-                  {portalInviteSending ? "Sending..." : "Send Invite"}
+                  {portalInviteSending ? "Generating..." : "Generate Link"}
                 </button>
               )}
             </div>
