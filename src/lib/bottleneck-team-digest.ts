@@ -894,13 +894,17 @@ export async function runPersonalWorklists(opts: {
         const text = isFirst
           ? `👋 Hi! I'm the PB Tech Ops Bot — I'll DM you a worklist like this when deals are waiting on you, and you can reply here with questions about any of them (or anything pipeline-related).\n\n${message}`
           : message;
-        await postGoogleChatMessage({ spaceName: space, text });
+        // skipMirror: the labeled mirror below already copies this to the
+        // oversight space — without it the global auto-mirror (google-chat-api)
+        // would post a SECOND copy, doubling every worklist in that space.
+        await postGoogleChatMessage({ spaceName: space, text, skipMirror: true });
         if (isFirst) await markWelcomed(email);
         // Copy into the owner's tracking space so they can see what was sent.
         if (mirrorSpace && mirrorSpace !== space) {
           await postGoogleChatMessage({
             spaceName: mirrorSpace,
             text: `📋 Worklist → ${w.person}${email ? ` <${email}>` : ""} (${w.totalDeals} deals):\n\n${message}`,
+            skipMirror: true,
           }).catch((e) => console.warn("[worklists] mirror copy failed:", e));
         }
         results.push({ ...base, sent: true });
@@ -1039,11 +1043,14 @@ export async function runManagerWorklists(opts: {
       continue;
     }
     try {
-      await postGoogleChatMessage({ spaceName: space, text: rendered.text });
+      // skipMirror: the labeled mirror below is the single oversight copy —
+      // without it the global auto-mirror would post a duplicate.
+      await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
       if (mirrorSpace && mirrorSpace !== space) {
         await postGoogleChatMessage({
           spaceName: mirrorSpace,
           text: `📋 Manager worklist → ${m.email} (${rendered.total} deals):\n\n${rendered.text}`,
+          skipMirror: true,
         }).catch((e) => console.warn("[manager-worklists] mirror failed:", e));
       }
       results.push({ email: m.email, total: rendered.total, sent: true });
@@ -1189,6 +1196,8 @@ export interface RepSendResult {
   sent?: boolean;
   reason?: string;
   preview?: string;
+  /** Set when a deactivated owner's worklist was routed to the manager instead. */
+  redirectedTo?: string;
 }
 
 /** Collapse whitespace to keep a note on one line — full text, no length cap
@@ -1206,7 +1215,8 @@ function renderRepWorklist(
   projects: Project[],
   pe: RepPeDeal[],
   surveyEligibleStages: readonly string[],
-  nowMs: number
+  nowMs: number,
+  opts?: { managerRedirect?: boolean }
 ): { text: string; total: number } {
   const day = new Date(nowMs).toLocaleDateString("en-US", {
     timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
@@ -1261,14 +1271,22 @@ function renderRepWorklist(
   }
 
   const total = pendingSalesChanges.length + surveysToSchedule.length + pe.length + onHold.length;
-  const first = repName.split(" ")[0] || repName;
-  const out: string[] = [
-    `👋 ${first} — your worklist for ${day}`,
-    total === 0
-      ? "You're all clear — nothing needs your attention right now. 🎉"
-      : `${total} item${total === 1 ? "" : "s"} need your attention:`,
-    "",
-  ];
+  const out: string[] = [];
+  if (opts?.managerRedirect) {
+    // Routed to the manager because this owner is deactivated in HubSpot.
+    out.push(`🗂️ ${repName} (deactivated owner) — ${total} live deal${total === 1 ? " needs" : "s need"} attention, ${day}`);
+    out.push("This rep is deactivated in HubSpot but still owns live deals — routed to you as their manager.");
+    out.push("");
+  } else {
+    const first = repName.split(" ")[0] || repName;
+    out.push(`👋 ${first} — your worklist for ${day}`);
+    out.push(
+      total === 0
+        ? "You're all clear — nothing needs your attention right now. 🎉"
+        : `${total} item${total === 1 ? "" : "s"} need your attention:`
+    );
+    out.push("");
+  }
   // No length cap here — postGoogleChatMessage splits anything over Chat's
   // limit at line boundaries, so the full worklist always delivers (across
   // multiple messages if long) rather than being truncated.
@@ -1277,7 +1295,11 @@ function renderRepWorklist(
     for (const line of s.lines) out.push(line);
     out.push("");
   }
-  out.push("Reply here anytime to ask about any of your deals.");
+  out.push(
+    opts?.managerRedirect
+      ? "Reply here to ask me about any of these deals."
+      : "Reply here anytime to ask about any of your deals."
+  );
   return { text: out.join("\n"), total };
 }
 
@@ -1285,9 +1307,13 @@ function renderRepWorklist(
  * Send each configured rep their own daily worklist. Live delivery reuses the
  * personal-worklist gate (`bottleneck_personal_worklists_enabled` + recorded DM
  * spaces), honors standing exclusions, and mirrors to the owner tracking space.
+ * A rep who is DEACTIVATED in HubSpot (absent from the Owners API but still
+ * owning live deals) has their worklist routed to the sales manager
+ * (SystemConfig `bottleneck_rep_deactivated_recipient`, default Ben) instead —
+ * the inactive rep is never messaged.
  * - preview: JSON summaries + rendered text, nothing posted.
  * - dryrun: every worklist posted to the OWNER DM, labeled (no rep is messaged).
- * - live: real DMs to each rep.
+ * - live: real DMs to each rep (or the manager for deactivated owners).
  */
 export async function runRepWorklists(opts: {
   mode: "preview" | "dryrun" | "live";
@@ -1352,18 +1378,23 @@ export async function runRepWorklists(opts: {
   //   rep-scoping path), 3. deactivated-owner fallback — match the User's
   //   display name to deal owners. An ambiguous name (two owners share it)
   //   returns null so a rep can never be shown someone else's deals.
-  async function resolveOwner(email: string): Promise<{ id: string; name: string } | null> {
+  async function resolveOwner(
+    email: string
+  ): Promise<{ id: string; name: string; deactivated: boolean } | null> {
     const direct = ownerByEmail.get(email);
-    if (direct) return direct;
+    if (direct) return { ...direct, deactivated: false };
     const aliasId = await resolveOwnerIdByEmail(email, nameByEmail.get(email) ?? null);
     if (aliasId) {
       const name = ownerById.get(String(aliasId));
-      if (name) return { id: String(aliasId), name };
+      if (name) return { id: String(aliasId), name, deactivated: false };
     }
+    // Fallback: owner is absent from the (active) Owners API but still owns
+    // live deals — i.e. deactivated in HubSpot. Flag it so delivery routes to
+    // the manager rather than the inactive rep.
     const userName = nameByEmail.get(email);
     if (userName) {
       const ids = idsByOwnerName.get(userName.trim().toLowerCase());
-      if (ids && ids.size === 1) return { id: [...ids][0], name: userName };
+      if (ids && ids.size === 1) return { id: [...ids][0], name: userName, deactivated: true };
     }
     return null;
   }
@@ -1376,6 +1407,14 @@ export async function runRepWorklists(opts: {
     const row = await prisma.systemConfig.findUnique({ where: { key: "techops_bot_mirror_space" } });
     mirrorSpace = row?.value?.trim() || null;
   }
+
+  // Deactivated owners' worklists route to the sales manager (Ben by default)
+  // instead of the inactive rep. Editable via SystemConfig without a deploy.
+  let managerEmail = "ben.minarick@photonbrothers.com";
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: "bottleneck_rep_deactivated_recipient" } });
+    if (row?.value?.trim()) managerEmail = row.value.trim().toLowerCase();
+  } catch { /* default stands */ }
 
   const results: RepSendResult[] = [];
   for (const email of roster) {
@@ -1391,8 +1430,13 @@ export async function runRepWorklists(opts: {
     // Slice by owner id (not name) so identically-named owners can't cross-leak.
     const mine = projects.filter((p) => p.hubspotOwnerId === owner.id);
     const myPe = peByOwner.get(owner.id) ?? [];
-    const rendered = renderRepWorklist(owner.name, mine, myPe, SURVEY_ELIGIBLE_STAGES, nowMs);
-    const base: RepSendResult = { email, name: owner.name, total: rendered.total };
+    const rendered = renderRepWorklist(owner.name, mine, myPe, SURVEY_ELIGIBLE_STAGES, nowMs, {
+      managerRedirect: owner.deactivated,
+    });
+    const base: RepSendResult = {
+      email, name: owner.name, total: rendered.total,
+      ...(owner.deactivated ? { redirectedTo: managerEmail } : {}),
+    };
 
     if (opts.mode === "preview") {
       results.push({ ...base, preview: rendered.text });
@@ -1404,24 +1448,36 @@ export async function runRepWorklists(opts: {
       continue;
     }
 
+    // Deactivated owners route to the manager, not the (inactive) rep.
+    const recipientEmail = owner.deactivated ? managerEmail : email;
+    const recipientLabel = owner.deactivated
+      ? `${owner.name} (deactivated) → ${managerEmail}`
+      : `${owner.name} <${email}>`;
+
     try {
       if (opts.mode === "dryrun") {
         const ownerSpace = await getOwnerDmSpace();
         if (!ownerSpace) { results.push({ ...base, sent: false, reason: "owner DM space missing" }); continue; }
         await postGoogleChatMessage({
           spaceName: ownerSpace,
-          text: `🧪 TEST — would DM ${owner.name} <${email}> (${rendered.total} items)\n\n${rendered.text}`,
+          text: `🧪 TEST — would DM ${recipientLabel} (${rendered.total} items)\n\n${rendered.text}`,
           skipMirror: true,
         });
         results.push({ ...base, sent: true });
       } else {
-        const space = dmSpaces[email] || dmSpaces[email.toLowerCase()];
-        if (!space) { results.push({ ...base, sent: false, reason: "no DM space recorded" }); continue; }
+        const space = dmSpaces[recipientEmail] || dmSpaces[recipientEmail.toLowerCase()];
+        if (!space) {
+          results.push({
+            ...base, sent: false,
+            reason: owner.deactivated ? `no DM space for manager ${managerEmail}` : "no DM space recorded",
+          });
+          continue;
+        }
         await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
         if (mirrorSpace && mirrorSpace !== space) {
           await postGoogleChatMessage({
             spaceName: mirrorSpace,
-            text: `🧾 Rep worklist → ${owner.name} <${email}> (${rendered.total} items):\n\n${rendered.text}`,
+            text: `🧾 Rep worklist → ${recipientLabel} (${rendered.total} items):\n\n${rendered.text}`,
             skipMirror: true,
           }).catch((e) => console.warn("[rep-worklists] mirror failed:", e));
         }
