@@ -443,8 +443,6 @@ function shortName(name: string): string {
 const dealLink = (id: string, name: string) =>
   `<https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-3/${id}|${shortName(name)}>`;
 
-/** Google Chat text messages cap at 4,096 chars — leave headroom for safety. */
-const CHAT_CHAR_BUDGET = 3900;
 
 export function renderTeamDigest(
   team: TeamDigestKey,
@@ -463,23 +461,14 @@ export function renderTeamDigest(
   out.push(`${total} deal${total === 1 ? "" : "s"} waiting on your team`);
   out.push("");
 
-  // Show every deal that fits; once the Chat char budget runs out, stop and
-  // say how many were cut. Budget counts rendered chars incl. link markup.
-  let used = out.join("\n").length + footer.length + 64; // slack for cut-notes
-  let cut = 0;
-
-  const push = (line: string): boolean => {
-    if (used + line.length + 1 > CHAT_CHAR_BUDGET) return false;
-    out.push(line);
-    used += line.length + 1;
-    return true;
-  };
-
+  // No length cap — postGoogleChatMessage splits over-limit messages at line
+  // boundaries, so the full worklist always delivers (across multiple messages
+  // if long) rather than being truncated.
   for (const s of sections) {
     if (s.lines.length === 0) continue;
     const flagged = s.followUpDays != null ? s.lines.filter((l) => l.needsFollowUp).length : 0;
     const followNote = s.followUpDays != null ? ` — ${flagged} past ${s.followUpDays}d` : "";
-    if (!push(`${s.title} (${s.lines.length}${followNote})`)) { cut += s.lines.length; continue; }
+    out.push(`${s.title} (${s.lines.length}${followNote})`);
 
     // Group by the responsible party (lead) or office, biggest group first;
     // within a group, oldest first.
@@ -495,7 +484,7 @@ export function renderTeamDigest(
     );
 
     for (const [who, lines] of ordered) {
-      if (!push(`${who} (${lines.length})`)) { cut += lines.length; continue; }
+      out.push(`${who} (${lines.length})`);
       for (const l of lines) {
         const status = l.status ? ` — ${l.status}` : "";
         const stage = l.stage ? ` — ${l.stage}` : "";
@@ -503,15 +492,12 @@ export function renderTeamDigest(
         const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
         // Location shown per line only when the grouping isn't already location.
         const where = s.groupBy !== "location" && l.location ? ` (${l.location})` : "";
-        if (!push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`)) {
-          cut++;
-        }
+        out.push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`);
       }
     }
-    push("");
+    out.push("");
   }
 
-  if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
   out.push(footer);
   return out.join("\n");
 }
@@ -663,25 +649,20 @@ export function renderPersonalWorklist(w: Omit<PersonalWorklist, "email">, nowMs
     `${w.totalDeals} of your deals ${w.totalDeals === 1 ? "needs" : "need"} a next step`,
     "",
   ];
-  let used = out.join("\n").length + 200;
-  let cut = 0;
+  // No length cap — postGoogleChatMessage splits over-limit messages at line
+  // boundaries, so the full worklist always delivers.
   for (const { team, section: s } of w.sections) {
-    const header = `${TEAM_DIGEST_LABELS[team]} — ${s.title} (${s.lines.length})`;
-    if (used + header.length > CHAT_CHAR_BUDGET) { cut += s.lines.length; continue; }
-    out.push(header); used += header.length + 1;
+    out.push(`${TEAM_DIGEST_LABELS[team]} — ${s.title} (${s.lines.length})`);
     for (const l of [...s.lines].sort((a, b) => b.daysWaiting - a.daysWaiting)) {
       const status = l.status ? ` — ${l.status}` : "";
       const stage = l.stage ? ` — ${l.stage}` : "";
       const mark = l.needsFollowUp ? " ⚠" : "";
       const blocked = l.blockedNote ? ` [${l.blockedNote}]` : "";
       const where = l.location ? ` (${l.location})` : "";
-      const line = `• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`;
-      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
-      out.push(line); used += line.length + 1;
+      out.push(`• ${dealLink(l.id, l.name)}${status}${stage} — ${l.daysWaiting}d${mark}${blocked}${where}`);
     }
-    out.push(""); used += 1;
+    out.push("");
   }
-  if (cut > 0) out.push(`…${cut} more didn't fit — full list on the dashboard.`);
   // Deep-link to the personal worklist view — the dashboard renders exactly
   // this list (same pivot), not the generic queue view.
   out.push(`Dashboard: ${FUNNEL_TAB_URL}&view=personal&person=${encodeURIComponent(w.person)}`);
@@ -976,20 +957,15 @@ function renderDaPendingSalesChanges(
     `${psc.length} deal${psc.length === 1 ? "" : "s"} — $${Math.round(totalRev).toLocaleString()} total, by rep:`,
     "",
   ];
-  let used = out.join("\n").length + 200;
-  let cut = 0;
+  // No length cap — postGoogleChatMessage splits over-limit messages at line
+  // boundaries, so the full rollup always delivers.
   for (const { rep, ds, rev } of reps) {
-    const header = `*${rep}* — ${ds.length} deal${ds.length === 1 ? "" : "s"} | $${Math.round(rev).toLocaleString()}`;
-    if (used + header.length > CHAT_CHAR_BUDGET) { cut += ds.length; continue; }
-    out.push(header); used += header.length + 1;
+    out.push(`*${rep}* — ${ds.length} deal${ds.length === 1 ? "" : "s"} | $${Math.round(rev).toLocaleString()}`);
     for (const p of [...ds].sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))) {
-      const line = `• ${dealLink(String(p.id), p.name)}${p.pbLocation ? ` (${p.pbLocation})` : ""} — $${Math.round(Number(p.amount) || 0).toLocaleString()}`;
-      if (used + line.length > CHAT_CHAR_BUDGET) { cut++; continue; }
-      out.push(line); used += line.length + 1;
+      out.push(`• ${dealLink(String(p.id), p.name)}${p.pbLocation ? ` (${p.pbLocation})` : ""} — $${Math.round(Number(p.amount) || 0).toLocaleString()}`);
     }
-    out.push(""); used += 1;
+    out.push("");
   }
-  if (cut > 0) out.push(`…${cut} more didn't fit — ask me "list all pending sales changes" for the rest.`);
   return { text: out.join("\n"), total: psc.length };
 }
 
@@ -1216,7 +1192,7 @@ export interface RepSendResult {
 }
 
 /** Collapse whitespace to keep a note on one line — full text, no length cap
- *  (the message-level CHAT_CHAR_BUDGET still guards the digest as a whole). */
+ *  (postGoogleChatMessage splits any over-limit message at line boundaries). */
 function repNote(s: string | null | undefined): string {
   return (s || "").replace(/\s+/g, " ").trim();
 }
