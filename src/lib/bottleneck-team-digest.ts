@@ -21,6 +21,7 @@ import type { Project } from "@/lib/hubspot";
 import { statusBucket } from "@/lib/pe-milestone-bucket";
 import { STAGES, type BottleneckDealRow } from "@/lib/bottlenecks";
 import { statusLabel } from "@/lib/deal-status-labels";
+import { PE_DOC_TO_TEAM_FIELD } from "@/lib/pe-rejection-notes";
 
 const HUBSPOT_PORTAL = (process.env.HUBSPOT_PORTAL_ID || "").replace(/\D/g, "") || "21710069";
 const FUNNEL_TAB_URL = "https://www.pbtechops.com/dashboards/project-pipeline-funnel?tab=bottlenecks";
@@ -1092,27 +1093,30 @@ export async function runManagerWorklists(opts: {
 // `exclude`) so nobody gets two DMs: this worklist is the superset.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** PE documents surfaced in the "action required" section, matched to
- *  `get_pe_docs` in chat-tools.ts so the daily push and the ad-hoc bot answer
- *  never name different documents. */
+/**
+ * PE documents a rep sees — SALES-owned ONLY. Reps must never see another
+ * team's PE rejections, so this is restricted to the customer-facing package
+ * Sales owns. Labels are the canonical names in PE_DOC_TO_TEAM_FIELD
+ * (pe-rejection-notes.ts); the assertion below fails the build if any entry is
+ * not actually routed to Sales, so the two can't drift apart.
+ */
 const REP_PE_DOCS: Array<{ prop: string; label: string }> = [
-  { prop: "pe_doc_customer_agreement", label: "Customer Agreement" },
-  { prop: "pe_doc_installation_order", label: "Installation Order" },
+  { prop: "pe_doc_customer_agreement", label: "Customer Agreement (PPA/ESA)" },
   { prop: "pe_doc_signed_proposal", label: "Signed Proposal" },
   { prop: "pe_doc_state_disclosures", label: "State Disclosures" },
-  { prop: "pe_doc_design_plan", label: "Design Plan" },
-  { prop: "pe_doc_bill_of_materials", label: "Bill of Materials" },
-  { prop: "pe_doc_permission_to_operate", label: "Permission to Operate" },
-  { prop: "pe_doc_photos_per_policy", label: "Photos per Policy" },
-  { prop: "pe_doc_signed_final_permit", label: "Signed Final Permit" },
-  { prop: "pe_doc_signed_interconnection", label: "Signed Interconnection Agreement" },
+  { prop: "pe_doc_installation_order", label: "Installation Order" },
   { prop: "pe_doc_utility_bill", label: "Utility Bill" },
-  { prop: "pe_doc_certificate_of_acceptance", label: "Certificate of Acceptance" },
-  { prop: "pe_doc_conditional_lien_waiver", label: "Conditional Progress Lien Waiver" },
-  { prop: "pe_doc_conditional_waiver_final", label: "Conditional Waiver — Final Payment" },
-  { prop: "pe_doc_attestation_customer_payment", label: "Attestation of Customer Payment" },
-  { prop: "pe_doc_access_to_monitoring", label: "Access to Monitoring" },
 ];
+// Guard: every rep-visible PE doc must be Sales-owned per the canonical map.
+const NON_SALES_REP_DOC = REP_PE_DOCS.find(
+  (d) => PE_DOC_TO_TEAM_FIELD[d.label] !== "pe_rejection_notes_for_sales"
+);
+if (NON_SALES_REP_DOC) {
+  throw new Error(
+    `REP_PE_DOCS includes a non-Sales PE doc: "${NON_SALES_REP_DOC.label}" ` +
+      `(routes to ${PE_DOC_TO_TEAM_FIELD[NON_SALES_REP_DOC.label] ?? "unknown"})`
+  );
+}
 
 type RepPeDeal = {
   id: string;
@@ -1263,7 +1267,7 @@ function renderRepWorklist(
   }
   if (pe.length) {
     sections.push({
-      title: `📄 PE docs — action required (${pe.length})`,
+      title: `📄 PE rejections — sales docs to fix (${pe.length})`,
       lines: pe.map((d) => {
         const docs = d.docs.map((x) => x.label).join(", ");
         const firstNote = repNote(d.docs.find((x) => x.note)?.note);
