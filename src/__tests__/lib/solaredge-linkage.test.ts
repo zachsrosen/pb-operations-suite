@@ -20,3 +20,19 @@ describe("extractProjNumber", () => {
     expect(extractProjNumber(undefined)).toBeNull();
   });
 });
+
+import { computeSolarEdgePortalUrl, alertSeverityToImpact } from "@/lib/solaredge";
+
+describe("computeSolarEdgePortalUrl", () => {
+  it("builds the per-site portal URL", () => {
+    expect(computeSolarEdgePortalUrl(123456)).toBe(
+      "https://monitoring.solaredge.com/solaredge-web/p/site/123456"
+    );
+  });
+});
+
+describe("alertSeverityToImpact", () => {
+  it.each([["HIGH", 9], ["MEDIUM", 5], ["LOW", 2], ["NONE", 0], ["", 0], [undefined, 0]])(
+    "%s -> %i", (sev, impact) => expect(alertSeverityToImpact(sev as string)).toBe(impact)
+  );
+});
