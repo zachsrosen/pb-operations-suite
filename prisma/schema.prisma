@@ -934,6 +934,7 @@ model HubSpotPropertyCache {
   companyLinks     PropertyCompanyLink[]
   powerhubSites    PowerhubSite[]
   enphaseSites     EnphaseSite[]
+  solarEdgeSites   SolarEdgeSite[]
   shovelsPermits   ShovelsPermitRecord[] @relation("ShovelsPermits")
   shovelsResidents ShovelsResident[]     @relation("ShovelsResidents")
 
@@ -4522,6 +4523,104 @@ model EnphaseTelemetryHistory {
 
   @@index([systemId, signalName, timestamp])
   @@index([systemId, timestamp])
+}
+
+// ─── SolarEdge Monitoring ────────────────────────────────────────────────────
+
+enum SolarEdgeLinkMethod {
+  PROJ // matched via PROJ number in the SolarEdge site name (authoritative)
+  ADDRESS
+  MANUAL
+  UNLINKED
+}
+
+/**
+ * A SolarEdge monitored site (one inverter system). Mirrors PowerhubSite /
+ * EnphaseSite. Populated from the SolarEdge Monitoring API `sites/list`
+ * (account API key). Most PB SolarEdge site names carry the PROJ number
+ * ("PROJ-2166 Kevin Bruer") — the clean linkage signal to HubSpot.
+ */
+model SolarEdgeSite {
+  id       String @id @default(cuid())
+  siteId   Int    @unique // SolarEdge numeric site id
+  siteName String
+
+  // Portal deep-link: https://monitoring.solaredge.com/solaredge-web/p/site/{siteId}
+  portalUrl String?
+
+  // Classification / status from sites/list
+  siteType         String? // RESIDENTIAL | COMMERCIAL
+  activationStatus String? // Active | Pending | Inactive
+  peakPowerKw      Float?
+
+  // Address (SolarEdge address fields are sparse; city is the reliable one)
+  address String?
+  city    String?
+  state   String?
+  zip     String?
+
+  // Linkage to the HubSpot property object
+  projNumber     String? // extracted from siteName, e.g. "PROJ-2166"
+  propertyId     String?
+  property       HubSpotPropertyCache? @relation(fields: [propertyId], references: [id])
+  dealId         String?
+  linkMethod     SolarEdgeLinkMethod   @default(UNLINKED)
+
+  // Equipment counts (from the `Equipment` column / inventory endpoint)
+  inverterCount  Int     @default(0)
+  optimizerCount Int     @default(0)
+  batteryCount   Int     @default(0)
+  hasStorage     Boolean @default(false)
+
+  // Latest telemetry summary (overview endpoint / on-demand)
+  lastPowerW        Float?
+  lastEnergyTodayWh Float?
+  lastReportAt      DateTime?
+
+  // Alert rollup (denormalized from SolarEdgeAlert / sites/list summary)
+  highestAlertImpact Int @default(0)
+  openAlertCount     Int @default(0)
+
+  lastSyncAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  alerts SolarEdgeAlert[]
+
+  @@index([propertyId])
+  @@index([dealId])
+  @@index([projNumber])
+  @@index([activationStatus])
+  @@index([highestAlertImpact])
+}
+
+/**
+ * An open SolarEdge alert on a site. SolarEdge (unlike the bare API docs
+ * implied) exposes named alert types + component + RMA tracking.
+ */
+model SolarEdgeAlert {
+  id     String        @id @default(cuid())
+  siteId Int
+  site   SolarEdgeSite @relation(fields: [siteId], references: [siteId], onDelete: Cascade)
+
+  alertType     String // e.g. "Module voltage mismatch", "No site communication"
+  component     String? // e.g. "Battery 1.1", "Inverter 1", "Panel ..."
+  impact        Int     @default(0) // SolarEdge impact/severity 0-9
+  rmaStatus     String?
+  rmaCaseNumber String?
+
+  status     String    @default("Open")
+  isActive   Boolean   @default(true)
+  reportedAt DateTime?
+  resolvedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([siteId, alertType, component])
+  @@index([siteId])
+  @@index([isActive])
+  @@index([impact])
 }
 
 model PowerhubSite {
