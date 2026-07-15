@@ -265,7 +265,9 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/dashboards/pm-action-queue",
     "/api/pm-flags",
     "/api/powerhub",
+    "/api/solaredge",
     "/dashboards/powerhub",
+    "/dashboards/solaredge",
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
@@ -480,7 +482,9 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/pm-action-queue",
     "/api/pm-flags",
     "/api/powerhub",
+    "/api/solaredge",
     "/dashboards/powerhub",
+    "/dashboards/solaredge",
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
@@ -614,6 +618,7 @@ const OPERATIONS: RoleDefinition = {
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
     "/api/powerhub",
+    "/api/solaredge",
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
@@ -712,7 +717,9 @@ const SERVICE: RoleDefinition = {
     "/dashboards/shit-show-meeting",
     "/api/shit-show-meeting",
     "/api/powerhub",
+    "/api/solaredge",
     "/dashboards/powerhub",
+    "/dashboards/solaredge",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -874,7 +881,9 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
     "/api/powerhub",
+    "/api/solaredge",
     "/dashboards/powerhub",
+    "/dashboards/solaredge",
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
@@ -976,7 +985,9 @@ const DESIGN: RoleDefinition = {
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
     "/api/powerhub",
+    "/api/solaredge",
     "/dashboards/powerhub",
+    "/dashboards/solaredge",
     // Property Hub (full-page property view)
     "/properties",
     "/api/properties",
