@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
       scheduledTime: true,
       sentAt: true,
       sentBy: true,
+      schedulingUrl: true,
       createdAt: true,
     },
     orderBy: { createdAt: "desc" },
