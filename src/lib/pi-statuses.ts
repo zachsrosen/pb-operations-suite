@@ -29,6 +29,23 @@ export const PERMIT_REVISION_STATUSES = [
   "As-Built Revision Resubmitted",
 ];
 
+/**
+ * permitting_status values that are the DESIGN team's work, not permitting's.
+ * They have a permit action kind (so other dashboards still route them), but
+ * the Permit Hub keeps them out of its action tabs and shows them under
+ * "Other" — permitting picks the work back up at "Returned from Design" /
+ * "As-Built Ready To Resubmit".
+ *
+ * "Rejected" is labelled "Permit Rejected - Needs Revision": a rejection
+ * needing a revision is a handoff to design.
+ */
+export const PERMIT_DESIGN_OWNED_STATUSES: ReadonlySet<string> = new Set([
+  "Rejected",
+  "In Design For Revision",
+  "As-Built Revision Needed",
+  "As-Built Revision In Progress",
+]);
+
 /** Statuses where the ball is in our court — permitting */
 export const PERMIT_ACTION_STATUSES: Record<string, string> = {
   "Ready For Permitting": "Submit to AHJ",

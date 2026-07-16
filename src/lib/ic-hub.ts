@@ -59,6 +59,14 @@ import type { ActivityType } from "@/generated/prisma/enums";
  * follow-up + rejection statuses so the Hub covers more of the "ball in
  * our court" surface than the email (which is tightly scoped to daily
  * actionable items only).
+ *
+ * Excludes the value "Rejected" — labelled "Rejected - Revisions Needed". A
+ * rejection that needs a revision is a handoff to the design team; IC picks it
+ * back up at "Revision Returned From Design" (labelled "Revision Ready To
+ * Resubmit"), which is in the base list. Same call as permit-hub.ts.
+ *
+ * "Rejected (New)" (labelled just "Rejected") and "Non-Design Related
+ * Rejection" DO stay — neither signals a design revision.
  */
 const IC_HUB_STATUSES = (() => {
   const def = PI_QUERY_DEFS.find((d) => d.key === "interconnection");
@@ -71,7 +79,6 @@ const IC_HUB_STATUSES = (() => {
       "Submitted To Utility",
       "Resubmitted To Utility",
       "Waiting On Information",
-      "Rejected",
       "Rejected (New)",
       "Non-Design Related Rejection",
     ]),
