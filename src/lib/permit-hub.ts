@@ -306,6 +306,13 @@ export async function fetchPermitProjectDetail(
   try {
     deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
       "dealname",
+      "project_number",
+      // Per-trade permit numbers — the AHJ cites these in correspondence.
+      "permit_number___pv",
+      "permit_number___ess",
+      "permit_number___elec",
+      "permit_number___fire_protection",
+      "permit_number___zoning___land_use",
       "address_line_1",
       "city",
       "state",
@@ -411,7 +418,17 @@ export async function fetchPermitProjectDetail(
   // no thread fetch (correspondenceInbox = null).
   let correspondenceInbox: string | null = null;
   let correspondenceThreads: SharedInboxThread[] = [];
-  if (ahjEmail || props.address_line_1) {
+  // Project-unique keys the AHJ cites: street address, PROJ number, and the
+  // per-trade permit numbers. NOT the AHJ email — it is shared across every
+  // project in the jurisdiction and pulled in other projects' threads.
+  const permitIdentifiers = [
+    props.permit_number___pv,
+    props.permit_number___ess,
+    props.permit_number___elec,
+    props.permit_number___fire_protection,
+    props.permit_number___zoning___land_use,
+  ];
+  if (props.address_line_1 || props.project_number || permitIdentifiers.some(Boolean)) {
     const pbLoc = props.pb_location;
     let region: "co" | "ca" | null = null;
     if (locationInBucket(pbLoc, "colorado")) region = "co";
@@ -424,8 +441,9 @@ export async function fetchPermitProjectDetail(
         correspondenceThreads = await fetchSharedInboxThreads({
           mailbox,
           query: buildGmailThreadQuery({
-            ahjEmail,
             address: props.address_line_1,
+            projectNumber: props.project_number,
+            identifiers: permitIdentifiers,
             lookbackDays: 90,
           }),
           maxThreads: 10,

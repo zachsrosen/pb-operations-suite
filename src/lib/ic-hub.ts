@@ -278,6 +278,8 @@ export async function fetchIcProjectDetail(
   try {
     deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
       "dealname",
+      "project_number",
+      "utility_application__", // Utility Application # — utility cites it in correspondence
       "address_line_1",
       "city",
       "state",
@@ -377,7 +379,12 @@ export async function fetchIcProjectDetail(
   // Region routing → interconnections@ (CO) / interconnectionsca@ (CA)
   let correspondenceInbox: string | null = null;
   let correspondenceThreads: SharedInboxThread[] = [];
-  if (utilityEmail || props.address_line_1) {
+  // Project-unique keys the utility actually cites: street address, PROJ
+  // number, and the Utility Application #. NOT the utility email — that is
+  // shared across every project for the utility and pulled in other
+  // projects' threads.
+  const icIdentifiers = [props.utility_application__];
+  if (props.address_line_1 || props.project_number || icIdentifiers.some(Boolean)) {
     const pbLoc = props.pb_location;
     let region: "co" | "ca" | null = null;
     if (locationInBucket(pbLoc, "colorado")) region = "co";
@@ -390,8 +397,9 @@ export async function fetchIcProjectDetail(
         correspondenceThreads = await fetchSharedInboxThreads({
           mailbox,
           query: buildGmailThreadQuery({
-            ahjEmail: utilityEmail, // field name is AHJ-flavored; semantics identical
             address: props.address_line_1,
+            projectNumber: props.project_number,
+            identifiers: icIdentifiers,
             lookbackDays: 90,
           }),
           maxThreads: 10,
