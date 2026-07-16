@@ -17,17 +17,22 @@ interface Props {
 
 /**
  * Queue groups map the internal action kinds to the work buckets Peter thinks
- * in, in workflow order: "Ready to Submit" (new work going out), "Rejections /
- * Revisions" (rejected by the AHJ or being revised — the ball is on us),
- * "Resubmit" (revision done, ready to go back out), and "Waiting / Follow Up"
- * (submitted, awaiting utility/AHJ decision — chase if stale).
+ * in, in workflow order: "Ready to Submit" (new work going out), "Rejections"
+ * (AHJ rejected it — needs review), "Resubmit" (revision done, ready to go back
+ * out), and "Waiting / Follow Up" (submitted, awaiting utility/AHJ decision —
+ * chase if stale).
+ *
+ * In-flight revisions are not in this queue: while one is being drafted the
+ * ball is on the design team, so permit-hub.ts excludes those statuses. The
+ * revision action kinds below are therefore unreachable today; they are kept
+ * mapped so the grouping still holds if those statuses are ever re-included.
  */
 const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
 
 const GROUP_LABELS: Record<GroupKey, string> = {
   ready: "Ready to Submit",
-  rejections: "Rejections / Revisions",
+  rejections: "Rejections",
   resubmit: "Resubmit",
   follow_up: "Waiting / Follow Up",
 };
@@ -37,7 +42,7 @@ function groupForActionKind(kind: PermitActionKind | null): GroupKey {
     case "SUBMIT_TO_AHJ":
     case "SUBMIT_SOLARAPP":
       return "ready";
-    // Rejected or mid-revision — needs review/rework before it can go back out.
+    // Rejected by the AHJ — needs review before it can go back out.
     case "REVIEW_REJECTION":
     case "COMPLETE_REVISION":
     case "START_AS_BUILT_REVISION":

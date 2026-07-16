@@ -55,7 +55,7 @@ describe("PermitQueue tabs", () => {
     renderQueue();
     expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(tab(/Ready to Submit/)).toHaveTextContent("2");
-    expect(tab(/Rejections \/ Revisions/)).toHaveTextContent("2");
+    expect(tab(/^Rejections/)).toHaveTextContent("2");
     expect(tab(/^Resubmit/)).toHaveTextContent("1");
     expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("3");
   });
@@ -64,7 +64,7 @@ describe("PermitQueue tabs", () => {
     const user = userEvent.setup();
     renderQueue();
 
-    await user.click(tab(/Rejections \/ Revisions/));
+    await user.click(tab(/^Rejections/));
     const panel = screen.getByRole("tabpanel");
     // REVIEW_REJECTION + COMPLETE_REVISION land here
     expect(within(panel).getByText("Deal x1")).toBeInTheDocument();
@@ -135,7 +135,7 @@ describe("PermitQueue tabs", () => {
         statusLabel: "Permit Rejected - Needs Revision",
       }),
     ]);
-    await user.click(tab(/Rejections \/ Revisions/));
+    await user.click(tab(/^Rejections/));
     const panel = screen.getByRole("tabpanel");
     expect(
       within(panel).getByText("Permit Rejected - Needs Revision"),

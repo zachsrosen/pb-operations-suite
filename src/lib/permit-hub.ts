@@ -73,18 +73,24 @@ import type { ActivityType } from "@/generated/prisma/enums";
 
 /**
  * Queue statuses = the Daily Focus email's Ready + Resubmit buckets, plus the
- * rejection / revision statuses so the Hub covers the rejection work the email
- * leaves out (it is tightly scoped to daily actionable items). This mirrors the
- * same widening `IC_HUB_STATUSES` does in ic-hub.ts. The base lists stay in
- * src/lib/daily-focus/config.ts so the email keeps its narrower scope.
+ * rejection + follow-up statuses so the Hub covers more of the permit team's
+ * surface than the email (which is tightly scoped to daily actionable items).
+ * This mirrors the same widening `IC_HUB_STATUSES` does in ic-hub.ts. The base
+ * lists stay in src/lib/daily-focus/config.ts so the email keeps its scope.
  *
  * Note these are HubSpot internal VALUES, not labels — several differ
- * ("Rejected" is labelled "Permit Rejected - Needs Revision", "In Design For
- * Revision" is "Design Revision In Progress").
+ * ("Rejected" is labelled "Permit Rejected - Needs Revision").
  *
- * Includes "Submitted to AHJ" / "Resubmitted to AHJ" — they map to FOLLOW_UP,
- * so they populate the Waiting / Follow Up tab, which is otherwise nearly
- * empty (only "Awaiting Utility Approval" lands there).
+ * "Submitted to AHJ" / "Resubmitted to AHJ" map to FOLLOW_UP and populate the
+ * Waiting / Follow Up tab, which is otherwise nearly empty (only "Awaiting
+ * Utility Approval" lands there).
+ *
+ * Deliberately EXCLUDES the in-flight revision statuses — "In Design For
+ * Revision", "As-Built Revision Needed", "As-Built Revision In Progress". While
+ * a revision is being drafted the ball is on the design team, not permitting;
+ * permitting picks it back up at "Returned from Design" / "As-Built Ready To
+ * Resubmit" (both RESUBMIT_TO_AHJ, in the Resubmit tab). Design tracks the
+ * in-flight ones on their own dashboards.
  */
 const PERMIT_HUB_STATUSES = (() => {
   const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
@@ -94,9 +100,6 @@ const PERMIT_HUB_STATUSES = (() => {
       ...base,
       "Rejected",
       "Non-Design Related Rejection",
-      "In Design For Revision",
-      "As-Built Revision Needed",
-      "As-Built Revision In Progress",
       "Submitted to AHJ",
       "Resubmitted to AHJ",
     ]),
