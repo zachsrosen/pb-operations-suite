@@ -10,6 +10,7 @@ function item(over: Partial<PermitQueueItem> & { dealId: string }): PermitQueueI
     pbLocation: "Westminster",
     status: "Ready For Permitting",
     statusLabel: "Ready For Permitting",
+    dealStage: "Permitting & Interconnection",
     actionLabel: "Submit to AHJ",
     actionKind: "SUBMIT_TO_AHJ",
     daysInStatus: 0,
@@ -161,6 +162,29 @@ describe("PermitQueue tabs", () => {
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByText("Deal x1")).toBeInTheDocument();
     expect(within(panel).queryByText("Deal r1")).not.toBeInTheDocument();
+  });
+
+  it("shows the deal stage on each row, and searches on it", async () => {
+    const user = userEvent.setup();
+    renderQueue([
+      item({ dealId: "r1", actionKind: "SUBMIT_TO_AHJ", dealStage: "Design & Engineering" }),
+      item({ dealId: "r2", actionKind: "SUBMIT_TO_AHJ", dealStage: "Construction" }),
+    ]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByText(/Design & Engineering/)).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/Search project/), "construction");
+    const after = screen.getByRole("tabpanel");
+    expect(within(after).getByText("Deal r2")).toBeInTheDocument();
+    expect(within(after).queryByText("Deal r1")).not.toBeInTheDocument();
+  });
+
+  it("omits the stage separator when the stage is unresolved", () => {
+    renderQueue([item({ dealId: "r1", actionKind: "SUBMIT_TO_AHJ", dealStage: null })]);
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByText(/Peter/)).toBeInTheDocument();
+    // No trailing " · " with nothing after it
+    expect(within(panel).queryByText(/Peter · $/)).not.toBeInTheDocument();
   });
 
   it("shows a per-tab empty state (with a 0 badge) instead of hiding the tab", async () => {

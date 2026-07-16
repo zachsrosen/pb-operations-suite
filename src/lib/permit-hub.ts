@@ -159,6 +159,8 @@ export interface PermitQueueItem {
   status: string;
   /** Human label for `status` (they differ for several options). Display this. */
   statusLabel: string;
+  /** Resolved deal-stage name (e.g. "Permitting & Interconnection"); null if unresolved. */
+  dealStage: string | null;
   actionLabel: string;
   actionKind: PermitActionKind | null;
   /** Days since the deal entered its current permitting_status; null when unknown. */
@@ -354,6 +356,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       pbLocation: props.pb_location ?? null,
       status,
       statusLabel: labelFor(statusLabels, status),
+      dealStage: props.dealstage ? (stageMap[props.dealstage] ?? null) : null,
       actionLabel,
       actionKind: actionKindForStatus(status),
       daysInStatus,
@@ -363,10 +366,6 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       pm: resolvedPm,
       amount: props.amount ? Number(props.amount) : null,
     });
-    // stageMap is also available on detail endpoint; queue items don't
-    // currently display dealStage, but the map is pre-warmed for the
-    // detail fetch's cache.
-    void stageMap;
   }
 
   // Stalest first; deals with an unknown entry time sort last rather than
