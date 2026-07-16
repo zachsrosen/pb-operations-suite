@@ -9,6 +9,7 @@
 
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
+import { fetchStatusEnteredAt } from "@/lib/status-entered";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { updateTask } from "@/lib/hubspot-tasks";
 import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
@@ -70,20 +71,43 @@ function resolvePermitLeadName(
 import type { ActivityType } from "@/generated/prisma/enums";
 
 /**
- * Permit Hub queue uses the same scoping as the Daily Focus email so the
- * two surfaces agree on "what does the permitting team need to work on today".
- * See src/lib/daily-focus/config.ts for the canonical definitions.
+ * Queue statuses = the Daily Focus email's Ready + Resubmit buckets, plus the
+ * rejection / revision statuses so the Hub covers the rejection work the email
+ * leaves out (it is tightly scoped to daily actionable items). This mirrors the
+ * same widening `IC_HUB_STATUSES` does in ic-hub.ts. The base lists stay in
+ * src/lib/daily-focus/config.ts so the email keeps its narrower scope.
  *
- * This intentionally narrows the displayed list vs. `PERMIT_ACTION_STATUSES`
- * in pi-statuses.ts — the older list is kept for other dashboards that want
- * the full ball-in-our-court view. Here we only surface statuses where a
- * permit lead should actually act today.
+ * Note these are HubSpot internal VALUES, not labels — several differ
+ * ("Rejected" is labelled "Permit Rejected - Needs Revision", "In Design For
+ * Revision" is "Design Revision In Progress").
+ *
+ * Includes "Submitted to AHJ" / "Resubmitted to AHJ" — they map to FOLLOW_UP,
+ * so they populate the Waiting / Follow Up tab, which is otherwise nearly
+ * empty (only "Awaiting Utility Approval" lands there).
  */
 const PERMIT_HUB_STATUSES = (() => {
   const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
-  if (!def) return [] as string[];
-  return [...def.readyStatuses, ...(def.resubmitStatuses ?? [])];
+  const base = def ? [...def.readyStatuses, ...(def.resubmitStatuses ?? [])] : [];
+  return Array.from(
+    new Set([
+      ...base,
+      "Rejected",
+      "Non-Design Related Rejection",
+      "In Design For Revision",
+      "As-Built Revision Needed",
+      "As-Built Revision In Progress",
+      "Submitted to AHJ",
+      "Resubmitted to AHJ",
+    ]),
+  );
 })();
+
+/**
+ * Safety cap on queue pagination — 10 pages x 200 = 2000 deals, far above the
+ * real queue (~57). Guards against an unbounded loop if HubSpot keeps
+ * returning a cursor; a hit is logged rather than silently truncating.
+ */
+const MAX_QUEUE_PAGES = 10;
 
 // ---------------------------------------------------------------------------
 // Permission + flag helpers
@@ -133,7 +157,8 @@ export interface PermitQueueItem {
   status: string;
   actionLabel: string;
   actionKind: PermitActionKind | null;
-  daysInStatus: number;
+  /** Days since the deal entered its current permitting_status; null when unknown. */
+  daysInStatus: number | null;
   isStale: boolean;
   permitLead: string | null;
   /** HubSpot owner ID on permit_tech — exposed so the client can filter
@@ -222,49 +247,93 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     },
   ];
 
-  const response = await searchWithRetry({
-    filterGroups: [{ filters }],
-    properties: [
-      "dealname",
-      "address_line_1",
-      "city",
-      "state",
-      "pb_location",
-      "permitting_status",
-      "dealstage",
-      "pipeline",
-      "hs_lastmodifieddate",
-      "amount",
-      "hubspot_owner_id",
-      "project_manager",
-      "permit_lead_name",
-      "permit_tech",
-      "calculated_system_size__kwdc_",
-    ],
-    limit: 200,
-    sorts: ["hs_lastmodifieddate"],
-  } as unknown as Parameters<typeof searchWithRetry>[0]);
+  // HubSpot search returns at most 200 results per page. The queue is well
+  // under that today (~57 deals), but a single un-paged call would silently
+  // drop the tail if it ever grows past 200, so page with the `after` cursor.
+  // Costs nothing while under one page: the loop exits after one request.
+  const searchResults: Array<{
+    id: string;
+    properties?: Record<string, string | null>;
+  }> = [];
+  let after: string | undefined;
+  let pages = 0;
+  do {
+    const response = await searchWithRetry({
+      filterGroups: [{ filters }],
+      properties: [
+        "dealname",
+        "address_line_1",
+        "city",
+        "state",
+        "pb_location",
+        "permitting_status",
+        "dealstage",
+        "pipeline",
+        "hs_lastmodifieddate",
+        "amount",
+        "hubspot_owner_id",
+        "project_manager",
+        "permit_lead_name",
+        "permit_tech",
+        "calculated_system_size__kwdc_",
+      ],
+      limit: 200,
+      sorts: ["hs_lastmodifieddate"],
+      ...(after ? { after } : {}),
+    } as unknown as Parameters<typeof searchWithRetry>[0]);
+
+    searchResults.push(
+      ...((response.results ?? []) as Array<{
+        id: string;
+        properties?: Record<string, string | null>;
+      }>),
+    );
+    after = (response as { paging?: { next?: { after?: string } } }).paging?.next
+      ?.after;
+    pages += 1;
+  } while (after && pages < MAX_QUEUE_PAGES);
+
+  if (after) {
+    // Never truncate silently — if this fires, raise MAX_QUEUE_PAGES or
+    // tighten the status allowlist.
+    console.warn(
+      `[permit-hub] queue hit the ${MAX_QUEUE_PAGES}-page cap (${searchResults.length} deals); results are truncated`,
+    );
+  }
 
   // Resolve owner-id + dealstage-id properties to display names in parallel.
   // buildOwnerMap batches the owners API so this is ~1 extra HubSpot call
   // for the whole queue. buildStageDisplayMap is cached via getStageMaps.
-  const rawDeals = (response.results ?? []).map((d) => ({
+  const rawDeals = searchResults.map((d) => ({
     properties: (d.properties ?? {}) as Record<string, string | null>,
   }));
-  const [ownerMap, stageMap] = await Promise.all([
+  // Real time-in-status comes from permitting_status property history — NOT
+  // hs_lastmodifieddate, which a calc-property loop re-stamps daily (every row
+  // computed to 0 days). See lib/status-entered.ts.
+  const [ownerMap, stageMap, enteredAtByDeal] = await Promise.all([
     buildOwnerMap(rawDeals),
     buildStageDisplayMap(),
+    fetchStatusEnteredAt(
+      searchResults.map((d) => ({
+        id: d.id,
+        status: d.properties?.permitting_status ?? "",
+      })),
+      "permitting_status",
+    ),
   ]);
 
   const items: PermitQueueItem[] = [];
   const now = Date.now();
-  for (const deal of response.results ?? []) {
+  for (const deal of searchResults) {
     const props = (deal.properties ?? {}) as Record<string, string | null>;
     const status = props.permitting_status ?? "";
-    const lastModified = props.hs_lastmodifieddate
-      ? new Date(props.hs_lastmodifieddate).getTime()
-      : now;
-    const daysInStatus = Math.floor((now - lastModified) / (1000 * 60 * 60 * 24));
+    const enteredAt = enteredAtByDeal.get(deal.id);
+    // null (not 0) when the entry time can't be resolved — the UI shows "—"
+    // rather than implying the deal just changed status.
+    const daysInStatus =
+      enteredAt === undefined
+        ? null
+        : Math.floor((now - enteredAt) / (1000 * 60 * 60 * 24));
     const actionLabel = PERMIT_ACTION_STATUSES[status] ?? "";
 
     const pmId = props.project_manager;
@@ -279,7 +348,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       actionLabel,
       actionKind: actionKindForStatus(status),
       daysInStatus,
-      isStale: daysInStatus > STALE_THRESHOLD_DAYS,
+      isStale: daysInStatus !== null && daysInStatus > STALE_THRESHOLD_DAYS,
       permitLead: resolvePermitLeadName(props, ownerMap),
       permitLeadOwnerId: props.permit_tech ?? null,
       pm: resolvedPm,
@@ -291,7 +360,13 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     void stageMap;
   }
 
-  items.sort((a, b) => b.daysInStatus - a.daysInStatus);
+  // Stalest first; deals with an unknown entry time sort last rather than
+  // masquerading as brand new.
+  items.sort((a, b) => {
+    if (a.daysInStatus === null) return b.daysInStatus === null ? 0 : 1;
+    if (b.daysInStatus === null) return -1;
+    return b.daysInStatus - a.daysInStatus;
+  });
   return items;
 }
 

@@ -16,16 +16,18 @@ interface Props {
 }
 
 /**
- * Queue groups map the internal action kinds to the three work buckets Peter
- * thinks in: "Ready to Submit" (new work going out), "Resubmit" (responses
- * to AHJ rejections / returned from design), and "Waiting / Follow Up"
+ * Queue groups map the internal action kinds to the work buckets Peter thinks
+ * in, in workflow order: "Ready to Submit" (new work going out), "Rejections /
+ * Revisions" (rejected by the AHJ or being revised — the ball is on us),
+ * "Resubmit" (revision done, ready to go back out), and "Waiting / Follow Up"
  * (submitted, awaiting utility/AHJ decision — chase if stale).
  */
-const GROUP_ORDER = ["ready", "resubmit", "follow_up"] as const;
+const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
 
 const GROUP_LABELS: Record<GroupKey, string> = {
   ready: "Ready to Submit",
+  rejections: "Rejections / Revisions",
   resubmit: "Resubmit",
   follow_up: "Waiting / Follow Up",
 };
@@ -35,11 +37,14 @@ function groupForActionKind(kind: PermitActionKind | null): GroupKey {
     case "SUBMIT_TO_AHJ":
     case "SUBMIT_SOLARAPP":
       return "ready";
-    case "RESUBMIT_TO_AHJ":
+    // Rejected or mid-revision — needs review/rework before it can go back out.
     case "REVIEW_REJECTION":
     case "COMPLETE_REVISION":
     case "START_AS_BUILT_REVISION":
     case "COMPLETE_AS_BUILT":
+      return "rejections";
+    // Revision finished — ready to resubmit to the AHJ.
+    case "RESUBMIT_TO_AHJ":
       return "resubmit";
     case "FOLLOW_UP":
     case "MARK_PERMIT_ISSUED":
@@ -55,6 +60,8 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
   const [search, setSearch] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  // Default to the most actionable bucket — new work going out.
+  const [activeTab, setActiveTab] = useState<GroupKey>("ready");
 
   const locationOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
@@ -110,6 +117,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
   const groups = useMemo(() => {
     const map: Record<GroupKey, PermitQueueItem[]> = {
       ready: [],
+      rejections: [],
       resubmit: [],
       follow_up: [],
     };
@@ -118,6 +126,8 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
     }
     return map;
   }, [filtered]);
+
+  const activeItems = groups[activeTab];
 
   return (
     <div className="flex h-full flex-col">
@@ -150,10 +160,44 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
       </div>
       <div className="text-muted flex items-center justify-between border-b border-t-border px-4 py-2 text-xs">
         <span>
-          {filtered.length} of {items.length} · grouped by action, stalest first
+          {filtered.length} of {items.length} · stalest first
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div
+        role="tablist"
+        aria-label="Queue groups"
+        className="flex items-center gap-1 border-b border-t-border px-2"
+      >
+        {GROUP_ORDER.map((key) => {
+          const active = key === activeTab;
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "text-muted hover:text-foreground border-transparent"
+              }`}
+            >
+              <span>{GROUP_LABELS[key]}</span>
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                  active
+                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    : "bg-surface-2 text-muted"
+                }`}
+              >
+                {groups[key].length}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex-1 overflow-y-auto" role="tabpanel">
         {isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -163,66 +207,53 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
               />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-muted flex h-full items-center justify-center text-sm">
-            No action items in queue
+        ) : activeItems.length === 0 ? (
+          <div className="text-muted flex h-full items-center justify-center px-4 text-center text-sm">
+            {filtered.length === 0
+              ? "No action items in queue"
+              : `Nothing in ${GROUP_LABELS[activeTab]}`}
           </div>
         ) : (
-          <div>
-            {GROUP_ORDER.map((key) => {
-              const groupItems = groups[key];
-              if (groupItems.length === 0) return null;
+          <ul className="divide-t-border divide-y">
+            {activeItems.map((item) => {
+              const selected = item.dealId === selectedDealId;
               return (
-                <section key={key}>
-                  <header className="bg-surface-2/60 text-muted sticky top-0 z-10 flex items-center justify-between border-y border-t-border px-4 py-1.5 text-xs font-semibold uppercase tracking-wide backdrop-blur">
-                    <span>{GROUP_LABELS[key]}</span>
-                    <span className="font-normal normal-case tracking-normal">
-                      {groupItems.length}
-                    </span>
-                  </header>
-                  <ul className="divide-t-border divide-y">
-                    {groupItems.map((item) => {
-                      const selected = item.dealId === selectedDealId;
-                      return (
-                        <li key={item.dealId}>
-                          <button
-                            type="button"
-                            onClick={() => onSelect(item.dealId)}
-                            className={`w-full px-4 py-3 text-left transition-colors ${
-                              selected ? "bg-blue-500/10" : "hover:bg-surface-2"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate font-medium">{item.name}</div>
-                                <div className="text-muted truncate text-xs">
-                                  {item.address ?? "—"} · {item.pbLocation ?? "—"}
-                                </div>
-                              </div>
-                              {item.isStale && (
-                                <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
-                                  Stale
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 flex items-center justify-between text-xs">
-                              <span className="text-muted">{item.status}</span>
-                              <span className="font-medium text-blue-600 dark:text-blue-400">
-                                {item.actionLabel}
-                              </span>
-                            </div>
-                            <div className="text-muted mt-1 text-xs">
-                              {item.daysInStatus}d · {item.permitLead ?? "Unassigned"}
-                            </div>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
+                <li key={item.dealId}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(item.dealId)}
+                    className={`w-full px-4 py-3 text-left transition-colors ${
+                      selected ? "bg-blue-500/10" : "hover:bg-surface-2"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{item.name}</div>
+                        <div className="text-muted truncate text-xs">
+                          {item.address ?? "—"} · {item.pbLocation ?? "—"}
+                        </div>
+                      </div>
+                      {item.isStale && (
+                        <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
+                          Stale
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs">
+                      <span className="text-muted">{item.status}</span>
+                      <span className="font-medium text-blue-600 dark:text-blue-400">
+                        {item.actionLabel}
+                      </span>
+                    </div>
+                    <div className="text-muted mt-1 text-xs">
+                      {item.daysInStatus === null ? "—" : `${item.daysInStatus}d`} ·{" "}
+                      {item.permitLead ?? "Unassigned"}
+                    </div>
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </div>
     </div>
