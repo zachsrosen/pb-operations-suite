@@ -66,6 +66,12 @@ export const EXCLUDED_STAGES = [
   "20440344",   // On Hold (Project)
   "72700977",   // On-hold (D&R)
   "1299090217", // New (Service) — no P&I/design work yet
+  // Roofing is in INCLUDED_PIPELINES but had no terminal stages listed here,
+  // so a cancelled/complete/on-hold roofing job would have surfaced as live
+  // work if it ever carried a permitting/interconnection status.
+  "1215078285", // Project Complete (Roofing)
+  "1310696342", // Cancelled (Roofing)
+  "1117662745", // On-Hold (Roofing)
 ];
 
 // ── Included Pipelines ─────────────────────────────────────────────────

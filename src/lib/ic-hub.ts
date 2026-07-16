@@ -145,6 +145,8 @@ export interface IcQueueItem {
   status: string;
   /** Human label for `status` (they differ for several options). Display this. */
   statusLabel: string;
+  /** Resolved deal-stage name (e.g. "Permission To Operate"); null if unresolved. */
+  dealStage: string | null;
   actionLabel: string;
   actionKind: IcActionKind | null;
   /** Days since the deal entered its current interconnection_status; null when unknown. */
@@ -281,7 +283,7 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
   // Real time-in-status comes from interconnection_status property history —
   // NOT hs_lastmodifieddate, which a calc-property loop re-stamps daily (every
   // row computed to 0 days). See lib/status-entered.ts.
-  const [ownerMap, enteredAtByDeal, statusLabels] = await Promise.all([
+  const [ownerMap, enteredAtByDeal, statusLabels, stageMap] = await Promise.all([
     buildOwnerMap(rawDeals),
     fetchStatusEnteredAt(
       searchResults.map((d) => ({
@@ -291,6 +293,8 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
       "interconnection_status",
     ),
     getEnumLabelMap("interconnection_status"),
+    // Cached via getStageMaps — resolves dealstage IDs to display names.
+    buildStageDisplayMap(),
   ]);
 
   const items: IcQueueItem[] = [];
@@ -316,6 +320,7 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
       pbLocation: props.pb_location ?? null,
       status,
       statusLabel: labelFor(statusLabels, status),
+      dealStage: props.dealstage ? (stageMap[props.dealstage] ?? null) : null,
       actionLabel,
       actionKind: icActionKindForStatus(status),
       daysInStatus,

@@ -94,7 +94,8 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
           i.icLead?.toLowerCase().includes(q) ||
           // Match either what's displayed (label) or the underlying value.
           i.statusLabel.toLowerCase().includes(q) ||
-          i.status.toLowerCase().includes(q),
+          i.status.toLowerCase().includes(q) ||
+          i.dealStage?.toLowerCase().includes(q),
       );
     }
     return list;
@@ -230,9 +231,10 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
                         {item.actionLabel}
                       </span>
                     </div>
-                    <div className="text-muted mt-1 text-xs">
+                    <div className="text-muted mt-1 truncate text-xs">
                       {item.daysInStatus === null ? "—" : `${item.daysInStatus}d`} ·{" "}
                       {item.icLead ?? "Unassigned"}
+                      {item.dealStage ? ` · ${item.dealStage}` : ""}
                     </div>
                   </button>
                 </li>

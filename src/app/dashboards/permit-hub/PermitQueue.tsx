@@ -110,7 +110,8 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
           i.permitLead?.toLowerCase().includes(q) ||
           // Match either what's displayed (label) or the underlying value.
           i.statusLabel.toLowerCase().includes(q) ||
-          i.status.toLowerCase().includes(q),
+          i.status.toLowerCase().includes(q) ||
+          i.dealStage?.toLowerCase().includes(q),
       );
     }
     return list;
@@ -247,9 +248,10 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
                         {item.actionLabel}
                       </span>
                     </div>
-                    <div className="text-muted mt-1 text-xs">
+                    <div className="text-muted mt-1 truncate text-xs">
                       {item.daysInStatus === null ? "—" : `${item.daysInStatus}d`} ·{" "}
                       {item.permitLead ?? "Unassigned"}
+                      {item.dealStage ? ` · ${item.dealStage}` : ""}
                     </div>
                   </button>
                 </li>
