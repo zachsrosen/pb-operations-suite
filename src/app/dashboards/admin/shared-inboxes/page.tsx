@@ -39,7 +39,7 @@ export default async function SharedInboxesPage({
     },
     {
       label: "Permits — California",
-      address: readInboxEnv("PERMIT_INBOX_CA", "permitting@photonbrothers.com"),
+      address: readInboxEnv("PERMIT_INBOX_CA", "permits@photonbrothers.com"),
     },
     {
       label: "Interconnections — Colorado",
@@ -47,7 +47,7 @@ export default async function SharedInboxesPage({
     },
     {
       label: "Interconnections — California",
-      address: readInboxEnv("IC_INBOX_CA", "interconnectionsca@photonbrothers.com"),
+      address: readInboxEnv("IC_INBOX_CA", "interconnectca@photonbrothers.com"),
     },
     {
       label: "PE / TPO",
