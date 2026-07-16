@@ -6,7 +6,10 @@ import {
   type FilterOption,
 } from "@/components/ui/MultiSelectFilter";
 import type { IcQueueItem } from "@/lib/ic-hub";
-import type { IcActionKind } from "@/lib/pi-statuses";
+import {
+  IC_DESIGN_OWNED_STATUSES,
+  type IcActionKind,
+} from "@/lib/pi-statuses";
 
 interface Props {
   items: IcQueueItem[];
@@ -15,13 +18,20 @@ interface Props {
   onSelect: (dealId: string) => void;
 }
 
-const GROUP_ORDER = ["ready", "resubmit", "follow_up"] as const;
+/**
+ * "Other" is the catch-all so nothing is invisible: design-owned revision work
+ * (IC picks it back up at "Revision Ready To Resubmit"), plus any status with
+ * no IC action — "Transformer Upgrade", "Waiting on New Construction",
+ * "Supplemental Review", "RBC On Hold", and any status added to HubSpot later.
+ */
+const GROUP_ORDER = ["ready", "resubmit", "follow_up", "other"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
 
 const GROUP_LABELS: Record<GroupKey, string> = {
   ready: "Ready to Submit",
   resubmit: "Resubmit / Revision",
   follow_up: "Waiting / Follow Up",
+  other: "Other",
 };
 
 function groupForActionKind(kind: IcActionKind | null): GroupKey {
@@ -35,9 +45,21 @@ function groupForActionKind(kind: IcActionKind | null): GroupKey {
       return "resubmit";
     case "FOLLOW_UP_UTILITY":
     case "MARK_IC_APPROVED":
-    default:
       return "follow_up";
+    // No IC action for this status — park it in Other.
+    default:
+      return "other";
   }
+}
+
+/**
+ * Status wins over action kind: design-owned statuses carry an IC action kind
+ * (so other dashboards can route them) but are not IC's work, so they belong
+ * in Other rather than the action tabs.
+ */
+function groupForItem(item: IcQueueItem): GroupKey {
+  if (IC_DESIGN_OWNED_STATUSES.has(item.status)) return "other";
+  return groupForActionKind(item.actionKind);
 }
 
 const UNASSIGNED = "__unassigned__";
@@ -106,9 +128,10 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
       ready: [],
       resubmit: [],
       follow_up: [],
+      other: [],
     };
     for (const item of filtered) {
-      map[groupForActionKind(item.actionKind)].push(item);
+      map[groupForItem(item)].push(item);
     }
     return map;
   }, [filtered]);
