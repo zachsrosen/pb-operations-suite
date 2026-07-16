@@ -21,10 +21,12 @@ function item(over: Partial<PermitQueueItem> & { dealId: string }): PermitQueueI
   };
 }
 
-// 2 ready, 1 resubmit, 3 follow_up
+// 2 ready, 2 rejections, 1 resubmit, 3 follow_up
 const ITEMS: PermitQueueItem[] = [
   item({ dealId: "r1", actionKind: "SUBMIT_TO_AHJ" }),
   item({ dealId: "r2", actionKind: "SUBMIT_SOLARAPP" }),
+  item({ dealId: "x1", actionKind: "REVIEW_REJECTION" }),
+  item({ dealId: "x2", actionKind: "COMPLETE_REVISION" }),
   item({ dealId: "s1", actionKind: "RESUBMIT_TO_AHJ" }),
   item({ dealId: "f1", actionKind: "FOLLOW_UP" }),
   item({ dealId: "f2", actionKind: "FOLLOW_UP" }),
@@ -49,10 +51,29 @@ const tab = (name: RegExp) => screen.getByRole("tab", { name });
 describe("PermitQueue tabs", () => {
   it("renders one tab per group with the correct counts", () => {
     renderQueue();
-    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(tab(/Ready to Submit/)).toHaveTextContent("2");
-    expect(tab(/Resubmit/)).toHaveTextContent("1");
+    expect(tab(/Rejections \/ Revisions/)).toHaveTextContent("2");
+    expect(tab(/^Resubmit/)).toHaveTextContent("1");
     expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("3");
+  });
+
+  it("routes rejection and revision work to the Rejections tab, not Resubmit", async () => {
+    const user = userEvent.setup();
+    renderQueue();
+
+    await user.click(tab(/Rejections \/ Revisions/));
+    const panel = screen.getByRole("tabpanel");
+    // REVIEW_REJECTION + COMPLETE_REVISION land here
+    expect(within(panel).getByText("Deal x1")).toBeInTheDocument();
+    expect(within(panel).getByText("Deal x2")).toBeInTheDocument();
+    // RESUBMIT_TO_AHJ stays in Resubmit
+    expect(within(panel).queryByText("Deal s1")).not.toBeInTheDocument();
+
+    await user.click(tab(/^Resubmit/));
+    const resubmitPanel = screen.getByRole("tabpanel");
+    expect(within(resubmitPanel).getByText("Deal s1")).toBeInTheDocument();
+    expect(within(resubmitPanel).queryByText("Deal x1")).not.toBeInTheDocument();
   });
 
   it("defaults to the Ready tab and shows only its items", () => {

@@ -70,19 +70,33 @@ function resolvePermitLeadName(
 import type { ActivityType } from "@/generated/prisma/enums";
 
 /**
- * Permit Hub queue uses the same scoping as the Daily Focus email so the
- * two surfaces agree on "what does the permitting team need to work on today".
- * See src/lib/daily-focus/config.ts for the canonical definitions.
+ * Queue statuses = the Daily Focus email's Ready + Resubmit buckets, plus the
+ * rejection / revision statuses so the Hub covers the rejection work the email
+ * leaves out (it is tightly scoped to daily actionable items). This mirrors the
+ * same widening `IC_HUB_STATUSES` does in ic-hub.ts. The base lists stay in
+ * src/lib/daily-focus/config.ts so the email keeps its narrower scope.
  *
- * This intentionally narrows the displayed list vs. `PERMIT_ACTION_STATUSES`
- * in pi-statuses.ts — the older list is kept for other dashboards that want
- * the full ball-in-our-court view. Here we only surface statuses where a
- * permit lead should actually act today.
+ * Note these are HubSpot internal VALUES, not labels — several differ
+ * ("Rejected" is labelled "Permit Rejected - Needs Revision", "In Design For
+ * Revision" is "Design Revision In Progress").
+ *
+ * Deliberately still excludes "Submitted to AHJ" / "Resubmitted to AHJ"
+ * (~120 deals): the queue search is capped at `limit: 200`, and adding them
+ * would overflow the cap and silently truncate the list.
  */
 const PERMIT_HUB_STATUSES = (() => {
   const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
-  if (!def) return [] as string[];
-  return [...def.readyStatuses, ...(def.resubmitStatuses ?? [])];
+  const base = def ? [...def.readyStatuses, ...(def.resubmitStatuses ?? [])] : [];
+  return Array.from(
+    new Set([
+      ...base,
+      "Rejected",
+      "Non-Design Related Rejection",
+      "In Design For Revision",
+      "As-Built Revision Needed",
+      "As-Built Revision In Progress",
+    ]),
+  );
 })();
 
 // ---------------------------------------------------------------------------

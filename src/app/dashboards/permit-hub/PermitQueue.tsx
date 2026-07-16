@@ -16,16 +16,18 @@ interface Props {
 }
 
 /**
- * Queue groups map the internal action kinds to the three work buckets Peter
- * thinks in: "Ready to Submit" (new work going out), "Resubmit" (responses
- * to AHJ rejections / returned from design), and "Waiting / Follow Up"
+ * Queue groups map the internal action kinds to the work buckets Peter thinks
+ * in, in workflow order: "Ready to Submit" (new work going out), "Rejections /
+ * Revisions" (rejected by the AHJ or being revised — the ball is on us),
+ * "Resubmit" (revision done, ready to go back out), and "Waiting / Follow Up"
  * (submitted, awaiting utility/AHJ decision — chase if stale).
  */
-const GROUP_ORDER = ["ready", "resubmit", "follow_up"] as const;
+const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
 
 const GROUP_LABELS: Record<GroupKey, string> = {
   ready: "Ready to Submit",
+  rejections: "Rejections / Revisions",
   resubmit: "Resubmit",
   follow_up: "Waiting / Follow Up",
 };
@@ -35,11 +37,14 @@ function groupForActionKind(kind: PermitActionKind | null): GroupKey {
     case "SUBMIT_TO_AHJ":
     case "SUBMIT_SOLARAPP":
       return "ready";
-    case "RESUBMIT_TO_AHJ":
+    // Rejected or mid-revision — needs review/rework before it can go back out.
     case "REVIEW_REJECTION":
     case "COMPLETE_REVISION":
     case "START_AS_BUILT_REVISION":
     case "COMPLETE_AS_BUILT":
+      return "rejections";
+    // Revision finished — ready to resubmit to the AHJ.
+    case "RESUBMIT_TO_AHJ":
       return "resubmit";
     case "FOLLOW_UP":
     case "MARK_PERMIT_ISSUED":
@@ -112,6 +117,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
   const groups = useMemo(() => {
     const map: Record<GroupKey, PermitQueueItem[]> = {
       ready: [],
+      rejections: [],
       resubmit: [],
       follow_up: [],
     };
