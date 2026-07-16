@@ -6,7 +6,10 @@ import {
   type FilterOption,
 } from "@/components/ui/MultiSelectFilter";
 import type { PermitQueueItem } from "@/lib/permit-hub";
-import type { PermitActionKind } from "@/lib/pi-statuses";
+import {
+  PERMIT_DESIGN_OWNED_STATUSES,
+  type PermitActionKind,
+} from "@/lib/pi-statuses";
 
 interface Props {
   items: PermitQueueItem[];
@@ -16,20 +19,18 @@ interface Props {
 }
 
 /**
- * Queue groups map the internal action kinds to the work buckets Peter thinks
- * in, in workflow order: "Ready to Submit" (new work going out), "Rejections"
- * (AHJ rejected it — needs review), "Resubmit" (revision done, ready to go back
- * out), and "Waiting / Follow Up" (submitted, awaiting utility/AHJ decision —
- * chase if stale).
+ * Queue groups, in workflow order: "Ready to Submit" (new work going out),
+ * "Rejections" (AHJ rejected it, no design revision needed — permitting
+ * resolves it), "Resubmit" (revision done, ready to go back out), "Waiting /
+ * Follow Up" (submitted, awaiting utility/AHJ decision — chase if stale), and
+ * "Other".
  *
- * Design-owned work is not in this queue: an AHJ rejection needing a revision
- * ("Rejected") and the revision itself are both design's, so permit-hub.ts
- * excludes those statuses. "Rejections" therefore holds only
- * "Non-Design Related Rejection" — the flavour permitting resolves itself.
- * The other rejection/revision action kinds below are unreachable today; they
- * are kept mapped so grouping still holds if those statuses are re-included.
+ * "Other" is the catch-all so nothing is invisible: design-owned revision work
+ * (permitting picks it back up at "Returned from Design"), plus any status with
+ * no permit action — "Waiting On Information", "As-Built Revision Resubmitted",
+ * "Permit Issued Pending Payment", and any status added to HubSpot later.
  */
-const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up"] as const;
+const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up", "other"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
 
 const GROUP_LABELS: Record<GroupKey, string> = {
@@ -37,6 +38,7 @@ const GROUP_LABELS: Record<GroupKey, string> = {
   rejections: "Rejections",
   resubmit: "Resubmit",
   follow_up: "Waiting / Follow Up",
+  other: "Other",
 };
 
 function groupForActionKind(kind: PermitActionKind | null): GroupKey {
@@ -55,9 +57,21 @@ function groupForActionKind(kind: PermitActionKind | null): GroupKey {
       return "resubmit";
     case "FOLLOW_UP":
     case "MARK_PERMIT_ISSUED":
-    default:
       return "follow_up";
+    // No permit action for this status — park it in Other.
+    default:
+      return "other";
   }
+}
+
+/**
+ * Status wins over action kind: design-owned statuses carry a permit action
+ * kind (so other dashboards can route them) but are not permitting's work, so
+ * they belong in Other rather than the action tabs.
+ */
+function groupForItem(item: PermitQueueItem): GroupKey {
+  if (PERMIT_DESIGN_OWNED_STATUSES.has(item.status)) return "other";
+  return groupForActionKind(item.actionKind);
 }
 
 /** Sentinel value representing unassigned permits in the lead filter. */
@@ -130,9 +144,10 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
       rejections: [],
       resubmit: [],
       follow_up: [],
+      other: [],
     };
     for (const item of filtered) {
-      map[groupForActionKind(item.actionKind)].push(item);
+      map[groupForItem(item)].push(item);
     }
     return map;
   }, [filtered]);

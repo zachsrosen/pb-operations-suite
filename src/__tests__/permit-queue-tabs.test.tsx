@@ -53,11 +53,49 @@ const tab = (name: RegExp) => screen.getByRole("tab", { name });
 describe("PermitQueue tabs", () => {
   it("renders one tab per group with the correct counts", () => {
     renderQueue();
-    expect(screen.getAllByRole("tab")).toHaveLength(4);
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
     expect(tab(/Ready to Submit/)).toHaveTextContent("2");
     expect(tab(/^Rejections/)).toHaveTextContent("2");
     expect(tab(/^Resubmit/)).toHaveTextContent("1");
     expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("3");
+    expect(tab(/^Other/)).toHaveTextContent("0");
+  });
+
+  it("routes design-owned statuses to Other even though they have an action kind", async () => {
+    const user = userEvent.setup();
+    renderQueue([
+      // Carries REVIEW_REJECTION, but "Rejected" is design's work -> Other.
+      item({ dealId: "d1", status: "Rejected", actionKind: "REVIEW_REJECTION" }),
+      // Non-design rejection stays in Rejections.
+      item({
+        dealId: "n1",
+        status: "Non-Design Related Rejection",
+        actionKind: "REVIEW_REJECTION",
+      }),
+    ]);
+    expect(tab(/^Other/)).toHaveTextContent("1");
+    expect(tab(/^Rejections/)).toHaveTextContent("1");
+
+    await user.click(tab(/^Other/));
+    expect(within(screen.getByRole("tabpanel")).getByText("Deal d1")).toBeInTheDocument();
+
+    await user.click(tab(/^Rejections/));
+    expect(within(screen.getByRole("tabpanel")).getByText("Deal n1")).toBeInTheDocument();
+  });
+
+  it("routes statuses with no permit action to Other, not Follow Up", async () => {
+    const user = userEvent.setup();
+    renderQueue([
+      item({ dealId: "u1", status: "Waiting On Information", actionKind: null }),
+      item({ dealId: "f1", actionKind: "FOLLOW_UP" }),
+    ]);
+    expect(tab(/^Other/)).toHaveTextContent("1");
+    expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("1");
+
+    await user.click(tab(/^Other/));
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByText("Deal u1")).toBeInTheDocument();
+    expect(within(panel).queryByText("Deal f1")).not.toBeInTheDocument();
   });
 
   it("routes rejection and revision work to the Rejections tab, not Resubmit", async () => {
@@ -135,7 +173,8 @@ describe("PermitQueue tabs", () => {
         statusLabel: "Permit Rejected - Needs Revision",
       }),
     ]);
-    await user.click(tab(/^Rejections/));
+    // "Rejected" is design-owned, so it lives in Other, not Rejections.
+    await user.click(tab(/^Other/));
     const panel = screen.getByRole("tabpanel");
     expect(
       within(panel).getByText("Permit Rejected - Needs Revision"),

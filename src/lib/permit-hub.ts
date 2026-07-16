@@ -28,7 +28,6 @@ import {
   type PermitActionKind,
 } from "@/lib/pi-statuses";
 import {
-  PI_QUERY_DEFS,
   EXCLUDED_STAGES,
   INCLUDED_PIPELINES,
   PI_LEADS,
@@ -72,43 +71,22 @@ function resolvePermitLeadName(
 import type { ActivityType } from "@/generated/prisma/enums";
 
 /**
- * Queue statuses = the Daily Focus email's Ready + Resubmit buckets, plus the
- * rejection + follow-up statuses so the Hub covers more of the permit team's
- * surface than the email (which is tightly scoped to daily actionable items).
- * This mirrors the same widening `IC_HUB_STATUSES` does in ic-hub.ts. The base
- * lists stay in src/lib/daily-focus/config.ts so the email keeps its scope.
+ * The queue carries every deal that HAS a permitting_status except the terminal
+ * ones below. Statuses that map to a permit action land in the action tabs
+ * (Ready / Rejections / Resubmit / Waiting); everything else — design-owned
+ * revision work, plus states with no permit action like "Waiting On
+ * Information" — falls into the "Other" tab, so nothing is invisible.
  *
- * Note these are HubSpot internal VALUES, not labels — several differ
- * ("Rejected" is labelled "Permit Rejected - Needs Revision").
+ * Expressed as an exclusion rather than an allowlist so a newly added
+ * permitting_status surfaces in "Other" instead of silently vanishing.
  *
- * "Submitted to AHJ" / "Resubmitted to AHJ" map to FOLLOW_UP and populate the
- * Waiting / Follow Up tab, which is otherwise nearly empty (only "Awaiting
- * Utility Approval" lands there).
- *
- * Deliberately EXCLUDES everything that sits with the design team:
- *   - "Rejected" — labelled "Permit Rejected - Needs Revision". An AHJ
- *     rejection that needs a revision is a handoff to design, not permit work.
- *   - "In Design For Revision", "As-Built Revision Needed",
- *     "As-Built Revision In Progress" — the revision itself, being drafted.
- * Permitting picks the work back up at "Returned from Design" / "As-Built
- * Ready To Resubmit" (both RESUBMIT_TO_AHJ, in the Resubmit tab). Design
- * tracks the in-flight work on their own dashboards.
- *
- * "Non-Design Related Rejection" DOES stay — as the name says, that is the
- * rejection flavour permitting resolves itself without design.
+ * These are HubSpot internal VALUES, not labels — several differ ("Complete" is
+ * labelled "Permit Issued").
  */
-const PERMIT_HUB_STATUSES = (() => {
-  const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
-  const base = def ? [...def.readyStatuses, ...(def.resubmitStatuses ?? [])] : [];
-  return Array.from(
-    new Set([
-      ...base,
-      "Non-Design Related Rejection",
-      "Submitted to AHJ",
-      "Resubmitted to AHJ",
-    ]),
-  );
-})();
+const PERMIT_TERMINAL_STATUSES = [
+  "Complete",   // labelled "Permit Issued" — done (~432 deals; would swamp the hub)
+  "Not Needed", // no permit required for this project
+];
 
 /**
  * Safety cap on queue pagination — 10 pages x 200 = 2000 deals, far above the
@@ -235,11 +213,11 @@ export interface PermitProjectDetail {
 // Queue
 // ---------------------------------------------------------------------------
 
-/** Returns all deals currently sitting in one of the PERMIT_ACTION_STATUSES. */
+/** Returns every non-terminal permit deal — action tabs plus the "Other" tab. */
 export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
-  // Scope matches the Daily Focus email (lib/daily-focus/config.ts):
-  //   • permit statuses = Ready ∪ Resubmit buckets only (excludes in-progress,
-  //     rejected-pre-triage, and already-submitted waiting statuses)
+  // Scope:
+  //   • has a permitting_status at all (a deal with none isn't permit work)
+  //   • permitting_status NOT IN terminal (Complete / Not Needed)
   //   • dealstage NOT IN cancelled/complete/on-hold terminal stages
   //   • pipeline IN Project / D&R / Service / Roofing
   // The `values` arrays are cast because the HubSpot SDK's Filter type only
@@ -253,8 +231,12 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     },
     {
       propertyName: "permitting_status",
-      operator: FilterOperatorEnum.In,
-      values: PERMIT_HUB_STATUSES,
+      operator: FilterOperatorEnum.HasProperty,
+    },
+    {
+      propertyName: "permitting_status",
+      operator: FilterOperatorEnum.NotIn,
+      values: PERMIT_TERMINAL_STATUSES,
     },
     {
       propertyName: "dealstage",
