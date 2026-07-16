@@ -210,22 +210,41 @@ function parseFrom(raw: string | null): { name: string | null; email: string | n
 }
 
 /**
- * Build a Gmail search query that matches threads mentioning EITHER the
- * AHJ/utility email OR the site address. Context clauses are OR'd so a
- * thread hits if any identifier matches; this is more forgiving than
- * requiring all of them (Peter often has threads with the AHJ that
- * don't mention the address verbatim, and vice versa).
+ * Escape a value for use inside a Gmail double-quoted phrase. Backslashes
+ * must be escaped BEFORE double-quotes — otherwise a backslash in the input
+ * neutralizes the quote escaping (incomplete-sanitization).
+ */
+function escapeQuotedPhrase(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * Build a Gmail search query that matches threads for ONE project, keyed
+ * on project-unique identifiers only, OR'd so a thread hits if any match:
+ *   - the site street address
+ *   - the PROJ-XXXX project number
+ *   - `identifiers`: extra project-unique numbers the utility/AHJ cites in
+ *     correspondence — the interconnection Utility Application # and the
+ *     per-trade permit numbers (e.g. "5167877", "OID4677235", "B2404681").
+ *
+ * Do NOT pass a shared utility/AHJ email as a matching key here. Those
+ * addresses are shared across every project for that utility/jurisdiction,
+ * so `from:/to:<sharedEmail>` pulls in other projects' threads (the bug
+ * this replaced). The `ahjEmail` param remains only for the manual
+ * debug/probe routes, which intentionally test an arbitrary address.
  *
  * Gmail search DSL notes:
  *   - `newer_than:90d` is relative
  *   - `from:` / `to:` are operators
- *   - Address is searched unquoted so "6323 Galeta Dr" also matches
- *     "6323 Galeta Drive" etc. — stemming is loose enough that this is
- *     usually broader than quoting
+ *   - Address / identifiers are quoted for exact-ish phrase match; the
+ *     address is trimmed to its street line (city/state/zip rarely appear
+ *     verbatim and over-constrain).
  */
 export function buildGmailThreadQuery(opts: {
   ahjEmail?: string | null;
   address?: string | null;
+  projectNumber?: string | null;
+  identifiers?: Array<string | null | undefined>;
   lookbackDays?: number;
 }): string {
   const contextClauses: string[] = [];
@@ -238,8 +257,24 @@ export function buildGmailThreadQuery(opts: {
     // appear verbatim in email bodies and over-constrain the match.
     const firstLine = opts.address.split(",")[0].trim();
     if (firstLine) {
-      // Escape any double quotes; Gmail tokenizes the rest without them.
-      contextClauses.push(`"${firstLine.replace(/"/g, '\\"')}"`);
+      // Escape for a Gmail quoted phrase; tokenized within the quotes.
+      contextClauses.push(`"${escapeQuotedPhrase(firstLine)}"`);
+    }
+  }
+  if (opts.projectNumber) {
+    // Normalize to PROJ-<digits> — the form that appears in email
+    // subjects/bodies. The stored property sometimes omits the prefix.
+    const digits = opts.projectNumber.trim().replace(/^PROJ-/i, "");
+    if (digits) {
+      contextClauses.push(`"PROJ-${digits}"`);
+    }
+  }
+  for (const id of opts.identifiers ?? []) {
+    const token = id?.trim();
+    // Guard against short/blank values (e.g. "1", "NA") that would
+    // over-match; real application/permit numbers are 4+ chars.
+    if (token && token.length >= 4) {
+      contextClauses.push(`"${escapeQuotedPhrase(token)}"`);
     }
   }
 
