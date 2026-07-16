@@ -176,6 +176,8 @@ export const IC_ACTION_STATUSES: Record<string, string> = {
   "Waiting On Information": "Provide information",
   "Submitted To Utility": "Follow up with utility",
   "Resubmitted To Utility": "Follow up with utility",
+  "As-Built Ready to Resubmit": "Resubmit as-built",
+  "As-Built Resubmitted": "Follow up with utility",
 };
 
 // ---- IC Hub action kinds (internal routing to action forms) ----
@@ -215,6 +217,9 @@ export function icActionKindForStatus(status: string): IcActionKind | null {
     "Waiting On Information": "PROVIDE_INFORMATION",
     "Submitted To Utility": "FOLLOW_UP_UTILITY",
     "Resubmitted To Utility": "FOLLOW_UP_UTILITY",
+    // As-built round trip: ours to send back out, then the utility's to review.
+    "As-Built Ready to Resubmit": "RESUBMIT_TO_UTILITY",
+    "As-Built Resubmitted": "FOLLOW_UP_UTILITY",
   };
   return map[status] ?? null;
 }
