@@ -96,6 +96,36 @@ describe("IcQueue tabs", () => {
     expect(within(panel).queryByText("Deal f1")).not.toBeInTheDocument();
   });
 
+  it("puts the as-built round trip in Resubmit then Follow Up", async () => {
+    const user = userEvent.setup();
+    renderQueue([
+      // Ours to send back out.
+      item({
+        dealId: "a1",
+        status: "As-Built Ready to Resubmit",
+        statusLabel: "As-Built Ready to Resubmit",
+        actionKind: "RESUBMIT_TO_UTILITY",
+      }),
+      // Sent — now the utility's to review, so we chase it.
+      item({
+        dealId: "a2",
+        status: "As-Built Resubmitted",
+        statusLabel: "As-Built Resubmitted",
+        actionKind: "FOLLOW_UP_UTILITY",
+      }),
+    ]);
+    expect(tab(/Resubmit \/ Revision/)).toHaveTextContent("1");
+    expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("1");
+    // Neither should fall into Other any more.
+    expect(tab(/^Other/)).toHaveTextContent("0");
+
+    await user.click(tab(/Resubmit \/ Revision/));
+    expect(within(screen.getByRole("tabpanel")).getByText("Deal a1")).toBeInTheDocument();
+
+    await user.click(tab(/Waiting \/ Follow Up/));
+    expect(within(screen.getByRole("tabpanel")).getByText("Deal a2")).toBeInTheDocument();
+  });
+
   it("displays the status label, not the internal value", () => {
     renderQueue([
       item({
