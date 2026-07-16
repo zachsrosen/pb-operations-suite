@@ -80,9 +80,9 @@ import type { ActivityType } from "@/generated/prisma/enums";
  * ("Rejected" is labelled "Permit Rejected - Needs Revision", "In Design For
  * Revision" is "Design Revision In Progress").
  *
- * Deliberately still excludes "Submitted to AHJ" / "Resubmitted to AHJ"
- * (~120 deals): the queue search is capped at `limit: 200`, and adding them
- * would overflow the cap and silently truncate the list.
+ * Includes "Submitted to AHJ" / "Resubmitted to AHJ" — they map to FOLLOW_UP,
+ * so they populate the Waiting / Follow Up tab, which is otherwise nearly
+ * empty (only "Awaiting Utility Approval" lands there).
  */
 const PERMIT_HUB_STATUSES = (() => {
   const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
@@ -95,9 +95,18 @@ const PERMIT_HUB_STATUSES = (() => {
       "In Design For Revision",
       "As-Built Revision Needed",
       "As-Built Revision In Progress",
+      "Submitted to AHJ",
+      "Resubmitted to AHJ",
     ]),
   );
 })();
+
+/**
+ * Safety cap on queue pagination — 10 pages x 200 = 2000 deals, far above the
+ * real queue (~57). Guards against an unbounded loop if HubSpot keeps
+ * returning a cursor; a hit is logged rather than silently truncating.
+ */
+const MAX_QUEUE_PAGES = 10;
 
 // ---------------------------------------------------------------------------
 // Permission + flag helpers
@@ -236,33 +245,64 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     },
   ];
 
-  const response = await searchWithRetry({
-    filterGroups: [{ filters }],
-    properties: [
-      "dealname",
-      "address_line_1",
-      "city",
-      "state",
-      "pb_location",
-      "permitting_status",
-      "dealstage",
-      "pipeline",
-      "hs_lastmodifieddate",
-      "amount",
-      "hubspot_owner_id",
-      "project_manager",
-      "permit_lead_name",
-      "permit_tech",
-      "calculated_system_size__kwdc_",
-    ],
-    limit: 200,
-    sorts: ["hs_lastmodifieddate"],
-  } as unknown as Parameters<typeof searchWithRetry>[0]);
+  // HubSpot search returns at most 200 results per page. The queue is well
+  // under that today (~57 deals), but a single un-paged call would silently
+  // drop the tail if it ever grows past 200, so page with the `after` cursor.
+  // Costs nothing while under one page: the loop exits after one request.
+  const searchResults: Array<{
+    id: string;
+    properties?: Record<string, string | null>;
+  }> = [];
+  let after: string | undefined;
+  let pages = 0;
+  do {
+    const response = await searchWithRetry({
+      filterGroups: [{ filters }],
+      properties: [
+        "dealname",
+        "address_line_1",
+        "city",
+        "state",
+        "pb_location",
+        "permitting_status",
+        "dealstage",
+        "pipeline",
+        "hs_lastmodifieddate",
+        "amount",
+        "hubspot_owner_id",
+        "project_manager",
+        "permit_lead_name",
+        "permit_tech",
+        "calculated_system_size__kwdc_",
+      ],
+      limit: 200,
+      sorts: ["hs_lastmodifieddate"],
+      ...(after ? { after } : {}),
+    } as unknown as Parameters<typeof searchWithRetry>[0]);
+
+    searchResults.push(
+      ...((response.results ?? []) as Array<{
+        id: string;
+        properties?: Record<string, string | null>;
+      }>),
+    );
+    after = (response as { paging?: { next?: { after?: string } } }).paging?.next
+      ?.after;
+    pages += 1;
+  } while (after && pages < MAX_QUEUE_PAGES);
+
+  if (after) {
+    // Never truncate silently — if this fires, raise MAX_QUEUE_PAGES or
+    // tighten the status allowlist.
+    console.warn(
+      `[permit-hub] queue hit the ${MAX_QUEUE_PAGES}-page cap (${searchResults.length} deals); results are truncated`,
+    );
+  }
 
   // Resolve owner-id + dealstage-id properties to display names in parallel.
   // buildOwnerMap batches the owners API so this is ~1 extra HubSpot call
   // for the whole queue. buildStageDisplayMap is cached via getStageMaps.
-  const rawDeals = (response.results ?? []).map((d) => ({
+  const rawDeals = searchResults.map((d) => ({
     properties: (d.properties ?? {}) as Record<string, string | null>,
   }));
   const [ownerMap, stageMap] = await Promise.all([
@@ -272,7 +312,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
 
   const items: PermitQueueItem[] = [];
   const now = Date.now();
-  for (const deal of response.results ?? []) {
+  for (const deal of searchResults) {
     const props = (deal.properties ?? {}) as Record<string, string | null>;
     const status = props.permitting_status ?? "";
     const lastModified = props.hs_lastmodifieddate

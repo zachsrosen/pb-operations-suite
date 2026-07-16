@@ -76,6 +76,13 @@ const IC_HUB_STATUSES = (() => {
   );
 })();
 
+/**
+ * Safety cap on queue pagination — 10 pages x 200 = 2000 deals, far above the
+ * real queue (~108). Guards against an unbounded loop if HubSpot keeps
+ * returning a cursor; a hit is logged rather than silently truncating.
+ */
+const MAX_QUEUE_PAGES = 10;
+
 // ---------------------------------------------------------------------------
 // Permission + flag helpers
 // ---------------------------------------------------------------------------
@@ -205,37 +212,68 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
     },
   ];
 
-  const response = await searchWithRetry({
-    filterGroups: [{ filters }],
-    properties: [
-      "dealname",
-      "address_line_1",
-      "city",
-      "state",
-      "pb_location",
-      "interconnection_status",
-      "dealstage",
-      "pipeline",
-      "hs_lastmodifieddate",
-      "amount",
-      "hubspot_owner_id",
-      "project_manager",
-      "interconnection_lead_name",
-      "interconnections_tech",
-      "calculated_system_size__kwdc_",
-    ],
-    limit: 200,
-    sorts: ["hs_lastmodifieddate"],
-  } as unknown as Parameters<typeof searchWithRetry>[0]);
+  // HubSpot search returns at most 200 results per page. This queue is ~108
+  // deals today — over half the cap — so page with the `after` cursor rather
+  // than silently dropping the tail once it grows past 200. Costs nothing
+  // while under one page: the loop exits after one request.
+  const searchResults: Array<{
+    id: string;
+    properties?: Record<string, string | null>;
+  }> = [];
+  let after: string | undefined;
+  let pages = 0;
+  do {
+    const response = await searchWithRetry({
+      filterGroups: [{ filters }],
+      properties: [
+        "dealname",
+        "address_line_1",
+        "city",
+        "state",
+        "pb_location",
+        "interconnection_status",
+        "dealstage",
+        "pipeline",
+        "hs_lastmodifieddate",
+        "amount",
+        "hubspot_owner_id",
+        "project_manager",
+        "interconnection_lead_name",
+        "interconnections_tech",
+        "calculated_system_size__kwdc_",
+      ],
+      limit: 200,
+      sorts: ["hs_lastmodifieddate"],
+      ...(after ? { after } : {}),
+    } as unknown as Parameters<typeof searchWithRetry>[0]);
 
-  const rawDeals = (response.results ?? []).map((d) => ({
+    searchResults.push(
+      ...((response.results ?? []) as Array<{
+        id: string;
+        properties?: Record<string, string | null>;
+      }>),
+    );
+    after = (response as { paging?: { next?: { after?: string } } }).paging?.next
+      ?.after;
+    pages += 1;
+  } while (after && pages < MAX_QUEUE_PAGES);
+
+  if (after) {
+    // Never truncate silently — if this fires, raise MAX_QUEUE_PAGES or
+    // tighten the status allowlist.
+    console.warn(
+      `[ic-hub] queue hit the ${MAX_QUEUE_PAGES}-page cap (${searchResults.length} deals); results are truncated`,
+    );
+  }
+
+  const rawDeals = searchResults.map((d) => ({
     properties: (d.properties ?? {}) as Record<string, string | null>,
   }));
   const ownerMap = await buildOwnerMap(rawDeals);
 
   const items: IcQueueItem[] = [];
   const now = Date.now();
-  for (const deal of response.results ?? []) {
+  for (const deal of searchResults) {
     const props = (deal.properties ?? {}) as Record<string, string | null>;
     const status = props.interconnection_status ?? "";
     const lastModified = props.hs_lastmodifieddate
