@@ -22,10 +22,12 @@ interface Props {
  * out), and "Waiting / Follow Up" (submitted, awaiting utility/AHJ decision —
  * chase if stale).
  *
- * In-flight revisions are not in this queue: while one is being drafted the
- * ball is on the design team, so permit-hub.ts excludes those statuses. The
- * revision action kinds below are therefore unreachable today; they are kept
- * mapped so the grouping still holds if those statuses are ever re-included.
+ * Design-owned work is not in this queue: an AHJ rejection needing a revision
+ * ("Rejected") and the revision itself are both design's, so permit-hub.ts
+ * excludes those statuses. "Rejections" therefore holds only
+ * "Non-Design Related Rejection" — the flavour permitting resolves itself.
+ * The other rejection/revision action kinds below are unreachable today; they
+ * are kept mapped so grouping still holds if those statuses are re-included.
  */
 const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
