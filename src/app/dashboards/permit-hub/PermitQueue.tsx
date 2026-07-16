@@ -160,7 +160,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
       </div>
       <div className="text-muted flex items-center justify-between border-b border-t-border px-4 py-2 text-xs">
         <span>
-          {filtered.length} of {items.length}
+          {filtered.length} of {items.length} · stalest first
         </span>
       </div>
       <div
@@ -246,7 +246,8 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
                       </span>
                     </div>
                     <div className="text-muted mt-1 text-xs">
-                      {item.daysInStatus}d · {item.permitLead ?? "Unassigned"}
+                      {item.daysInStatus === null ? "—" : `${item.daysInStatus}d`} ·{" "}
+                      {item.permitLead ?? "Unassigned"}
                     </div>
                   </button>
                 </li>

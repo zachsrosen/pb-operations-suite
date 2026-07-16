@@ -19,6 +19,7 @@
 
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
+import { fetchStatusEnteredAt } from "@/lib/status-entered";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { updateTask } from "@/lib/hubspot-tasks";
 import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
@@ -142,7 +143,8 @@ export interface IcQueueItem {
   status: string;
   actionLabel: string;
   actionKind: IcActionKind | null;
-  daysInStatus: number;
+  /** Days since the deal entered its current interconnection_status; null when unknown. */
+  daysInStatus: number | null;
   isStale: boolean;
   icLead: string | null;
   icLeadOwnerId: string | null;
@@ -269,17 +271,32 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
   const rawDeals = searchResults.map((d) => ({
     properties: (d.properties ?? {}) as Record<string, string | null>,
   }));
-  const ownerMap = await buildOwnerMap(rawDeals);
+  // Real time-in-status comes from interconnection_status property history —
+  // NOT hs_lastmodifieddate, which a calc-property loop re-stamps daily (every
+  // row computed to 0 days). See lib/status-entered.ts.
+  const [ownerMap, enteredAtByDeal] = await Promise.all([
+    buildOwnerMap(rawDeals),
+    fetchStatusEnteredAt(
+      searchResults.map((d) => ({
+        id: d.id,
+        status: d.properties?.interconnection_status ?? "",
+      })),
+      "interconnection_status",
+    ),
+  ]);
 
   const items: IcQueueItem[] = [];
   const now = Date.now();
   for (const deal of searchResults) {
     const props = (deal.properties ?? {}) as Record<string, string | null>;
     const status = props.interconnection_status ?? "";
-    const lastModified = props.hs_lastmodifieddate
-      ? new Date(props.hs_lastmodifieddate).getTime()
-      : now;
-    const daysInStatus = Math.floor((now - lastModified) / (1000 * 60 * 60 * 24));
+    const enteredAt = enteredAtByDeal.get(deal.id);
+    // null (not 0) when the entry time can't be resolved — the UI shows "—"
+    // rather than implying the deal just changed status.
+    const daysInStatus =
+      enteredAt === undefined
+        ? null
+        : Math.floor((now - enteredAt) / (1000 * 60 * 60 * 24));
     const actionLabel = IC_ACTION_STATUSES[status] ?? "";
     const pmId = props.project_manager;
     const resolvedPm = pmId ? (ownerMap.get(pmId) ?? pmId) : null;
@@ -293,7 +310,7 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
       actionLabel,
       actionKind: icActionKindForStatus(status),
       daysInStatus,
-      isStale: daysInStatus > STALE_THRESHOLD_DAYS,
+      isStale: daysInStatus !== null && daysInStatus > STALE_THRESHOLD_DAYS,
       icLead: resolveIcLeadName(props, ownerMap),
       icLeadOwnerId: props.interconnections_tech ?? null,
       pm: resolvedPm,
@@ -301,7 +318,13 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
     });
   }
 
-  items.sort((a, b) => b.daysInStatus - a.daysInStatus);
+  // Stalest first; deals with an unknown entry time sort last rather than
+  // masquerading as brand new.
+  items.sort((a, b) => {
+    if (a.daysInStatus === null) return b.daysInStatus === null ? 0 : 1;
+    if (b.daysInStatus === null) return -1;
+    return b.daysInStatus - a.daysInStatus;
+  });
   return items;
 }
 

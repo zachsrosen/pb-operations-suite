@@ -111,6 +111,18 @@ describe("PermitQueue tabs", () => {
     expect(onSelect).toHaveBeenCalledWith("r1");
   });
 
+  it("renders a real day count, and an em dash when the entry time is unknown", () => {
+    renderQueue([
+      item({ dealId: "known", actionKind: "SUBMIT_TO_AHJ", daysInStatus: 23 }),
+      item({ dealId: "unknown", actionKind: "SUBMIT_TO_AHJ", daysInStatus: null }),
+    ]);
+    const panel = screen.getByRole("tabpanel");
+    // Never show a fake "0d" for an unresolved status-entry time.
+    expect(within(panel).getByText(/23d/)).toBeInTheDocument();
+    expect(within(panel).getByText(/—/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/\b0d\b/)).not.toBeInTheDocument();
+  });
+
   it("shows a per-tab empty state (with a 0 badge) instead of hiding the tab", async () => {
     const user = userEvent.setup();
     // No resubmit items at all
