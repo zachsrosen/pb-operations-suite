@@ -10,7 +10,10 @@ export function OverviewTab({ detail }: { detail: IcProjectDetail }) {
     ["Amount", deal.amount != null ? formatMoney(deal.amount) : null],
     ["IC lead", deal.icLead],
     ["Project manager", deal.pm],
-    ["Current status", deal.interconnectionStatus || null],
+    [
+      "Current status",
+      deal.interconnectionStatusLabel || deal.interconnectionStatus || null,
+    ],
     ["Next action", deal.actionLabel],
     ["Deal stage", deal.dealStage],
   ];

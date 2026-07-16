@@ -9,6 +9,7 @@ function item(over: Partial<PermitQueueItem> & { dealId: string }): PermitQueueI
     address: "1 Main St",
     pbLocation: "Westminster",
     status: "Ready For Permitting",
+    statusLabel: "Ready For Permitting",
     actionLabel: "Submit to AHJ",
     actionKind: "SUBMIT_TO_AHJ",
     daysInStatus: 0,
@@ -121,6 +122,45 @@ describe("PermitQueue tabs", () => {
     expect(within(panel).getByText(/23d/)).toBeInTheDocument();
     expect(within(panel).getByText(/—/)).toBeInTheDocument();
     expect(within(panel).queryByText(/\b0d\b/)).not.toBeInTheDocument();
+  });
+
+  it("displays the human status label, not the HubSpot internal value", async () => {
+    const user = userEvent.setup();
+    renderQueue([
+      item({
+        dealId: "x1",
+        actionKind: "REVIEW_REJECTION",
+        status: "Rejected",
+        statusLabel: "Permit Rejected - Needs Revision",
+      }),
+    ]);
+    await user.click(tab(/Rejections \/ Revisions/));
+    const panel = screen.getByRole("tabpanel");
+    expect(
+      within(panel).getByText("Permit Rejected - Needs Revision"),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText("Rejected")).not.toBeInTheDocument();
+  });
+
+  it("searches on the status label as well as the raw value", async () => {
+    const user = userEvent.setup();
+    renderQueue([
+      item({
+        dealId: "x1",
+        actionKind: "SUBMIT_TO_AHJ",
+        status: "Pending SolarApp",
+        statusLabel: "Ready to Submit for SolarApp",
+      }),
+      item({ dealId: "r1", actionKind: "SUBMIT_TO_AHJ" }),
+    ]);
+    // Typing the LABEL (which is not present in the raw value) must match.
+    await user.type(
+      screen.getByPlaceholderText(/Search project/),
+      "Ready to Submit for Solar",
+    );
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getByText("Deal x1")).toBeInTheDocument();
+    expect(within(panel).queryByText("Deal r1")).not.toBeInTheDocument();
   });
 
   it("shows a per-tab empty state (with a 0 badge) instead of hiding the tab", async () => {

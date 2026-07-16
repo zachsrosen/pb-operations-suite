@@ -92,6 +92,8 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
           i.name.toLowerCase().includes(q) ||
           i.address?.toLowerCase().includes(q) ||
           i.icLead?.toLowerCase().includes(q) ||
+          // Match either what's displayed (label) or the underlying value.
+          i.statusLabel.toLowerCase().includes(q) ||
           i.status.toLowerCase().includes(q),
       );
     }
@@ -223,7 +225,7 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
                       )}
                     </div>
                     <div className="mt-1 flex items-center justify-between text-xs">
-                      <span className="text-muted">{item.status}</span>
+                      <span className="text-muted">{item.statusLabel || item.status}</span>
                       <span className="font-medium text-green-600 dark:text-green-400">
                         {item.actionLabel}
                       </span>

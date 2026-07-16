@@ -20,6 +20,7 @@
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
 import { fetchStatusEnteredAt } from "@/lib/status-entered";
+import { getEnumLabelMap, labelFor } from "@/lib/hubspot-enum-labels";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { updateTask } from "@/lib/hubspot-tasks";
 import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
@@ -140,7 +141,10 @@ export interface IcQueueItem {
   name: string;
   address: string | null;
   pbLocation: string | null;
+  /** HubSpot internal VALUE — used for routing/filtering, not for display. */
   status: string;
+  /** Human label for `status` (they differ for several options). Display this. */
+  statusLabel: string;
   actionLabel: string;
   actionKind: IcActionKind | null;
   /** Days since the deal entered its current interconnection_status; null when unknown. */
@@ -161,7 +165,10 @@ export interface IcProjectDetail {
     pbLocation: string | null;
     icLead: string | null;
     pm: string | null;
+    /** HubSpot internal VALUE — used for routing, not for display. */
     interconnectionStatus: string;
+    /** Human label for `interconnectionStatus`. Display this. */
+    interconnectionStatusLabel: string;
     actionKind: IcActionKind | null;
     actionLabel: string | null;
     systemSizeKw: number | null;
@@ -274,7 +281,7 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
   // Real time-in-status comes from interconnection_status property history —
   // NOT hs_lastmodifieddate, which a calc-property loop re-stamps daily (every
   // row computed to 0 days). See lib/status-entered.ts.
-  const [ownerMap, enteredAtByDeal] = await Promise.all([
+  const [ownerMap, enteredAtByDeal, statusLabels] = await Promise.all([
     buildOwnerMap(rawDeals),
     fetchStatusEnteredAt(
       searchResults.map((d) => ({
@@ -283,6 +290,7 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
       })),
       "interconnection_status",
     ),
+    getEnumLabelMap("interconnection_status"),
   ]);
 
   const items: IcQueueItem[] = [];
@@ -307,6 +315,7 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
       address: props.address_line_1 ?? null,
       pbLocation: props.pb_location ?? null,
       status,
+      statusLabel: labelFor(statusLabels, status),
       actionLabel,
       actionKind: icActionKindForStatus(status),
       daysInStatus,
@@ -412,6 +421,10 @@ export async function fetchIcProjectDetail(
   const interconnectionStatus = props.interconnection_status ?? "";
   const actionLabel = IC_ACTION_STATUSES[interconnectionStatus] ?? null;
   const resolvedKind = icActionKindForStatus(interconnectionStatus);
+  const interconnectionStatusLabel = labelFor(
+    await getEnumLabelMap("interconnection_status"),
+    interconnectionStatus,
+  );
 
   const pmId = props.project_manager;
   const resolvedPm = pmId ? (ownerMap.get(pmId) ?? pmId) : null;
@@ -484,6 +497,7 @@ export async function fetchIcProjectDetail(
       icLead: resolveIcLeadName(props, ownerMap),
       pm: resolvedPm,
       interconnectionStatus,
+      interconnectionStatusLabel,
       actionKind: resolvedKind,
       actionLabel,
       systemSizeKw: props.calculated_system_size__kwdc_

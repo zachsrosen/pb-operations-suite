@@ -10,6 +10,7 @@
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
 import { fetchStatusEnteredAt } from "@/lib/status-entered";
+import { getEnumLabelMap, labelFor } from "@/lib/hubspot-enum-labels";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { updateTask } from "@/lib/hubspot-tasks";
 import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
@@ -154,7 +155,10 @@ export interface PermitQueueItem {
   name: string;
   address: string | null;
   pbLocation: string | null;
+  /** HubSpot internal VALUE — used for routing/filtering, not for display. */
   status: string;
+  /** Human label for `status` (they differ for several options). Display this. */
+  statusLabel: string;
   actionLabel: string;
   actionKind: PermitActionKind | null;
   /** Days since the deal entered its current permitting_status; null when unknown. */
@@ -177,7 +181,10 @@ export interface PermitProjectDetail {
     pbLocation: string | null;
     permitLead: string | null;
     pm: string | null;
+    /** HubSpot internal VALUE — used for routing, not for display. */
     permittingStatus: string;
+    /** Human label for `permittingStatus`. Display this. */
+    permittingStatusLabel: string;
     actionKind: PermitActionKind | null;
     actionLabel: string | null;
     systemSizeKw: number | null;
@@ -310,7 +317,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
   // Real time-in-status comes from permitting_status property history — NOT
   // hs_lastmodifieddate, which a calc-property loop re-stamps daily (every row
   // computed to 0 days). See lib/status-entered.ts.
-  const [ownerMap, stageMap, enteredAtByDeal] = await Promise.all([
+  const [ownerMap, stageMap, enteredAtByDeal, statusLabels] = await Promise.all([
     buildOwnerMap(rawDeals),
     buildStageDisplayMap(),
     fetchStatusEnteredAt(
@@ -320,6 +327,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       })),
       "permitting_status",
     ),
+    getEnumLabelMap("permitting_status"),
   ]);
 
   const items: PermitQueueItem[] = [];
@@ -345,6 +353,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       address: props.address_line_1 ?? null,
       pbLocation: props.pb_location ?? null,
       status,
+      statusLabel: labelFor(statusLabels, status),
       actionLabel,
       actionKind: actionKindForStatus(status),
       daysInStatus,
@@ -472,6 +481,10 @@ export async function fetchPermitProjectDetail(
   const permittingStatus = props.permitting_status ?? "";
   const actionLabel = PERMIT_ACTION_STATUSES[permittingStatus] ?? null;
   const resolvedKind = actionKindForStatus(permittingStatus);
+  const permittingStatusLabel = labelFor(
+    await getEnumLabelMap("permitting_status"),
+    permittingStatus,
+  );
 
   const pmId = props.project_manager;
   const resolvedPm = pmId ? (ownerMap.get(pmId) ?? pmId) : null;
@@ -553,6 +566,7 @@ export async function fetchPermitProjectDetail(
       permitLead: resolvePermitLeadName(props, ownerMap),
       pm: resolvedPm,
       permittingStatus,
+      permittingStatusLabel,
       actionKind: resolvedKind,
       actionLabel,
       systemSizeKw: props.calculated_system_size__kwdc_

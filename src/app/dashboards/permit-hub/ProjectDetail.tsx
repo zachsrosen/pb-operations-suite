@@ -90,7 +90,7 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{detail.deal.name}</h2>
           <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-600 dark:text-blue-400">
-            {detail.deal.permittingStatus || "—"}
+            {detail.deal.permittingStatusLabel || detail.deal.permittingStatus || "—"}
           </span>
         </div>
         <div className="text-muted mt-1 text-sm">
