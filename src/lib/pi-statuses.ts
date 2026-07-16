@@ -44,6 +44,9 @@ export const PERMIT_ACTION_STATUSES: Record<string, string> = {
   "Submit SolarApp to AHJ": "Submit SolarApp to AHJ",
   "Submitted to AHJ": "Follow up with AHJ",
   "Resubmitted to AHJ": "Follow up with AHJ",
+  // Mapped to FOLLOW_UP in actionKindForStatus but previously had no label
+  // here, so these rows rendered a blank action label.
+  "Awaiting Utility Approval": "Follow up with utility",
 };
 
 // ---- Permit Hub action kinds (internal routing to action forms) ----

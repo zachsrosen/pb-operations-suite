@@ -46,6 +46,8 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  // Default to the most actionable bucket — new work going out.
+  const [activeTab, setActiveTab] = useState<GroupKey>("ready");
 
   const locationOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
@@ -108,6 +110,8 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
     return map;
   }, [filtered]);
 
+  const activeItems = groups[activeTab];
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-col gap-2 border-b border-t-border px-4 py-3">
@@ -139,10 +143,44 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
       </div>
       <div className="text-muted flex items-center justify-between border-b border-t-border px-4 py-2 text-xs">
         <span>
-          {filtered.length} of {items.length} · grouped by action, stalest first
+          {filtered.length} of {items.length}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div
+        role="tablist"
+        aria-label="Queue groups"
+        className="flex items-center gap-1 border-b border-t-border px-2"
+      >
+        {GROUP_ORDER.map((key) => {
+          const active = key === activeTab;
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveTab(key)}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                active
+                  ? "border-green-500 text-green-600 dark:text-green-400"
+                  : "text-muted hover:text-foreground border-transparent"
+              }`}
+            >
+              <span>{GROUP_LABELS[key]}</span>
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                  active
+                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                    : "bg-surface-2 text-muted"
+                }`}
+              >
+                {groups[key].length}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex-1 overflow-y-auto" role="tabpanel">
         {isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -152,66 +190,52 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
               />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-muted flex h-full items-center justify-center text-sm">
-            No action items in queue
+        ) : activeItems.length === 0 ? (
+          <div className="text-muted flex h-full items-center justify-center px-4 text-center text-sm">
+            {filtered.length === 0
+              ? "No action items in queue"
+              : `Nothing in ${GROUP_LABELS[activeTab]}`}
           </div>
         ) : (
-          <div>
-            {GROUP_ORDER.map((key) => {
-              const groupItems = groups[key];
-              if (groupItems.length === 0) return null;
+          <ul className="divide-t-border divide-y">
+            {activeItems.map((item) => {
+              const selected = item.dealId === selectedDealId;
               return (
-                <section key={key}>
-                  <header className="bg-surface-2/60 text-muted sticky top-0 z-10 flex items-center justify-between border-y border-t-border px-4 py-1.5 text-xs font-semibold uppercase tracking-wide backdrop-blur">
-                    <span>{GROUP_LABELS[key]}</span>
-                    <span className="font-normal normal-case tracking-normal">
-                      {groupItems.length}
-                    </span>
-                  </header>
-                  <ul className="divide-t-border divide-y">
-                    {groupItems.map((item) => {
-                      const selected = item.dealId === selectedDealId;
-                      return (
-                        <li key={item.dealId}>
-                          <button
-                            type="button"
-                            onClick={() => onSelect(item.dealId)}
-                            className={`w-full px-4 py-3 text-left transition-colors ${
-                              selected ? "bg-green-500/10" : "hover:bg-surface-2"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate font-medium">{item.name}</div>
-                                <div className="text-muted truncate text-xs">
-                                  {item.address ?? "—"} · {item.pbLocation ?? "—"}
-                                </div>
-                              </div>
-                              {item.isStale && (
-                                <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
-                                  Stale
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 flex items-center justify-between text-xs">
-                              <span className="text-muted">{item.status}</span>
-                              <span className="font-medium text-green-600 dark:text-green-400">
-                                {item.actionLabel}
-                              </span>
-                            </div>
-                            <div className="text-muted mt-1 text-xs">
-                              {item.daysInStatus}d · {item.icLead ?? "Unassigned"}
-                            </div>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
+                <li key={item.dealId}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(item.dealId)}
+                    className={`w-full px-4 py-3 text-left transition-colors ${
+                      selected ? "bg-green-500/10" : "hover:bg-surface-2"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{item.name}</div>
+                        <div className="text-muted truncate text-xs">
+                          {item.address ?? "—"} · {item.pbLocation ?? "—"}
+                        </div>
+                      </div>
+                      {item.isStale && (
+                        <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
+                          Stale
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs">
+                      <span className="text-muted">{item.status}</span>
+                      <span className="font-medium text-green-600 dark:text-green-400">
+                        {item.actionLabel}
+                      </span>
+                    </div>
+                    <div className="text-muted mt-1 text-xs">
+                      {item.daysInStatus}d · {item.icLead ?? "Unassigned"}
+                    </div>
+                  </button>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </div>
     </div>
