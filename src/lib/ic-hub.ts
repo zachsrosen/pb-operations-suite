@@ -38,7 +38,6 @@ import {
   type IcActionKind,
 } from "@/lib/pi-statuses";
 import {
-  PI_QUERY_DEFS,
   EXCLUDED_STAGES,
   INCLUDED_PIPELINES,
   PI_LEADS,
@@ -55,35 +54,27 @@ import {
 import type { ActivityType } from "@/generated/prisma/enums";
 
 /**
- * Queue statuses = email's Ready + Resubmit buckets, plus a handful of
- * follow-up + rejection statuses so the Hub covers more of the "ball in
- * our court" surface than the email (which is tightly scoped to daily
- * actionable items only).
+ * The queue carries every deal that HAS an interconnection_status except the
+ * terminal ones below. Statuses that map to an IC action land in the action
+ * tabs (Ready / Resubmit / Waiting); everything else — design-owned revision
+ * work, and states with no IC action like "Transformer Upgrade" — falls into
+ * the "Other" tab, so nothing is invisible.
  *
- * Excludes the value "Rejected" — labelled "Rejected - Revisions Needed". A
- * rejection that needs a revision is a handoff to the design team; IC picks it
- * back up at "Revision Returned From Design" (labelled "Revision Ready To
- * Resubmit"), which is in the base list. Same call as permit-hub.ts.
+ * Expressed as an exclusion rather than an allowlist so a newly added
+ * interconnection_status surfaces in "Other" instead of silently vanishing.
  *
- * "Rejected (New)" (labelled just "Rejected") and "Non-Design Related
- * Rejection" DO stay — neither signals a design revision.
+ * Terminal = the application is approved (all four approval flavours) or no
+ * interconnection is required. Note "RBC On Hold", "Transformer Upgrade" and
+ * "Supplemental Review" are NOT terminal — the application is still live, so
+ * they stay visible under Other.
  */
-const IC_HUB_STATUSES = (() => {
-  const def = PI_QUERY_DEFS.find((d) => d.key === "interconnection");
-  const base = def
-    ? [...def.readyStatuses, ...(def.resubmitStatuses ?? [])]
-    : [];
-  return Array.from(
-    new Set([
-      ...base,
-      "Submitted To Utility",
-      "Resubmitted To Utility",
-      "Waiting On Information",
-      "Rejected (New)",
-      "Non-Design Related Rejection",
-    ]),
-  );
-})();
+const IC_TERMINAL_STATUSES = [
+  "Application Approved",
+  "Application Approved - Pending Signatures",
+  "Conditional Application Approval",
+  "Conditional Application Approval - Pending Signatures",
+  "Not Needed", // no interconnection required for this project
+];
 
 /**
  * Safety cap on queue pagination — 10 pages x 200 = 2000 deals, far above the
@@ -220,8 +211,12 @@ export async function fetchIcQueue(): Promise<IcQueueItem[]> {
     },
     {
       propertyName: "interconnection_status",
-      operator: FilterOperatorEnum.In,
-      values: IC_HUB_STATUSES,
+      operator: FilterOperatorEnum.HasProperty,
+    },
+    {
+      propertyName: "interconnection_status",
+      operator: FilterOperatorEnum.NotIn,
+      values: IC_TERMINAL_STATUSES,
     },
     {
       propertyName: "dealstage",

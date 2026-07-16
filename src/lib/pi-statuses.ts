@@ -46,6 +46,22 @@ export const PERMIT_DESIGN_OWNED_STATUSES: ReadonlySet<string> = new Set([
   "As-Built Revision In Progress",
 ]);
 
+/**
+ * interconnection_status values that are the DESIGN team's work, not IC's.
+ * Same treatment as PERMIT_DESIGN_OWNED_STATUSES: they carry an IC action kind
+ * (other dashboards still route them) but the IC Hub shows them under "Other".
+ * IC picks the work back up at "Revision Returned From Design" (labelled
+ * "Revision Ready To Resubmit").
+ *
+ * "Rejected" is labelled "Rejected - Revisions Needed" — a rejection needing a
+ * revision is a handoff to design. Note "Rejected (New)" (labelled plain
+ * "Rejected") is NOT design's and stays in the action tabs.
+ */
+export const IC_DESIGN_OWNED_STATUSES: ReadonlySet<string> = new Set([
+  "Rejected",
+  "In Design For Revisions",
+]);
+
 /** Statuses where the ball is in our court — permitting */
 export const PERMIT_ACTION_STATUSES: Record<string, string> = {
   "Ready For Permitting": "Submit to AHJ",
