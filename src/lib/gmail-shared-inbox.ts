@@ -210,6 +210,15 @@ function parseFrom(raw: string | null): { name: string | null; email: string | n
 }
 
 /**
+ * Escape a value for use inside a Gmail double-quoted phrase. Backslashes
+ * must be escaped BEFORE double-quotes — otherwise a backslash in the input
+ * neutralizes the quote escaping (incomplete-sanitization).
+ */
+function escapeQuotedPhrase(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
  * Build a Gmail search query that matches threads for ONE project, keyed
  * on project-unique identifiers only, OR'd so a thread hits if any match:
  *   - the site street address
@@ -248,8 +257,8 @@ export function buildGmailThreadQuery(opts: {
     // appear verbatim in email bodies and over-constrain the match.
     const firstLine = opts.address.split(",")[0].trim();
     if (firstLine) {
-      // Escape any double quotes; Gmail tokenizes the rest without them.
-      contextClauses.push(`"${firstLine.replace(/"/g, '\\"')}"`);
+      // Escape for a Gmail quoted phrase; tokenized within the quotes.
+      contextClauses.push(`"${escapeQuotedPhrase(firstLine)}"`);
     }
   }
   if (opts.projectNumber) {
@@ -265,7 +274,7 @@ export function buildGmailThreadQuery(opts: {
     // Guard against short/blank values (e.g. "1", "NA") that would
     // over-match; real application/permit numbers are 4+ chars.
     if (token && token.length >= 4) {
-      contextClauses.push(`"${token.replace(/"/g, '\\"')}"`);
+      contextClauses.push(`"${escapeQuotedPhrase(token)}"`);
     }
   }
 
