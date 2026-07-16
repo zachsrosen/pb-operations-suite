@@ -85,12 +85,17 @@ import type { ActivityType } from "@/generated/prisma/enums";
  * Waiting / Follow Up tab, which is otherwise nearly empty (only "Awaiting
  * Utility Approval" lands there).
  *
- * Deliberately EXCLUDES the in-flight revision statuses — "In Design For
- * Revision", "As-Built Revision Needed", "As-Built Revision In Progress". While
- * a revision is being drafted the ball is on the design team, not permitting;
- * permitting picks it back up at "Returned from Design" / "As-Built Ready To
- * Resubmit" (both RESUBMIT_TO_AHJ, in the Resubmit tab). Design tracks the
- * in-flight ones on their own dashboards.
+ * Deliberately EXCLUDES everything that sits with the design team:
+ *   - "Rejected" — labelled "Permit Rejected - Needs Revision". An AHJ
+ *     rejection that needs a revision is a handoff to design, not permit work.
+ *   - "In Design For Revision", "As-Built Revision Needed",
+ *     "As-Built Revision In Progress" — the revision itself, being drafted.
+ * Permitting picks the work back up at "Returned from Design" / "As-Built
+ * Ready To Resubmit" (both RESUBMIT_TO_AHJ, in the Resubmit tab). Design
+ * tracks the in-flight work on their own dashboards.
+ *
+ * "Non-Design Related Rejection" DOES stay — as the name says, that is the
+ * rejection flavour permitting resolves itself without design.
  */
 const PERMIT_HUB_STATUSES = (() => {
   const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
@@ -98,7 +103,6 @@ const PERMIT_HUB_STATUSES = (() => {
   return Array.from(
     new Set([
       ...base,
-      "Rejected",
       "Non-Design Related Rejection",
       "Submitted to AHJ",
       "Resubmitted to AHJ",
