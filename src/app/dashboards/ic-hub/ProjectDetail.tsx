@@ -96,7 +96,9 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{detail.deal.name}</h2>
           <span className="rounded-full bg-green-500/10 px-3 py-1 text-xs font-medium text-green-600 dark:text-green-400">
-            {detail.deal.interconnectionStatus || "—"}
+            {detail.deal.interconnectionStatusLabel ||
+              detail.deal.interconnectionStatus ||
+              "—"}
           </span>
         </div>
         <div className="text-muted mt-1 text-sm">

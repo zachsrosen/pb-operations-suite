@@ -108,6 +108,8 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
           i.name.toLowerCase().includes(q) ||
           i.address?.toLowerCase().includes(q) ||
           i.permitLead?.toLowerCase().includes(q) ||
+          // Match either what's displayed (label) or the underlying value.
+          i.statusLabel.toLowerCase().includes(q) ||
           i.status.toLowerCase().includes(q),
       );
     }
@@ -240,7 +242,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
                       )}
                     </div>
                     <div className="mt-1 flex items-center justify-between text-xs">
-                      <span className="text-muted">{item.status}</span>
+                      <span className="text-muted">{item.statusLabel || item.status}</span>
                       <span className="font-medium text-blue-600 dark:text-blue-400">
                         {item.actionLabel}
                       </span>

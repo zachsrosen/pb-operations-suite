@@ -10,7 +10,7 @@ export function OverviewTab({ detail }: { detail: PermitProjectDetail }) {
     ["Amount", deal.amount != null ? formatMoney(deal.amount) : null],
     ["Permit lead", deal.permitLead],
     ["Project manager", deal.pm],
-    ["Current status", deal.permittingStatus || null],
+    ["Current status", deal.permittingStatusLabel || deal.permittingStatus || null],
     ["Next action", deal.actionLabel],
     ["Deal stage", deal.dealStage],
   ];
