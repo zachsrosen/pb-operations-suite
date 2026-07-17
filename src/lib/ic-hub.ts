@@ -47,6 +47,7 @@ import { buildStageDisplayMap } from "@/lib/daily-focus/format";
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import {
   buildGmailThreadQuery,
+  extractIdentifierTokens,
   fetchSharedInboxThreads,
   getSharedInboxAddress,
   type SharedInboxThread,
@@ -464,7 +465,10 @@ export async function fetchIcProjectDetail(
   // number, and the Utility Application #. NOT the utility email — that is
   // shared across every project for the utility and pulled in other
   // projects' threads.
-  const icIdentifiers = [props.utility_application__];
+  // utility_application__ is hand-entered and often polluted with the program
+  // code + TPO signer name — extract the clean token(s) or the phrase match
+  // finds nothing (PROJ-9810: "06405260 (PSPS) J STEPHEN POLLOCK").
+  const icIdentifiers = extractIdentifierTokens(props.utility_application__);
   if (props.address_line_1 || props.project_number || icIdentifiers.some(Boolean)) {
     const pbLoc = props.pb_location;
     let region: "co" | "ca" | null = null;

@@ -37,6 +37,7 @@ import { buildStageDisplayMap } from "@/lib/daily-focus/format";
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import {
   buildGmailThreadQuery,
+  extractIdentifierTokens,
   fetchSharedInboxThreads,
   getSharedInboxAddress,
   type SharedInboxThread,
@@ -497,13 +498,15 @@ export async function fetchPermitProjectDetail(
   // Project-unique keys the AHJ cites: street address, PROJ number, and the
   // per-trade permit numbers. NOT the AHJ email — it is shared across every
   // project in the jurisdiction and pulled in other projects' threads.
+  // Hand-entered fields — extract clean tokens so pollution ("B2404681 (elec)")
+  // can't defeat the quoted-phrase match. Clean values pass through unchanged.
   const permitIdentifiers = [
     props.permit_number___pv,
     props.permit_number___ess,
     props.permit_number___elec,
     props.permit_number___fire_protection,
     props.permit_number___zoning___land_use,
-  ];
+  ].flatMap((v) => extractIdentifierTokens(v));
   if (props.address_line_1 || props.project_number || permitIdentifiers.some(Boolean)) {
     const pbLoc = props.pb_location;
     let region: "co" | "ca" | null = null;
