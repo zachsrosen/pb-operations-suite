@@ -9,14 +9,14 @@
 - IC queue: **163 deals** (Ready 27 / Resubmit 15 / Waiting 62 / Other 59).
 - PTO (no hub exists): **19 `pto_status` options, 311 deals in scope, 133 non-terminal** — largest bucket is `PTO Waiting on Interconnection Approval` (**44 deals**), i.e. blocked on the IC step.
 - IC and PTO share a role property: both use `interconnections_tech`. Permit uses `permit_tech`. Two of the three "teams" are the same person's job.
-- `permit-hub.ts` (707 lines) and `ic-hub.ts` (635) are ~75–80% identical, export-for-export (`resolveUserIdByEmail` is byte-identical). `permit-hub.ts:5-6` deferred "extraction to shared primitives … until IC Hub (second consumer)"; IC shipped as a copy instead. PTO must not be a third.
+- `permit-hub.ts` (802 lines) and `ic-hub.ts` (725) are structurally identical, export-for-export (`resolveUserIdByEmail` is byte-identical). `permit-hub.ts:6-7` deferred "extraction to shared primitives … until IC Hub (second consumer)"; IC shipped as a copy instead. PTO must not be a third.
 - Usage reality: **zero hub actions ever completed** (0 `PermitHubDraft` rows all-time); 204 of 209 page visits are Zach. The hubs are being handed to their first real user now — this redesign is the setup for that, not a migration of active users.
 
 ---
 
 ## 1. Problem
 
-Three sequential stages of the same pipeline — permit → interconnection → PTO — live in two separate, near-duplicate hubs, and the third stage has no surface at all. The person who works IC also works PTO, and 44 PTO deals are blocked on an IC step they'd see in a different hub. Meanwhile the primary interaction the team actually needs — *set the status* — doesn't exist: the hubs expose ~8 bespoke action forms per team (never used, two of which wrote invalid values until #1481), while a plain status change requires leaving for HubSpot.
+Three sequential stages of the same pipeline — permit → interconnection → PTO — live in two separate, near-duplicate hubs, and the third stage has no surface at all. The person who works IC also works PTO, and 44 PTO deals are blocked on an IC step they'd see in a different hub. Meanwhile the primary interaction the team actually needs — *set the status* — doesn't exist: the hubs expose 16 bespoke action routes (9 permit + 7 IC, never used, two of which wrote invalid values until #1481), while a plain status change requires leaving for HubSpot.
 
 ## 2. Goals
 
@@ -74,14 +74,21 @@ interface TeamConfig {
   folderLabel: string;                // "Permit Folder" | "Interconnection Folder"
   domainPanel: "ahj" | "utility";     // which custom-object section the detail shows
   portalLinkSource: "ahj" | "utility";
+  /** NEW status value → open-task subject substrings to complete on arrival.
+   *  Derived from PERMIT_ACTION_TASK_SUBJECTS / IC_ACTION_TASK_SUBJECTS
+   *  (re-keyed from action kind to the status the action lands on).
+   *  Statuses with no entry — all of PTO in v1 — skip task completion. */
+  taskSubjectsForStatus?: Record<string, readonly string[]>;
 }
 ```
 
-Everything else — pagination, `statusEnteredAt`/stale, label resolution (`getEnumLabelMap`), correspondence matching (`buildGmailThreadQuery` with address + PROJ# + app#/permit#s), owner/stage resolution, drafts — is engine code written once. All of it already exists in the two hubs; this is consolidation, not invention.
+Note `interconnection_documents` is referenced nowhere in code today (verified live: it exists and holds Drive folder URLs on 2,139 IC-status deals) — today's IC hub links `permit_documents`, so the per-team folder is a new fetch, not a rewire.
+
+Everything else — pagination, `statusEnteredAt`/stale, label resolution, correspondence matching (`buildGmailThreadQuery` with address + PROJ# + app#/permit#s), owner/stage resolution — is engine code written once. All of it already exists in the two hubs; this is consolidation, not invention. The `PermitHubDraft` table is **not** carried over: it stored action-form drafts, and with no forms rendered there is nothing to draft.
 
 ### Grouping moves from action-kinds to config
 
-Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in each Queue component). The action-kind layer existed to route to action forms; with forms gone, it's an indirection with no consumer. `groupForStatus` maps directly in config. (`pi-statuses.ts` action-kind maps stay — the Daily Focus email and other dashboards read them.)
+Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in each Queue component). The action-kind layer existed to route to action forms; with forms gone, its only remaining consumers are the task-subject maps (folded into `taskSubjectsForStatus` above) and the Daily Focus email / other dashboards, which keep reading `pi-statuses.ts` untouched. The hub itself maps status → group directly in config via `groupForStatus`.
 
 **PTO grouping (v1):**
 - **ready**: Inspection Passed - Ready for Utility, Xcel Photos Ready to Submit
@@ -95,9 +102,12 @@ Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in
 
 Replaces the action-form system as the write path.
 
-- **Options** come from the live property definition (`getEnumLabelMap` already fetches value+label, merged with archived); render labels, write values. No hardcoded option lists — the #1481 bug class (writing a label, or an invented value) becomes structurally impossible.
-- **Write path** (`setStatus`): PATCH the deal property; then best-effort **complete a matching open HubSpot task** (reusing `completePermitTask`'s search — it keeps workflows' task hygiene intact when a task exists, and doesn't block when none does); then `createDealNote` ("Status: X → Y, by Zach via P&I Hub") + `ActivityLog` row. Dates (permit_issued, approval dates) are stamped by existing HubSpot workflows triggered by the status change — the hub does not write dates.
-- **Optimistic UI** with rollback on error; queue refetch on success (the deal may leave the current tab or queue — that's correct and visible).
+- **Options: active options only, in HubSpot display order.** A new `getActiveEnumOptions(property)` fetches the property definition and returns non-archived options as `{value, label}[]`. `getEnumLabelMap` (which deliberately merges **archived** options) is used only for *labeling* deals stuck on retired values — it must not feed the dropdown, or users could write retired statuses, reintroducing the #1481 bug class this design exists to kill. Labels render; values write; no hardcoded option lists anywhere.
+- **The PATCH is the source of truth.** `setStatus(team, dealId, newValue)` PATCHes the deal property first. Everything after — task completion, note, activity log — is caught and surfaced as a non-blocking warning, never a failure: `completePermitTask` deliberately **throws** on task-search failure, so `setStatus` extracts only its task-search/complete step into a shared helper rather than calling the whole function (which would also double-write the note it creates internally). If a follow-up step fails after the PATCH succeeded, the UI reports "status changed; task cleanup failed" — it must never report failure for a write that landed, or roll back optimistic state to a lie.
+- **Task completion is config-scoped**: after a successful PATCH, if `taskSubjectsForStatus[newValue]` exists, best-effort complete one matching open HubSpot task (keeps workflow task hygiene when a task exists; skips silently when none does). All PTO statuses skip in v1 — PTO has no task-subject conventions to match against.
+- **Note + activity**: `createDealNote` ("Status: X → Y, by Zach via P&I Hub") and an `ActivityLog` row, both post-PATCH, both non-blocking.
+- Dates (permit_issued, approval dates) are stamped by existing HubSpot workflows triggered by the status change — the hub does not write dates.
+- **Optimistic UI** keyed off the PATCH only, rollback if the PATCH itself fails; queue refetch on success (the deal may leave the current tab or queue — correct and visible).
 - **Confirm step only when the new status is terminal** for the team ("This marks the permit issued — the deal leaves this queue"), since those feed PE payments/close-out.
 - Placement: in the detail header (replacing the status pill) and as the row's primary affordance in the queue's action column.
 
@@ -108,7 +118,7 @@ The #1482 unified layout, parameterized:
 - Left: Overview · **domain panel** (AHJ for permit; Utility for ic/pto) · Planset
 - Right: Correspondence (badge, prime slot) · Status History · Activity (collapsed)
 - Header links: HubSpot · portal · application · **`folderProperty` link** (Permit Folder / Interconnection Folder) · design folder · project drive. Folder fields are Drive URLs — run through `extractFolderId()` handling like existing folder links.
-- PTO's domain panel is the Utility panel (same associated custom object). Known cleanup folded in: drop the two Utility fields that 404 (`interconnection_turnaround_time`, `pto_turnaround_time` — properties don't exist on the object).
+- PTO's domain panel is the Utility panel (same associated custom object). Known cleanup folded in: today's `UtilityTab` renders **four** fields that can never populate — `interconnection_turnaround_time` and `pto_turnaround_time` (don't exist on the Utility object), the `interconnection_issues` block (not in `UTILITY_PROPERTIES`), and `submission_method` (the fetch list has `submission_type`; a typo'd property name — fix the name, keep the field). Drop the three dead ones, repair the fourth.
 
 ## 7. Days-in-status & stale
 
@@ -121,9 +131,9 @@ Engine-level, already solved: `fetchStatusEnteredAt(deals, statusProperty)` work
 
 ## 9. Migration & rollout
 
-1. Build `/dashboards/pi-hub` behind flags; old hubs untouched.
+1. Build `/dashboards/pi-hub` behind flags; old hubs untouched. Set `NEXT_PUBLIC_PI_HUB_ENABLED` in Vercel **before** the enabling deploy — `NEXT_PUBLIC_*` flags are build-time inlined (the suite page reads them as module-level consts), so flipping the var after deploy does nothing until the next build.
 2. Verify live (all three teams' queues + dropdown writes against a test deal), then enable.
-3. `/dashboards/permit-hub` → redirect `/dashboards/pi-hub?team=permit`; `/dashboards/ic-hub` → `?team=ic`. Old page code and `permit-hub.ts`/`ic-hub.ts` libs are deleted only after the redirects have baked; the old API action routes stay until then.
+3. `/dashboards/permit-hub` → redirect `/dashboards/pi-hub?team=permit`; `/dashboards/ic-hub` → `?team=ic`. The old routes **stay in every role's `allowedRoutes` during the redirect period** — a redirect page still passes middleware first, and dropping them early is this repo's classic silent-403. Old page code and `permit-hub.ts`/`ic-hub.ts` libs are deleted only after the redirects have baked; the old API action routes stay until then.
 4. Suite cards/nav updated to the single hub.
 
 Timing note: there are no habituated users to migrate (see grounding) — this is the setup for first real use, which is why replacing rather than preserving the action-form system is low-risk *now* and would not be later.
@@ -139,4 +149,5 @@ Timing note: there are no habituated users to migrate (see grounding) — this i
 
 - PTO stale thresholds — utility PTO waits are long; 14d may flag half the queue. Accept for v1?
 - Should `Xcel Photos Approved` (8 deals) be "waiting" (it precedes PTO grant) instead of "other"?
+- Is `Conditional PTO - Pending Transformer Upgrade` (3 deals) semi-terminal? It lands in "other" via the catch-all in v1.
 - Does `pto_status` have property history enabled (needed for days-in-status)? Verify at build start.
