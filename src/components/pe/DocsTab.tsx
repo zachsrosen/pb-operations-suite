@@ -39,6 +39,10 @@ interface PeDeal {
   pePortalUrl: string | null;
   peProjectId: string | null;
   driveUrl: string | null;
+  dealOwner: string | null;
+  designLead: string | null;
+  permitLead: string | null;
+  interconnectionLead: string | null;
   docReviews: DocReviewFromHS[];
 }
 
@@ -139,6 +143,42 @@ const TEAM_DOT: Record<DocTeam, string> = {
 
 // Ordered for display priority (teams with most actionable items first)
 const TEAM_ORDER: DocTeam[] = ["sales", "design", "operations", "permit", "interconnection", "accounting", "compliance"];
+
+// By-team sub-grouping: which per-deal lead field each team groups deals by.
+// Teams not listed render flat (no lead sub-level).
+const LEAD_FIELD_BY_TEAM: Partial<Record<DocTeam, "dealOwner" | "designLead" | "permitLead" | "interconnectionLead">> = {
+  sales: "dealOwner",
+  design: "designLead",
+  permit: "permitLead",
+  interconnection: "interconnectionLead",
+};
+function leadForDeal(deal: PeDeal, team: DocTeam): string {
+  const field = LEAD_FIELD_BY_TEAM[team];
+  return (field && deal[field]) || "Unassigned";
+}
+type TeamDealItem = {
+  summary: DealDocSummary;
+  teamActionCount: number;
+  teamDocs: { doc: DocRequirement; review: DocReview | undefined }[];
+};
+// Group a bucket's deals by their team lead; Unassigned last, else by action count then name.
+function groupItemsByLead(items: TeamDealItem[], team: DocTeam): { lead: string; rows: TeamDealItem[] }[] {
+  const map = new Map<string, TeamDealItem[]>();
+  for (const it of items) {
+    const lead = leadForDeal(it.summary.deal, team);
+    if (!map.has(lead)) map.set(lead, []);
+    map.get(lead)!.push(it);
+  }
+  return [...map.entries()]
+    .map(([lead, rows]) => ({ lead, rows }))
+    .sort((a, b) => {
+      if ((a.lead === "Unassigned") !== (b.lead === "Unassigned")) return a.lead === "Unassigned" ? 1 : -1;
+      const ac =
+        b.rows.reduce((s, r) => s + r.teamActionCount, 0) -
+        a.rows.reduce((s, r) => s + r.teamActionCount, 0);
+      return ac !== 0 ? ac : a.lead.localeCompare(b.lead);
+    });
+}
 
 const SECTION_LABELS: Record<string, string> = {
   onboarding: "Onboarding",
@@ -1765,15 +1805,35 @@ export default function DocsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                               </svg>
                             </button>
-                            {!bucketCollapsed && items.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
-                              <TeamDealRow
-                                key={s.deal.dealId}
-                                summary={s}
-                                team={team}
-                                teamActionCount={teamActionCount}
-                                teamDocs={tDocs}
-                              />
-                            ))}
+                            {!bucketCollapsed && (
+                              LEAD_FIELD_BY_TEAM[team]
+                                ? groupItemsByLead(items, team).map(({ lead, rows }) => (
+                                    <div key={lead} className="space-y-1.5">
+                                      <div className="flex items-center gap-1.5 pl-3 pt-0.5">
+                                        <span className={`text-[10px] font-medium ${lead === "Unassigned" ? "text-muted/50 italic" : "text-muted"}`}>{lead}</span>
+                                        <span className="text-[10px] text-muted/50">{rows.length}</span>
+                                      </div>
+                                      {rows.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
+                                        <TeamDealRow
+                                          key={s.deal.dealId}
+                                          summary={s}
+                                          team={team}
+                                          teamActionCount={teamActionCount}
+                                          teamDocs={tDocs}
+                                        />
+                                      ))}
+                                    </div>
+                                  ))
+                                : items.map(({ summary: s, teamActionCount, teamDocs: tDocs }) => (
+                                    <TeamDealRow
+                                      key={s.deal.dealId}
+                                      summary={s}
+                                      team={team}
+                                      teamActionCount={teamActionCount}
+                                      teamDocs={tDocs}
+                                    />
+                                  ))
+                            )}
                           </div>
                         );
                       })}
