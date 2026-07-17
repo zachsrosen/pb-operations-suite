@@ -23,7 +23,6 @@
 Create:
   src/lib/pi-hub/types.ts            Team, QueueItem, ProjectDetail, SetStatusResult
   src/lib/pi-hub/config.ts           TEAM_CONFIGS (pure data + groupForStatus)
-  src/lib/pi-hub/tasks.ts            completeMatchingTask (extracted from completePermitTask)
   src/lib/pi-hub/status.ts           setStatus — the only write path
   src/lib/pi-hub/queue.ts            fetchQueue(team)
   src/lib/pi-hub/detail.ts           fetchDetail(team, dealId)
@@ -167,11 +166,6 @@ export interface TeamConfig {
    *  portalLinkSource was identical to this across all three teams, so it
    *  was folded in. Don't re-add it without a team that differs. */
   domainPanel: "ahj" | "utility";
-  /** NEW status value → open-task subject substrings to complete on arrival.
-   *  Re-keyed from *_ACTION_TASK_SUBJECTS by landing status; collisions merge
-   *  (e.g. both submit actions land on "Submitted to AHJ"); FOLLOW_UP writes
-   *  no status so its subjects drop. PTO has no task conventions — omitted. */
-  taskSubjectsForStatus?: Record<string, readonly string[]>;
 }
 
 export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
@@ -191,19 +185,6 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
     inboxTeam: "permit",
     folderProperty: "permit_documents", folderLabel: "Permit Folder",
     domainPanel: "ahj",
-    taskSubjectsForStatus: {
-      "Submitted to AHJ": ["submit to ahj", "submit permit", "submit solarapp", "solarapp submission"],
-      "Resubmitted to AHJ": ["resubmit to ahj", "resubmit permit"],
-      // resubmit-to-ahj's asBuilt branch lands here (resubmit-to-ahj/route.ts:56-58)
-      "As-Built Revision Resubmitted": ["resubmit to ahj", "resubmit permit"],
-      "Returned from Design": ["complete revision", "revision complete"],
-      "As-Built Revision In Progress": ["start as-built", "as-built revision"],
-      "As-Built Ready To Resubmit": ["complete as-built"],
-      "In Design For Revision": ["review rejection", "permit rejected"],
-      "Non-Design Related Rejection": ["review rejection", "permit rejected"],
-      "Rejected": ["review rejection", "permit rejected"],
-      "Complete": ["permit issued", "permit approved"],
-    },
   },
   ic: {
     key: "ic", label: "Interconnection", accent: "green",
@@ -227,18 +208,6 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
     inboxTeam: "ic",
     folderProperty: "interconnection_documents", folderLabel: "Interconnection Folder",
     domainPanel: "utility",
-    taskSubjectsForStatus: {
-      "Submitted To Utility": ["submit to utility", "submit ic", "submit interconnection"],
-      "Resubmitted To Utility": [
-        "resubmit to utility", "resubmit ic", "resubmit interconnection",
-        "provide information", "send information", "respond to utility", // PROVIDE_INFORMATION also lands here
-      ],
-      "Revision Returned From Design": ["complete revision", "ic revision complete"],
-      "In Design For Revisions": ["review rejection", "ic rejected", "interconnection rejected"],
-      "Non-Design Related Rejection": ["review rejection", "ic rejected", "interconnection rejected"],
-      "Rejected": ["review rejection", "ic rejected", "interconnection rejected"],
-      "Application Approved": ["ic approved", "interconnection approved"],
-    },
   },
   pto: {
     key: "pto", label: "PTO", accent: "yellow",
@@ -256,7 +225,6 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
     inboxTeam: "ic",
     folderProperty: "pto___closeout_documents", folderLabel: "PTO Folder",
     domainPanel: "utility",
-    // no taskSubjectsForStatus: PTO skips task completion in v1 (spec §5)
   },
 };
 
@@ -281,20 +249,8 @@ describe("TEAM_CONFIGS validity", () => {
       const configured = [
         ...config.terminalStatuses,
         ...Object.values(config.groups).flat(),
-        ...Object.keys(config.taskSubjectsForStatus ?? {}),
       ];
       for (const s of configured) expect(live).toContain(s);
-    });
-    it(`${config.key}: task-subject keys are dropdown-reachable (active, not hidden)`, () => {
-      // Group lists may pin retired values (deals can be STUCK on them — read
-      // path), but taskSubjectsForStatus keys are dropdown LANDING statuses:
-      // an archived/hidden one could never be selected, making its entry dead.
-      const active = LIVE_STATUS_OPTIONS[config.statusProperty]
-        .filter((o) => !o.archived && !o.hidden)
-        .map((o) => o.value);
-      for (const s of Object.keys(config.taskSubjectsForStatus ?? {})) {
-        expect(active).toContain(s);
-      }
     });
     it(`${config.key}: no status is in two groups`, () => {
       const all = Object.values(config.groups).flat();
@@ -345,63 +301,9 @@ export async function getActiveEnumOptions(propertyName: string): Promise<EnumOp
 - [ ] **Step 2.2:** Check `HubSpotPropertyOption` in `src/lib/hubspot.ts` — if it already declares `archived`/`hidden`, drop the inline casts.
 - [ ] **Step 2.3:** Typecheck; commit — `feat(pi-hub): active-only enum options for the write path`
 
-### Task 3: `tasks.ts` — extract the task search
+### Task 3: CUT — dropdown is status-update only (Zach, 2026-07-17)
 
-**Files:** Create `src/lib/pi-hub/tasks.ts`
-
-`completePermitTask` (`src/lib/permit-hub.ts:641-727`) cannot be reused whole: it **throws** on search failure and **createDealNote's internally** (verified; see spec §5). Extract only the search/complete step, with soft-fail semantics:
-
-- [ ] **Step 3.1: Write `tasks.ts`:**
-
-```ts
-import { FilterOperatorEnum } from "@/generated-or-sdk-path"; // copy the exact import used at permit-hub.ts top
-import { hubspotClient } from "@/lib/hubspot";
-import { updateTask } from "@/lib/hubspot-tasks";
-import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
-
-/**
- * Best-effort: complete ONE open HubSpot task on the deal whose subject
- * matches any pattern. Unlike completePermitTask this NEVER throws — the
- * status PATCH is the source of truth (spec §5) and task hygiene is a
- * post-write courtesy. Returns a warning string on failure, null on
- * success-or-nothing-to-do.
- */
-export async function completeMatchingTask(opts: {
-  dealId: string;
-  subjectPatterns: readonly string[];
-  noteBody: string;
-}): Promise<string | null> {
-  try {
-    const searchResult = await withHubSpotRetry(
-      () =>
-        hubspotClient.crm.objects.tasks.searchApi.doSearch({
-          filterGroups: [{ filters: [
-            { propertyName: "associations.deal", operator: FilterOperatorEnum.Eq, value: opts.dealId },
-            { propertyName: "hs_task_status", operator: FilterOperatorEnum.Neq, value: "COMPLETED" },
-          ] }],
-          properties: ["hs_task_subject", "hs_task_status"],
-          limit: 100,
-        }),
-      "pi-hub.completeMatchingTask.search",
-    );
-    if (!searchResult.ok) return `task search failed: ${searchResult.error}`;
-    const match = (searchResult.data.results ?? []).find((t) => {
-      const subject = String((t.properties as Record<string, string | null>)?.hs_task_subject ?? "").toLowerCase();
-      return opts.subjectPatterns.some((p) => subject.includes(p.toLowerCase()));
-    });
-    if (!match) return null; // nothing open to complete — not a warning
-    await updateTask(match.id, { status: "COMPLETED", body: opts.noteBody });
-    return null;
-  } catch (err) {
-    return `task completion failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
-}
-```
-
-(Copy the `FilterOperatorEnum` import line verbatim from `permit-hub.ts:22` — it imports from `@hubspot/api-client/lib/codegen/crm/deals`, and permit-hub uses that same enum for its tasks search.)
-
-- [ ] **Step 3.2: Unit-test the never-throws contract** (append to `src/__tests__/pi-hub-status.test.ts`, mocking hubspot/tasks modules): (a) search returns `ok:false` → returns a warning string, no throw; (b) no subject match → returns `null`, `updateTask` not called; (c) match → `updateTask` called with `COMPLETED`, returns `null`; bonus (d) `updateTask` throws → returns warning string.
-- [ ] **Step 3.3:** Run tests; typecheck; commit — `feat(pi-hub): soft-fail task completion helper`
+No task completion from the hub. `tasks.ts` is not built; `completeMatchingTask` does not exist.
 
 ### Task 4: `status.ts` — setStatus
 
@@ -411,10 +313,10 @@ export async function completeMatchingTask(opts: {
 
 ```ts
 // 1. rejects a value not in active options — no PATCH attempted
-// 2. PATCH succeeds, no taskSubjectsForStatus entry (pto) → ok:true, warnings:[]  — task helper NOT called
-// 3. PATCH succeeds, task helper returns warning → ok:true, warnings:["task completion failed…"]
-// 4. PATCH succeeds, createDealNote throws → ok:true, warning; activityLog still attempted
-// 5. PATCH itself rejects → throws (caller/route turns it into a 502); no note, no task call
+// 2. PATCH succeeds → ok:true, warnings:[]
+// 3. PATCH succeeds, createDealNote throws → ok:true, warning; activityLog still attempted
+// 4. PATCH succeeds, activityLog throws → ok:true, warning
+// 5. PATCH itself rejects → throws (route turns it into a 502); no note attempted
 ```
 
 - [ ] **Step 4.2: Run** — expect FAIL (module missing).
@@ -426,7 +328,6 @@ import { getActiveEnumOptions } from "@/lib/hubspot-enum-labels";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { prisma } from "@/lib/db";
 import { TEAM_CONFIGS } from "./config";
-import { completeMatchingTask } from "./tasks";
 import type { SetStatusResult, Team } from "./types";
 
 export async function setStatus(opts: {
@@ -452,11 +353,6 @@ export async function setStatus(opts: {
   // fetched (saves a read; HubSpot property history already records it).
   const noteBody = `<b>Status set via P&I Hub</b><br>${config.label}: ${option.label}<br>By: ${opts.userEmail}`;
 
-  const subjects = config.taskSubjectsForStatus?.[opts.newValue];
-  if (subjects?.length) {
-    const warn = await completeMatchingTask({ dealId: opts.dealId, subjectPatterns: subjects, noteBody });
-    if (warn) warnings.push(warn);
-  }
   try { await createDealNote(opts.dealId, noteBody); }
   catch (err) { warnings.push(`note failed: ${err instanceof Error ? err.message : String(err)}`); }
   try {

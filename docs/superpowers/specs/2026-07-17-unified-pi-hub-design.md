@@ -74,15 +74,6 @@ interface TeamConfig {
   folderLabel: string;                // "Permit Folder" | "Interconnection Folder" | "PTO Folder"
   domainPanel: "ahj" | "utility";     // which custom-object section the detail shows
   portalLinkSource: "ahj" | "utility";
-  /** NEW status value → open-task subject substrings to complete on arrival.
-   *  Derived from PERMIT_ACTION_TASK_SUBJECTS / IC_ACTION_TASK_SUBJECTS
-   *  (re-keyed from action kind to the status the action lands on). The
-   *  re-key is many-to-one, not 1:1: collisions merge subject lists (e.g.
-   *  RESUBMIT_TO_UTILITY and PROVIDE_INFORMATION both land on "Resubmitted
-   *  To Utility" — union both), and FOLLOW_UP writes no status, so its
-   *  subjects drop out. Statuses with no entry — all of PTO in v1 — skip
-   *  task completion. */
-  taskSubjectsForStatus?: Record<string, readonly string[]>;
 }
 ```
 
@@ -92,7 +83,7 @@ Everything else — pagination, `statusEnteredAt`/stale, label resolution, corre
 
 ### Grouping moves from action-kinds to config
 
-Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in each Queue component). The action-kind layer existed to route to action forms; with forms gone, its only remaining consumers are the task-subject maps (folded into `taskSubjectsForStatus` above) and the Daily Focus email / other dashboards, which keep reading `pi-statuses.ts` untouched. The hub itself maps status → group directly in config via `groupForStatus`.
+Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in each Queue component). The action-kind layer existed to route to action forms; with forms gone, its only remaining consumers are the Daily Focus email / other dashboards, which keep reading `pi-statuses.ts` untouched. The hub itself maps status → group directly in config via `groupForStatus`.
 
 **PTO grouping (v1):**
 - **ready**: Inspection Passed - Ready for Utility, Xcel Photos Ready to Submit
@@ -107,8 +98,8 @@ Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in
 Replaces the action-form system as the write path.
 
 - **Options: active options only, in HubSpot display order.** A new `getActiveEnumOptions(property)` fetches the property definition and returns non-archived options as `{value, label}[]`. `getEnumLabelMap` (which deliberately merges **archived** options) is used only for *labeling* deals stuck on retired values — it must not feed the dropdown, or users could write retired statuses, reintroducing the #1481 bug class this design exists to kill. Labels render; values write; no hardcoded option lists anywhere.
-- **The PATCH is the source of truth.** `setStatus(team, dealId, newValue)` PATCHes the deal property first. Everything after — task completion, note, activity log — is caught and surfaced as a non-blocking warning, never a failure: `completePermitTask` deliberately **throws** on task-search failure, so `setStatus` extracts only its task-search/complete step into a shared helper rather than calling the whole function (which would also double-write the note it creates internally). If a follow-up step fails after the PATCH succeeded, the UI reports "status changed; task cleanup failed" — it must never report failure for a write that landed, or roll back optimistic state to a lie.
-- **Task completion is config-scoped**: after a successful PATCH, if `taskSubjectsForStatus[newValue]` exists, best-effort complete one matching open HubSpot task (keeps workflow task hygiene when a task exists; skips silently when none does). All PTO statuses skip in v1 — PTO has no task-subject conventions to match against.
+- **The PATCH is the source of truth.** `setStatus(team, dealId, newValue)` PATCHes the deal property first. Everything after — task completion, note, activity log — is caught and surfaced as a non-blocking warning, never a failure: If a follow-up step (note, activity log) fails after the PATCH succeeded, the UI reports "status changed; note failed" — it must never report failure for a write that landed, or roll back optimistic state to a lie.
+- **No task completion — DECIDED (Zach, 2026-07-17): the dropdown is status-update only.** Task-0 verification found 48 enabled workflows that write these statuses on task completion (the portal's progression engine); rather than have the hub participate in that machine, the dropdown stays out of it entirely. Consequence, stated plainly: a dropdown write leaves any open HubSpot task open, and automation keyed on task completion does not fire — the task flow remains the automation path; the dropdown is the manual override for statuses the machine missed.
 - **Note + activity**: `createDealNote` ("Status: X → Y, by Zach via P&I Hub") and an `ActivityLog` row, both post-PATCH, both non-blocking.
 - Dates (permit_issued, approval dates) are stamped by existing HubSpot workflows triggered by the status change — the hub does not write dates.
 - **Optimistic UI** keyed off the PATCH only, rollback if the PATCH itself fails; queue refetch on success (the deal may leave the current tab or queue — correct and visible).
