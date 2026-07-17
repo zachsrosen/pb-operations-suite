@@ -76,8 +76,12 @@ interface TeamConfig {
   portalLinkSource: "ahj" | "utility";
   /** NEW status value → open-task subject substrings to complete on arrival.
    *  Derived from PERMIT_ACTION_TASK_SUBJECTS / IC_ACTION_TASK_SUBJECTS
-   *  (re-keyed from action kind to the status the action lands on).
-   *  Statuses with no entry — all of PTO in v1 — skip task completion. */
+   *  (re-keyed from action kind to the status the action lands on). The
+   *  re-key is many-to-one, not 1:1: collisions merge subject lists (e.g.
+   *  RESUBMIT_TO_UTILITY and PROVIDE_INFORMATION both land on "Resubmitted
+   *  To Utility" — union both), and FOLLOW_UP writes no status, so its
+   *  subjects drop out. Statuses with no entry — all of PTO in v1 — skip
+   *  task completion. */
   taskSubjectsForStatus?: Record<string, readonly string[]>;
 }
 ```
@@ -126,7 +130,7 @@ Engine-level, already solved: `fetchStatusEnteredAt(deals, statusProperty)` work
 
 ## 8. Access & flags
 
-- Roles: union of today's hub roles; PTO visible to the same set as IC (`INTERCONNECT`, TECH_OPS, PM, admin/owner). Route added to every role's `allowedRoutes` (silent-403 trap) and gated by `PI_HUB_ENABLED` + `NEXT_PUBLIC_PI_HUB_ENABLED`.
+- Roles: union of today's hub role lists — `ADMIN`, `EXECUTIVE`, `PERMIT`, `INTERCONNECT`, `TECH_OPS` (per `PERMIT_HUB_ROLES` / `IC_HUB_ROLES` in code; note neither includes PM). PTO uses IC's set. Route added to each of those roles' `allowedRoutes` (silent-403 trap) and gated by `PI_HUB_ENABLED` + `NEXT_PUBLIC_PI_HUB_ENABLED`.
 - Switcher hides teams the user's role can't access (e.g. a `PERMIT`-only user sees only Permit).
 
 ## 9. Migration & rollout
@@ -143,7 +147,7 @@ Timing note: there are no habituated users to migrate (see grounding) — this i
 - Engine unit tests parameterized across all three configs (queue grouping, terminal exclusion, label display, folder link selection) — the existing 30+ hub tests are the template and largely port over.
 - `setStatus` tests: writes the **value**, completes a matching task when present, never throws when absent, note+activity recorded (mocked Prisma/HubSpot).
 - Config validation test: every status in every `groupForStatus` map and `terminalStatuses` list must exist in the live-fetched option list fixture — pinning against the #1481 class.
-- Live verification before enabling flags, per team, from real queue data (the house style all session).
+- Live verification before enabling flags, per team, from real queue data (the house style all session). Two specific checks at build start: (a) `pto_status` has property history enabled (days-in-status depends on it); (b) **no HubSpot workflow writes a status on task completion** — today's flow completes the task and lets workflows move the status, so if any workflow still does that, the post-PATCH task-complete step could stomp the user's chosen value with the workflow's.
 
 ## 11. Open questions
 
