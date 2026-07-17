@@ -27,7 +27,9 @@ Create:
   src/lib/pi-hub/status.ts           setStatus — the only write path
   src/lib/pi-hub/queue.ts            fetchQueue(team)
   src/lib/pi-hub/detail.ts           fetchDetail(team, dealId)
+  src/lib/pi-hub/access.ts           PI_HUB_ROLES + isPiHubEnabled (created in Task 7)
   src/app/api/pi-hub/queue/route.ts
+  src/app/api/pi-hub/today-count/route.ts
   src/app/api/pi-hub/project/[dealId]/route.ts
   src/app/api/pi-hub/options/route.ts
   src/app/api/pi-hub/status/route.ts
@@ -94,7 +96,9 @@ Expected: none found. **If found: STOP and surface to Zach** — the `setStatus`
 ```ts
 /** Snapshot of live HubSpot enum options, captured <date> by plan Task 0.
  *  Used by pi-hub-config.test.ts to pin config statuses to real values. */
-export const LIVE_STATUS_OPTIONS: Record<string, { value: string; label: string; archived: boolean }[]> = {
+export const LIVE_STATUS_OPTIONS: Record<string, { value: string; label: string; archived: boolean; hidden: boolean }[]> = {
+  // capture BOTH archived and hidden (default false when absent) — they are
+  // the exact fields getActiveEnumOptions filters on
   permitting_status: [/* ... paste ... */],
   interconnection_status: [/* ... */],
   pto_status: [/* ... */],
@@ -159,6 +163,9 @@ export interface TeamConfig {
   inboxTeam: "permit" | "ic";
   folderProperty: string;
   folderLabel: string;
+  /** Also selects the portal/application link source — the spec's separate
+   *  portalLinkSource was identical to this across all three teams, so it
+   *  was folded in. Don't re-add it without a team that differs. */
   domainPanel: "ahj" | "utility";
   /** NEW status value → open-task subject substrings to complete on arrival.
    *  Re-keyed from *_ACTION_TASK_SUBJECTS by landing status; collisions merge
@@ -187,6 +194,8 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
     taskSubjectsForStatus: {
       "Submitted to AHJ": ["submit to ahj", "submit permit", "submit solarapp", "solarapp submission"],
       "Resubmitted to AHJ": ["resubmit to ahj", "resubmit permit"],
+      // resubmit-to-ahj's asBuilt branch lands here (resubmit-to-ahj/route.ts:56-58)
+      "As-Built Revision Resubmitted": ["resubmit to ahj", "resubmit permit"],
       "Returned from Design": ["complete revision", "revision complete"],
       "As-Built Revision In Progress": ["start as-built", "as-built revision"],
       "As-Built Ready To Resubmit": ["complete as-built"],
@@ -378,9 +387,10 @@ export async function completeMatchingTask(opts: {
 }
 ```
 
-(Copy the `FilterOperatorEnum` import line verbatim from `permit-hub.ts` — placeholder above.)
+(Copy the `FilterOperatorEnum` import line verbatim from `permit-hub.ts:22` — it imports from `@hubspot/api-client/lib/codegen/crm/deals`, and permit-hub uses that same enum for its tasks search.)
 
-- [ ] **Step 3.2:** Typecheck; commit — `feat(pi-hub): soft-fail task completion helper`
+- [ ] **Step 3.2: Unit-test the never-throws contract** (append to `src/__tests__/pi-hub-status.test.ts`, mocking hubspot/tasks modules): (a) search returns `ok:false` → returns a warning string, no throw; (b) no subject match → returns `null`, `updateTask` not called; (c) match → `updateTask` called with `COMPLETED`, returns `null`; bonus (d) `updateTask` throws → returns warning string.
+- [ ] **Step 3.3:** Run tests; typecheck; commit — `feat(pi-hub): soft-fail task completion helper`
 
 ### Task 4: `status.ts` — setStatus
 
@@ -427,6 +437,8 @@ export async function setStatus(opts: {
   });
 
   const warnings: string[] = [];
+  // Deliberate deviation from spec §5's "X → Y" note: the old value isn't
+  // fetched (saves a read; HubSpot property history already records it).
   const noteBody = `<b>Status set via P&I Hub</b><br>${config.label}: ${option.label}<br>By: ${opts.userEmail}`;
 
   const subjects = config.taskSubjectsForStatus?.[opts.newValue];
@@ -438,7 +450,7 @@ export async function setStatus(opts: {
   catch (err) { warnings.push(`note failed: ${err instanceof Error ? err.message : String(err)}`); }
   try {
     await prisma?.activityLog.create({ data: {
-      type: "STATUS_CHANGED" as never, // use an existing ActivityType — check enum; PERMIT/IC hubs use specific types, pick the closest existing value, do NOT add enum values (migration)
+      type: "HUBSPOT_DEAL_UPDATED", // the one generic existing ActivityType that fits — there is NO STATUS_CHANGED value; do NOT add enum values (that's a migration)
       description: `${config.label} status → ${option.label}`,
       userEmail: opts.userEmail, userName: opts.userName, userId: opts.userId ?? undefined,
       entityType: "deal", entityId: opts.dealId, metadata: { team: opts.team, value: opts.newValue } as never,
@@ -449,7 +461,7 @@ export async function setStatus(opts: {
 }
 ```
 
-**Before writing:** `grep "enum ActivityType" -A 60 prisma/schema.prisma` and pick a real value (e.g. an existing `*_STATUS*` or the types `recordPermitActivity` callers use — see the action routes). **Do not add enum values** — that's a migration.
+**Verified for you:** the enum (prisma/schema.prisma ~130-321) has only hub-action-specific values (`PERMIT_SUBMITTED`…`IC_APPROVED`) and the generic `HUBSPOT_DEAL_UPDATED` — use the latter. A wrong value here fails Prisma on every write and gets silently downgraded to a warning by the try/catch, so get it right, and make test case 4 assert the exact `type` sent.
 
 - [ ] **Step 4.4: Run tests** — expect PASS.
 - [ ] **Step 4.5: Commit** — `feat(pi-hub): setStatus write path — PATCH first, warnings after`
@@ -499,6 +511,7 @@ function parseTeam(v: string | null): Team | null { return v === "permit" || v =
 - [ ] **Step 7.2:** `project/[dealId]/route.ts` — GET `?team=`; 404 when `fetchDetail` returns null.
 - [ ] **Step 7.3:** `options/route.ts` — GET `?team=` → `{ options: await getActiveEnumOptions(config.statusProperty) }`.
 - [ ] **Step 7.4:** `status/route.ts` — POST zod `{ team, dealId, status }`; `resolveUserIdByEmail` (import from permit-hub — it's exported) for the userId; on `setStatus` throw → 502 with message; else `{ ok, warnings }`.
+- [ ] **Step 7.4b:** `today-count/route.ts` — model on `/api/permit-hub/today-count` but count today's `ActivityLog` rows where `type = HUBSPOT_DEAL_UPDATED` and `metadata.team` is set (i.e. pi-hub setStatus writes) for the current user. Feeds SessionHeader's "Touched today" across all three teams.
 - [ ] **Step 7.5:** Add `piHub` keys to `src/lib/query-keys.ts` (mirror `permitHub`'s factory: `queue(team)`, `project(team, dealId)`, `options(team)`).
 - [ ] **Step 7.6:** Typecheck; commit — `feat(pi-hub): api routes`
 
@@ -506,7 +519,7 @@ function parseTeam(v: string | null): Team | null { return v === "permit" || v =
 
 **Files:** Modify `src/lib/roles.ts`, `.env.example`
 
-- [ ] **Step 8.1:** In `roles.ts`, find each existing `"/dashboards/permit-hub"` / `"/api/permit-hub"` entry (ADMIN, EXECUTIVE, PERMIT, INTERCONNECT, TECH_OPS role blocks) and add `"/dashboards/pi-hub"` + `"/api/pi-hub"` alongside. **Do not remove the old entries** (spec §9 — redirects still pass middleware).
+- [ ] **Step 8.1:** In `roles.ts`, add `"/dashboards/pi-hub"` + `"/api/pi-hub"` to the roles with explicit hub entries: **TECH_OPS** (has both hubs, ~822-825), **PERMIT** (permit-hub only, ~1034), **INTERCONNECT** (ic-hub only, ~1111) — for PERMIT/INTERCONNECT this also grants the unified page (their switcher hides teams they can't use). **ADMIN and EXECUTIVE need nothing** — they have `allowedRoutes: ["*"]`. **Do not remove any old entries** (spec §9 — redirects still pass middleware).
 - [ ] **Step 8.2:** `.env.example`: `PI_HUB_ENABLED=false`, `NEXT_PUBLIC_PI_HUB_ENABLED=false` with a comment noting NEXT_PUBLIC_* is build-time inlined (set in Vercel before the enabling deploy).
 - [ ] **Step 8.3:** Typecheck; commit — `feat(pi-hub): route allowlist + flags`
 
@@ -526,16 +539,16 @@ function parseTeam(v: string | null): Team | null { return v === "permit" || v =
 **Files:** Create `src/app/dashboards/pi-hub/StatusDropdown.tsx`; test `src/__tests__/pi-hub-dropdown.test.tsx`
 
 - [ ] **Step 10.1: Failing tests:** renders current status **label**; options come from `/api/pi-hub/options` (mock fetch); selecting a non-terminal option POSTs `{team, dealId, status: VALUE}` (assert the VALUE, not the label, is sent); selecting a **terminal** option shows a confirm step first (use `ConfirmDialog` from `src/components/ui/ConfirmDialog.tsx`); a warnings response surfaces a toast/inline warning but not an error.
-- [ ] **Step 10.2:** Implement — a `<select>`-styled listbox (follow `MultiSelectFilter`'s visual idiom, single-select, `align` awareness not needed inside the wide detail header) + React Query `useMutation` with optimistic update of the detail cache and invalidation of `queryKeys.piHub.queue(team)` on success. Terminal detection via a `terminalStatuses` prop passed from config through the detail response.
+- [ ] **Step 10.2:** Implement — a `<select>`-styled listbox (follow `MultiSelectFilter`'s visual idiom, single-select) + React Query `useMutation` with optimistic update of the detail cache and invalidation of `queryKeys.piHub.queue(team)` on success. Terminal detection via a `terminalStatuses` prop passed from config through the detail/queue responses. Two render modes: default (detail header) and **`compact`** (queue row: small "Set status ▾" trigger, dropdown `align="right"`-style anchored so it cannot overflow the 420px queue column — the exact failure mode fixed in #1479). Same options fetch (`queryKeys.piHub.options(team)`, shared cache) and same mutation for both.
 - [ ] **Step 10.3:** Run tests — PASS; commit — `feat(pi-hub): status dropdown`
 
 ### Task 11: Queue + ProjectDetail
 
 **Files:** Create `Queue.tsx`, `ProjectDetail.tsx`; test `src/__tests__/pi-hub-queue-ui.test.tsx`
 
-- [ ] **Step 11.1:** `Queue.tsx` — port `PermitQueue.tsx` (post-#1478: `flex-wrap` tab strip, tight paddings, `min-w-0`); delete the local `groupForActionKind` — rows carry `group` from the server. Accent classes come from `config.accent` via a small map (blue/green/yellow variants for active tab, selected row, action label). Tabs = `GROUP_ORDER` with count badges; search matches name/address/lead/status **label**/value/dealStage (as today).
-- [ ] **Step 11.2:** `ProjectDetail.tsx` — port the #1482 two-column `CollapsibleSection` layout; header gets `StatusDropdown` (replacing the status pill), links: HubSpot, portal (AHJ portal / Utility portal per `domainPanel`), application, **`detail.folderUrl` with `detail.folderLabel`**, design folder, project drive. Domain section renders `AhjPanel` or `UtilityPanel` per `config.domainPanel`. **No ActionPanel, no forms** (spec §3).
-- [ ] **Step 11.3:** Port the queue component tests (`permit-queue-tabs.test.tsx` is the template — tab counts, switching, empty state, label display, stage display) against `Queue.tsx` with fixture `QueueItem`s (groups precomputed).
+- [ ] **Step 11.1:** `Queue.tsx` — port `PermitQueue.tsx` (post-#1478: `flex-wrap` tab strip, tight paddings, `min-w-0`); delete the local `groupForActionKind` — rows carry `group` from the server. Accent classes come from `config.accent` via a small map (blue/green/yellow variants for active tab, selected row). Tabs = `GROUP_ORDER` with count badges; search matches name/address/lead/status **label**/value/dealStage (as today). **The old `actionLabel` slot in the row becomes the compact `StatusDropdown`** (spec §5: the row's primary affordance) — `QueueItem` has no `actionLabel`; the dropdown is the action.
+- [ ] **Step 11.2:** `ProjectDetail.tsx` — port the #1482 two-column `CollapsibleSection` layout; header gets `StatusDropdown` (replacing the status pill), links: HubSpot, portal (AHJ portal / Utility portal per `domainPanel`), application, **`detail.folderUrl` with `detail.folderLabel`**, design folder, project drive. Folder links are full Drive URLs rendered as plain `href`s — same as today's `ExternalLinkButton`s; `extractFolderId` is only for Drive-API use, not links. Domain section renders `AhjPanel` or `UtilityPanel` per `config.domainPanel`. **No ActionPanel, no forms** (spec §3).
+- [ ] **Step 11.3:** Port the queue component tests (`permit-queue-tabs.test.tsx` is the template — tab counts, switching, empty state, label display, stage display) against `Queue.tsx` with fixture `QueueItem`s (groups precomputed). Add: the row renders the compact dropdown; and a small detail-header test asserting `folderLabel`/`folderUrl` render per team (spec §10's "folder link selection").
 - [ ] **Step 11.4:** Run; typecheck; commit — `feat(pi-hub): queue + detail components`
 
 ### Task 12: Page + switcher
@@ -543,7 +556,7 @@ function parseTeam(v: string | null): Team | null { return v === "permit" || v =
 **Files:** Create `page.tsx`, `PiHubClient.tsx`
 
 - [ ] **Step 12.1:** `page.tsx` — model on `src/app/dashboards/permit-hub/page.tsx` (auth, role gate vs PI_HUB_ROLES, `isPiHubEnabled()` → `notFound()`, `export const dynamic = "force-dynamic"` — flag-read pages must be dynamic or they prerender 404).
-- [ ] **Step 12.2:** `PiHubClient.tsx` — port `PermitHubClient.tsx` shell (SessionHeader can be dropped or ported thin — it's presence/solo-mode chrome; port it). Team state: `useSearchParams()` `?team=` (default `permit`, validated), switcher writes it via `router.replace` so it's linkable. Switcher = three buttons **above** the queue's group tabs, accented per team, hiding teams the user's roles can't access (pass allowed teams from the server page: PERMIT-only → permit; INTERCONNECT → ic+pto; ADMIN/EXECUTIVE/TECH_OPS → all).
+- [ ] **Step 12.2:** `PiHubClient.tsx` — port `PermitHubClient.tsx` shell, including `SessionHeader` **rewired to `/api/pi-hub/today-count`** (Step 7.4b) — do not leave it pointed at the permit-only `/api/permit-hub/today-count`, which is flag/role-gated to the old hub and counts only permit actions. Team state: `useSearchParams()` `?team=` (default `permit`, validated), switcher writes it via `router.replace` so it's linkable. Switcher = three buttons **above** the queue's group tabs, accented per team, hiding teams the user's roles can't access (pass allowed teams from the server page: PERMIT-only → permit; INTERCONNECT → ic+pto; ADMIN/EXECUTIVE/TECH_OPS → all).
   Data: `useQuery(queryKeys.piHub.queue(team))` + `useSSE` cache invalidation (port the pattern; keep `keepPreviousData` semantics so switching teams doesn't flash empty — house UI standard).
 - [ ] **Step 12.3:** Typecheck; run full hub test suite (`jest src/__tests__/pi-hub-*`); commit — `feat(pi-hub): page, client shell, team switcher`
 
