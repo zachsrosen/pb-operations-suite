@@ -62,6 +62,22 @@ export const IC_DESIGN_OWNED_STATUSES: ReadonlySet<string> = new Set([
   "In Design For Revisions",
 ]);
 
+/**
+ * Terminal statuses the hub's "mark done" actions write.
+ *
+ * These are HubSpot internal VALUES, and both differ from the label the team
+ * sees — which is exactly how they were wrong before: the routes wrote the
+ * LABEL ("Permit Issued") and a value that never existed ("Approved").
+ * HubSpot rejects an invalid enum option, so both buttons failed.
+ *
+ *   permitting_status      value "Complete"             label "Permit Issued"
+ *   interconnection_status value "Application Approved"  label "Application Approved"
+ *
+ * Verified against the live property option lists on 2026-07-17.
+ */
+export const PERMIT_STATUS_ISSUED = "Complete";
+export const IC_STATUS_APPROVED = "Application Approved";
+
 /** Statuses where the ball is in our court — permitting */
 export const PERMIT_ACTION_STATUSES: Record<string, string> = {
   "Ready For Permitting": "Submit to AHJ",
