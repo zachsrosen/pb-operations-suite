@@ -12,11 +12,11 @@ import { STALE_THRESHOLD_DAYS } from "@/lib/pi-statuses";
 import {
   EXCLUDED_STAGES,
   INCLUDED_PIPELINES,
-  PI_LEADS,
 } from "@/lib/daily-focus/config";
 import { buildOwnerMap } from "@/lib/idr-meeting";
 import { buildStageDisplayMap } from "@/lib/daily-focus/format";
-import { TEAM_CONFIGS, groupForStatus, type TeamConfig } from "./config";
+import { TEAM_CONFIGS, groupForStatus } from "./config";
+import { resolveLeadName } from "./leads";
 import type { QueueItem, Team } from "./types";
 
 /**
@@ -25,47 +25,6 @@ import type { QueueItem, Team } from "./types";
  * keeps returning a cursor; a hit is logged rather than silently truncating.
  */
 const MAX_QUEUE_PAGES = 10;
-
-/**
- * Explicit lead-name deal property per team. IC and PTO share the IC lead
- * (both are interconnections_tech work), so they share the name property too.
- */
-const LEAD_NAME_PROPERTY: Record<Team, string> = {
-  permit: "permit_lead_name",
-  ic: "interconnection_lead_name",
-  pto: "interconnection_lead_name",
-};
-
-/**
- * HubSpot owner ID → lead name fallback, keyed by the team's role property.
- * PI_LEADS roles use the role-property names verbatim, so the config's
- * roleProperty doubles as the roster filter.
- */
-function leadByOwnerId(config: TeamConfig): Record<string, string> {
-  return Object.fromEntries(
-    PI_LEADS.filter((l) =>
-      (l.roles as readonly string[]).includes(config.roleProperty),
-    ).map((l) => [l.hubspotOwnerId, l.name]),
-  );
-}
-
-function resolveLeadName(
-  config: TeamConfig,
-  props: Record<string, string | null>,
-  ownerMap?: Map<string, string>,
-): string | null {
-  // 1. Explicit name field (rarely populated in prod).
-  const explicit = props[LEAD_NAME_PROPERTY[config.key]];
-  if (explicit) return explicit;
-  // 2. Role-property owner-id → owner map (full HubSpot owners API),
-  //    falling back to the static PI_LEADS roster.
-  const ownerId = props[config.roleProperty];
-  if (ownerId) {
-    const resolved = ownerMap?.get(ownerId) ?? leadByOwnerId(config)[ownerId];
-    if (resolved) return resolved;
-  }
-  return null;
-}
 
 /** Returns every non-terminal deal for the team — grouped tabs plus "other". */
 export async function fetchQueue(team: Team): Promise<QueueItem[]> {
@@ -125,7 +84,7 @@ export async function fetchQueue(team: Team): Promise<QueueItem[]> {
         "amount",
         "hubspot_owner_id",
         "project_manager",
-        LEAD_NAME_PROPERTY[team],
+        config.leadNameProperty,
         config.roleProperty,
         "calculated_system_size__kwdc_",
       ],

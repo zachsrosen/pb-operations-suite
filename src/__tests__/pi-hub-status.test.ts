@@ -10,6 +10,20 @@ jest.mock("@/lib/hubspot", () => ({
     crm: { deals: { basicApi: { update: jest.fn() } } },
   },
 }));
+// Faithful pass-through of the real contract: { ok: true, data } on success,
+// { ok: false, error: "label: msg" } on throw — no retries/sleeps in tests.
+jest.mock("@/lib/bulk-sync-confirmation", () => ({
+  withHubSpotRetry: jest.fn(async (fn: () => Promise<unknown>, label: string) => {
+    try {
+      return { ok: true, data: await fn() };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `${label}: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }),
+}));
 jest.mock("@/lib/hubspot-enum-labels", () => ({
   getActiveEnumOptions: jest.fn(),
 }));
@@ -59,6 +73,17 @@ describe("setStatus", () => {
     expect(mockNote).not.toHaveBeenCalled();
   });
 
+  it("empty options list → load-failure message, no PATCH", async () => {
+    mockOptions.mockResolvedValue([]);
+    await expect(
+      setStatus({ ...CALLER, newValue: "Submitted to AHJ" }),
+    ).rejects.toThrow(
+      "could not load permitting_status options from HubSpot — try again",
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(mockNote).not.toHaveBeenCalled();
+  });
+
   it("PATCH succeeds → ok with no warnings; note + activity attempted", async () => {
     const result = await setStatus({ ...CALLER, newValue: "Submitted to AHJ" });
     expect(result).toEqual({ ok: true, warnings: [] });
@@ -67,6 +92,12 @@ describe("setStatus", () => {
     });
     expect(mockNote).toHaveBeenCalledTimes(1);
     expect(mockLog).toHaveBeenCalledTimes(1);
+    // The today-count route filters on exactly this type — pin it.
+    expect(mockLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ type: "HUBSPOT_DEAL_UPDATED" }),
+      }),
+    );
   });
 
   it("note failure warns but stays ok and still attempts the activity log", async () => {

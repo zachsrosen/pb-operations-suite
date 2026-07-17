@@ -24,9 +24,14 @@ import {
   getSharedInboxAddress,
   type SharedInboxThread,
 } from "@/lib/gmail-shared-inbox";
-import { PI_LEADS } from "@/lib/daily-focus/config";
 import { TEAM_CONFIGS, type TeamConfig } from "./config";
-import type { Team } from "./types";
+import { resolveLeadName } from "./leads";
+import type { ProjectDetail, Team } from "./types";
+
+// Convenience re-export — the canonical definition lives in types.ts (an
+// import-free-at-runtime file) so client code can import the shape without
+// pulling this server module into the bundle.
+export type { ProjectDetail } from "./types";
 
 // Per-trade permit numbers — the AHJ cites these in correspondence.
 const PERMIT_NUMBER_PROPERTIES = [
@@ -45,13 +50,6 @@ const IDENTIFIER_PROPERTIES: Record<Team, readonly string[]> = {
   pto: ["utility_application__"],
 };
 
-/** Explicit lead-name deal property per team (IC and PTO share the IC lead). */
-const LEAD_NAME_PROPERTY: Record<Team, string> = {
-  permit: "permit_lead_name",
-  ic: "interconnection_lead_name",
-  pto: "interconnection_lead_name",
-};
-
 /** propertiesWithHistory set per team — status plus its milestone-date props. */
 const HISTORY_PROPERTIES: Record<Team, string> = {
   permit: "permitting_status,permit_submit,permit_issued",
@@ -61,84 +59,16 @@ const HISTORY_PROPERTIES: Record<Team, string> = {
 
 /**
  * Engagement keyword filters per team — an engagement is team activity when
- * its subject or body contains any of these (case-insensitive substring, so
- * "interconnect" also matches "interconnection").
+ * its subject or body matches any of these. Strings are case-insensitive
+ * substrings (so "interconnect" also matches "interconnection"); regexes are
+ * used where a substring over-matches — "pto" appears inside unrelated words
+ * ("laptop", "acceptor"), so it only counts as a whole word.
  */
-const ACTIVITY_KEYWORDS: Record<Team, readonly string[]> = {
+const ACTIVITY_KEYWORDS: Record<Team, readonly (string | RegExp)[]> = {
   permit: ["permit", "ahj"],
   ic: ["interconnect", "utility", "xcel"],
-  pto: ["interconnect", "utility", "xcel", "pto"],
+  pto: ["interconnect", "utility", "xcel", /\bpto\b/i],
 };
-
-export interface ProjectDetail {
-  deal: {
-    id: string;
-    name: string;
-    address: string | null;
-    amount: number | null;
-    pbLocation: string | null;
-    lead: string | null;
-    pm: string | null;
-    /** HubSpot internal VALUE — used for routing, not for display. */
-    status: string;
-    /** Human label for `status`. Display this. */
-    statusLabel: string;
-    systemSizeKw: number | null;
-    dealStage: string | null;
-    hubspotUrl: string;
-    designFolderUrl: string | null;
-    driveFolderUrl: string | null;
-    /** The team's own document folder (config.folderProperty). */
-    folderUrl: string | null;
-    folderLabel: string;
-    /** First domain record's portal link (AHJ or utility, per team). */
-    portalUrl: string | null;
-    /** First domain record's application link. */
-    applicationUrl: string | null;
-  };
-  domain:
-    | { kind: "ahj"; records: AHJRecord[] }
-    | { kind: "utility"; records: UtilityRecord[] };
-  correspondenceSearchUrl: string | null;
-  /** Recent threads from the region's shared inbox — empty when not
-   *  configured, service account misconfigured, or no matching threads. */
-  correspondenceThreads: SharedInboxThread[];
-  /** Which shared inbox the threads came from — shown so the team knows
-   *  which mailbox was searched. Null when no thread fetch was attempted. */
-  correspondenceInbox: string | null;
-  statusHistory: Array<{
-    property: string;
-    value: string | null;
-    timestamp: string;
-  }>;
-  activity: Array<{
-    id: string;
-    type: "email" | "call" | "note" | "meeting" | "task";
-    subject: string | null;
-    body: string | null;
-    timestamp: string;
-  }>;
-}
-
-function resolveLeadName(
-  config: TeamConfig,
-  props: Record<string, string | null>,
-  ownerMap?: Map<string, string>,
-): string | null {
-  const explicit = props[LEAD_NAME_PROPERTY[config.key]];
-  if (explicit) return explicit;
-  const ownerId = props[config.roleProperty];
-  if (ownerId) {
-    const roster = Object.fromEntries(
-      PI_LEADS.filter((l) =>
-        (l.roles as readonly string[]).includes(config.roleProperty),
-      ).map((l) => [l.hubspotOwnerId, l.name]),
-    );
-    const resolved = ownerMap?.get(ownerId) ?? roster[ownerId];
-    if (resolved) return resolved;
-  }
-  return null;
-}
 
 export async function fetchDetail(
   team: Team,
@@ -159,7 +89,7 @@ export async function fetchDetail(
       // Domain-panel name fallback when no formal association exists.
       ...(config.domainPanel === "ahj" ? ["ahj"] : ["utility"]),
       "amount",
-      LEAD_NAME_PROPERTY[team],
+      config.leadNameProperty,
       config.roleProperty,
       "project_manager",
       config.statusProperty,
@@ -171,6 +101,7 @@ export async function fetchDetail(
       "g_drive",
       // Legacy / alternative property names — kept as fallbacks since
       // the HubSpot portal may use different ones on older deals.
+      "planset_drive_folder_url",
       "design_folder_url",
       "all_document_folder_url",
     ]);
@@ -250,7 +181,10 @@ export async function fetchDetail(
   }
 
   const designFolderUrl =
-    props.design_documents ?? props.design_folder_url ?? null;
+    props.design_documents ??
+    props.design_folder_url ??
+    props.planset_drive_folder_url ??
+    null;
   const driveFolderUrl = props.g_drive ?? props.all_document_folder_url ?? null;
 
   const [statusHistory, activity] = await Promise.all([
@@ -429,7 +363,11 @@ async function fetchActivity(
       .filter((e) => {
         const subject = String(e.subject ?? "").toLowerCase();
         const body = String(e.body ?? "").toLowerCase();
-        return keywords.some((k) => subject.includes(k) || body.includes(k));
+        return keywords.some((k) =>
+          typeof k === "string"
+            ? subject.includes(k) || body.includes(k)
+            : k.test(subject) || k.test(body),
+        );
       })
       .slice(0, 50)
       .map((e) => ({

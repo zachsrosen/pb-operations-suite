@@ -6,6 +6,8 @@ export interface TeamConfig {
   accent: "blue" | "green" | "yellow";
   statusProperty: string;
   roleProperty: string;
+  /** Explicit lead-name deal property (IC and PTO share the IC lead). */
+  leadNameProperty: string;
   leadLabel: string;
   terminalStatuses: readonly string[];
   groups: Partial<Record<GroupKey, readonly string[]>>;
@@ -18,7 +20,8 @@ export interface TeamConfig {
 export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
   permit: {
     key: "permit", label: "Permit", accent: "blue",
-    statusProperty: "permitting_status", roleProperty: "permit_tech", leadLabel: "Permit Lead",
+    statusProperty: "permitting_status", roleProperty: "permit_tech",
+    leadNameProperty: "permit_lead_name", leadLabel: "Permit Lead",
     terminalStatuses: ["Complete", "Not Needed"], // "Complete" is labelled "Permit Issued"
     groups: {
       ready: ["Ready For Permitting", "Customer Signature Acquired", "Pending SolarApp", "Submit SolarApp to AHJ"],
@@ -35,7 +38,8 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
   },
   ic: {
     key: "ic", label: "Interconnection", accent: "green",
-    statusProperty: "interconnection_status", roleProperty: "interconnections_tech", leadLabel: "IC Lead",
+    statusProperty: "interconnection_status", roleProperty: "interconnections_tech",
+    leadNameProperty: "interconnection_lead_name", leadLabel: "IC Lead",
     terminalStatuses: [
       "Application Approved", "Application Approved - Pending Signatures",
       "Conditional Application Approval", "Conditional Application Approval - Pending Signatures",
@@ -58,7 +62,8 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
   },
   pto: {
     key: "pto", label: "PTO", accent: "yellow",
-    statusProperty: "pto_status", roleProperty: "interconnections_tech", leadLabel: "IC Lead",
+    statusProperty: "pto_status", roleProperty: "interconnections_tech",
+    leadNameProperty: "interconnection_lead_name", leadLabel: "IC Lead",
     terminalStatuses: ["PTO", "Not Needed"], // "PTO" is labelled "PTO Granted"
     groups: {
       ready: ["Inspection Passed - Ready for Utility", "Xcel Photos Ready to Submit"],

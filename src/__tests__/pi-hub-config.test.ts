@@ -3,7 +3,12 @@ import { LIVE_STATUS_OPTIONS } from "./fixtures/pi-status-options";
 
 describe("TEAM_CONFIGS validity", () => {
   for (const config of Object.values(TEAM_CONFIGS)) {
-    const live = LIVE_STATUS_OPTIONS[config.statusProperty].map((o) => o.value);
+    // ACTIVE options only — the write path (getActiveEnumOptions) filters
+    // archived/hidden, so a config status pinned to an archived value would
+    // pass a raw containment check but fail at write time.
+    const live = LIVE_STATUS_OPTIONS[config.statusProperty]
+      .filter((o) => !o.archived && !o.hidden)
+      .map((o) => o.value);
     it(`${config.key}: every configured status exists in HubSpot`, () => {
       const configured = [...config.terminalStatuses, ...Object.values(config.groups).flat()];
       for (const s of configured) expect(live).toContain(s);
