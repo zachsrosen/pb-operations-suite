@@ -25,7 +25,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const parsed = Schema.safeParse(await req.json());
+  // Tolerate a malformed / missing body: parse defensively so bad JSON is a
+  // 400 (validation failure) rather than a 500 (unhandled parse throw).
+  const body = await req.json().catch(() => null);
+  const parsed = Schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }

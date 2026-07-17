@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
-import { isPiHubAllowedRole, isPiHubEnabled } from "@/lib/pi-hub/access";
+import { isPiHubAllowedRole, isPiHubEnabled, parseTeam } from "@/lib/pi-hub/access";
 
 export async function GET() {
   if (!isPiHubEnabled()) {
@@ -40,12 +40,14 @@ export async function GET() {
 
   const piEntries = entries.filter((e) => {
     const meta = e.metadata;
-    return (
-      meta !== null &&
-      typeof meta === "object" &&
-      !Array.isArray(meta) &&
-      (meta as { team?: unknown }).team != null
-    );
+    if (meta === null || typeof meta !== "object" || Array.isArray(meta)) {
+      return false;
+    }
+    // Only count rows whose metadata.team is a real P&I team — a stray
+    // HUBSPOT_DEAL_UPDATED row from another writer with an unrelated `team`
+    // value must not inflate the count.
+    const team = (meta as { team?: unknown }).team;
+    return typeof team === "string" && parseTeam(team) !== null;
   });
 
   return NextResponse.json({

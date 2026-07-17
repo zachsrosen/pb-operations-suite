@@ -14,6 +14,11 @@ export const PI_HUB_ROLES = [
   "TECH_OPS",
 ] as const;
 
+/**
+ * Server-only flag read: `PI_HUB_ENABLED` is not exposed to the client bundle,
+ * so this must only be called from server components / API routes. Client
+ * components read `NEXT_PUBLIC_PI_HUB_ENABLED` directly instead.
+ */
 export function isPiHubEnabled(): boolean {
   return process.env.PI_HUB_ENABLED === "true";
 }
