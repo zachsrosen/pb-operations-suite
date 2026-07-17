@@ -99,7 +99,7 @@ Today: status → action kind (`pi-statuses.ts`) → group (duplicated switch in
 - **rejections**: Inspection Rejected By Utility, Ops Related PTO Rejection, XCEL Photos Rejected
 - **resubmit**: Ready to Resubmit, Xcel Photos Ready to Resubmit
 - **waiting**: Inspection Submitted to Utility, Resubmitted to Utility, Xcel Photos Submitted, Xcel Photos Resubmitted
-- **other**: everything else non-terminal (incl. PTO Waiting on Interconnection Approval — blocked upstream, not actionable)
+- **other**: everything else non-terminal — incl. PTO Waiting on Interconnection Approval (blocked upstream, not actionable), and **by decision** (Zach, 2026-07-17) `Xcel Photos Approved` and `Conditional PTO - Pending Transformer Upgrade`: neither is IC-team work in flight, neither is terminal.
 - **terminal** (excluded): `PTO` (labelled "PTO Granted"), `Not Needed`
 
 ## 5. The status dropdown
@@ -152,6 +152,7 @@ Timing note: there are no habituated users to migrate (see grounding) — this i
 ## 11. Open questions
 
 - PTO stale thresholds — utility PTO waits are long; 14d may flag half the queue. Accept for v1?
-- Should `Xcel Photos Approved` (8 deals) be "waiting" (it precedes PTO grant) instead of "other"?
-- Is `Conditional PTO - Pending Transformer Upgrade` (3 deals) semi-terminal? It lands in "other" via the catch-all in v1.
+- ~~Xcel Photos Approved placement~~ — **decided: "other"** (Zach, 2026-07-17).
+- ~~Conditional PTO - Pending Transformer Upgrade placement~~ — **decided: "other", not terminal** (Zach, 2026-07-17).
 - Does `pto_status` have property history enabled (needed for days-in-status)? Verify at build start.
+- Do any HubSpot workflows write a status on task completion? If so, the post-PATCH task-complete step could stomp the user's chosen value. Verify at build start.
