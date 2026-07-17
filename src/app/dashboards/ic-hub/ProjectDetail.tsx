@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { UtilityTab } from "./tabs/UtilityTab";
 import { PlansetTab } from "./tabs/PlansetTab";
@@ -11,23 +11,6 @@ import { StatusHistoryTab } from "./tabs/StatusHistoryTab";
 import { ActivityTab } from "./tabs/ActivityTab";
 import { ActionPanel } from "./actions/ActionPanel";
 import type { IcProjectDetail } from "@/lib/ic-hub";
-
-type TabKey =
-  | "overview"
-  | "utility"
-  | "planset"
-  | "correspondence"
-  | "history"
-  | "activity";
-
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: "overview", label: "Overview" },
-  { key: "utility", label: "Utility" },
-  { key: "planset", label: "Planset" },
-  { key: "correspondence", label: "Correspondence" },
-  { key: "history", label: "Status History" },
-  { key: "activity", label: "Activity" },
-];
 
 function ExternalLinkButton({
   href,
@@ -62,8 +45,6 @@ function ExternalLinkButton({
 }
 
 export function ProjectDetail({ dealId }: { dealId: string }) {
-  const [tab, setTab] = useState<TabKey>("overview");
-
   const detailQuery = useQuery<IcProjectDetail>({
     queryKey: queryKeys.icHub.project(dealId),
     queryFn: async () => {
@@ -137,46 +118,59 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-t-border px-4">
-        {TABS.map((t) => (
-          <button
-            type="button"
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`border-b-2 px-3 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? "border-green-500 text-foreground"
-                : "border-transparent text-muted hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
+      {/* One organized view rather than tabs — every panel visible at once, in
+          the shape the IDR design-meeting detail uses. Correspondence leads the
+          right column: most of this queue is waiting on the utility, so "what
+          did we last hear, and when" is the question the page exists to answer.
+          Collapses to one column when the pane is narrow. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="p-6">
-          {tab === "overview" && <OverviewTab detail={detail} />}
-          {tab === "utility" && <UtilityTab utility={detail.utility} />}
-          {tab === "planset" && <PlansetTab url={detail.deal.designFolderUrl} />}
-          {tab === "correspondence" && (
-            <CorrespondenceTab
-              searchUrl={detail.correspondenceSearchUrl}
-              threads={detail.correspondenceThreads}
-              inbox={detail.correspondenceInbox}
-            />
-          )}
-          {tab === "history" && (
-            <StatusHistoryTab history={detail.statusHistory} />
-          )}
-          {tab === "activity" && <ActivityTab activity={detail.activity} />}
+        <div className="grid grid-cols-1 gap-3 p-4 xl:grid-cols-2">
+          <div className="min-w-0 space-y-3">
+            <CollapsibleSection title="Overview">
+              <OverviewTab detail={detail} />
+            </CollapsibleSection>
+            <CollapsibleSection title="Utility">
+              <UtilityTab utility={detail.utility} />
+            </CollapsibleSection>
+            <CollapsibleSection title="Planset">
+              <PlansetTab url={detail.deal.designFolderUrl} />
+            </CollapsibleSection>
+          </div>
+          <div className="min-w-0 space-y-3">
+            <CollapsibleSection
+              title="Correspondence"
+              badge={
+                detail.correspondenceThreads.length > 0 ? (
+                  <span className="bg-surface-2 text-muted rounded-full px-1.5 text-[10px] font-semibold">
+                    {detail.correspondenceThreads.length}
+                  </span>
+                ) : null
+              }
+            >
+              <CorrespondenceTab
+                searchUrl={detail.correspondenceSearchUrl}
+                threads={detail.correspondenceThreads}
+                inbox={detail.correspondenceInbox}
+              />
+            </CollapsibleSection>
+            <CollapsibleSection title="Status History" defaultOpen={false}>
+              <StatusHistoryTab history={detail.statusHistory} />
+            </CollapsibleSection>
+            <CollapsibleSection title="Activity" defaultOpen={false}>
+              <ActivityTab activity={detail.activity} />
+            </CollapsibleSection>
+          </div>
         </div>
 
-        {detail.deal.actionKind && (
-          <div className="bg-surface-2 border-t border-t-border p-6">
-            <ActionPanel dealId={dealId} actionKind={detail.deal.actionKind} />
-          </div>
-        )}
+        {/* FOLLOW_UP_UTILITY is excluded — see the permit hub's ProjectDetail:
+            the form only asks the lead to retype what Correspondence now reads
+            from the shared inbox, and it does not move the status. */}
+        {detail.deal.actionKind &&
+          detail.deal.actionKind !== "FOLLOW_UP_UTILITY" && (
+            <div className="bg-surface-2 border-t border-t-border p-6">
+              <ActionPanel dealId={dealId} actionKind={detail.deal.actionKind} />
+            </div>
+          )}
       </div>
     </div>
   );
