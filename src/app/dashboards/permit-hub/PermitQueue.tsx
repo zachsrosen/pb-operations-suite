@@ -211,7 +211,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTab(key)}
-              className={`flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-2 py-2 text-xs font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-1.5 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-blue-500 text-blue-600 dark:text-blue-400"
                   : "text-muted hover:text-foreground border-transparent"
