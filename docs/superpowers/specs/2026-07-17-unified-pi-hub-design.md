@@ -24,7 +24,7 @@ Three sequential stages of the same pipeline — permit → interconnection → 
 - **One engine, three configs.** A team is data — status property, role property, statuses→tab mapping, inbox routing, folder links, domain panel — not a copy of 600 lines.
 - **Status dropdown as the primary interaction.** Editing `permitting_status` / `interconnection_status` / `pto_status` from the hub, from the option list with **labels** shown and **values** written.
 - PTO exists for the first time, for free, as the third config.
-- Per-team folder links: Permit → `permit_documents`, IC/PTO → `interconnection_documents`.
+- Per-team folder links: Permit → `permit_documents`, IC → `interconnection_documents`, PTO → `pto___closeout_documents` ("PTO & Closeout Documents", populated on 8,742 deals).
 
 ## 3. Non-goals (YAGNI)
 
@@ -70,8 +70,8 @@ interface TeamConfig {
   terminalStatuses: string[];         // excluded from the queue (values, not labels)
   groupForStatus: (status: string) => "ready" | "rejections" | "resubmit" | "waiting" | "other";
   inboxTeam: "permit" | "ic";         // getSharedInboxAddress routing; pto → "ic"
-  folderProperty: string;             // permit_documents | interconnection_documents | interconnection_documents
-  folderLabel: string;                // "Permit Folder" | "Interconnection Folder"
+  folderProperty: string;             // permit_documents | interconnection_documents | pto___closeout_documents
+  folderLabel: string;                // "Permit Folder" | "Interconnection Folder" | "PTO Folder"
   domainPanel: "ahj" | "utility";     // which custom-object section the detail shows
   portalLinkSource: "ahj" | "utility";
   /** NEW status value → open-task subject substrings to complete on arrival.
@@ -86,7 +86,7 @@ interface TeamConfig {
 }
 ```
 
-Note `interconnection_documents` is referenced nowhere in code today (verified live: it exists and holds Drive folder URLs on 2,139 IC-status deals) — today's IC hub links `permit_documents`, so the per-team folder is a new fetch, not a rewire.
+Note neither `interconnection_documents` nor `pto___closeout_documents` is referenced anywhere in code today (verified live: they exist and hold Drive folder URLs on 2,139 and 8,742 deals respectively) — today's IC hub links `permit_documents`, so the per-team folders are new fetches, not rewires.
 
 Everything else — pagination, `statusEnteredAt`/stale, label resolution, correspondence matching (`buildGmailThreadQuery` with address + PROJ# + app#/permit#s), owner/stage resolution — is engine code written once. All of it already exists in the two hubs; this is consolidation, not invention. The `PermitHubDraft` table is **not** carried over: it stored action-form drafts, and with no forms rendered there is nothing to draft.
 
