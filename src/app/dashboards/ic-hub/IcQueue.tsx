@@ -177,13 +177,14 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
           {filtered.length} of {items.length} · stalest first
         </span>
       </div>
-      {/* Scrolls within itself. Without overflow-x-auto the strip is wider than
-          the fixed 420px column, and focusing a tab makes the browser scroll the
-          whole panel sideways — clipping the rows. */}
+      {/* Wraps rather than scrolls: tabs plus counts can be wider than the
+          fixed 420px column, and a scrolling strip hides whole tabs off the
+          edge. Wrapping also means no horizontal overflow, so focusing a tab
+          can't make the browser drag the panel sideways and clip the rows. */}
       <div
         role="tablist"
         aria-label="Queue groups"
-        className="flex items-center gap-1 overflow-x-auto border-b border-t-border px-2"
+        className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-t-border px-1.5"
       >
         {GROUP_ORDER.map((key) => {
           const active = key === activeTab;
@@ -194,7 +195,7 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTab(key)}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-xs font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-2 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-green-500 text-green-600 dark:text-green-400"
                   : "text-muted hover:text-foreground border-transparent"
@@ -202,7 +203,7 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
             >
               <span>{GROUP_LABELS[key]}</span>
               <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                className={`rounded-full px-1 py-0.5 text-[10px] font-semibold ${
                   active
                     ? "bg-green-500/10 text-green-600 dark:text-green-400"
                     : "bg-surface-2 text-muted"
