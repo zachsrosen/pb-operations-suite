@@ -185,6 +185,9 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
             onChange={setSelectedLeads}
             placeholder="All leads"
             accentColor="blue"
+            // Right-anchored: this trigger sits far enough into the 420px
+            // queue column that a left-anchored 288px dropdown overflows it.
+            align="right"
           />
         </div>
       </div>

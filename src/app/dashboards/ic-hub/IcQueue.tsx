@@ -169,6 +169,9 @@ export function IcQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
             onChange={setSelectedLeads}
             placeholder="All leads"
             accentColor="green"
+            // Right-anchored: this trigger sits far enough into the 420px
+            // queue column that a left-anchored 288px dropdown overflows it.
+            align="right"
           />
         </div>
       </div>
