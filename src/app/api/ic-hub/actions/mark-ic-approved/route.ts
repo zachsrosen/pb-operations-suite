@@ -9,6 +9,7 @@ import {
   isIcHubEnabled,
   resolveUserIdByEmail,
 } from "@/lib/ic-hub";
+import { IC_STATUS_APPROVED } from "@/lib/pi-statuses";
 
 const Schema = z.object({
   dealId: z.string().min(1),
@@ -49,7 +50,11 @@ export async function POST(req: NextRequest) {
     .join("<br>");
 
   const fallbackProperties: Record<string, string> = {
-    interconnection_status: "Approved",
+    // "Approved" is not a valid interconnection_status option at all; the plain
+    // approval is "Application Approved". The conditional / pending-signature
+    // flavours are separate statuses this action does not model.
+    // See IC_STATUS_APPROVED in pi-statuses.ts.
+    interconnection_status: IC_STATUS_APPROVED,
   };
 
   const result = await completeIcTask({

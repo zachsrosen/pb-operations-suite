@@ -9,6 +9,7 @@ import {
   isPermitHubEnabled,
   resolveUserIdByEmail,
 } from "@/lib/permit-hub";
+import { PERMIT_STATUS_ISSUED } from "@/lib/pi-statuses";
 
 const Schema = z.object({
   dealId: z.string().min(1),
@@ -48,7 +49,9 @@ export async function POST(req: NextRequest) {
 
   const fallbackProperties: Record<string, string> = {
     permit_issued: p.issueDate,
-    permitting_status: "Permit Issued",
+    // Internal VALUE — "Permit Issued" is only its label, and HubSpot rejects
+    // an invalid enum option. See PERMIT_STATUS_ISSUED in pi-statuses.ts.
+    permitting_status: PERMIT_STATUS_ISSUED,
   };
   if (p.permitNumber) {
     fallbackProperties.permit_number = p.permitNumber;
