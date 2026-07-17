@@ -210,6 +210,30 @@ function parseFrom(raw: string | null): { name: string | null; email: string | n
 }
 
 /**
+ * Extract searchable identifier tokens from a free-text identifier field.
+ *
+ * The HubSpot fields holding application numbers are hand-entered and often
+ * polluted — e.g. utility_application__ = "06405260 (PSPS) J STEPHEN POLLOCK"
+ * (app number + program code + the TPO signer's name). Quoting that whole
+ * string matches nothing, while the bare "06405260" matches the utility's
+ * actual emails (verified live on PROJ-9810: 0 hits for the full phrase,
+ * 7 for the number alone).
+ *
+ * A clean single-token value passes through unchanged (covers alphanumeric
+ * permit numbers like "B2404681" / "SBP-179859"). A polluted value yields
+ * each digit-run of 5+ chars (app numbers are 6-8 digits; 5+ avoids matching
+ * street numbers and dates).
+ */
+export function extractIdentifierTokens(
+  raw: string | null | undefined,
+): string[] {
+  const value = (raw ?? "").trim();
+  if (!value) return [];
+  if (!/\s/.test(value)) return [value];
+  return Array.from(new Set(value.match(/\d{5,}/g) ?? []));
+}
+
+/**
  * Escape a value for use inside a Gmail double-quoted phrase. Backslashes
  * must be escaped BEFORE double-quotes — otherwise a backslash in the input
  * neutralizes the quote escaping (incomplete-sanitization).
