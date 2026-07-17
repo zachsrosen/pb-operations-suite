@@ -1,5 +1,31 @@
 import type { AHJRecord } from "@/lib/hubspot-custom-objects";
 
+/**
+ * The AHJ turnaround properties are HubSpot calculation_rollup numbers held in
+ * MILLISECONDS, so rendering them raw showed things like "489135483.870968"
+ * where a number of days was meant. The object's own `permit_turnaround_average`
+ * text field corroborates the conversion — Arvada 2002560000ms = 23.2d vs "24",
+ * Aurora 705600000ms = 8.2d vs "8", Atascadero 5085257142ms = 58.9d vs "59".
+ *
+ * Returns null for blank/zero so the field renders "—" rather than "0.0 days"
+ * (a real case: AHJs with no permits in the window roll up to 0).
+ */
+function formatMsAsDays(value: string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const days = ms / 86_400_000;
+  return `${days.toFixed(1)} days`;
+}
+
+/** Rollup averages carry full float precision (e.g. 0.329032). */
+function formatAverage(value: string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n.toFixed(2);
+}
+
 export function AhjTab({ ahj }: { ahj: AHJRecord[] }) {
   if (!ahj.length) {
     return (
@@ -50,7 +76,7 @@ export function AhjTab({ ahj }: { ahj: AHJRecord[] }) {
               <Field label="Submission method" value={p.submission_method} />
               <Field
                 label="Avg turnaround (365d)"
-                value={p.average_permit_turnaround_time__365_days_}
+                value={formatMsAsDays(p.average_permit_turnaround_time__365_days_)}
               />
               <Field label="Primary contact" value={p.primary_contact_name} />
               <Field label="Contact email" value={p.email} />
@@ -62,7 +88,10 @@ export function AhjTab({ ahj }: { ahj: AHJRecord[] }) {
               />
               <Field label="Permits issued" value={p.permit_issued_count} />
               <Field label="Rejections" value={p.permit_rejection_count} />
-              <Field label="Avg revisions" value={p.average_permit_revision_count} />
+              <Field
+                label="Avg revisions"
+                value={formatAverage(p.average_permit_revision_count)}
+              />
             </dl>
             {p.permit_issues && (
               <div className="mt-4 rounded-md bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
