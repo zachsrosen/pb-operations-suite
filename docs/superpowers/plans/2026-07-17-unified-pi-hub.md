@@ -285,6 +285,17 @@ describe("TEAM_CONFIGS validity", () => {
       ];
       for (const s of configured) expect(live).toContain(s);
     });
+    it(`${config.key}: task-subject keys are dropdown-reachable (active, not hidden)`, () => {
+      // Group lists may pin retired values (deals can be STUCK on them — read
+      // path), but taskSubjectsForStatus keys are dropdown LANDING statuses:
+      // an archived/hidden one could never be selected, making its entry dead.
+      const active = LIVE_STATUS_OPTIONS[config.statusProperty]
+        .filter((o) => !o.archived && !o.hidden)
+        .map((o) => o.value);
+      for (const s of Object.keys(config.taskSubjectsForStatus ?? {})) {
+        expect(active).toContain(s);
+      }
+    });
     it(`${config.key}: no status is in two groups`, () => {
       const all = Object.values(config.groups).flat();
       expect(new Set(all).size).toBe(all.length);
@@ -512,7 +523,7 @@ function parseTeam(v: string | null): Team | null { return v === "permit" || v =
 - [ ] **Step 7.3:** `options/route.ts` — GET `?team=` → `{ options: await getActiveEnumOptions(config.statusProperty) }`.
 - [ ] **Step 7.4:** `status/route.ts` — POST zod `{ team, dealId, status }`; `resolveUserIdByEmail` (import from permit-hub — it's exported) for the userId; on `setStatus` throw → 502 with message; else `{ ok, warnings }`.
 - [ ] **Step 7.4b:** `today-count/route.ts` — model on `/api/permit-hub/today-count` but count today's `ActivityLog` rows where `type = HUBSPOT_DEAL_UPDATED` and `metadata.team` is set (i.e. pi-hub setStatus writes) for the current user. Feeds SessionHeader's "Touched today" across all three teams.
-- [ ] **Step 7.5:** Add `piHub` keys to `src/lib/query-keys.ts` (mirror `permitHub`'s factory: `queue(team)`, `project(team, dealId)`, `options(team)`).
+- [ ] **Step 7.5:** Add `piHub` keys to `src/lib/query-keys.ts` (mirror `permitHub`'s factory: `queue(team)`, `project(team, dealId)`, `options(team)`, `todayCount()` — the dropdown mutation must invalidate `todayCount()` too or "Touched today" never increments after a status set).
 - [ ] **Step 7.6:** Typecheck; commit — `feat(pi-hub): api routes`
 
 ### Task 8: Access + flags
@@ -539,7 +550,7 @@ function parseTeam(v: string | null): Team | null { return v === "permit" || v =
 **Files:** Create `src/app/dashboards/pi-hub/StatusDropdown.tsx`; test `src/__tests__/pi-hub-dropdown.test.tsx`
 
 - [ ] **Step 10.1: Failing tests:** renders current status **label**; options come from `/api/pi-hub/options` (mock fetch); selecting a non-terminal option POSTs `{team, dealId, status: VALUE}` (assert the VALUE, not the label, is sent); selecting a **terminal** option shows a confirm step first (use `ConfirmDialog` from `src/components/ui/ConfirmDialog.tsx`); a warnings response surfaces a toast/inline warning but not an error.
-- [ ] **Step 10.2:** Implement — a `<select>`-styled listbox (follow `MultiSelectFilter`'s visual idiom, single-select) + React Query `useMutation` with optimistic update of the detail cache and invalidation of `queryKeys.piHub.queue(team)` on success. Terminal detection via a `terminalStatuses` prop passed from config through the detail/queue responses. Two render modes: default (detail header) and **`compact`** (queue row: small "Set status ▾" trigger, dropdown `align="right"`-style anchored so it cannot overflow the 420px queue column — the exact failure mode fixed in #1479). Same options fetch (`queryKeys.piHub.options(team)`, shared cache) and same mutation for both.
+- [ ] **Step 10.2:** Implement — a `<select>`-styled listbox (follow `MultiSelectFilter`'s visual idiom, single-select) + React Query `useMutation` with optimistic update of the detail cache and invalidation of `queryKeys.piHub.queue(team)` on success. Terminal detection via a `terminalStatuses` prop passed from config through the detail/queue responses. Two render modes: default (detail header) and **`compact`** (queue row: small "Set status ▾" trigger, dropdown `align="right"`-style anchored so it cannot overflow the 420px queue column — the exact failure mode fixed in #1479). Same options fetch (`queryKeys.piHub.options(team)`, shared cache) and same mutation for both; the mutation invalidates `queue(team)`, the detail key, **and `todayCount()`**.
 - [ ] **Step 10.3:** Run tests — PASS; commit — `feat(pi-hub): status dropdown`
 
 ### Task 11: Queue + ProjectDetail
