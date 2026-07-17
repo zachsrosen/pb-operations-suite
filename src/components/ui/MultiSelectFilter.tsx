@@ -25,6 +25,17 @@ interface MultiSelectFilterProps {
   onChange: (selected: string[]) => void;
   placeholder?: string;
   accentColor?: string;
+  /**
+   * Which edge the dropdown is anchored to. Defaults to "left" (the dropdown
+   * opens rightward from the trigger).
+   *
+   * Use "right" when the filter sits near the right edge of a narrow container:
+   * the dropdown is a fixed 288px, so a left-anchored one can extend past the
+   * container. If that container has `overflow: hidden`, the dropdown's
+   * autofocused search input makes the browser scroll it to bring the input
+   * into view — which drags the whole panel sideways and clips its contents.
+   */
+  align?: "left" | "right";
 }
 
 // ---- Component ----
@@ -37,6 +48,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
   onChange,
   placeholder = "All",
   accentColor = "indigo",
+  align = "left",
 }: MultiSelectFilterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -153,7 +165,11 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-72 max-h-96 overflow-auto bg-surface border border-t-border rounded-lg shadow-card-lg">
+        <div
+          className={`absolute z-50 mt-1 w-72 max-h-96 overflow-auto bg-surface border border-t-border rounded-lg shadow-card-lg ${
+            align === "right" ? "right-0" : "left-0"
+          }`}
+        >
           {/* Search */}
           <div className="p-2 border-b border-t-border sticky top-0 bg-surface">
             <input
