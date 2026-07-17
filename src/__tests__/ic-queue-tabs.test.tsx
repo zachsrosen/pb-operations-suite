@@ -35,7 +35,7 @@ describe("IcQueue tabs", () => {
   it("renders the four groups including Other", () => {
     renderQueue([item({ dealId: "r1" })]);
     expect(screen.getAllByRole("tab")).toHaveLength(4);
-    expect(tab(/Ready to Submit/)).toHaveTextContent("1");
+    expect(tab(/^Ready/)).toHaveTextContent("1");
     expect(tab(/^Other/)).toHaveTextContent("0");
   });
 
@@ -67,7 +67,7 @@ describe("IcQueue tabs", () => {
     ]);
 
     expect(tab(/^Other/)).toHaveTextContent("2");
-    expect(tab(/Resubmit \/ Revision/)).toHaveTextContent("1");
+    expect(tab(/^Resubmit/)).toHaveTextContent("1");
 
     await user.click(tab(/^Other/));
     const other = screen.getByRole("tabpanel");
@@ -88,7 +88,7 @@ describe("IcQueue tabs", () => {
       item({ dealId: "f1", status: "Submitted To Utility", actionKind: "FOLLOW_UP_UTILITY" }),
     ]);
     expect(tab(/^Other/)).toHaveTextContent("1");
-    expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("1");
+    expect(tab(/^Waiting/)).toHaveTextContent("1");
 
     await user.click(tab(/^Other/));
     const panel = screen.getByRole("tabpanel");
@@ -114,15 +114,15 @@ describe("IcQueue tabs", () => {
         actionKind: "FOLLOW_UP_UTILITY",
       }),
     ]);
-    expect(tab(/Resubmit \/ Revision/)).toHaveTextContent("1");
-    expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("1");
+    expect(tab(/^Resubmit/)).toHaveTextContent("1");
+    expect(tab(/^Waiting/)).toHaveTextContent("1");
     // Neither should fall into Other any more.
     expect(tab(/^Other/)).toHaveTextContent("0");
 
-    await user.click(tab(/Resubmit \/ Revision/));
+    await user.click(tab(/^Resubmit/));
     expect(within(screen.getByRole("tabpanel")).getByText("Deal a1")).toBeInTheDocument();
 
-    await user.click(tab(/Waiting \/ Follow Up/));
+    await user.click(tab(/^Waiting/));
     expect(within(screen.getByRole("tabpanel")).getByText("Deal a2")).toBeInTheDocument();
   });
 

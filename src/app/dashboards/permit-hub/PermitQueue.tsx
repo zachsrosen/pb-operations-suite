@@ -33,11 +33,15 @@ interface Props {
 const GROUP_ORDER = ["ready", "rejections", "resubmit", "follow_up", "other"] as const;
 type GroupKey = (typeof GROUP_ORDER)[number];
 
+/**
+ * Kept short: the queue column is a fixed 420px, so five long labels blow the
+ * tab strip past the panel width. See the tablist's overflow-x-auto below.
+ */
 const GROUP_LABELS: Record<GroupKey, string> = {
-  ready: "Ready to Submit",
+  ready: "Ready",
   rejections: "Rejections",
   resubmit: "Resubmit",
-  follow_up: "Waiting / Follow Up",
+  follow_up: "Waiting",
   other: "Other",
 };
 
@@ -155,7 +159,8 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
   const activeItems = groups[activeTab];
 
   return (
-    <div className="flex h-full flex-col">
+    // min-w-0 so no child (the tab strip) can force this past the 420px column.
+    <div className="flex h-full min-w-0 flex-col">
       <div className="flex flex-col gap-2 border-b border-t-border px-4 py-3">
         <input
           type="text"
@@ -188,10 +193,13 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
           {filtered.length} of {items.length} · stalest first
         </span>
       </div>
+      {/* Scrolls within itself. Without overflow-x-auto the strip is wider than
+          the fixed 420px column, and focusing a tab makes the browser scroll the
+          whole panel sideways — clipping the rows. */}
       <div
         role="tablist"
         aria-label="Queue groups"
-        className="flex items-center gap-1 border-b border-t-border px-2"
+        className="flex items-center gap-1 overflow-x-auto border-b border-t-border px-2"
       >
         {GROUP_ORDER.map((key) => {
           const active = key === activeTab;
@@ -202,7 +210,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
               role="tab"
               aria-selected={active}
               onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-xs font-medium transition-colors ${
                 active
                   ? "border-blue-500 text-blue-600 dark:text-blue-400"
                   : "text-muted hover:text-foreground border-transparent"
