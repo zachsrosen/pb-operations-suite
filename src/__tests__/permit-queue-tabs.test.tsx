@@ -54,10 +54,10 @@ describe("PermitQueue tabs", () => {
   it("renders one tab per group with the correct counts", () => {
     renderQueue();
     expect(screen.getAllByRole("tab")).toHaveLength(5);
-    expect(tab(/Ready to Submit/)).toHaveTextContent("2");
+    expect(tab(/^Ready/)).toHaveTextContent("2");
     expect(tab(/^Rejections/)).toHaveTextContent("2");
     expect(tab(/^Resubmit/)).toHaveTextContent("1");
-    expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("3");
+    expect(tab(/^Waiting/)).toHaveTextContent("3");
     expect(tab(/^Other/)).toHaveTextContent("0");
   });
 
@@ -90,7 +90,7 @@ describe("PermitQueue tabs", () => {
       item({ dealId: "f1", actionKind: "FOLLOW_UP" }),
     ]);
     expect(tab(/^Other/)).toHaveTextContent("1");
-    expect(tab(/Waiting \/ Follow Up/)).toHaveTextContent("1");
+    expect(tab(/^Waiting/)).toHaveTextContent("1");
 
     await user.click(tab(/^Other/));
     const panel = screen.getByRole("tabpanel");
@@ -118,7 +118,7 @@ describe("PermitQueue tabs", () => {
 
   it("defaults to the Ready tab and shows only its items", () => {
     renderQueue();
-    expect(tab(/Ready to Submit/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/^Ready/)).toHaveAttribute("aria-selected", "true");
 
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
@@ -132,10 +132,10 @@ describe("PermitQueue tabs", () => {
     const user = userEvent.setup();
     renderQueue();
 
-    await user.click(tab(/Waiting \/ Follow Up/));
+    await user.click(tab(/^Waiting/));
 
-    expect(tab(/Waiting \/ Follow Up/)).toHaveAttribute("aria-selected", "true");
-    expect(tab(/Ready to Submit/)).toHaveAttribute("aria-selected", "false");
+    expect(tab(/^Waiting/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/^Ready/)).toHaveAttribute("aria-selected", "false");
 
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
