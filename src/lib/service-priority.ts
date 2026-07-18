@@ -29,12 +29,15 @@ export interface PriorityItem {
   warrantyExpiry?: string | null;
   ownerId?: string | null;
   serviceType?: string | null;
-  powerhubAlertSeverity?: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL" | null;
   /** Tesla PowerHub portal URL for the associated property (System Health column). */
   teslaPortalUrl?: string | null;
   /** Count of currently-active PowerHub alerts across all sites linked to this deal/ticket. */
   activeAlertCount?: number;
-  /** Highest severity among active PowerHub alerts (JS-side max — Prisma _max would return lexicographic). */
+  /**
+   * Highest severity among active PowerHub alerts (JS-side max — Prisma _max
+   * would return lexicographic). This is the field scoring reads; it must be
+   * populated on the item BEFORE scoring (see priority-queue route).
+   */
   highestAlertSeverity?: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null;
 }
 
@@ -186,12 +189,18 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     categories.add("stage_urgency");
   }
 
-  // 7. PowerHub alert severity
-  if (item.powerhubAlertSeverity === "CRITICAL") {
+  // 7. PowerHub alert severity (rank: INFORMATIONAL < PERFORMANCE < RMA < CRITICAL).
+  // Reads highestAlertSeverity — the field enrichment populates — which must be
+  // attached to the item before scoring.
+  if (item.highestAlertSeverity === "CRITICAL") {
     score += 25;
     reasons.push("PowerHub: Critical system alert");
     categories.add("powerhub_alert");
-  } else if (item.powerhubAlertSeverity === "PERFORMANCE") {
+  } else if (item.highestAlertSeverity === "RMA") {
+    score += 20;
+    reasons.push("PowerHub: Tesla RMA (hardware replacement)");
+    categories.add("powerhub_alert");
+  } else if (item.highestAlertSeverity === "PERFORMANCE") {
     score += 10;
     reasons.push("PowerHub: Performance alert");
     categories.add("powerhub_alert");

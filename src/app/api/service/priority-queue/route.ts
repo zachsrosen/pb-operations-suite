@@ -176,6 +176,37 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // PowerHub enrichment: tesla portal URL + active-alert summary per item.
+        // Joined via PropertyDealLink/PropertyTicketLink → HubSpotPropertyCache →
+        // PowerhubSite → PowerhubAlert. Falls back to nulls/0 on any DB error
+        // so the queue still renders.
+        //
+        // MUST run before buildPriorityQueue: highestAlertSeverity feeds the
+        // priority score (see service-priority.ts section 7). Decorating after
+        // scoring — as this did previously — left alerts out of the ranking.
+        let powerhubByDealId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null }>();
+        let powerhubByTicketId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null }>();
+        try {
+          const result = await fetchPowerhubItemSummaries({
+            dealIds: deals.map(d => d.id),
+            ticketIds: tickets.map(t => t.id),
+          });
+          powerhubByDealId = result.byDealId;
+          powerhubByTicketId = result.byTicketId;
+        } catch (err) {
+          console.warn("[PriorityQueue] PowerHub enrichment failed:", err);
+        }
+
+        // Attach PowerHub summary to each item so scoring sees the severity.
+        for (const item of allItems) {
+          const phub = item.type === "deal"
+            ? powerhubByDealId.get(item.id)
+            : powerhubByTicketId.get(item.id);
+          item.teslaPortalUrl = phub?.teslaPortalUrl ?? null;
+          item.activeAlertCount = phub?.activeAlertCount ?? 0;
+          item.highestAlertSeverity = phub?.highestAlertSeverity ?? null;
+        }
+
         // Fetch overrides from DB
         const overrides = prisma
           ? await prisma.servicePriorityOverride.findMany({
@@ -197,39 +228,11 @@ export async function GET(request: NextRequest) {
           }))
         );
 
-        // PowerHub enrichment: tesla portal URL + active-alert summary per item.
-        // Joined via PropertyDealLink/PropertyTicketLink → HubSpotPropertyCache →
-        // PowerhubSite → PowerhubAlert. Falls back to nulls/0 on any DB error
-        // so the queue still renders.
-        let powerhubByDealId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null }>();
-        let powerhubByTicketId = new Map<string, { teslaPortalUrl: string | null; activeAlertCount: number; highestAlertSeverity: "INFORMATIONAL" | "PERFORMANCE" | "RMA" | "CRITICAL" | null }>();
-        try {
-          const result = await fetchPowerhubItemSummaries({
-            dealIds: deals.map(d => d.id),
-            ticketIds: tickets.map(t => t.id),
-          });
-          powerhubByDealId = result.byDealId;
-          powerhubByTicketId = result.byTicketId;
-        } catch (err) {
-          console.warn("[PriorityQueue] PowerHub enrichment failed:", err);
-        }
-
-        const enrichedQueue = queue.map(q => {
-          const phub = q.item.type === "deal"
-            ? powerhubByDealId.get(q.item.id)
-            : powerhubByTicketId.get(q.item.id);
-          return {
-            ...q,
-            serviceType: enrichments.get(q.item.id)?.serviceType ?? null,
-            lastContactSource: enrichments.get(q.item.id)?.lastContactSource ?? null,
-            item: {
-              ...q.item,
-              teslaPortalUrl: phub?.teslaPortalUrl ?? null,
-              activeAlertCount: phub?.activeAlertCount ?? 0,
-              highestAlertSeverity: phub?.highestAlertSeverity ?? null,
-            },
-          };
-        });
+        const enrichedQueue = queue.map(q => ({
+          ...q,
+          serviceType: enrichments.get(q.item.id)?.serviceType ?? null,
+          lastContactSource: enrichments.get(q.item.id)?.lastContactSource ?? null,
+        }));
 
         return { queue: enrichedQueue, fetchedAt: new Date().toISOString() };
       },
