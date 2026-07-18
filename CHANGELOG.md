@@ -4,6 +4,73 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-07-17
+
+### Permitting & Interconnection Hub (Major)
+- Tabbed Hub queues by group (Ready, Waiting, Rejected, Other) instead of one long list, with deal stage shown on each row
+- Added an "Other" tab in both Permit Hub and IC Hub for statuses that don't map to the main workflow buckets
+- IC Hub now maps the as-built round trip to real action kinds
+- Excluded roofing terminal stages from hub queues; dropped in-flight revision statuses and "Rejected" from Permit Hub (those belong to design)
+- Dropped IC "Rejected - Revisions Needed" from the main queue after the Other tab absorbed it
+- Display HubSpot status labels instead of internal enum values
+- Scoped Hub correspondence to the project instead of the shared utility/AHJ inbox
+- Corrected California shared-inbox addresses
+- Tab strip stability: wrap instead of horizontal scroll, tightened so all five tabs fit one row, and stopped the tab strip and lead-filter dropdown from dragging the queue panel sideways
+
+### SolarEdge Fleet Monitor (Major, New)
+- Live SolarEdge fleet monitor with schema, sync pipeline, and dashboard
+- Customer/deal links, open-ticket enrichment, and table polish
+- Named alerts sourced from SolarEdge export with alert-type filter
+
+### PowerHub Fleet Monitor
+- Dedicated Monitor column on every fleet row; alert chips returned to plain badges
+- Monitor link surfaced for sites with no active alerts, and each alert chip links directly to the site's live monitoring
+- Alert Type filter on the fleet table; show all alert chips per row (dropped the +N overflow)
+- Fleet-table info columns, voltage-based grid cell, and Active Alerts toggle
+- Fixed Powerwall 3 being counted as gateways instead of batteries
+- Device-count backfill made idempotent (array-based)
+
+### Google Chat Bot
+- Per-rep daily worklist: each rep gets their own deals, split into 4 sections
+- Sales reps scoped to their own deals; company-wide aggregates blocked
+- All outbound bot messages mirrored to the oversight space
+- New `get_pe_docs` tool for bulk PE document-status lookup (action required / rejected)
+- Worklist delivery routes deactivated owners to their manager and stopped double-mirroring
+- Bot returns full pbtechops.com URLs for app pages instead of bare SOP paths
+- Raised google-chat webhook maxDuration from 60s to 300s to fit heavy queries
+
+### Funnel / Pipeline
+- New Construction indicator with hide/show toggle in the pipeline view
+- Close Out stage and backlog now driven by Close Out Status
+- Blocked toggle plus waiting-since/scheduled dates surfaced in drill-downs
+- Stopped `total:0` empty searches from blanking the pipeline
+
+### Deal Sync
+- 15-minute cron with a visible "deals synced N ago" freshness badge
+- Scheduled the cron, batched the writes, stabilized the diff, and added a staleness alert
+
+### Scheduler
+- Re-enabled PM survey invite with status badges and gated button
+- Survey invite button generates a copyable link (no email sent)
+
+### Team Activity
+- Weekly report-card email digest
+- Tasks/day and Property updates/day metrics added to the report
+
+### RTB
+- Ready tab "Released" reads `pm_rtb_approved_date` instead of the flag
+- Re-blocked deals now read un-released until Release is pressed again
+- RTB-Blocked notes edit control always visible
+
+### Service & PE
+- Time-in-stage measured from stage-entry date, not the deal's modified date
+- Stabilized `pe_doc_*_notes` ordering to stop duplicate rejection emails
+
+### Infrastructure & Fixes
+- Allowlisted `zuper-field-activity-sync` and `product-sync` crons in middleware
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
