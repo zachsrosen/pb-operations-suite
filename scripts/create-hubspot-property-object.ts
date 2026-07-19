@@ -154,6 +154,12 @@ const PROPERTY_FIELDS: HubSpotPropertyDef[] = [
   num("roof_age_years", "Roof Age (years)", GROUP_ROOF, "Derived from roof_last_replaced_year"),
   num("roof_last_replaced_year", "Roof Last Replaced (year)", GROUP_ROOF),
   richText("roof_condition_notes", "Roof Condition Notes", GROUP_ROOF),
+  // Permit rollups (Shovels-maintained) — used to backdate roofing permits
+  num("solar_permit_count", "Solar Permit Count", GROUP_ROOF, "Count of solar permits on record from Shovels"),
+  num("roofing_permit_count", "Roofing Permit Count", GROUP_ROOF, "Count of roofing permits on record from Shovels"),
+  date("latest_roofing_permit_date", "Latest Roofing Permit Date", GROUP_ROOF, "Issue date (fallback file date) of the most recent roofing permit"),
+  str("latest_roofing_permit_number", "Latest Roofing Permit #", GROUP_ROOF),
+  str("latest_roofing_permit_jurisdiction", "Latest Roofing Permit Jurisdiction", GROUP_ROOF),
 
   // Risk / permitting
   str("flood_zone", "Flood Zone", GROUP_RISK),

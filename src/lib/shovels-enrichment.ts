@@ -296,6 +296,16 @@ export async function enrichPropertyFromShovels(
       (p) => p.tags?.some((t) => t === "solar" || t === "solar_battery_storage") ?? false,
     ).length;
 
+    // Roofing rollup — used to backdate roofing permits on the HubSpot property
+    // object. Uses the Shovels canonical "roofing" tag (matches the solar approach).
+    const roofingPermits = allPermits.filter((p) => p.tags?.includes("roofing") ?? false);
+    const roofingPermitCount = roofingPermits.length;
+    // Most-recent roofing permit by issue date (fall back to file date).
+    const latestRoofing = roofingPermits
+      .map((p) => ({ p, when: p.issue_date ?? p.file_date ?? null }))
+      .filter((x): x is { p: (typeof roofingPermits)[number]; when: string } => x.when != null)
+      .sort((a, b) => b.when.localeCompare(a.when))[0]?.p;
+
     // 7. Resident lookup
     let residents: { name: string | null; personalEmail: string | null; phone: string | null; linkedinUrl: string | null; netWorth: string | null; incomeRange: string | null; isHomeowner: boolean | null }[] = [];
     try {
@@ -395,10 +405,22 @@ export async function enrichPropertyFromShovels(
       if (propData.squareFootage != null) hubspotProps.square_footage = propData.squareFootage;
       if (propData.lotSizeSqft != null) hubspotProps.lot_size_sqft = propData.lotSizeSqft;
       if (propData.stories != null) hubspotProps.stories = propData.stories;
-      if (propData.propertyType != null) hubspotProps.property_type = propData.propertyType;
+      // NOTE: property_type intentionally NOT pushed. HubSpot's property_type is an
+      // enumeration [residential, multi_family, commercial, land, other], but Shovels
+      // returns 87+ freeform compound values ("residential / Single Family"), which
+      // HubSpot rejects — and one invalid value 400s the whole batch. Needs a mapping
+      // decision before it can be pushed; propData.propertyType still persists to the DB.
       if (propData.assessedValue != null) hubspotProps.assessed_value = propData.assessedValue;
       if (propData.publicRecordOwnerName != null) hubspotProps.public_record_owner_name = propData.publicRecordOwnerName;
       hubspotProps.solar_permit_count = solarPermitCount;
+      hubspotProps.roofing_permit_count = roofingPermitCount;
+      if (latestRoofing) {
+        // HubSpot date properties take a YYYY-MM-DD string (see toDateString in property-sync.ts).
+        const when = latestRoofing.issue_date ?? latestRoofing.file_date;
+        if (when) hubspotProps.latest_roofing_permit_date = when.slice(0, 10);
+        if (latestRoofing.number) hubspotProps.latest_roofing_permit_number = latestRoofing.number;
+        if (latestRoofing.jurisdiction) hubspotProps.latest_roofing_permit_jurisdiction = latestRoofing.jurisdiction;
+      }
 
       if (Object.keys(hubspotProps).length > 0) {
         await updateProperty(property.hubspotObjectId, hubspotProps);
