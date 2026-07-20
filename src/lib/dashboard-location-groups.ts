@@ -34,7 +34,7 @@ export interface DashboardLocationGroup {
 export const DASHBOARD_LOCATION_GROUPS: DashboardLocationGroup[] = [
   { slug: "westminster", label: "Westminster", canonicals: ["Westminster"] },
   { slug: "centennial", label: "Centennial", canonicals: ["Centennial"] },
-  { slug: "colorado-springs", label: "Colorado Springs", canonicals: ["Colorado Springs"] },
+  { slug: "colorado-springs", label: "Colorado Springs", canonicals: ["Pueblo"] },
   { slug: "california", label: "California", canonicals: ["San Luis Obispo", "Camarillo"] },
 ];
 

@@ -45,7 +45,7 @@ const SOP_ALLOWED_CLASSES = [
   // Role badges
   "role-badge", "role-admin", "role-user",
   // Region markers (PM guide)
-  "region-bar", "region-cosp", "market",
+  "region-bar", "region-cosp", "region-pblo", "market",
   // TBD placeholders
   "tbd-placeholder",
   // Auto-linked route anchors (autolinkRoutes())

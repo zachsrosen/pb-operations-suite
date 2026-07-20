@@ -26,7 +26,7 @@ const DNR_PIPELINE = process.env.HUBSPOT_PIPELINE_DNR ?? DNR_PIPELINE_ID;
 // CO and CA meetings are held separately; each session is scoped to one bucket.
 // Sourced from src/lib/locations.ts so a new shop flows through automatically.
 export const COLORADO_LOCATIONS: readonly CanonicalLocation[] = [
-  "Westminster", "Centennial", "Colorado Springs",
+  "Westminster", "Centennial", "Pueblo",
 ] as const;
 export const CALIFORNIA_LOCATIONS: readonly CanonicalLocation[] = [
   "San Luis Obispo", "Camarillo",

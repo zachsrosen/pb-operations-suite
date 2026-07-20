@@ -18,7 +18,7 @@ describe("map-offices", () => {
   it("getOfficeByPbLocation resolves canonical names", () => {
     expect(getOfficeByPbLocation("Centennial")?.id).toBe("dtc");
     expect(getOfficeByPbLocation("Westminster")?.id).toBe("westminster");
-    expect(getOfficeByPbLocation("Colorado Springs")?.id).toBe("cosp");
+    expect(getOfficeByPbLocation("Pueblo")?.id).toBe("pblo");
     expect(getOfficeByPbLocation("San Luis Obispo")?.id).toBe("slo");
     expect(getOfficeByPbLocation("Camarillo")?.id).toBe("camarillo");
   });
@@ -30,6 +30,10 @@ describe("map-offices", () => {
 
   it("getOfficeByPbLocation accepts 'dtc' as alias for Centennial", () => {
     expect(getOfficeByPbLocation("dtc")?.id).toBe("dtc");
+  });
+
+  it("getOfficeByPbLocation accepts legacy 'Colorado Springs' as alias for Pueblo", () => {
+    expect(getOfficeByPbLocation("Colorado Springs")?.id).toBe("pblo");
   });
 
   it("getOfficeByPbLocation returns null for unknown / empty", () => {

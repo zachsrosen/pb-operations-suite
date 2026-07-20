@@ -48,7 +48,7 @@ describe("map-colors", () => {
   it("SHOP_LABELS covers the 5 CrewShopId values", () => {
     expect(SHOP_LABELS.dtc).toBeTruthy();
     expect(SHOP_LABELS.westy).toBeTruthy();
-    expect(SHOP_LABELS.cosp).toBeTruthy();
+    expect(SHOP_LABELS.pblo).toBeTruthy();
     expect(SHOP_LABELS.ca).toBeTruthy();
     expect(SHOP_LABELS.camarillo).toBeTruthy();
   });

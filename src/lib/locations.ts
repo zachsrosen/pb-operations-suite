@@ -1,7 +1,7 @@
 export const CANONICAL_LOCATIONS = [
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ] as const;
@@ -13,7 +13,7 @@ const NORMALIZED_LOCATION_ALIASES: Array<[CanonicalLocation, string[]]> = [
   ["Westminster", ["westy", "westminster"]],
   ["Camarillo", ["camarillo"]],
   ["San Luis Obispo", ["slo", "san luis obispo", "san luis", "california"]],
-  ["Colorado Springs", ["cosp", "colorado springs", "co springs", "pueblo"]],
+  ["Pueblo", ["pblo", "pueblo", "cosp", "colorado springs", "co springs"]],
 ];
 
 export function isCanonicalLocation(value: string): value is CanonicalLocation {
@@ -44,7 +44,9 @@ export function normalizeLocationOrUnknown(location?: string | null): string {
 export const LOCATION_SLUG_TO_CANONICAL: Record<string, CanonicalLocation> = {
   "westminster": "Westminster",
   "centennial": "Centennial",
-  "colorado-springs": "Colorado Springs",
+  "pueblo": "Pueblo",
+  // Legacy slug kept so old bookmarks/office-performance URLs keep resolving.
+  "colorado-springs": "Pueblo",
   "san-luis-obispo": "San Luis Obispo",
   "camarillo": "Camarillo",
 };
@@ -52,7 +54,7 @@ export const LOCATION_SLUG_TO_CANONICAL: Record<string, CanonicalLocation> = {
 export const CANONICAL_TO_LOCATION_SLUG: Record<CanonicalLocation, string> = {
   "Westminster": "westminster",
   "Centennial": "centennial",
-  "Colorado Springs": "colorado-springs",
+  "Pueblo": "pueblo",
   "San Luis Obispo": "san-luis-obispo",
   "Camarillo": "camarillo",
 };
@@ -64,8 +66,8 @@ export const CANONICAL_TO_LOCATION_SLUG: Record<CanonicalLocation, string> = {
 const ZIP_PREFIX_TO_LOCATION: Record<string, CanonicalLocation> = {
   // Westminster / north metro Denver
   "800": "Westminster", "801": "Westminster", "802": "Westminster", "803": "Westminster",
-  // Colorado Springs
-  "808": "Colorado Springs", "809": "Colorado Springs",
+  // Pueblo shop (covers the legacy Colorado Springs metro band 808/809 plus Pueblo 810/811)
+  "808": "Pueblo", "809": "Pueblo", "810": "Pueblo", "811": "Pueblo",
   // Camarillo / Ventura county
   "930": "Camarillo",
   // San Luis Obispo / SLO county

@@ -42,7 +42,7 @@ export function markerFillStyle(
 export const SHOP_LABELS: Record<CrewShopId, string> = {
   dtc: "DTC",
   westy: "Westy",
-  cosp: "COSP",
+  pblo: "PBLO",
   ca: "CA (SLO/Camarillo)",
   camarillo: "Camarillo",
 };

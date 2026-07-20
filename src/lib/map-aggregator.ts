@@ -525,7 +525,9 @@ export interface CrewMemberInput {
 const SHOP_MAP: Record<string, CrewShopId> = {
   dtc: "dtc",
   westy: "westy",
-  cosp: "cosp",
+  pblo: "pblo",
+  pueblo: "pblo",
+  cosp: "pblo", // legacy Colorado Springs shop id
   ca: "ca",
   camarillo: "camarillo",
   slo: "ca", // SLO shares California bucket
