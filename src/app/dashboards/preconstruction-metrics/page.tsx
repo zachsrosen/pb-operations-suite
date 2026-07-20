@@ -18,11 +18,29 @@ export default function PreconstMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
+  // Fetch ALL project-pipeline deals (not just active): completed deals must
+  // stay in historical milestone counts or trailing windows undercount by ~2x.
+  // Slim field list keeps the ~6.5k-deal payload small.
   const { data: projects, loading, error, lastUpdated, refetch } = useProjectData<RawProject[]>({
-    params: { context: "executive" },
+    params: {
+      context: "all",
+      active: "false",
+      fields: [
+        "name", "stage", "pbLocation", "amount",
+        "siteSurveyScheduleDate", "siteSurveyCompletionDate", "siteSurveyor",
+        "designApprovalSentDate", "designApprovalDate", "designLead",
+        "permitSubmitDate", "permitIssueDate", "permitLead",
+        "interconnectionSubmitDate", "interconnectionApprovalDate", "interconnectionsLead",
+      ].join(","),
+    },
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
-  const safeProjects = projects ?? [];
+  // Cancelled deals are excluded from all metrics (matches the ops-scorecard
+  // convention: time/throughput metrics describe deals that actually flow).
+  const safeProjects = useMemo(
+    () => (projects ?? []).filter((p) => p.stage !== "Cancelled"),
+    [projects]
+  );
 
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
