@@ -214,7 +214,32 @@ Follows the repo's existing script conventions (see `scripts/backfill-so-warehou
 
 Dry-run prints would-change counts per column. `--apply` executes and prints updated counts.
 
-- [ ] **Step 1:** Write script. **Step 2:** `npx tsc --noEmit` (script type-checks). **Step 3:** Run DRY-RUN ONLY (`npx tsx scripts/migrate-cosp-to-pueblo.ts`) and record counts in the PR body. Do NOT pass `--apply` — Zach runs that after merge. **Step 4: Commit** `feat(locations): add cosp→pueblo data migration script (dry-run verified)`
+- [x] **Step 1:** Write script. **Step 2:** `npx tsc --noEmit` (script type-checks). **Step 3:** Run DRY-RUN ONLY (`npx tsx scripts/migrate-cosp-to-pueblo.ts`) and record counts in the PR body. Do NOT pass `--apply` — Zach runs that after merge. **Step 4: Commit** `feat(locations): add cosp→pueblo data migration script (dry-run verified)`
+
+**Dry-run results (2026-07-20, prod Neon, read-only):**
+
+| Table.column | Would change |
+|---|---|
+| ActivityLog.pbLocation | 14 |
+| BookedSlot.location | 0 |
+| CrewAvailability.location (incl. COSP / CO Springs variants) | 5 |
+| CrewAvailability.reportLocation (incl. COSP / CO Springs variants) | 5 |
+| AvailabilityChangeRequest.location | 3 |
+| InventoryStock.location | 0 |
+| SurveyInvite.pbLocation | 14 |
+| OfficeGoal.location | 63 |
+| Deal.pbLocation | 0 |
+| DealStatusSnapshot.pbLocation | 2701 |
+| ComplianceScoreShadow.location | 0 |
+| GoalsDigestSnapshot.location | 11 |
+| ZuperStatusDrift.pbLocation | 51 |
+| ShopHealthBottleneck.location | 0 |
+| HubSpotProjectCache.pbLocation | 0 |
+| HubSpotPropertyCache.pbLocation | 1395 |
+| User.allowedLocations (array element) | 1 |
+| CrewMember.locations (array element) | 4 |
+| EstimatorRun.location ("COSP" → "PBLO") | 0 |
+| **Total** | **4267** |
 
 ### Task 11: Test sweep + full verification
 
