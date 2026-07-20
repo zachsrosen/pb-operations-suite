@@ -208,7 +208,7 @@ function TriagePageInner() {
 const SHOPS = [
   "Westminster",
   "DTC",
-  "Colorado Springs",
+  "Pueblo",
   "SLO",
   "Camarillo",
 ] as const;

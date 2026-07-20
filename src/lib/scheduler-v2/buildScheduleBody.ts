@@ -106,7 +106,7 @@ export function resolveTimezone(location: string | undefined): string {
  * Crew resolution mirrors construction-scheduler: the resolved Zuper user uid is
  * sent as both `crew` and `userUid`; the human-readable name as `assignedUser`;
  * the team uid as `teamUid`. The endpoint resolves an empty uid by name at
- * runtime (e.g. Colorado Springs / Lenny), so we still send the name even when
+ * runtime (e.g. Pueblo / Lenny), so we still send the name even when
  * the uid is blank.
  */
 export function buildScheduleBody(

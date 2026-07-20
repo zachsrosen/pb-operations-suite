@@ -40,7 +40,7 @@ interface SlotForm {
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const DAY_ABBREV = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const LOCATIONS = ["Westminster","DTC","Colorado Springs","San Luis Obispo","Camarillo"];
+const LOCATIONS = ["Westminster","DTC","Pueblo","San Luis Obispo","Camarillo"];
 const JOB_TYPES = ["survey","construction","inspection"];
 const LOCATION_OPTIONS = LOCATIONS.map((l) => ({ value: l, label: l }));
 const DAY_OPTS = [

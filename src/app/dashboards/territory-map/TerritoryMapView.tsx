@@ -38,7 +38,7 @@ const LNG_EAST = -102.0;
 const OFFICES = [
   { name: "Westminster", lat: 39.8397, lng: -105.0353 },
   { name: "Centennial", lat: 39.5977, lng: -104.8722 },
-  { name: "Colorado Springs", lat: 38.8609, lng: -104.7905 },
+  { name: "Pueblo", lat: 38.8609, lng: -104.7905 },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -86,10 +86,10 @@ function ZoneOverlays({
         color: locationColors.Centennial?.hex || "#10B981",
       },
       {
-        name: "Colorado Springs",
+        name: "Pueblo",
         north: boundaries.centennial,
         south: 37.5,
-        color: locationColors["Colorado Springs"]?.hex || "#F59E0B",
+        color: locationColors["Pueblo"]?.hex || "#F59E0B",
       },
     ];
 
@@ -233,8 +233,8 @@ function ZoneOverlays({
     );
     drawBoundaryLine(
       active.centennial,
-      `${activeLabel} C/CS`,
-      locationColors["Colorado Springs"]?.hex || "#F59E0B",
+      `${activeLabel} C/P`,
+      locationColors["Pueblo"]?.hex || "#F59E0B",
       true,
       labelLngRight,
     );
@@ -252,7 +252,7 @@ function ZoneOverlays({
     if (inactive.centennial !== active.centennial) {
       drawBoundaryLine(
         inactive.centennial,
-        `${inactiveLabel} C/CS`,
+        `${inactiveLabel} C/P`,
         "#999",
         false,
         labelLngLeft,
@@ -539,7 +539,7 @@ export default function TerritoryMapView({
 
       {/* ---- Legend ---- */}
       <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white pointer-events-none">
-        {(["Westminster", "Centennial", "Colorado Springs"] as const).map((name) => (
+        {(["Westminster", "Centennial", "Pueblo"] as const).map((name) => (
           <span key={name} className="flex items-center gap-1.5">
             <span
               className="inline-block w-2 h-2 rounded-full"

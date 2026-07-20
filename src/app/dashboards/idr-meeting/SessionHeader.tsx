@@ -230,7 +230,7 @@ export function SessionHeader({
                   className="px-3 py-1.5 hover:bg-orange-600 transition-colors disabled:opacity-50"
                   onClick={() => onNewSession("colorado")}
                   disabled={creating}
-                  title="Start a meeting that includes only Westminster, Centennial, and Colorado Springs"
+                  title="Start a meeting that includes only Westminster, Centennial, and Pueblo"
                 >
                   {creating ? "Starting..." : "Start CO"}
                 </button>

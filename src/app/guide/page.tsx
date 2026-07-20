@@ -639,7 +639,7 @@ export default function GuidePage() {
             "Stage distribution per location"
           ]}
           howToUse={[
-            "Compare metrics across Westminster, Centennial, Colorado Springs, SLO, and Camarillo",
+            "Compare metrics across Westminster, Centennial, Pueblo, SLO, and Camarillo",
             "Toggle between count, value, and efficiency metrics",
             "Click on a location to see detailed breakdown",
             "Identify high-performing and struggling locations"

@@ -149,9 +149,9 @@ const LINKS: SuitePageCard[] = [
     section: "Office Performance",
   },
   {
-    href: "/dashboards/office-performance/colorado-springs",
-    title: "Colorado Springs",
-    description: "Ambient display — pipeline, surveys, installs, inspections for Colorado Springs.",
+    href: "/dashboards/office-performance/pueblo",
+    title: "Pueblo",
+    description: "Ambient display — pipeline, surveys, installs, inspections for Pueblo.",
     tag: "OFFICE",
     icon: "🏢",
     section: "Office Performance",

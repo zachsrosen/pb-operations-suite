@@ -51,7 +51,7 @@ const DAY_ABBREV = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ALL_LOCATIONS = [
   "Westminster",
   "DTC",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ];

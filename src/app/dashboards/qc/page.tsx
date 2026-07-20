@@ -71,7 +71,7 @@ const DAYS_OPTIONS = [
   { label: "All Time", value: 0 },
 ];
 
-const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+const LOCATIONS = ["Westminster", "Centennial", "Pueblo", "San Luis Obispo", "Camarillo"];
 
 export default function QCDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
@@ -224,7 +224,7 @@ export default function QCDashboardPage() {
                   : "text-muted hover:text-foreground hover:bg-surface-2"
               }`}
             >
-              {loc.replace("Colorado Springs", "CO Springs").replace("San Luis Obispo", "SLO")}
+              {loc.replace("San Luis Obispo", "SLO")}
             </button>
           ))}
         </div>
@@ -310,7 +310,7 @@ export default function QCDashboardPage() {
                     return (
                       <div key={loc} className="flex items-center justify-between">
                         <span className="text-xs text-muted truncate mr-2">
-                          {loc.replace("Colorado Springs", "CO Spr").replace("San Luis Obispo", "SLO").replace("Westminster", "West").replace("Centennial", "Cent").replace("Camarillo", "Cam")}
+                          {loc.replace("San Luis Obispo", "SLO").replace("Westminster", "West").replace("Centennial", "Cent").replace("Camarillo", "Cam")}
                         </span>
                         <span className="text-sm font-mono font-medium text-foreground">{fmt(val)}</span>
                       </div>

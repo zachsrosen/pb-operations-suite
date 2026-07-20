@@ -381,7 +381,7 @@ function ReceiveAdjustTab(props: {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const PB_LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+  const PB_LOCATIONS = ["Westminster", "Centennial", "Pueblo", "San Luis Obispo", "Camarillo"];
 
   /* ---- SKU options grouped by category ---- */
   const skusByCategory = useMemo(() => {
