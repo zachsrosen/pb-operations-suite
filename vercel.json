@@ -125,6 +125,9 @@
     },
     "src/app/api/cron/zuper-field-activity-sync/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/pi-hub/queue/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
