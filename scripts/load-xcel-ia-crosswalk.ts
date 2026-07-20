@@ -57,7 +57,7 @@ function parseCsv(path: string): Row[] {
   return rows;
 }
 
-async function findDealByCaseNumber(caseNumber: string) {
+async function searchCaseToken(token: string) {
   const body = {
     filterGroups: [
       {
@@ -67,7 +67,7 @@ async function findDealByCaseNumber(caseNumber: string) {
             // ("06405260 (PSPS) J STEPHEN POLLOCK"), so match on the token.
             propertyName: "utility_application__",
             operator: "CONTAINS_TOKEN",
-            value: `*${caseNumber}*`,
+            value: `*${token}*`,
           },
         ],
       },
@@ -82,6 +82,19 @@ async function findDealByCaseNumber(caseNumber: string) {
   });
   if (!r.ok) throw new Error(`HubSpot search ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return (await r.json()).results ?? [];
+}
+
+async function findDealByCaseNumber(caseNumber: string) {
+  const deals = await searchCaseToken(caseNumber);
+  if (deals.length > 0) return deals;
+  // HubSpot stores some legacy case numbers without the leading zero
+  // (portal "05016743" -> deal "5016743"), which the padded token misses.
+  const stripped = caseNumber.replace(/^0+/, "");
+  if (stripped !== caseNumber && stripped.length >= 6) {
+    await new Promise((r) => setTimeout(r, THROTTLE_MS));
+    return searchCaseToken(stripped);
+  }
+  return deals;
 }
 
 async function setIaNumber(dealId: string, iaNumber: string) {
@@ -109,6 +122,10 @@ async function main() {
   console.log(`${rows.length} valid crosswalk rows${apply ? "" : "  (DRY RUN — pass --apply to write)"}\n`);
 
   const stats = { matched: 0, noDeal: 0, ambiguous: 0, unchanged: 0, written: 0, failed: 0 };
+  // Values written this run, keyed by deal id. The search API's index lags
+  // ~10-30s, so a dual-application deal's second row would otherwise read a
+  // stale xcel_ia_number and clobber the first row's write.
+  const writtenThisRun = new Map<string, string>();
 
   for (const row of rows) {
     try {
@@ -125,15 +142,25 @@ async function main() {
         console.log(`  ${row.caseNumber} -> ${row.iaNumber}   AMBIGUOUS (${names}) — skipped`);
       } else {
         const deal = deals[0];
-        const existing = deal.properties.xcel_ia_number;
         stats.matched++;
-        if (existing === row.iaNumber) {
+        // Dual-application projects (separate PV + ESS Xcel applications)
+        // map two case numbers to one deal — accumulate IA numbers as a
+        // comma-separated list instead of last-row-wins.
+        const existing =
+          writtenThisRun.get(deal.id) ??
+          (deal.properties.xcel_ia_number ?? "").trim();
+        const tokens = existing ? existing.split(/[,\s]+/).filter(Boolean) : [];
+        const merged = tokens.includes(row.iaNumber)
+          ? existing
+          : [...tokens, row.iaNumber].join(", ");
+        if (merged === existing) {
           stats.unchanged++;
         } else {
-          const note = existing ? ` (was ${existing})` : "";
+          const note = existing ? ` (adding to ${existing})` : "";
           console.log(`  ${row.caseNumber} -> ${row.iaNumber}   ${deal.properties.project_number}${note}`);
+          writtenThisRun.set(deal.id, merged);
           if (apply) {
-            await setIaNumber(deal.id, row.iaNumber);
+            await setIaNumber(deal.id, merged);
             stats.written++;
           }
         }

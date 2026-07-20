@@ -41,4 +41,26 @@ describe("extractIdentifierTokens", () => {
     expect(extractIdentifierTokens("IA214386")).toEqual(["IA214386"]);
     expect(extractIdentifierTokens("IA160801")).toEqual(["IA160801"]);
   });
+
+  it("keeps every token of a clean list whole (dual-application projects)", () => {
+    // A project with separate PV + ESS Xcel applications stores both IA
+    // numbers in one field. Each must keep its IA prefix — Gmail's
+    // "213490" phrase does not match "IA213490" in an email body.
+    expect(extractIdentifierTokens("IA213490, IA216791")).toEqual([
+      "IA213490",
+      "IA216791",
+    ]);
+    expect(extractIdentifierTokens("IA213490,IA216791")).toEqual([
+      "IA213490",
+      "IA216791",
+    ]);
+    expect(extractIdentifierTokens("SBP-179859 SBP-179860")).toEqual([
+      "SBP-179859",
+      "SBP-179860",
+    ]);
+  });
+
+  it("strips a trailing comma from a single value", () => {
+    expect(extractIdentifierTokens("06405260,")).toEqual(["06405260"]);
+  });
 });
