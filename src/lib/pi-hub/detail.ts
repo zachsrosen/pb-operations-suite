@@ -25,6 +25,7 @@ import {
   type SharedInboxThread,
 } from "@/lib/gmail-shared-inbox";
 import { TEAM_CONFIGS, type TeamConfig } from "./config";
+import { normalizeDriveFolderUrl } from "./drive";
 import { resolveLeadName } from "./leads";
 import type { ProjectDetail, Team } from "./types";
 
@@ -210,7 +211,7 @@ export async function fetchDetail(
       hubspotUrl: getHubSpotDealUrl(dealId),
       designFolderUrl,
       driveFolderUrl,
-      folderUrl: props[config.folderProperty] ?? null,
+      folderUrl: normalizeDriveFolderUrl(props[config.folderProperty]),
       folderLabel: config.folderLabel,
       portalUrl: (domainProps?.portal_link as string | null | undefined) ?? null,
       applicationUrl:
