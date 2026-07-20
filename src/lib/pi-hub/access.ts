@@ -37,8 +37,3 @@ export function allowedTeamsForRoles(roles: string[]): Team[] {
   if (roles.includes("INTERCONNECT")) teams.push("ic", "pto");
   return teams;
 }
-
-/** Narrow an untrusted query param to a Team, or null when invalid. */
-export function parseTeam(value: string | null): Team | null {
-  return value === "permit" || value === "ic" || value === "pto" ? value : null;
-}

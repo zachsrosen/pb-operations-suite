@@ -1,4 +1,5 @@
 import type { AHJRecord } from "@/lib/hubspot-custom-objects";
+import { ACCENTS, type Accent } from "../accents";
 
 /**
  * The AHJ turnaround properties are HubSpot calculation_rollup numbers held in
@@ -27,7 +28,13 @@ function formatAverage(value: string | null | undefined): string | null {
   return n.toFixed(2);
 }
 
-export function AhjPanel({ records }: { records: AHJRecord[] }) {
+export function AhjPanel({
+  records,
+  accent,
+}: {
+  records: AHJRecord[];
+  accent: Accent;
+}) {
   if (!records.length) {
     return (
       <div className="text-muted text-sm">
@@ -56,7 +63,7 @@ export function AhjPanel({ records }: { records: AHJRecord[] }) {
                     href={p.portal_link}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-md bg-blue-500 px-3 py-1 text-xs font-medium text-white hover:bg-blue-600"
+                    className={`rounded-md px-3 py-1 text-xs font-medium ${ACCENTS[accent].primaryButton}`}
                   >
                     Portal
                   </a>

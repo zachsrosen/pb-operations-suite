@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ToastProvider } from "@/contexts/ToastContext";
 import { Queue } from "@/app/dashboards/pi-hub/Queue";
 import type { QueueItem } from "@/lib/pi-hub/types";
 
@@ -42,15 +43,19 @@ function renderQueue(items = ITEMS) {
     defaultOptions: { queries: { retry: false } },
   });
   render(
+    // ToastProvider: the rows' StatusDropdown reports post-write warnings via
+    // the toast context.
     <QueryClientProvider client={client}>
-      <Queue
-        items={items}
-        isLoading={false}
-        selectedDealId={null}
-        onSelect={onSelect}
-        team="permit"
-        accent="blue"
-      />
+      <ToastProvider>
+        <Queue
+          items={items}
+          isLoading={false}
+          selectedDealId={null}
+          onSelect={onSelect}
+          team="permit"
+          accent="blue"
+        />
+      </ToastProvider>
     </QueryClientProvider>,
   );
   return { onSelect };

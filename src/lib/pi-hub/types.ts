@@ -1,9 +1,20 @@
 // Type-only imports — erased at compile time, so this file stays free of
-// runtime imports and is safe to pull into client bundles.
+// runtime imports and is safe to pull into client bundles. The one runtime
+// export (parseTeam) is a pure string narrowing with no server dependencies.
 import type { AHJRecord, UtilityRecord } from "@/lib/hubspot-custom-objects";
 import type { SharedInboxThread } from "@/lib/gmail-shared-inbox";
 
 export type Team = "permit" | "ic" | "pto";
+
+/**
+ * Narrow an untrusted query param to a Team, or null when invalid. Lives here
+ * rather than in access.ts because client components need it and access.ts is
+ * server-only (it reads process.env.PI_HUB_ENABLED).
+ */
+export function parseTeam(value: string | null): Team | null {
+  return value === "permit" || value === "ic" || value === "pto" ? value : null;
+}
+
 export type GroupKey = "ready" | "rejections" | "resubmit" | "waiting" | "other";
 export const GROUP_ORDER: readonly GroupKey[] = ["ready", "rejections", "resubmit", "waiting", "other"];
 

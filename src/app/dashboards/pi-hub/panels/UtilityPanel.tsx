@@ -1,4 +1,5 @@
 import type { UtilityRecord } from "@/lib/hubspot-custom-objects";
+import { ACCENTS, type Accent } from "../accents";
 
 /**
  * Utility record panel. Ported from ic-hub's UtilityTab with the spec §6
@@ -8,7 +9,13 @@ import type { UtilityRecord } from "@/lib/hubspot-custom-objects";
  * render is corrected to `submission_type` (the real property name; the fetch
  * list uses submission_type).
  */
-export function UtilityPanel({ records }: { records: UtilityRecord[] }) {
+export function UtilityPanel({
+  records,
+  accent,
+}: {
+  records: UtilityRecord[];
+  accent: Accent;
+}) {
   if (!records.length) {
     return (
       <div className="text-muted text-sm">
@@ -37,7 +44,7 @@ export function UtilityPanel({ records }: { records: UtilityRecord[] }) {
                     href={p.portal_link}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-md bg-green-500 px-3 py-1 text-xs font-medium text-white hover:bg-green-600"
+                    className={`rounded-md px-3 py-1 text-xs font-medium ${ACCENTS[accent].primaryButton}`}
                   >
                     Portal
                   </a>

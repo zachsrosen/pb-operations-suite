@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ToastProvider } from "@/contexts/ToastContext";
 import { StatusDropdown } from "@/app/dashboards/pi-hub/StatusDropdown";
 
 // "Pending SolarApp" and "Complete" have a label distinct from the value, so
@@ -49,13 +50,15 @@ function renderDropdown(props?: { compact?: boolean }) {
   });
   render(
     <QueryClientProvider client={client}>
-      <StatusDropdown
-        team="permit"
-        dealId="123"
-        currentStatus="Ready For Permitting"
-        currentStatusLabel="Ready For Permitting"
-        compact={props?.compact}
-      />
+      <ToastProvider>
+        <StatusDropdown
+          team="permit"
+          dealId="123"
+          currentStatus="Ready For Permitting"
+          currentStatusLabel="Ready For Permitting"
+          compact={props?.compact}
+        />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -94,7 +97,7 @@ describe("StatusDropdown", () => {
 
     await user.click(screen.getByRole("button", { name: /Ready For Permitting/ }));
     await user.click(
-      await screen.findByRole("button", { name: "Ready to Submit for SolarApp" }),
+      await screen.findByRole("menuitem", { name: "Ready to Submit for SolarApp" }),
     );
 
     await waitFor(() => expect(body).not.toBeNull());
@@ -110,40 +113,58 @@ describe("StatusDropdown", () => {
     setupFetch({ onStatusBody: (b) => (body = b) });
     renderDropdown();
 
-    // Select the terminal option -> confirm dialog, no POST yet. (ConfirmDialog
-    // wraps its role="dialog" in an aria-hidden backdrop, so it's queried by
-    // its visible text rather than the dialog role.)
+    // Select the terminal option -> confirm dialog, no POST yet. Queried by
+    // role: the backdrop no longer carries aria-hidden, so the dialog is
+    // reachable in the accessibility tree.
     await user.click(screen.getByRole("button", { name: /Ready For Permitting/ }));
-    await user.click(await screen.findByRole("button", { name: "Permit Issued" }));
-    expect(await screen.findByText("Set terminal status?")).toBeInTheDocument();
+    await user.click(await screen.findByRole("menuitem", { name: "Permit Issued" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveAccessibleName("Set terminal status?");
     expect(body).toBeNull();
 
     // Cancel -> still no POST.
-    await user.click(screen.getByText("Cancel"));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
-      expect(screen.queryByText("Set terminal status?")).not.toBeInTheDocument(),
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     expect(body).toBeNull();
 
     // Reopen, select terminal again, confirm -> POST with the VALUE.
     await user.click(screen.getByRole("button", { name: /Ready For Permitting/ }));
-    await user.click(await screen.findByRole("button", { name: "Permit Issued" }));
-    expect(await screen.findByText("Set terminal status?")).toBeInTheDocument();
-    await user.click(screen.getByText("Set status"));
+    await user.click(await screen.findByRole("menuitem", { name: "Permit Issued" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Set status" }));
 
     await waitFor(() => expect(body).not.toBeNull());
     expect(body!.status).toBe("Complete");
   });
 
-  it("surfaces warnings as a non-error notice", async () => {
+  it("surfaces warnings as a non-error inline notice (detail header)", async () => {
     const user = userEvent.setup();
     setupFetch({ statusJson: { ok: true, warnings: ["note failed: boom"] } });
     renderDropdown();
 
     await user.click(screen.getByRole("button", { name: /Ready For Permitting/ }));
-    await user.click(await screen.findByRole("button", { name: "Submitted to AHJ" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Submitted to AHJ" }));
 
     expect(await screen.findByText(/note failed: boom/)).toBeInTheDocument();
+    // The stable detail header reports inline; it must not also toast.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("compact mode routes warnings to a toast, not an inline notice", async () => {
+    const user = userEvent.setup();
+    setupFetch({ statusJson: { ok: true, warnings: ["note failed: boom"] } });
+    renderDropdown({ compact: true });
+
+    await user.click(screen.getByRole("button", { name: /Set status/i }));
+    await user.click(await screen.findByRole("menuitem", { name: "Submitted to AHJ" }));
+
+    // A compact row usually re-groups and unmounts after the write, so the
+    // warning has to live outside this component.
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveTextContent("Status saved, with warnings");
+    expect(toast).toHaveTextContent("note failed: boom");
   });
 
   it("compact mode renders a small 'Set status' trigger", () => {
@@ -152,5 +173,41 @@ describe("StatusDropdown", () => {
     expect(
       screen.getByRole("button", { name: /Set status/i }),
     ).toBeInTheDocument();
+  });
+
+  it("exposes options as menuitems inside the menu", async () => {
+    const user = userEvent.setup();
+    setupFetch();
+    renderDropdown();
+
+    await user.click(screen.getByRole("button", { name: /Ready For Permitting/ }));
+
+    // role="menu" containing a bare <ul> announces as an empty menu; the list
+    // roles are stripped so the options are the menu's direct items.
+    const items = await screen.findAllByRole("menuitem");
+    expect(items).toHaveLength(OPTIONS.length);
+    // Accessible name, not textContent: terminal rows append a "Terminal" badge.
+    expect(
+      screen.getByRole("menuitem", { name: "Submitted to AHJ" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: /Permit Issued/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes on Escape without writing", async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> | null = null;
+    setupFetch({ onStatusBody: (b) => (body = b) });
+    renderDropdown();
+
+    await user.click(screen.getByRole("button", { name: /Ready For Permitting/ }));
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+    expect(body).toBeNull();
   });
 });

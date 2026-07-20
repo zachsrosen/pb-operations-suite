@@ -4,8 +4,8 @@ import {
   allowedTeamsForRoles,
   isPiHubAllowedRole,
   isPiHubEnabled,
-  parseTeam,
 } from "@/lib/pi-hub/access";
+import { parseTeam } from "@/lib/pi-hub/types";
 import { fetchDetail } from "@/lib/pi-hub/detail";
 
 export async function GET(

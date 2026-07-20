@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
-import { parseTeam } from "@/lib/pi-hub/access";
+import { parseTeam } from "@/lib/pi-hub/types";
 import type { QueueItem, Team } from "@/lib/pi-hub/types";
 import { SessionHeader } from "./SessionHeader";
 import { Queue } from "./Queue";
@@ -77,7 +77,11 @@ export function PiHubClient({
   });
 
   function switchTeam(t: Team) {
-    router.replace(`${pathname}?team=${t}`, { scroll: false });
+    // Rebuild from the current params so switching teams doesn't drop whatever
+    // else is on the URL (deep links, tracking params).
+    const params = new URLSearchParams(searchParams);
+    params.set("team", t);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
   return (
@@ -105,7 +109,10 @@ export function PiHubClient({
           })}
         </div>
       )}
-      <SessionHeader userEmail={userEmail} />
+      <SessionHeader
+        userEmail={userEmail}
+        lastUpdated={queueQuery.data?.lastUpdated}
+      />
       <div className="flex flex-1 gap-3 overflow-hidden">
         <div className="w-[420px] shrink-0 overflow-hidden rounded-xl border border-t-border bg-surface">
           <Queue

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
-import { isPiHubAllowedRole, isPiHubEnabled, parseTeam } from "@/lib/pi-hub/access";
+import { isPiHubAllowedRole, isPiHubEnabled } from "@/lib/pi-hub/access";
+import { parseTeam } from "@/lib/pi-hub/types";
 
 export async function GET() {
   if (!isPiHubEnabled()) {

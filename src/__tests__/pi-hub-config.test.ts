@@ -1,5 +1,23 @@
 import { TEAM_CONFIGS, groupForStatus } from "@/lib/pi-hub/config";
+import { ACCENT_FOR_TEAM } from "@/app/dashboards/pi-hub/accents";
 import { LIVE_STATUS_OPTIONS } from "./fixtures/pi-status-options";
+
+// ACCENT_FOR_TEAM duplicates TEAM_CONFIGS[team].accent on purpose — the client
+// bundle must not import the server config module. Duplication is only safe if
+// it can't silently drift.
+describe("ACCENT_FOR_TEAM mirrors TEAM_CONFIGS", () => {
+  for (const config of Object.values(TEAM_CONFIGS)) {
+    it(`${config.key}: accent matches the config`, () => {
+      expect(ACCENT_FOR_TEAM[config.key]).toBe(config.accent);
+    });
+  }
+
+  it("covers every configured team", () => {
+    expect(Object.keys(ACCENT_FOR_TEAM).sort()).toEqual(
+      Object.keys(TEAM_CONFIGS).sort(),
+    );
+  });
+});
 
 describe("TEAM_CONFIGS validity", () => {
   for (const config of Object.values(TEAM_CONFIGS)) {

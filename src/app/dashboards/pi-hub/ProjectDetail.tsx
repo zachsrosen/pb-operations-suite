@@ -152,15 +152,17 @@ export function ProjectDetail({
             </CollapsibleSection>
             {detail.domain.kind === "ahj" ? (
               <CollapsibleSection title="AHJ">
-                <AhjPanel records={detail.domain.records} />
+                <AhjPanel records={detail.domain.records} accent={accent} />
               </CollapsibleSection>
             ) : (
               <CollapsibleSection title="Utility">
-                <UtilityPanel records={detail.domain.records} />
+                <UtilityPanel records={detail.domain.records} accent={accent} />
               </CollapsibleSection>
             )}
-            <CollapsibleSection title="Planset">
-              <PlansetPanel url={deal.designFolderUrl} />
+            {/* Named for the property it actually renders (designFolderUrl) —
+                there is no separate planset property. */}
+            <CollapsibleSection title="Design Folder">
+              <PlansetPanel url={deal.designFolderUrl} accent={accent} />
             </CollapsibleSection>
           </div>
           <div className="min-w-0 space-y-3">

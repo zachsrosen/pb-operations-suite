@@ -113,7 +113,9 @@ export function Queue({
       other: [],
     };
     for (const item of filtered) {
-      map[item.group].push(item);
+      // Fall back to "other" rather than throwing if the server ever returns a
+      // group key this build doesn't know about (deploy skew, new taxonomy).
+      (map[item.group] ?? map.other).push(item);
     }
     return map;
   }, [filtered]);
