@@ -46,9 +46,10 @@ const PERMIT_NUMBER_PROPERTIES = [
 /** Correspondence identifier deal properties per team. */
 const IDENTIFIER_PROPERTIES: Record<Team, readonly string[]> = {
   permit: PERMIT_NUMBER_PROPERTIES,
-  // Utility Application # — utility cites it in correspondence.
-  ic: ["utility_application__"],
-  pto: ["utility_application__"],
+  // Utility Application # — utility cites it in correspondence. Xcel chatter
+  // notifications cite ONLY the IA number (backfilled from the portal crosswalk).
+  ic: ["utility_application__", "xcel_ia_number"],
+  pto: ["utility_application__", "xcel_ia_number"],
 };
 
 /** propertiesWithHistory set per team — status plus its milestone-date props. */
