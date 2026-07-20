@@ -220,16 +220,26 @@ function parseFrom(raw: string | null): { name: string | null; email: string | n
  * 7 for the number alone).
  *
  * A clean single-token value passes through unchanged (covers alphanumeric
- * permit numbers like "B2404681" / "SBP-179859"). A polluted value yields
- * each digit-run of 5+ chars (app numbers are 6-8 digits; 5+ avoids matching
- * street numbers and dates).
+ * permit numbers like "B2404681" / "SBP-179859"). A clean LIST of tokens
+ * ("IA213490, IA216791" — dual-application projects store both IA numbers
+ * in one field) yields each token unchanged, preserving letter prefixes
+ * that a digit-run extraction would strip (Gmail's "213490" phrase does
+ * not match "IA213490"). A polluted value yields each digit-run of 5+
+ * chars (app numbers are 6-8 digits; 5+ avoids matching street numbers
+ * and dates).
  */
 export function extractIdentifierTokens(
   raw: string | null | undefined,
 ): string[] {
   const value = (raw ?? "").trim();
   if (!value) return [];
-  if (!/\s/.test(value)) return [value];
+  const parts = value.split(/[,\s]+/).filter(Boolean);
+  if (parts.length === 1) return [parts[0]];
+  // Every part looks like a real identifier (has a digit, no stray
+  // punctuation) → a deliberate list; keep each token whole.
+  if (parts.every((p) => /^[A-Za-z0-9_-]{4,}$/.test(p) && /\d/.test(p))) {
+    return Array.from(new Set(parts));
+  }
   return Array.from(new Set(value.match(/\d{5,}/g) ?? []));
 }
 
