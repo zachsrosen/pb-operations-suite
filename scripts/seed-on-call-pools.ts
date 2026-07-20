@@ -44,7 +44,7 @@ const POOLS: Array<{
   },
   {
     name: "Southern CO",
-    region: "Colorado — Colorado Springs + Service",
+    region: "Colorado — Pueblo + Service",
     timezone: "America/Denver",
     shiftStart: "17:00",
     shiftEnd: "07:00",

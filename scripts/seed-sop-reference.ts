@@ -629,7 +629,7 @@ ${statusList([
 <tbody>
 <tr><td>Westminster</td><td>America/Denver (MT)</td><td>${colorDot("#3B82F6", "Blue")}</td></tr>
 <tr><td>Centennial</td><td>America/Denver (MT)</td><td>${colorDot("#10B981", "Emerald")}</td></tr>
-<tr><td>Colorado Springs</td><td>America/Denver (MT)</td><td>${colorDot("#F59E0B", "Amber")}</td></tr>
+<tr><td>Pueblo</td><td>America/Denver (MT)</td><td>${colorDot("#F59E0B", "Amber")}</td></tr>
 <tr><td>San Luis Obispo</td><td>America/Los_Angeles (PT)</td><td>${colorDot("#8B5CF6", "Violet")}</td></tr>
 <tr><td>Camarillo</td><td>America/Los_Angeles (PT)</td><td>${colorDot("#EC4899", "Pink")}</td></tr>
 </tbody>
