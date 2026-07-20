@@ -1,12 +1,14 @@
 import type { ProjectFilterSpec } from "@/lib/ai";
 
-const LOCATIONS = [
-  "Westminster",
-  "Centennial",
-  "Colorado Springs",
-  "San Luis Obispo",
-  "Camarillo",
-] as const;
+// Canonical location + lowercase query substrings that map to it.
+// Pueblo keeps legacy Colorado Springs/COSP aliases on the match side only.
+const LOCATION_MATCHERS: Array<{ canonical: string; terms: string[] }> = [
+  { canonical: "Westminster", terms: ["westminster"] },
+  { canonical: "Centennial", terms: ["centennial"] },
+  { canonical: "Pueblo", terms: ["pueblo", "pblo", "colorado springs", "co springs", "cosp"] },
+  { canonical: "San Luis Obispo", terms: ["san luis obispo"] },
+  { canonical: "Camarillo", terms: ["camarillo"] },
+];
 
 type SortField = NonNullable<ProjectFilterSpec["sort_by"]>;
 type SortDir = NonNullable<ProjectFilterSpec["sort_dir"]>;
@@ -94,7 +96,9 @@ export function hasMeaningfulFilterSpec(spec: ProjectFilterSpec): boolean {
 export function buildHeuristicFilterSpec(rawQuery: string): ProjectFilterSpec {
   const query = normalizeQuery(rawQuery);
 
-  const locations = LOCATIONS.filter((loc) => query.includes(loc.toLowerCase()));
+  const locations = LOCATION_MATCHERS.filter((m) =>
+    m.terms.some((t) => query.includes(t)),
+  ).map((m) => m.canonical);
   const stages = parseStages(query);
   const { sort_by, sort_dir } = parseSort(query);
 

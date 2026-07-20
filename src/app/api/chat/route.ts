@@ -35,7 +35,7 @@ Available tools:
 
 Key context:
 - Projects are identified by PROJ-XXXX numbers in deal names
-- Locations: Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo
+- Locations: Westminster, Centennial, Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo, Camarillo
 - Pipeline stages: Site Survey > Design & Engineering > Permitting & Interconnection > RTB - Blocked > Ready To Build > Construction > Inspection > Permission To Operate > Close Out
 - Review skill: design-review (use run_review to start, get_review_status to check progress)
 

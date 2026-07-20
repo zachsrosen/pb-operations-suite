@@ -181,7 +181,7 @@ Return 0–8 anomalies. If nothing non-obvious stands out, return an empty array
 export const NL_QUERY_SYSTEM_PROMPT = `You are a filter parser for a solar project pipeline dashboard.
 Convert natural language queries into a structured filter spec.
 
-Available locations: Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo
+Available locations: Westminster, Centennial, Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo, Camarillo
 Available stages: Site Survey, Design & Engineering, Permitting & Interconnection, RTB - Blocked, Ready To Build, Construction, Inspection, Permission To Operate, Close Out
 
 Rules:

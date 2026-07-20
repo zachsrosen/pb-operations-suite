@@ -823,7 +823,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
         .optional()
         .describe(
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
-            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+            "Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
     }),
     run: async (input) => {
@@ -844,7 +844,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
       }
 
       // Resolve the optional location through the canonical normalizer
-      // (handles aliases like Westy/DTC/COSP/SLO). Refuse rather than guess.
+      // (handles aliases like Westy/DTC/PBLO/SLO plus legacy COSP). Refuse rather than guess.
       let canonicalLocation: string | null = null;
       if (input.location) {
         const { normalizeLocation, CANONICAL_LOCATIONS } = await import("@/lib/locations");
@@ -923,7 +923,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
         .optional()
         .describe(
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
-            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+            "Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
       participateEnergyOnly: z
         .boolean()
@@ -1016,7 +1016,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
         .optional()
         .describe(
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
-            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+            "Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
       participateEnergyOnly: z
         .boolean()
@@ -1201,7 +1201,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
         .optional()
         .describe(
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
-            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+            "Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
     }),
     run: async (input) => {
@@ -2342,7 +2342,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
       location: z
         .string()
         .optional()
-        .describe("Optional PB location filter (Westminster/Westy, Centennial/DTC, COSP, SLO, Camarillo)."),
+        .describe("Optional PB location filter (Westminster/Westy, Centennial/DTC, Pueblo/PBLO (formerly COSP), SLO, Camarillo)."),
     }),
     run: async (input) => {
       const { searchWithRetry, fetchAllOwnersMinimal } = await import("@/lib/hubspot");
@@ -2500,7 +2500,7 @@ export function createReadOnlyChatTools(restriction?: ChatToolsRestriction | nul
       "Company revenue GOALS vs actuals — the executive Revenue Goal Tracker. Use for " +
       "'how are we pacing against goal', 'is Westminster ahead of target', 'what's the " +
       "annual revenue goal', 'revenue vs goal this month / YTD'. Revenue groups: " +
-      "Westminster, DTC (Centennial), Colorado Springs, California, Roofing & D&R, " +
+      "Westminster, DTC (Centennial), Pueblo (PBLO; formerly Colorado Springs/COSP), California, Roofing & D&R, " +
       "Service. Numbers match the executive dashboard exactly — never estimate goal " +
       "progress from other tools.",
     inputSchema: z.object({
