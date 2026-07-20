@@ -12,6 +12,10 @@ import { ACCENTS, type Accent } from "./accents";
 interface Props {
   items: QueueItem[];
   isLoading: boolean;
+  /** True while a team switch is showing the PREVIOUS team's rows as
+   *  placeholder — a cold queue load can take 30-60s, and without a visible
+   *  state the switch reads as a no-op. */
+  isSwitching: boolean;
   selectedDealId: string | null;
   onSelect: (dealId: string) => void;
   team: Team;
@@ -37,9 +41,16 @@ const GROUP_LABELS: Record<GroupKey, string> = {
 /** Sentinel value representing unassigned deals in the lead filter. */
 const UNASSIGNED = "__unassigned__";
 
+const TEAM_LOADING_LABEL: Record<Team, string> = {
+  permit: "Permit",
+  ic: "Interconnection",
+  pto: "PTO",
+};
+
 export function Queue({
   items,
   isLoading,
+  isSwitching,
   selectedDealId,
   onSelect,
   team,
@@ -194,7 +205,20 @@ export function Queue({
           );
         })}
       </div>
-      <div className="flex-1 overflow-y-auto" role="tabpanel">
+      {isSwitching && (
+        <div
+          role="status"
+          className={`flex items-center gap-2 border-b border-t-border px-4 py-2 text-xs font-medium ${a.switchingBanner}`}
+        >
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+          Loading {TEAM_LOADING_LABEL[team]} queue…
+        </div>
+      )}
+      <div
+        className={`flex-1 overflow-y-auto ${isSwitching ? "pointer-events-none opacity-40" : ""}`}
+        role="tabpanel"
+        aria-busy={isSwitching}
+      >
         {isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 6 }).map((_, i) => (
