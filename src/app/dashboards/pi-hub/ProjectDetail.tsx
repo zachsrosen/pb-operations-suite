@@ -181,6 +181,7 @@ export function ProjectDetail({
                 searchUrl={detail.correspondenceSearchUrl}
                 threads={detail.correspondenceThreads}
                 inbox={detail.correspondenceInbox}
+                identifiers={detail.correspondenceIdentifiers ?? []}
               />
             </CollapsibleSection>
             <CollapsibleSection title="Status History" defaultOpen={false}>

@@ -222,6 +222,7 @@ export async function fetchDetail(
     correspondenceSearchUrl,
     correspondenceThreads,
     correspondenceInbox,
+    correspondenceIdentifiers: identifiers,
     statusHistory,
     activity,
   };
