@@ -177,6 +177,7 @@ export function ProjectDetail({
               }
             >
               <CorrespondencePanel
+                team={team}
                 searchUrl={detail.correspondenceSearchUrl}
                 threads={detail.correspondenceThreads}
                 inbox={detail.correspondenceInbox}

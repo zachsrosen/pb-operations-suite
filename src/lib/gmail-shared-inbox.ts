@@ -627,6 +627,117 @@ function extractPlainTextBody(part: GmailMessagePart): string | null {
   return null;
 }
 
+/**
+ * Fallback for HTML-only messages (some utility notification systems send no
+ * text/plain part): find the text/html body and strip it down to readable text.
+ */
+function extractHtmlBodyAsText(part: GmailMessagePart): string | null {
+  if (part.mimeType === "text/html" && part.body?.data) {
+    const html = Buffer.from(part.body.data, "base64url").toString("utf-8");
+    return html
+      .replace(/<(style|script)[\s\S]*?<\/\1>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|tr|li|h[1-6])>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+  if (part.parts) {
+    for (const child of part.parts) {
+      const text = extractHtmlBodyAsText(child);
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
+export interface SharedInboxThreadMessage {
+  id: string;
+  subject: string | null;
+  from: string | null;
+  to: string | null;
+  date: string; // ISO 8601
+  bodyText: string;
+}
+
+export type FetchThreadMessagesResult =
+  | { ok: true; messages: SharedInboxThreadMessage[] }
+  | { ok: false; error: string };
+
+/**
+ * Fetch every message in one thread, with readable bodies, for the in-app
+ * viewer (shared mailboxes cannot be deep-linked for delegated users, so the
+ * hub renders the mail itself).
+ */
+export async function fetchSharedInboxThreadMessages(
+  mailbox: string,
+  threadId: string,
+): Promise<FetchThreadMessagesResult> {
+  // Auth: same stored-token-first, service-account-fallback pattern
+  let token: string | null = null;
+  try {
+    const { getStoredSharedInboxToken } = await import(
+      "@/lib/shared-inbox-token"
+    );
+    token = await getStoredSharedInboxToken(mailbox);
+  } catch (err) {
+    console.error(
+      `[gmail-shared-inbox] stored-token lookup failed for ${mailbox}:`,
+      err,
+    );
+  }
+  if (!token) {
+    const tokenResult = await getReadonlyTokenVerbose(mailbox);
+    if (!tokenResult.ok) {
+      return { ok: false, error: `Auth failed for ${mailbox}: ${tokenResult.reason}` };
+    }
+    token = tokenResult.token;
+  }
+
+  const url = `${GMAIL_API_BASE}/users/${encodeURIComponent(mailbox)}/threads/${encodeURIComponent(threadId)}?format=full`;
+  let resp: Response;
+  try {
+    resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (err) {
+    return { ok: false, error: `Network error fetching thread: ${err}` };
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    return {
+      ok: false,
+      error: `threads.get failed (HTTP ${resp.status}): ${body.slice(0, 300)}`,
+    };
+  }
+
+  const thread = (await resp.json()) as GmailThread;
+  const messages: SharedInboxThreadMessage[] = [];
+  for (const msg of thread.messages ?? []) {
+    const payload = msg.payload;
+    if (!payload) continue;
+    const bodyText =
+      extractPlainTextBody(payload) ?? extractHtmlBodyAsText(payload) ?? "";
+    const headers = payload.headers;
+    messages.push({
+      id: msg.id,
+      subject: getHeader(headers, "Subject"),
+      from: getHeader(headers, "From"),
+      to: getHeader(headers, "To"),
+      date: msg.internalDate
+        ? new Date(Number(msg.internalDate)).toISOString()
+        : new Date().toISOString(),
+      bodyText,
+    });
+  }
+  messages.sort((a, b) => (a.date < b.date ? -1 : 1));
+  return { ok: true, messages };
+}
+
 // ---------------------------------------------------------------------------
 // Attachment listing + download
 // ---------------------------------------------------------------------------
