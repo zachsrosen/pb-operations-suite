@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { formatCurrencyCompact } from "@/lib/format";
@@ -16,6 +16,8 @@ import type { OpsScorecardData } from "@/lib/ops-scorecard";
  * docs/superpowers/specs/2026-07-18-ops-scorecard-dashboard-design.md.
  */
 
+type MeanMedT = { mean: number | null; median: number | null };
+
 const $ = (n: number | null | undefined) =>
   n === null || n === undefined ? "—" : formatCurrencyCompact(n);
 const pct = (n: number | null | undefined) =>
@@ -24,6 +26,9 @@ const days = (n: number | null | undefined) =>
   n === null || n === undefined ? "—" : n.toFixed(1);
 const num = (n: number | null | undefined) =>
   n === null || n === undefined ? "—" : n.toLocaleString();
+
+const mm = (v: MeanMedT) =>
+  v.mean === null ? "—" : `${v.mean.toFixed(1)} (${v.median === null ? "—" : v.median.toFixed(1)})`;
 
 function Arrow3({ a, b, c }: { a: string; b: string; c: string }) {
   return (
@@ -57,6 +62,8 @@ const tdR = td + " text-right tabular-nums";
 export default function OpsScorecardPage() {
   const { trackDashboardView } = useActivityTracking();
   const tracked = useRef(false);
+  /** "fy" compares full prior years; "samePoint" compares prior years through today's month-day. */
+  const [yearView, setYearView] = useState<"fy" | "samePoint">("fy");
 
   const { data, loading, error, lastUpdated, refetch } = useProjectData<OpsScorecardData>({
     endpoint: "/api/ops-scorecard",
@@ -120,7 +127,7 @@ export default function OpsScorecardPage() {
         <StatCard
           label="Net sales needed to sustain CC pace"
           value={`${$(capacity.sustainSalesPerMo)}/mo`}
-          subtitle={`selling ${$(capacity.netSalesPacePerMo)}/mo · burning ${$(capacity.burnPerMo)}/mo`}
+          subtitle={`selling ${$(capacity.netSalesPacePerMo)}/mo · burning ${$(capacity.burnPerMo)}/mo (${meta.l3mLabel})`}
           color="red"
         />
         <StatCard
@@ -197,28 +204,53 @@ export default function OpsScorecardPage() {
         </table>
       </SectionCard>
 
+      {/* ---- Year-view toggle ---- */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs text-muted">Prior-year comparison:</span>
+        {([
+          ["fy", "Full year"],
+          ["samePoint", `Same point (thru ${meta.monthDayLabel})`],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setYearView(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+              yearView === key
+                ? "bg-orange-500/20 border-orange-500/50 text-orange-300 font-semibold"
+                : "border-t-border text-muted hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ---- Run rate by office ---- */}
       <SectionCard
         title="Net sales run rate, by office"
-        sub={`Full-year ${py2}/${py} actuals, ${cy} YTD, and two forward paces — YTD-annualized and trailing-3-month.`}
+        sub={
+          yearView === "fy"
+            ? `Full-year ${py2}/${py} actuals, ${cy} YTD, and two forward paces — YTD-annualized and trailing-3-calendar-month (${meta.l3mLabel}).`
+            : `Apples-to-apples: net sales through ${meta.monthDayLabel} of each year, plus the two forward paces.`
+        }
       >
         <table className="w-full min-w-[680px]">
           <thead>
             <tr>
               <th className={th}>Office</th>
-              <th className={thR}>FY {py2}</th>
-              <th className={thR}>FY {py}</th>
+              <th className={thR}>{yearView === "fy" ? `FY ${py2}` : `${py2} thru ${meta.monthDayLabel}`}</th>
+              <th className={thR}>{yearView === "fy" ? `FY ${py}` : `${py} thru ${meta.monthDayLabel}`}</th>
               <th className={thR}>{cy} YTD</th>
               <th className={thR}>YTD run rate</th>
-              <th className={thR}>Trailing-3mo rate</th>
+              <th className={thR}>3-mo rate ({meta.l3mLabel})</th>
             </tr>
           </thead>
           <tbody>
             {runRateByOffice.map((r) => (
               <tr key={r.office} className={r.office === "Company" ? "font-semibold" : ""}>
                 <td className={td}>{r.office}</td>
-                <td className={tdR}>{$(r.py2Rev)}</td>
-                <td className={tdR}>{$(r.pyRev)}</td>
+                <td className={tdR}>{$(yearView === "fy" ? r.py2Rev : r.py2SamePointRev)}</td>
+                <td className={tdR}>{$(yearView === "fy" ? r.pyRev : r.pySamePointRev)}</td>
                 <td className={tdR}>{$(r.ytdRev)}</td>
                 <td className={tdR}>{$(r.ytdAnnualized)}</td>
                 <td className={tdR}>{$(r.l3mAnnualized)}</td>
@@ -231,7 +263,11 @@ export default function OpsScorecardPage() {
       {/* ---- Throughput by office ---- */}
       <SectionCard
         title="Throughput by office: sales → DAs → CCs"
-        sub={`Counts (all deals) and net revenue — FY ${py2} → FY ${py} → ${cy} YTD.`}
+        sub={
+          yearView === "fy"
+            ? `Counts (all deals) and net revenue — FY ${py2} → FY ${py} → ${cy} YTD.`
+            : `Counts (all deals) and net revenue through ${meta.monthDayLabel} of each year — like-for-like.`
+        }
       >
         <table className="w-full min-w-[860px]">
           <thead>
@@ -249,12 +285,12 @@ export default function OpsScorecardPage() {
             {throughputByOffice.map((r) => (
               <tr key={r.office} className={r.office === "Company" ? "font-semibold" : ""}>
                 <td className={td}>{r.office}</td>
-                <td className={tdR}><Arrow3 a={num(r.sales.py2.count)} b={num(r.sales.py.count)} c={num(r.sales.ytd.count)} /></td>
-                <td className={tdR}><Arrow3 a={$(r.sales.py2.revenue)} b={$(r.sales.py.revenue)} c={$(r.sales.ytd.revenue)} /></td>
-                <td className={tdR}><Arrow3 a={num(r.das.py2.count)} b={num(r.das.py.count)} c={num(r.das.ytd.count)} /></td>
-                <td className={tdR}><Arrow3 a={$(r.das.py2.revenue)} b={$(r.das.py.revenue)} c={$(r.das.ytd.revenue)} /></td>
-                <td className={tdR}><Arrow3 a={num(r.ccs.py2.count)} b={num(r.ccs.py.count)} c={num(r.ccs.ytd.count)} /></td>
-                <td className={tdR}><Arrow3 a={$(r.ccs.py2.revenue)} b={$(r.ccs.py.revenue)} c={$(r.ccs.ytd.revenue)} /></td>
+                <td className={tdR}><Arrow3 a={num((yearView === "fy" ? r.sales.py2 : r.sales.py2SamePoint).count)} b={num((yearView === "fy" ? r.sales.py : r.sales.pySamePoint).count)} c={num(r.sales.ytd.count)} /></td>
+                <td className={tdR}><Arrow3 a={$((yearView === "fy" ? r.sales.py2 : r.sales.py2SamePoint).revenue)} b={$((yearView === "fy" ? r.sales.py : r.sales.pySamePoint).revenue)} c={$(r.sales.ytd.revenue)} /></td>
+                <td className={tdR}><Arrow3 a={num((yearView === "fy" ? r.das.py2 : r.das.py2SamePoint).count)} b={num((yearView === "fy" ? r.das.py : r.das.pySamePoint).count)} c={num(r.das.ytd.count)} /></td>
+                <td className={tdR}><Arrow3 a={$((yearView === "fy" ? r.das.py2 : r.das.py2SamePoint).revenue)} b={$((yearView === "fy" ? r.das.py : r.das.pySamePoint).revenue)} c={$(r.das.ytd.revenue)} /></td>
+                <td className={tdR}><Arrow3 a={num((yearView === "fy" ? r.ccs.py2 : r.ccs.py2SamePoint).count)} b={num((yearView === "fy" ? r.ccs.py : r.ccs.pySamePoint).count)} c={num(r.ccs.ytd.count)} /></td>
+                <td className={tdR}><Arrow3 a={$((yearView === "fy" ? r.ccs.py2 : r.ccs.py2SamePoint).revenue)} b={$((yearView === "fy" ? r.ccs.py : r.ccs.pySamePoint).revenue)} c={$(r.ccs.ytd.revenue)} /></td>
               </tr>
             ))}
           </tbody>
@@ -264,8 +300,13 @@ export default function OpsScorecardPage() {
       {/* ---- Cancellations ---- */}
       <SectionCard
         title="Cancellations by location"
-        sub={`Cohorts keyed on year sold. Same-yr = cancelled within that calendar year; eventual = cancelled as of today. ${cy}'s columns are equal because the year is still open.`}
+        sub={
+          yearView === "fy"
+            ? `Cohorts keyed on year sold. Same-yr = cancelled within that calendar year; eventual = cancelled as of today. ${cy}'s columns are equal because the year is still open.`
+            : `Same-age lens: deals sold Jan 1 → ${meta.monthDayLabel} of each year and cancelled by ${meta.monthDayLabel} of that year — the truest like-for-like. 2024's rate is understated (cancels were processed late that year).`
+        }
       >
+        {yearView === "fy" ? (
         <table className="w-full min-w-[860px]">
           <thead>
             <tr>
@@ -294,31 +335,63 @@ export default function OpsScorecardPage() {
             ))}
           </tbody>
         </table>
+        ) : (
+        <table className="w-full min-w-[680px]">
+          <thead>
+            <tr>
+              <th className={th}>Office</th>
+              <th className={thR}>{py2} thru {meta.monthDayLabel}</th>
+              <th className={thR}>{py} thru {meta.monthDayLabel}</th>
+              <th className={thR}>{cy} thru {meta.monthDayLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cancellations.map((r) => (
+              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : ""}>
+                <td className={td}>{r.office}</td>
+                <td className={tdR}>{r.samePoint.py2.count}/{r.samePoint.py2.sold} · {pct(r.samePoint.py2.revPct)}</td>
+                <td className={tdR}>{r.samePoint.py.count}/{r.samePoint.py.sold} · {pct(r.samePoint.py.revPct)}</td>
+                <td className={tdR + ((r.samePoint.cy.revPct ?? 0) > 15 ? " text-red-400 font-semibold" : "")}>
+                  {r.samePoint.cy.count}/{r.samePoint.cy.sold} · {pct(r.samePoint.cy.revPct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        )}
       </SectionCard>
 
       {/* ---- Funnel FY ---- */}
       <SectionCard
         title="Funnel: sales → DAs → CCs → inspections → PTO"
-        sub={`Full-year ${py2} and ${py}, ${cy} YTD. Counts include every deal reaching the milestone; revenue is net. Leads & appointments land in phase 2.`}
+        sub={
+          yearView === "fy"
+            ? `Full-year ${py2} and ${py}, ${cy} YTD. Counts include every deal reaching the milestone; revenue is net. Leads & appointments land in phase 2.`
+            : `Milestones reached Jan 1 → ${meta.monthDayLabel} of each year — like-for-like. Counts include every deal reaching the milestone; revenue is net.`
+        }
       >
         <table className="w-full min-w-[620px]">
           <thead>
             <tr>
               <th className={th}>Stage</th>
-              <th className={thR}>FY {py2}</th>
-              <th className={thR}>FY {py}</th>
+              <th className={thR}>{yearView === "fy" ? `FY ${py2}` : `${py2} thru ${meta.monthDayLabel}`}</th>
+              <th className={thR}>{yearView === "fy" ? `FY ${py}` : `${py} thru ${meta.monthDayLabel}`}</th>
               <th className={thR}>{cy} YTD</th>
             </tr>
           </thead>
           <tbody>
-            {funnelFy.map((r) => (
-              <tr key={r.stage}>
-                <td className={td}>{r.stage}</td>
-                <td className={tdR}>{num(r.py2.count)} · {$(r.py2.revenue)}</td>
-                <td className={tdR}>{num(r.py.count)} · {$(r.py.revenue)}</td>
-                <td className={tdR}>{num(r.ytd.count)} · {$(r.ytd.revenue)}</td>
-              </tr>
-            ))}
+            {funnelFy.map((r) => {
+              const a = yearView === "fy" ? r.py2 : r.py2SamePoint;
+              const b = yearView === "fy" ? r.py : r.pySamePoint;
+              return (
+                <tr key={r.stage}>
+                  <td className={td}>{r.stage}</td>
+                  <td className={tdR}>{num(a.count)} · {$(a.revenue)}</td>
+                  <td className={tdR}>{num(b.count)} · {$(b.revenue)}</td>
+                  <td className={tdR}>{num(r.ytd.count)} · {$(r.ytd.revenue)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </SectionCard>
@@ -352,7 +425,7 @@ export default function OpsScorecardPage() {
 
       <SectionCard
         title="Turnaround times by office"
-        sub={`Average days per step, sold-year cohorts ${py2} → ${py} → ${cy}. Averages include the stalled-deal tail — medians run lower. Same-day DA approvals: ${efficiency.sameDayDaPct.py2 ?? "—"}% → ${efficiency.sameDayDaPct.py ?? "—"}% → ${efficiency.sameDayDaPct.cy ?? "—"}%.`}
+        sub={`Days per step as mean (median), sold-year cohorts ${py2} → ${py} → ${cy}. The mean includes the stalled-deal tail; the median is the typical deal. Same-day DA approvals: ${efficiency.sameDayDaPct.py2 ?? "—"}% → ${efficiency.sameDayDaPct.py ?? "—"}% → ${efficiency.sameDayDaPct.cy ?? "—"}%.`}
       >
         <table className="w-full min-w-[900px]">
           <thead>
@@ -369,7 +442,7 @@ export default function OpsScorecardPage() {
                 <td className={td}>{r.office}</td>
                 {Object.entries(r.legs).map(([leg, v]) => (
                   <td key={leg} className={tdR}>
-                    <Arrow3 a={days(v.py2)} b={days(v.py)} c={days(v.cy)} />
+                    <Arrow3 a={mm(v.py2)} b={mm(v.py)} c={mm(v.cy)} />
                   </td>
                 ))}
               </tr>

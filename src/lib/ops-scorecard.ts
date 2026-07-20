@@ -102,19 +102,35 @@ export interface StageYearRow {
   py2: CountRev;
   py: CountRev;
   ytd: CountRev;
+  /** Same point in prior years: milestones reached Jan 1 → meta.monthDay. */
+  py2SamePoint: CountRev;
+  pySamePoint: CountRev;
+}
+
+export interface SameAgeCohort {
+  count: number;
+  sold: number;
+  revPct: number | null;
 }
 
 export interface OfficeCancellation {
   office: string;
+  /** Same-age lens: sold Jan1→monthDay of the year, cancelled by monthDay same year. */
+  samePoint: { py2: SameAgeCohort; py: SameAgeCohort; cy: SameAgeCohort };
   py2: { sameYrCount: number; sold: number; sameYrRevPct: number | null; eventualCount: number; eventualRevPct: number | null };
   py: { sameYrCount: number; sold: number; sameYrRevPct: number | null; eventualCount: number; eventualRevPct: number | null };
   cy: { count: number; sold: number; revPct: number | null; revLost: number };
 }
 
+export interface MeanMed {
+  mean: number | null;
+  median: number | null;
+}
+
 export interface TurnaroundLegYearMeans {
-  py2: number | null;
-  py: number | null;
-  cy: number | null;
+  py2: MeanMed;
+  py: MeanMed;
+  cy: MeanMed;
 }
 
 export interface OpsScorecardData {
@@ -124,6 +140,12 @@ export interface OpsScorecardData {
     cy: string;
     py: string;
     py2: string;
+    /** MM-DD cutoff used for YTD and same-point comparisons. */
+    monthDay: string;
+    /** Human form of monthDay, e.g. "Jul 18". */
+    monthDayLabel: string;
+    /** Label for the trailing-3-calendar-month window, e.g. "Apr–Jun". */
+    l3mLabel: string;
     projectCount: number;
   };
   capacity: {
@@ -156,6 +178,8 @@ export interface OpsScorecardData {
     office: string;
     py2Rev: number;
     pyRev: number;
+    py2SamePointRev: number;
+    pySamePointRev: number;
     ytdRev: number;
     ytdAnnualized: number;
     l3mAnnualized: number;
@@ -191,6 +215,18 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     Math.floor((now.getTime() - Date.parse(`${cy}-01-01`)) / 86_400_000)
   );
   const yearFrac = Math.min(1, dayOfYear / 365);
+  const monthDay = dataThrough.slice(5, 10);
+
+  // Trailing 3 COMPLETE calendar months (e.g. on Jul 20 → Apr 1–Jun 30),
+  // matching the approved analysis; a rolling 92-day window whipsaws with
+  // partial-month surges.
+  const mStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1));
+  const mEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+  const l3mLo = mStart.toISOString().slice(0, 10);
+  const l3mHi = mEnd.toISOString().slice(0, 10);
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const monthDayLabel = `${MONTH_NAMES[Number(monthDay.slice(0, 2)) - 1]} ${Number(monthDay.slice(3, 5))}`;
+  const l3mLabel = `${MONTH_NAMES[mStart.getUTCMonth()]}–${MONTH_NAMES[mEnd.getUTCMonth()]}`;
 
   const loc = (p: Project) => normalizeLocation(p.pbLocation);
   const inOffice = (o: string) => (p: Project) => loc(p) === o;
@@ -213,11 +249,17 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     });
 
   const stageYearRow = (date: (p: Project) => string | null): StageYearRow => {
-    const mk = (year: string): CountRev => {
-      const all = reached(date, year);
+    const mk = (year: string, throughMonthDay?: string): CountRev => {
+      const all = reached(date, year, throughMonthDay);
       return { count: all.length, revenue: sumAmount(all.filter(isNet)) };
     };
-    return { py2: mk(py2), py: mk(py), ytd: mk(cy) };
+    return {
+      py2: mk(py2),
+      py: mk(py),
+      ytd: mk(cy),
+      py2SamePoint: mk(py2, monthDay),
+      pySamePoint: mk(py, monthDay),
+    };
   };
 
   // ---- Funnel (FY + monthly) ------------------------------------------------
@@ -246,20 +288,27 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
   const daByMonth = monthBars((p) => p.designApprovalDate, true);
 
   // ---- Run rate by office ---------------------------------------------------
-  const l3mStart = new Date(now.getTime() - 92 * 86_400_000).toISOString().slice(0, 10);
   const runRateRow = (ps: Project[]) => {
-    const sold = (year: string) =>
-      sumAmount(ps.filter((p) => yearOf(p.closeDate) === year && isNet(p)));
+    const sold = (year: string, throughMonthDay?: string) =>
+      sumAmount(
+        ps.filter((p) => {
+          if (yearOf(p.closeDate) !== year || !isNet(p)) return false;
+          if (throughMonthDay && p.closeDate!.slice(5, 10) > throughMonthDay) return false;
+          return true;
+        })
+      );
     const ytdRev = sold(cy);
     const l3mRev = sumAmount(
-      ps.filter((p) => p.closeDate && p.closeDate >= l3mStart && p.closeDate <= dataThrough && isNet(p))
+      ps.filter((p) => p.closeDate && p.closeDate >= l3mLo && p.closeDate <= l3mHi && isNet(p))
     );
     return {
       py2Rev: sold(py2),
       pyRev: sold(py),
+      py2SamePointRev: sold(py2, monthDay),
+      pySamePointRev: sold(py, monthDay),
       ytdRev,
       ytdAnnualized: yearFrac > 0 ? ytdRev / yearFrac : 0,
-      l3mAnnualized: (l3mRev / 92) * 365,
+      l3mAnnualized: (l3mRev / 3) * 12,
     };
   };
   const runRateByOffice = [
@@ -272,11 +321,22 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     ...SCORECARD_OFFICES.map((o) => {
       const ps = projects.filter(inOffice(o));
       const row = (date: (p: Project) => string | null): StageYearRow => {
-        const mk = (year: string): CountRev => {
-          const all = ps.filter((p) => yearOf(date(p)) === year);
+        const mk = (year: string, throughMonthDay?: string): CountRev => {
+          const all = ps.filter((p) => {
+            const d = date(p);
+            if (!d || yearOf(d) !== year) return false;
+            if (throughMonthDay && d.slice(5, 10) > throughMonthDay) return false;
+            return true;
+          });
           return { count: all.length, revenue: sumAmount(all.filter(isNet)) };
         };
-        return { py2: mk(py2), py: mk(py), ytd: mk(cy) };
+        return {
+          py2: mk(py2),
+          py: mk(py),
+          ytd: mk(cy),
+          py2SamePoint: mk(py2, monthDay),
+          pySamePoint: mk(py, monthDay),
+        };
       };
       return {
         office: o,
@@ -310,12 +370,32 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     };
   };
 
+  const sameAge = (ps: Project[], soldYear: string): SameAgeCohort => {
+    const sold = ps.filter(
+      (p) =>
+        yearOf(p.closeDate) === soldYear && p.closeDate!.slice(5, 10) <= monthDay
+    );
+    const soldRev = sumAmount(sold);
+    const cancelled = sold.filter(
+      (p) =>
+        p.stageId === CANCELLED &&
+        yearOf(p.cancelledDate) === soldYear &&
+        (p.cancelledDate ?? "9999").slice(5, 10) <= monthDay
+    );
+    return {
+      count: cancelled.length,
+      sold: sold.length,
+      revPct: soldRev > 0 ? (sumAmount(cancelled) / soldRev) * 100 : null,
+    };
+  };
+
   const cancellationFor = (ps: Project[], office: string): OfficeCancellation => {
     const a = cohort(ps, py2);
     const b = cohort(ps, py);
     const c = cohort(ps, cy);
     return {
       office,
+      samePoint: { py2: sameAge(ps, py2), py: sameAge(ps, py), cy: sameAge(ps, cy) },
       py2: { sameYrCount: a.sameYrCount, sold: a.sold, sameYrRevPct: a.sameYrRevPct, eventualCount: a.eventualCount, eventualRevPct: a.eventualRevPct },
       py: { sameYrCount: b.sameYrCount, sold: b.sold, sameYrRevPct: b.sameYrRevPct, eventualCount: b.eventualCount, eventualRevPct: b.eventualRevPct },
       cy: { count: c.sameYrCount, sold: c.sold, revPct: c.sameYrRevPct, revLost: c.sameYrRev },
@@ -387,15 +467,13 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     const ps = o === "Company" ? live : live.filter(inOffice(o));
     const legs: Record<string, TurnaroundLegYearMeans> = {};
     for (const leg of LEGS) {
-      const forYear = (year: string) =>
-        round1(
-          mean(
-            ps
-              .filter((p) => yearOf(p.closeDate) === year)
-              .map((p) => daysBetween(leg.from(p), leg.to(p)))
-              .filter((v): v is number => v !== null)
-          )
-        );
+      const forYear = (year: string): MeanMed => {
+        const vals = ps
+          .filter((p) => yearOf(p.closeDate) === year)
+          .map((p) => daysBetween(leg.from(p), leg.to(p)))
+          .filter((v): v is number => v !== null);
+        return { mean: round1(mean(vals)), median: round1(median(vals)) };
+      };
       legs[leg.key] = { py2: forYear(py2), py: forYear(py), cy: forYear(cy) };
     }
     return { office: o, legs };
@@ -436,9 +514,9 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
   const last3Mo = (date: (p: Project) => string | null, net: boolean) => {
     const ps = projects.filter((p) => {
       const d = date(p);
-      return d !== null && d >= l3mStart && d <= dataThrough && (!net || isNet(p));
+      return d !== null && d >= l3mLo && d <= l3mHi && (!net || isNet(p));
     });
-    return (sumAmount(ps) / 92) * 30.4; // $/month
+    return sumAmount(ps) / 3; // $/month over 3 complete calendar months
   };
   const burnPerMo = last3Mo((p) => p.constructionCompleteDate, false);
   const netSalesPacePerMo = last3Mo((p) => p.closeDate, true);
@@ -472,10 +550,8 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     const ccPacePerMo = dayOfYear >= 30 ? ccYtd / (dayOfYear / 30.4) : null;
     const sellingPacePerMo =
       sumAmount(
-        ps.filter(
-          (p) => p.closeDate && p.closeDate >= l3mStart && p.closeDate <= dataThrough && isNet(p)
-        )
-      ) / (92 / 30.4);
+        ps.filter((p) => p.closeDate && p.closeDate >= l3mLo && p.closeDate <= l3mHi && isNet(p))
+      ) / 3;
     const oConv = oConvPct !== null ? oConvPct / 100 : null;
     return {
       office: o,
@@ -498,6 +574,9 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       cy,
       py,
       py2,
+      monthDay,
+      monthDayLabel,
+      l3mLabel,
       projectCount: projects.length,
     },
     capacity: {
