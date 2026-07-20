@@ -446,7 +446,10 @@ export async function fetchSharedInboxThreads(
         to: getHeader(headers, "To"),
         date,
         snippet: latest.snippet ?? null,
-        webUrl: `https://mail.google.com/mail/u/${encodeURIComponent(mailbox)}/#inbox/${id}`,
+        // /u/<email> requires the mailbox to be DIRECTLY signed in to the
+        // browser (delegated access cannot be deep-linked). #all, not #inbox,
+        // so archived threads still resolve.
+        webUrl: `https://mail.google.com/mail/u/${encodeURIComponent(mailbox)}/#all/${id}`,
       };
       return thread;
     });
