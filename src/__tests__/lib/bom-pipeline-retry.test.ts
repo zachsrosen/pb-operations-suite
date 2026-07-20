@@ -400,7 +400,15 @@ describe("getPipelineLocationRecipients", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("returns director + coordinator for Colorado Springs", () => {
+  it("returns directors + coordinator for Pueblo", () => {
+    const result = getPipelineLocationRecipients("Pueblo");
+    expect(result).toContain("rolando@photonbrothers.com");
+    expect(result).toContain("lenny@photonbrothers.com");
+    expect(result).toContain("brittany.miller@photonbrothers.com");
+    expect(result).toHaveLength(3);
+  });
+
+  it("returns director + coordinator for legacy 'Colorado Springs' rows", () => {
     const result = getPipelineLocationRecipients("Colorado Springs");
     expect(result).toContain("rolando@photonbrothers.com");
     expect(result).toContain("brittany.miller@photonbrothers.com");

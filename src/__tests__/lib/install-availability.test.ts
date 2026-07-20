@@ -30,21 +30,21 @@ describe("earliestInstallAvailability", () => {
   });
 
   it("returns the first business day under capacity per location", async () => {
-    // Colorado Springs capacity = 1/day. Mon 7/13 + Tue 7/14 are occupied,
+    // Pueblo capacity = 1/day. Mon 7/13 + Tue 7/14 are occupied,
     // so the first open business day from Monday 2026-07-13 is Wed 2026-07-15.
     mockJobFindMany.mockResolvedValue([
       job("d1", "Construction - Solar", "2026-07-13", "2026-07-14"),
     ]);
     mockDealFindMany.mockResolvedValue([
-      { hubspotDealId: "d1", pbLocation: "Colorado Springs" },
+      { hubspotDealId: "d1", pbLocation: "Pueblo" },
     ]);
 
     const result = await earliestInstallAvailability(
-      ["Colorado Springs", "Westminster"],
+      ["Pueblo", "Westminster"],
       { today: "2026-07-12" } // Sunday → walk starts Monday 7/13
     );
 
-    expect(result.get("Colorado Springs")).toBe("2026-07-15");
+    expect(result.get("Pueblo")).toBe("2026-07-15");
     // Westminster (capacity 2) has nothing scheduled → first business day.
     expect(result.get("Westminster")).toBe("2026-07-13");
   });

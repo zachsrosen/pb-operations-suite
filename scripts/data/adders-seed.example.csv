@@ -1,4 +1,4 @@
-code,name,category,type,direction,autoApply,appliesTo,triggerCondition,triageQuestion,triageAnswerType,triggerLogic,photosRequired,unit,basePrice,baseCost,marginTarget,notes,override_Westminster,override_DTC,override_Colorado Springs,override_SLO,override_Camarillo
+code,name,category,type,direction,autoApply,appliesTo,triggerCondition,triageQuestion,triageAnswerType,triggerLogic,photosRequired,unit,basePrice,baseCost,marginTarget,notes,override_Westminster,override_DTC,override_Pueblo,override_SLO,override_Camarillo
 MPU_200A,Main Panel Upgrade to 200A,ELECTRICAL,FIXED,ADD,false,,main panel < 200A,What is the main panel amp rating?,NUMERIC,"{""op"":""lt"",""value"":200,""qtyFrom"":""constant"",""qtyConstant"":1}",true,FLAT,2500,1800,0.28,Includes permit + inspection,,,,,
 ROOF_STEEP_8_12,Steep Roof (8/12+),ROOFING,FIXED,ADD,false,,roof pitch >= 8/12,What is the steepest roof pitch?,NUMERIC,"{""op"":""gte"",""value"":8,""qtyFrom"":""constant"",""qtyConstant"":1}",true,PER_KW,50,30,0.4,Measured in rise over 12 run,,,,,
 PE_DISCOUNT_30,PE Customer Discount,ORG,PERCENTAGE,DISCOUNT,true,deal.dealType == 'PE',,,,,false,FLAT,30,0,,Flat 30% discount on PE deals,,,,,
@@ -15,4 +15,4 @@ PITCH_STANDARD,Pitch: Standard (< 34°),STRUCTURAL,FIXED,ADD,false,,,,,,false,FL
 PITCH_STEEP1_PERWATT,Pitch: Steep 34°-44° (per kW),STRUCTURAL,FIXED,ADD,false,,,,,,false,PER_KW,350,0,,Mirrors PITCH_ADDERS[steep1] costPerWatt=$0.35/W,,,,,
 PITCH_STEEP2_PERWATT,Pitch: Very Steep > 44° (per kW),STRUCTURAL,FIXED,ADD,false,,,,,,false,PER_KW,500,0,,Mirrors PITCH_ADDERS[steep2] costPerWatt=$0.50/W,,,,,
 ORG_Q1_2026_1000_OFF_SOLAR,Q1 2026 $1000 Off Solar,ORG,FIXED,DISCOUNT,false,,,,,,false,FLAT,1000,0,,Mirrors ORG_ADDERS[q1-2026] flat -$1000 solar promo,,,,,
-ORG_SOCO_1500,SoCo Regional Discount,ORG,FIXED,DISCOUNT,false,shop == 'Colorado Springs',,,,,false,FLAT,1500,0,,Mirrors ORG_ADDERS[soco] flat -$1500 regional discount,,,,,
+ORG_SOCO_1500,SoCo Regional Discount,ORG,FIXED,DISCOUNT,false,shop == 'Pueblo',,,,,false,FLAT,1500,0,,Mirrors ORG_ADDERS[soco] flat -$1500 regional discount,,,,,
