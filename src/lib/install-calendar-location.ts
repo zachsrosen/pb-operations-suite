@@ -1,17 +1,19 @@
 import { COMPLIANCE_TEAM_OVERRIDES } from "@/lib/compliance-team-overrides";
 import { normalizeLocationForInstallCalendars } from "@/lib/google-calendar";
 
-type InstallBucket = "dtc" | "westy" | "cosp" | "california" | "camarillo";
+type InstallBucket = "dtc" | "westy" | "pblo" | "california" | "camarillo";
 
 const NAME_FALLBACKS: Array<{ matcher: RegExp; location: string }> = [
   { matcher: /\bdrew perry\b/i, location: "Centennial" },
   { matcher: /\bjoe lynch\b/i, location: "Westminster" },
-  { matcher: /\blenny\b/i, location: "Colorado Springs" },
-  { matcher: /\brolando\b/i, location: "Colorado Springs" }, // legacy: older records assigned to Rolando
+  { matcher: /\blenny\b/i, location: "Pueblo" },
+  { matcher: /\brolando\b/i, location: "Pueblo" }, // legacy: older records assigned to Rolando
   // Legacy master-scheduler crew labels (stored in older schedule records)
   { matcher: /\bdtc\b.*\balpha\b|\balpha\b.*\bdtc\b/i, location: "Centennial" },
   { matcher: /\bwesty\b.*\balpha\b|\balpha\b.*\bwesty\b/i, location: "Westminster" },
-  { matcher: /\bcosp\b.*\balpha\b|\balpha\b.*\bcosp\b/i, location: "Colorado Springs" },
+  // Calendar event titles in the wild still say "COSP Alpha"; new ones say "Pueblo Alpha"
+  { matcher: /\bcosp\b.*\balpha\b|\balpha\b.*\bcosp\b/i, location: "Pueblo" },
+  { matcher: /\bpueblo\b.*\balpha\b|\balpha\b.*\bpueblo\b/i, location: "Pueblo" },
 ];
 
 function canonicalLocationFromBucket(bucket: InstallBucket): string {
@@ -19,7 +21,7 @@ function canonicalLocationFromBucket(bucket: InstallBucket): string {
   if (bucket === "westy") return "Westminster";
   if (bucket === "california") return "San Luis Obispo";
   if (bucket === "camarillo") return "Camarillo";
-  return "Colorado Springs";
+  return "Pueblo";
 }
 
 function firstUuid(value?: string | null): string | null {

@@ -31,7 +31,7 @@ type GoogleCalendarListResponse = {
   };
 };
 
-type LocationBucket = "dtc" | "westy" | "cosp" | "california" | "camarillo";
+type LocationBucket = "dtc" | "westy" | "pblo" | "california" | "camarillo";
 
 function isEnabled(): boolean {
   const raw = (process.env.GOOGLE_CALENDAR_SYNC_ENABLED || "false").toLowerCase().trim();
@@ -153,14 +153,18 @@ export function normalizeLocationForInstallCalendars(location?: string | null): 
     return "california";
   }
   if (
+    normalized === "pueblo" ||
+    normalized.includes("pueblo") ||
+    normalized === "pblo" ||
+    normalized.includes("pblo") ||
+    // Legacy Colorado Springs strings (pre-rename calendar text / stored rows)
     normalized === "colorado springs" ||
     normalized.includes("colorado springs") ||
     normalized.includes("co springs") ||
     normalized === "cosp" ||
-    normalized.includes("cosp") ||
-    normalized === "pueblo"
+    normalized.includes("cosp")
   ) {
-    return "cosp";
+    return "pblo";
   }
 
   return null;
@@ -189,10 +193,10 @@ export function getInstallCalendarIdForLocation(location?: string | null): strin
   if (bucket === "westy") {
     return normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_WESTY_ID) || null;
   }
-  if (bucket === "cosp") {
+  if (bucket === "pblo") {
     return (
-      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID) ||
       normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_PUEBLO_ID) ||
+      normalizeCalendarId(process.env.GOOGLE_INSTALL_CALENDAR_COSP_ID) ||
       null
     );
   }

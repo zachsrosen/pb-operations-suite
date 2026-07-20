@@ -39,7 +39,8 @@ const GOAL_DEFS: GoalDef[] = [
 const SLUG_TO_PATH: Record<string, string> = {
   westminster: "westminster",
   centennial: "centennial",
-  "colorado-springs": "colorado-springs",
+  pueblo: "pueblo",
+  "colorado-springs": "pueblo", // legacy group slug → emit the new Pueblo URL
   california: "california",
 };
 

@@ -61,7 +61,8 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/office-performance/all": "Executive",       // also operations
   "/dashboards/office-performance/westminster": "Executive",
   "/dashboards/office-performance/centennial": "Executive",
-  "/dashboards/office-performance/colorado-springs": "Executive",
+  "/dashboards/office-performance/pueblo": "Executive",
+  "/dashboards/office-performance/colorado-springs": "Executive", // legacy slug, still served
   "/dashboards/office-performance/san-luis-obispo": "Executive",
   "/dashboards/office-performance/camarillo": "Executive",
   "/dashboards/shop-health": "Executive",
