@@ -246,6 +246,8 @@ export const queryKeys = {
       [...queryKeys.piHub.root, "project", team, dealId] as const,
     options: (team: string) => [...queryKeys.piHub.root, "options", team] as const,
     todayCount: () => [...queryKeys.piHub.root, "today-count"] as const,
+    thread: (team: string, threadId: string) =>
+      [...queryKeys.piHub.root, "thread", team, threadId] as const,
   },
   comms: {
     root: ["comms"] as const,
