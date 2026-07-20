@@ -30,6 +30,15 @@ describe("parseDealLabel", () => {
     });
   });
 
+  it("uses the leading segment for non-standard deals with no PROJ number", () => {
+    // Real one-off/Test-pipeline format: customer leads, address follows.
+    // Must not render the address as the customer name.
+    expect(parseDealLabel("Barnett, Ted | 1731 S Welch Cir, Lakewood, CO 80228")).toEqual({
+      projNum: null,
+      fullName: "Ted Barnett",
+    });
+  });
+
   it("falls back when there is no PROJ number", () => {
     expect(parseDealLabel("Walk-in Customer | Somebody, Else")).toEqual({
       projNum: null,

@@ -25,10 +25,21 @@ export function parseDealLabel(dealName: string): { projNum: string | null; full
     }
   }
 
-  // Customer name is the segment right after the PROJ segment; when there's no
-  // PROJ segment, fall back to the second-then-first segment (legacy behavior).
-  const namePart =
-    (projIdx >= 0 ? parts[projIdx + 1] : undefined) ?? parts[1] ?? parts[0] ?? dealName;
+  // Customer name is the segment right after the PROJ segment.
+  //
+  // Non-standard deals (one-off / Test pipelines) carry no PROJ number and lead
+  // with the customer instead — "Barnett, Ted | 1731 S Welch Cir, Lakewood, CO".
+  // Blindly taking the second segment there renders the ADDRESS as the customer.
+  // So with no PROJ: prefer the first segment when it looks like a "Last, First"
+  // name (has a comma), otherwise fall back to the second-then-first segment.
+  let namePart: string;
+  if (projIdx >= 0 && parts[projIdx + 1]) {
+    namePart = parts[projIdx + 1];
+  } else if (parts[0]?.includes(",")) {
+    namePart = parts[0];
+  } else {
+    namePart = parts[1] ?? parts[0] ?? dealName;
+  }
 
   // Flip "Last, First" → "First Last".
   const comma = namePart.indexOf(",");
