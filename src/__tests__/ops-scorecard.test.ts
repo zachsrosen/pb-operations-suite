@@ -127,6 +127,21 @@ describe("computeOpsScorecard", () => {
     expect(leg.cy.mean).toBeCloseTo(10.7, 1);
   });
 
+  it("computes end-to-end sale → CC and sale → DA legs", () => {
+    const projects = [
+      makeProject({
+        closeDate: "2026-01-10",
+        designApprovalDate: "2026-02-09", // 30 days
+        constructionCompleteDate: "2026-04-10", // 90 days
+      }),
+      makeProject({ closeDate: "2026-01-10" }), // not there yet → excluded from both legs
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const company = out.efficiency.turnaroundsByOffice.find((r) => r.office === "Company")!;
+    expect(company.legs["Sale → DA approved"].cy).toEqual({ mean: 30, median: 30 });
+    expect(company.legs["Sale → CC"].cy).toEqual({ mean: 90, median: 90 });
+  });
+
   it("counts backlog only for pre-CC active stages without a CC date", () => {
     const projects = [
       makeProject({ stageId: "20461937", amount: 10000 }), // D&E, no CC → backlog

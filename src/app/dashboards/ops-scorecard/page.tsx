@@ -425,9 +425,9 @@ export default function OpsScorecardPage() {
 
       <SectionCard
         title="Turnaround times by office"
-        sub={`Days per step as mean (median), sold-year cohorts ${py2} → ${py} → ${cy}. The mean includes the stalled-deal tail; the median is the typical deal. Same-day DA approvals: ${efficiency.sameDayDaPct.py2 ?? "—"}% → ${efficiency.sameDayDaPct.py ?? "—"}% → ${efficiency.sameDayDaPct.cy ?? "—"}%.`}
+        sub={`Days per step as mean (median), sold-year cohorts ${py2} → ${py} → ${cy}. The mean includes the stalled-deal tail; the median is the typical deal. Same-day DA approvals: ${efficiency.sameDayDaPct.py2 ?? "—"}% → ${efficiency.sameDayDaPct.py ?? "—"}% → ${efficiency.sameDayDaPct.cy ?? "—"}%. Sale → DA and Sale → CC only count deals that have reached the milestone, so recent cohorts skew fast.`}
       >
-        <table className="w-full min-w-[900px]">
+        <table className="w-full min-w-[1200px]">
           <thead>
             <tr>
               <th className={th}>Office</th>
