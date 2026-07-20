@@ -14,7 +14,15 @@ export const AddressPartsSchema = z.object({
 
 export const ShadeBucketSchema = z.enum(["light", "moderate", "heavy"]);
 export const RoofTypeSchema = z.enum(["asphalt_shingle", "tile", "metal", "flat_tpo", "other"]);
-export const LocationSchema = z.enum(["DTC", "WESTY", "COSP", "CA", "CAMARILLO"]);
+/**
+ * Location codes. "PBLO" replaced "COSP" in the Pueblo office rename;
+ * stored EstimatorRun rows and in-flight clients may still send "COSP",
+ * so it is accepted on input and normalized to "PBLO".
+ */
+export const LocationSchema = z.preprocess(
+  (v) => (v === "COSP" ? "PBLO" : v),
+  z.enum(["DTC", "WESTY", "PBLO", "CA", "CAMARILLO"]),
+);
 export const QuoteTypeSchema = z.enum([
   "new_install",
   "ev_charger",

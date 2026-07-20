@@ -10,7 +10,8 @@ export function resolveLocationFromZip(zip: string): Location | null {
   if (!Number.isFinite(z)) return null;
 
   if (utility.state === "CO") {
-    if (z >= 80800 && z <= 80999) return "COSP";
+    // Pueblo office (formerly Colorado Springs): Springs metro + Pueblo/811 band.
+    if (z >= 80800 && z <= 81199) return "PBLO";
     if (z >= 80020 && z <= 80035) return "WESTY";
     if (z >= 80300 && z <= 80305) return "WESTY";
     if (z >= 80501 && z <= 80545) return "WESTY";
