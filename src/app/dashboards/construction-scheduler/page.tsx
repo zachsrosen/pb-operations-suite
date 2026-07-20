@@ -41,7 +41,7 @@ const CONSTRUCTION_DIRECTORS: Record<string, { name: string; userUid: string; te
   Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
   Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  "Colorado Springs": { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  Pueblo: { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
   Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" }, // Camarillo shares SLO install crew
 };
@@ -146,7 +146,7 @@ const LOCATIONS = [
   "All",
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ];
@@ -170,8 +170,8 @@ const OPTIMIZER_CREWS: Record<string, Array<{ name: string; roofers: number; ele
     { name: "DTC Alpha", roofers: 2, electricians: 1, color: "#8b5cf6" },
     { name: "DTC Bravo", roofers: 2, electricians: 1, color: "#ec4899" },
   ],
-  "Colorado Springs": [
-    { name: "COSP Alpha", roofers: 3, electricians: 1, color: "#f97316" },
+  Pueblo: [
+    { name: "Pueblo Alpha", roofers: 3, electricians: 1, color: "#f97316" },
   ],
   "San Luis Obispo": [
     { name: "SLO Solar", roofers: 2, electricians: 1, color: "#06b6d4" },
@@ -1902,7 +1902,7 @@ export default function ConstructionSchedulerPage() {
                       : "bg-surface border-t-border text-muted hover:border-muted"
                   }`}
                 >
-                  {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                  {loc.replace("San Luis Obispo", "SLO")}
                 </button>
               ))}
               {selectedLocations.length > 0 && (
@@ -2019,7 +2019,7 @@ export default function ConstructionSchedulerPage() {
                             : "bg-background border-t-border text-muted hover:border-emerald-500"
                         }`}
                       >
-                        {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                        {loc.replace("San Luis Obispo", "SLO")}
                       </button>
                     ))}
                   </div>

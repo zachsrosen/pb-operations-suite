@@ -189,7 +189,7 @@ describe("DEFAULT_LOCATION_CAPACITY", () => {
   it("exports expected location capacities", () => {
     expect(DEFAULT_LOCATION_CAPACITY["Westminster"]).toBe(2);
     expect(DEFAULT_LOCATION_CAPACITY["Centennial"]).toBe(2);
-    expect(DEFAULT_LOCATION_CAPACITY["Colorado Springs"]).toBe(1);
+    expect(DEFAULT_LOCATION_CAPACITY["Pueblo"]).toBe(1);
     expect(DEFAULT_LOCATION_CAPACITY["San Luis Obispo"]).toBe(2);
     expect(DEFAULT_LOCATION_CAPACITY["Camarillo"]).toBe(1);
   });

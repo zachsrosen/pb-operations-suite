@@ -5,7 +5,7 @@ import { evaluateAppliesTo } from "./applies-to";
 export const VALID_SHOPS = [
   "Westminster",
   "DTC",
-  "Colorado Springs",
+  "Pueblo",
   "SLO",
   "Camarillo",
 ] as const;

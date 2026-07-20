@@ -5,7 +5,7 @@ import { DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
  * Construction directors per location.
  * Copied from construction-scheduler/page.tsx.
  *
- * NOTE: Colorado Springs uses Lenny Uematsu as the director.
+ * NOTE: Pueblo (formerly Colorado Springs) uses Lenny Uematsu as the director.
  * userUid is intentionally left empty — Lenny's real Zuper userUid is not
  * reliably known at build time; the schedule API resolves the assignee by
  * name at runtime. The teamUid is kept so crew-based lookups still work.
@@ -29,9 +29,15 @@ export const CONSTRUCTION_DIRECTORS: Record<
     userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353",
     teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
   },
-  "Colorado Springs": {
+  Pueblo: {
     name: "Lenny Uematsu",
     // userUid intentionally empty: resolved by name at runtime
+    userUid: "",
+    teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93",
+  },
+  // Legacy alias (pre Pueblo rename) — same entry, kept for stored/legacy location strings.
+  "Colorado Springs": {
+    name: "Lenny Uematsu",
     userUid: "",
     teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93",
   },
@@ -53,7 +59,7 @@ export const LOCATIONS: string[] = [
   "Westminster",
   "Centennial",
   "DTC",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ];

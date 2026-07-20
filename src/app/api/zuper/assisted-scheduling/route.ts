@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   const teamMap: Record<string, string> = {
     "Westminster": "1c23adb9-cefa-44c7-8506-804949afc56f",
     "Centennial": "", // Add actual team UID
-    "Colorado Springs": "", // Add actual team UID
+    "Pueblo": "", // Add actual team UID
     "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
     "Camarillo": "", // Add actual team UID
   };
