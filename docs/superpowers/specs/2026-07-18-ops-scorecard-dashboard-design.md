@@ -29,6 +29,7 @@ Local **Deal mirror** (`prisma.deal`, pipeline=PROJECT) via the same `dealToProj
 - **CC capacity model:** backlog = active-stage deals (Survey→Construction) with no `construction_complete_date`; conversion = share of sold $ reaching CC from the last fully-baked cohort (sold Jan–Sep prior year; 2025 cohort: 81% of $, median 84d); burn = trailing-3-month CC $/mo; sustain sales = burn ÷ conversion.
 - **Run rate:** two paces side by side — YTD annualized and trailing-3-month annualized — never a single number.
 - Throughput stages are independent volume measures (milestone reached in window), not one cohort flowing; say so on the page.
+- **Year framing (Zach 7/18):** all year-over-year tables show **full-year 2024, full-year 2025, 2026 YTD, and projected FY 2026** (projection = YTD + current-pace for sales/leads/appointments, capacity model for DAs–PTO). Cancellation cohorts key on the year sold, with BOTH same-yr and eventual columns per office. Do not use same-window (Jan–Jul) YoY framing except for turnaround cohort tables.
 
 ## Page sections (mirror the artifact, in order)
 
