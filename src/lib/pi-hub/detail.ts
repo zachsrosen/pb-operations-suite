@@ -209,6 +209,10 @@ export async function fetchDetail(
         ? Number(props.calculated_system_size__kwdc_)
         : null,
       dealStage: resolvedDealStage,
+      // Raw hand-entered values, shown verbatim on the Overview panel.
+      // Fetched only for IC/PTO (IDENTIFIER_PROPERTIES) — null on permit.
+      applicationNumber: props.utility_application__ ?? null,
+      xcelIaNumber: props.xcel_ia_number ?? null,
       hubspotUrl: getHubSpotDealUrl(dealId),
       designFolderUrl,
       driveFolderUrl,

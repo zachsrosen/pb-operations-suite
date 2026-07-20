@@ -19,6 +19,10 @@ export function OverviewPanel({ detail }: { detail: ProjectDetail }) {
     ["Current status", deal.statusLabel || deal.status || null],
     ["Deal stage", deal.dealStage],
   ];
+  // Identifier rows only when present: application # exists on IC/PTO deals,
+  // the IA number only on Xcel deals.
+  if (deal.applicationNumber) fields.push(["Application #", deal.applicationNumber]);
+  if (deal.xcelIaNumber) fields.push(["Xcel IA #", deal.xcelIaNumber]);
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
       {fields.map(([label, value]) => (
