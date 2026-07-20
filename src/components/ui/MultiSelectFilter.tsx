@@ -116,6 +116,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
     orange: "bg-orange-500/20 text-orange-400 border-orange-500/50",
     blue: "bg-blue-500/20 text-blue-400 border-blue-500/50",
     green: "bg-green-500/20 text-green-400 border-green-500/50",
+    yellow: "bg-yellow-500/20 text-yellow-400 border-yellow-500/50",
     purple: "bg-purple-500/20 text-purple-400 border-purple-500/50",
     cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   };
@@ -126,6 +127,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
     orange: "bg-orange-500 border-orange-500",
     blue: "bg-blue-500 border-blue-500",
     green: "bg-green-500 border-green-500",
+    yellow: "bg-yellow-500 border-yellow-500",
     purple: "bg-purple-500 border-purple-500",
     cyan: "bg-cyan-500 border-cyan-500",
   };
@@ -134,6 +136,7 @@ export const MultiSelectFilter = memo(function MultiSelectFilter({
     orange: "bg-orange-500/50 border-orange-500",
     blue: "bg-blue-500/50 border-blue-500",
     green: "bg-green-500/50 border-green-500",
+    yellow: "bg-yellow-500/50 border-yellow-500",
     purple: "bg-purple-500/50 border-purple-500",
     cyan: "bg-cyan-500/50 border-cyan-500",
   };

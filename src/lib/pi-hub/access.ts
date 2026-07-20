@@ -1,0 +1,39 @@
+/**
+ * Role + flag gates for the unified P&I hub. Role strings mirror
+ * PERMIT_HUB_ROLES (permit-hub.ts) / IC_HUB_ROLES (ic-hub.ts) with both
+ * team roles admitted, since the hub serves permit, ic, and pto tabs.
+ */
+
+import type { Team } from "./types";
+
+export const PI_HUB_ROLES = [
+  "ADMIN",
+  "EXECUTIVE",
+  "PERMIT",
+  "INTERCONNECT",
+  "TECH_OPS",
+] as const;
+
+/**
+ * Server-only flag read: `PI_HUB_ENABLED` is not exposed to the client bundle,
+ * so this must only be called from server components / API routes. Client
+ * components read `NEXT_PUBLIC_PI_HUB_ENABLED` directly instead.
+ */
+export function isPiHubEnabled(): boolean {
+  return process.env.PI_HUB_ENABLED === "true";
+}
+
+export function isPiHubAllowedRole(roles: string[]): boolean {
+  return roles.some((r) => (PI_HUB_ROLES as readonly string[]).includes(r));
+}
+
+/** Which team tabs a user's roles admit. PTO is interconnection work. */
+export function allowedTeamsForRoles(roles: string[]): Team[] {
+  if (roles.some((r) => ["ADMIN", "EXECUTIVE", "TECH_OPS"].includes(r))) {
+    return ["permit", "ic", "pto"];
+  }
+  const teams: Team[] = [];
+  if (roles.includes("PERMIT")) teams.push("permit");
+  if (roles.includes("INTERCONNECT")) teams.push("ic", "pto");
+  return teams;
+}

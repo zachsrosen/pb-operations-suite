@@ -70,8 +70,9 @@ export default function ConfirmDialog({
 
   return (
     <div
+      // No aria-hidden here: this backdrop WRAPS the role="dialog" element, so
+      // hiding it removed the entire dialog from the accessibility tree.
       className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      aria-hidden="true"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
     >
       <div

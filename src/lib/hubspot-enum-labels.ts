@@ -60,6 +60,27 @@ export async function getEnumLabelMap(
   return map;
 }
 
+export interface EnumOption { value: string; label: string }
+
+/**
+ * ACTIVE options only, in HubSpot display order — the dropdown's option
+ * source. Do NOT use getEnumLabelMap for a write path: it deliberately
+ * merges ARCHIVED options (for labeling deals stuck on retired values),
+ * and offering those for writing reintroduces the #1481 bug class.
+ */
+export async function getActiveEnumOptions(propertyName: string): Promise<EnumOption[]> {
+  const key = `enum-active:${propertyName}`;
+  const cached = appCache.get<EnumOption[]>(key);
+  if (cached.hit && cached.data) return cached.data;
+  const def = await getDealPropertyDefinition(propertyName);
+  const options = (def?.options ?? [])
+    .filter((o) => !(o as { archived?: boolean }).archived && !(o as { hidden?: boolean }).hidden)
+    .map((o) => ({ value: String(o.value ?? ""), label: String(o.label ?? o.value ?? "") }))
+    .filter((o) => o.value);
+  if (options.length) appCache.set(key, options, { ttl: TTL_MS, staleTtl: TTL_MS });
+  return options;
+}
+
 /** Convenience: resolve one value, falling back to the value itself. */
 export function labelFor(
   map: Map<string, string>,
