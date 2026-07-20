@@ -357,7 +357,8 @@ export async function fetchIcProjectDetail(
     deal = await hubspotClient.crm.deals.basicApi.getById(dealId, [
       "dealname",
       "project_number",
-      "utility_application__", // Utility Application # — utility cites it in correspondence
+      "utility_application__", // Utility Application # (Case number) — utility cites it in correspondence
+      "xcel_ia_number", // Xcel Interconnection Application # — the ONLY id chatter emails carry
       "address_line_1",
       "city",
       "state",
@@ -468,7 +469,14 @@ export async function fetchIcProjectDetail(
   // utility_application__ is hand-entered and often polluted with the program
   // code + TPO signer name — extract the clean token(s) or the phrase match
   // finds nothing (PROJ-9810: "06405260 (PSPS) J STEPHEN POLLOCK").
-  const icIdentifiers = extractIdentifierTokens(props.utility_application__);
+  // Two different Xcel identifiers, and correspondence splits across them:
+  // status/payment/Sertifi mail cites the Case number (utility_application__),
+  // while the chatter notifications that carry the actual approve/reject
+  // decisions cite ONLY the IA number. Match on both.
+  const icIdentifiers = [
+    ...extractIdentifierTokens(props.utility_application__),
+    ...extractIdentifierTokens(props.xcel_ia_number),
+  ];
   if (props.address_line_1 || props.project_number || icIdentifiers.some(Boolean)) {
     const pbLoc = props.pb_location;
     let region: "co" | "ca" | null = null;
