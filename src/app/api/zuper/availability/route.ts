@@ -158,7 +158,8 @@ const TEAM_LOCATION_NAMES: Record<string, string> = {
   Westminster: "Westminster",
   Centennial: "Centennial",
   DTC: "Centennial", // DTC is part of Centennial team
-  "Colorado Springs": "Colorado Springs",
+  Pueblo: "Pueblo",
+  "Colorado Springs": "Pueblo", // legacy inbound location (pre Pueblo rename) — Zuper team renamed in place
   "San Luis Obispo": "San Luis Obispo",
   Camarillo: "Camarillo",
 };
@@ -203,10 +204,10 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
   {
-    // Lenny Uematsu took over all Colorado Springs surveys from Rolando Valle.
+    // Lenny Uematsu took over all Pueblo (formerly Colorado Springs) surveys from Rolando Valle.
     name: "Lenny Uematsu",
-    location: "Colorado Springs",
-    reportLocation: "Colorado Springs",
+    location: "Pueblo",
+    reportLocation: "Pueblo",
     schedule: [
       { day: 1, startTime: "08:00", endTime: "12:00" }, // Mon
       { day: 2, startTime: "08:00", endTime: "12:00" }, // Tue
@@ -351,7 +352,10 @@ const LOCATION_ALIASES: Record<string, string[]> = {
   Westminster: ["Westminster"],
   Centennial: ["Centennial", "DTC"],
   DTC: ["DTC", "Centennial"],
-  "Colorado Springs": ["Colorado Springs"],
+  // Legacy "Colorado Springs" rows still exist in CrewAvailability until the
+  // data migration runs — accept both spellings in each direction.
+  Pueblo: ["Pueblo", "Colorado Springs"],
+  "Colorado Springs": ["Colorado Springs", "Pueblo"],
   "San Luis Obispo": ["San Luis Obispo", "SLO"],
   // Camarillo and SLO share install/construction crews but have SEPARATE survey
   // availability. Only expand to SLO for non-survey job types.

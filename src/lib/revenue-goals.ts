@@ -17,6 +17,7 @@ import {
   computeEffectiveTargets,
   computePaceStatus,
   aggregateRevenue,
+  normalizeRevenueGroupKey,
   type DealLike,
   type RevenueGoalResponse,
   type RevenueGroupResult,
@@ -486,8 +487,9 @@ export async function getRevenueGoalSnapshot(
         baseTargetsMap[groupKey] = Array(12).fill(group.annualTarget / 12);
       }
       for (const goal of goals) {
-        if (!baseTargetsMap[goal.groupKey]) continue;
-        baseTargetsMap[goal.groupKey][goal.month - 1] = Number(goal.target);
+        const groupKey = normalizeRevenueGroupKey(goal.groupKey);
+        if (!baseTargetsMap[groupKey]) continue;
+        baseTargetsMap[groupKey][goal.month - 1] = Number(goal.target);
       }
 
       const [deals, zuperActuals] = await Promise.all([

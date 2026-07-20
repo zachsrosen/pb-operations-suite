@@ -2,7 +2,7 @@
  * GET /api/cron/goals-digest
  *
  * Monday-morning cron — sends one Goals Digest email per office
- * (Westminster, Centennial, Colorado Springs, California) to leadership
+ * (Westminster, Centennial, Pueblo, California) to leadership
  * and ops directors. Each email focuses on that office's goals with
  * company-wide context as a secondary section.
  *

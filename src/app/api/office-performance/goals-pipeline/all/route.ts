@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
           const allPipelines = perLocationData.map((d) => d.pipeline);
 
           // Build perLocation rows by collapsing per-canonical data into dashboard groups.
-          // Single-canonical groups (Westminster, Centennial, Colorado Springs) pass through.
+          // Single-canonical groups (Westminster, Centennial, Pueblo) pass through.
           // Multi-canonical groups (California = SLO + Camarillo) are summed into one row.
           const perLocation: AllGoalsPipelineResponse["perLocation"] = [];
           for (const group of DASHBOARD_LOCATION_GROUPS) {

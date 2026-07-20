@@ -35,7 +35,10 @@ const LOCATION_ALIASES: Record<string, string[]> = {
   Westminster: ["Westminster"],
   Centennial: ["Centennial", "DTC"],
   DTC: ["DTC", "Centennial"],
-  "Colorado Springs": ["Colorado Springs"],
+  // Legacy "Colorado Springs" rows still exist in CrewAvailability until the
+  // data migration runs — accept both spellings in each direction.
+  Pueblo: ["Pueblo", "Colorado Springs"],
+  "Colorado Springs": ["Colorado Springs", "Pueblo"],
   "San Luis Obispo": ["San Luis Obispo", "SLO"],
   // Camarillo and SLO share install crews but have SEPARATE survey availability.
   // Do NOT include SLO here — a crew member with different per-location survey

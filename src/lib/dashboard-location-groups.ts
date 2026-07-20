@@ -16,7 +16,7 @@ import type { CanonicalLocation } from "@/lib/locations";
 export const DASHBOARD_LOCATION_SLUGS = [
   "westminster",
   "centennial",
-  "colorado-springs",
+  "pueblo",
   "california",
 ] as const;
 
@@ -34,7 +34,7 @@ export interface DashboardLocationGroup {
 export const DASHBOARD_LOCATION_GROUPS: DashboardLocationGroup[] = [
   { slug: "westminster", label: "Westminster", canonicals: ["Westminster"] },
   { slug: "centennial", label: "Centennial", canonicals: ["Centennial"] },
-  { slug: "colorado-springs", label: "Colorado Springs", canonicals: ["Pueblo"] },
+  { slug: "pueblo", label: "Pueblo", canonicals: ["Pueblo"] },
   { slug: "california", label: "California", canonicals: ["San Luis Obispo", "Camarillo"] },
 ];
 
@@ -49,6 +49,8 @@ const GROUPS_BY_SLUG: Record<string, DashboardLocationGroup> = Object.fromEntrie
 export const LEGACY_SLUG_REDIRECTS: Record<string, DashboardLocationSlug> = {
   "san-luis-obispo": "california",
   "camarillo": "california",
+  // Pre-Pueblo-rename slug — old bookmarks/TV URLs keep working.
+  "colorado-springs": "pueblo",
 };
 
 /**

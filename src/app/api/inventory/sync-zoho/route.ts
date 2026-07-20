@@ -21,7 +21,7 @@ const ALLOWED_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
 const PB_LOCATIONS = [
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ] as const;
@@ -117,10 +117,13 @@ function canonicalizeLocation(rawName: string | undefined, rawId: string | undef
     westy: "Westminster",
     centennial: "Centennial",
     dtc: "Centennial",
-    "colorado springs": "Colorado Springs",
-    "co springs": "Colorado Springs",
-    cosp: "Colorado Springs",
-    pueblo: "Colorado Springs",
+    // Zoho warehouse display name unverified (API unreachable during the
+    // Pueblo rename) — accept both the legacy and new spellings.
+    pueblo: "Pueblo",
+    pblo: "Pueblo",
+    "colorado springs": "Pueblo",
+    "co springs": "Pueblo",
+    cosp: "Pueblo",
     "san luis obispo": "San Luis Obispo",
     slo: "San Luis Obispo",
     camarillo: "Camarillo",
