@@ -110,7 +110,21 @@ describe("computeOpsScorecard", () => {
     ];
     const out = computeOpsScorecard(projects, NOW);
     const company = out.efficiency.turnaroundsByOffice.find((r) => r.office === "Company")!;
-    expect(company.legs["Sale → day of survey"].cy).toBe(5);
+    expect(company.legs["Sale → day of survey"].cy.mean).toBe(5);
+    expect(company.legs["Sale → day of survey"].cy.median).toBe(5);
+  });
+
+  it("reports both mean and median per turnaround leg", () => {
+    const projects = [
+      makeProject({ closeDate: "2026-01-10", siteSurveyScheduleDate: "2026-01-11" }), // 1 day
+      makeProject({ closeDate: "2026-01-10", siteSurveyScheduleDate: "2026-01-11" }), // 1 day
+      makeProject({ closeDate: "2026-01-10", siteSurveyScheduleDate: "2026-02-09" }), // 30 days
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const company = out.efficiency.turnaroundsByOffice.find((r) => r.office === "Company")!;
+    const leg = company.legs["Sale → day of survey"];
+    expect(leg.cy.median).toBe(1);
+    expect(leg.cy.mean).toBeCloseTo(10.7, 1);
   });
 
   it("counts backlog only for pre-CC active stages without a CC date", () => {
@@ -152,6 +166,38 @@ describe("computeOpsScorecard", () => {
     ];
     const out = computeOpsScorecard(projects, NOW);
     expect(out.efficiency.sameDayDaPct.cy).toBe(50);
+  });
+
+  it("computes same-point prior-year cohorts through the clock's month-day", () => {
+    // NOW is 2026-07-18 → monthDay window is Jan 1 – Jul 18 of each year.
+    const projects = [
+      makeProject({ closeDate: "2025-03-01", amount: 100 }), // 2025 before Jul 18 → in same-point
+      makeProject({ closeDate: "2025-09-01", amount: 200 }), // 2025 after Jul 18 → FY only
+      makeProject({ closeDate: "2026-02-01", amount: 300 }),
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    expect(out.meta.monthDay).toBe("07-18");
+    expect(out.meta.monthDayLabel).toBe("Jul 18");
+    const company = out.throughputByOffice.find((r) => r.office === "Company")!;
+    expect(company.sales.py.count).toBe(2);
+    expect(company.sales.pySamePoint.count).toBe(1);
+    expect(company.sales.pySamePoint.revenue).toBe(100);
+  });
+
+  it("same-age cancellation lens counts only cancels stamped by the month-day", () => {
+    const projects = [
+      // sold + cancelled before Jul 18, 2025 → in same-point cohort numerator
+      makeProject({ closeDate: "2025-02-01", amount: 100, stageId: "68229433", cancelledDate: "2025-05-01" }),
+      // sold before Jul 18 but cancelled after → denominator only
+      makeProject({ closeDate: "2025-03-01", amount: 100, stageId: "68229433", cancelledDate: "2025-11-01" }),
+      // sold after Jul 18 → excluded from same-point entirely
+      makeProject({ closeDate: "2025-10-01", amount: 100 }),
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const company = out.cancellations.find((r) => r.office === "Company")!;
+    expect(company.samePoint.py.sold).toBe(2);
+    expect(company.samePoint.py.count).toBe(1);
+    expect(company.samePoint.py.revPct).toBeCloseTo(50);
   });
 
   it("year framing follows the provided clock", () => {
