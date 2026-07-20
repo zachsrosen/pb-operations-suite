@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { parseTeam } from "@/lib/pi-hub/types";
@@ -53,10 +53,15 @@ export function PiHubClient({
   const accent = ACCENT_FOR_TEAM[team];
 
   // Selection is per-team — a deal from one team's queue is meaningless in
-  // another's, so clear it whenever the team changes.
-  useEffect(() => {
+  // another's, so clear it when the team changes. Render-time reset (the
+  // React-sanctioned adjust-state-during-render pattern) rather than an
+  // effect: the effect version painted one frame with the stale selection
+  // and tripped react-hooks/set-state-in-effect.
+  const [selectionTeam, setSelectionTeam] = useState(team);
+  if (selectionTeam !== team) {
+    setSelectionTeam(team);
     setSelectedDealId(null);
-  }, [team]);
+  }
 
   const queueQuery = useQuery<{ queue: QueueItem[]; lastUpdated: string }>({
     queryKey: queryKeys.piHub.queue(team),
@@ -70,6 +75,31 @@ export function PiHubClient({
     // screen until the new team's data lands (house standard).
     placeholderData: keepPreviousData,
   });
+
+  // keepPreviousData without a visible fetching state made team switches look
+  // like a no-op: a cold queue load runs one HubSpot history call per deal
+  // (30-60s for the IC queue), during which the old team's rows sat on screen
+  // unchanged. Surface it so the switch visibly happened.
+  const isSwitching = queueQuery.isPlaceholderData;
+
+  // Warm the other allowed teams once the current queue has landed: makes the
+  // first switch near-instant and heats the server-side status-history cache.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!queueQuery.isSuccess || queueQuery.isPlaceholderData) return;
+    for (const other of allowedTeams) {
+      if (other === team) continue;
+      void queryClient.prefetchQuery({
+        queryKey: queryKeys.piHub.queue(other),
+        queryFn: async () => {
+          const r = await fetch(`/api/pi-hub/queue?team=${other}`);
+          if (!r.ok) throw new Error("Failed to load queue");
+          return r.json();
+        },
+        staleTime: 30_000,
+      });
+    }
+  }, [queueQuery.isSuccess, queueQuery.isPlaceholderData, team, allowedTeams, queryClient]);
 
   useSSE(() => queueQuery.refetch(), {
     url: "/api/stream",
@@ -118,6 +148,7 @@ export function PiHubClient({
           <Queue
             items={queueQuery.data?.queue ?? []}
             isLoading={queueQuery.isLoading}
+            isSwitching={isSwitching}
             selectedDealId={selectedDealId}
             onSelect={setSelectedDealId}
             team={team}

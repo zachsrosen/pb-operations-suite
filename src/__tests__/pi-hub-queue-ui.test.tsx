@@ -37,7 +37,7 @@ const ITEMS: QueueItem[] = [
   item({ dealId: "f3", group: "waiting" }),
 ];
 
-function renderQueue(items = ITEMS) {
+function renderQueue(items = ITEMS, opts: { isSwitching?: boolean } = {}) {
   const onSelect = jest.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -50,6 +50,7 @@ function renderQueue(items = ITEMS) {
         <Queue
           items={items}
           isLoading={false}
+          isSwitching={opts.isSwitching ?? false}
           selectedDealId={null}
           onSelect={onSelect}
           team="permit"
@@ -204,5 +205,23 @@ describe("pi-hub Queue tabs", () => {
     renderQueue([item({ dealId: "r1", group: "ready", isStale: true })]);
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByText("Stale")).toBeInTheDocument();
+  });
+});
+
+describe("team switching feedback", () => {
+  // A cold queue load runs one history call per deal (30-60s for IC) while
+  // keepPreviousData keeps the old team's rows on screen. Without a visible
+  // state the switch reads as a no-op — the first live user reported exactly
+  // that ("nothing is changing between the tabs").
+  it("shows a loading banner and marks the panel busy while switching", () => {
+    renderQueue([item({ dealId: "r1" })], { isSwitching: true });
+    expect(screen.getByRole("status")).toHaveTextContent(/Loading Permit queue/);
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows no banner when not switching", () => {
+    renderQueue([item({ dealId: "r1" })]);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-busy", "false");
   });
 });

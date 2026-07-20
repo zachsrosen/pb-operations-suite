@@ -21,6 +21,8 @@ export interface AccentClasses {
   rowSelected: string;
   /** Primary external-link button (detail header). */
   primaryButton: string;
+  /** Team-switch loading banner (text + tint). */
+  switchingBanner: string;
 }
 
 export const ACCENTS: Record<Accent, AccentClasses> = {
@@ -31,6 +33,7 @@ export const ACCENTS: Record<Accent, AccentClasses> = {
     tabActiveBadge: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
     rowSelected: "bg-blue-500/10",
     primaryButton: "bg-blue-500 text-white hover:bg-blue-600",
+    switchingBanner: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   },
   green: {
     filter: "green",
@@ -39,6 +42,7 @@ export const ACCENTS: Record<Accent, AccentClasses> = {
     tabActiveBadge: "bg-green-500/10 text-green-600 dark:text-green-400",
     rowSelected: "bg-green-500/10",
     primaryButton: "bg-green-500 text-white hover:bg-green-600",
+    switchingBanner: "bg-green-500/10 text-green-600 dark:text-green-400",
   },
   yellow: {
     filter: "yellow",
@@ -47,6 +51,7 @@ export const ACCENTS: Record<Accent, AccentClasses> = {
     tabActiveBadge: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
     rowSelected: "bg-yellow-500/10",
     primaryButton: "bg-yellow-500 text-white hover:bg-yellow-600",
+    switchingBanner: "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
   },
 };
 
