@@ -34,4 +34,11 @@ describe("extractIdentifierTokens", () => {
     expect(extractIdentifierTokens(null)).toEqual([]);
     expect(extractIdentifierTokens("  ")).toEqual([]);
   });
+
+  it("passes an Xcel IA number through unchanged", () => {
+    // Chatter notification emails cite ONLY this id (IA160801), never the
+    // case number, so it must survive extraction to reach the Gmail query.
+    expect(extractIdentifierTokens("IA214386")).toEqual(["IA214386"]);
+    expect(extractIdentifierTokens("IA160801")).toEqual(["IA160801"]);
+  });
 });
