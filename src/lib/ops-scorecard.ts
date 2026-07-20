@@ -86,6 +86,8 @@ const sumAmount = (ps: Project[]) => ps.reduce((s, p) => s + (p.amount || 0), 0)
 const round1 = (n: number | null) => (n === null ? null : Math.round(n * 10) / 10);
 
 interface CountRev {
+  /** All-deals (gross) revenue incl. later-cancelled — companion to net `revenue`. */
+  grossRevenue: number;
   count: number;
   revenue: number;
 }
@@ -111,14 +113,15 @@ export interface SameAgeCohort {
   count: number;
   sold: number;
   revPct: number | null;
+  revLost: number;
 }
 
 export interface OfficeCancellation {
   office: string;
   /** Same-age lens: sold Jan1→monthDay of the year, cancelled by monthDay same year. */
   samePoint: { py2: SameAgeCohort; py: SameAgeCohort; cy: SameAgeCohort };
-  py2: { sameYrCount: number; sold: number; sameYrRevPct: number | null; eventualCount: number; eventualRevPct: number | null };
-  py: { sameYrCount: number; sold: number; sameYrRevPct: number | null; eventualCount: number; eventualRevPct: number | null };
+  py2: { sameYrCount: number; sold: number; sameYrRevPct: number | null; eventualCount: number; eventualRevPct: number | null; eventualRevLost: number };
+  py: { sameYrCount: number; sold: number; sameYrRevPct: number | null; eventualCount: number; eventualRevPct: number | null; eventualRevLost: number };
   cy: { count: number; sold: number; revPct: number | null; revLost: number };
 }
 
@@ -156,6 +159,7 @@ export interface OpsScorecardData {
     convMedianDays: number | null;
     burnPerMo: number | null;
     netSalesPacePerMo: number | null;
+    grossSalesPacePerMo: number | null;
     sustainSalesPerMo: number | null;
     coverMonths: number | null;
     ytdCcRev: number;
@@ -169,15 +173,22 @@ export interface OpsScorecardData {
       ccPacePerMo: number | null;
       coverMonths: number | null;
       sellingPacePerMo: number | null;
+      grossSellingPacePerMo: number | null;
       sustainPerMo: number | null;
     }>;
   };
-  ccByMonth: Array<{ month: string; count: number; revenue: number }>;
-  daByMonth: Array<{ month: string; count: number; revenue: number }>;
+  salesByMonth: Array<{ month: string; count: number; revenue: number; grossRevenue: number }>;
+  ccByMonth: Array<{ month: string; count: number; revenue: number; grossRevenue: number }>;
+  daByMonth: Array<{ month: string; count: number; revenue: number; grossRevenue: number }>;
   runRateByOffice: Array<{
     office: string;
     py2Rev: number;
     pyRev: number;
+    py2GrossRev: number;
+    pyGrossRev: number;
+    py2SamePointGrossRev: number;
+    pySamePointGrossRev: number;
+    ytdGrossRev: number;
     py2SamePointRev: number;
     pySamePointRev: number;
     ytdRev: number;
@@ -251,7 +262,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
   const stageYearRow = (date: (p: Project) => string | null): StageYearRow => {
     const mk = (year: string, throughMonthDay?: string): CountRev => {
       const all = reached(date, year, throughMonthDay);
-      return { count: all.length, revenue: sumAmount(all.filter(isNet)) };
+      return { count: all.length, revenue: sumAmount(all.filter(isNet)), grossRevenue: sumAmount(all) };
     };
     return {
       py2: mk(py2),
@@ -282,17 +293,18 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     cyMonths.map((month) => {
       const ps = projects.filter((p) => monthOf(date(p)) === month);
       const rev = sumAmount(net ? ps.filter(isNet) : ps);
-      return { month, count: ps.length, revenue: rev };
+      return { month, count: ps.length, revenue: rev, grossRevenue: sumAmount(ps) };
     });
+  const salesByMonth = monthBars((p) => p.closeDate, true);
   const ccByMonth = monthBars((p) => p.constructionCompleteDate, false);
   const daByMonth = monthBars((p) => p.designApprovalDate, true);
 
   // ---- Run rate by office ---------------------------------------------------
   const runRateRow = (ps: Project[]) => {
-    const sold = (year: string, throughMonthDay?: string) =>
+    const sold = (year: string, throughMonthDay?: string, gross = false) =>
       sumAmount(
         ps.filter((p) => {
-          if (yearOf(p.closeDate) !== year || !isNet(p)) return false;
+          if (yearOf(p.closeDate) !== year || (!gross && !isNet(p))) return false;
           if (throughMonthDay && p.closeDate!.slice(5, 10) > throughMonthDay) return false;
           return true;
         })
@@ -304,8 +316,13 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     return {
       py2Rev: sold(py2),
       pyRev: sold(py),
+      py2GrossRev: sold(py2, undefined, true),
+      pyGrossRev: sold(py, undefined, true),
       py2SamePointRev: sold(py2, monthDay),
       pySamePointRev: sold(py, monthDay),
+      py2SamePointGrossRev: sold(py2, monthDay, true),
+      pySamePointGrossRev: sold(py, monthDay, true),
+      ytdGrossRev: sold(cy, undefined, true),
       ytdRev,
       ytdAnnualized: yearFrac > 0 ? ytdRev / yearFrac : 0,
       l3mAnnualized: (l3mRev / 3) * 12,
@@ -328,7 +345,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
             if (throughMonthDay && d.slice(5, 10) > throughMonthDay) return false;
             return true;
           });
-          return { count: all.length, revenue: sumAmount(all.filter(isNet)) };
+          return { count: all.length, revenue: sumAmount(all.filter(isNet)), grossRevenue: sumAmount(all) };
         };
         return {
           py2: mk(py2),
@@ -367,6 +384,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       eventualCount: cancelled.length,
       eventualRevPct: pct(cancelled),
       sameYrRev: sumAmount(sameYr),
+      eventualRev: sumAmount(cancelled),
     };
   };
 
@@ -386,6 +404,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       count: cancelled.length,
       sold: sold.length,
       revPct: soldRev > 0 ? (sumAmount(cancelled) / soldRev) * 100 : null,
+      revLost: sumAmount(cancelled),
     };
   };
 
@@ -396,8 +415,8 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     return {
       office,
       samePoint: { py2: sameAge(ps, py2), py: sameAge(ps, py), cy: sameAge(ps, cy) },
-      py2: { sameYrCount: a.sameYrCount, sold: a.sold, sameYrRevPct: a.sameYrRevPct, eventualCount: a.eventualCount, eventualRevPct: a.eventualRevPct },
-      py: { sameYrCount: b.sameYrCount, sold: b.sold, sameYrRevPct: b.sameYrRevPct, eventualCount: b.eventualCount, eventualRevPct: b.eventualRevPct },
+      py2: { sameYrCount: a.sameYrCount, sold: a.sold, sameYrRevPct: a.sameYrRevPct, eventualCount: a.eventualCount, eventualRevPct: a.eventualRevPct, eventualRevLost: a.eventualRev },
+      py: { sameYrCount: b.sameYrCount, sold: b.sold, sameYrRevPct: b.sameYrRevPct, eventualCount: b.eventualCount, eventualRevPct: b.eventualRevPct, eventualRevLost: b.eventualRev },
       cy: { count: c.sameYrCount, sold: c.sold, revPct: c.sameYrRevPct, revLost: c.sameYrRev },
     };
   };
@@ -524,6 +543,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
   };
   const burnPerMo = last3Mo((p) => p.constructionCompleteDate, false);
   const netSalesPacePerMo = last3Mo((p) => p.closeDate, true);
+  const grossSalesPacePerMo = last3Mo((p) => p.closeDate, false);
   const conv = conversionPct !== null ? conversionPct / 100 : null;
   const sustainSalesPerMo = conv && conv > 0 ? burnPerMo / conv : null;
 
@@ -556,6 +576,8 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       sumAmount(
         ps.filter((p) => p.closeDate && p.closeDate >= l3mLo && p.closeDate <= l3mHi && isNet(p))
       ) / 3;
+    const grossSellingPacePerMo =
+      sumAmount(ps.filter((p) => p.closeDate && p.closeDate >= l3mLo && p.closeDate <= l3mHi)) / 3;
     const oConv = oConvPct !== null ? oConvPct / 100 : null;
     return {
       office: o,
@@ -566,6 +588,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       coverMonths:
         ccPacePerMo && ccPacePerMo > 0 ? round1(sumAmount(oBacklog) / ccPacePerMo) : null,
       sellingPacePerMo: Math.round(sellingPacePerMo),
+      grossSellingPacePerMo: Math.round(grossSellingPacePerMo),
       sustainPerMo:
         oConv && oConv > 0 && ccPacePerMo !== null ? Math.round(ccPacePerMo / oConv) : null,
     };
@@ -591,6 +614,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       convMedianDays,
       burnPerMo: Math.round(burnPerMo),
       netSalesPacePerMo: Math.round(netSalesPacePerMo),
+      grossSalesPacePerMo: Math.round(grossSalesPacePerMo),
       sustainSalesPerMo: sustainSalesPerMo !== null ? Math.round(sustainSalesPerMo) : null,
       coverMonths: burnPerMo > 0 ? round1(backlogRev / burnPerMo) : null,
       ytdCcRev,
@@ -598,6 +622,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
       projectedFyCcHigh,
       byOffice: capacityByOffice,
     },
+    salesByMonth,
     ccByMonth,
     daByMonth,
     runRateByOffice,

@@ -215,6 +215,29 @@ describe("computeOpsScorecard", () => {
     expect(company.samePoint.py.revPct).toBeCloseTo(50);
   });
 
+  it("reports gross revenue alongside net for throughput rows", () => {
+    const projects = [
+      makeProject({ closeDate: "2026-02-01", amount: 1000 }),
+      makeProject({ closeDate: "2026-03-01", amount: 500, stageId: "68229433" }), // cancelled → gross only
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const company = out.throughputByOffice.find((r) => r.office === "Company")!;
+    expect(company.sales.ytd.revenue).toBe(1000);
+    expect(company.sales.ytd.grossRevenue).toBe(1500);
+  });
+
+  it("reports revenue lost for prior-year cancellation cohorts", () => {
+    const projects = [
+      makeProject({ closeDate: "2025-02-01", amount: 700, stageId: "68229433", cancelledDate: "2025-04-01" }),
+      makeProject({ closeDate: "2025-03-01", amount: 300, stageId: "68229433", cancelledDate: "2026-01-15" }),
+      makeProject({ closeDate: "2025-05-01", amount: 1000 }),
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const company = out.cancellations.find((r) => r.office === "Company")!;
+    expect(company.py.eventualRevLost).toBe(1000); // 700 same-yr + 300 the next year
+    expect(company.samePoint.py.revLost).toBe(700); // only the cancel stamped by Jul 18
+  });
+
   it("year framing follows the provided clock", () => {
     const out = computeOpsScorecard([], NOW);
     expect(out.meta.cy).toBe("2026");
