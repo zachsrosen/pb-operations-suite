@@ -238,6 +238,15 @@ describe("computeOpsScorecard", () => {
     expect(company.samePoint.py.revLost).toBe(700); // only the cancel stamped by Jul 18
   });
 
+  it("passes topFunnel through and defaults it to null", () => {
+    expect(computeOpsScorecard([], NOW).topFunnel).toBeNull();
+    const tf = {
+      leads: { py2: 2289, py: 3252, ytd: 1888, py2SamePoint: 1073, pySamePoint: 1500 },
+      consults: { py2: 2996, py: 3351, ytd: 1508, py2SamePoint: 1600, pySamePoint: 1700 },
+    };
+    expect(computeOpsScorecard([], NOW, tf).topFunnel).toEqual(tf);
+  });
+
   it("year framing follows the provided clock", () => {
     const out = computeOpsScorecard([], NOW);
     expect(out.meta.cy).toBe("2026");

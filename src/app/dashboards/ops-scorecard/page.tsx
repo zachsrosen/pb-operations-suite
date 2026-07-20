@@ -447,11 +447,11 @@ export default function OpsScorecardPage() {
 
       {/* ---- Funnel FY ---- */}
       <SectionCard
-        title="Funnel: sales → DAs → CCs → inspections → PTO"
+        title={data.topFunnel ? "Funnel: leads → consults → sales → DAs → CCs → inspections → PTO" : "Funnel: sales → DAs → CCs → inspections → PTO"}
         sub={
           yearView === "fy"
-            ? `Full-year ${py2} and ${py}, ${cy} YTD. Counts include every deal reaching the milestone; revenue is net. Leads & appointments land in phase 2.`
-            : `Milestones reached Jan 1 → ${meta.monthDayLabel} of each year — like-for-like. Counts include every deal reaching the milestone; revenue is net.`
+            ? `Full-year ${py2} and ${py}, ${cy} YTD. Counts include every deal reaching the milestone; revenue is net. Consults include all consult types (solar, battery, D&R, repeats), so they can exceed leads — use the trend, not the ratio.`
+            : `Milestones reached Jan 1 → ${meta.monthDayLabel} of each year — like-for-like. Counts include every deal reaching the milestone; revenue is net. Consults include all consult types, so they can exceed leads.`
         }
       >
         <table className="w-full min-w-[620px]">
@@ -464,6 +464,22 @@ export default function OpsScorecardPage() {
             </tr>
           </thead>
           <tbody>
+            {data.topFunnel && ([
+              ["Leads created (Sales Pipeline)", data.topFunnel.leads],
+              ["Consults set", data.topFunnel.consults],
+            ] as const).map(([label, tf]) => {
+              const fy = yearView === "fy";
+              const a = fy ? tf.py2 : tf.py2SamePoint;
+              const b = fy ? tf.py : tf.pySamePoint;
+              return (
+                <tr key={label}>
+                  <td className={td}>{label}</td>
+                  <td className={tdR}>{num(a)}</td>
+                  <td className={tdR + trend(b, a, "higher")}>{num(b)}</td>
+                  <td className={tdR + (fy ? "" : trend(tf.ytd, b, "higher"))}>{num(tf.ytd)}</td>
+                </tr>
+              );
+            })}
             {funnelFy.map((r) => {
               const fy = yearView === "fy";
               const a = fy ? r.py2 : r.py2SamePoint;

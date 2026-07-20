@@ -7,7 +7,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getDealSyncSource } from "@/lib/deal-sync";
 import { dealToProject } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
-import { computeOpsScorecard } from "@/lib/ops-scorecard";
+import { computeOpsScorecard, TopFunnelCounts } from "@/lib/ops-scorecard";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +33,11 @@ export async function GET(request: NextRequest) {
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
       CACHE_KEYS.OPS_SCORECARD,
       async () => {
-        const projects = await loadAllProjects();
-        return computeOpsScorecard(projects);
+        const [projects, topFunnel] = await Promise.all([
+          loadAllProjects(),
+          fetchTopFunnel(),
+        ]);
+        return computeOpsScorecard(projects, new Date(), topFunnel);
       },
       forceRefresh,
       { ttl: SCORECARD_TTL, staleTtl: SCORECARD_STALE_TTL }
@@ -107,4 +110,86 @@ async function fetchCancelledDates(): Promise<Map<string, string>> {
     after = response.paging?.next?.after;
   } while (after);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Top of funnel — leads + consults (outside the Project pipeline)
+// ---------------------------------------------------------------------------
+
+/**
+ * Leads = deals created in the Sales Pipeline ("default"); consults set =
+ * meeting engagements titled consult* (matches "Consult", "Consultation", any
+ * case) excluding Canceled ones — the same definitions as Matt's scorecard
+ * artifact (verified to reproduce its FY24/FY25 numbers exactly). Only the
+ * search `total` is read, so the 10k pagination cap doesn't apply. Returns
+ * null on failure so the page can hide the rows rather than 500.
+ */
+async function fetchTopFunnel(): Promise<{ leads: TopFunnelCounts; consults: TopFunnelCounts } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const searchTotal = async (
+    objectType: "deals" | "meetings",
+    filters: Array<Record<string, string>>
+  ): Promise<number> => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}/search`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ filterGroups: [{ filters }], limit: 1 }),
+      });
+      if (res.status === 429) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      if (!res.ok) throw new Error(`${objectType} search ${res.status}`);
+      const body = (await res.json()) as { total: number };
+      return body.total;
+    }
+    throw new Error(`${objectType} search rate-limited after retries`);
+  };
+
+  const epochMs = (d: string) => String(Date.parse(`${d}T00:00:00Z`));
+  const epochMsEnd = (d: string) => String(Date.parse(`${d}T23:59:59Z`));
+
+  const now = new Date();
+  const cy = now.getUTCFullYear();
+  const monthDay = now.toISOString().slice(5, 10);
+
+  const leadsIn = (lo: string, hi: string) =>
+    searchTotal("deals", [
+      { propertyName: "pipeline", operator: "EQ", value: "default" },
+      { propertyName: "createdate", operator: "BETWEEN", value: epochMs(lo), highValue: epochMsEnd(hi) },
+    ]);
+  const consultsIn = (lo: string, hi: string) =>
+    searchTotal("meetings", [
+      { propertyName: "hs_meeting_title", operator: "CONTAINS_TOKEN", value: "consult*" },
+      { propertyName: "hs_meeting_title", operator: "NOT_CONTAINS_TOKEN", value: "Canceled" },
+      { propertyName: "hs_meeting_start_time", operator: "BETWEEN", value: epochMs(lo), highValue: epochMsEnd(hi) },
+    ]);
+
+  const windows: Record<keyof TopFunnelCounts, [string, string]> = {
+    py2: [`${cy - 2}-01-01`, `${cy - 2}-12-31`],
+    py: [`${cy - 1}-01-01`, `${cy - 1}-12-31`],
+    ytd: [`${cy}-01-01`, `${cy}-${monthDay}`],
+    py2SamePoint: [`${cy - 2}-01-01`, `${cy - 2}-${monthDay}`],
+    pySamePoint: [`${cy - 1}-01-01`, `${cy - 1}-${monthDay}`],
+  };
+
+  try {
+    const keys = Object.keys(windows) as Array<keyof TopFunnelCounts>;
+    const leads = {} as TopFunnelCounts;
+    const consults = {} as TopFunnelCounts;
+    // Sequential to stay under HubSpot's per-second search limit.
+    for (const key of keys) {
+      const [lo, hi] = windows[key];
+      leads[key] = await leadsIn(lo, hi);
+      consults[key] = await consultsIn(lo, hi);
+    }
+    return { leads, consults };
+  } catch (error) {
+    Sentry.captureException(error);
+    console.error("[ops-scorecard] top-funnel fetch failed:", error);
+    return null;
+  }
 }
