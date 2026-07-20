@@ -421,6 +421,10 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     { key: "DA sent → approved", from: (p) => p.designApprovalSentDate, to: (p) => p.designApprovalDate },
     { key: "Permit submitted → issued", from: (p) => p.permitSubmitDate, to: (p) => p.permitIssueDate },
     { key: "Sale → permit issued", from: (p) => p.closeDate, to: (p) => p.permitIssueDate },
+    // End-to-end forecasting legs. Recent sold-year cohorts only include
+    // deals that already reached the milestone, so they skew fast.
+    { key: "Sale → DA approved", from: (p) => p.closeDate, to: (p) => p.designApprovalDate },
+    { key: "Sale → CC", from: (p) => p.closeDate, to: (p) => p.constructionCompleteDate },
   ];
 
   /** Median per bucket (month/quarter of the completing event). */
