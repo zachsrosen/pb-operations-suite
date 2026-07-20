@@ -136,6 +136,15 @@ export interface TurnaroundLegYearMeans {
   cy: MeanMed;
 }
 
+/** Counts per comparison window for top-of-funnel stages sourced outside the Project pipeline. */
+export interface TopFunnelCounts {
+  py2: number;
+  py: number;
+  ytd: number;
+  py2SamePoint: number;
+  pySamePoint: number;
+}
+
 export interface OpsScorecardData {
   meta: {
     generatedAt: string;
@@ -202,6 +211,9 @@ export interface OpsScorecardData {
     ccs: StageYearRow;
   }>;
   cancellations: OfficeCancellation[];
+  /** Leads (Sales-Pipeline deals created) and consults set (meetings titled consult*).
+   *  Null when the HubSpot fetch fails — the page hides the rows. */
+  topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null;
   funnelFy: Array<{ stage: string } & StageYearRow>;
   funnelMonthly: Array<{ stage: string; byMonth: Record<string, number> }>;
   efficiency: {
@@ -216,7 +228,11 @@ export interface OpsScorecardData {
 // Main
 // ---------------------------------------------------------------------------
 
-export function computeOpsScorecard(projects: Project[], now = new Date()): OpsScorecardData {
+export function computeOpsScorecard(
+  projects: Project[],
+  now = new Date(),
+  topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null = null
+): OpsScorecardData {
   const dataThrough = now.toISOString().slice(0, 10);
   const cy = String(now.getUTCFullYear());
   const py = String(now.getUTCFullYear() - 1);
@@ -628,6 +644,7 @@ export function computeOpsScorecard(projects: Project[], now = new Date()): OpsS
     runRateByOffice,
     throughputByOffice,
     cancellations,
+    topFunnel,
     funnelFy,
     funnelMonthly,
     efficiency: {
