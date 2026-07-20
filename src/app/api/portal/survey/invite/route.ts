@@ -90,6 +90,9 @@ export async function POST(request: NextRequest) {
         expiresAt,
         sentBy: session.user.email,
         sentAt: new Date(),
+        // Persist the raw link so reps can re-copy it later (only the hash is
+        // otherwise stored). This is the one place the shareable URL lives.
+        schedulingUrl: portalUrl,
       },
     });
 

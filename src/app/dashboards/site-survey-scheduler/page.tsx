@@ -493,6 +493,8 @@ export default function SiteSurveySchedulerPage() {
   const [portalInviteResult, setPortalInviteResult] = useState<{ success: boolean; message: string } | null>(null);
   const [portalInviteLink, setPortalInviteLink] = useState<string | null>(null);
   const [portalInviteStatuses, setPortalInviteStatuses] = useState<Record<string, string>>({});
+  const [portalInviteLinks, setPortalInviteLinks] = useState<Record<string, string>>({}); // dealId → schedulingUrl
+  const [portalInviteSentBy, setPortalInviteSentBy] = useState<Record<string, string>>({}); // dealId → sentBy
   const [, setPortalInviteIds] = useState<Record<string, string>>({}); // dealId → inviteId
   const [portalInviteLoadingEmail, setPortalInviteLoadingEmail] = useState(false);
 
@@ -811,15 +813,21 @@ export default function SiteSurveySchedulerPage() {
       .then((data) => {
         const statuses: Record<string, string> = {};
         const ids: Record<string, string> = {};
+        const links: Record<string, string> = {};
+        const senders: Record<string, string> = {};
         for (const inv of data.invites || []) {
           // Keep the most recent invite per deal
           if (!statuses[inv.dealId]) {
             statuses[inv.dealId] = inv.status;
             ids[inv.dealId] = inv.id;
+            if (inv.schedulingUrl) links[inv.dealId] = inv.schedulingUrl;
+            if (inv.sentBy) senders[inv.dealId] = inv.sentBy;
           }
         }
         setPortalInviteStatuses(statuses);
         setPortalInviteIds(ids);
+        setPortalInviteLinks(links);
+        setPortalInviteSentBy(senders);
       })
       .catch(() => { /* non-critical */ });
   }, [projects]);
@@ -968,6 +976,27 @@ export default function SiteSurveySchedulerPage() {
   const showToast = useCallback((message: string, type: "success" | "error" | "warning" | "info" = "success") => {
     addToast({ title: message, type });
   }, [addToast]);
+
+  /* ---- portal invite badge + copy-link helpers ---- */
+  // Badge label per deal. PENDING splits into "Invited" (sent by Olivia) vs
+  // "Link ready" (a rep generated a link but the customer wasn't messaged).
+  const inviteBadge = useCallback((dealId: string): { label: string; tone: "green" | "orange" | "muted" } | null => {
+    const status = portalInviteStatuses[dealId];
+    if (!status) return null;
+    if (status === "SCHEDULED") return { label: "Booked", tone: "green" };
+    if (status === "PENDING") {
+      const olivia = (portalInviteSentBy[dealId] || "").toLowerCase().includes("olivia");
+      return { label: olivia ? "Invited" : "Link ready", tone: "orange" };
+    }
+    return { label: status, tone: "muted" };
+  }, [portalInviteStatuses, portalInviteSentBy]);
+
+  const copyInviteLink = useCallback((dealId: string) => {
+    const url = portalInviteLinks[dealId];
+    if (!url) return;
+    navigator.clipboard?.writeText(url);
+    showToast("Scheduling link copied", "success");
+  }, [portalInviteLinks, showToast]);
 
   const canManageAllSchedules = useMemo(
     () => !!userRole && MANAGER_ROLES.includes(userRole),
@@ -2188,21 +2217,28 @@ export default function SiteSurveySchedulerPage() {
             Get link
           </button>
         ) : (
-          <span
-            className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-              portalInviteStatuses[project.id] === "SCHEDULED"
-                ? "bg-green-500/20 text-green-400"
-                : portalInviteStatuses[project.id] === "PENDING"
-                  ? "bg-orange-500/20 text-orange-400"
-                  : "bg-zinc-500/20 text-muted"
-            }`}
-            title={`Portal invite: ${portalInviteStatuses[project.id]}`}
-          >
-            {portalInviteStatuses[project.id] === "SCHEDULED"
-              ? "Booked"
-              : portalInviteStatuses[project.id] === "PENDING"
-                ? "Invited"
-                : portalInviteStatuses[project.id]}
+          <span className="inline-flex items-center gap-1">
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                inviteBadge(project.id)?.tone === "green"
+                  ? "bg-green-500/20 text-green-400"
+                  : inviteBadge(project.id)?.tone === "orange"
+                    ? "bg-orange-500/20 text-orange-400"
+                    : "bg-zinc-500/20 text-muted"
+              }`}
+              title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+            >
+              {inviteBadge(project.id)?.label}
+            </span>
+            {portalInviteLinks[project.id] && (
+              <button
+                onClick={(e) => { e.stopPropagation(); copyInviteLink(project.id); }}
+                className="text-[10px] px-1 py-0.5 rounded text-orange-400 hover:bg-orange-500/20"
+                title="Copy the scheduling link to share for follow-up"
+              >
+                Copy link
+              </button>
+            )}
           </span>
         )}
       </div>
@@ -3087,21 +3123,28 @@ export default function SiteSurveySchedulerPage() {
                                         Get link
                                       </button>
                                     ) : (
-                                      <span
-                                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                          portalInviteStatuses[project.id] === "SCHEDULED"
-                                            ? "bg-green-500/20 text-green-400"
-                                            : portalInviteStatuses[project.id] === "PENDING"
-                                              ? "bg-orange-500/20 text-orange-400"
-                                              : "bg-zinc-500/20 text-muted"
-                                        }`}
-                                        title={`Portal invite: ${portalInviteStatuses[project.id]}`}
-                                      >
-                                        {portalInviteStatuses[project.id] === "SCHEDULED"
-                                          ? "Booked"
-                                          : portalInviteStatuses[project.id] === "PENDING"
-                                            ? "Invited"
-                                            : portalInviteStatuses[project.id]}
+                                      <span className="inline-flex items-center gap-1">
+                                        <span
+                                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                            inviteBadge(project.id)?.tone === "green"
+                                              ? "bg-green-500/20 text-green-400"
+                                              : inviteBadge(project.id)?.tone === "orange"
+                                                ? "bg-orange-500/20 text-orange-400"
+                                                : "bg-zinc-500/20 text-muted"
+                                          }`}
+                                          title={`Portal invite: ${portalInviteStatuses[project.id]}`}
+                                        >
+                                          {inviteBadge(project.id)?.label}
+                                        </span>
+                                        {portalInviteLinks[project.id] && (
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); copyInviteLink(project.id); }}
+                                            className="text-[10px] px-1 py-0.5 rounded text-orange-400 hover:bg-orange-500/20"
+                                            title="Copy the scheduling link to share for follow-up"
+                                          >
+                                            Copy link
+                                          </button>
+                                        )}
                                       </span>
                                     )}
                                   </>
@@ -3726,6 +3769,12 @@ export default function SiteSurveySchedulerPage() {
                         });
                         setPortalInviteLink(data.portalUrl || null);
                         setPortalInviteStatuses((prev) => ({ ...prev, [portalInviteProject.id]: "PENDING" }));
+                        // Populate the copy-link + sender maps so the deal card
+                        // immediately shows "Link ready" with a Copy link action.
+                        if (data.portalUrl) {
+                          setPortalInviteLinks((prev) => ({ ...prev, [portalInviteProject.id]: data.portalUrl }));
+                        }
+                        setPortalInviteSentBy((prev) => ({ ...prev, [portalInviteProject.id]: currentUserEmail || "rep" }));
                       } else {
                         setPortalInviteResult({ success: false, message: data.error || "Failed to create link" });
                       }

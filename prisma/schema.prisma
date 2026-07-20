@@ -2209,6 +2209,11 @@ model SurveyInvite {
   scheduleRecordId String? // link to ScheduleRecord
   zuperJobUid      String? // Zuper job UID once created
   accessNotes      String? // customer-provided gate codes, dogs, etc.
+  // Raw self-scheduling URL, stored so reps can re-copy it for follow-up.
+  // Only the token HASH is otherwise persisted, so this is the sole place the
+  // shareable link lives. Populated for app-generated links going forward;
+  // backfilled for historical invites from the hello@ Sent folder.
+  schedulingUrl    String? // /portal/survey/{token} link
 
   // Invite tracking
   sentAt DateTime? // when invite email was sent
