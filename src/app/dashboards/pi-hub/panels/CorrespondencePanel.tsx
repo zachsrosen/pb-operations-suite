@@ -11,6 +11,7 @@ interface Props {
   searchUrl: string | null;
   threads: ProjectDetail["correspondenceThreads"];
   inbox: string | null;
+  identifiers: string[];
 }
 
 function formatDate(iso: string): string {
@@ -41,17 +42,44 @@ function formatDateTime(iso: string): string {
   }
 }
 
+/** Application-identifier shapes a message can cite: Xcel IA numbers and
+ *  8-digit case numbers. Leading zeros are stripped for comparison — legacy
+ *  deals store case numbers un-padded. */
+function citedIdentifiers(text: string): string[] {
+  return [...text.matchAll(/\b(IA\d{5,}|0\d{7})\b/gi)].map((m) =>
+    m[1].toUpperCase().replace(/^0+(?=\d)/, ""),
+  );
+}
+
+/** True when the message cites application identifiers and NONE of them are
+ *  this project's — i.e. Gmail threaded another project's notification into
+ *  the same conversation (Xcel chatter emails all share one subject line). */
+function isForeignMessage(
+  m: SharedInboxThreadMessage,
+  ownIdentifiers: Set<string>,
+): boolean {
+  if (ownIdentifiers.size === 0) return false;
+  const cited = citedIdentifiers(`${m.subject ?? ""}\n${m.bodyText}`);
+  return cited.length > 0 && !cited.some((c) => ownIdentifiers.has(c));
+}
+
 /** Expanded thread body — fetched on first open, rendered in-app so
  *  delegated users never need a Gmail sign-in. */
 function ThreadMessages({
   team,
   threadId,
   inbox,
+  identifiers,
 }: {
   team: Team;
   threadId: string;
   inbox: string;
+  identifiers: string[];
 }) {
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const ownIdentifiers = new Set(
+    identifiers.map((t) => t.toUpperCase().replace(/^0+(?=\d)/, "")),
+  );
   const query = useQuery<{ messages: SharedInboxThreadMessage[] }>({
     queryKey: queryKeys.piHub.thread(team, threadId),
     queryFn: async () => {
@@ -81,23 +109,45 @@ function ThreadMessages({
 
   return (
     <div className="border-t-border mt-3 space-y-3 border-t pt-3">
-      {query.data.messages.map((m) => (
-        <div key={m.id} className="text-xs">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="font-medium">{m.from ?? "—"}</span>
-            <span className="text-muted shrink-0">{formatDateTime(m.date)}</span>
+      {query.data.messages.map((m) => {
+        if (isForeignMessage(m, ownIdentifiers) && !revealed.has(m.id)) {
+          const cited = citedIdentifiers(`${m.subject ?? ""}\n${m.bodyText}`);
+          return (
+            <div key={m.id} className="text-muted flex items-center gap-2 text-xs">
+              <span>
+                Message about a different project ({cited[0] ?? "other id"}) —
+                Gmail threads Xcel notifications together
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setRevealed((prev) => new Set(prev).add(m.id))
+                }
+                className="text-blue-600 hover:underline dark:text-blue-400"
+              >
+                show
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div key={m.id} className="text-xs">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-medium">{m.from ?? "—"}</span>
+              <span className="text-muted shrink-0">{formatDateTime(m.date)}</span>
+            </div>
+            {m.to && <div className="text-muted">to {m.to}</div>}
+            <pre className="text-foreground/90 mt-1.5 max-h-96 overflow-y-auto font-sans whitespace-pre-wrap break-words">
+              {m.bodyText || "(no readable body)"}
+            </pre>
           </div>
-          {m.to && <div className="text-muted">to {m.to}</div>}
-          <pre className="text-foreground/90 mt-1.5 max-h-96 overflow-y-auto font-sans whitespace-pre-wrap break-words">
-            {m.bodyText || "(no readable body)"}
-          </pre>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-export function CorrespondencePanel({ team, searchUrl, threads, inbox }: Props) {
+export function CorrespondencePanel({ team, searchUrl, threads, inbox, identifiers }: Props) {
   const hasThreads = threads && threads.length > 0;
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
 
@@ -163,7 +213,12 @@ export function CorrespondencePanel({ team, searchUrl, threads, inbox }: Props) 
                 </button>
                 {open && inbox && (
                   <>
-                    <ThreadMessages team={team} threadId={t.id} inbox={inbox} />
+                    <ThreadMessages
+                      team={team}
+                      threadId={t.id}
+                      inbox={inbox}
+                      identifiers={identifiers}
+                    />
                     <div className="mt-2 text-right">
                       <a
                         href={t.webUrl}

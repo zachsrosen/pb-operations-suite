@@ -79,6 +79,12 @@ export interface ProjectDetail {
   /** Which shared inbox the threads came from — shown so the team knows
    *  which mailbox was searched. Null when no thread fetch was attempted. */
   correspondenceInbox: string | null;
+  /** This project's application/permit identifier tokens (IA numbers, case
+   *  numbers, permit numbers). Used client-side to collapse messages inside
+   *  a matched Gmail thread that cite a DIFFERENT project's identifier —
+   *  Xcel chatter notifications share one subject line, so Gmail threads
+   *  many projects' notifications together. */
+  correspondenceIdentifiers: string[];
   statusHistory: Array<{
     property: string;
     value: string | null;
