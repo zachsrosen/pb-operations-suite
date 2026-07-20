@@ -58,6 +58,12 @@ export interface ProjectDetail {
     statusLabel: string;
     systemSizeKw: number | null;
     dealStage: string | null;
+    /** Raw utility application / case number(s) (utility_application__).
+     *  Only fetched for IC/PTO; null on the permit team. */
+    applicationNumber: string | null;
+    /** Xcel IA number(s), comma list on dual-application projects.
+     *  Only populated for Xcel deals. */
+    xcelIaNumber: string | null;
     hubspotUrl: string;
     designFolderUrl: string | null;
     driveFolderUrl: string | null;
