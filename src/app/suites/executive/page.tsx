@@ -13,6 +13,14 @@ const LINKS: SuitePageCard[] = [
     section: "Executive Views",
   },
   {
+    href: "/dashboards/ops-scorecard",
+    title: "Operations Scorecard",
+    description: "Run rate per office, CC capacity model, funnel throughput, cancellation cohorts, and turnaround trends — FY over FY.",
+    tag: "OPS",
+    icon: "🎯",
+    section: "Executive Views",
+  },
+  {
     href: "/dashboards/executive",
     title: "Executive Summary",
     description: "High-level pipeline and stage analysis with location and monthly trends.",

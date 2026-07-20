@@ -134,6 +134,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Construction",
   },
   {
+    href: "/dashboards/ops-scorecard",
+    title: "Operations Scorecard",
+    description: "Run rate per office, CC capacity model, funnel throughput, cancellation cohorts, and turnaround trends — FY over FY.",
+    tag: "OPS",
+    icon: "🎯",
+    section: "Office Performance",
+  },
+  {
     href: "/dashboards/bottlenecks",
     title: "Bottleneck Monitor",
     description: "Deals stuck past stage thresholds — age, volume, and flow per pipeline stage.",
