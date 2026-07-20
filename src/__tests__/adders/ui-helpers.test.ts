@@ -68,7 +68,7 @@ describe("hydrateRows", () => {
     expect(result.map((r) => r.shop)).toEqual([
       "Westminster",
       "DTC",
-      "Colorado Springs",
+      "Pueblo",
       "SLO",
       "Camarillo",
     ]);

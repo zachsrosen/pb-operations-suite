@@ -1,11 +1,13 @@
 import { LOCATION_SLUG_TO_CANONICAL, CANONICAL_TO_LOCATION_SLUG, CANONICAL_LOCATIONS } from "@/lib/locations";
 
 describe("Office Performance Location Slugs", () => {
-  it("maps all 5 slugs to canonical locations", () => {
-    expect(Object.keys(LOCATION_SLUG_TO_CANONICAL)).toHaveLength(5);
+  it("maps all slugs (5 primary + legacy colorado-springs alias) to canonical locations", () => {
+    expect(Object.keys(LOCATION_SLUG_TO_CANONICAL)).toHaveLength(6);
     expect(LOCATION_SLUG_TO_CANONICAL["westminster"]).toBe("Westminster");
     expect(LOCATION_SLUG_TO_CANONICAL["centennial"]).toBe("Centennial");
-    expect(LOCATION_SLUG_TO_CANONICAL["colorado-springs"]).toBe("Colorado Springs");
+    expect(LOCATION_SLUG_TO_CANONICAL["pueblo"]).toBe("Pueblo");
+    // Legacy slug kept so old bookmarks/URLs keep resolving.
+    expect(LOCATION_SLUG_TO_CANONICAL["colorado-springs"]).toBe("Pueblo");
     expect(LOCATION_SLUG_TO_CANONICAL["san-luis-obispo"]).toBe("San Luis Obispo");
     expect(LOCATION_SLUG_TO_CANONICAL["camarillo"]).toBe("Camarillo");
   });
@@ -13,7 +15,7 @@ describe("Office Performance Location Slugs", () => {
   it("maps all canonical locations back to slugs", () => {
     expect(Object.keys(CANONICAL_TO_LOCATION_SLUG)).toHaveLength(5);
     expect(CANONICAL_TO_LOCATION_SLUG["Westminster"]).toBe("westminster");
-    expect(CANONICAL_TO_LOCATION_SLUG["Colorado Springs"]).toBe("colorado-springs");
+    expect(CANONICAL_TO_LOCATION_SLUG["Pueblo"]).toBe("pueblo");
   });
 
   it("covers every canonical location", () => {
@@ -22,9 +24,9 @@ describe("Office Performance Location Slugs", () => {
     }
   });
 
-  it("round-trips slug → canonical → slug", () => {
-    for (const [slug, canonical] of Object.entries(LOCATION_SLUG_TO_CANONICAL)) {
-      expect(CANONICAL_TO_LOCATION_SLUG[canonical as keyof typeof CANONICAL_TO_LOCATION_SLUG]).toBe(slug);
+  it("round-trips canonical → slug → canonical", () => {
+    for (const [canonical, slug] of Object.entries(CANONICAL_TO_LOCATION_SLUG)) {
+      expect(LOCATION_SLUG_TO_CANONICAL[slug]).toBe(canonical);
     }
   });
 });

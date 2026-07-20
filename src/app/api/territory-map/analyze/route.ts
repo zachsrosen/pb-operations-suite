@@ -36,18 +36,18 @@ export async function POST(request: NextRequest) {
     const currentBounds = TERRITORY_BOUNDARIES.current;
     const proposedBounds = TERRITORY_BOUNDARIES.proposed;
 
-    const prompt = `You are a solar operations analyst for Photon Brothers, a residential solar company with 3 Colorado offices: Westminster (north), Centennial (central/DTC), and Colorado Springs (south).
+    const prompt = `You are a solar operations analyst for Photon Brothers, a residential solar company with 3 Colorado offices: Westminster (north), Centennial (central/DTC), and Pueblo (south) (PBLO; formerly Colorado Springs/COSP).
 
-Ownership's goal is a 2:2:1 deal ratio — Westminster and Centennial should each handle roughly equal volume, with Colorado Springs at ~50% of each.
+Ownership's goal is a 2:2:1 deal ratio — Westminster and Centennial should each handle roughly equal volume, with Pueblo at ~50% of each.
 
 TERRITORY DATA (${boundaryMode} boundaries):
 - Boundary mode: ${boundaryMode}
 - Westminster/Centennial line: latitude ${boundaries.westminster}
-- Centennial/Colorado Springs line: latitude ${boundaries.centennial}
+- Centennial/Pueblo line: latitude ${boundaries.centennial}
 - Total geocoded deals: ${totalDeals}
 
-Current boundary config: Westminster/Centennial at ${currentBounds.westminster}, Centennial/COSP at ${currentBounds.centennial}
-Proposed boundary config: Westminster/Centennial at ${proposedBounds.westminster}, Centennial/COSP at ${proposedBounds.centennial}
+Current boundary config: Westminster/Centennial at ${currentBounds.westminster}, Centennial/Pueblo at ${currentBounds.centennial}
+Proposed boundary config: Westminster/Centennial at ${proposedBounds.westminster}, Centennial/Pueblo at ${proposedBounds.centennial}
 
 PER-OFFICE STATS:
 ${statsBlock}

@@ -26,7 +26,7 @@ const ZUPER_TEAM_UIDS: Record<string, string> = {
   Westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
   Centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
   DTC: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c", // DTC uses Centennial team
-  "Colorado Springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
+  Pueblo: "1a914a0e-b633-4f12-8ed6-3348285d6b93",
   "San Luis Obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
   Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
 };
@@ -82,9 +82,9 @@ const SEED_DATA = [
     name: "Lenny Uematsu",
     email: "lenny@photonbrothers.com",
     zuperUserUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77",
-    zuperTeamUid: ZUPER_TEAM_UIDS["Colorado Springs"],
+    zuperTeamUid: ZUPER_TEAM_UIDS.Pueblo,
     role: "technician",
-    locations: ["Colorado Springs"],
+    locations: ["Pueblo"],
   },
   {
     name: "Daniel Kelly",

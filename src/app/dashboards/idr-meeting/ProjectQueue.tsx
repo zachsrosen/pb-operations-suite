@@ -32,7 +32,8 @@ const SYNC_INDICATOR: Record<string, { symbol: string; color: string }> = {
 const REGION_ORDER: Record<string, number> = {
   Centennial: 0,
   Westminster: 1,
-  "Colorado Springs": 2,
+  Pueblo: 2,
+  "Colorado Springs": 2, // legacy region rows pre Pueblo rename
   "San Luis Obispo": 3,
   Camarillo: 4,
 };

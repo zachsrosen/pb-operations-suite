@@ -45,6 +45,14 @@ const ROUTING: DigestAudienceMap = {
     ],
     bcc: OFFICE_BCC,
   },
+  pueblo: {
+    to: [
+      "rolando@photonbrothers.com", // Rolando Valle — Regional Director
+      "lenny@photonbrothers.com",   // Lenny Uematsu — Field Supervisor
+    ],
+    bcc: OFFICE_BCC,
+  },
+  // Legacy slug (pre Pueblo rename) — same recipients as pueblo
   "colorado-springs": {
     to: [
       "rolando@photonbrothers.com", // Rolando Valle — Regional Director

@@ -35,9 +35,17 @@ export const revalidate = 0;
 const TEAM_TO_CANONICAL_LOCATIONS: Record<string, string[]> = {
   "westminster": ["Westminster"],
   "centennial": ["Centennial"],
-  "colorado springs": ["Colorado Springs"],
+  "pueblo": ["Pueblo"],
+  "colorado springs": ["Pueblo"], // legacy team filter (pre Pueblo rename)
   "san luis obispo": ["San Luis Obispo", "Camarillo"],
   "camarillo": ["Camarillo"],
+};
+
+/** Legacy inbound team filters (pre Pueblo rename) → current team substring. */
+const LEGACY_TEAM_FILTERS: Record<string, string> = {
+  "colorado springs": "pueblo",
+  "co springs": "pueblo",
+  "cosp": "pueblo",
 };
 
 // ========== Types ==========
@@ -161,7 +169,10 @@ export async function GET(request: NextRequest) {
     // Parse query params
     const searchParams = request.nextUrl.searchParams;
     const days = Math.min(Math.max(parseInt(searchParams.get("days") || "30") || 30, 1), 365);
-    const teamFilter = searchParams.get("team")?.toLowerCase().trim() || null;
+    const rawTeamFilter = searchParams.get("team")?.toLowerCase().trim() || null;
+    // Accept legacy inbound team filters (pre Pueblo rename) and normalize
+    // to the current team substring so name matching still works.
+    const teamFilter = rawTeamFilter ? (LEGACY_TEAM_FILTERS[rawTeamFilter] ?? rawTeamFilter) : null;
     const categoryFilter = searchParams.get("category")?.toLowerCase().trim() || null;
     const minJobs = Math.max(parseInt(searchParams.get("minJobs") || "5") || 5, 0);
 

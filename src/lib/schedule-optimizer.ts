@@ -58,7 +58,7 @@ export interface ExistingBooking {
 export const DEFAULT_LOCATION_CAPACITY: Record<string, number> = {
   Westminster: 2,
   Centennial: 2,
-  "Colorado Springs": 1,
+  Pueblo: 1,
   "San Luis Obispo": 2,
   Camarillo: 1,
 };

@@ -70,13 +70,13 @@ describe("computeCapacityCells", () => {
     const cells = computeCapacityCells(
       [],
       [],
-      ["Westminster", "Colorado Springs"],
+      ["Westminster", "Pueblo"],
       { start: "2026-06-29", end: "2026-06-29" }
     );
     expect(cells.length).toBe(2);
     const locs = cells.map((c) => c.location);
     expect(locs).toContain("Westminster");
-    expect(locs).toContain("Colorado Springs");
+    expect(locs).toContain("Pueblo");
   });
 
   /* ---------------------------------------------------------------- */
@@ -136,8 +136,8 @@ describe("computeCapacityCells", () => {
     expect(cells[0].capacityDays).toBe(1);
   });
 
-  it("uses Colorado Springs default capacity of 1", () => {
-    const cells = computeCapacityCells([], [], ["Colorado Springs"], { start: "2026-06-29", end: "2026-06-29" });
+  it("uses Pueblo default capacity of 1", () => {
+    const cells = computeCapacityCells([], [], ["Pueblo"], { start: "2026-06-29", end: "2026-06-29" });
     expect(cells[0].capacityDays).toBe(1);
   });
 

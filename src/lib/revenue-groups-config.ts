@@ -149,9 +149,9 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
     excludedStages: [CANCELLED_STAGES.PROJECT],
   },
 
-  colorado_springs: {
-    key: "colorado_springs",
-    label: "Colorado Springs",
+  pueblo: {
+    key: "pueblo",
+    label: "Pueblo",
     color: "#F59E0B",
     annualTarget: 7_000_000,
     recognition: [
@@ -161,7 +161,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
         dateField: "construction_complete_date",
       },
     ],
-    locationFilter: ["Colorado Springs"],
+    locationFilter: ["Pueblo"],
     excludedStages: [CANCELLED_STAGES.PROJECT],
   },
 
@@ -222,6 +222,20 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
     excludedStages: [CANCELLED_STAGES.SERVICE],
   },
 };
+
+/**
+ * Legacy persisted group keys → current keys. `RevenueGoal.groupKey` rows
+ * written before the Pueblo rename still say "colorado_springs"; read sites
+ * must normalize before indexing into REVENUE_GROUPS.
+ */
+export const LEGACY_REVENUE_GROUP_KEYS: Record<string, string> = {
+  colorado_springs: "pueblo",
+};
+
+/** Resolve a (possibly legacy) persisted group key to its current key. */
+export function normalizeRevenueGroupKey(key: string): string {
+  return LEGACY_REVENUE_GROUP_KEYS[key] ?? key;
+}
 
 // ---------------------------------------------------------------------------
 // Pure computation functions

@@ -97,7 +97,7 @@ const roleBadgeClass = (r: string): string => {
 const LOCATIONS = [
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ];

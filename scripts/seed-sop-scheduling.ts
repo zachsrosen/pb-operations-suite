@@ -39,7 +39,7 @@ const OVERVIEW = `
 
 <h2>Locations</h2>
 
-<p>All schedulers cover five locations: <strong>Denver Tech Center (DTC), Westminster, Colorado Springs, San Luis Obispo, Camarillo</strong>. DTC and Centennial are aliased — same calendar, same crew. Camarillo and SLO share the same install calendar (the "California" bucket) intentionally.</p>
+<p>All schedulers cover five locations: <strong>Denver Tech Center (DTC), Westminster, Pueblo, San Luis Obispo, Camarillo</strong>. DTC and Centennial are aliased — same calendar, same crew. Camarillo and SLO share the same install calendar (the "California" bucket) intentionally.</p>
 
 <h2>Common Behavior</h2>
 <ul>
@@ -118,7 +118,7 @@ const CONSTRUCTION = `
 </ul>
 
 <h2>Layout</h2>
-<p>Four view modes: <strong>Month</strong> (default), Week, Gantt, List. Five-location calendar across Westminster, Centennial/DTC, Colorado Springs, SLO, Camarillo.</p>
+<p>Four view modes: <strong>Month</strong> (default), Week, Gantt, List. Five-location calendar across Westminster, Centennial/DTC, Pueblo, SLO, Camarillo.</p>
 
 <h2>Click Flow</h2>
 <ol>
@@ -146,7 +146,7 @@ const CONSTRUCTION = `
 <tbody>
 <tr><td>DTC / Centennial</td><td><code>GOOGLE_INSTALL_CALENDAR_DTC_ID</code></td></tr>
 <tr><td>Westminster</td><td><code>GOOGLE_INSTALL_CALENDAR_WESTY_ID</code></td></tr>
-<tr><td>Colorado Springs</td><td><code>GOOGLE_INSTALL_CALENDAR_COSP_ID</code> (fallback <code>GOOGLE_INSTALL_CALENDAR_PUEBLO_ID</code>)</td></tr>
+<tr><td>Pueblo</td><td><code>GOOGLE_INSTALL_CALENDAR_PUEBLO_ID</code> (legacy fallback <code>GOOGLE_INSTALL_CALENDAR_COSP_ID</code>)</td></tr>
 <tr><td>SLO + Camarillo</td><td><code>GOOGLE_INSTALL_CALENDAR_CA_ID</code> (fallback <code>GOOGLE_INSTALL_CALENDAR_CALIFORNIA_ID</code>)</td></tr>
 <tr><td>Camarillo override</td><td><code>GOOGLE_INSTALL_CALENDAR_CAMARILLO_ID</code></td></tr>
 </tbody>

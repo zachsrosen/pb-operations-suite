@@ -42,8 +42,8 @@ const SEED_SCHEDULES = [
   },
   {
     name: "Lenny Uematsu",
-    location: "Colorado Springs",
-    reportLocation: "Colorado Springs",
+    location: "Pueblo",
+    reportLocation: "Pueblo",
     schedule: [
       { day: 1, startTime: "08:00", endTime: "12:00" },
       { day: 2, startTime: "08:00", endTime: "12:00" },

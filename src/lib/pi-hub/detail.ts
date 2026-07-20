@@ -143,7 +143,7 @@ export async function fetchDetail(
       : null;
 
   // Region routing for the shared inbox fetch. Bucket uses the same CO/CA
-  // definition idr-meeting uses (Westminster/Centennial/COSP → CO;
+  // definition idr-meeting uses (Westminster/Centennial/Pueblo → CO;
   // SLO/Camarillo → CA). Deals in an unrecognized location get no thread
   // fetch (correspondenceInbox = null).
   let correspondenceInbox: string | null = null;

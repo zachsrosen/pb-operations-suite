@@ -39,7 +39,7 @@ export const STAGE_COLORS: Record<string, { tw: string; hex: string }> = {
 export const LOCATION_COLORS: Record<string, { tw: string; hex: string }> = {
   Westminster: { tw: "bg-blue-500", hex: "#3B82F6" },
   Centennial: { tw: "bg-emerald-500", hex: "#10B981" },
-  "Colorado Springs": { tw: "bg-amber-500", hex: "#F59E0B" },
+  Pueblo: { tw: "bg-amber-500", hex: "#F59E0B" },
   "San Luis Obispo": { tw: "bg-violet-500", hex: "#8B5CF6" },
   Camarillo: { tw: "bg-pink-500", hex: "#EC4899" },
   Unknown: { tw: "bg-zinc-500", hex: "#71717A" },
@@ -71,7 +71,7 @@ export const LOCATION_TIMEZONES: Record<string, string> = {
   Westminster: "America/Denver",
   Centennial: "America/Denver",
   DTC: "America/Denver",
-  "Colorado Springs": "America/Denver",
+  Pueblo: "America/Denver",
   "San Luis Obispo": "America/Los_Angeles",
   Camarillo: "America/Los_Angeles",
 };
@@ -87,7 +87,7 @@ const _WAREHOUSE_IDS: Record<string, string> = {
   Centennial: "5385454000000088162",
   DTC: "5385454000000088162",
   Westminster: "5385454000000114025",
-  "Colorado Springs": "5385454000000114101",
+  Pueblo: "5385454000000114101",
   "San Luis Obispo": "5385454000000114177",
   Camarillo: "5385454000001367019",
 };
@@ -99,8 +99,12 @@ export const ZOHO_WAREHOUSE_IDS: Record<string, string> = Object.fromEntries([
   // Common aliases
   ["slo", _WAREHOUSE_IDS["San Luis Obispo"]],
   ["california", _WAREHOUSE_IDS["San Luis Obispo"]],
-  ["co springs", _WAREHOUSE_IDS["Colorado Springs"]],
-  ["cosp", _WAREHOUSE_IDS["Colorado Springs"]],
+  ["pueblo", _WAREHOUSE_IDS.Pueblo],
+  ["pblo", _WAREHOUSE_IDS.Pueblo],
+  // Legacy Colorado Springs aliases — keep accepting old stored/inbound strings
+  ["colorado springs", _WAREHOUSE_IDS.Pueblo],
+  ["co springs", _WAREHOUSE_IDS.Pueblo],
+  ["cosp", _WAREHOUSE_IDS.Pueblo],
   ["dtc", _WAREHOUSE_IDS.DTC],
   ["centennial", _WAREHOUSE_IDS.Centennial],
   ["westy", _WAREHOUSE_IDS.Westminster],

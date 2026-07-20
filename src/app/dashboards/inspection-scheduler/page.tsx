@@ -129,7 +129,7 @@ const LOCATIONS = [
   "All",
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ];
@@ -1375,7 +1375,7 @@ export default function InspectionSchedulerPage() {
                       : "bg-surface border-t-border text-muted hover:border-muted"
                   }`}
                 >
-                  {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                  {loc.replace("San Luis Obispo", "SLO")}
                 </button>
               ))}
               {selectedLocations.length > 0 && (

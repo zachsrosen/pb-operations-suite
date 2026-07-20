@@ -376,7 +376,7 @@ export const DIGEST_ROUTES: DigestRoute[] = [
     room: "Colorado Project Team",
     title: "CO P&I — daily",
     intro: "Where permitting & interconnection stand today.",
-    locations: ["Westminster", "Centennial", "Colorado Springs"],
+    locations: ["Westminster", "Centennial", "Pueblo"],
     sections: ["milestones"],
     milestones: ["permit_submitted", "permit_issued", "ic_submitted", "ic_approved"],
     enabled: false,

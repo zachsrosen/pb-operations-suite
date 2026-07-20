@@ -9,8 +9,16 @@ describe("service-area", () => {
     expect(resolveLocationFromZip("80031")).toBe("WESTY");
   });
 
-  it("resolves COSP for Colorado Springs", () => {
-    expect(resolveLocationFromZip("80918")).toBe("COSP");
+  it("resolves PBLO for the Colorado Springs metro", () => {
+    expect(resolveLocationFromZip("80918")).toBe("PBLO");
+  });
+
+  it("resolves PBLO for Pueblo (810 prefix)", () => {
+    expect(resolveLocationFromZip("81001")).toBe("PBLO");
+  });
+
+  it("resolves PBLO for the 811 band (Alamosa — included per service-area decision)", () => {
+    expect(resolveLocationFromZip("81101")).toBe("PBLO");
   });
 
   it("resolves CA for SLO (PG&E)", () => {
@@ -28,6 +36,6 @@ describe("service-area", () => {
 
   it("trims zip+4 to first 5 chars", () => {
     expect(resolveLocationFromZip("80202-1234")).toBe("DTC");
-    expect(resolveLocationFromZip("  80918  ")).toBe("COSP");
+    expect(resolveLocationFromZip("  80918  ")).toBe("PBLO");
   });
 });

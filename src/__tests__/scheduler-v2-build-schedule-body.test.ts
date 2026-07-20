@@ -65,7 +65,7 @@ const baseForm: ScheduleFormValues = {
 describe("resolveTimezone", () => {
   it("maps CO locations to America/Denver", () => {
     expect(resolveTimezone("Westminster")).toBe("America/Denver");
-    expect(resolveTimezone("Colorado Springs")).toBe("America/Denver");
+    expect(resolveTimezone("Pueblo")).toBe("America/Denver");
   });
   it("maps CA locations to America/Los_Angeles", () => {
     expect(resolveTimezone("San Luis Obispo")).toBe("America/Los_Angeles");

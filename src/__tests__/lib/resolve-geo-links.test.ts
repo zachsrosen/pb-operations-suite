@@ -4,8 +4,8 @@ describe("resolvePbLocationFromAddress", () => {
   it("maps Boulder (80301) to Westminster", () => {
     expect(resolvePbLocationFromAddress("80301", "CO")).toBe("Westminster");
   });
-  it("maps Colorado Springs zip to Colorado Springs", () => {
-    expect(resolvePbLocationFromAddress("80903", "CO")).toBe("Colorado Springs");
+  it("maps a Colorado Springs zip to Pueblo", () => {
+    expect(resolvePbLocationFromAddress("80903", "CO")).toBe("Pueblo");
   });
   it("maps a Centennial zip to Centennial", () => {
     expect(resolvePbLocationFromAddress("80112", "CO")).toBe("Centennial");

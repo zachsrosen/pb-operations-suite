@@ -1034,7 +1034,9 @@
   font-weight: 700;
 }
 
-.sop-content .region-cosp {
+/* .region-cosp kept as a legacy alias for stored SOP content pre Pueblo rename */
+.sop-content .region-cosp,
+.sop-content .region-pblo {
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   border-left: 3px solid #3b82f6;
@@ -1045,8 +1047,9 @@
   color: #1e40af;
 }
 
-.sop-content .region-cosp::before {
-  content: "\1F3D4 Colorado Springs: ";
+.sop-content .region-cosp::before,
+.sop-content .region-pblo::before {
+  content: "\1F3D4 Pueblo: ";
   font-weight: 700;
 }
 

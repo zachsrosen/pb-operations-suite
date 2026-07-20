@@ -1186,7 +1186,7 @@ model CrewAvailability {
   crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
   // Location
-  location       String // "Westminster", "DTC", "Colorado Springs", "SLO", "Camarillo"
+  location       String // "Westminster", "DTC", "Pueblo", "SLO", "Camarillo" — legacy rows may still say "Colorado Springs"/"COSP"
   reportLocation String? // Where crew reports to (if different)
 
   // Job type

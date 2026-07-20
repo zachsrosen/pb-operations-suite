@@ -14,7 +14,7 @@ import { computeLocationComplianceV2 } from "../src/lib/compliance-v2/scoring";
 dotenv({ path: ".env" });
 dotenv({ path: ".env.local", override: false });
 
-const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+const LOCATIONS = ["Westminster", "Centennial", "Pueblo", "San Luis Obispo", "Camarillo"];
 const CATEGORIES = ["Site Survey", "Construction", "Inspection"];
 
 async function main() {

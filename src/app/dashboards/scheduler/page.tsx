@@ -231,8 +231,8 @@ const CREWS: Record<string, CrewConfig[]> = {
     { name: "DTC Alpha", roofers: 2, electricians: 1, color: "#8b5cf6" },
     { name: "DTC Bravo", roofers: 2, electricians: 1, color: "#ec4899" },
   ],
-  "Colorado Springs": [
-    { name: "COSP Alpha", roofers: 3, electricians: 1, color: "#f97316" },
+  Pueblo: [
+    { name: "Pueblo Alpha", roofers: 3, electricians: 1, color: "#f97316" },
   ],
   "San Luis Obispo": [
     { name: "SLO Solar", roofers: 2, electricians: 1, color: "#06b6d4" },
@@ -254,11 +254,17 @@ const ALL_CREW_NAMES = new Set(
   Object.values(CREWS).flat().map((c) => c.name)
 );
 
+// Legacy crew display names (pre Pueblo rename) still present in stored
+// ScheduleRecord notes and Zuper/calendar text.
+const LEGACY_CREW_NAMES: Record<string, string> = {
+  "COSP Alpha": "Pueblo Alpha",
+};
+
 const LOCATIONS = [
   "All",
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "San Luis Obispo",
   "Camarillo",
 ];
@@ -266,7 +272,7 @@ const LOCATIONS = [
 const LOCATION_COLORS: Record<string, string> = {
   Westminster: "#3b82f6",
   Centennial: "#8b5cf6",
-  "Colorado Springs": "#f97316",
+  Pueblo: "#f97316",
   "San Luis Obispo": "#06b6d4",
   Camarillo: "#f43f5e",
 };
@@ -318,7 +324,7 @@ const ZUPER_CONSTRUCTION_DIRECTORS: Record<string, ZuperAssignee> = {
   Westminster: { name: "Joe Lynch", userUid: "f203f99b-4aaf-488e-8e6a-8ee5e94ec217", teamUid: "1c23adb9-cefa-44c7-8506-804949afc56f" },
   Centennial: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   DTC: { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
-  "Colorado Springs": { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
+  Pueblo: { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   "San Luis Obispo": { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" },
   Camarillo: { name: "Nick Scarpellino", userUid: "8e67159c-48fe-4fb0-acc3-b1c905ff6e95", teamUid: "699cec60-f9f8-4e57-b41a-bb29b1f3649c" }, // Camarillo shares SLO install crew
 };
@@ -336,7 +342,7 @@ const ZUPER_SURVEY_USERS: Record<string, { name: string; userUid: string; teamUi
   DTC: [
     { name: "Drew Perry", userUid: "0ddc7e1d-62e1-49df-b89d-905a39c1e353", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   ],
-  "Colorado Springs": [
+  Pueblo: [
     { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   ],
   "San Luis Obispo": [
@@ -360,7 +366,7 @@ const ZUPER_INSPECTION_USERS: Record<string, { name: string; userUid: string; te
   DTC: [
     { name: "Daniel Kelly", userUid: "f0a5aca8-0137-478c-a910-1380b9a31a79", teamUid: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c" },
   ],
-  "Colorado Springs": [
+  Pueblo: [
     { name: "Lenny Uematsu", userUid: "6b0a8b10-a969-4dd9-8104-62e5c38f7d77", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
     { name: "Alexander Swope", userUid: "", teamUid: "1a914a0e-b633-4f12-8ed6-3348285d6b93" },
   ],
@@ -691,7 +697,7 @@ function regionAbbr(region: string): string {
   const r = (region || "").toLowerCase();
   if (r.includes("colorado")) return "CO";
   if (r.includes("california")) return "CA";
-  if (r.includes("denver") || r.includes("dtc") || r.includes("westy") || r.includes("springs")) return "CO";
+  if (r.includes("denver") || r.includes("dtc") || r.includes("westy") || r.includes("springs") || r.includes("pueblo")) return "CO";
   if (r.includes("camarillo") || r.includes("slo") || r.includes("luis")) return "CA";
   return region?.slice(0, 2).toUpperCase() || "";
 }
@@ -1250,7 +1256,8 @@ export default function SchedulerPage() {
               if (rec.notes) {
                 const crewMatch = rec.notes.match(/—\s*(.+)$/);
                 if (crewMatch) {
-                  const parsed = crewMatch[1].trim();
+                  const raw = crewMatch[1].trim();
+                  const parsed = LEGACY_CREW_NAMES[raw] ?? raw;
                   if (ALL_CREW_NAMES.has(parsed)) rehydratedCrew = parsed;
                 }
               }
@@ -4038,7 +4045,7 @@ export default function SchedulerPage() {
                         : "bg-background border-t-border text-muted hover:border-muted"
                     }`}
                   >
-                    {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                    {loc.replace("San Luis Obispo", "SLO")}
                   </button>
                 ))}
                 {selectedLocations.length > 0 && (
@@ -4443,7 +4450,7 @@ export default function SchedulerPage() {
               {[
                 { value: "Westminster", label: "Westy" },
                 { value: "Centennial", label: "DTC" },
-                { value: "Colorado Springs", label: "CO Spgs" },
+                { value: "Pueblo", label: "Pueblo" },
                 { value: "San Luis Obispo", label: "SLO" },
                 { value: "Camarillo", label: "Cam" },
               ].map((loc) => (
@@ -5163,7 +5170,7 @@ export default function SchedulerPage() {
                           className="bg-background p-2.5 text-[0.7rem] font-semibold flex flex-col gap-1"
                           style={{ borderRight: `3px solid ${LOCATION_COLORS[loc] || "#6b7280"}` }}
                         >
-                          <span className="text-foreground/90">{loc.replace("Colorado Springs", "CO Springs").replace("San Luis Obispo", "SLO")}</span>
+                          <span className="text-foreground/90">{loc.replace("San Luis Obispo", "SLO")}</span>
                         </div>
                         {weekDates.map((d, di) => {
                           const dateStr = toDateStr(d);
@@ -5378,7 +5385,7 @@ export default function SchedulerPage() {
                           className="bg-background p-2 text-[0.7rem] font-semibold"
                           style={{ borderLeft: `3px solid ${LOCATION_COLORS[loc] || "#6b7280"}` }}
                         >
-                          {loc.replace("Colorado Springs", "CO Springs").replace("San Luis Obispo", "SLO")}
+                          {loc.replace("San Luis Obispo", "SLO")}
                         </div>
                         {ganttDates.map((d, idx) => (
                           <div

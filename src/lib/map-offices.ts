@@ -35,9 +35,10 @@ export const OFFICES: OfficeLocation[] = [
     address: "7705 W 108th Ave, Broomfield, CO 80021",
   },
   {
-    id: "cosp",
-    label: "Colorado Springs",
-    pbLocation: "Colorado Springs",
+    id: "pblo",
+    label: "Pueblo",
+    pbLocation: "Pueblo",
+    // Physical move to Pueblo pending — keep old Colorado Springs address/coords until final.
     lat: 38.8587,
     lng: -104.7362,
     address: "752 Clark Pl, Colorado Springs, CO 80915",
@@ -62,7 +63,8 @@ export const OFFICES: OfficeLocation[] = [
 
 /**
  * Lookup an office by its pbLocation (what HubSpot / CrewMember use).
- * DTC and Centennial are the same shop — fuzzy-aliased.
+ * DTC and Centennial are the same shop — fuzzy-aliased. Legacy
+ * "Colorado Springs" strings (pre-rename DB rows) resolve to the Pueblo shop.
  */
 export function getOfficeByPbLocation(pbLocation: string | null | undefined): OfficeLocation | null {
   if (!pbLocation) return null;
@@ -70,6 +72,9 @@ export function getOfficeByPbLocation(pbLocation: string | null | undefined): Of
   return (
     OFFICES.find((o) => o.pbLocation.toLowerCase() === target) ??
     (target === "dtc" ? OFFICES.find((o) => o.id === "dtc") ?? null : null) ??
+    (target === "colorado springs" || target === "cosp"
+      ? OFFICES.find((o) => o.id === "pblo") ?? null
+      : null) ??
     null
   );
 }

@@ -39,7 +39,7 @@ import type { Assignment, CapacityCell, ConflictFlag, ConflictResult } from "./t
 export interface ConflictParams {
   /** Zuper user UID or CrewMember.id — identifies the assignee. */
   resourceId: string;
-  /** Normalized PB location name ("Westminster", "Colorado Springs", etc.). */
+  /** Normalized PB location name ("Westminster", "Pueblo", etc.). */
   location: string;
   /** Proposed start date in YYYY-MM-DD format. */
   date: string;

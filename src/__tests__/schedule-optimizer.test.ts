@@ -35,21 +35,21 @@ const CREWS = {
     { name: "DTC Alpha", roofers: 2, electricians: 1, color: "#8b5cf6" },
     { name: "DTC Bravo", roofers: 2, electricians: 1, color: "#ec4899" },
   ],
-  "Colorado Springs": [
-    { name: "COSP Alpha", roofers: 3, electricians: 1, color: "#f97316" },
+  "Pueblo": [
+    { name: "Pueblo Alpha", roofers: 3, electricians: 1, color: "#f97316" },
   ],
 };
 
 const DIRECTORS = {
   Westminster: { name: "Joe Lynch", userUid: "uid-joe", teamUid: "team-westy" },
   Centennial: { name: "Drew Perry", userUid: "uid-drew", teamUid: "team-dtc" },
-  "Colorado Springs": { name: "Rolando", userUid: "uid-rolando", teamUid: "team-cosp" },
+  "Pueblo": { name: "Rolando", userUid: "uid-rolando", teamUid: "team-pblo" },
 };
 
 const TIMEZONES: Record<string, string> = {
   Westminster: "America/Denver",
   Centennial: "America/Denver",
-  "Colorado Springs": "America/Denver",
+  "Pueblo": "America/Denver",
 };
 
 /* ================================================================== */
@@ -189,7 +189,7 @@ describe("DEFAULT_LOCATION_CAPACITY", () => {
   it("exports expected location capacities", () => {
     expect(DEFAULT_LOCATION_CAPACITY["Westminster"]).toBe(2);
     expect(DEFAULT_LOCATION_CAPACITY["Centennial"]).toBe(2);
-    expect(DEFAULT_LOCATION_CAPACITY["Colorado Springs"]).toBe(1);
+    expect(DEFAULT_LOCATION_CAPACITY["Pueblo"]).toBe(1);
     expect(DEFAULT_LOCATION_CAPACITY["San Luis Obispo"]).toBe(2);
     expect(DEFAULT_LOCATION_CAPACITY["Camarillo"]).toBe(1);
   });
@@ -262,8 +262,8 @@ describe("generateOptimizedSchedule", () => {
 
   it("single-crew location with capacity=1 stacks sequentially", () => {
     const projects = [
-      makeProject({ id: "p1", location: "Colorado Springs", daysInstall: 2 }),
-      makeProject({ id: "p2", location: "Colorado Springs", daysInstall: 2 }),
+      makeProject({ id: "p1", location: "Pueblo", daysInstall: 2 }),
+      makeProject({ id: "p2", location: "Pueblo", daysInstall: 2 }),
     ];
 
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
@@ -271,8 +271,8 @@ describe("generateOptimizedSchedule", () => {
     });
 
     expect(result.entries).toHaveLength(2);
-    expect(result.entries[0].crew).toBe("COSP Alpha");
-    expect(result.entries[1].crew).toBe("COSP Alpha");
+    expect(result.entries[0].crew).toBe("Pueblo Alpha");
+    expect(result.entries[1].crew).toBe("Pueblo Alpha");
     // First: Wed Feb 18, 2 days → ends Thu Feb 19, next available = Fri Feb 20
     expect(result.entries[0].startDate).toBe("2026-02-18");
     expect(result.entries[1].startDate).toBe("2026-02-20");
@@ -296,8 +296,8 @@ describe("generateOptimizedSchedule", () => {
 
   it("off-by-one: single crew capacity=1, 1-day Friday → next job Monday", () => {
     const projects = [
-      makeProject({ id: "p1", location: "Colorado Springs", amount: 100000, daysInstall: 1 }),
-      makeProject({ id: "p2", location: "Colorado Springs", amount: 50000, daysInstall: 1 }),
+      makeProject({ id: "p1", location: "Pueblo", amount: 100000, daysInstall: 1 }),
+      makeProject({ id: "p2", location: "Pueblo", amount: 50000, daysInstall: 1 }),
     ];
 
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
@@ -310,8 +310,8 @@ describe("generateOptimizedSchedule", () => {
 
   it("multi-day span: 3-day job starting Wednesday → ends Friday, next Monday", () => {
     const projects = [
-      makeProject({ id: "p1", location: "Colorado Springs", amount: 100000, daysInstall: 3 }),
-      makeProject({ id: "p2", location: "Colorado Springs", amount: 50000, daysInstall: 1 }),
+      makeProject({ id: "p1", location: "Pueblo", amount: 100000, daysInstall: 3 }),
+      makeProject({ id: "p2", location: "Pueblo", amount: 50000, daysInstall: 1 }),
     ];
 
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
@@ -342,7 +342,7 @@ describe("generateOptimizedSchedule", () => {
   it("assigns correct director and timezone per location", () => {
     const projects = [
       makeProject({ id: "p1", location: "Westminster" }),
-      makeProject({ id: "p2", location: "Colorado Springs" }),
+      makeProject({ id: "p2", location: "Pueblo" }),
     ];
 
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
@@ -353,8 +353,8 @@ describe("generateOptimizedSchedule", () => {
     expect(westy.assigneeName).toBe("Joe Lynch");
     expect(westy.timezone).toBe("America/Denver");
 
-    const cosp = result.entries.find((e) => e.project.location === "Colorado Springs")!;
-    expect(cosp.assigneeName).toBe("Rolando");
+    const pueblo = result.entries.find((e) => e.project.location === "Pueblo")!;
+    expect(pueblo.assigneeName).toBe("Rolando");
   });
 
   it("sorts by priority score descending", () => {
@@ -434,10 +434,10 @@ describe("generateOptimizedSchedule", () => {
     expect(result.entries[0].startDate).toBe("2026-03-03"); // Tue
   });
 
-  it("COSP capacity=1 means one booking blocks that day entirely", () => {
-    const projects = [makeProject({ id: "new-1", location: "Colorado Springs", daysInstall: 1 })];
+  it("Pueblo capacity=1 means one booking blocks that day entirely", () => {
+    const projects = [makeProject({ id: "new-1", location: "Pueblo", daysInstall: 1 })];
     const existingBookings = [
-      { location: "Colorado Springs", startDate: "2026-03-02", days: 3 }, // Mon-Wed
+      { location: "Pueblo", startDate: "2026-03-02", days: 3 }, // Mon-Wed
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02",
@@ -461,11 +461,11 @@ describe("generateOptimizedSchedule", () => {
   });
 
   it("multi-day job avoids days at capacity", () => {
-    // COSP capacity=1. Existing booking Wed only.
+    // Pueblo capacity=1. Existing booking Wed only.
     // New 3-day job: Mon-Wed would overlap blocked Wed → must skip.
-    const projects = [makeProject({ id: "p1", location: "Colorado Springs", daysInstall: 3 })];
+    const projects = [makeProject({ id: "p1", location: "Pueblo", daysInstall: 3 })];
     const existingBookings = [
-      { location: "Colorado Springs", startDate: "2026-03-04", days: 1 }, // Wed
+      { location: "Pueblo", startDate: "2026-03-04", days: 1 }, // Wed
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02", // Mon
@@ -478,15 +478,15 @@ describe("generateOptimizedSchedule", () => {
   });
 
   it("backfills earlier gaps when a smaller job fits in a slot a larger job skipped", () => {
-    // COSP capacity=1. Existing booking on Wed Mar 4 (1 day).
+    // Pueblo capacity=1. Existing booking on Wed Mar 4 (1 day).
     // Big job (3 days) can't start Mon (Mon-Wed overlaps Wed) → starts Thu.
     // Small job (1 day) SHOULD backfill to Mon.
     const projects = [
-      makeProject({ id: "big", location: "Colorado Springs", amount: 100000, daysInstall: 3 }),
-      makeProject({ id: "small", location: "Colorado Springs", amount: 10000, daysInstall: 1 }),
+      makeProject({ id: "big", location: "Pueblo", amount: 100000, daysInstall: 3 }),
+      makeProject({ id: "small", location: "Pueblo", amount: 10000, daysInstall: 1 }),
     ];
     const existingBookings = [
-      { location: "Colorado Springs", startDate: "2026-03-04", days: 1 }, // Wed blocked
+      { location: "Pueblo", startDate: "2026-03-04", days: 1 }, // Wed blocked
     ];
     const result = generateOptimizedSchedule(projects, CREWS, DIRECTORS, TIMEZONES, {
       startDate: "2026-03-02", // Mon

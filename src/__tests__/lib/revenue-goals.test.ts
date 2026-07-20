@@ -224,7 +224,7 @@ describe("aggregateRevenue", () => {
       }),
       makeDeal({
         hs_object_id: "3",
-        pb_location: "Colorado Springs",
+        pb_location: "Pueblo",
         amount: "150000",
         construction_complete_date: "2026-01-20",
       }),
@@ -242,8 +242,8 @@ describe("aggregateRevenue", () => {
     expect(result.westminster.monthlyActuals[1]).toBe(100_000);
     // Centennial deal → dtc group, Mar
     expect(result.dtc.monthlyActuals[2]).toBe(200_000);
-    // CO Springs deal → colorado_springs group, Jan
-    expect(result.colorado_springs.monthlyActuals[0]).toBe(150_000);
+    // Pueblo deal → pueblo group, Jan
+    expect(result.pueblo.monthlyActuals[0]).toBe(150_000);
     // SLO deal → california group, Apr
     expect(result.california.monthlyActuals[3]).toBe(175_000);
   });

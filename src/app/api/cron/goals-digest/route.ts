@@ -2,7 +2,7 @@
  * GET /api/cron/goals-digest
  *
  * Monday-morning cron — sends one Goals Digest email per office
- * (Westminster, Centennial, Colorado Springs, California) to leadership
+ * (Westminster, Centennial, Pueblo, California) to leadership
  * and ops directors. Each email focuses on that office's goals with
  * company-wide context as a secondary section.
  *
@@ -141,6 +141,13 @@ export async function GET(request: NextRequest) {
       } else {
         priorSnapshots[row.location] = values;
       }
+    }
+
+    // Transition shim: the prior week's snapshot may still be stored under
+    // "Colorado Springs" (pre Pueblo rename / before the data migration runs).
+    // Fall back so week-over-week deltas survive the transition.
+    if (!priorSnapshots["Pueblo"] && priorSnapshots["Colorado Springs"]) {
+      priorSnapshots["Pueblo"] = priorSnapshots["Colorado Springs"];
     }
 
     console.log(

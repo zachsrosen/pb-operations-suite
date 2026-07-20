@@ -22,7 +22,7 @@ import { ROLES } from "@/lib/roles";
 const CREWS: Record<string, string[]> = {
   Westminster: ["WESTY Alpha", "WESTY Bravo"],
   Centennial: ["DTC Alpha", "DTC Bravo"],
-  "Colorado Springs": ["COSP Alpha"],
+  Pueblo: ["Pueblo Alpha"],
   "San Luis Obispo": ["SLO Solar", "SLO Electrical 1", "SLO Electrical 2"],
   Camarillo: ["CAM Crew"],
 };
@@ -34,6 +34,8 @@ for (const [loc, crews] of Object.entries(CREWS)) {
     CREW_TO_LOCATION[crew] = loc;
   }
 }
+// Legacy crew name (pre Pueblo rename) — historical records still say COSP Alpha.
+CREW_TO_LOCATION["COSP Alpha"] = "Pueblo";
 
 // Director names to location mapping (for records without crew in notes).
 // Only include directors who manage a single location to avoid misclassification.
@@ -41,8 +43,8 @@ for (const [loc, crews] of Object.entries(CREWS)) {
 const DIRECTOR_TO_LOCATION: Record<string, string> = {
   "Joe Lynch": "Westminster",
   "Drew Perry": "Centennial",
-  "Lenny Uematsu": "Colorado Springs",
-  "Rolando": "Colorado Springs", // kept so historical records assigned to Rolando still map
+  "Lenny Uematsu": "Pueblo",
+  "Rolando": "Pueblo", // kept so historical records assigned to Rolando still map
 };
 
 interface ScheduleRec {

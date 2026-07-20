@@ -122,9 +122,9 @@ export const CREWS_CONFIG: Record<string, CrewConfig> = {
     ],
     monthly_capacity: 22,
   },
-  "Colorado Springs": {
+  Pueblo: {
     crews: [
-      { name: "COS Crew", roofers: 2, electricians: 1, color: "#eab308", dailyCapacity: 1 },
+      { name: "Pueblo Crew", roofers: 2, electricians: 1, color: "#eab308", dailyCapacity: 1 },
     ],
     monthly_capacity: 22,
   },

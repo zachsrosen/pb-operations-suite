@@ -49,6 +49,10 @@ const inputsSchema = z.object({
 const TEAM_UID_BY_PB_LOCATION: Record<string, string> = {
   westminster: "1c23adb9-cefa-44c7-8506-804949afc56f",
   centennial: "76b94bd3-e2fc-4cfe-8c2a-357b9a850b3c",
+  // Pueblo (formerly Colorado Springs) — Zuper team renamed in place, same UID.
+  // HubSpot sends pb_location = "Pueblo"; legacy key kept for old data.
+  pueblo: "1a914a0e-b633-4f12-8ed6-3348285d6b93",
+  pblo: "1a914a0e-b633-4f12-8ed6-3348285d6b93",
   "colorado springs": "1a914a0e-b633-4f12-8ed6-3348285d6b93",
   "san luis obispo": "699cec60-f9f8-4e57-b41a-bb29b1f3649c",
   camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",

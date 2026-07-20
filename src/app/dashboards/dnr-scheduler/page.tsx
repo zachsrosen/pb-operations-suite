@@ -68,7 +68,7 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+const LOCATIONS = ["Westminster", "Centennial", "Pueblo", "San Luis Obispo", "Camarillo"];
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -296,7 +296,7 @@ export default function DNRSchedulerPage() {
                       : "bg-background border-t-border text-muted hover:border-muted"
                   }`}
                 >
-                  {loc.replace("Colorado Springs", "CO Spgs").replace("San Luis Obispo", "SLO")}
+                  {loc.replace("San Luis Obispo", "SLO")}
                 </button>
               ))}
               {selectedLocations.length > 0 && (

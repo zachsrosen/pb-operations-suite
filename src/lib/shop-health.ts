@@ -37,6 +37,7 @@ import {
   resolveReviewLocations,
 } from "./hubspot-customer-reviews";
 import { prisma } from "./db";
+import { expandLegacyPueblo, dedupeLegacyPuebloGoals } from "./office-goal-legacy";
 import { appCache, CACHE_KEYS } from "./cache";
 
 // ─── Week Utilities ──────────────────────────────────────────────────────────
@@ -685,13 +686,17 @@ async function computeGoalsFromOfficeGoals(
   let ptoRevenueTarget = 0;
 
   try {
-    const goalRecords = await prisma.officeGoal.findMany({
-      where: {
-        location: { in: group.canonicals },
-        month,
-        year,
-      },
-    });
+    // Transition shim: prod rows may still say "Colorado Springs" until the
+    // pueblo data migration runs (see src/lib/office-goal-legacy.ts).
+    const goalRecords = dedupeLegacyPuebloGoals(
+      await prisma.officeGoal.findMany({
+        where: {
+          location: { in: expandLegacyPueblo(group.canonicals) },
+          month,
+          year,
+        },
+      })
+    );
 
     const targetMap = new Map<string, number>();
     for (const g of goalRecords) {
@@ -1111,14 +1116,17 @@ async function computeCustomerSuccess(
 
   // Review target: sum across canonical locations from OfficeGoal or defaults
   try {
-    const goalRecords = await prisma.officeGoal.findMany({
-      where: {
-        location: { in: group.canonicals },
-        metric: "five_star_reviews",
-        month,
-        year: weekStart.getFullYear(),
-      },
-    });
+    // Transition shim: tolerate legacy "Colorado Springs" rows (Pueblo wins).
+    const goalRecords = dedupeLegacyPuebloGoals(
+      await prisma.officeGoal.findMany({
+        where: {
+          location: { in: expandLegacyPueblo(group.canonicals) },
+          metric: "five_star_reviews",
+          month,
+          year: weekStart.getFullYear(),
+        },
+      })
+    );
     if (goalRecords.length > 0) {
       reviewTarget = goalRecords.reduce((sum, g) => sum + g.target, 0);
     }

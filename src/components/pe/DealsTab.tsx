@@ -133,7 +133,8 @@ function fmt(n: number | null): string {
 const LOCATION_SHORT: Record<string, string> = {
   "Centennial": "DTC",
   "Westminster": "WST",
-  "Colorado Springs": "CSP",
+  "Pueblo": "PBLO",
+  "Colorado Springs": "PBLO", // legacy pb_location rows pre Pueblo rename
   "San Luis Obispo": "SLO",
   "Camarillo": "CAM",
 };

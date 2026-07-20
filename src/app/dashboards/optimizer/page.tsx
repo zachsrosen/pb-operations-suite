@@ -640,7 +640,7 @@ export default function OptimizerDashboard() {
       const crews: Record<string, string[]> = {
         Westminster: ["WESTY Alpha", "WESTY Bravo"],
         Centennial: ["DTC Alpha", "DTC Bravo"],
-        "Colorado Springs": ["COSP Alpha"],
+        Pueblo: ["Pueblo Alpha"],
         "San Luis Obispo": ["SLO Solar"],
         Camarillo: ["CAM Crew"],
       };

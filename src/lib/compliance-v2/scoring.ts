@@ -52,7 +52,8 @@ const LOCATION_TEAM_FILTERS: Record<string, string> = {
   Westminster: "westminster",
   Centennial: "centennial",
   DTC: "centennial",
-  "Colorado Springs": "colorado springs",
+  Pueblo: "pueblo",
+  "Colorado Springs": "pueblo", // legacy location rows (pre Pueblo rename) → same bucket
   "San Luis Obispo": "san luis obispo",
   Camarillo: "san luis obispo",
 };

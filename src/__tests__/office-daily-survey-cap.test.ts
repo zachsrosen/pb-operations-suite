@@ -59,9 +59,9 @@ describe("applyOfficeDailyCap", () => {
     expect(day.hasAvailability).toBe(false);
   });
 
-  it("Colorado Springs (unconfigured): 3 booked + 3 available → no cap fields", () => {
+  it("Pueblo (unconfigured): 3 booked + 3 available → no cap fields", () => {
     const day = makeDay(3, 3);
-    applyOfficeDailyCap(day, "Colorado Springs");
+    applyOfficeDailyCap(day, "Pueblo");
     expect(day.dayCapped).toBeUndefined();
     expect(day.capLimit).toBeUndefined();
     expect(day.availableSlots.length).toBe(3);

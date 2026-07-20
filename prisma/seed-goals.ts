@@ -27,7 +27,7 @@ const TARGETS: Array<{
 }> = [
   { location: "Westminster",       revenueTarget: 1_100_000, reviewTarget: 15 },
   { location: "Centennial",        revenueTarget: 1_100_000, reviewTarget: 15 },
-  { location: "Colorado Springs",  revenueTarget: 300_000,   reviewTarget: 10 },
+  { location: "Pueblo",            revenueTarget: 300_000,   reviewTarget: 10 },
   { location: "San Luis Obispo",   revenueTarget: 500_000,   reviewTarget: 10 },
   { location: "Camarillo",         revenueTarget: 500_000,   reviewTarget: 10 },
 ];

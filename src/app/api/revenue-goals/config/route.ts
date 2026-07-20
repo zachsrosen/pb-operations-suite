@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { appCache } from "@/lib/cache";
-import { REVENUE_GROUPS } from "@/lib/revenue-groups-config";
+import { REVENUE_GROUPS, normalizeRevenueGroupKey } from "@/lib/revenue-groups-config";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAuth();
@@ -27,9 +27,10 @@ export async function GET(request: NextRequest) {
     }));
   }
   for (const goal of goals) {
-    if (config[goal.groupKey]) {
-      const idx = config[goal.groupKey].findIndex((m) => m.month === goal.month);
-      if (idx >= 0) config[goal.groupKey][idx].target = Number(goal.target);
+    const groupKey = normalizeRevenueGroupKey(goal.groupKey);
+    if (config[groupKey]) {
+      const idx = config[groupKey].findIndex((m) => m.month === goal.month);
+      if (idx >= 0) config[groupKey][idx].target = Number(goal.target);
     }
   }
 

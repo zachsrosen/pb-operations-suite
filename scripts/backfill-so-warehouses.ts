@@ -20,7 +20,8 @@ const ZOHO_WAREHOUSE_IDS: Record<string, string> = {
   Centennial: "5385454000000088162",
   DTC: "5385454000000088162",
   Westminster: "5385454000000114025",
-  "Colorado Springs": "5385454000000114101",
+  Pueblo: "5385454000000114101",
+  "Colorado Springs": "5385454000000114101", // legacy pb_location rows pre Pueblo rename — same warehouse
   "San Luis Obispo": "5385454000000114177",
   Camarillo: "5385454000001367019",
 };

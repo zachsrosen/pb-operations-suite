@@ -32,19 +32,19 @@ export const COMPLIANCE_TEAM_OVERRIDES: Record<string, string> = {
   // Paul Cougill
   "5a28cb5d-44fe-4848-ba12-034a1af977ac": "Centennial",
   // Alex Swope
-  "d27d2562-6249-41b3-8922-6434477eb87b": "Colorado Springs",
+  "d27d2562-6249-41b3-8922-6434477eb87b": "Pueblo",
   // Andres Espino
-  "694c2834-82d2-4719-97b0-d75502e9a3cc": "Colorado Springs",
+  "694c2834-82d2-4719-97b0-d75502e9a3cc": "Pueblo",
   // Andrew Green
-  "e7abeb11-43f1-4028-82d1-456bb3de0fe6": "Colorado Springs",
+  "e7abeb11-43f1-4028-82d1-456bb3de0fe6": "Pueblo",
   // Joshua Hager
-  "2337cf17-6ab8-4b44-abc5-c560fc21c22d": "Colorado Springs",
+  "2337cf17-6ab8-4b44-abc5-c560fc21c22d": "Pueblo",
   // Kenny O'Brien
-  "219bc9a8-8683-4290-be32-c32093b69333": "Colorado Springs",
+  "219bc9a8-8683-4290-be32-c32093b69333": "Pueblo",
   // Lenny Uematsu
-  "6b0a8b10-a969-4dd9-8104-62e5c38f7d77": "Colorado Springs",
+  "6b0a8b10-a969-4dd9-8104-62e5c38f7d77": "Pueblo",
   // Rolando Valle
-  "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b": "Colorado Springs",
+  "a89ed2f5-222b-4b09-8bb0-14dc45c2a51b": "Pueblo",
   // Cristian Garcia
   "71344347-2107-413e-892b-d1ba51cfcc95": "D&R",
   // Mario Villareal

@@ -1,8 +1,11 @@
 import {
   CANONICAL_LOCATIONS,
+  CANONICAL_TO_LOCATION_SLUG,
+  LOCATION_SLUG_TO_CANONICAL,
   isCanonicalLocation,
   normalizeLocation,
   normalizeLocationOrUnknown,
+  resolvePbLocationFromAddress,
 } from "@/lib/locations";
 
 describe("locations", () => {
@@ -10,10 +13,12 @@ describe("locations", () => {
     expect(CANONICAL_LOCATIONS).toEqual([
       "Westminster",
       "Centennial",
-      "Colorado Springs",
+      "Pueblo",
       "San Luis Obispo",
       "Camarillo",
     ]);
+    expect(CANONICAL_LOCATIONS).toContain("Pueblo");
+    expect(CANONICAL_LOCATIONS).not.toContain("Colorado Springs");
   });
 
   it.each([
@@ -25,8 +30,14 @@ describe("locations", () => {
     ["SLO", "San Luis Obispo"],
     ["san luis", "San Luis Obispo"],
     ["California", "San Luis Obispo"],
-    ["co springs", "Colorado Springs"],
-    ["Pueblo", "Colorado Springs"],
+    // legacy Colorado Springs aliases resolve to Pueblo
+    ["co springs", "Pueblo"],
+    ["Colorado Springs", "Pueblo"],
+    ["COSP", "Pueblo"],
+    // new Pueblo forms
+    ["PBLO", "Pueblo"],
+    ["pueblo", "Pueblo"],
+    ["Pueblo", "Pueblo"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(normalizeLocation(input)).toBe(expected);
   });
@@ -50,6 +61,20 @@ describe("locations", () => {
 
   it("supports type-guard checks for canonical values", () => {
     expect(isCanonicalLocation("Centennial")).toBe(true);
+    expect(isCanonicalLocation("Pueblo")).toBe(true);
+    expect(isCanonicalLocation("Colorado Springs")).toBe(false);
     expect(isCanonicalLocation("Denver")).toBe(false);
+  });
+
+  it("maps slugs to canonical locations with the legacy slug kept as an alias", () => {
+    expect(LOCATION_SLUG_TO_CANONICAL["pueblo"]).toBe("Pueblo");
+    expect(LOCATION_SLUG_TO_CANONICAL["colorado-springs"]).toBe("Pueblo");
+    expect(CANONICAL_TO_LOCATION_SLUG["Pueblo"]).toBe("pueblo");
+  });
+
+  it("routes Springs metro AND Pueblo zips to Pueblo", () => {
+    expect(resolvePbLocationFromAddress("80915", "CO")).toBe("Pueblo");
+    expect(resolvePbLocationFromAddress("81001", "CO")).toBe("Pueblo");
+    expect(resolvePbLocationFromAddress("81101", "CO")).toBe("Pueblo"); // 811 prefix (Alamosa band — included per decision 2)
   });
 });

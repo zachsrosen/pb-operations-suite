@@ -34,7 +34,8 @@ import type { CanonicalLocation } from "@/lib/locations";
 const LOC_ABBR: Record<string, string> = {
   Westminster: "WM",
   Centennial: "DTC",
-  "Colorado Springs": "COS",
+  Pueblo: "PBLO",
+  "Colorado Springs": "PBLO", // legacy location rows pre Pueblo rename
   "San Luis Obispo": "SLO",
   Camarillo: "CAM",
 };

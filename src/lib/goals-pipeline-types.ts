@@ -73,7 +73,7 @@ export interface GoalsPipelineData {
 export const HUBSPOT_LOCATION_IDS: Record<string, string> = {
   Westminster: "35157882011",
   Centennial: "35214810442",
-  "Colorado Springs": "35236484623",
+  Pueblo: "35236484623", // renamed in place from "Colorado Springs" — same record
   "San Luis Obispo": "35287130735",
   Camarillo: "35287501484",
 };
@@ -96,7 +96,7 @@ export type GoalMetric = (typeof GOAL_METRICS)[number];
 export const DEFAULT_TARGETS: Record<string, Record<GoalMetric, number>> = {
   Westminster:        { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, permits_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 6 },
   Centennial:         { sales_revenue: 1_000_000, survey_revenue: 1_000_000, da_revenue: 1_000_000, permits_revenue: 1_000_000, cc_revenue: 1_000_000, inspection_revenue: 1_000_000, pto_revenue: 1_000_000, five_star_reviews: 6 },
-  "Colorado Springs": { sales_revenue: 400_000,   survey_revenue: 400_000,   da_revenue: 400_000,   permits_revenue: 400_000,   cc_revenue: 400_000,   inspection_revenue: 400_000,   pto_revenue: 400_000,   five_star_reviews: 4 },
+  Pueblo:             { sales_revenue: 400_000,   survey_revenue: 400_000,   da_revenue: 400_000,   permits_revenue: 400_000,   cc_revenue: 400_000,   inspection_revenue: 400_000,   pto_revenue: 400_000,   five_star_reviews: 4 },
   "San Luis Obispo":  { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   permits_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 2 },
   Camarillo:          { sales_revenue: 350_000,   survey_revenue: 350_000,   da_revenue: 350_000,   permits_revenue: 350_000,   cc_revenue: 350_000,   inspection_revenue: 350_000,   pto_revenue: 350_000,   five_star_reviews: 2 },
 };
@@ -105,7 +105,7 @@ export const DEFAULT_TARGETS: Record<string, Record<GoalMetric, number>> = {
 export const DEFAULT_STRETCH_TARGETS: Record<string, Record<GoalMetric, number>> = {
   Westminster:        { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, permits_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 7 },
   Centennial:         { sales_revenue: 1_100_000, survey_revenue: 1_100_000, da_revenue: 1_100_000, permits_revenue: 1_100_000, cc_revenue: 1_100_000, inspection_revenue: 1_100_000, pto_revenue: 1_100_000, five_star_reviews: 7 },
-  "Colorado Springs": { sales_revenue: 500_000,   survey_revenue: 500_000,   da_revenue: 500_000,   permits_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   pto_revenue: 500_000,   five_star_reviews: 5 },
+  Pueblo:             { sales_revenue: 500_000,   survey_revenue: 500_000,   da_revenue: 500_000,   permits_revenue: 500_000,   cc_revenue: 500_000,   inspection_revenue: 500_000,   pto_revenue: 500_000,   five_star_reviews: 5 },
   "San Luis Obispo":  { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   permits_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 3 },
   Camarillo:          { sales_revenue: 375_000,   survey_revenue: 375_000,   da_revenue: 375_000,   permits_revenue: 375_000,   cc_revenue: 375_000,   inspection_revenue: 375_000,   pto_revenue: 375_000,   five_star_reviews: 3 },
 };

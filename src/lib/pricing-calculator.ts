@@ -337,7 +337,7 @@ export function calcLeaseFactorAdjustment(
 export const LOCATION_SCHEME: Record<string, string> = {
   Westminster: "base",
   Centennial: "base",
-  "Colorado Springs": "base",
+  Pueblo: "base",
   "San Luis Obispo": "ventura",
   Camarillo: "ventura",
 };

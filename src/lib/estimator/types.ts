@@ -7,7 +7,7 @@ export type QuoteType =
 
 export type RoofType = "asphalt_shingle" | "tile" | "metal" | "flat_tpo" | "other";
 
-export type Location = "DTC" | "WESTY" | "COSP" | "CA" | "CAMARILLO";
+export type Location = "DTC" | "WESTY" | "PBLO" | "CA" | "CAMARILLO";
 
 export type ShadeBucket = "light" | "moderate" | "heavy";
 

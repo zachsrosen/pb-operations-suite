@@ -74,8 +74,8 @@ const DA_STATUS_FUNNEL = [
   { key: "Approved", label: "Approved", color: "bg-emerald-500" },
 ];
 
-// pbLocation values: "Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"
-const CO_LOCATIONS = ["Westminster", "Centennial", "Colorado Springs"];
+// pbLocation values: "Westminster", "Centennial", "Pueblo", "San Luis Obispo", "Camarillo"
+const CO_LOCATIONS = ["Westminster", "Centennial", "Pueblo"];
 const CA_LOCATIONS = ["San Luis Obispo", "Camarillo"];
 
 // D&E sub-dashboard links

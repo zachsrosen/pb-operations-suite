@@ -344,7 +344,7 @@ const DRAFT_PM_INTAKE = `
 <li>Deal name follows the standard format: <code>PROJ-XXXX | Last, First | Address</code></li>
 <li>Deal Owner = the actual selling rep</li>
 <li>Pipeline = Project; current stage = Site Survey</li>
-<li>Install Location set (one of: Westy, DTC/Centennial, COSP, Camarillo/SLO)</li>
+<li>Install Location set (one of: Westy, DTC/Centennial, PBLO, Camarillo/SLO)</li>
 <li>System specs populated: kW DC, module model + count, inverter model, battery model (if applicable)</li>
 </ul>
 
@@ -544,7 +544,7 @@ The Zuper API <strong>only allows setting the assigned crew at job creation time
 <tbody>
 <tr><td>Westminster</td><td>Westy install calendar</td><td>—</td></tr>
 <tr><td>DTC / Centennial</td><td>DTC install calendar</td><td>—</td></tr>
-<tr><td>Colorado Springs</td><td>COSP install calendar</td><td>—</td></tr>
+<tr><td>Pueblo</td><td>Pueblo install calendar</td><td>—</td></tr>
 <tr><td>Camarillo / SLO</td><td>California install calendar (shared)</td><td>SLO and Camarillo intentionally share one calendar — do not split</td></tr>
 </tbody>
 </table>

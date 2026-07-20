@@ -62,7 +62,7 @@ describe("LOCATION_COLORS", () => {
     const expectedLocations = [
       "Westminster",
       "Centennial",
-      "Colorado Springs",
+      "Pueblo",
       "San Luis Obispo",
       "Camarillo",
     ];

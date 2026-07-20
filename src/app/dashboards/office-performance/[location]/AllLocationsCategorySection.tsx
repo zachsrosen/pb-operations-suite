@@ -42,7 +42,8 @@ interface AllLocationsCategorySectionProps {
 const LOC_SHORT: Record<string, string> = {
   Westminster: "WM",
   Centennial: "DTC",
-  "Colorado Springs": "COS",
+  Pueblo: "PBLO",
+  "Colorado Springs": "PBLO", // legacy location rows pre Pueblo rename
   California: "CA",
   // Pre-grouping fallbacks (kept for any callers passing canonical labels):
   "San Luis Obispo": "SLO",

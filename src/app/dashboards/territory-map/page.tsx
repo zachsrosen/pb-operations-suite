@@ -154,7 +154,7 @@ function assignTerritory(
 ): string {
   if (lat >= boundaries.westminster) return "Westminster";
   if (lat >= boundaries.centennial) return "Centennial";
-  return "Colorado Springs";
+  return "Pueblo";
 }
 
 /* ------------------------------------------------------------------ */
@@ -223,7 +223,7 @@ export default function TerritoryMapPage() {
     const offices = [
       { name: "Westminster" as const, borderClass: "border-l-blue-500" },
       { name: "Centennial" as const, borderClass: "border-l-emerald-500" },
-      { name: "Colorado Springs" as const, borderClass: "border-l-amber-500" },
+      { name: "Pueblo" as const, borderClass: "border-l-amber-500" },
     ];
     const stats = offices.map(({ name, borderClass }) => {
       const deals = filteredDeals.filter((d) => d.computedLocation === name);

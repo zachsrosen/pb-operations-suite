@@ -10,7 +10,7 @@ export type JobMarkerKind =
 
 export type MapMode = "today" | "week" | "backlog";
 
-export type CrewShopId = "dtc" | "westy" | "cosp" | "ca" | "camarillo";
+export type CrewShopId = "dtc" | "westy" | "pblo" | "ca" | "camarillo";
 
 export interface JobMarkerAddress {
   street: string;
@@ -41,7 +41,7 @@ export interface JobMarker {
   rawStage?: string;
   // Job-specific enrichment (populated for project-pipeline marker kinds)
   projectNumber?: string;    // Human-readable project number shown on other schedulers
-  pbLocation?: string;       // DTC / Westminster / Colorado Springs / Camarillo / SLO
+  pbLocation?: string;       // DTC / Westminster / Pueblo / Camarillo / SLO
   systemSizeKwDc?: number;
   batteryCount?: number;
   batterySizeKwh?: number;

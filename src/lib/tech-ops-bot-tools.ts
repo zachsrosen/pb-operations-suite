@@ -109,7 +109,7 @@ export function createTechOpsBotTools() {
         .optional()
         .describe(
           "Optional PB location/shop: Westminster (Westy), Centennial (DTC), " +
-            "Colorado Springs (COSP), San Luis Obispo (SLO/California), Camarillo"
+            "Pueblo (PBLO; formerly Colorado Springs/COSP), San Luis Obispo (SLO/California), Camarillo"
         ),
       days: z
         .number()

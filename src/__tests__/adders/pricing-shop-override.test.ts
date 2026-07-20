@@ -3,7 +3,7 @@ import type { AdderWithOverrides } from "@/lib/adders/types";
 
 describe("VALID_SHOPS", () => {
   test("matches CrewMember.location strings", () => {
-    expect(VALID_SHOPS).toEqual(["Westminster", "DTC", "Colorado Springs", "SLO", "Camarillo"]);
+    expect(VALID_SHOPS).toEqual(["Westminster", "DTC", "Pueblo", "SLO", "Camarillo"]);
   });
 });
 

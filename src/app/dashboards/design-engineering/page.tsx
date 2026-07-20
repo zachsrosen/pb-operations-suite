@@ -32,7 +32,7 @@ interface Project {
 const CO_LOCATIONS = [
   "Westminster",
   "Centennial",
-  "Colorado Springs",
+  "Pueblo",
   "Colorado",
 ];
 const CA_LOCATIONS = ["San Luis Obispo", "Camarillo", "California"];
