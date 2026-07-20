@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { fetchAllProjects, searchWithRetry } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { normalizeLocation } from "@/lib/locations";
+import { expandLegacyPueblo, dedupeLegacyPuebloGoals } from "@/lib/office-goal-legacy";
 import type { DashboardLocationGroup } from "@/lib/dashboard-location-groups";
 import { handleLookup } from "@/app/api/zuper/jobs/lookup/route";
 import type {
@@ -61,6 +62,7 @@ const DEFAULT_GOALS: Record<OfficeMetricName, number> = {
 };
 
 type OfficeGoalRow = {
+  location: string;
   metric: string;
   target: number;
 };
@@ -68,7 +70,7 @@ type OfficeGoalRow = {
 type OfficeGoalDelegate = {
   findMany(args: {
     where: {
-      location: string;
+      location: string | { in: string[] };
       month: number;
       year: number;
     };
@@ -90,10 +92,17 @@ export async function getGoalsForLocation(
   const officeGoal = getOfficeGoalDelegate();
   if (!officeGoal) return goals;
 
+  // Transition shim: prod rows may still say "Colorado Springs" until the
+  // pueblo data migration runs (see src/lib/office-goal-legacy.ts).
+  const locationFilter =
+    location === "Pueblo" ? { in: expandLegacyPueblo([location]) } : location;
+
   try {
-    const rows = await officeGoal.findMany({
-      where: { location, month, year },
-    });
+    const rows = dedupeLegacyPuebloGoals(
+      await officeGoal.findMany({
+        where: { location: locationFilter, month, year },
+      })
+    );
 
     for (const row of rows) {
       if (row.metric in goals) {
@@ -105,9 +114,11 @@ export async function getGoalsForLocation(
     if (rows.length === 0) {
       const prevMonth = month === 1 ? 12 : month - 1;
       const prevYear = month === 1 ? year - 1 : year;
-      const fallback = await officeGoal.findMany({
-        where: { location, month: prevMonth, year: prevYear },
-      });
+      const fallback = dedupeLegacyPuebloGoals(
+        await officeGoal.findMany({
+          where: { location: locationFilter, month: prevMonth, year: prevYear },
+        })
+      );
       for (const row of fallback) {
         if (row.metric in goals) {
           goals[row.metric as OfficeMetricName] = row.target;

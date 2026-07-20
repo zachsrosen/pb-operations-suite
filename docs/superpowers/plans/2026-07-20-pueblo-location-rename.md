@@ -238,8 +238,10 @@ Dry-run prints would-change counts per column. `--apply` executes and prints upd
 | HubSpotPropertyCache.pbLocation | 1395 |
 | User.allowedLocations (array element) | 1 |
 | CrewMember.locations (array element) | 4 |
+| AdderShopOverride.shop | 0 |
+| RevenueGoal.groupKey ("colorado_springs" → "pueblo") | 12 |
 | EstimatorRun.location ("COSP" → "PBLO") | 0 |
-| **Total** | **4267** |
+| **Total** | **4279** |
 
 ### Task 11: Test sweep + full verification
 

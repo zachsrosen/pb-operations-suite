@@ -3,7 +3,11 @@
  * (and estimator "COSP" → "PBLO") after the Pueblo office rename.
  *
  * Dry-run by default: prints would-change counts per table.column and writes
- * NOTHING. Pass --apply to execute the updates (one transaction per table).
+ * NOTHING. Pass --apply to execute the updates. Tables whose unique keys
+ * include the location (CrewAvailability, OfficeGoal, GoalsDigestSnapshot,
+ * AdderShopOverride, RevenueGoal) migrate per-row: when a Pueblo counterpart
+ * already exists the legacy row is deleted instead (OfficeGoal keeps the
+ * newer target of the pair). Idempotent — safe to re-run.
  *
  * Usage:
  *   npx tsx scripts/migrate-cosp-to-pueblo.ts           # dry run (read-only)
@@ -73,13 +77,40 @@ const tasks: ColumnTask[] = [
       prisma.crewAvailability.count({
         where: { location: { in: CREW_AVAIL_LEGACY } },
       }),
-    async () =>
-      (
-        await prisma.crewAvailability.updateMany({
-          where: { location: { in: CREW_AVAIL_LEGACY } },
-          data: { location: PUEBLO },
-        })
-      ).count,
+    // Per-row: @@unique([crewMemberId, location, dayOfWeek, startTime]) — if a
+    // Pueblo counterpart already exists for the slot, delete the legacy row.
+    async () => {
+      const rows = await prisma.crewAvailability.findMany({
+        where: { location: { in: CREW_AVAIL_LEGACY } },
+        select: { id: true, crewMemberId: true, dayOfWeek: true, startTime: true },
+      });
+      let n = 0;
+      for (const r of rows) {
+        try {
+          const dup = await prisma.crewAvailability.findFirst({
+            where: {
+              crewMemberId: r.crewMemberId,
+              location: PUEBLO,
+              dayOfWeek: r.dayOfWeek,
+              startTime: r.startTime,
+            },
+            select: { id: true },
+          });
+          if (dup) {
+            await prisma.crewAvailability.delete({ where: { id: r.id } });
+          } else {
+            await prisma.crewAvailability.update({
+              where: { id: r.id },
+              data: { location: PUEBLO },
+            });
+          }
+          n++;
+        } catch (err) {
+          console.error(`    CrewAvailability row ${r.id} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      return n;
+    },
   ),
   eq(
     "CrewAvailability.reportLocation (incl. COSP / CO Springs variants)",
@@ -134,13 +165,40 @@ const tasks: ColumnTask[] = [
   eq(
     "OfficeGoal.location",
     () => prisma.officeGoal.count({ where: { location: LEGACY_CANONICAL } }),
-    async () =>
-      (
-        await prisma.officeGoal.updateMany({
-          where: { location: LEGACY_CANONICAL },
-          data: { location: PUEBLO },
-        })
-      ).count,
+    // Per-row: @@unique([location, metric, month, year]) — if a Pueblo
+    // counterpart exists, keep the newer (updatedAt) target of the pair and
+    // delete the legacy row.
+    async () => {
+      const rows = await prisma.officeGoal.findMany({
+        where: { location: LEGACY_CANONICAL },
+      });
+      let n = 0;
+      for (const r of rows) {
+        try {
+          const dup = await prisma.officeGoal.findFirst({
+            where: { location: PUEBLO, metric: r.metric, month: r.month, year: r.year },
+          });
+          if (!dup) {
+            await prisma.officeGoal.update({
+              where: { id: r.id },
+              data: { location: PUEBLO },
+            });
+          } else {
+            if (r.updatedAt > dup.updatedAt) {
+              await prisma.officeGoal.update({
+                where: { id: dup.id },
+                data: { target: r.target },
+              });
+            }
+            await prisma.officeGoal.delete({ where: { id: r.id } });
+          }
+          n++;
+        } catch (err) {
+          console.error(`    OfficeGoal row ${r.id} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      return n;
+    },
   ),
   eq(
     "Deal.pbLocation",
@@ -187,13 +245,35 @@ const tasks: ColumnTask[] = [
       prisma.goalsDigestSnapshot.count({
         where: { location: LEGACY_CANONICAL },
       }),
-    async () =>
-      (
-        await prisma.goalsDigestSnapshot.updateMany({
-          where: { location: LEGACY_CANONICAL },
-          data: { location: PUEBLO },
-        })
-      ).count,
+    // Per-row: @@unique([weekKey, location]) — if a Pueblo snapshot already
+    // exists for the week (post-rename write), it wins; delete the legacy row.
+    async () => {
+      const rows = await prisma.goalsDigestSnapshot.findMany({
+        where: { location: LEGACY_CANONICAL },
+        select: { id: true, weekKey: true },
+      });
+      let n = 0;
+      for (const r of rows) {
+        try {
+          const dup = await prisma.goalsDigestSnapshot.findFirst({
+            where: { weekKey: r.weekKey, location: PUEBLO },
+            select: { id: true },
+          });
+          if (dup) {
+            await prisma.goalsDigestSnapshot.delete({ where: { id: r.id } });
+          } else {
+            await prisma.goalsDigestSnapshot.update({
+              where: { id: r.id },
+              data: { location: PUEBLO },
+            });
+          }
+          n++;
+        } catch (err) {
+          console.error(`    GoalsDigestSnapshot row ${r.id} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      return n;
+    },
   ),
   eq(
     "ZuperStatusDrift.pbLocation",
@@ -304,6 +384,74 @@ const tasks: ColumnTask[] = [
         ),
       );
       return rows.length;
+    },
+  ),
+  eq(
+    "AdderShopOverride.shop",
+    () =>
+      prisma.adderShopOverride.count({ where: { shop: LEGACY_CANONICAL } }),
+    // Per-row: @@unique([adderId, shop]) — if a Pueblo override already exists
+    // for the adder, it wins; delete the legacy row.
+    async () => {
+      const rows = await prisma.adderShopOverride.findMany({
+        where: { shop: LEGACY_CANONICAL },
+        select: { id: true, adderId: true },
+      });
+      let n = 0;
+      for (const r of rows) {
+        try {
+          const dup = await prisma.adderShopOverride.findFirst({
+            where: { adderId: r.adderId, shop: PUEBLO },
+            select: { id: true },
+          });
+          if (dup) {
+            await prisma.adderShopOverride.delete({ where: { id: r.id } });
+          } else {
+            await prisma.adderShopOverride.update({
+              where: { id: r.id },
+              data: { shop: PUEBLO },
+            });
+          }
+          n++;
+        } catch (err) {
+          console.error(`    AdderShopOverride row ${r.id} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      return n;
+    },
+  ),
+  eq(
+    'RevenueGoal.groupKey ("colorado_springs" → "pueblo")',
+    () =>
+      prisma.revenueGoal.count({ where: { groupKey: "colorado_springs" } }),
+    // Per-row: @@unique([year, groupKey, month]) — if a (year, "pueblo", month)
+    // row already exists, it wins; delete the legacy row.
+    async () => {
+      const rows = await prisma.revenueGoal.findMany({
+        where: { groupKey: "colorado_springs" },
+        select: { id: true, year: true, month: true },
+      });
+      let n = 0;
+      for (const r of rows) {
+        try {
+          const dup = await prisma.revenueGoal.findFirst({
+            where: { year: r.year, groupKey: "pueblo", month: r.month },
+            select: { id: true },
+          });
+          if (dup) {
+            await prisma.revenueGoal.delete({ where: { id: r.id } });
+          } else {
+            await prisma.revenueGoal.update({
+              where: { id: r.id },
+              data: { groupKey: "pueblo" },
+            });
+          }
+          n++;
+        } catch (err) {
+          console.error(`    RevenueGoal row ${r.id} failed:`, err instanceof Error ? err.message : err);
+        }
+      }
+      return n;
     },
   ),
   // ---- Estimator: abbreviation code, not display name ----

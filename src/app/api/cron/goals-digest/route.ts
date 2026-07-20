@@ -143,6 +143,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Transition shim: the prior week's snapshot may still be stored under
+    // "Colorado Springs" (pre Pueblo rename / before the data migration runs).
+    // Fall back so week-over-week deltas survive the transition.
+    if (!priorSnapshots["Pueblo"] && priorSnapshots["Colorado Springs"]) {
+      priorSnapshots["Pueblo"] = priorSnapshots["Colorado Springs"];
+    }
+
     console.log(
       `[goals-digest] Prior week ${prevKey}: ${priorRows.length} snapshots found`,
     );

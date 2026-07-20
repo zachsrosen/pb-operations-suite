@@ -20,7 +20,12 @@ export function isValidShop(value: string): value is Shop {
 export function resolveShopPrice(adder: AdderWithOverrides, shop: string): number {
   if (!isValidShop(shop)) throw new Error(`invalid shop: ${shop}`);
   const base = Number(adder.basePrice);
-  const override = adder.overrides.find((o) => o.shop === shop && o.active);
+  const override =
+    adder.overrides.find((o) => o.shop === shop && o.active) ??
+    // Legacy rows pre Pueblo rename — a Pueblo override wins when both exist.
+    (shop === "Pueblo"
+      ? adder.overrides.find((o) => o.shop === "Colorado Springs" && o.active)
+      : undefined);
   return base + (override ? Number(override.priceDelta) : 0);
 }
 

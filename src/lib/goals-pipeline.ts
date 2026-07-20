@@ -15,6 +15,7 @@
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { prisma } from "@/lib/db";
+import { expandLegacyPueblo, dedupeLegacyPuebloGoals } from "@/lib/office-goal-legacy";
 import { LOCATION_OBJECT_TYPE } from "@/lib/hubspot-custom-objects";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import {
@@ -298,9 +299,20 @@ export async function getGoalsPipelineData(
   let targetMap = new Map<string, number>();
   if (prisma) {
     try {
-      const goalRecords = await prisma.officeGoal.findMany({
-        where: { location, month, year },
-      });
+      // Transition shim: prod rows may still say "Colorado Springs" until the
+      // pueblo data migration runs (see src/lib/office-goal-legacy.ts).
+      const goalRecords = dedupeLegacyPuebloGoals(
+        await prisma.officeGoal.findMany({
+          where: {
+            location:
+              location === "Pueblo"
+                ? { in: expandLegacyPueblo([location]) }
+                : location,
+            month,
+            year,
+          },
+        })
+      );
       targetMap = new Map(goalRecords.map((g) => [g.metric, g.target]));
     } catch (err) {
       console.error("[goals-pipeline] Failed to fetch OfficeGoal records, using defaults:", err);
