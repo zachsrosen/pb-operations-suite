@@ -130,7 +130,11 @@ async function fetchCancelledDates(): Promise<Map<string, string>> {
  * search `total` is read, so the 10k pagination cap doesn't apply. Returns
  * null on failure so the page can hide the rows rather than 500.
  */
-async function fetchTopFunnel(): Promise<{ leads: TopFunnelCounts; consults: TopFunnelCounts } | null> {
+async function fetchTopFunnel(): Promise<{
+  leads: TopFunnelCounts;
+  consults: TopFunnelCounts;
+  monthly: { leads: Record<string, number>; consults: Record<string, number> };
+} | null> {
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) return null;
 
@@ -192,7 +196,17 @@ async function fetchTopFunnel(): Promise<{ leads: TopFunnelCounts; consults: Top
       leads[key] = await leadsIn(lo, hi);
       consults[key] = await consultsIn(lo, hi);
     }
-    return { leads, consults };
+    // Current-year monthly counts for the monthly funnel table.
+    const monthly = { leads: {} as Record<string, number>, consults: {} as Record<string, number> };
+    for (let mo = 1; mo <= now.getUTCMonth() + 1; mo++) {
+      const mm = String(mo).padStart(2, "0");
+      const lo = `${cy}-${mm}-01`;
+      const lastDay = new Date(Date.UTC(cy, mo, 0)).getUTCDate();
+      const hi = `${cy}-${mm}-${String(lastDay).padStart(2, "0")}`;
+      monthly.leads[`${cy}-${mm}`] = await leadsIn(lo, hi);
+      monthly.consults[`${cy}-${mm}`] = await consultsIn(lo, hi);
+    }
+    return { leads, consults, monthly };
   } catch (error) {
     Sentry.captureException(error);
     console.error("[ops-scorecard] top-funnel fetch failed:", error);

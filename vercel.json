@@ -134,6 +134,9 @@
     },
     "src/app/api/cron/consult-stamp/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/ops-scorecard/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [

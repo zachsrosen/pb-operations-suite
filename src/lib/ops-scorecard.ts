@@ -164,6 +164,13 @@ export interface SalesForecast {
   avgNetDeal: number;
 }
 
+export interface TopFunnel {
+  leads: TopFunnelCounts;
+  consults: TopFunnelCounts;
+  /** Current-year monthly counts ("YYYY-MM" keys), for the monthly funnel table. */
+  monthly: { leads: Record<string, number>; consults: Record<string, number> };
+}
+
 export interface OpsScorecardData {
   meta: {
     generatedAt: string;
@@ -234,7 +241,7 @@ export interface OpsScorecardData {
   cancellations: OfficeCancellation[];
   /** Leads (Sales-Pipeline deals created) and consults set (meetings titled consult*).
    *  Null when the HubSpot fetch fails — the page hides the rows. */
-  topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null;
+  topFunnel: TopFunnel | null;
   /** Consult-pace sales forecast: consults last 30d × close rate, lagged by the
    *  median consult → sale time. Null until first_consult_date data exists. */
   salesForecast: SalesForecast | null;
@@ -242,6 +249,8 @@ export interface OpsScorecardData {
    *  revenue should be presented from the capacity model instead. */
   funnelFy: Array<{ stage: string; projected: CountRev } & StageYearRow>;
   funnelMonthly: Array<{ stage: string; byMonth: Record<string, number> }>;
+  /** Net revenue reaching each stage per quarter, py2 Q1 → current quarter. */
+  funnelQuarterly: Array<{ stage: string; byQuarter: Record<string, number> }>;
   efficiency: {
     monthlyMedians: Array<{ leg: string; byMonth: Record<string, number | null> }>;
     quarterlyMedians: Array<{ leg: string; byQuarter: Record<string, number | null> }>;
@@ -257,7 +266,7 @@ export interface OpsScorecardData {
 export function computeOpsScorecard(
   projects: Project[],
   now = new Date(),
-  topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null = null,
+  topFunnel: TopFunnel | null = null,
   forecastInputs: SalesForecastInputs | null = null
 ): OpsScorecardData {
   const dataThrough = now.toISOString().slice(0, 10);
@@ -537,6 +546,16 @@ export function computeOpsScorecard(
     byQuarter: bucketedMedians(leg, quarters, quarterOf),
   }));
 
+  const funnelQuarterly = MILESTONES.map((m) => {
+    const byQuarter: Record<string, number> = {};
+    for (const q of quarters) {
+      byQuarter[q] = sumAmount(
+        projects.filter((p) => isNet(p) && quarterOf(m.date(p)) === q)
+      );
+    }
+    return { stage: m.label, byQuarter };
+  });
+
   /** Mean per sold-year cohort (by office). */
   const turnaroundsByOffice = [...SCORECARD_OFFICES, "Colorado", "California", "Company"].map((o) => {
     const ps =
@@ -716,6 +735,7 @@ export function computeOpsScorecard(
     salesForecast,
     funnelFy,
     funnelMonthly,
+    funnelQuarterly,
     efficiency: {
       monthlyMedians,
       quarterlyMedians,

@@ -546,6 +546,71 @@ export default function OpsScorecardPage() {
       </SectionCard>
 
       {/* ---- Efficiency ---- */}
+      {/* ---- 2026 funnel, month by month ---- */}
+      <SectionCard
+        title={`${cy} funnel, month by month`}
+        sub="Counts reaching each milestone per month. Leads and consults come from the Sales Pipeline / meetings; the rest from the Project pipeline."
+      >
+        <table className="w-full min-w-[680px]">
+          <thead>
+            <tr>
+              <th className={th}>Stage — count</th>
+              {Object.keys(data.funnelMonthly[0]?.byMonth ?? {}).map((m) => (
+                <th key={m} className={thR}>{m.slice(5)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.topFunnel && ([
+              ["Leads created", data.topFunnel.monthly.leads],
+              ["Consults set", data.topFunnel.monthly.consults],
+            ] as const).map(([label, byMonth]) => (
+              <tr key={label}>
+                <td className={td}>{label}</td>
+                {Object.keys(data.funnelMonthly[0]?.byMonth ?? {}).map((m) => (
+                  <td key={m} className={tdR}>{byMonth[m] ?? "—"}</td>
+                ))}
+              </tr>
+            ))}
+            {data.funnelMonthly.map((r) => (
+              <tr key={r.stage}>
+                <td className={td}>{r.stage}</td>
+                {Object.entries(r.byMonth).map(([m, v]) => (
+                  <td key={m} className={tdR}>{v}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionCard>
+
+      {/* ---- Quarter over quarter ---- */}
+      <SectionCard
+        title="Quarter over quarter — net revenue by stage"
+        sub={`Net revenue reaching each stage per quarter, ${py2}Q1 → today. The ${py}Q3 tax-credit rush and ${py}Q4 crash distort simple QoQ reads — compare like quarters across years.`}
+      >
+        <table className="w-full min-w-[860px]">
+          <thead>
+            <tr>
+              <th className={th}>Stage</th>
+              {Object.keys(data.funnelQuarterly[0]?.byQuarter ?? {}).map((q) => (
+                <th key={q} className={thR}>{q.slice(2)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.funnelQuarterly.map((r) => (
+              <tr key={r.stage}>
+                <td className={td}>{r.stage}</td>
+                {Object.entries(r.byQuarter).map(([q, v]) => (
+                  <td key={q} className={tdR}>{$(v)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionCard>
+
       <SectionCard
         title={`Operational efficiency — ${cy} monthly medians`}
         sub="Median days per step, bucketed by when the step completed. Cancelled deals excluded from all time metrics."
@@ -565,6 +630,32 @@ export default function OpsScorecardPage() {
                 <td className={td}>{r.leg}</td>
                 {Object.entries(r.byMonth).map(([m, v]) => (
                   <td key={m} className={tdR}>{days(v)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </SectionCard>
+
+      <SectionCard
+        title="Operational efficiency — quarterly medians"
+        sub={`Median days per step, bucketed by the quarter the step completed, ${py2}Q1 → today. Cancelled deals excluded.`}
+      >
+        <table className="w-full min-w-[860px]">
+          <thead>
+            <tr>
+              <th className={th}>Leg</th>
+              {Object.keys(efficiency.quarterlyMedians[0]?.byQuarter ?? {}).map((q) => (
+                <th key={q} className={thR}>{q.slice(2)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {efficiency.quarterlyMedians.map((r) => (
+              <tr key={r.leg}>
+                <td className={td}>{r.leg}</td>
+                {Object.entries(r.byQuarter).map(([q, v]) => (
+                  <td key={q} className={tdR}>{v === null ? "—" : v.toFixed(1)}</td>
                 ))}
               </tr>
             ))}
