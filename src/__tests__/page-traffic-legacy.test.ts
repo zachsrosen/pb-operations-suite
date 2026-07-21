@@ -1,9 +1,19 @@
 import {
   computeLegacyPaths,
   fetchRecentTeamViewPaths,
+  getLegacyPaths,
   LEGACY_EXEMPT,
   LEGACY_THRESHOLD_DAYS,
 } from "@/lib/page-traffic";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
+
+// getLegacyPaths lazily imports @/lib/db; give it a swappable fake.
+let mockPrisma: unknown;
+jest.mock("@/lib/db", () => ({
+  get prisma() {
+    return mockPrisma;
+  },
+}));
 
 const DAY = 86_400_000;
 
@@ -90,10 +100,62 @@ describe("fetchRecentTeamViewPaths", () => {
       recentRows: [{ entityId: "/dashboards/scheduler" }],
     });
     expect(await fetchRecentTeamViewPaths(prisma as never)).toBeNull();
+    expect(prisma.activityLog.groupBy).not.toHaveBeenCalled();
   });
 
   it("returns null when the log is empty", async () => {
     const prisma = fakePrisma({ oldestView: null, admins: [], recentRows: [] });
     expect(await fetchRecentTeamViewPaths(prisma as never)).toBeNull();
+  });
+});
+
+describe("getLegacyPaths", () => {
+  function fakePrisma(opts: {
+    oldestView: Date | null;
+    admins: { id: string }[];
+    recentRows: { entityId: string | null }[];
+  }) {
+    return {
+      activityLog: {
+        aggregate: jest.fn().mockResolvedValue({ _min: { createdAt: opts.oldestView } }),
+        groupBy: jest.fn().mockResolvedValue(opts.recentRows),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue(opts.admins),
+      },
+    };
+  }
+
+  beforeEach(() => {
+    appCache.invalidate(CACHE_KEYS.PAGE_TRAFFIC_LEGACY);
+    mockPrisma = undefined;
+  });
+  afterAll(() => {
+    appCache.invalidate(CACHE_KEYS.PAGE_TRAFFIC_LEGACY);
+  });
+
+  it("negative-caches a guard-tripped outcome: second call skips the DB", async () => {
+    const prisma = fakePrisma({ oldestView: null, admins: [], recentRows: [] });
+    mockPrisma = prisma;
+    expect(await getLegacyPaths(["/dashboards/capacity"])).toEqual(new Set());
+    expect(await getLegacyPaths(["/dashboards/capacity"])).toEqual(new Set());
+    expect(prisma.activityLog.aggregate).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches the recent-path set: second call computes from cache without the DB", async () => {
+    const prisma = fakePrisma({
+      oldestView: new Date(Date.now() - 150 * DAY),
+      admins: [],
+      recentRows: [{ entityId: "/dashboards/scheduler" }],
+    });
+    mockPrisma = prisma;
+    expect(await getLegacyPaths(["/dashboards/scheduler", "/dashboards/capacity"])).toEqual(
+      new Set(["/dashboards/capacity"]),
+    );
+    expect(await getLegacyPaths(["/dashboards/scheduler", "/dashboards/capacity"])).toEqual(
+      new Set(["/dashboards/capacity"]),
+    );
+    expect(prisma.activityLog.aggregate).toHaveBeenCalledTimes(1);
+    expect(prisma.activityLog.groupBy).toHaveBeenCalledTimes(1);
   });
 });

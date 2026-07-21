@@ -1,4 +1,5 @@
 import type { UserRole, ActivityType } from "@/lib/db";
+import type { PrismaClient } from "@/generated/prisma/client";
 
 // ─── PATH_TO_SUITE ──────────────────────────────────────────────────────────────
 // Exhaustive map of every /dashboards/* href used in suite landing pages →
@@ -250,7 +251,7 @@ export function computeLegacyPaths(hrefs: string[], recentTeamViewPaths: Set<str
  * Takes the prisma client as a parameter so tests can pass a fake.
  */
 export async function fetchRecentTeamViewPaths(
-  prisma: import("@/generated/prisma/client").PrismaClient,
+  prisma: PrismaClient,
 ): Promise<Set<string> | null> {
   const cutoff = new Date(Date.now() - LEGACY_THRESHOLD_DAYS * 86_400_000);
 
@@ -293,22 +294,35 @@ export async function fetchRecentTeamViewPaths(
   return paths;
 }
 
+// Sentinel cached when the retention guard trips: that outcome is stable for
+// hours (fresh/preview DBs, or AUDIT_RETENTION_DAYS < threshold), so cache it
+// briefly instead of re-running the aggregate on every suite-page render.
+const GUARD_TRIPPED = "guard-tripped" as const;
+
 /**
- * Which of the given hrefs are legacy. Cached 1 hour. Fails open: on DB error,
- * short retention, or missing prisma, returns the empty set (nothing dulled).
+ * Which of the given hrefs are legacy. Cached 1 hour (15 min when the retention
+ * guard trips). Fails open: on DB error, short retention, or missing prisma,
+ * returns the empty set (nothing dulled). True DB errors are never cached.
  */
 export async function getLegacyPaths(hrefs: string[]): Promise<Set<string>> {
   try {
     const { appCache, CACHE_KEYS } = await import("@/lib/cache");
-    const cached = appCache.get<string[]>(CACHE_KEYS.PAGE_TRAFFIC_LEGACY);
+    const cached = appCache.get<string[] | typeof GUARD_TRIPPED>(CACHE_KEYS.PAGE_TRAFFIC_LEGACY);
+    if (cached.hit && cached.data === GUARD_TRIPPED) return new Set();
     let recent: Set<string> | null = null;
-    if (cached.hit && cached.data) {
+    if (cached.hit && Array.isArray(cached.data)) {
       recent = new Set(cached.data);
     } else {
       const { prisma } = await import("@/lib/db");
       if (!prisma) return new Set();
       recent = await fetchRecentTeamViewPaths(prisma);
-      if (recent === null) return new Set(); // guard tripped; never cache a failure
+      if (recent === null) {
+        appCache.set(CACHE_KEYS.PAGE_TRAFFIC_LEGACY, GUARD_TRIPPED, {
+          ttl: 15 * 60 * 1000,
+          staleTtl: 15 * 60 * 1000,
+        });
+        return new Set();
+      }
       appCache.set(CACHE_KEYS.PAGE_TRAFFIC_LEGACY, [...recent], {
         ttl: 60 * 60 * 1000,
         staleTtl: 60 * 60 * 1000,
