@@ -4,6 +4,7 @@ import { getSuiteSwitcherEntriesForRoles, SUITE_NAV_ENTRIES } from "@/lib/suite-
 import { canAccessRoute, getDefaultRouteForRole } from "@/lib/user-access";
 import type { UserRole } from "@/generated/prisma/enums";
 import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
+import { getLegacyPaths } from "@/lib/page-traffic";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 import { UserMenu } from "./UserMenu";
 import { HeaderControls } from "./HeaderControls";
@@ -106,6 +107,7 @@ const SECTION_COLORS: Record<string, string> = {
   "Tools Under Test": "#14b8a6",
   "Executive Tests": "#f59e0b",
   "Data Quality": "#06b6d4",
+  "Legacy": "#64748b",
 };
 
 const DEFAULT_SECTION_COLOR = "#64748b";
@@ -131,7 +133,7 @@ export function partitionLegacyCards(
   return { fresh, legacy };
 }
 
-export default function SuitePageShell({
+export default async function SuitePageShell({
   currentSuiteHref,
   title,
   subtitle,
@@ -166,10 +168,110 @@ export default function SuitePageShell({
       })
     : cards;
 
-  const sections = groupCards(visibleCards);
+  const legacyPaths = await getLegacyPaths(visibleCards.map((c) => c.href));
+  const { fresh: freshCards, legacy: legacyCards } = partitionLegacyCards(visibleCards, legacyPaths);
+  const sections = groupCards(freshCards);
   const backHref = primaryRole
     ? (canAccessRoute(primaryRole, "/") ? "/" : getDefaultRouteForRole(primaryRole))
     : "/";
+
+  const renderSectionBody = (sectionCards: SuitePageCard[], dulled: boolean) => {
+    const rows = getGridRows(sectionCards, columnsClassName);
+    return rows.map((row, rowIdx) => (
+      <div key={rowIdx} className={`${row.cols}${rowIdx > 0 ? " mt-4" : ""}`}>
+        {row.cards.map((item) => {
+          const sectionColor = SECTION_COLORS[item.section || ""] || DEFAULT_SECTION_COLOR;
+
+          const cardClass = item.disabled
+            ? `block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default relative overflow-hidden${dulled ? " transition-opacity" : ""}`
+            : `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm hover:bg-surface transition-all relative overflow-hidden${dulled ? " opacity-60 hover:opacity-100 transition-opacity" : ""}`;
+
+          const content = (
+            <>
+              {/* Left accent bar */}
+              <div
+                className="absolute top-0 left-0 w-[3px] h-full"
+                style={{
+                  background: `linear-gradient(to bottom, ${sectionColor}, transparent)`,
+                  opacity: item.disabled ? 0.3 : 1,
+                }}
+              />
+              {/* Title row with emoji */}
+              <div className="flex items-center gap-2 mb-1">
+                {item.icon && (
+                  <span
+                    className="text-lg leading-none"
+                    style={item.disabled ? { filter: "grayscale(1) opacity(0.5)" } : undefined}
+                  >
+                    {item.icon}
+                  </span>
+                )}
+                <h3
+                  className={`font-semibold transition-colors ${
+                    item.disabled ? "text-muted" : "text-foreground"
+                  }`}
+                >
+                  <span className="group-hover:hidden">{item.title}</span>
+                  <span
+                    className="hidden group-hover:inline"
+                    style={{ color: accent.color }}
+                  >
+                    {item.title}
+                  </span>
+                </h3>
+              </div>
+              {/* Description */}
+              <p className="text-sm text-muted">{item.description}</p>
+              {/* Footer: Open → or disabled tag */}
+              <div className="mt-2 text-xs text-muted opacity-30 group-hover:opacity-60 transition-opacity">
+                {item.disabled ? item.tag : "Open \u2192"}
+              </div>
+            </>
+          );
+
+          // Hover border via inline CSS variable
+          const hoverStyle = !item.disabled ? {
+            "--hover-border": `rgba(${hexToRgb(accent.color)}, 0.5)`,
+          } as CSSProperties : undefined;
+
+          const hoverClass = !item.disabled ? "[&:hover]:border-[var(--hover-border)]" : "";
+
+          if (item.disabled) {
+            return (
+              <div key={item.href || item.title} className={cardClass}>
+                {content}
+              </div>
+            );
+          }
+
+          if (item.hardNavigate) {
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                className={`${cardClass} ${hoverClass}`}
+                style={hoverStyle}
+              >
+                {content}
+              </a>
+            );
+          }
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch={false}
+              className={`${cardClass} ${hoverClass}`}
+              style={hoverStyle}
+            >
+              {content}
+            </Link>
+          );
+        })}
+      </div>
+    ));
+  };
 
   return (
     <div
@@ -246,118 +348,41 @@ export default function SuitePageShell({
           <div className="mb-8">{heroContent}</div>
         )}
 
-        {sections.map(({ section, cards: sectionCards }) => {
-          const rows = getGridRows(sectionCards, columnsClassName);
-          return (
-            <section key={section} className="mb-8">
-              <div className="flex items-center gap-2 mb-4">
-                <div
-                  className="w-1 h-4 rounded-sm"
-                  style={{
-                    background: `linear-gradient(to bottom, ${SECTION_COLORS[section] || DEFAULT_SECTION_COLOR}, transparent)`,
-                  }}
-                />
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                  {section}
-                </h2>
-              </div>
-              {rows.map((row, rowIdx) => (
-                <div key={rowIdx} className={`${row.cols}${rowIdx > 0 ? " mt-4" : ""}`}>
-                  {row.cards.map((item) => {
-                    const sectionColor = SECTION_COLORS[item.section || ""] || DEFAULT_SECTION_COLOR;
+        {sections.map(({ section, cards: sectionCards }) => (
+          <section key={section} className="mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <div
+                className="w-1 h-4 rounded-sm"
+                style={{
+                  background: `linear-gradient(to bottom, ${SECTION_COLORS[section] || DEFAULT_SECTION_COLOR}, transparent)`,
+                }}
+              />
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                {section}
+              </h2>
+            </div>
+            {renderSectionBody(sectionCards, false)}
+          </section>
+        ))}
 
-                    const cardClass = item.disabled
-                      ? "block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default relative overflow-hidden"
-                      : "group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm hover:bg-surface transition-all relative overflow-hidden";
-
-                    const content = (
-                      <>
-                        {/* Left accent bar */}
-                        <div
-                          className="absolute top-0 left-0 w-[3px] h-full"
-                          style={{
-                            background: `linear-gradient(to bottom, ${sectionColor}, transparent)`,
-                            opacity: item.disabled ? 0.3 : 1,
-                          }}
-                        />
-                        {/* Title row with emoji */}
-                        <div className="flex items-center gap-2 mb-1">
-                          {item.icon && (
-                            <span
-                              className="text-lg leading-none"
-                              style={item.disabled ? { filter: "grayscale(1) opacity(0.5)" } : undefined}
-                            >
-                              {item.icon}
-                            </span>
-                          )}
-                          <h3
-                            className={`font-semibold transition-colors ${
-                              item.disabled ? "text-muted" : "text-foreground"
-                            }`}
-                          >
-                            <span className="group-hover:hidden">{item.title}</span>
-                            <span
-                              className="hidden group-hover:inline"
-                              style={{ color: accent.color }}
-                            >
-                              {item.title}
-                            </span>
-                          </h3>
-                        </div>
-                        {/* Description */}
-                        <p className="text-sm text-muted">{item.description}</p>
-                        {/* Footer: Open → or disabled tag */}
-                        <div className="mt-2 text-xs text-muted opacity-30 group-hover:opacity-60 transition-opacity">
-                          {item.disabled ? item.tag : "Open \u2192"}
-                        </div>
-                      </>
-                    );
-
-                    // Hover border via inline CSS variable
-                    const hoverStyle = !item.disabled ? {
-                      "--hover-border": `rgba(${hexToRgb(accent.color)}, 0.5)`,
-                    } as CSSProperties : undefined;
-
-                    const hoverClass = !item.disabled ? "[&:hover]:border-[var(--hover-border)]" : "";
-
-                    if (item.disabled) {
-                      return (
-                        <div key={item.href || item.title} className={cardClass}>
-                          {content}
-                        </div>
-                      );
-                    }
-
-                    if (item.hardNavigate) {
-                      return (
-                        <a
-                          key={item.href}
-                          href={item.href}
-                          className={`${cardClass} ${hoverClass}`}
-                          style={hoverStyle}
-                        >
-                          {content}
-                        </a>
-                      );
-                    }
-
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        prefetch={false}
-                        className={`${cardClass} ${hoverClass}`}
-                        style={hoverStyle}
-                      >
-                        {content}
-                      </Link>
-                    );
-                  })}
-                </div>
-              ))}
-            </section>
-          );
-        })}
+        {legacyCards.length > 0 && (
+          <details className="mb-8 group/legacy">
+            <summary className="flex cursor-pointer list-none items-center gap-2 mb-4 select-none">
+              <div
+                className="w-1 h-4 rounded-sm"
+                style={{ background: `linear-gradient(to bottom, ${SECTION_COLORS["Legacy"]}, transparent)` }}
+              />
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Legacy
+              </h2>
+              <span className="text-xs text-muted opacity-60">
+                {legacyCards.length} rarely-used page{legacyCards.length === 1 ? "" : "s"}
+                <span className="ml-1 inline-block transition-transform group-open/legacy:rotate-90">›</span>
+              </span>
+            </summary>
+            {renderSectionBody(legacyCards, true)}
+          </details>
+        )}
 
         {sections.length === 0 && (
           <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 text-sm text-muted shadow-card backdrop-blur-sm">
