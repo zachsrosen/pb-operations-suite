@@ -523,6 +523,9 @@ export interface Project {
   projectCompleteDate: string | null;
   cancelledDate: string | null;
 
+  /** Earliest consult meeting held with the primary contact (stamped nightly). */
+  firstConsultDate: string | null;
+
   // Calculated fields
   daysToInstall: number | null;
   daysToInspection: number | null;
@@ -863,6 +866,7 @@ const DEAL_PROPERTIES = [
   "hs_v2_date_entered_current_stage",
   "hs_v2_date_entered_20440343", // Date entered Project Complete stage
   "hs_v2_date_entered_68229433", // Date entered Cancelled stage
+  "first_consult_date", // Earliest consult meeting (stamped by consult-stamp cron)
 
   // Install planning
   "expected_days_for_install",
@@ -1227,6 +1231,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     // Project completion
     projectCompleteDate: parseDate(deal.hs_v2_date_entered_20440343),
     cancelledDate: parseDate(deal.hs_v2_date_entered_68229433),
+    firstConsultDate: parseDate(deal.first_consult_date),
 
     // Forecasted dates
     forecastedInstallDate: parseDate(deal.forecasted_installation_date),

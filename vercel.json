@@ -131,6 +131,9 @@
     },
     "src/app/api/pi-hub/queue/route.ts": {
       "maxDuration": 120
+    },
+    "src/app/api/cron/consult-stamp/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -345,6 +348,10 @@
     {
       "path": "/api/cron/approval-scan",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/consult-stamp",
+      "schedule": "40 9 * * *"
     }
   ],
   "redirects": [

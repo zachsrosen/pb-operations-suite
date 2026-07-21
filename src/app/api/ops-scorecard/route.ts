@@ -7,7 +7,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getDealSyncSource } from "@/lib/deal-sync";
 import { dealToProject } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
-import { computeOpsScorecard, TopFunnelCounts } from "@/lib/ops-scorecard";
+import { computeOpsScorecard, median, TopFunnelCounts, SalesForecastInputs } from "@/lib/ops-scorecard";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,8 @@ export async function GET(request: NextRequest) {
           loadAllProjects(),
           fetchTopFunnel(),
         ]);
-        return computeOpsScorecard(projects, new Date(), topFunnel);
+        const forecastInputs = await fetchForecastInputs(projects);
+        return computeOpsScorecard(projects, new Date(), topFunnel, forecastInputs);
       },
       forceRefresh,
       { ttl: SCORECARD_TTL, staleTtl: SCORECARD_STALE_TTL }
@@ -66,13 +67,18 @@ async function loadAllProjects(): Promise<Project[]> {
   if (syncSource === "local" || syncSource === "local-with-verify") {
     const deals = await prisma.deal.findMany({ where: { pipeline: "PROJECT" } });
     const projects = deals.map(dealToProject);
-    // The Deal mirror doesn't sync cancellation_date (deal-reader hardcodes
-    // cancelledDate: null), but the same-yr cancellation cohorts need it.
-    // Overlay it from one scoped HubSpot query covering only cancelled deals.
-    const cancelledDates = await fetchCancelledDates();
+    // The Deal mirror doesn't sync cancellation_date or first_consult_date
+    // (deal-reader hardcodes both null), but the cancellation cohorts and the
+    // consult → sale leg need them. Overlay each from a scoped HubSpot query.
+    const [cancelledDates, consultDates] = await Promise.all([
+      fetchCancelledDates(),
+      fetchFirstConsultDates(),
+    ]);
     for (const p of projects) {
       const d = cancelledDates.get(String(p.id));
       if (d) p.cancelledDate = d;
+      const c = consultDates.get(String(p.id));
+      if (c) p.firstConsultDate = c;
     }
     return projects;
   }
@@ -190,6 +196,97 @@ async function fetchTopFunnel(): Promise<{ leads: TopFunnelCounts; consults: Top
   } catch (error) {
     Sentry.captureException(error);
     console.error("[ops-scorecard] top-funnel fetch failed:", error);
+    return null;
+  }
+}
+
+/** dealId → first_consult_date for all stamped Project-pipeline deals. */
+async function fetchFirstConsultDates(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  let after: string | undefined;
+  do {
+    const response = await searchWithRetry({
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: "6900017" },
+            { propertyName: "first_consult_date", operator: FilterOperatorEnum.HasProperty },
+          ],
+        },
+      ],
+      properties: ["first_consult_date"],
+      limit: 100,
+      after,
+    });
+    for (const deal of response.results) {
+      const d = deal.properties.first_consult_date;
+      if (d) out.set(deal.id, d.slice(0, 10));
+    }
+    after = response.paging?.next?.after;
+  } while (after);
+  return out;
+}
+
+/**
+ * Consult windows for the sales forecast. The lag comes from the stamped
+ * first_consult_date data on deals sold in the last year; the two consult
+ * counts reuse the meetings-search definition from fetchTopFunnel. Null until
+ * enough stamped data exists (pre-backfill) or on fetch failure.
+ */
+async function fetchForecastInputs(
+  projects: Array<{ closeDate: string | null; firstConsultDate: string | null }>
+): Promise<SalesForecastInputs | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const now = Date.now();
+  const yearAgo = new Date(now - 365 * 86_400_000).toISOString().slice(0, 10);
+  const lags = projects
+    .filter((p) => p.firstConsultDate && p.closeDate && p.closeDate >= yearAgo)
+    .map((p) => (Date.parse(p.closeDate!) - Date.parse(p.firstConsultDate!)) / 86_400_000)
+    .filter((d) => d >= 0 && d < 400);
+  if (lags.length < 50) return null;
+  const lagDays = Math.round(median(lags) ?? 0);
+
+  const consultsBetween = async (loMs: number, hiMs: number): Promise<number> => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await fetch("https://api.hubapi.com/crm/v3/objects/meetings/search", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filterGroups: [
+            {
+              filters: [
+                { propertyName: "hs_meeting_title", operator: "CONTAINS_TOKEN", value: "consult*" },
+                { propertyName: "hs_meeting_title", operator: "NOT_CONTAINS_TOKEN", value: "Canceled" },
+                { propertyName: "hs_meeting_start_time", operator: "BETWEEN", value: String(loMs), highValue: String(hiMs) },
+              ],
+            },
+          ],
+          limit: 1,
+        }),
+      });
+      if (res.status === 429) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      if (!res.ok) throw new Error(`meetings search ${res.status}`);
+      return ((await res.json()) as { total: number }).total;
+    }
+    throw new Error("meetings search rate-limited after retries");
+  };
+
+  try {
+    const day = 86_400_000;
+    const consultsLast30 = await consultsBetween(now - 30 * day, now);
+    const consultsRateWindow = await consultsBetween(
+      now - (lagDays + 90) * day,
+      now - lagDays * day
+    );
+    return { lagDays, consultsLast30, consultsRateWindow };
+  } catch (error) {
+    Sentry.captureException(error);
+    console.error("[ops-scorecard] forecast inputs fetch failed:", error);
     return null;
   }
 }

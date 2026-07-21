@@ -162,6 +162,37 @@ export default function OpsScorecardPage() {
         />
       </div>
 
+      {/* ---- Consult-driven sales forecast ---- */}
+      {data.salesForecast && (
+        <SectionCard
+          title="Sales forecast from consults"
+          sub={`Consults held in the last 30 days × trailing close rate, arriving after the median consult → sale lag. Close rate = sales (all deals) in the last 90 days ÷ consults held in the matching lag-shifted window.`}
+        >
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-semibold text-orange-400">~{num(data.salesForecast.predictedCount30)}</div>
+              <div className="text-xs text-muted mt-1">predicted sales, next ~30 days</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-orange-400">{$(data.salesForecast.predictedRev30)}</div>
+              <div className="text-xs text-muted mt-1">predicted net revenue</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-foreground">{num(data.salesForecast.consultsLast30)}</div>
+              <div className="text-xs text-muted mt-1">consults, last 30 days</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-foreground">{pct(data.salesForecast.closeRatePct)}</div>
+              <div className="text-xs text-muted mt-1">consult → sale close rate</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-foreground">{data.salesForecast.lagDays}d</div>
+              <div className="text-xs text-muted mt-1">median consult → sale (avg deal {$(data.salesForecast.avgNetDeal)})</div>
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
       {/* ---- Sales / DA / CC by month ---- */}
       <SectionCard
         title={`${cy} sales, DAs, and CCs by month`}
