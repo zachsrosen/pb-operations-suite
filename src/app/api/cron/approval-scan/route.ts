@@ -238,12 +238,51 @@ export async function GET(request: NextRequest) {
         : null;
     });
 
-    const result = await scanApprovalSignals({
-      mode: watermark.mode,
-      deals,
-      existing,
-      deps,
-    });
+    // Per-deal scan with a wall-clock budget: a whole-page scan (Gmail
+    // searches + LLM calls for 25 deals) can exceed maxDuration and 504,
+    // which used to lose the verdict cache and watermark — every retry then
+    // restarted from zero. Each raw deal now persists its own signals and
+    // verdicts, and the watermark advances to the last deal actually
+    // processed, so a timeout costs at most one deal of work.
+    const BUDGET_MS = 75_000;
+    const startedAt = Date.now();
+    const scannable = new Set(deals.map((d) => d.id));
+    const allSignals: Awaited<
+      ReturnType<typeof scanApprovalSignals>
+    >["signals"] = [];
+    let verdictsCached = 0;
+    let dealsScanned = 0;
+    let lastProcessedId: string | null = null;
+    let ranOutOfBudget = false;
+    const allErrors: string[] = [];
+
+    for (const raw of rawDeals) {
+      if (Date.now() - startedAt > BUDGET_MS) {
+        ranOutOfBudget = true;
+        break;
+      }
+      if (scannable.has(raw.id)) {
+        const dealResult = await scanApprovalSignals({
+          mode: watermark.mode,
+          deals: [raw],
+          existing: existing.filter((e) => e.hubspotDealId === raw.id),
+          deps,
+        });
+        allSignals.push(...dealResult.signals);
+        allErrors.push(...dealResult.errors);
+        if (dealResult.verdicts.length > 0) {
+          await prisma.approvalScanVerdict.createMany({
+            data: dealResult.verdicts,
+            skipDuplicates: true,
+          });
+          verdictsCached += dealResult.verdicts.length;
+        }
+        dealsScanned++;
+      }
+      // Filter-skipped deals still advance the cursor — they need no scan.
+      lastProcessedId = raw.id;
+    }
+    const result = { signals: allSignals };
 
     // Persist signals — three-strikes actions were computed against the rows
     // read above, but a user can dismiss/mute a row WHILE the (minutes-long)
@@ -300,27 +339,25 @@ export async function GET(request: NextRequest) {
       else reopened++;
     }
 
-    if (result.verdicts.length > 0) {
-      await prisma.approvalScanVerdict.createMany({
-        data: result.verdicts,
-        skipDuplicates: true,
-      });
-    }
-
-    // Advance the rotating watermark: short RAW page = mode exhausted, move
-    // on. Always cursor from the raw page so filtered-out deals still advance.
-    const exhausted = rawDeals.length < CHUNK_SIZE;
+    // Advance the rotating watermark. Exhaustion means the whole RAW page was
+    // processed AND the page was short (cursor from the raw page so
+    // filtered-out deals still advance). A budget cutoff resumes from the
+    // last processed deal instead of rotating.
+    const exhausted = !ranOutOfBudget && rawDeals.length < CHUNK_SIZE;
     const next: Watermark = exhausted
       ? { mode: nextMode(watermark.mode), after: "0" }
-      : { mode: watermark.mode, after: rawDeals[rawDeals.length - 1].id };
+      : {
+          mode: watermark.mode,
+          after: lastProcessedId ?? watermark.after,
+        };
     await prisma.systemConfig.upsert({
       where: { key: WATERMARK_KEY },
       create: { key: WATERMARK_KEY, value: JSON.stringify(next) },
       update: { value: JSON.stringify(next) },
     });
 
-    if (result.errors.length > 0) {
-      console.warn("[approval-scan] partial errors:", result.errors);
+    if (allErrors.length > 0) {
+      console.warn("[approval-scan] partial errors:", allErrors);
     }
 
     return NextResponse.json({
@@ -328,13 +365,14 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       mode: watermark.mode,
       nextWatermark: next,
+      ranOutOfBudget,
+      dealsScanned,
       created,
       refreshed,
       reopened,
       skippedConcurrent,
-      verdictsCached: result.verdicts.length,
-      ...result.stats,
-      errors: result.errors,
+      verdictsCached,
+      errors: allErrors,
     });
   } catch (err) {
     console.error("[approval-scan] failed:", err);
