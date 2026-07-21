@@ -273,6 +273,37 @@ describe("computeOpsScorecard", () => {
     expect(sales.projected.revenue).toBe(Math.round(1000 / out.meta.yearFrac));
   });
 
+  it("computes the consult-driven sales forecast from inputs", () => {
+    const projects = [
+      // 3 sales in the last 90 days (NOW = Jul 18), 2 net + 1 cancelled
+      makeProject({ closeDate: "2026-06-01", amount: 40000 }),
+      makeProject({ closeDate: "2026-06-15", amount: 60000 }),
+      makeProject({ closeDate: "2026-07-01", amount: 99999, stageId: "68229433" }),
+    ];
+    const out = computeOpsScorecard(projects, NOW, null, {
+      lagDays: 21,
+      consultsLast30: 200,
+      consultsRateWindow: 300,
+    });
+    expect(out.salesForecast).not.toBeNull();
+    // close rate = 3 sales / 300 consults = 1%; 200 consults × 1% = 2 predicted
+    expect(out.salesForecast!.closeRatePct).toBe(1);
+    expect(out.salesForecast!.predictedCount30).toBe(2);
+    // avg net deal = (40k + 60k) / 2 = 50k → predicted revenue 2 × 50k
+    expect(out.salesForecast!.avgNetDeal).toBe(50000);
+    expect(out.salesForecast!.predictedRev30).toBe(100000);
+    expect(computeOpsScorecard(projects, NOW).salesForecast).toBeNull();
+  });
+
+  it("computes the consult → sale turnaround leg", () => {
+    const projects = [
+      makeProject({ firstConsultDate: "2026-01-01", closeDate: "2026-01-22" }), // 21 days
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const company = out.efficiency.turnaroundsByOffice.find((r) => r.office === "Company")!;
+    expect(company.legs["Consult → sale"].cy).toEqual({ mean: 21, median: 21 });
+  });
+
   it("year framing follows the provided clock", () => {
     const out = computeOpsScorecard([], NOW);
     expect(out.meta.cy).toBe("2026");

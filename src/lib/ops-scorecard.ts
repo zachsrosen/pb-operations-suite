@@ -145,6 +145,25 @@ export interface TopFunnelCounts {
   pySamePoint: number;
 }
 
+/** Inputs for the consult-driven sales forecast (fetched by the API route). */
+export interface SalesForecastInputs {
+  /** Median consult → sale lag in days (computed from stamped first_consult_date). */
+  lagDays: number;
+  /** Consults held in the last 30 days. */
+  consultsLast30: number;
+  /** Consults held in the 90-day window ending lagDays ago (close-rate denominator). */
+  consultsRateWindow: number;
+}
+
+export interface SalesForecast {
+  lagDays: number;
+  closeRatePct: number;
+  consultsLast30: number;
+  predictedCount30: number;
+  predictedRev30: number;
+  avgNetDeal: number;
+}
+
 export interface OpsScorecardData {
   meta: {
     generatedAt: string;
@@ -216,6 +235,9 @@ export interface OpsScorecardData {
   /** Leads (Sales-Pipeline deals created) and consults set (meetings titled consult*).
    *  Null when the HubSpot fetch fails — the page hides the rows. */
   topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null;
+  /** Consult-pace sales forecast: consults last 30d × close rate, lagged by the
+   *  median consult → sale time. Null until first_consult_date data exists. */
+  salesForecast: SalesForecast | null;
   /** Naive current-pace full-year projection (ytd / yearFrac). The CC row's
    *  revenue should be presented from the capacity model instead. */
   funnelFy: Array<{ stage: string; projected: CountRev } & StageYearRow>;
@@ -235,7 +257,8 @@ export interface OpsScorecardData {
 export function computeOpsScorecard(
   projects: Project[],
   now = new Date(),
-  topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null = null
+  topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null = null,
+  forecastInputs: SalesForecastInputs | null = null
 ): OpsScorecardData {
   const dataThrough = now.toISOString().slice(0, 10);
   const cy = String(now.getUTCFullYear());
@@ -462,6 +485,7 @@ export function computeOpsScorecard(
   const live = projects.filter(notCancelled);
 
   const LEGS: Array<{ key: string; from: (p: Project) => string | null; to: (p: Project) => string | null }> = [
+    { key: "Consult → sale", from: (p) => p.firstConsultDate, to: (p) => p.closeDate },
     { key: "Sale → day of survey", from: (p) => p.closeDate, to: (p) => p.siteSurveyScheduleDate },
     { key: "Survey day → completion", from: (p) => p.siteSurveyScheduleDate, to: (p) => p.siteSurveyCompletionDate },
     { key: "Survey completed → DA sent", from: (p) => p.siteSurveyCompletionDate, to: (p) => p.designApprovalSentDate },
@@ -631,6 +655,28 @@ export function computeOpsScorecard(
     capacityRowFor(projects, "Company"),
   ];
 
+  // ---- Consult-driven sales forecast ---------------------------------------
+  let salesForecast: SalesForecast | null = null;
+  if (forecastInputs && forecastInputs.consultsRateWindow > 0) {
+    const cut90 = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+    const nowStr = now.toISOString().slice(0, 10);
+    const sold90 = projects.filter(
+      (p) => p.closeDate !== null && p.closeDate >= cut90 && p.closeDate <= nowStr
+    );
+    const soldNet90 = sold90.filter(isNet);
+    const closeRate = sold90.length / forecastInputs.consultsRateWindow;
+    const avgNetDeal = soldNet90.length > 0 ? sumAmount(soldNet90) / soldNet90.length : 0;
+    const predictedCount30 = forecastInputs.consultsLast30 * closeRate;
+    salesForecast = {
+      lagDays: forecastInputs.lagDays,
+      closeRatePct: round1(closeRate * 100) ?? 0,
+      consultsLast30: forecastInputs.consultsLast30,
+      predictedCount30: Math.round(predictedCount30),
+      predictedRev30: Math.round(predictedCount30 * avgNetDeal),
+      avgNetDeal: Math.round(avgNetDeal),
+    };
+  }
+
   return {
     meta: {
       generatedAt: now.toISOString(),
@@ -667,6 +713,7 @@ export function computeOpsScorecard(
     throughputByOffice,
     cancellations,
     topFunnel,
+    salesForecast,
     funnelFy,
     funnelMonthly,
     efficiency: {

@@ -317,6 +317,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     // Project complete / cancelled (not yet in Deal cache — populated only via HubSpot API path)
     projectCompleteDate: null,
     cancelledDate: null,
+    firstConsultDate: null,
 
     // Forecasted dates
     forecastedInstallDate: dateToDateString(deal.forecastedInstallDate),
