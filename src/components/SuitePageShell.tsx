@@ -118,6 +118,19 @@ function hexToRgb(hex: string): string {
   return `${r}, ${g}, ${b}`;
 }
 
+/** Partition cards into fresh and legacy by membership of card.href in the legacy set. */
+export function partitionLegacyCards(
+  cards: SuitePageCard[],
+  legacyPaths: Set<string>,
+): { fresh: SuitePageCard[]; legacy: SuitePageCard[] } {
+  const fresh: SuitePageCard[] = [];
+  const legacy: SuitePageCard[] = [];
+  for (const c of cards) {
+    (legacyPaths.has(c.href) ? legacy : fresh).push(c);
+  }
+  return { fresh, legacy };
+}
+
 export default function SuitePageShell({
   currentSuiteHref,
   title,
