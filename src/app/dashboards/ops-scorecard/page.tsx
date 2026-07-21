@@ -100,8 +100,12 @@ function SectionCard({ title, sub, actions, explain, children }: { title: string
 
 function GoalPlanner({ data }: { data: OpsScorecardData }) {
   const { goalModel, capacity } = data;
+  const [mode, setMode] = useState<"forward" | "reverse">("forward");
   const [targetM, setTargetM] = useState<number>(
     () => Math.round(((capacity.sustainSalesPerMo ?? 3_000_000) / 1_000_000) * 10) / 10
+  );
+  const [ccGoalM, setCcGoalM] = useState<number>(
+    () => Math.round(((capacity.burnPerMo ?? 2_500_000) / 1_000_000) * 10) / 10
   );
   const S = targetM * 1_000_000;
   const daConv = (goalModel.daConversionPct ?? 0) / 100;
@@ -147,8 +151,29 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
 
   return (
     <SectionCard
-      title="Goal planner — what a sales pace produces downstream"
-      sub={`Set a TOTAL signed-sales target (all deals, including ones that will later cancel) and see the expected DA and CC flow. CC conversion is mix-weighted per office (${pct(mixConv * 100)} at the current sales mix, vs ${pct(goalModel.ccConversionPct)} blanket) — cancellations are already discounted, so enter total, not net.`}
+      title="Goal planner"
+      actions={
+        <div className="flex items-center gap-2">
+          {([["forward", "Sales → CC"], ["reverse", "CC goal → required"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                mode === key
+                  ? "bg-orange-500/20 border-orange-500/50 text-orange-300 font-semibold"
+                  : "border-t-border text-muted hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      }
+      sub={
+        mode === "forward"
+          ? `Set a TOTAL signed-sales target (all deals, including ones that will later cancel) and see the expected DA and CC flow. CC conversion is mix-weighted per office (${pct(mixConv * 100)} at the current sales mix, vs ${pct(goalModel.ccConversionPct)} blanket) — cancellations are already discounted, so enter total, not net.`
+          : `Set a CC revenue goal and work the funnel backwards: how much we must sign, how many deals that is, and how many consults have to happen — at the mix-weighted conversion (${pct(mixConv * 100)}) and current close rate.`
+      }
       explain={[
         ["Why total, not net", "conversion is measured as CC dollars ÷ ALL sold dollars (81% — cancels already baked in). Survivors complete at ~99%, so if you think in net-mature terms, a net target × ~0.99 gives the same CC answer. Enter what the team signs, and the model handles the leak."],
         ["Expected DAs", "target × DA conversion × share of deals that historically reach DA within k months of sale, plus today's sold-but-not-yet-DA'd pipeline fading out over ~2 months."],
@@ -156,9 +181,12 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
         ["Mix-weighted conversion", "each office's own conversion rate (Westminster ~90%, Camarillo ~57%) weighted by its share of the current selling pace, instead of the blanket cohort average. If the sales mix shifts toward high-converting offices, expected CCs rise without anyone selling more."],
         ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate for ~${capacity.coverMonths ?? "—"} months of cover, then is spent.`],
         ["Counts", "revenue ÷ trailing average net deal size."],
+        ["Reverse mode", "required signed sales = CC goal ÷ mix-weighted conversion; deals = revenue ÷ trailing average deal; consults = deals ÷ the consult → sale close rate. Timing still applies: a sales-pace change reaches full CC effect ~4–5 months later."],
         ["Steady state", "once the ramp completes, DAs/mo ≈ target × DA conversion and CCs/mo ≈ target × CC conversion. Selling below sustain means the total CC line sags once the backlog is spent — exactly what the capacity section warns about."],
       ]}
     >
+      {mode === "forward" ? (
+      <>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <label className="text-sm text-muted">Total sales target (signed):</label>
         <div className="flex items-center gap-1">
@@ -248,7 +276,118 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
           })}
         </div>
       </div>
+      </>
+      ) : (
+      <ReversePlanner
+        ccGoalM={ccGoalM}
+        setCcGoalM={setCcGoalM}
+        mixConv={mixConv}
+        daConv={daConv}
+        data={data}
+        officeRows={officeRows}
+        mixDenom={mixDenom}
+      />
+      )}
     </SectionCard>
+  );
+}
+
+function ReversePlanner({
+  ccGoalM, setCcGoalM, mixConv, daConv, data, officeRows, mixDenom,
+}: {
+  ccGoalM: number;
+  setCcGoalM: (n: number) => void;
+  mixConv: number;
+  daConv: number;
+  data: OpsScorecardData;
+  officeRows: OpsScorecardData["capacity"]["byOffice"];
+  mixDenom: number;
+}) {
+  const { capacity, goalModel, salesForecast } = data;
+  const fmt = (n: number) => formatCurrencyCompact(n);
+  const goal = ccGoalM * 1_000_000;
+  const requiredSales = mixConv > 0 ? goal / mixConv : 0;
+  const requiredDeals = goalModel.avgNetDeal ? Math.round(requiredSales / goalModel.avgNetDeal) : null;
+  const closeRate = salesForecast ? salesForecast.closeRatePct / 100 : null;
+  const requiredConsults =
+    requiredDeals !== null && closeRate && closeRate > 0 ? Math.round(requiredDeals / closeRate) : null;
+  const requiredDas = requiredSales * daConv;
+  const currentSigning = capacity.grossSalesPacePerMo ?? 0;
+  const gap = requiredSales - currentSigning;
+  const presets: Array<[string, number | null]> = [
+    ["Current burn", capacity.burnPerMo],
+    ["$2.5M", 2_500_000],
+    ["$3M", 3_000_000],
+  ];
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <label className="text-sm text-muted">CC revenue goal:</label>
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-muted">$</span>
+          <input
+            type="number"
+            min={0.5}
+            max={10}
+            step={0.1}
+            value={ccGoalM}
+            onChange={(e) => setCcGoalM(parseFloat(e.target.value) || 0)}
+            className="w-20 bg-surface-2 border border-t-border rounded-lg px-2 py-1.5 text-sm text-foreground text-right"
+          />
+          <span className="text-sm text-muted">M / month</span>
+        </div>
+        {presets.map(([label, v]) =>
+          v ? (
+            <button
+              key={label}
+              onClick={() => setCcGoalM(Math.round((v / 1_000_000) * 10) / 10)}
+              className="px-3 py-1.5 rounded-lg text-xs border border-t-border text-muted hover:text-foreground transition-colors"
+            >
+              {label} ({fmt(v)})
+            </button>
+          ) : null
+        )}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center mb-4">
+        <div>
+          <div className="text-2xl font-semibold text-orange-400">{fmt(requiredSales)}</div>
+          <div className="text-xs text-muted mt-1">signed sales needed /mo (÷ {pct(mixConv * 100)} conversion)</div>
+        </div>
+        <div>
+          <div className="text-2xl font-semibold text-foreground">{requiredDeals === null ? "—" : num(requiredDeals)}</div>
+          <div className="text-xs text-muted mt-1">deals /mo (at {fmt(goalModel.avgNetDeal ?? 0)} avg)</div>
+        </div>
+        <div>
+          <div className="text-2xl font-semibold text-foreground">{fmt(requiredDas)}</div>
+          <div className="text-xs text-muted mt-1">DAs /mo that implies</div>
+        </div>
+        <div>
+          <div className="text-2xl font-semibold text-foreground">{requiredConsults === null ? "—" : num(requiredConsults)}</div>
+          <div className="text-xs text-muted mt-1">consults /mo (at {salesForecast ? pct(salesForecast.closeRatePct) : "—"} close rate)</div>
+        </div>
+        <div>
+          <div className={"text-2xl font-semibold " + (gap > 0 ? "text-red-400" : "text-emerald-400")}>
+            {gap > 0 ? "+" : ""}{fmt(gap)}
+          </div>
+          <div className="text-xs text-muted mt-1">vs current signing ({fmt(currentSigning)}/mo)</div>
+        </div>
+      </div>
+      <div className="text-xs text-muted">
+        Timing: a sales-pace change reaches full CC effect ~4–5 months out (median sale → CC ≈ 3 months, plus
+        ramp). To hold {fmt(goal)}/mo of completions past the current backlog (~{capacity.coverMonths ?? "—"} months
+        of cover), the required signing pace needs to be in place now. Per-office at current mix:{" "}
+        {officeRows.map((o, i) => {
+          const share = (o.grossSellingPacePerMo ?? 0) / mixDenom;
+          return (
+            <span key={o.office}>
+              {i > 0 ? " · " : ""}
+              {o.office} {fmt(requiredSales * share)}
+            </span>
+          );
+        })}
+        .
+      </div>
+    </>
   );
 }
 
