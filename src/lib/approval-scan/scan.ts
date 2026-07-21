@@ -80,7 +80,9 @@ export const SCAN_IDENTIFIER_PROPERTIES: Record<ScanMode, readonly string[]> = {
 };
 
 export function signalTeamForMode(mode: ScanMode): Team {
-  return mode === "inspection" ? "pto" : mode;
+  // Inspection evidence arrives in the PERMIT inboxes and the permit team
+  // actions it (Zach 2026-07-20) — the proposed status is still a pto value.
+  return mode === "inspection" ? "permit" : mode;
 }
 
 /** Inbox routing per mode: inspection evidence is AHJ mail → permit inboxes. */

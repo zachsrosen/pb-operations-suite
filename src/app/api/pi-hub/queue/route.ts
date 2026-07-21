@@ -15,6 +15,7 @@ import {
 import { appCache } from "@/lib/cache";
 import { batchReadDealsWithRetry } from "@/lib/hubspot";
 import { TEAM_CONFIGS } from "@/lib/pi-hub/config";
+import { getEnumLabelMap, labelFor } from "@/lib/hubspot-enum-labels";
 import type { QueueItem, Team } from "@/lib/pi-hub/types";
 
 /**
@@ -116,12 +117,17 @@ async function fetchSignalOnlyRows(
   signals: Awaited<ReturnType<typeof fetchOpenSignals>>,
 ): Promise<QueueItem[]> {
   try {
-    const response = await batchReadDealsWithRetry(dealIds, [
-      "dealname",
-      "address_line_1",
-      "city",
-      "pb_location",
-      "amount",
+    const statusProperty = TEAM_CONFIGS[team].statusProperty;
+    const [response, statusLabels] = await Promise.all([
+      batchReadDealsWithRetry(dealIds, [
+        "dealname",
+        "address_line_1",
+        "city",
+        "pb_location",
+        "amount",
+        statusProperty,
+      ]),
+      getEnumLabelMap(statusProperty),
     ]);
     const results = (response?.results ?? []) as Array<{
       id: string;
@@ -129,13 +135,16 @@ async function fetchSignalOnlyRows(
     }>;
     return results.map((d) => {
       const p = d.properties ?? {};
+      const status = p[statusProperty] ?? "";
       return {
         dealId: d.id,
         name: p.dealname ?? "Untitled",
         address: [p.address_line_1, p.city].filter(Boolean).join(", ") || null,
         pbLocation: p.pb_location ?? null,
-        status: "",
-        statusLabel: `No ${TEAM_CONFIGS[team].label} status yet`,
+        status,
+        statusLabel: status
+          ? labelFor(statusLabels, status)
+          : `No ${TEAM_CONFIGS[team].label} status yet`,
         dealStage: null,
         group: "ready" as const,
         daysInStatus: null,

@@ -197,8 +197,15 @@ export async function resolveSignalsOnStatusWrite(opts: {
     await prisma.approvalSignal.updateMany({
       where: {
         hubspotDealId: opts.dealId,
-        team: opts.team,
         status: { in: ["OPEN", "DISMISSED"] },
+        // Inspection signals live on the PERMIT team but propose a pto
+        // status — a pto write that leaves the waiting set settles them too.
+        OR: [
+          { team: opts.team },
+          ...(opts.team === "pto"
+            ? [{ team: "permit", signalType: "inspection_passed" }]
+            : []),
+        ],
       },
       data: {
         status: "RESOLVED",
