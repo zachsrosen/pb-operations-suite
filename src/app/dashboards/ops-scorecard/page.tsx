@@ -245,6 +245,7 @@ export default function OpsScorecardPage() {
               {data.salesByMonth.map((m) => (
                 <th key={m.month} className={thR}>{m.month.slice(5)}</th>
               ))}
+              <th className={thR}>Total YTD</th>
             </tr>
           </thead>
           <tbody>
@@ -256,18 +257,24 @@ export default function OpsScorecardPage() {
                   <div className="text-[11px] text-muted">{$(m.grossRevenue)} total</div>
                 </td>
               ))}
+              <td className={tdR + " font-semibold"}>
+                <div>{data.salesByMonth.reduce((a, m) => a + m.count, 0)} · {$(data.salesByMonth.reduce((a, m) => a + m.revenue, 0))}</div>
+                <div className="text-[11px] text-muted font-normal">{$(data.salesByMonth.reduce((a, m) => a + m.grossRevenue, 0))} total</div>
+              </td>
             </tr>
             <tr>
               <td className={td}>DAs (net)</td>
               {data.daByMonth.map((m) => (
                 <td key={m.month} className={tdR}>{m.count} · {$(m.revenue)}</td>
               ))}
+              <td className={tdR + " font-semibold"}>{data.daByMonth.reduce((a, m) => a + m.count, 0)} · {$(data.daByMonth.reduce((a, m) => a + m.revenue, 0))}</td>
             </tr>
             <tr>
               <td className={td}>CCs</td>
               {data.ccByMonth.map((m) => (
                 <td key={m.month} className={tdR}>{m.count} · {$(m.revenue)}</td>
               ))}
+              <td className={tdR + " font-semibold"}>{data.ccByMonth.reduce((a, m) => a + m.count, 0)} · {$(data.ccByMonth.reduce((a, m) => a + m.revenue, 0))}</td>
             </tr>
           </tbody>
         </table>
@@ -601,11 +608,19 @@ export default function OpsScorecardPage() {
                     <div className="text-[11px] text-muted">{$(a.grossRevenue)} total</div>
                   </td>
                   <td className={tdR}>
-                    <div className={trend(b.revenue, a.revenue, "higher")}>{num(b.count)} · {$(b.revenue)}</div>
+                    <div>
+                      <span className={trend(b.count, a.count, "higher")}>{num(b.count)}</span>
+                      {" · "}
+                      <span className={trend(b.revenue, a.revenue, "higher")}>{$(b.revenue)}</span>
+                    </div>
                     <div className="text-[11px] text-muted">{$(b.grossRevenue)} total</div>
                   </td>
                   <td className={tdR}>
-                    <div className={fy ? "" : trend(r.ytd.revenue, b.revenue, "higher")}>{num(r.ytd.count)} · {$(r.ytd.revenue)}</div>
+                    <div>
+                      <span className={fy ? "" : trend(r.ytd.count, b.count, "higher")}>{num(r.ytd.count)}</span>
+                      {" · "}
+                      <span className={fy ? "" : trend(r.ytd.revenue, b.revenue, "higher")}>{$(r.ytd.revenue)}</span>
+                    </div>
                     <div className="text-[11px] text-muted">{$(r.ytd.grossRevenue)} total</div>
                   </td>
                   <td className={tdR + " text-muted"}>
@@ -637,6 +652,7 @@ export default function OpsScorecardPage() {
               {Object.keys(data.funnelMonthly[0]?.byMonth ?? {}).map((m) => (
                 <th key={m} className={thR}>{m.slice(5)}</th>
               ))}
+              <th className={thR}>Total YTD</th>
             </tr>
           </thead>
           <tbody>
@@ -649,6 +665,7 @@ export default function OpsScorecardPage() {
                 {Object.keys(data.funnelMonthly[0]?.byMonth ?? {}).map((m) => (
                   <td key={m} className={tdR}>{byMonth[m] ?? "—"}</td>
                 ))}
+                <td className={tdR + " font-semibold"}>{Object.values(byMonth).reduce((a, v) => a + v, 0)}</td>
               </tr>
             ))}
             {data.funnelMonthly.map((r) => (
@@ -657,6 +674,7 @@ export default function OpsScorecardPage() {
                 {Object.entries(r.byMonth).map(([m, v]) => (
                   <td key={m} className={tdR}>{v}</td>
                 ))}
+                <td className={tdR + " font-semibold"}>{Object.values(r.byMonth).reduce((a, v) => a + v, 0)}</td>
               </tr>
             ))}
           </tbody>
