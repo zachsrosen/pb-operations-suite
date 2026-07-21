@@ -183,8 +183,8 @@ export default async function SuitePageShell({
           const sectionColor = SECTION_COLORS[item.section || ""] || DEFAULT_SECTION_COLOR;
 
           const cardClass = item.disabled
-            ? `block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default relative overflow-hidden${dulled ? " transition-opacity" : ""}`
-            : `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm hover:bg-surface transition-all relative overflow-hidden${dulled ? " opacity-60 hover:opacity-100 transition-opacity" : ""}`;
+            ? "block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default relative overflow-hidden"
+            : `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm hover:bg-surface transition-all relative overflow-hidden${dulled ? " opacity-60 hover:opacity-100" : ""}`;
 
           const content = (
             <>
@@ -367,9 +367,9 @@ export default async function SuitePageShell({
 
         {legacyCards.length > 0 && (
           <details className="mb-8 group/legacy">
-            <summary className="flex cursor-pointer list-none items-center gap-2 mb-4 select-none">
-              <div
-                className="w-1 h-4 rounded-sm"
+            <summary className="flex cursor-pointer list-none items-center gap-2 mb-4 select-none [&::-webkit-details-marker]:hidden">
+              <span
+                className="inline-block w-1 h-4 rounded-sm"
                 style={{ background: `linear-gradient(to bottom, ${SECTION_COLORS["Legacy"]}, transparent)` }}
               />
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">

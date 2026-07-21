@@ -226,6 +226,10 @@ export const LEGACY_EXEMPT: string[] = [
   "/dashboards/pe-photo-builder", // shipped, E2E validation pending
   "/dashboards/workflow-map",     // new
   "/dashboards/revenue-goals",    // $50M tracker, launch pending
+  "/dashboards/pe-analytics",     // new PE analytics, adoption pending
+  "/dashboards/rtb-review",       // RTB review gate, new
+  "/dashboards/atlas",            // new Atlas GIS entry point
+  "/dashboards/admin/team-activity", // new admin report
 ];
 
 // Public or untracked surfaces: activity tracking only logs signed-in staff,
