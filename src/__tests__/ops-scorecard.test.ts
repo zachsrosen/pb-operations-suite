@@ -318,6 +318,20 @@ describe("computeOpsScorecard", () => {
     expect(Object.keys(sales.byQuarter).at(-1)).toBe("2026Q3");
   });
 
+  it("builds the goal-planner model from the fully-baked cohort", () => {
+    const projects = [
+      // Jan–Sep 2025 cohort: 2 deals, one reaches CC fast, one never
+      makeProject({ closeDate: "2025-02-01", amount: 1000, designApprovalDate: "2025-02-15", constructionCompleteDate: "2025-03-01" }), // DA 14d, CC 28d
+      makeProject({ closeDate: "2025-03-01", amount: 1000 }),
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    expect(out.goalModel.daConversionPct).toBe(50);
+    expect(out.goalModel.ccConversionPct).toBe(50);
+    // the one converted deal arrived within month 1 → cdf[0] = 1
+    expect(out.goalModel.ccMonthlyCdf[0]).toBe(1);
+    expect(out.goalModel.daMonthlyCdf[0]).toBe(1);
+  });
+
   it("year framing follows the provided clock", () => {
     const out = computeOpsScorecard([], NOW);
     expect(out.meta.cy).toBe("2026");
