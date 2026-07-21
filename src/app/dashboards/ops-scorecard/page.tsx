@@ -129,7 +129,7 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
   });
 
   const presets: Array<[string, number | null]> = [
-    ["Current pace", capacity.netSalesPacePerMo],
+    ["Current pace", capacity.grossSalesPacePerMo],
     ["Sustain", capacity.sustainSalesPerMo],
     ["$3.5M", 3_500_000],
   ];
@@ -137,8 +137,9 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
   return (
     <SectionCard
       title="Goal planner — what a sales pace produces downstream"
-      sub={`Set a net sales target and see the expected DA and CC flow, using measured conversion rates (DA ${pct(goalModel.daConversionPct)}, CC ${pct(goalModel.ccConversionPct)}) and how fast deals actually move (last fully-baked cohort).`}
+      sub={`Set a TOTAL signed-sales target (all deals, including ones that will later cancel) and see the expected DA and CC flow. The conversion rates (DA ${pct(goalModel.daConversionPct)}, CC ${pct(goalModel.ccConversionPct)}) already discount cancellations — entering a net figure would subtract them twice.`}
       explain={[
+        ["Why total, not net", "conversion is measured as CC dollars ÷ ALL sold dollars (81% — cancels already baked in). Survivors complete at ~99%, so if you think in net-mature terms, a net target × ~0.99 gives the same CC answer. Enter what the team signs, and the model handles the leak."],
         ["Expected DAs", "target × DA conversion × share of deals that historically reach DA within k months of sale, plus today's sold-but-not-yet-DA'd pipeline fading out over ~2 months."],
         ["CCs from new sales", "target × CC conversion × the sale → CC arrival curve — new sales barely contribute for ~2 months, then ramp to steady state (~month 4–5)."],
         ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate for ~${capacity.coverMonths ?? "—"} months of cover, then is spent.`],
@@ -147,7 +148,7 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
       ]}
     >
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <label className="text-sm text-muted">Net sales target:</label>
+        <label className="text-sm text-muted">Total sales target (signed):</label>
         <div className="flex items-center gap-1">
           <span className="text-sm text-muted">$</span>
           <input
@@ -187,7 +188,7 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
         </thead>
         <tbody>
           <tr>
-            <td className={td}>Net sales (target)</td>
+            <td className={td}>Total sales signed (target)</td>
             {rows.map((r) => (
               <td key={r.label} className={tdR}>{fmt(S)}</td>
             ))}
