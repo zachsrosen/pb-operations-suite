@@ -283,6 +283,7 @@ export const appCache = new CacheStore();
 // Cache keys
 export const CACHE_KEYS = {
   OPS_SCORECARD: "ops-scorecard",
+  PAGE_TRAFFIC_LEGACY: "page-traffic:legacy-paths",
   PROJECTS_ALL: "projects:all",
   PROJECTS_ACTIVE: "projects:active",
   DEALS_ALL_PIPELINES_ACTIVE: "deals:all-pipelines:active",

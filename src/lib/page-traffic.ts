@@ -1,4 +1,5 @@
 import type { UserRole, ActivityType } from "@/lib/db";
+import type { PrismaClient } from "@/generated/prisma/client";
 
 // ─── PATH_TO_SUITE ──────────────────────────────────────────────────────────────
 // Exhaustive map of every /dashboards/* href used in suite landing pages →
@@ -207,6 +208,135 @@ export function normalizePath(raw: string): string {
     return segs.join("/");
   }
   return path;
+}
+
+// ─── LEGACY PAGES ───────────────────────────────────────────────────────────────
+// Pages with no non-admin views in the last LEGACY_THRESHOLD_DAYS are demoted to
+// a collapsed "Legacy" section on suite landing pages (see SuitePageShell).
+// Spec: docs/superpowers/specs/2026-07-20-suite-legacy-sections-design.md
+
+export const LEGACY_THRESHOLD_DAYS = 60;
+
+// New tools awaiting team adoption. Prune an entry once its page has real
+// team traffic (it stops mattering the moment the team uses it monthly).
+export const LEGACY_EXEMPT: string[] = [
+  "/dashboards/bottlenecks",      // live 2026-07-07, adoption pending
+  "/dashboards/ops-scorecard",    // built for Matt 2026-07
+  "/dashboards/scheduler-v2",     // behind feature flag
+  "/dashboards/pe-photo-builder", // shipped, E2E validation pending
+  "/dashboards/workflow-map",     // new
+  "/dashboards/revenue-goals",    // $50M tracker, launch pending
+  "/dashboards/pe-analytics",     // new PE analytics, adoption pending
+  "/dashboards/rtb-review",       // RTB review gate, new
+  "/dashboards/atlas",            // new Atlas GIS entry point
+  "/dashboards/admin/team-activity", // new admin report
+];
+
+// Public or untracked surfaces: activity tracking only logs signed-in staff,
+// so absence of views is meaningless for these.
+const LEGACY_EXEMPT_PREFIXES = ["/estimator", "/portal", "/suites"];
+
+/** Pure core: which of these hrefs are legacy, given the set of recently-team-viewed paths. */
+export function computeLegacyPaths(hrefs: string[], recentTeamViewPaths: Set<string>): Set<string> {
+  const legacy = new Set<string>();
+  for (const href of hrefs) {
+    if (!href.startsWith("/")) continue;
+    const norm = normalizePath(href);
+    if (LEGACY_EXEMPT.includes(norm)) continue;
+    if (LEGACY_EXEMPT_PREFIXES.some((p) => norm === p || norm.startsWith(`${p}/`))) continue;
+    if (!recentTeamViewPaths.has(norm)) legacy.add(href);
+  }
+  return legacy;
+}
+
+/**
+ * Paths with at least one page view by a non-ADMIN user in the threshold window.
+ * Returns null when the retained log history is too short to judge (fail open).
+ * Takes the prisma client as a parameter so tests can pass a fake.
+ */
+export async function fetchRecentTeamViewPaths(
+  prisma: PrismaClient,
+): Promise<Set<string> | null> {
+  const cutoff = new Date(Date.now() - LEGACY_THRESHOLD_DAYS * 86_400_000);
+
+  // Retention guard, over ALL page views regardless of viewer role.
+  const oldest = await prisma.activityLog.aggregate({
+    where: { type: "DASHBOARD_VIEWED", entityType: "page" },
+    _min: { createdAt: true },
+  });
+  if (!oldest._min.createdAt || oldest._min.createdAt > cutoff) {
+    console.warn("[page-traffic] legacy: retained history shorter than threshold; failing open");
+    return null;
+  }
+
+  const admins = await prisma.user.findMany({
+    where: { roles: { has: "ADMIN" } },
+    select: { id: true },
+  });
+  const adminIds = admins.map((a) => a.id);
+
+  // Distinct paths viewed by a non-admin (or userless log row) within the window.
+  // groupBy runs GROUP BY in the database, so result cardinality is bounded by the
+  // number of distinct paths. Do NOT use findMany({ distinct, take }): without the
+  // nativeDistinct preview feature Prisma dedupes in memory while `take` LIMITs raw
+  // rows, silently dropping paths and falsely demoting actively-used pages.
+  const rows = await prisma.activityLog.groupBy({
+    by: ["entityId"],
+    where: {
+      type: "DASHBOARD_VIEWED",
+      entityType: "page",
+      entityId: { not: null },
+      createdAt: { gte: cutoff },
+      OR: [{ userId: null }, { userId: { notIn: adminIds } }],
+    },
+  });
+
+  const paths = new Set<string>();
+  for (const r of rows) {
+    if (r.entityId) paths.add(normalizePath(r.entityId));
+  }
+  return paths;
+}
+
+// Sentinel cached when the retention guard trips: that outcome is stable for
+// hours (fresh/preview DBs, or AUDIT_RETENTION_DAYS < threshold), so cache it
+// briefly instead of re-running the aggregate on every suite-page render.
+const GUARD_TRIPPED = "guard-tripped" as const;
+
+/**
+ * Which of the given hrefs are legacy. Cached 1 hour (15 min when the retention
+ * guard trips). Fails open: on DB error, short retention, or missing prisma,
+ * returns the empty set (nothing dulled). True DB errors are never cached.
+ */
+export async function getLegacyPaths(hrefs: string[]): Promise<Set<string>> {
+  try {
+    const { appCache, CACHE_KEYS } = await import("@/lib/cache");
+    const cached = appCache.get<string[] | typeof GUARD_TRIPPED>(CACHE_KEYS.PAGE_TRAFFIC_LEGACY);
+    if (cached.hit && cached.data === GUARD_TRIPPED) return new Set();
+    let recent: Set<string> | null = null;
+    if (cached.hit && Array.isArray(cached.data)) {
+      recent = new Set(cached.data);
+    } else {
+      const { prisma } = await import("@/lib/db");
+      if (!prisma) return new Set();
+      recent = await fetchRecentTeamViewPaths(prisma);
+      if (recent === null) {
+        appCache.set(CACHE_KEYS.PAGE_TRAFFIC_LEGACY, GUARD_TRIPPED, {
+          ttl: 15 * 60 * 1000,
+          staleTtl: 15 * 60 * 1000,
+        });
+        return new Set();
+      }
+      appCache.set(CACHE_KEYS.PAGE_TRAFFIC_LEGACY, [...recent], {
+        ttl: 60 * 60 * 1000,
+        staleTtl: 60 * 60 * 1000,
+      });
+    }
+    return computeLegacyPaths(hrefs, recent);
+  } catch (e) {
+    console.error("[page-traffic] getLegacyPaths failed open:", e);
+    return new Set();
+  }
 }
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────────
