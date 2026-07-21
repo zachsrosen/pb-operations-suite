@@ -384,7 +384,7 @@ export default async function SuitePageShell({
           </details>
         )}
 
-        {sections.length === 0 && (
+        {visibleCards.length === 0 && (
           <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 text-sm text-muted shadow-card backdrop-blur-sm">
             No pages are available for your current role in this suite.
           </div>
