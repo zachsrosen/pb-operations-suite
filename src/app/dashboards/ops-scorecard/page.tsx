@@ -105,7 +105,18 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
   );
   const S = targetM * 1_000_000;
   const daConv = (goalModel.daConversionPct ?? 0) / 100;
-  const ccConv = (goalModel.ccConversionPct ?? 0) / 100;
+  // CC conversion weighted by each office's own rate × its share of current
+  // selling — more accurate than the blanket cohort rate when the sales mix
+  // shifts between offices with very different cancellation behavior.
+  const officeRows = capacity.byOffice.filter(
+    (o) => !["Colorado", "California", "Company"].includes(o.office) && (o.grossSellingPacePerMo ?? 0) > 0 && o.conversionPct !== null
+  );
+  const mixDenom = officeRows.reduce((a, o) => a + (o.grossSellingPacePerMo ?? 0), 0);
+  const mixConv =
+    mixDenom > 0
+      ? officeRows.reduce((a, o) => a + (o.grossSellingPacePerMo ?? 0) * ((o.conversionPct ?? 0) / 100), 0) / mixDenom
+      : (goalModel.ccConversionPct ?? 0) / 100;
+  const ccConv = mixConv;
   const fmt = (n: number) => formatCurrencyCompact(n);
   const cnt = (rev: number) =>
     goalModel.avgNetDeal ? Math.round(rev / goalModel.avgNetDeal) : null;
@@ -137,11 +148,12 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
   return (
     <SectionCard
       title="Goal planner — what a sales pace produces downstream"
-      sub={`Set a TOTAL signed-sales target (all deals, including ones that will later cancel) and see the expected DA and CC flow. The conversion rates (DA ${pct(goalModel.daConversionPct)}, CC ${pct(goalModel.ccConversionPct)}) already discount cancellations — entering a net figure would subtract them twice.`}
+      sub={`Set a TOTAL signed-sales target (all deals, including ones that will later cancel) and see the expected DA and CC flow. CC conversion is mix-weighted per office (${pct(mixConv * 100)} at the current sales mix, vs ${pct(goalModel.ccConversionPct)} blanket) — cancellations are already discounted, so enter total, not net.`}
       explain={[
         ["Why total, not net", "conversion is measured as CC dollars ÷ ALL sold dollars (81% — cancels already baked in). Survivors complete at ~99%, so if you think in net-mature terms, a net target × ~0.99 gives the same CC answer. Enter what the team signs, and the model handles the leak."],
         ["Expected DAs", "target × DA conversion × share of deals that historically reach DA within k months of sale, plus today's sold-but-not-yet-DA'd pipeline fading out over ~2 months."],
-        ["CCs from new sales", "target × CC conversion × the sale → CC arrival curve — new sales barely contribute for ~2 months, then ramp to steady state (~month 4–5)."],
+        ["CCs from new sales", "target × mix-weighted CC conversion × the sale → CC arrival curve — new sales barely contribute for ~2 months, then ramp to steady state (~month 4–5)."],
+        ["Mix-weighted conversion", "each office's own conversion rate (Westminster ~90%, Camarillo ~57%) weighted by its share of the current selling pace, instead of the blanket cohort average. If the sales mix shifts toward high-converting offices, expected CCs rise without anyone selling more."],
         ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate for ~${capacity.coverMonths ?? "—"} months of cover, then is spent.`],
         ["Counts", "revenue ÷ trailing average net deal size."],
         ["Steady state", "once the ramp completes, DAs/mo ≈ target × DA conversion and CCs/mo ≈ target × CC conversion. Selling below sustain means the total CC line sags once the backlog is spent — exactly what the capacity section warns about."],
@@ -219,6 +231,23 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
           </tr>
         </tbody>
       </table>
+      <div className="mt-4 pt-3 border-t border-t-border/50">
+        <div className="text-xs text-muted mb-2">
+          Per-office steady state at this target (share of current selling mix × own conversion):
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+          {officeRows.map((o) => {
+            const share = (o.grossSellingPacePerMo ?? 0) / mixDenom;
+            return (
+              <span key={o.office} className="whitespace-nowrap">
+                <span className="text-foreground/80">{o.office}</span>
+                <span className="text-muted"> {Math.round(share * 100)}% of sales · conv {pct(o.conversionPct)} → </span>
+                <span className="text-foreground">{fmt(S * share * ((o.conversionPct ?? 0) / 100))}/mo CC</span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
     </SectionCard>
   );
 }
