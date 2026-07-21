@@ -310,7 +310,7 @@ export default function OpsScorecardPage() {
           </thead>
           <tbody>
             {capacity.byOffice.map((o) => (
-              <tr key={o.office} className={o.office === "Company" ? "font-semibold" : o.office === "Colorado" || o.office === "California" ? "font-medium border-t-2" : ""}>
+              <tr key={o.office} className={o.office === "Company" ? "font-semibold" : o.office === "Colorado" ? "font-medium [&>td]:border-t-2" : o.office === "California" ? "font-medium" : ""}>
                 <td className={td}>{o.office}</td>
                 <td className={tdR}>{$(o.backlogRev)} ({o.backlogCount})</td>
                 <td className={tdR}>{pct(o.conversionPct)}</td>
@@ -387,7 +387,7 @@ export default function OpsScorecardPage() {
               const aG = fy ? r.py2GrossRev : r.py2SamePointGrossRev;
               const bG = fy ? r.pyGrossRev : r.pySamePointGrossRev;
               return (
-              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" || r.office === "California" ? "font-medium border-t-2" : ""}>
+              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" ? "font-medium [&>td]:border-t-2" : r.office === "California" ? "font-medium" : ""}>
                 <td className={td}>
                   <div>{r.office}</div>
                   <div className="text-[11px] text-muted font-normal">net · total</div>
@@ -450,7 +450,7 @@ export default function OpsScorecardPage() {
               };
               const sales = cell(r.sales); const das = cell(r.das); const ccs = cell(r.ccs);
               return (
-              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" || r.office === "California" ? "font-medium border-t-2" : ""}>
+              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" ? "font-medium [&>td]:border-t-2" : r.office === "California" ? "font-medium" : ""}>
                 <td className={td}>{r.office}</td>
                 <td className={tdR}><Arrow3 a={num(sales.a.count)} b={num(sales.b.count)} c={num(sales.c.count)} av={sales.a.count} bv={sales.b.count} cv={sales.c.count} better="higher" compareLast={!fy} /></td>
                 <td className={tdR}>
@@ -499,7 +499,7 @@ export default function OpsScorecardPage() {
           </thead>
           <tbody>
             {cancellations.map((r) => (
-              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" || r.office === "California" ? "font-medium border-t-2" : ""}>
+              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" ? "font-medium [&>td]:border-t-2" : r.office === "California" ? "font-medium" : ""}>
                 <td className={td}>{r.office}</td>
                 <td className={tdR}>{r.py2.sameYrCount}/{r.py2.sold} · {pct(r.py2.sameYrRevPct)}</td>
                 <td className={tdR}>
@@ -531,7 +531,7 @@ export default function OpsScorecardPage() {
           </thead>
           <tbody>
             {cancellations.map((r) => (
-              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" || r.office === "California" ? "font-medium border-t-2" : ""}>
+              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" ? "font-medium [&>td]:border-t-2" : r.office === "California" ? "font-medium" : ""}>
                 <td className={td}>{r.office}</td>
                 <td className={tdR}>
                   <div>{r.samePoint.py2.count}/{r.samePoint.py2.sold} · {pct(r.samePoint.py2.revPct)}</div>
@@ -813,7 +813,7 @@ export default function OpsScorecardPage() {
           </thead>
           <tbody>
             {efficiency.turnaroundsByOffice.map((r) => (
-              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" || r.office === "California" ? "font-medium border-t-2" : ""}>
+              <tr key={r.office} className={r.office === "Company" ? "font-semibold" : r.office === "Colorado" ? "font-medium [&>td]:border-t-2" : r.office === "California" ? "font-medium" : ""}>
                 <td className={td}>{r.office}</td>
                 {Object.entries(r.legs).map(([leg, v]) => (
                   <td key={leg} className={tdR}>
