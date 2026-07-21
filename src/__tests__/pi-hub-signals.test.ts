@@ -288,8 +288,8 @@ describe("resolveSignalsOnStatusWrite", () => {
     expect(updateMany).toHaveBeenCalledWith({
       where: {
         hubspotDealId: "100",
-        team: "permit",
         status: { in: ["OPEN", "DISMISSED"] },
+        OR: [{ team: "permit" }],
       },
       data: expect.objectContaining({
         status: "RESOLVED",
@@ -310,10 +310,30 @@ describe("resolveSignalsOnStatusWrite", () => {
       expect.objectContaining({
         where: {
           hubspotDealId: "100",
-          team: "permit",
           status: { in: ["OPEN", "DISMISSED"] },
+          OR: [{ team: "permit" }],
         },
         data: expect.objectContaining({ status: "RESOLVED" }),
+      }),
+    );
+  });
+
+  it("a pto status write also resolves the permit-team inspection signal", async () => {
+    updateMany.mockResolvedValue({ count: 1 });
+    await resolveSignalsOnStatusWrite({
+      dealId: "100",
+      team: "pto",
+      newStatus: "PTO",
+      userEmail: "zach@photonbrothers.com",
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { team: "pto" },
+            { team: "permit", signalType: "inspection_passed" },
+          ],
+        }),
       }),
     );
   });
