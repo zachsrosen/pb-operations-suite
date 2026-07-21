@@ -119,6 +119,13 @@ interface PostMessageParams {
   // mirror copy itself (avoids loops) and on the bot's conversational reply
   // (the Q&A exchange is mirrored separately, with the question for context).
   skipMirror?: boolean;
+  // When true, record this send as an assistant turn in the bot's conversation
+  // history for this space. Set on PROACTIVE sends (worklists, digests) so the
+  // bot remembers what it pushed: without it, a reply like "I spoke to AJ about
+  // both her projects" arrives with no memory of the worklist naming
+  // "PROJ-9982 — Chamberlin, AJ", and the bot has to ask who AJ is.
+  // Never set on mirror copies (that space is oversight, not a conversation).
+  recordHistory?: boolean;
 }
 
 // Google Chat rejects messages over 4096 characters. Split a long message into
@@ -191,11 +198,38 @@ export async function postGoogleChatMessage(params: PostMessageParams): Promise<
   // serverless runtimes freeze after return and silently kill detached
   // promises — the ~15ms insert is worth a lossless audit log. Never fails the send.
   await logOutboundMessage(params).catch((e) => console.warn("[google-chat-api] audit log failed:", e));
+  // Memory: proactive sends become an assistant turn so the bot can answer
+  // follow-ups about what it just pushed (see recordHistory above).
+  if (params.recordHistory) {
+    await recordProactiveTurn(params).catch((e) =>
+      console.warn("[google-chat-api] history record failed:", e)
+    );
+  }
   // Oversight: copy every outbound bot message into the mirror space so the team
   // can see everything the bot says to anyone (welcomes, direct sends, worklists,
   // errors). The conversational Q&A reply passes skipMirror — it's mirrored
   // separately with the question for context.
   await mirrorOutboundMessage(params).catch((e) => console.warn("[google-chat-api] mirror failed:", e));
+}
+
+/**
+ * Record a proactive outbound message as an assistant turn in this space's
+ * conversation history, so the next inbound reply is answered WITH the context
+ * of what the bot just sent (worklist deal names, PROJ numbers, notes).
+ */
+async function recordProactiveTurn(params: PostMessageParams): Promise<void> {
+  const { prisma } = await import("@/lib/db");
+  if (!prisma) return;
+  await prisma.techOpsBotConversation.create({
+    data: {
+      spaceId: params.spaceName,
+      threadId: params.threadName ?? null,
+      senderEmail: "bot",
+      senderName: "Zach's Assistant",
+      role: "assistant",
+      content: params.text,
+    },
+  });
 }
 
 /** Reverse-lookup a space id to a human label (owner email / rep email / space id). */

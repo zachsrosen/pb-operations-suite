@@ -897,7 +897,7 @@ export async function runPersonalWorklists(opts: {
         // skipMirror: the labeled mirror below already copies this to the
         // oversight space — without it the global auto-mirror (google-chat-api)
         // would post a SECOND copy, doubling every worklist in that space.
-        await postGoogleChatMessage({ spaceName: space, text, skipMirror: true });
+        await postGoogleChatMessage({ spaceName: space, text, skipMirror: true, recordHistory: true });
         if (isFirst) await markWelcomed(email);
         // Copy into the owner's tracking space so they can see what was sent.
         if (mirrorSpace && mirrorSpace !== space) {
@@ -1045,7 +1045,7 @@ export async function runManagerWorklists(opts: {
     try {
       // skipMirror: the labeled mirror below is the single oversight copy —
       // without it the global auto-mirror would post a duplicate.
-      await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
+      await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true, recordHistory: true });
       if (mirrorSpace && mirrorSpace !== space) {
         await postGoogleChatMessage({
           spaceName: mirrorSpace,
@@ -1473,7 +1473,7 @@ export async function runRepWorklists(opts: {
           });
           continue;
         }
-        await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true });
+        await postGoogleChatMessage({ spaceName: space, text: rendered.text, skipMirror: true, recordHistory: true });
         if (mirrorSpace && mirrorSpace !== space) {
           await postGoogleChatMessage({
             spaceName: mirrorSpace,
