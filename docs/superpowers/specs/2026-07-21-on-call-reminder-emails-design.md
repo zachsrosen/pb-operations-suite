@@ -41,20 +41,27 @@ Three new files plus three one-line integrations:
   weeks).
 - `reminderSubject(variant, poolName, dates)` — e.g.
   `You're on call this week — Colorado (Nov 2 – Nov 8)`.
-- Reuses `mondayOf`/`addDays` from `on-call-rotation.ts` and the pool-timezone
-  "today" helper.
+- Reuses `mondayOf`/`addDays` from `on-call-rotation.ts` and `todayInTz` from
+  `src/lib/on-call-swap.ts` (already the shared export, consumed by
+  `on-call-notifications.ts`) — do NOT write another private copy.
 
 ### 2. `src/emails/OnCallReminder.tsx` (React Email template)
 
 Props: member name, pool name, variant (`week-of` | `week-ahead`), formatted
-date ranges, weekday shift window, weekend shift window, timezone label,
-dashboard link (`/dashboards/on-call`). House style via existing
-`src/emails/_components`.
+date ranges, weekday shift window, weekend shift window, `coversSundays`,
+timezone label, dashboard link (`/dashboards/on-call`, absolute via the
+`baseUrl()` pattern from `on-call-notifications.ts`). House style via existing
+`src/emails/_components`. When `coversSundays` is false (California) the
+weekend window is labeled "Saturday" only — the email must not imply Sunday
+coverage that doesn't exist.
 
 ### 3. `src/app/api/cron/on-call-reminders/route.ts`
 
 1. `Authorization: Bearer ${CRON_SECRET}` check (same as goals-digest).
-2. Gate on both env flags; 503/skip when off.
+2. Gate on both env flags; when either is off, return HTTP 200 with
+   `{ skipped: true }` (repo convention for dark-shipped crons, e.g.
+   `powerhub-telemetry` — a 503 would show as a failing cron in Vercel every
+   Monday until the flag is flipped).
 3. For each active pool with `rotationUnit === "weekly"` (daily pools skipped
    with a log — none exist today):
    - `today` in pool tz → `thisMonday = mondayOf(today)`, `nextMonday = +7d`.
@@ -86,5 +93,6 @@ lines. Route-level: auth rejection and flag-off short-circuit.
 1. PR → review → merge (deploys via GitHub per repo convention).
 2. Set `ON_CALL_REMINDER_EMAILS_ENABLED=true` in Vercel prod env (printf, not
    echo) and local `.env`.
-3. Verify the first Monday run (July 27: week-of → Gaige Hayse, week-ahead →
-   Nathan Kirkegaard) via Vercel logs.
+3. Verify the first Monday run (July 27) via Vercel logs, cross-checking
+   recipients against the published schedule on the on-call dashboard (swaps
+   between now and then can change who's on).
