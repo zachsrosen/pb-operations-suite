@@ -3,16 +3,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { useToast } from "@/contexts/ToastContext";
 import type { DetailSignal, Team } from "@/lib/pi-hub/types";
 import type { SharedInboxThreadMessage } from "@/lib/gmail-shared-inbox";
 import { signalLabel } from "../signal-ui";
-
-interface OptionsResponse {
-  options: Array<{ value: string; label: string }>;
-  terminalStatuses: string[];
-}
 
 function formatReceived(iso: string): string {
   try {
@@ -89,12 +82,11 @@ function EvidenceMessage({
 }
 
 /**
- * Approval-signal callout at the top of the project detail. Read side of the
- * three-strikes flow: Dismiss strikes the evidence messageId (3rd distinct
- * dismissal mutes the deal); "Set status" goes through the EXISTING
- * /api/pi-hub/status write path — same endpoint as StatusDropdown, including
- * the terminal-status confirm rule — and the server auto-resolves the signal
- * when the write matches proposedStatus. No new write path here.
+ * Approval-signal callout at the top of the project detail. Suggestion-only
+ * by decision (Zach 2026-07-20): shows the evidence and proposed status but
+ * offers NO status write — the human uses the normal StatusDropdown, and the
+ * server auto-resolves the signal when the deal leaves its waiting statuses.
+ * Dismiss strikes the evidence messageId (3rd distinct dismissal mutes).
  */
 export function SignalPanel({
   team,
@@ -106,28 +98,9 @@ export function SignalPanel({
   signal: DetailSignal;
 }) {
   const queryClient = useQueryClient();
-  const { addToast } = useToast();
   const [showEmail, setShowEmail] = useState(false);
-  const [confirmTerminal, setConfirmTerminal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { evidence } = signal;
-
-  // Loaded up-front (unlike the dropdown's lazy fetch): the primary button
-  // can't know whether the proposed status is terminal until options land.
-  const optionsQuery = useQuery<OptionsResponse>({
-    queryKey: queryKeys.piHub.options(team),
-    queryFn: async () => {
-      const r = await fetch(`/api/pi-hub/options?team=${team}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!r.ok) throw new Error("Failed to load status options");
-      return r.json();
-    },
-    staleTime: 5 * 60_000,
-  });
-  const isTerminal = (optionsQuery.data?.terminalStatuses ?? []).includes(
-    signal.proposedStatus,
-  );
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: queryKeys.piHub.queue(team) });
@@ -135,37 +108,6 @@ export function SignalPanel({
       queryKey: queryKeys.piHub.project(team, dealId),
     });
   }
-
-  const setStatusMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch("/api/pi-hub/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ team, dealId, status: signal.proposedStatus }),
-      });
-      const data = (await r.json().catch(() => ({}))) as {
-        warnings?: string[];
-        error?: string;
-      };
-      if (!r.ok) throw new Error(data.error ?? "Failed to update status");
-      return data;
-    },
-    onSuccess: (data) => {
-      const w = data.warnings ?? [];
-      if (w.length > 0) {
-        addToast({
-          type: "warning",
-          title: "Status saved, with warnings",
-          message: w.join("; "),
-        });
-      }
-      invalidate();
-      queryClient.invalidateQueries({ queryKey: queryKeys.piHub.todayCount() });
-    },
-    onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to update status");
-    },
-  });
 
   const dismissMutation = useMutation({
     mutationFn: async () => {
@@ -189,13 +131,7 @@ export function SignalPanel({
     },
   });
 
-  const busy = setStatusMutation.isPending || dismissMutation.isPending;
-
-  function handleSetStatus() {
-    setError(null);
-    if (isTerminal) setConfirmTerminal(true);
-    else setStatusMutation.mutate();
-  }
+  const busy = dismissMutation.isPending;
 
   return (
     <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
@@ -218,20 +154,6 @@ export function SignalPanel({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handleSetStatus}
-          disabled={busy || optionsQuery.isLoading}
-          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-        >
-          {setStatusMutation.isPending && (
-            <span
-              className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
-              aria-label="Saving"
-            />
-          )}
-          Set status: {signal.proposedStatusLabel || signal.proposedStatus}
-        </button>
         {evidence.threadId && evidence.mailbox && (
           <button
             type="button"
@@ -268,17 +190,6 @@ export function SignalPanel({
         />
       )}
 
-      <ConfirmDialog
-        open={confirmTerminal}
-        title="Set terminal status?"
-        message={`Set status to "${signal.proposedStatusLabel || signal.proposedStatus}"? This marks the ${team.toUpperCase()} work complete for this project.`}
-        confirmLabel="Set status"
-        onConfirm={() => {
-          setConfirmTerminal(false);
-          setStatusMutation.mutate();
-        }}
-        onCancel={() => setConfirmTerminal(false)}
-      />
     </div>
   );
 }
