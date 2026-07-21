@@ -20,7 +20,6 @@ import { EXCLUDED_STAGES, INCLUDED_PIPELINES } from "@/lib/daily-focus/config";
 import { TEAM_CONFIGS } from "@/lib/pi-hub/config";
 import {
   isInspectionCandidate,
-  PTO_AT_OR_PAST_INSPECTION,
 } from "@/lib/approval-scan/classify";
 import {
   CANDIDATE_STATUSES,
@@ -106,20 +105,10 @@ async function fetchCandidates(
       operator: FilterOperatorEnum.Eq,
       value: "Complete",
     };
-    // Two OR'd groups because HubSpot's NOT_IN drops property-missing rows —
-    // a deal that never got a pto_status is still an inspection candidate.
+    // Inspection candidates are ONLY permit-complete deals with NO pto_status
+    // at all (any pto_status means the PTO team already owns the deal —
+    // Zach 2026-07-20). Empty-string enum values read as property-missing.
     filterGroups = [
-      {
-        filters: [
-          permitComplete,
-          {
-            propertyName: TEAM_CONFIGS.pto.statusProperty,
-            operator: FilterOperatorEnum.NotIn,
-            values: [...PTO_AT_OR_PAST_INSPECTION],
-          },
-          ...commonFilters,
-        ],
-      },
       {
         filters: [
           permitComplete,
