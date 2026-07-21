@@ -98,6 +98,130 @@ function SectionCard({ title, sub, actions, explain, children }: { title: string
   );
 }
 
+function GoalPlanner({ data }: { data: OpsScorecardData }) {
+  const { goalModel, capacity } = data;
+  const [targetM, setTargetM] = useState<number>(
+    () => Math.round(((capacity.sustainSalesPerMo ?? 3_000_000) / 1_000_000) * 10) / 10
+  );
+  const S = targetM * 1_000_000;
+  const daConv = (goalModel.daConversionPct ?? 0) / 100;
+  const ccConv = (goalModel.ccConversionPct ?? 0) / 100;
+  const fmt = (n: number) => formatCurrencyCompact(n);
+  const cnt = (rev: number) =>
+    goalModel.avgNetDeal ? Math.round(rev / goalModel.avgNetDeal) : null;
+
+  const months: string[] = [];
+  const nowD = new Date();
+  for (let k = 1; k <= 6; k++) {
+    const d = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth() + k, 1));
+    months.push(d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }));
+  }
+  const cover = capacity.coverMonths ?? 0;
+  const burn = capacity.burnPerMo ?? 0;
+  const daPace = goalModel.daPacePerMo ?? 0;
+  const rows = months.map((label, i) => {
+    const k = i + 1;
+    const daNew = S * daConv * (goalModel.daMonthlyCdf[k - 1] ?? 1);
+    const daExisting = daPace * Math.max(0, Math.min(1, 1 - (k - 1) / 2));
+    const ccNew = S * ccConv * (goalModel.ccMonthlyCdf[k - 1] ?? 1);
+    const ccBacklog = burn * Math.max(0, Math.min(1, cover - (k - 1)));
+    return { label, da: daNew + daExisting, ccNew, ccBacklog, cc: ccNew + ccBacklog };
+  });
+
+  const presets: Array<[string, number | null]> = [
+    ["Current pace", capacity.netSalesPacePerMo],
+    ["Sustain", capacity.sustainSalesPerMo],
+    ["$3.5M", 3_500_000],
+  ];
+
+  return (
+    <SectionCard
+      title="Goal planner — what a sales pace produces downstream"
+      sub={`Set a net sales target and see the expected DA and CC flow, using measured conversion rates (DA ${pct(goalModel.daConversionPct)}, CC ${pct(goalModel.ccConversionPct)}) and how fast deals actually move (last fully-baked cohort).`}
+      explain={[
+        ["Expected DAs", "target × DA conversion × share of deals that historically reach DA within k months of sale, plus today's sold-but-not-yet-DA'd pipeline fading out over ~2 months."],
+        ["CCs from new sales", "target × CC conversion × the sale → CC arrival curve — new sales barely contribute for ~2 months, then ramp to steady state (~month 4–5)."],
+        ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate for ~${capacity.coverMonths ?? "—"} months of cover, then is spent.`],
+        ["Counts", "revenue ÷ trailing average net deal size."],
+        ["Steady state", "once the ramp completes, DAs/mo ≈ target × DA conversion and CCs/mo ≈ target × CC conversion. Selling below sustain means the total CC line sags once the backlog is spent — exactly what the capacity section warns about."],
+      ]}
+    >
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <label className="text-sm text-muted">Net sales target:</label>
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-muted">$</span>
+          <input
+            type="number"
+            min={0.5}
+            max={10}
+            step={0.1}
+            value={targetM}
+            onChange={(e) => setTargetM(parseFloat(e.target.value) || 0)}
+            className="w-20 bg-surface-2 border border-t-border rounded-lg px-2 py-1.5 text-sm text-foreground text-right"
+          />
+          <span className="text-sm text-muted">M / month</span>
+        </div>
+        {presets.map(([label, v]) =>
+          v ? (
+            <button
+              key={label}
+              onClick={() => setTargetM(Math.round((v / 1_000_000) * 10) / 10)}
+              className="px-3 py-1.5 rounded-lg text-xs border border-t-border text-muted hover:text-foreground transition-colors"
+            >
+              {label} ({fmt(v)})
+            </button>
+          ) : null
+        )}
+        <span className="text-xs text-muted ml-auto">
+          steady state: ~{fmt(S * daConv)}/mo DAs · ~{fmt(S * ccConv)}/mo CCs ({cnt(S * ccConv) ?? "—"} installs)
+        </span>
+      </div>
+      <table className="w-full min-w-[720px]">
+        <thead>
+          <tr>
+            <th className={th}>Expected flow</th>
+            {rows.map((r) => (
+              <th key={r.label} className={thR}>{r.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className={td}>Net sales (target)</td>
+            {rows.map((r) => (
+              <td key={r.label} className={tdR}>{fmt(S)}</td>
+            ))}
+          </tr>
+          <tr>
+            <td className={td}>DAs expected</td>
+            {rows.map((r) => (
+              <td key={r.label} className={tdR}>{cnt(r.da) ?? "—"} · {fmt(r.da)}</td>
+            ))}
+          </tr>
+          <tr>
+            <td className={td + " text-muted"}>CCs — from new sales</td>
+            {rows.map((r) => (
+              <td key={r.label} className={tdR + " text-muted"}>{fmt(r.ccNew)}</td>
+            ))}
+          </tr>
+          <tr>
+            <td className={td + " text-muted"}>CCs — from today&apos;s backlog</td>
+            {rows.map((r) => (
+              <td key={r.label} className={tdR + " text-muted"}>{fmt(r.ccBacklog)}</td>
+            ))}
+          </tr>
+          <tr className="font-semibold">
+            <td className={td}>CCs total</td>
+            {rows.map((r) => (
+              <td key={r.label} className={tdR}>{cnt(r.cc) ?? "—"} · {fmt(r.cc)}</td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </SectionCard>
+  );
+}
+
 const th = "text-left text-[11px] uppercase tracking-wide text-muted font-semibold pb-2 pr-4 whitespace-nowrap";
 const thR = th + " text-right";
 const td = "py-1.5 pr-4 text-sm whitespace-nowrap border-t border-t-border/50";
@@ -328,6 +452,9 @@ export default function OpsScorecardPage() {
           </tbody>
         </table>
       </SectionCard>
+
+      {/* ---- Goal planner ---- */}
+      <GoalPlanner data={data} />
 
       {/* ---- Year-view toggle ---- */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">

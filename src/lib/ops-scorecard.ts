@@ -239,6 +239,20 @@ export interface OpsScorecardData {
     ccs: StageYearRow;
   }>;
   cancellations: OfficeCancellation[];
+  /** Inputs for the interactive goal planner: measured conversion rates and
+   *  monthly lag CDFs from the fully-baked Jan–Sep prior-year cohort. */
+  goalModel: {
+    /** Share of sold $ eventually reaching DA / CC (gross cohort basis). */
+    daConversionPct: number | null;
+    ccConversionPct: number | null;
+    /** cdf[k] = share of eventually-converted $ arriving within k+1 months of sale (6 entries). */
+    daMonthlyCdf: number[];
+    ccMonthlyCdf: number[];
+    /** Trailing-90d average net deal size, for revenue → count conversion. */
+    avgNetDeal: number | null;
+    /** Current DA pace (net $/mo over the trailing 3 calendar months). */
+    daPacePerMo: number | null;
+  };
   /** Leads (Sales-Pipeline deals created) and consults set (meetings titled consult*).
    *  Null when the HubSpot fetch fails — the page hides the rows. */
   topFunnel: TopFunnel | null;
@@ -696,6 +710,33 @@ export function computeOpsScorecard(
     };
   }
 
+  // ---- Goal planner model ---------------------------------------------------
+  const gmCohort = projects.filter(
+    (p) => p.closeDate !== null && p.closeDate >= `${py}-01-01` && p.closeDate < `${py}-10-01`
+  );
+  const gmCohortRev = sumAmount(gmCohort);
+  const cdfFor = (date: (p: Project) => string | null): { convPct: number | null; cdf: number[] } => {
+    const reachedDeals = gmCohort.filter((p) => date(p) !== null);
+    const reachedRev = sumAmount(reachedDeals);
+    const convPct = gmCohortRev > 0 ? (reachedRev / gmCohortRev) * 100 : null;
+    const cdf: number[] = [];
+    for (let k = 1; k <= 6; k++) {
+      const within = reachedDeals.filter((p) => {
+        const d = daysBetween(p.closeDate, date(p));
+        return d !== null && d <= k * 30.4;
+      });
+      cdf.push(reachedRev > 0 ? Math.min(1, sumAmount(within) / reachedRev) : 0);
+    }
+    return { convPct: round1(convPct), cdf: cdf.map((v) => Math.round(v * 1000) / 1000) };
+  };
+  const daModel = cdfFor((p) => p.designApprovalDate);
+  const ccModel = cdfFor((p) => p.constructionCompleteDate);
+  const gmSoldNet90 = projects.filter((p) => {
+    const cut90 = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+    return p.closeDate !== null && p.closeDate >= cut90 && isNet(p);
+  });
+  const daPacePerMo = last3Mo((p) => p.designApprovalDate, true);
+
   return {
     meta: {
       generatedAt: now.toISOString(),
@@ -731,6 +772,14 @@ export function computeOpsScorecard(
     runRateByOffice,
     throughputByOffice,
     cancellations,
+    goalModel: {
+      daConversionPct: daModel.convPct,
+      ccConversionPct: ccModel.convPct,
+      daMonthlyCdf: daModel.cdf,
+      ccMonthlyCdf: ccModel.cdf,
+      avgNetDeal: gmSoldNet90.length > 0 ? Math.round(sumAmount(gmSoldNet90) / gmSoldNet90.length) : null,
+      daPacePerMo: Math.round(daPacePerMo),
+    },
     topFunnel,
     salesForecast,
     funnelFy,
