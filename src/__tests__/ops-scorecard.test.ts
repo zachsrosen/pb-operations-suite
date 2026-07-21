@@ -247,6 +247,32 @@ describe("computeOpsScorecard", () => {
     expect(computeOpsScorecard([], NOW, tf).topFunnel).toEqual(tf);
   });
 
+  it("adds Colorado and California rollup rows to by-office tables", () => {
+    const projects = [
+      makeProject({ pbLocation: "Westminster", closeDate: "2026-02-01", amount: 1000 }),
+      makeProject({ pbLocation: "San Luis Obispo", closeDate: "2026-02-02", amount: 2000 }),
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    for (const table of [out.throughputByOffice, out.runRateByOffice, out.capacity.byOffice, out.efficiency.turnaroundsByOffice] as Array<Array<{ office: string }>>) {
+      expect(table.map((r) => r.office)).toEqual(
+        expect.arrayContaining(["Colorado", "California", "Company"])
+      );
+    }
+    const co = out.throughputByOffice.find((r) => r.office === "Colorado")!;
+    const ca = out.throughputByOffice.find((r) => r.office === "California")!;
+    expect(co.sales.ytd.revenue).toBe(1000);
+    expect(ca.sales.ytd.revenue).toBe(2000);
+  });
+
+  it("projects the funnel full year from YTD pace", () => {
+    const projects = [makeProject({ closeDate: "2026-02-01", amount: 1000 })];
+    const out = computeOpsScorecard(projects, NOW);
+    const sales = out.funnelFy.find((r) => r.stage === "Sales")!;
+    // NOW = Jul 18 → yearFrac ≈ 0.545; 1 sale YTD → ~2 projected.
+    expect(sales.projected.count).toBe(Math.round(1 / out.meta.yearFrac));
+    expect(sales.projected.revenue).toBe(Math.round(1000 / out.meta.yearFrac));
+  });
+
   it("year framing follows the provided clock", () => {
     const out = computeOpsScorecard([], NOW);
     expect(out.meta.cy).toBe("2026");

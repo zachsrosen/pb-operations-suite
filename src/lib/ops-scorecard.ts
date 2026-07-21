@@ -158,6 +158,8 @@ export interface OpsScorecardData {
     monthDayLabel: string;
     /** Label for the trailing-3-calendar-month window, e.g. "Apr–Jun". */
     l3mLabel: string;
+    /** Fraction of the current year elapsed — divisor for YTD-pace projections. */
+    yearFrac: number;
     projectCount: number;
   };
   capacity: {
@@ -214,7 +216,9 @@ export interface OpsScorecardData {
   /** Leads (Sales-Pipeline deals created) and consults set (meetings titled consult*).
    *  Null when the HubSpot fetch fails — the page hides the rows. */
   topFunnel: { leads: TopFunnelCounts; consults: TopFunnelCounts } | null;
-  funnelFy: Array<{ stage: string } & StageYearRow>;
+  /** Naive current-pace full-year projection (ytd / yearFrac). The CC row's
+   *  revenue should be presented from the capacity model instead. */
+  funnelFy: Array<{ stage: string; projected: CountRev } & StageYearRow>;
   funnelMonthly: Array<{ stage: string; byMonth: Record<string, number> }>;
   efficiency: {
     monthlyMedians: Array<{ leg: string; byMonth: Record<string, number | null> }>;
@@ -290,7 +294,15 @@ export function computeOpsScorecard(
   };
 
   // ---- Funnel (FY + monthly) ------------------------------------------------
-  const funnelFy = MILESTONES.map((m) => ({ stage: m.label, ...stageYearRow(m.date) }));
+  const funnelFy = MILESTONES.map((m) => {
+    const row = stageYearRow(m.date);
+    const projected: CountRev = {
+      count: Math.round(row.ytd.count / yearFrac),
+      revenue: Math.round(row.ytd.revenue / yearFrac),
+      grossRevenue: Math.round(row.ytd.grossRevenue / yearFrac),
+    };
+    return { stage: m.label, projected, ...row };
+  });
 
   const cyMonths: string[] = [];
   for (let mo = 1; mo <= now.getUTCMonth() + 1; mo++) {
@@ -344,46 +356,48 @@ export function computeOpsScorecard(
       l3mAnnualized: (l3mRev / 3) * 12,
     };
   };
+  const coProjects = projects.filter((p) => CO_OFFICES.has(loc(p)));
+  const caProjects = projects.filter((p) => !CO_OFFICES.has(loc(p)) && (SCORECARD_OFFICES as readonly string[]).includes(loc(p)));
+
   const runRateByOffice = [
     ...SCORECARD_OFFICES.map((o) => ({ office: o, ...runRateRow(projects.filter(inOffice(o))) })),
+    { office: "Colorado", ...runRateRow(coProjects) },
+    { office: "California", ...runRateRow(caProjects) },
     { office: "Company", ...runRateRow(projects) },
   ];
 
-  // ---- Throughput by office -------------------------------------------------
-  const throughputByOffice = [
-    ...SCORECARD_OFFICES.map((o) => {
-      const ps = projects.filter(inOffice(o));
-      const row = (date: (p: Project) => string | null): StageYearRow => {
-        const mk = (year: string, throughMonthDay?: string): CountRev => {
-          const all = ps.filter((p) => {
-            const d = date(p);
-            if (!d || yearOf(d) !== year) return false;
-            if (throughMonthDay && d.slice(5, 10) > throughMonthDay) return false;
-            return true;
-          });
-          return { count: all.length, revenue: sumAmount(all.filter(isNet)), grossRevenue: sumAmount(all) };
-        };
-        return {
-          py2: mk(py2),
-          py: mk(py),
-          ytd: mk(cy),
-          py2SamePoint: mk(py2, monthDay),
-          pySamePoint: mk(py, monthDay),
-        };
+  // ---- Throughput by office (incl. Colorado / California / Company rollups) --
+  const throughputFor = (ps: Project[], office: string) => {
+    const row = (date: (p: Project) => string | null): StageYearRow => {
+      const mk = (year: string, throughMonthDay?: string): CountRev => {
+        const all = ps.filter((p) => {
+          const d = date(p);
+          if (!d || yearOf(d) !== year) return false;
+          if (throughMonthDay && d.slice(5, 10) > throughMonthDay) return false;
+          return true;
+        });
+        return { count: all.length, revenue: sumAmount(all.filter(isNet)), grossRevenue: sumAmount(all) };
       };
       return {
-        office: o,
-        sales: row((p) => p.closeDate),
-        das: row((p) => p.designApprovalDate),
-        ccs: row((p) => p.constructionCompleteDate),
+        py2: mk(py2),
+        py: mk(py),
+        ytd: mk(cy),
+        py2SamePoint: mk(py2, monthDay),
+        pySamePoint: mk(py, monthDay),
       };
-    }),
-    {
-      office: "Company",
-      sales: stageYearRow((p) => p.closeDate),
-      das: stageYearRow((p) => p.designApprovalDate),
-      ccs: stageYearRow((p) => p.constructionCompleteDate),
-    },
+    };
+    return {
+      office,
+      sales: row((p) => p.closeDate),
+      das: row((p) => p.designApprovalDate),
+      ccs: row((p) => p.constructionCompleteDate),
+    };
+  };
+  const throughputByOffice = [
+    ...SCORECARD_OFFICES.map((o) => throughputFor(projects.filter(inOffice(o)), o)),
+    throughputFor(coProjects, "Colorado"),
+    throughputFor(caProjects, "California"),
+    throughputFor(projects, "Company"),
   ];
 
   // ---- Cancellation cohorts (keyed on year SOLD) ----------------------------
@@ -437,8 +451,6 @@ export function computeOpsScorecard(
     };
   };
 
-  const coProjects = projects.filter((p) => CO_OFFICES.has(loc(p)));
-  const caProjects = projects.filter((p) => !CO_OFFICES.has(loc(p)) && (SCORECARD_OFFICES as readonly string[]).includes(loc(p)));
   const cancellations = [
     ...SCORECARD_OFFICES.map((o) => cancellationFor(projects.filter(inOffice(o)), o)),
     cancellationFor(coProjects, "Colorado"),
@@ -502,8 +514,12 @@ export function computeOpsScorecard(
   }));
 
   /** Mean per sold-year cohort (by office). */
-  const turnaroundsByOffice = [...SCORECARD_OFFICES, "Company"].map((o) => {
-    const ps = o === "Company" ? live : live.filter(inOffice(o));
+  const turnaroundsByOffice = [...SCORECARD_OFFICES, "Colorado", "California", "Company"].map((o) => {
+    const ps =
+      o === "Company" ? live :
+      o === "Colorado" ? live.filter((p) => CO_OFFICES.has(loc(p))) :
+      o === "California" ? live.filter((p) => !CO_OFFICES.has(loc(p)) && (SCORECARD_OFFICES as readonly string[]).includes(loc(p))) :
+      live.filter(inOffice(o));
     const legs: Record<string, TurnaroundLegYearMeans> = {};
     for (const leg of LEGS) {
       const forYear = (year: string): MeanMed => {
@@ -575,8 +591,7 @@ export function computeOpsScorecard(
   const projectedFyCcLow = Math.round(ytdCcRev + backlogRev * 0.8 + newSalesCc * 0.85);
   const projectedFyCcHigh = Math.round(ytdCcRev + backlogRev * 0.9 + newSalesCc * 1.1);
 
-  const capacityByOffice = SCORECARD_OFFICES.map((o) => {
-    const ps = projects.filter(inOffice(o));
+  const capacityRowFor = (ps: Project[], o: string) => {
     const oBacklog = ps.filter((p) => BACKLOG_STAGE_IDS.has(p.stageId) && !p.constructionCompleteDate);
     const oCohort = ps.filter(
       (p) => p.closeDate !== null && p.closeDate >= `${py}-01-01` && p.closeDate < `${py}-10-01`
@@ -608,7 +623,13 @@ export function computeOpsScorecard(
       sustainPerMo:
         oConv && oConv > 0 && ccPacePerMo !== null ? Math.round(ccPacePerMo / oConv) : null,
     };
-  });
+  };
+  const capacityByOffice = [
+    ...SCORECARD_OFFICES.map((o) => capacityRowFor(projects.filter(inOffice(o)), o)),
+    capacityRowFor(coProjects, "Colorado"),
+    capacityRowFor(caProjects, "California"),
+    capacityRowFor(projects, "Company"),
+  ];
 
   return {
     meta: {
@@ -620,6 +641,7 @@ export function computeOpsScorecard(
       monthDay,
       monthDayLabel,
       l3mLabel,
+      yearFrac,
       projectCount: projects.length,
     },
     capacity: {
