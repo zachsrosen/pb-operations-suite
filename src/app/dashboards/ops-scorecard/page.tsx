@@ -61,7 +61,25 @@ function Arrow3({
   );
 }
 
-function SectionCard({ title, sub, actions, children }: { title: string; sub?: string; actions?: React.ReactNode; children: React.ReactNode }) {
+/** Collapsible per-section methodology note. Items render as "term — definition". */
+function Explain({ items }: { items: Array<[string, string]> }) {
+  return (
+    <details className="mt-3 text-xs text-muted">
+      <summary className="cursor-pointer select-none hover:text-foreground transition-colors">
+        How these numbers are calculated
+      </summary>
+      <ul className="mt-2 space-y-1.5 pl-4 list-disc leading-relaxed">
+        {items.map(([term, def]) => (
+          <li key={term}>
+            <span className="font-semibold text-foreground/80">{term}</span> — {def}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function SectionCard({ title, sub, actions, explain, children }: { title: string; sub?: string; actions?: React.ReactNode; explain?: Array<[string, string]>; children: React.ReactNode }) {
   return (
     <section className="mb-8">
       <div className="flex items-center justify-between gap-3 mb-1 flex-wrap">
@@ -71,6 +89,7 @@ function SectionCard({ title, sub, actions, children }: { title: string; sub?: s
       {sub && <p className="text-sm text-muted mb-3">{sub}</p>}
       <div className="bg-surface border border-t-border rounded-xl shadow-card p-4 overflow-x-auto">
         {children}
+        {explain && <Explain items={explain} />}
       </div>
     </section>
   );
@@ -161,12 +180,28 @@ export default function OpsScorecardPage() {
           color="orange"
         />
       </div>
+      <div className="-mt-6 mb-8 px-1">
+        <Explain
+          items={[
+            ["Projected CC revenue", `${cy} completed so far + 80–90% of the live backlog converting + sales still to close that can complete in-year (net sales pace × months before October × conversion rate). A range because backlog conversion isn't certain.`],
+            ["Sustain rate", "current CC burn ÷ conversion rate — the net sales/month needed to keep completions flat, because only ~81% of sold dollars ever reach CC. Selling below it means today's completion pace is borrowed from the backlog."],
+            ["Live backlog", "open deals between sale and construction-complete. Cover = backlog ÷ burn: how long completions can hold with zero new sales. Conversion and its median days come from the fully-baked cohort sold Jan–Sep last year."],
+          ]}
+        />
+      </div>
 
       {/* ---- Consult-driven sales forecast ---- */}
       {data.salesForecast && (
         <SectionCard
           title="Sales forecast from consults"
-          sub={`Consults held in the last 30 days × trailing close rate, arriving after the median consult → sale lag. Close rate = sales (all deals) in the last 90 days ÷ consults held in the matching lag-shifted window.`}
+          sub="A leading indicator: consults already held predict the sales that follow them."
+          explain={[
+            ["Median lag", "days from a deal's first consult meeting to its close date, median over deals sold in the last 12 months (stamped on every deal as first_consult_date). Half of buyers sign within ~2 weeks."],
+            ["Close rate", "deals sold in the last 90 days ÷ consults held in the 90-day window ending [lag] days ago — so consults are compared against the sales they had time to become."],
+            ["Predicted sales", "consults held in the last 30 days × close rate. These consults' sales land over the next ~30 days (offset by the lag)."],
+            ["Predicted net revenue", "predicted sales × average net deal size over the last 90 days."],
+            ["What it can miss", "the ~20% of sales that close 60+ days after their consult (the nurture tail), and consults on a spouse's contact record."],
+          ]}
         >
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
             <div>
@@ -197,6 +232,11 @@ export default function OpsScorecardPage() {
       <SectionCard
         title={`${cy} sales, DAs, and CCs by month`}
         sub="Sales closed (net revenue, with total incl. later-cancelled below), design approvals (net revenue), and construction completes (all deals) reached each month."
+        explain={[
+          ["Sales (net)", "deals with a close date in the month; count includes every deal, revenue excludes deals now Cancelled / Rejected / On-Hold. The small 'total' line is all sold dollars — the gap between the two lines is revenue that has since fallen out."],
+          ["DAs (net)", "deals whose design approval date lands in the month; revenue is net."],
+          ["CCs", "deals whose construction complete date lands in the month; a completed install counts even if the deal later cancelled, so no net/total split is shown."],
+        ]}
       >
         <table className="w-full min-w-[560px]">
           <thead>
@@ -236,7 +276,15 @@ export default function OpsScorecardPage() {
       {/* ---- Capacity by office ---- */}
       <SectionCard
         title="CC capacity by office"
-        sub={`Fuel (backlog), conversion, burn, cover, and the net sales pace (${meta.l3mLabel}) needed to sustain completions. Total = incl. later-cancelled/rejected/on-hold.`}
+        sub="Can each office keep completing at its current pace? Fuel (backlog) ÷ burn = how long, and sustain vs selling = whether sales refill it."
+        explain={[
+          ["Backlog", "open deals sitting between sale and construction-complete (Survey → Construction stages, no CC date yet) — the fuel available to burn."],
+          ["Conversion", `share of sold dollars that eventually reach CC, measured on the fully-baked cohort sold Jan–Sep ${py} (newer cohorts haven't had time to finish).`],
+          ["CC pace /mo", `${cy} completed revenue ÷ months elapsed — the current burn rate.`],
+          ["Cover", "backlog ÷ CC pace — months the office can sustain its pace with zero new sales."],
+          ["Sustain /mo", "CC pace ÷ conversion — the net sales needed per month to keep completions flat, since only [conversion]% of sold dollars ever complete."],
+          ["Net selling /mo", `actual net sales per month over ${meta.l3mLabel} (green = at/above sustain, red = below). The muted 'total' line includes deals that later cancelled.`],
+        ]}
       >
         <table className="w-full min-w-[720px]">
           <thead>
@@ -303,6 +351,12 @@ export default function OpsScorecardPage() {
             ? `Full-year ${py2}/${py} actuals, ${cy} YTD, and two forward paces — YTD-annualized and trailing-3-calendar-month (${meta.l3mLabel}).`
             : `Apples-to-apples: net sales through ${meta.monthDayLabel} of each year, plus the two forward paces.`
         }
+        explain={[
+          ["Net (big number)", "revenue from deals closed in the period, excluding deals now Cancelled / Rejected / On-Hold — the same basis as the Revenue Breakdowns dashboard. Older years drift down over time as their cohorts accumulate cancellations."],
+          ["Total (small number)", "all sold dollars including later-cancelled — what was actually signed."],
+          ["YTD run rate", `${cy} net YTD ÷ fraction of the year elapsed — the full-year pace if the whole year looks like the year so far.`],
+          ["3-mo rate", `net sales over ${meta.l3mLabel} ÷ 3 × 12 — current momentum. When it disagrees with the YTD rate, momentum is shifting.`],
+        ]}
       >
         <table className="w-full min-w-[680px]">
           <thead>
@@ -357,6 +411,12 @@ export default function OpsScorecardPage() {
             ? `Counts (all deals) and net revenue — full year ${py2} → full year ${py} → ${cy} YTD.`
             : `Counts (all deals) and net revenue through ${meta.monthDayLabel} of each year — like-for-like.`
         }
+        explain={[
+          ["Counts", "every deal whose milestone date (close / design approval / construction complete) falls in the period — including deals that later cancelled, because the work happened."],
+          ["Revenue", "net — excludes deals now Cancelled / Rejected / On-Hold. Sales revenue also shows the all-deals total beneath."],
+          ["Each stage stands alone", "a 2025 CC usually comes from a 2024–2025 sale, so columns are volume per period, not one cohort flowing through."],
+          ["Full year vs same point", `the toggle above switches prior-year columns between full-year totals and Jan 1 → ${meta.monthDayLabel} — only same-point columns are fair to compare against ${cy} YTD, which is why full-year mode doesn't color the last arrow.`],
+        ]}
       >
         <table className="w-full min-w-[860px]">
           <thead>
@@ -406,6 +466,13 @@ export default function OpsScorecardPage() {
             ? `Cohorts keyed on year sold. Same-yr = cancelled within that calendar year; eventual = cancelled as of today. ${cy}'s columns are equal because the year is still open.`
             : `Same-age lens: deals sold Jan 1 → ${meta.monthDayLabel} of each year and cancelled by ${meta.monthDayLabel} of that year — the truest like-for-like. 2024's rate is understated (cancels were processed late that year).`
         }
+        explain={[
+          ["Cohort", "every deal SOLD in the year (gross — a cancelled deal was still a sale, so it stays in the denominator)."],
+          ["Same-yr", "of those, cancelled before that calendar year ended — shows timing. Shown as cancelled/sold · % of sold dollars."],
+          ["Eventual", "cancelled as of today, whenever the cancellation happened — the true loss rate. It only grows: 2025 was 11.4% at year-end and is 18.5% now. The dollar line is the revenue lost."],
+          ["Same point (toggle)", `sold Jan 1 → ${meta.monthDayLabel} AND cancelled by ${meta.monthDayLabel} of the same year — the only view where ${cy} compares fairly against prior years at the same age.`],
+          ["Why rates differ from the funnel", "cancellation %s divide by gross sold; the funnel's revenue figures are net. Both are correct — different denominators for different questions."],
+        ]}
       >
         {yearView === "fy" ? (
         <table className="w-full min-w-[860px]">
@@ -482,9 +549,17 @@ export default function OpsScorecardPage() {
         title={data.topFunnel ? "Funnel: leads → consults → sales → DAs → CCs → inspections → PTO" : "Funnel: sales → DAs → CCs → inspections → PTO"}
         sub={
           yearView === "fy"
-            ? `Full-year ${py2} and ${py}, ${cy} YTD, and projected full-year ${cy} at current YTD pace (CC revenue from the capacity model). Counts include every deal reaching the milestone; revenue is net. Consults include all consult types (solar, battery, D&R, repeats), so they can exceed leads — use the trend, not the ratio.`
-            : `Milestones reached Jan 1 → ${meta.monthDayLabel} of each year — like-for-like — plus the projected full year. Counts include every deal reaching the milestone; revenue is net. Consults include all consult types, so they can exceed leads.`
+            ? `Full-year ${py2} and ${py}, ${cy} YTD, and the projected full year. Counts include every deal reaching the milestone; revenue is net.`
+            : `Milestones reached Jan 1 → ${meta.monthDayLabel} of each year — like-for-like — plus the projected full year. Counts include every deal reaching the milestone; revenue is net.`
         }
+        explain={[
+          ["Leads created", "deal records created in the Sales Pipeline during the period — every prospect that got far enough to become a deal record."],
+          ["Consults set", "meeting engagements titled Consult/Consultation (excluding canceled) held during the period. Includes all consult types — solar, battery, D&R, repeats — so it can exceed leads; use the trend, not the ratio."],
+          ["Sales → PTO rows", "deals whose milestone date (close, design approval, construction complete, inspection pass, PTO) falls in the period. Counts are all deals; revenue is net (excludes now-Cancelled/Rejected/On-Hold); the small line is the all-deals total."],
+          ["Projected (most rows)", `${cy} YTD ÷ ${(meta.yearFrac * 100).toFixed(0)}% of the year elapsed — 'if the rest of the year looks like the year so far.' The ~ means model output, not commitment.`],
+          ["Projected CCs", "the one row NOT on straight pace: completed YTD + 80–90% of the live backlog + new sales that can still complete in-year at the trailing conversion rate. Pace math would ignore the backlog draining in Q4."],
+          ["Projected inspections & PTO — read with care", `straight pace math, but ${cy} YTD includes the record Q1 PTO quarter ($10.8M) from the ${py} tax-credit cohort clearing. Annualizing that assumes the record repeats; the capacity model suggests the real number lands lower (~$30–32M PTO).`],
+        ]}
       >
         <table className="w-full min-w-[620px]">
           <thead>
@@ -550,6 +625,10 @@ export default function OpsScorecardPage() {
       <SectionCard
         title={`${cy} funnel, month by month`}
         sub="Counts reaching each milestone per month. Leads and consults come from the Sales Pipeline / meetings; the rest from the Project pipeline."
+        explain={[
+          ["Reading it", "each row is independent volume per month — a June CC came from a much earlier sale. The current month is partial."],
+          ["The row to watch", "leads vs consults: lead intake has been climbing while consults hold flat — the set rate, not demand, is the funnel's weakest link."],
+        ]}
       >
         <table className="w-full min-w-[680px]">
           <thead>
@@ -588,6 +667,10 @@ export default function OpsScorecardPage() {
       <SectionCard
         title="Quarter over quarter — net revenue by stage"
         sub={`Net revenue reaching each stage per quarter, ${py2}Q1 → today. The ${py}Q3 tax-credit rush and ${py}Q4 crash distort simple QoQ reads — compare like quarters across years.`}
+        explain={[
+          ["Cells", "net revenue whose milestone date falls in the quarter. The current quarter is partial."],
+          ["Known distortions", `${py}Q3 sales ($11.2M) were pulled forward by the tax-credit deadline and crashed ${py}Q4 ($3.2M); that cohort then powered the big ${py}Q3–Q4 CC quarters and the record ${cy}Q1 PTO. ${cy}Q1 CC was low ($4.9M) from the Participate rollout. Compare Q2-to-Q2, not Q-to-Q.`],
+        ]}
       >
         <table className="w-full min-w-[860px]">
           <thead>
@@ -614,6 +697,11 @@ export default function OpsScorecardPage() {
       <SectionCard
         title={`Operational efficiency — ${cy} monthly medians`}
         sub="Median days per step, bucketed by when the step completed. Cancelled deals excluded from all time metrics."
+        explain={[
+          ["Bucketing", "a deal counts in the month its step COMPLETED (e.g. permit issued in June → June column), so each month reflects the work finished then."],
+          ["Median", "the typical deal — half faster, half slower. Immune to the stalled-deal tail that inflates averages."],
+          ["Exclusions", "cancelled deals, deals missing either date, and spans over 400 days. The current month is partial and can move."],
+        ]}
       >
         <table className="w-full min-w-[560px]">
           <thead>
@@ -640,6 +728,9 @@ export default function OpsScorecardPage() {
       <SectionCard
         title="Operational efficiency — quarterly medians"
         sub={`Median days per step, bucketed by the quarter the step completed, ${py2}Q1 → today. Cancelled deals excluded.`}
+        explain={[
+          ["Same method as the monthly table", "just bucketed by quarter — the long view of the same three legs. Q2'26 is the best quarter on record for all three."],
+        ]}
       >
         <table className="w-full min-w-[860px]">
           <thead>
@@ -682,7 +773,13 @@ export default function OpsScorecardPage() {
             ))}
           </div>
         }
-        sub={`${turnStat === "median" ? "Median (typical deal)" : "Average (includes the stalled-deal tail, so runs higher than the typical deal)"} days per step, sold-year cohorts ${py2} → ${py} → ${cy}. Same-day DA approvals: ${efficiency.sameDayDaPct.py2 ?? "—"}% → ${efficiency.sameDayDaPct.py ?? "—"}% → ${efficiency.sameDayDaPct.cy ?? "—"}%. Sale → DA and Sale → CC only count deals that have reached the milestone, so recent cohorts skew fast.`}
+        sub={`${turnStat === "median" ? "Median (typical deal)" : "Average (includes the stalled-deal tail, so runs higher than the typical deal)"} days per step, sold-year cohorts ${py2} → ${py} → ${cy}. Same-day DA approvals: ${efficiency.sameDayDaPct.py2 ?? "—"}% → ${efficiency.sameDayDaPct.py ?? "—"}% → ${efficiency.sameDayDaPct.cy ?? "—"}%.`}
+        explain={[
+          ["Cohorts", `deals are grouped by the year SOLD (close date), so each column follows one vintage of deals through the process. Cancelled deals and spans over 400 days are excluded.`],
+          ["Median vs Average (toggle)", "median = the typical deal. Average includes the stalled-deal tail so it runs higher — a growing average over a flat median means more stragglers, not slower typical work. Consult → sale shows this sharply: median ~2 weeks, average ~6 weeks, because ~20% of sales close 60+ days after their first consult (the nurture tail)."],
+          ["Survivorship on long legs", `Consult → sale, Sale → DA and Sale → CC only count deals that already reached the end milestone — a ${cy} deal that will CC in November isn't in the ${cy} number yet, so recent cohorts read faster than they'll finish.`],
+          ["Colors", "green = improvement vs the prior cohort (fewer days), red = setback."],
+        ]}
       >
         <table className="w-full min-w-[1200px]">
           <thead>
