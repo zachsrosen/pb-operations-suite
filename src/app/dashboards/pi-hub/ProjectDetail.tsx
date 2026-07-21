@@ -9,6 +9,7 @@ import { AhjPanel } from "./panels/AhjPanel";
 import { UtilityPanel } from "./panels/UtilityPanel";
 import { PlansetPanel } from "./panels/PlansetPanel";
 import { CorrespondencePanel } from "./panels/CorrespondencePanel";
+import { SignalPanel } from "./panels/SignalPanel";
 import { StatusHistoryPanel } from "./panels/StatusHistoryPanel";
 import { ActivityPanel } from "./panels/ActivityPanel";
 import { StatusDropdown } from "./StatusDropdown";
@@ -145,6 +146,13 @@ export function ProjectDetail({
           question the page exists to answer. Collapses to one column when the
           pane is narrow. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Approval-signal callout — above everything: it is the one item on
+            this page that might close the project out in a single click. */}
+        {detail.signal && (
+          <div className="p-4 pb-0">
+            <SignalPanel team={team} dealId={dealId} signal={detail.signal} />
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-3 p-4 xl:grid-cols-2">
           <div className="min-w-0 space-y-3">
             <CollapsibleSection title="Overview">

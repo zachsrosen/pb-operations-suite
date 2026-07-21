@@ -99,6 +99,7 @@ const PUBLIC_API_ROUTES = [
   "/api/hubspot-card/pe",           // HubSpot UI Extension (Participate Energy) — HubSpot signature v3 validated in route
   "/api/webhooks/google-chat", // Google Chat Tech Ops bot — JWT signature validated in route
   "/api/cron/vishtik-id-sync", // Vishtik project-id sync — CRON_SECRET validated in route
+  "/api/cron/approval-scan", // P&I approval-signal inbox scan — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",

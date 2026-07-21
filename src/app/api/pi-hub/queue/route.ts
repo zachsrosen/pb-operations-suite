@@ -7,8 +7,13 @@ import {
 } from "@/lib/pi-hub/access";
 import { parseTeam } from "@/lib/pi-hub/types";
 import { fetchQueue } from "@/lib/pi-hub/queue";
+import {
+  attachSignals,
+  fetchOpenSignals,
+  isApprovalSignalsEnabled,
+} from "@/lib/pi-hub/signals";
 import { appCache } from "@/lib/cache";
-import type { QueueItem } from "@/lib/pi-hub/types";
+import type { QueueItem, Team } from "@/lib/pi-hub/types";
 
 /**
  * A queue build costs 5-9s warm and can exceed the 60s function limit cold:
@@ -67,10 +72,25 @@ export async function GET(req: NextRequest) {
       // failure mode is "data a few minutes older", never a hang.
       void refreshInBackground(team);
     }
-    return NextResponse.json(cached.data);
+    return NextResponse.json(await withSignals(team, cached.data));
   }
 
-  return NextResponse.json(await buildQueueCoalesced(team));
+  return NextResponse.json(await withSignals(team, await buildQueueCoalesced(team)));
+}
+
+/**
+ * Approval-signal join, applied to the response payload AFTER cache retrieval
+ * — never inside the cached build. The queue cache serves stale data for up to
+ * 15 minutes; a badge baked into the cached payload would survive a dismiss or
+ * status write for that whole window. Joining per-request keeps the badge as
+ * fresh as the ApprovalSignal table (the dismiss mutation invalidates the
+ * client query, so the refetch lands here and sees the new state immediately).
+ * Flag off ⇒ payload passes through untouched, no signal query at all.
+ */
+async function withSignals(team: Team, data: CachedQueue): Promise<CachedQueue> {
+  if (!isApprovalSignalsEnabled()) return data;
+  const signals = await fetchOpenSignals(team);
+  return { ...data, queue: attachSignals(data.queue, signals) };
 }
 
 /** Coalesce concurrent cold builds so N users on an empty cache pay once. */

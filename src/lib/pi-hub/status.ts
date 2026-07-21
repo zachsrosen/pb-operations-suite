@@ -10,6 +10,7 @@ import { getActiveEnumOptions } from "@/lib/hubspot-enum-labels";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { prisma } from "@/lib/db";
 import { TEAM_CONFIGS } from "./config";
+import { resolveSignalsOnStatusWrite } from "./signals";
 import type { SetStatusResult, Team } from "./types";
 
 export async function setStatus(opts: {
@@ -44,6 +45,17 @@ export async function setStatus(opts: {
     `pi-hub setStatus ${config.statusProperty}`,
   );
   if (!patchResult.ok) throw new Error(patchResult.error);
+
+  // Auto-resolve any open approval signal proposing exactly this status —
+  // the dropdown and the signal callout share this write path. Flag-gated and
+  // self-swallowing inside (the table may not exist during dark launch); a
+  // write to a different status leaves signals untouched.
+  await resolveSignalsOnStatusWrite({
+    dealId: opts.dealId,
+    team: opts.team,
+    newStatus: opts.newValue,
+    userEmail: opts.userEmail,
+  });
 
   const warnings: string[] = [];
   const noteBody = `<b>Status set via P&I Hub</b><br>${config.label}: ${option.label}<br>By: ${opts.userEmail}`;

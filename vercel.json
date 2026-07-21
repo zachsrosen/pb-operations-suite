@@ -114,6 +114,9 @@
     "src/app/api/cron/zuper-job-backfill/route.ts": {
       "maxDuration": 120
     },
+    "src/app/api/cron/approval-scan/route.ts": {
+      "maxDuration": 120
+    },
     "src/app/api/pe/photo-package/triage/route.ts": {
       "maxDuration": 300
     },
@@ -338,6 +341,10 @@
     {
       "path": "/api/cron/team-activity-digest",
       "schedule": "0 13 * * 1,2"
+    },
+    {
+      "path": "/api/cron/approval-scan",
+      "schedule": "0 */2 * * *"
     }
   ],
   "redirects": [
