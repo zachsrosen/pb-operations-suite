@@ -8,6 +8,12 @@ import {
 import { GROUP_ORDER, type GroupKey, type QueueItem, type Team } from "@/lib/pi-hub/types";
 import { StatusDropdown } from "./StatusDropdown";
 import { ACCENTS, type Accent } from "./accents";
+import {
+  SIGNAL_CHIP_ACTIVE_CLASS,
+  SIGNAL_CHIP_CLASS,
+  SIGNAL_PILL_CLASS,
+  signalLabel,
+} from "./signal-ui";
 
 interface Props {
   items: QueueItem[];
@@ -62,6 +68,9 @@ export function Queue({
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   // Default to the most actionable bucket — new work going out.
   const [activeTab, setActiveTab] = useState<GroupKey>("ready");
+  // "N look approved" chip: narrows the list to rows with an open approval
+  // signal. Client-only state, same as the other filters.
+  const [signalOnly, setSignalOnly] = useState(false);
 
   const locationOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
@@ -87,8 +96,18 @@ export function Queue({
     return opts;
   }, [items]);
 
+  // Count over the FULL list — the chip reads "N look approved" for the team,
+  // not for whatever the other filters left visible.
+  const signalCount = useMemo(
+    () => items.filter((i) => i.signal).length,
+    [items],
+  );
+
   const filtered = useMemo(() => {
     let list = items;
+    if (signalOnly) {
+      list = list.filter((i) => i.signal);
+    }
     if (selectedLocations.length > 0) {
       const set = new Set(selectedLocations);
       list = list.filter((i) => i.pbLocation && set.has(i.pbLocation));
@@ -113,7 +132,7 @@ export function Queue({
       );
     }
     return list;
-  }, [items, search, selectedLocations, selectedLeads]);
+  }, [items, search, selectedLocations, selectedLeads, signalOnly]);
 
   const groups = useMemo(() => {
     const map: Record<GroupKey, QueueItem[]> = {
@@ -170,6 +189,18 @@ export function Queue({
         <span>
           {filtered.length} of {items.length} · stalest first
         </span>
+        {/* Keep the chip visible while the filter is on even if the last
+            signal resolves — otherwise the only way to clear it disappears. */}
+        {(signalCount > 0 || signalOnly) && (
+          <button
+            type="button"
+            onClick={() => setSignalOnly((v) => !v)}
+            aria-pressed={signalOnly}
+            className={signalOnly ? SIGNAL_CHIP_ACTIVE_CLASS : SIGNAL_CHIP_CLASS}
+          >
+            {signalCount} look{signalCount === 1 ? "s" : ""} approved
+          </button>
+        )}
       </div>
       {/* Wraps rather than scrolls: five tabs plus counts are wider than the
           fixed 420px column, and a scrolling strip hides whole tabs off the
@@ -269,6 +300,11 @@ export function Queue({
                     </div>
                   </button>
                   <div className="absolute right-3 top-2 flex flex-col items-end gap-1">
+                    {item.signal && (
+                      <span className={SIGNAL_PILL_CLASS}>
+                        {signalLabel(item.signal.signalType)}
+                      </span>
+                    )}
                     {item.isStale && (
                       <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
                         Stale

@@ -3,6 +3,7 @@
 // export (parseTeam) is a pure string narrowing with no server dependencies.
 import type { AHJRecord, UtilityRecord } from "@/lib/hubspot-custom-objects";
 import type { SharedInboxThread } from "@/lib/gmail-shared-inbox";
+import type { SignalType } from "@/lib/approval-scan/classify";
 
 export type Team = "permit" | "ic" | "pto";
 
@@ -17,6 +18,33 @@ export function parseTeam(value: string | null): Team | null {
 
 export type GroupKey = "ready" | "rejections" | "resubmit" | "waiting" | "other";
 export const GROUP_ORDER: readonly GroupKey[] = ["ready", "rejections", "resubmit", "waiting", "other"];
+
+/** Open approval-signal summary attached to a queue row (flag-gated: the
+ *  field is only joined when NEXT_PUBLIC_APPROVAL_SIGNALS_ENABLED is on). */
+export interface QueueSignal {
+  signalType: SignalType;
+  confidence: "high" | "medium";
+}
+
+/** Evidence subset the UI renders — mirrors the ApprovalSignal.evidence Json. */
+export interface SignalEvidenceView {
+  quote: string;
+  subject: string;
+  mailbox: string;
+  threadId: string;
+  messageId: string;
+  receivedAt: string;
+}
+
+/** Open approval signal on the project detail payload. `proposedStatus` is the
+ *  HubSpot VALUE the one-click write sends; display `proposedStatusLabel`. */
+export interface DetailSignal {
+  signalType: SignalType;
+  proposedStatus: string;
+  proposedStatusLabel: string;
+  confidence: "high" | "medium";
+  evidence: SignalEvidenceView;
+}
 
 export interface QueueItem {
   dealId: string;
@@ -35,6 +63,10 @@ export interface QueueItem {
   leadOwnerId: string | null;
   pm: string | null;
   amount: number | null;
+  /** Open approval signal, joined in the queue ROUTE (not the cached build) so
+   *  a dismiss/resolve never shows a stale badge for the cache's stale window.
+   *  Absent when the signals flag is off. */
+  signal?: QueueSignal | null;
 }
 
 export interface SetStatusResult {
@@ -91,6 +123,9 @@ export interface ProjectDetail {
    *  Xcel chatter notifications share one subject line, so Gmail threads
    *  many projects' notifications together. */
   correspondenceIdentifiers: string[];
+  /** Open approval signal for this deal+team — drives the detail callout.
+   *  Absent/null when the signals flag is off or nothing is flagged. */
+  signal?: DetailSignal | null;
   statusHistory: Array<{
     property: string;
     value: string | null;

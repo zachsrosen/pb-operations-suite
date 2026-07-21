@@ -27,7 +27,8 @@ import {
 import { TEAM_CONFIGS, type TeamConfig } from "./config";
 import { normalizeDriveFolderUrl } from "./drive";
 import { resolveLeadName } from "./leads";
-import type { ProjectDetail, Team } from "./types";
+import { fetchOpenSignalForDeal } from "./signals";
+import type { DetailSignal, ProjectDetail, Team } from "./types";
 
 // Convenience re-export — the canonical definition lives in types.ts (an
 // import-free-at-runtime file) so client code can import the shape without
@@ -119,10 +120,22 @@ export async function fetchDetail(
   ]);
 
   const status = props[config.statusProperty] ?? "";
-  const statusLabel = labelFor(
-    await getEnumLabelMap(config.statusProperty),
-    status,
-  );
+  const statusLabels = await getEnumLabelMap(config.statusProperty);
+  const statusLabel = labelFor(statusLabels, status);
+
+  // Open approval signal for the callout — fetchOpenSignalForDeal is flag-
+  // gated internally (null while the feature is dark). proposedStatus stays a
+  // VALUE for the write path; the label is resolved here for display.
+  const openSignal = await fetchOpenSignalForDeal(team, dealId);
+  const signal: DetailSignal | null = openSignal
+    ? {
+        signalType: openSignal.signalType,
+        proposedStatus: openSignal.proposedStatus,
+        proposedStatusLabel: labelFor(statusLabels, openSignal.proposedStatus),
+        confidence: openSignal.confidence,
+        evidence: openSignal.evidence,
+      }
+    : null;
 
   const pmId = props.project_manager;
   const resolvedPm = pmId ? (ownerMap.get(pmId) ?? pmId) : null;
@@ -227,6 +240,7 @@ export async function fetchDetail(
     correspondenceThreads,
     correspondenceInbox,
     correspondenceIdentifiers: identifiers,
+    signal,
     statusHistory,
     activity,
   };

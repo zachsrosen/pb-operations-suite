@@ -5023,6 +5023,39 @@ model ZuperStatusDrift {
   @@index([category])
 }
 
+/// P&I hub approval-signal drift table — one row per (deal, team, signalType).
+/// Written by /api/cron/approval-scan; flag-only (never writes HubSpot status).
+/// See docs/superpowers/specs/2026-07-20-approval-signals-design.md.
+model ApprovalSignal {
+  id                  String    @id @default(cuid())
+  hubspotDealId       String
+  team                String // "permit" | "ic" | "pto"
+  signalType          String // permit_issued | ic_approved | pto_granted | xcel_photos_approved | inspection_passed
+  actualStatus        String // HubSpot VALUE at detection time
+  proposedStatus      String // HubSpot VALUE the callout offers
+  confidence          String // "high" (rules-matched template) | "medium" (LLM)
+  evidence            Json // { messageId, threadId, mailbox, subject, quote, receivedAt, reasoning, citedIdentifiers }
+  detectedAt          DateTime  @default(now())
+  status              String // OPEN | RESOLVED | DISMISSED | MUTED
+  dismissedMessageIds String[]
+  dismissCount        Int       @default(0)
+  resolvedAt          DateTime?
+  resolvedBy          String?
+
+  @@unique([hubspotDealId, team, signalType])
+  @@index([status])
+}
+
+/// Per-message classifier verdict cache — a Gmail messageId is classified at
+/// most once (LLM calls are never re-paid across runs or deals).
+model ApprovalScanVerdict {
+  messageId    String   @id
+  verdict      String // approved | conditional_approved | approved_pending_signatures | pto_granted | photos_approved | inspection_passed | rejected | info_needed | other
+  confidence   String
+  quote        String? // grounding quote from the classifier, reused on cache hits
+  classifiedAt DateTime @default(now())
+}
+
 model ShopHealthBottleneck {
   id         String   @id @default(cuid())
   location   String

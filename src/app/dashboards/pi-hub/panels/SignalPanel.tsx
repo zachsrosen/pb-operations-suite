@@ -1,0 +1,284 @@
+"use client";
+
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/contexts/ToastContext";
+import type { DetailSignal, Team } from "@/lib/pi-hub/types";
+import type { SharedInboxThreadMessage } from "@/lib/gmail-shared-inbox";
+import { signalLabel } from "../signal-ui";
+
+interface OptionsResponse {
+  options: Array<{ value: string; label: string }>;
+  terminalStatuses: string[];
+}
+
+function formatReceived(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Inline evidence viewer — fetches the thread through the same endpoint (and
+ * React Query key) the Correspondence panel uses, so opening it here warms the
+ * cache there and vice versa. Shows only the evidence message when it can be
+ * found in the thread; Gmail bundles other projects' chatter into the same
+ * thread, so rendering everything would bury the sentence that flagged.
+ */
+function EvidenceMessage({
+  team,
+  threadId,
+  inbox,
+  messageId,
+}: {
+  team: Team;
+  threadId: string;
+  inbox: string;
+  messageId: string;
+}) {
+  const query = useQuery<{ messages: SharedInboxThreadMessage[] }>({
+    queryKey: queryKeys.piHub.thread(team, threadId),
+    queryFn: async () => {
+      const r = await fetch(
+        `/api/pi-hub/thread/${encodeURIComponent(threadId)}?team=${team}&inbox=${encodeURIComponent(inbox)}`,
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (query.isPending) {
+    return <div className="text-muted mt-2 text-xs">Loading email…</div>;
+  }
+  const messages = query.data?.messages ?? [];
+  if (query.isError || messages.length === 0) {
+    return (
+      <div className="text-muted mt-2 text-xs">
+        Couldn&apos;t load this email — see the Correspondence section below.
+      </div>
+    );
+  }
+  const shown = messages.filter((m) => m.id === messageId);
+  const list = shown.length > 0 ? shown : messages;
+
+  return (
+    <div className="border-t-border mt-2 space-y-3 border-t pt-2">
+      {list.map((m) => (
+        <div key={m.id} className="text-xs">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="font-medium">{m.from ?? "—"}</span>
+            <span className="text-muted shrink-0">{formatReceived(m.date)}</span>
+          </div>
+          {m.to && <div className="text-muted">to {m.to}</div>}
+          <pre className="text-foreground/90 mt-1.5 max-h-72 overflow-y-auto font-sans whitespace-pre-wrap break-words">
+            {m.bodyText || "(no readable body)"}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Approval-signal callout at the top of the project detail. Read side of the
+ * three-strikes flow: Dismiss strikes the evidence messageId (3rd distinct
+ * dismissal mutes the deal); "Set status" goes through the EXISTING
+ * /api/pi-hub/status write path — same endpoint as StatusDropdown, including
+ * the terminal-status confirm rule — and the server auto-resolves the signal
+ * when the write matches proposedStatus. No new write path here.
+ */
+export function SignalPanel({
+  team,
+  dealId,
+  signal,
+}: {
+  team: Team;
+  dealId: string;
+  signal: DetailSignal;
+}) {
+  const queryClient = useQueryClient();
+  const { addToast } = useToast();
+  const [showEmail, setShowEmail] = useState(false);
+  const [confirmTerminal, setConfirmTerminal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { evidence } = signal;
+
+  // Loaded up-front (unlike the dropdown's lazy fetch): the primary button
+  // can't know whether the proposed status is terminal until options land.
+  const optionsQuery = useQuery<OptionsResponse>({
+    queryKey: queryKeys.piHub.options(team),
+    queryFn: async () => {
+      const r = await fetch(`/api/pi-hub/options?team=${team}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!r.ok) throw new Error("Failed to load status options");
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+  const isTerminal = (optionsQuery.data?.terminalStatuses ?? []).includes(
+    signal.proposedStatus,
+  );
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: queryKeys.piHub.queue(team) });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.piHub.project(team, dealId),
+    });
+  }
+
+  const setStatusMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/pi-hub/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ team, dealId, status: signal.proposedStatus }),
+      });
+      const data = (await r.json().catch(() => ({}))) as {
+        warnings?: string[];
+        error?: string;
+      };
+      if (!r.ok) throw new Error(data.error ?? "Failed to update status");
+      return data;
+    },
+    onSuccess: (data) => {
+      const w = data.warnings ?? [];
+      if (w.length > 0) {
+        addToast({
+          type: "warning",
+          title: "Status saved, with warnings",
+          message: w.join("; "),
+        });
+      }
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: queryKeys.piHub.todayCount() });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to update status");
+    },
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/pi-hub/signals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          team,
+          dealId,
+          signalType: signal.signalType,
+          action: "dismiss",
+        }),
+      });
+      const data = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok) throw new Error(data.error ?? "Failed to dismiss");
+      return data;
+    },
+    onSuccess: invalidate,
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Failed to dismiss");
+    },
+  });
+
+  const busy = setStatusMutation.isPending || dismissMutation.isPending;
+
+  function handleSetStatus() {
+    setError(null);
+    if (isTerminal) setConfirmTerminal(true);
+    else setStatusMutation.mutate();
+  }
+
+  return (
+    <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+          {signalLabel(signal.signalType)}
+        </span>
+        <span className="text-muted text-xs">
+          Suggested status: {signal.proposedStatusLabel || signal.proposedStatus}
+          {signal.confidence === "medium" ? " · AI-classified" : ""}
+        </span>
+      </div>
+
+      <blockquote className="mt-3 border-l-2 border-emerald-500 pl-3 text-sm italic">
+        &ldquo;{evidence.quote || evidence.subject || "(no quote captured)"}&rdquo;
+      </blockquote>
+      <div className="text-muted mt-1.5 text-xs">
+        Received {formatReceived(evidence.receivedAt)} in{" "}
+        <span className="font-medium">{evidence.mailbox || "shared inbox"}</span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleSetStatus}
+          disabled={busy || optionsQuery.isLoading}
+          className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+        >
+          {setStatusMutation.isPending && (
+            <span
+              className="inline-block h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+              aria-label="Saving"
+            />
+          )}
+          Set status: {signal.proposedStatusLabel || signal.proposedStatus}
+        </button>
+        {evidence.threadId && evidence.mailbox && (
+          <button
+            type="button"
+            onClick={() => setShowEmail((v) => !v)}
+            aria-expanded={showEmail}
+            className="bg-surface-2 text-foreground hover:bg-surface-elevated rounded-md px-3 py-1 text-xs font-medium transition-colors"
+          >
+            {showEmail ? "Hide email" : "View email"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            dismissMutation.mutate();
+          }}
+          disabled={busy}
+          className="text-muted hover:text-foreground rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-60"
+        >
+          {dismissMutation.isPending ? "Dismissing…" : "Dismiss"}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</div>
+      )}
+
+      {showEmail && (
+        <EvidenceMessage
+          team={team}
+          threadId={evidence.threadId}
+          inbox={evidence.mailbox}
+          messageId={evidence.messageId}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmTerminal}
+        title="Set terminal status?"
+        message={`Set status to "${signal.proposedStatusLabel || signal.proposedStatus}"? This marks the ${team.toUpperCase()} work complete for this project.`}
+        confirmLabel="Set status"
+        onConfirm={() => {
+          setConfirmTerminal(false);
+          setStatusMutation.mutate();
+        }}
+        onCancel={() => setConfirmTerminal(false)}
+      />
+    </div>
+  );
+}
