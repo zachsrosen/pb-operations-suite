@@ -464,10 +464,10 @@ export default function OpsScorecardPage() {
           color="orange"
         />
         <StatCard
-          label="Net sales needed to sustain CC pace"
+          label="Total signed sales needed to sustain CC pace"
           value={`${$(capacity.sustainSalesPerMo)}/mo`}
-          subtitle={`selling ${$(capacity.netSalesPacePerMo)}/mo net (${$(capacity.grossSalesPacePerMo)} total) · burning ${$(capacity.burnPerMo)}/mo (${meta.l3mLabel})`}
-          color="red"
+          subtitle={`signing ${$(capacity.grossSalesPacePerMo)}/mo total (${$(capacity.netSalesPacePerMo)} net) · burning ${$(capacity.burnPerMo)}/mo (${meta.l3mLabel})`}
+          color={(capacity.grossSalesPacePerMo ?? 0) < (capacity.sustainSalesPerMo ?? Infinity) ? "red" : "green"}
         />
         <StatCard
           label="Live backlog (no CC yet)"
@@ -480,7 +480,7 @@ export default function OpsScorecardPage() {
         <Explain
           items={[
             ["Projected CC revenue", `${cy} completed so far + 80–90% of the live backlog converting + sales still to close that can complete in-year (net sales pace × months before October × conversion rate). A range because backlog conversion isn't certain.`],
-            ["Sustain rate", "current CC burn ÷ conversion rate — the net sales/month needed to keep completions flat, because only ~81% of sold dollars ever reach CC. Selling below it means today's completion pace is borrowed from the backlog."],
+            ["Sustain rate", "current CC burn ÷ conversion rate — the TOTAL signed sales/month needed to keep completions flat, because conversion divides by all sold dollars (only ~81% of what's signed ever reaches CC). Compare it against the total signing pace: comparing against net would double-count cancellations. Signing below sustain means today's completion pace is borrowed from the backlog."],
             ["Live backlog", "open deals between sale and construction-complete. Cover = backlog ÷ burn: how long completions can hold with zero new sales. Conversion and its median days come from the fully-baked cohort sold Jan–Sep last year."],
           ]}
         />
@@ -586,7 +586,7 @@ export default function OpsScorecardPage() {
           ["CC pace /mo", `${cy} completed revenue ÷ months elapsed — the current burn rate.`],
           ["Cover", "backlog ÷ CC pace — months the office can sustain its pace with zero new sales."],
           ["Sustain /mo", "CC pace ÷ conversion — the net sales needed per month to keep completions flat, since only [conversion]% of sold dollars ever complete."],
-          ["Net selling /mo", `actual net sales per month over ${meta.l3mLabel} (green = at/above sustain, red = below). The muted 'total' line includes deals that later cancelled.`],
+          ["Signing /mo (total)", `actual signed sales per month over ${meta.l3mLabel} — total basis, matching sustain (green = at/above sustain, red = below). The muted line is net of already-fallen-out deals. Sustain is total-basis because conversion divides by all sold dollars; comparing net against it would double-count cancellations.`],
         ]}
       >
         <table className="w-full min-w-[720px]">
@@ -598,7 +598,7 @@ export default function OpsScorecardPage() {
               <th className={thR}>CC pace /mo</th>
               <th className={thR}>Cover</th>
               <th className={thR}>Sustain /mo</th>
-              <th className={thR}>Net selling /mo</th>
+              <th className={thR}>Signing /mo (total)</th>
             </tr>
           </thead>
           <tbody>
@@ -614,10 +614,10 @@ export default function OpsScorecardPage() {
                 <td className={tdR}>{o.coverMonths === null ? "—" : `~${o.coverMonths} mo`}</td>
                 <td className={tdR}>{$(o.sustainPerMo)}</td>
                 <td className={tdR}>
-                  <div className={(o.sustainPerMo !== null && o.sellingPacePerMo !== null && o.sellingPacePerMo < o.sustainPerMo ? "text-red-400 font-semibold" : "text-emerald-400")}>
-                    {$(o.sellingPacePerMo)}
+                  <div className={(o.sustainPerMo !== null && o.grossSellingPacePerMo !== null && o.grossSellingPacePerMo < o.sustainPerMo ? "text-red-400 font-semibold" : "text-emerald-400")}>
+                    {$(o.grossSellingPacePerMo)}
                   </div>
-                  <div className="text-[11px] text-muted">{$(o.grossSellingPacePerMo)} total</div>
+                  <div className="text-[11px] text-muted">{$(o.sellingPacePerMo)} net</div>
                 </td>
               </tr>
             ))}

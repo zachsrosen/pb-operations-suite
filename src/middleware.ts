@@ -78,6 +78,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/product-sync", // Catalog product sync — CRON_SECRET validated in route
   "/api/cron/team-activity-digest", // Weekly team-activity report card email — CRON_SECRET validated in route
   "/api/cron/office-performance-warm", // Office performance cache warmer — CRON_SECRET validated in route
+  "/api/cron/scorecard-warm", // Ops scorecard cache warmer — CRON_SECRET validated in route
   "/api/cron/powerhub-assets",     // PowerHub asset sync — CRON_SECRET validated in route
   "/api/cron/powerhub-telemetry",  // PowerHub telemetry poll — CRON_SECRET validated in route
   "/api/cron/powerhub-alerts",     // PowerHub alert poll — CRON_SECRET validated in route
@@ -112,6 +113,8 @@ const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/pm-flags",
   // Office performance cache warmer — cron self-fetches to warm the API lambda.
   "/api/office-performance",
+  // Ops scorecard cache warmer — same self-fetch pattern.
+  "/api/ops-scorecard",
   // PowerHub geo-coord ingest — used for one-shot fleet imports + future
   // bookmarklet/admin-UI flow. Route validates payload with Zod + role check
   // is skipped when machine-authenticated.
