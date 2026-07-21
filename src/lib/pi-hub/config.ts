@@ -1,5 +1,19 @@
 import type { GroupKey, Team } from "./types";
 
+/**
+ * Extra "Inspection" queue section: deals whose team status marks the work
+ * done (`statusValue` — a TERMINAL status the main queue query excludes) but
+ * the follow-on team hasn't started (`nextStatusProperty` has no value at
+ * all). Permit-only today: permit issued, waiting on/through inspection, no
+ * pto_status yet — the population inspection_passed approval signals flag.
+ */
+export interface InspectionSectionConfig {
+  /** HubSpot VALUE (not label) of the team's work-complete status. */
+  statusValue: string;
+  /** Next team's status property — ANY value there means that team owns the deal. */
+  nextStatusProperty: string;
+}
+
 export interface TeamConfig {
   key: Team;
   label: string;
@@ -11,6 +25,8 @@ export interface TeamConfig {
   leadLabel: string;
   terminalStatuses: readonly string[];
   groups: Partial<Record<GroupKey, readonly string[]>>;
+  /** Absent for teams without an inspection section (ic, pto). */
+  inspection?: InspectionSectionConfig;
   inboxTeam: "permit" | "ic";
   folderProperty: string;
   folderLabel: string;
@@ -32,6 +48,11 @@ export const TEAM_CONFIGS: Record<Team, TeamConfig> = {
       // As-Built Revision Needed / In Progress, As-Built Revision Resubmitted,
       // Waiting On Information, Permit Issued Pending Payment, Submitted To Customer
     },
+    // Inspection section: permit issued ("Complete", labelled "Permit
+    // Issued") with NO pto_status at all — any pto_status means the PTO team
+    // already owns the deal (Zach 2026-07-20). Mirrors the approval-scan
+    // inspection candidate filter so inspection_passed signals land on rows.
+    inspection: { statusValue: "Complete", nextStatusProperty: "pto_status" },
     inboxTeam: "permit",
     folderProperty: "permit_documents", folderLabel: "Permit Folder",
     domainPanel: "ahj",
@@ -85,4 +106,26 @@ export function groupForStatus(config: TeamConfig, status: string): GroupKey {
     if (statuses?.includes(status)) return group as GroupKey;
   }
   return "other";
+}
+
+/**
+ * Group assignment for a fetched queue deal from its raw HubSpot properties.
+ * Inspection rows: team status equals the section's complete value AND the
+ * next team's status property is blank (HubSpot reads property-missing as
+ * null or empty string, both falsy here). Everything else falls through to
+ * the status→group map — teams without an inspection section are unchanged.
+ */
+export function groupForQueueDeal(
+  config: TeamConfig,
+  props: Record<string, string | null>,
+): GroupKey {
+  const status = props[config.statusProperty] ?? "";
+  if (
+    config.inspection &&
+    status === config.inspection.statusValue &&
+    !props[config.inspection.nextStatusProperty]
+  ) {
+    return "inspection";
+  }
+  return groupForStatus(config, status);
 }

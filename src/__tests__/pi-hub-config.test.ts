@@ -1,4 +1,4 @@
-import { TEAM_CONFIGS, groupForStatus } from "@/lib/pi-hub/config";
+import { TEAM_CONFIGS, groupForQueueDeal, groupForStatus } from "@/lib/pi-hub/config";
 import { ACCENT_FOR_TEAM } from "@/app/dashboards/pi-hub/accents";
 import { LIVE_STATUS_OPTIONS } from "./fixtures/pi-status-options";
 
@@ -41,5 +41,53 @@ describe("TEAM_CONFIGS validity", () => {
   }
   it("unknown statuses fall to 'other'", () => {
     expect(groupForStatus(TEAM_CONFIGS.permit, "Some Future Status")).toBe("other");
+  });
+
+  it("inspection-section status is terminal (never double-fetched by the main query)", () => {
+    for (const config of Object.values(TEAM_CONFIGS)) {
+      if (config.inspection) {
+        expect(config.terminalStatuses).toContain(config.inspection.statusValue);
+      }
+    }
+  });
+});
+
+describe("groupForQueueDeal", () => {
+  const permit = TEAM_CONFIGS.permit;
+
+  it("permit Complete with no pto_status is an inspection row", () => {
+    expect(
+      groupForQueueDeal(permit, { permitting_status: "Complete" }),
+    ).toBe("inspection");
+    expect(
+      groupForQueueDeal(permit, { permitting_status: "Complete", pto_status: null }),
+    ).toBe("inspection");
+    // HubSpot renders property-missing as an empty string on some reads.
+    expect(
+      groupForQueueDeal(permit, { permitting_status: "Complete", pto_status: "" }),
+    ).toBe("inspection");
+  });
+
+  it("any pto_status means the PTO team owns the deal — not inspection", () => {
+    expect(
+      groupForQueueDeal(permit, {
+        permitting_status: "Complete",
+        pto_status: "PTO Waiting on Interconnection Approval",
+      }),
+    ).toBe("other");
+  });
+
+  it("non-terminal permit statuses group exactly as groupForStatus does", () => {
+    expect(
+      groupForQueueDeal(permit, {
+        permitting_status: "Submitted to AHJ",
+        pto_status: null,
+      }),
+    ).toBe("waiting");
+  });
+
+  it("teams without an inspection section never produce inspection rows", () => {
+    expect(groupForQueueDeal(TEAM_CONFIGS.ic, { interconnection_status: "Application Approved" })).toBe("other");
+    expect(groupForQueueDeal(TEAM_CONFIGS.pto, { pto_status: "PTO" })).toBe("other");
   });
 });

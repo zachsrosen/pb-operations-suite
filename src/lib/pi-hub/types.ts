@@ -16,8 +16,11 @@ export function parseTeam(value: string | null): Team | null {
   return value === "permit" || value === "ic" || value === "pto" ? value : null;
 }
 
-export type GroupKey = "ready" | "rejections" | "resubmit" | "waiting" | "other";
-export const GROUP_ORDER: readonly GroupKey[] = ["ready", "rejections", "resubmit", "waiting", "other"];
+// "inspection" is permit-only today: permit-issued deals the PTO team hasn't
+// picked up yet (no pto_status). It sits LAST so the other teams' tab strips
+// are byte-identical — the Queue UI hides the tab when a team has no rows.
+export type GroupKey = "ready" | "rejections" | "resubmit" | "waiting" | "other" | "inspection";
+export const GROUP_ORDER: readonly GroupKey[] = ["ready", "rejections", "resubmit", "waiting", "other", "inspection"];
 
 /** Open approval-signal summary attached to a queue row (flag-gated: the
  *  field is only joined when NEXT_PUBLIC_APPROVAL_SIGNALS_ENABLED is on). */

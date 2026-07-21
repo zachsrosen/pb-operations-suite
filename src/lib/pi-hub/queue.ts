@@ -15,7 +15,7 @@ import {
 } from "@/lib/daily-focus/config";
 import { buildOwnerMap } from "@/lib/idr-meeting";
 import { buildStageDisplayMap } from "@/lib/daily-focus/format";
-import { TEAM_CONFIGS, groupForStatus } from "./config";
+import { TEAM_CONFIGS, groupForQueueDeal } from "./config";
 import { resolveLeadName } from "./leads";
 import type { QueueItem, Team } from "./types";
 
@@ -25,6 +25,13 @@ import type { QueueItem, Team } from "./types";
  * keeps returning a cursor; a hit is logged rather than silently truncating.
  */
 const MAX_QUEUE_PAGES = 10;
+
+/**
+ * Cap on the inspection-section fetch (permit: permit issued, no pto_status).
+ * One 100-deal page covers today's backlog with headroom; a hit is logged so
+ * the cap gets raised deliberately rather than truncating silently.
+ */
+const MAX_INSPECTION_DEALS = 100;
 
 /** Returns every non-terminal deal for the team — grouped tabs plus "other". */
 export async function fetchQueue(team: Team): Promise<QueueItem[]> {
@@ -59,6 +66,26 @@ export async function fetchQueue(team: Team): Promise<QueueItem[]> {
     },
   ];
 
+  // Shared by the main fetch and the inspection-section fetch so the mapped
+  // rows are shaped identically.
+  const properties = [
+    "dealname",
+    "address_line_1",
+    "city",
+    "state",
+    "pb_location",
+    config.statusProperty,
+    "dealstage",
+    "pipeline",
+    "hs_lastmodifieddate",
+    "amount",
+    "hubspot_owner_id",
+    "project_manager",
+    config.leadNameProperty,
+    config.roleProperty,
+    "calculated_system_size__kwdc_",
+  ];
+
   // HubSpot search returns at most 200 results per page. The IC queue is
   // near the cap today, so page with the `after` cursor rather than
   // silently dropping the tail once a queue grows past 200.
@@ -71,23 +98,7 @@ export async function fetchQueue(team: Team): Promise<QueueItem[]> {
   do {
     const response = await searchWithRetry({
       filterGroups: [{ filters }],
-      properties: [
-        "dealname",
-        "address_line_1",
-        "city",
-        "state",
-        "pb_location",
-        config.statusProperty,
-        "dealstage",
-        "pipeline",
-        "hs_lastmodifieddate",
-        "amount",
-        "hubspot_owner_id",
-        "project_manager",
-        config.leadNameProperty,
-        config.roleProperty,
-        "calculated_system_size__kwdc_",
-      ],
+      properties,
       limit: 200,
       sorts: ["hs_lastmodifieddate"],
       ...(after ? { after } : {}),
@@ -110,6 +121,67 @@ export async function fetchQueue(team: Team): Promise<QueueItem[]> {
     console.warn(
       `[pi-hub] ${team} queue hit the ${MAX_QUEUE_PAGES}-page cap (${searchResults.length} deals); results are truncated`,
     );
+  }
+
+  // Inspection section (permit only today): deals whose permit is issued
+  // (status "Complete" — TERMINAL, so the main query above excludes them) but
+  // no pto_status exists yet, i.e. nobody downstream owns the deal. Surfaced
+  // as real queue rows so inspection_passed approval signals land on a row
+  // the team can open. Same filter shape as the approval-scan candidate
+  // query (api/cron/approval-scan).
+  if (config.inspection) {
+    const inspectionResponse = await searchWithRetry({
+      filterGroups: [
+        {
+          filters: [
+            {
+              propertyName: "pipeline",
+              operator: FilterOperatorEnum.In,
+              values: INCLUDED_PIPELINES,
+            },
+            {
+              propertyName: config.statusProperty,
+              operator: FilterOperatorEnum.Eq,
+              value: config.inspection.statusValue,
+            },
+            {
+              // Empty-string enum values read as property-missing, so this
+              // also excludes blank (not just absent) statuses.
+              propertyName: config.inspection.nextStatusProperty,
+              operator: FilterOperatorEnum.NotHasProperty,
+            },
+            {
+              propertyName: "dealstage",
+              operator: FilterOperatorEnum.NotIn,
+              values: EXCLUDED_STAGES,
+            },
+          ],
+        },
+      ],
+      // The next-status property rides along so groupForQueueDeal can apply
+      // the same missing-pto guard the filter did (defense in depth).
+      properties: [...properties, config.inspection.nextStatusProperty],
+      limit: MAX_INSPECTION_DEALS,
+      sorts: ["hs_lastmodifieddate"],
+    } as unknown as Parameters<typeof searchWithRetry>[0]);
+
+    const inspectionResults = (inspectionResponse.results ?? []) as Array<{
+      id: string;
+      properties?: Record<string, string | null>;
+    }>;
+    // The main query excludes terminal statuses, so overlap is impossible —
+    // but guard anyway so a config change can't produce duplicate rows.
+    const seen = new Set(searchResults.map((d) => d.id));
+    searchResults.push(...inspectionResults.filter((d) => !seen.has(d.id)));
+    if (
+      (inspectionResponse as { paging?: { next?: { after?: string } } }).paging
+        ?.next?.after
+    ) {
+      // Never truncate silently — if this fires, raise MAX_INSPECTION_DEALS.
+      console.warn(
+        `[pi-hub] ${team} inspection section hit the ${MAX_INSPECTION_DEALS}-deal cap; results are truncated`,
+      );
+    }
   }
 
   // Resolve owner-id + dealstage-id properties to display names in parallel.
@@ -158,7 +230,11 @@ export async function fetchQueue(team: Team): Promise<QueueItem[]> {
       status,
       statusLabel: labelFor(statusLabels, status),
       dealStage: props.dealstage ? (stageMap[props.dealstage] ?? null) : null,
-      group: groupForStatus(config, status),
+      // Inspection rows (permit-Complete, no pto_status) group "inspection";
+      // everything else via the config status→group map. Safe on main-query
+      // rows even though they don't carry pto_status: their status can never
+      // equal the terminal inspection statusValue.
+      group: groupForQueueDeal(config, props),
       daysInStatus,
       isStale: daysInStatus !== null && daysInStatus > STALE_THRESHOLD_DAYS,
       lead: resolveLeadName(config, props, ownerMap),
