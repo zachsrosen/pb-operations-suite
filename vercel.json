@@ -140,6 +140,9 @@
     },
     "src/app/api/ops-scorecard/route.ts": {
       "maxDuration": 120
+    },
+    "src/app/api/cron/scorecard-warm/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -362,6 +365,10 @@
     {
       "path": "/api/cron/consult-stamp",
       "schedule": "40 9 * * *"
+    },
+    {
+      "path": "/api/cron/scorecard-warm",
+      "schedule": "*/25 * * * *"
     }
   ],
   "redirects": [
