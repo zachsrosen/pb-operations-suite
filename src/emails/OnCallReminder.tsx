@@ -24,7 +24,7 @@ const VARIANT_META: Record<ReminderVariant, { badge: string; badgeGradient: stri
     badge: "ON CALL THIS WEEK",
     badgeGradient: "linear-gradient(to right, #10b981, #34d399)",
     title: "You're on call this week",
-    blurb: "Your on-call shift starts today. The shifts are on your Google Calendar with reminders before each one.",
+    blurb: "Your on-call days this week are below. The shifts are on your Google Calendar with reminders before each one.",
   },
   "week-ahead": {
     badge: "ON CALL NEXT WEEK",
