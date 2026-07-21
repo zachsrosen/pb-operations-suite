@@ -95,10 +95,12 @@ async function withSignals(team: Team, data: CachedQueue): Promise<CachedQueue> 
   const signals = await fetchOpenSignals(team);
   const queue = attachSignals(data.queue, signals);
 
-  // Signal-only rows: inspection_passed flags deals with NO pto_status, which
-  // the queue's HasProperty filter excludes — without this append the badge
-  // would exist in the table but never render anywhere. Fetched per-request
-  // (2-3 deals, batch read) so a dismiss drops the row on the next refetch.
+  // Signal-only rows: fallback for any future signal type whose deals live
+  // outside the queue entirely. inspection_passed deals are REAL queue rows
+  // now (the permit build's inspection section), so they land in `present`
+  // and skip this path — apart from a cache built before that section
+  // existed, which self-heals on the next rebuild. The `present` set keeps
+  // the append duplicate-free either way.
   const present = new Set(queue.map((q) => q.dealId));
   const orphanIds = [...signals.keys()].filter((id) => !present.has(id));
   if (orphanIds.length > 0) {
@@ -108,8 +110,10 @@ async function withSignals(team: Team, data: CachedQueue): Promise<CachedQueue> 
   return { ...data, queue };
 }
 
-/** Minimal QueueItem rows for deals carrying an open signal but absent from
- *  the cached queue (no team status yet). Shown in the "ready" group — the
+/** Fallback: minimal QueueItem rows for deals carrying an open signal but
+ *  absent from the cached queue (no team status yet). Every CURRENT signal
+ *  type's deals are real queue rows, so this only fires for a future signal
+ *  type or a stale pre-deploy cache. Shown in the "ready" group — the
  *  signal's whole point is that these deals are ready to be picked up. */
 async function fetchSignalOnlyRows(
   team: Team,

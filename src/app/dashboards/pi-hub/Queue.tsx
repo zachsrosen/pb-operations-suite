@@ -42,6 +42,7 @@ const GROUP_LABELS: Record<GroupKey, string> = {
   resubmit: "Resubmit",
   waiting: "Waiting",
   other: "Other",
+  inspection: "Inspection",
 };
 
 /** Sentinel value representing unassigned deals in the lead filter. */
@@ -141,6 +142,7 @@ export function Queue({
       resubmit: [],
       waiting: [],
       other: [],
+      inspection: [],
     };
     for (const item of filtered) {
       // Fall back to "other" rather than throwing if the server ever returns a
@@ -150,7 +152,27 @@ export function Queue({
     return map;
   }, [filtered]);
 
-  const activeItems = groups[activeTab];
+  // The Inspection tab only renders for teams whose queue actually carries
+  // inspection rows (permit today) — the other teams keep their five-tab
+  // strip untouched. Gated on the FULL item list, not `filtered`, so a
+  // search/filter emptying the group shows a 0 badge (like every other tab)
+  // instead of making the tab itself vanish.
+  const hasInspection = useMemo(
+    () => items.some((i) => i.group === "inspection"),
+    [items],
+  );
+  const visibleGroups = hasInspection
+    ? GROUP_ORDER
+    : GROUP_ORDER.filter((k) => k !== "inspection");
+
+  // The Queue is NOT remounted on a team switch, so switching away from a
+  // team with inspection rows could strand the active tab on a tab that no
+  // longer renders. Derived (not reset in an effect): render as if Ready
+  // were active; if inspection rows return, the stored selection revives.
+  const effectiveTab: GroupKey =
+    activeTab === "inspection" && !hasInspection ? "ready" : activeTab;
+
+  const activeItems = groups[effectiveTab];
 
   return (
     // min-w-0 so no child (the tab strip) can force this past the 420px column.
@@ -202,17 +224,18 @@ export function Queue({
           </button>
         )}
       </div>
-      {/* Wraps rather than scrolls: five tabs plus counts are wider than the
-          fixed 420px column, and a scrolling strip hides whole tabs off the
-          edge. Wrapping also means no horizontal overflow, so focusing a tab
-          can't make the browser drag the panel sideways and clip the rows. */}
+      {/* Wraps rather than scrolls: five tabs (six on permit, with
+          Inspection) plus counts are wider than the fixed 420px column, and a
+          scrolling strip hides whole tabs off the edge. Wrapping also means
+          no horizontal overflow, so focusing a tab can't make the browser
+          drag the panel sideways and clip the rows. */}
       <div
         role="tablist"
         aria-label="Queue groups"
         className="flex flex-wrap items-center gap-x-1 gap-y-0 border-b border-t-border px-1.5"
       >
-        {GROUP_ORDER.map((key) => {
-          const active = key === activeTab;
+        {visibleGroups.map((key) => {
+          const active = key === effectiveTab;
           return (
             <button
               key={key}
@@ -263,7 +286,7 @@ export function Queue({
           <div className="text-muted flex h-full items-center justify-center px-4 text-center text-sm">
             {filtered.length === 0
               ? "No action items in queue"
-              : `Nothing in ${GROUP_LABELS[activeTab]}`}
+              : `Nothing in ${GROUP_LABELS[effectiveTab]}`}
           </div>
         ) : (
           <ul className="divide-t-border divide-y">

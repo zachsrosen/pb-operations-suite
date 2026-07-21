@@ -208,6 +208,73 @@ describe("pi-hub Queue tabs", () => {
   });
 });
 
+describe("Inspection tab", () => {
+  const inspectionItem = (dealId: string) =>
+    item({
+      dealId,
+      group: "inspection",
+      status: "Complete",
+      statusLabel: "Permit Issued",
+    });
+
+  it("is hidden when the queue carries no inspection rows", () => {
+    renderQueue();
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(
+      screen.queryByRole("tab", { name: /^Inspection/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders LAST with its count when inspection rows exist, and shows them", async () => {
+    const user = userEvent.setup();
+    renderQueue([...ITEMS, inspectionItem("i1"), inspectionItem("i2")]);
+
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(6);
+    expect(tabs[5]).toHaveTextContent(/^Inspection/);
+    expect(tab(/^Inspection/)).toHaveTextContent("2");
+
+    await user.click(tab(/^Inspection/));
+    const panel = screen.getByRole("tabpanel");
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
+    // Display label, not the internal "Complete" value.
+    expect(within(panel).getAllByText("Permit Issued")).toHaveLength(2);
+  });
+
+  it("snaps back to Ready when the queue loses its inspection rows", async () => {
+    // A team switch swaps `items` WITHOUT remounting the Queue — the active
+    // tab must not strand on a tab that no longer renders.
+    const user = userEvent.setup();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const ui = (items: QueueItem[]) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <Queue
+            items={items}
+            isLoading={false}
+            isSwitching={false}
+            selectedDealId={null}
+            onSelect={jest.fn()}
+            team="permit"
+            accent="blue"
+          />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(ui([inspectionItem("i1")]));
+    await user.click(tab(/^Inspection/));
+    expect(tab(/^Inspection/)).toHaveAttribute("aria-selected", "true");
+
+    rerender(ui([item({ dealId: "r1", group: "ready" })]));
+    expect(
+      screen.queryByRole("tab", { name: /^Inspection/ }),
+    ).not.toBeInTheDocument();
+    expect(tab(/^Ready/)).toHaveAttribute("aria-selected", "true");
+  });
+});
+
 describe("team switching feedback", () => {
   // A cold queue load runs one history call per deal (30-60s for IC) while
   // keepPreviousData keeps the old team's rows on screen. Without a visible
