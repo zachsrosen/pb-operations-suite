@@ -330,29 +330,15 @@ const IC_FLAVOURS: Partial<Record<ApprovalVerdict, string>> = {
   approved_pending_signatures: "Application Approved - Pending Signatures",
 };
 
-/** pto statuses at/past "Inspection Passed - Ready for Utility" — a deal in
- *  any of these is NOT an inspection-passed candidate (spec: ready/waiting/
- *  resubmit/rejection/terminal groups plus the post-inspection "other"
- *  statuses), so inspection_passed can never propose a regression. Exported
- *  for the cron's HubSpot NOT_IN filter. */
-export const PTO_AT_OR_PAST_INSPECTION: readonly string[] = [
-  ...(TEAM_CONFIGS.pto.groups.ready ?? []),
-  ...PTO_WAITING,
-  ...(TEAM_CONFIGS.pto.groups.resubmit ?? []),
-  ...(TEAM_CONFIGS.pto.groups.rejections ?? []),
-  ...TEAM_CONFIGS.pto.terminalStatuses,
-  // Post-inspection "other"-group statuses (Zach 2026-07-17 grouping
-  // decision) — a deal here already passed inspection.
-  "Xcel Photos Approved",
-  "Conditional PTO - Pending Transformer Upgrade",
-];
-
 export function isInspectionCandidate(
   permittingStatus: string | null | undefined,
   ptoStatus: string | null | undefined,
 ): boolean {
   if (permittingStatus !== "Complete") return false;
-  return !PTO_AT_OR_PAST_INSPECTION.includes(ptoStatus ?? "");
+  // Any pto_status at all means the PTO team is already tracking the deal —
+  // an inspection-passed nudge is noise there (Zach 2026-07-20). The signal
+  // only helps the gap where the permit closed and PTO was never started.
+  return !(ptoStatus ?? "").trim();
 }
 
 /**
@@ -397,10 +383,9 @@ export function signalForVerdict(
           proposedStatus: "Xcel Photos Approved",
         };
       }
-      if (
-        verdict === "inspection_passed" &&
-        !PTO_AT_OR_PAST_INSPECTION.includes(currentStatus)
-      ) {
+      // Inspection signals only fill the permit-closed-but-PTO-never-started
+      // gap; any pto_status means the PTO team already owns the deal.
+      if (verdict === "inspection_passed" && !currentStatus.trim()) {
         return {
           signalType: "inspection_passed",
           proposedStatus: "Inspection Passed - Ready for Utility",

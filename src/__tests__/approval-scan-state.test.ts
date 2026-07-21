@@ -92,19 +92,16 @@ describe("signalForVerdict", () => {
       ).toBeNull();
     });
 
-    it("inspection_passed only before the deal reaches ready/waiting/resubmit/terminal", () => {
+    it("inspection_passed only when the deal has no pto_status at all", () => {
       // No pto_status yet (common right after permit completes).
       expect(signalForVerdict("pto", "", "inspection_passed")).toEqual({
         signalType: "inspection_passed",
         proposedStatus: "Inspection Passed - Ready for Utility",
       });
-      // "other"-group statuses are still candidates.
+      // ANY pto_status means the PTO team already owns the deal — no signal.
       expect(
         signalForVerdict("pto", "Pending Truck Roll", "inspection_passed"),
-      ).toEqual({
-        signalType: "inspection_passed",
-        proposedStatus: "Inspection Passed - Ready for Utility",
-      });
+      ).toBeNull();
       // At/past: ready, waiting, resubmit, terminal → null.
       for (const status of [
         "Inspection Passed - Ready for Utility",
@@ -135,23 +132,22 @@ describe("isInspectionCandidate", () => {
     expect(isInspectionCandidate("Complete", "")).toBe(true);
   });
 
-  it("excludes deals at/past Inspection Passed", () => {
-    expect(isInspectionCandidate("Complete", "PTO")).toBe(false);
-    expect(isInspectionCandidate("Complete", "Inspection Passed - Ready for Utility")).toBe(false);
-    expect(isInspectionCandidate("Complete", "Xcel Photos Submitted")).toBe(false);
-    expect(isInspectionCandidate("Complete", "Pending Truck Roll")).toBe(true);
-  });
-
-  it("excludes post-inspection rejection and other-group statuses (no regression proposals)", () => {
+  it("excludes any deal with a pto_status — the PTO team already owns it", () => {
     for (const status of [
+      "PTO",
+      "Inspection Passed - Ready for Utility",
+      "Xcel Photos Submitted",
+      "Pending Truck Roll",
+      "PTO Waiting on Interconnection Approval",
+      "Waiting on New Construction",
       "Inspection Rejected By Utility",
-      "Ops Related PTO Rejection",
-      "XCEL Photos Rejected",
       "Xcel Photos Approved",
       "Conditional PTO - Pending Transformer Upgrade",
     ]) {
       expect(isInspectionCandidate("Complete", status)).toBe(false);
     }
+    expect(isInspectionCandidate("Complete", "  ")).toBe(true);
+    expect(isInspectionCandidate("Complete", null)).toBe(true);
   });
 });
 
