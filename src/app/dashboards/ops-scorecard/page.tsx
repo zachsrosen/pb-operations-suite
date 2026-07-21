@@ -532,8 +532,14 @@ export default function OpsScorecardPage() {
                   <div className={fy ? "" : trend(r.ytdRev, bN, "higher")}>{$(r.ytdRev)}</div>
                   <div className="text-[11px] text-muted">{$(r.ytdGrossRev)}</div>
                 </td>
-                <td className={tdR + trend(r.ytdAnnualized, r.pyRev, "higher")}>{$(r.ytdAnnualized)}</td>
-                <td className={tdR}>{$(r.l3mAnnualized)}</td>
+                <td className={tdR}>
+                  <div className={trend(r.ytdAnnualized, r.pyRev, "higher")}>{$(r.ytdAnnualized)}</div>
+                  <div className="text-[11px] text-muted">{$(r.ytdGrossAnnualized)}</div>
+                </td>
+                <td className={tdR}>
+                  <div>{$(r.l3mAnnualized)}</div>
+                  <div className="text-[11px] text-muted">{$(r.l3mGrossAnnualized)}</div>
+                </td>
               </tr>
               );
             })}
