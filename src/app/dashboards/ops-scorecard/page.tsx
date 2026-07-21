@@ -48,15 +48,18 @@ function Arrow3({
   /** Set false when c isn't like-for-like with b (e.g. YTD vs full year). */
   compareLast?: boolean;
 }) {
-  const bClass = better ? trend(bv, av, better) : "";
-  const cClass = better && compareLast ? trend(cv, bv, better) : "";
+  // Trend color must REPLACE the base color, not stack with it — Tailwind emits
+  // color utilities alphabetically, so text-emerald-400 loses to text-foreground
+  // while text-red-400 beats it (greens silently never rendered).
+  const bClass = (better ? trend(bv, av, better) : "").trim();
+  const cClass = (better && compareLast ? trend(cv, bv, better) : "").trim();
   return (
     <span className="whitespace-nowrap">
       <span className="text-muted">{a}</span>
       <span className="text-muted mx-0.5">→</span>
-      <span className={"text-muted" + bClass}>{b}</span>
+      <span className={bClass || "text-muted"}>{b}</span>
       <span className="text-muted mx-0.5">→</span>
-      <span className={"font-semibold text-foreground" + cClass}>{c}</span>
+      <span className={"font-semibold " + (cClass || "text-foreground")}>{c}</span>
     </span>
   );
 }
