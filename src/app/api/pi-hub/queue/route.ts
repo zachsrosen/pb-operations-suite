@@ -13,6 +13,8 @@ import {
   isApprovalSignalsEnabled,
 } from "@/lib/pi-hub/signals";
 import { appCache } from "@/lib/cache";
+import { batchReadDealsWithRetry } from "@/lib/hubspot";
+import { TEAM_CONFIGS } from "@/lib/pi-hub/config";
 import type { QueueItem, Team } from "@/lib/pi-hub/types";
 
 /**
@@ -90,7 +92,66 @@ export async function GET(req: NextRequest) {
 async function withSignals(team: Team, data: CachedQueue): Promise<CachedQueue> {
   if (!isApprovalSignalsEnabled()) return data;
   const signals = await fetchOpenSignals(team);
-  return { ...data, queue: attachSignals(data.queue, signals) };
+  const queue = attachSignals(data.queue, signals);
+
+  // Signal-only rows: inspection_passed flags deals with NO pto_status, which
+  // the queue's HasProperty filter excludes — without this append the badge
+  // would exist in the table but never render anywhere. Fetched per-request
+  // (2-3 deals, batch read) so a dismiss drops the row on the next refetch.
+  const present = new Set(queue.map((q) => q.dealId));
+  const orphanIds = [...signals.keys()].filter((id) => !present.has(id));
+  if (orphanIds.length > 0) {
+    const orphanRows = await fetchSignalOnlyRows(team, orphanIds, signals);
+    queue.push(...orphanRows);
+  }
+  return { ...data, queue };
+}
+
+/** Minimal QueueItem rows for deals carrying an open signal but absent from
+ *  the cached queue (no team status yet). Shown in the "ready" group — the
+ *  signal's whole point is that these deals are ready to be picked up. */
+async function fetchSignalOnlyRows(
+  team: Team,
+  dealIds: string[],
+  signals: Awaited<ReturnType<typeof fetchOpenSignals>>,
+): Promise<QueueItem[]> {
+  try {
+    const response = await batchReadDealsWithRetry(dealIds, [
+      "dealname",
+      "address_line_1",
+      "city",
+      "pb_location",
+      "amount",
+    ]);
+    const results = (response?.results ?? []) as Array<{
+      id: string;
+      properties?: Record<string, string | null>;
+    }>;
+    return results.map((d) => {
+      const p = d.properties ?? {};
+      return {
+        dealId: d.id,
+        name: p.dealname ?? "Untitled",
+        address: [p.address_line_1, p.city].filter(Boolean).join(", ") || null,
+        pbLocation: p.pb_location ?? null,
+        status: "",
+        statusLabel: `No ${TEAM_CONFIGS[team].label} status yet`,
+        dealStage: null,
+        group: "ready" as const,
+        daysInStatus: null,
+        isStale: false,
+        lead: null,
+        leadOwnerId: null,
+        pm: null,
+        amount: p.amount ? Number(p.amount) : null,
+        signal: signals.get(d.id) ?? null,
+      };
+    });
+  } catch (err) {
+    // The appended rows are a convenience — never fail the queue over them.
+    console.error("[pi-hub] signal-only row fetch failed:", err);
+    return [];
+  }
 }
 
 /** Coalesce concurrent cold builds so N users on an empty cache pay once. */
