@@ -414,7 +414,7 @@ export default function OpsScorecardPage() {
         sub="Can each office keep completing at its current pace? Fuel (backlog) ÷ burn = how long, and sustain vs selling = whether sales refill it."
         explain={[
           ["Backlog", "open deals sitting between sale and construction-complete (Survey → Construction stages, no CC date yet) — the fuel available to burn."],
-          ["Conversion", `share of sold dollars that eventually reach CC, measured on the fully-baked cohort sold Jan–Sep ${py} (newer cohorts haven't had time to finish).`],
+          ["Conversion (trend)", `share of sold dollars that eventually reach CC — the ${py2} full-year cohort → the fully-baked Jan–Sep ${py} cohort. Conversion is the cancellation rate seen from the other side: survivors complete at ~99%, so a falling conversion means rising cancellations, not slower ops.`],
           ["CC pace /mo", `${cy} completed revenue ÷ months elapsed — the current burn rate.`],
           ["Cover", "backlog ÷ CC pace — months the office can sustain its pace with zero new sales."],
           ["Sustain /mo", "CC pace ÷ conversion — the net sales needed per month to keep completions flat, since only [conversion]% of sold dollars ever complete."],
@@ -426,7 +426,7 @@ export default function OpsScorecardPage() {
             <tr>
               <th className={th}>Office</th>
               <th className={thR}>Backlog</th>
-              <th className={thR}>Conversion</th>
+              <th className={thR}>Conversion (trend)</th>
               <th className={thR}>CC pace /mo</th>
               <th className={thR}>Cover</th>
               <th className={thR}>Sustain /mo</th>
@@ -438,7 +438,10 @@ export default function OpsScorecardPage() {
               <tr key={o.office} className={o.office === "Company" ? "font-semibold" : o.office === "Colorado" ? "font-medium [&>td]:border-t-2" : o.office === "California" ? "font-medium" : ""}>
                 <td className={td}>{o.office}</td>
                 <td className={tdR}>{$(o.backlogRev)} ({o.backlogCount})</td>
-                <td className={tdR}>{pct(o.conversionPct)}</td>
+                <td className={tdR}>
+                  <span className="text-muted text-xs">{pct(o.conversionPy2Pct)} → </span>
+                  <span className={trend(o.conversionPct, o.conversionPy2Pct, "higher")}>{pct(o.conversionPct)}</span>
+                </td>
                 <td className={tdR}>{$(o.ccPacePerMo)}</td>
                 <td className={tdR}>{o.coverMonths === null ? "—" : `~${o.coverMonths} mo`}</td>
                 <td className={tdR}>{$(o.sustainPerMo)}</td>

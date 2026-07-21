@@ -207,6 +207,8 @@ export interface OpsScorecardData {
       backlogRev: number;
       backlogCount: number;
       conversionPct: number | null;
+      /** Same conversion measured on the full py2 cohort — shows the trend. */
+      conversionPy2Pct: number | null;
       ccPacePerMo: number | null;
       coverMonths: number | null;
       sellingPacePerMo: number | null;
@@ -666,6 +668,14 @@ export function computeOpsScorecard(
       oCohortRev > 0
         ? (sumAmount(oCohort.filter((p) => p.constructionCompleteDate)) / oCohortRev) * 100
         : null;
+    const oCohortPy2 = ps.filter(
+      (p) => p.closeDate !== null && p.closeDate >= `${py2}-01-01` && p.closeDate < `${Number(py2) + 1}-01-01`
+    );
+    const oCohortPy2Rev = sumAmount(oCohortPy2);
+    const oConvPy2Pct =
+      oCohortPy2Rev > 0
+        ? (sumAmount(oCohortPy2.filter((p) => p.constructionCompleteDate)) / oCohortPy2Rev) * 100
+        : null;
     const ccYtd = sumAmount(ps.filter((p) => yearOf(p.constructionCompleteDate) === cy));
     const ccPacePerMo = dayOfYear >= 30 ? ccYtd / (dayOfYear / 30.4) : null;
     const sellingPacePerMo =
@@ -680,6 +690,7 @@ export function computeOpsScorecard(
       backlogRev: sumAmount(oBacklog),
       backlogCount: oBacklog.length,
       conversionPct: round1(oConvPct),
+      conversionPy2Pct: round1(oConvPy2Pct),
       ccPacePerMo: ccPacePerMo !== null ? Math.round(ccPacePerMo) : null,
       coverMonths:
         ccPacePerMo && ccPacePerMo > 0 ? round1(sumAmount(oBacklog) / ccPacePerMo) : null,
