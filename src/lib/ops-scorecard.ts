@@ -231,6 +231,8 @@ export interface OpsScorecardData {
     ytdRev: number;
     ytdAnnualized: number;
     l3mAnnualized: number;
+    ytdGrossAnnualized: number;
+    l3mGrossAnnualized: number;
   }>;
   throughputByOffice: Array<{
     office: string;
@@ -384,8 +386,12 @@ export function computeOpsScorecard(
         })
       );
     const ytdRev = sold(cy);
+    const ytdGrossRev = sold(cy, undefined, true);
     const l3mRev = sumAmount(
       ps.filter((p) => p.closeDate && p.closeDate >= l3mLo && p.closeDate <= l3mHi && isNet(p))
+    );
+    const l3mGrossRev = sumAmount(
+      ps.filter((p) => p.closeDate && p.closeDate >= l3mLo && p.closeDate <= l3mHi)
     );
     return {
       py2Rev: sold(py2),
@@ -396,9 +402,11 @@ export function computeOpsScorecard(
       pySamePointRev: sold(py, monthDay),
       py2SamePointGrossRev: sold(py2, monthDay, true),
       pySamePointGrossRev: sold(py, monthDay, true),
-      ytdGrossRev: sold(cy, undefined, true),
+      ytdGrossRev,
       ytdRev,
       ytdAnnualized: yearFrac > 0 ? ytdRev / yearFrac : 0,
+      ytdGrossAnnualized: yearFrac > 0 ? ytdGrossRev / yearFrac : 0,
+      l3mGrossAnnualized: (l3mGrossRev / 3) * 12,
       l3mAnnualized: (l3mRev / 3) * 12,
     };
   };
