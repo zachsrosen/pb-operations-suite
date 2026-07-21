@@ -243,6 +243,7 @@ describe("computeOpsScorecard", () => {
     const tf = {
       leads: { py2: 2289, py: 3252, ytd: 1888, py2SamePoint: 1073, pySamePoint: 1500 },
       consults: { py2: 2996, py: 3351, ytd: 1508, py2SamePoint: 1600, pySamePoint: 1700 },
+      monthly: { leads: { "2026-01": 252 }, consults: { "2026-01": 239 } },
     };
     expect(computeOpsScorecard([], NOW, tf).topFunnel).toEqual(tf);
   });
@@ -302,6 +303,19 @@ describe("computeOpsScorecard", () => {
     const out = computeOpsScorecard(projects, NOW);
     const company = out.efficiency.turnaroundsByOffice.find((r) => r.office === "Company")!;
     expect(company.legs["Consult → sale"].cy).toEqual({ mean: 21, median: 21 });
+  });
+
+  it("computes quarterly net revenue by stage", () => {
+    const projects = [
+      makeProject({ closeDate: "2025-08-01", amount: 1000 }), // 2025Q3
+      makeProject({ closeDate: "2025-08-15", amount: 500, stageId: "68229433" }), // cancelled → excluded from net
+      makeProject({ closeDate: "2026-02-01", amount: 2000 }), // 2026Q1
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const sales = out.funnelQuarterly.find((r) => r.stage === "Sales")!;
+    expect(sales.byQuarter["2025Q3"]).toBe(1000);
+    expect(sales.byQuarter["2026Q1"]).toBe(2000);
+    expect(Object.keys(sales.byQuarter).at(-1)).toBe("2026Q3");
   });
 
   it("year framing follows the provided clock", () => {
