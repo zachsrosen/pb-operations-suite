@@ -360,6 +360,15 @@ export function signalForVerdict(
       if (verdict === "approved" && PERMIT_WAITING.includes(currentStatus)) {
         return { signalType: "permit_issued", proposedStatus: "Complete" };
       }
+      // Inspection signals ride the permit team (evidence is AHJ mail) but
+      // propose a pto value; candidacy (permit Complete + blank pto_status)
+      // is enforced by isInspectionCandidate in the cron's filter.
+      if (verdict === "inspection_passed" && currentStatus === "Complete") {
+        return {
+          signalType: "inspection_passed",
+          proposedStatus: "Inspection Passed - Ready for Utility",
+        };
+      }
       return null;
 
     case "ic": {
@@ -381,14 +390,6 @@ export function signalForVerdict(
         return {
           signalType: "xcel_photos_approved",
           proposedStatus: "Xcel Photos Approved",
-        };
-      }
-      // Inspection signals only fill the permit-closed-but-PTO-never-started
-      // gap; any pto_status means the PTO team already owns the deal.
-      if (verdict === "inspection_passed" && !currentStatus.trim()) {
-        return {
-          signalType: "inspection_passed",
-          proposedStatus: "Inspection Passed - Ready for Utility",
         };
       }
       return null;

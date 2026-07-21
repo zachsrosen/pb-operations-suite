@@ -93,11 +93,13 @@ describe("signalForVerdict", () => {
     });
 
     it("inspection_passed only when the deal has no pto_status at all", () => {
-      // No pto_status yet (common right after permit completes).
-      expect(signalForVerdict("pto", "", "inspection_passed")).toEqual({
+      // Inspection rides the PERMIT team (evidence is AHJ mail).
+      expect(signalForVerdict("permit", "Complete", "inspection_passed")).toEqual({
         signalType: "inspection_passed",
         proposedStatus: "Inspection Passed - Ready for Utility",
       });
+      // The pto team no longer maps inspection verdicts at all.
+      expect(signalForVerdict("pto", "", "inspection_passed")).toBeNull();
       // ANY pto_status means the PTO team already owns the deal — no signal.
       expect(
         signalForVerdict("pto", "Pending Truck Roll", "inspection_passed"),
