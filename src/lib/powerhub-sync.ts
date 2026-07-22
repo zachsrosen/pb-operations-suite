@@ -121,6 +121,18 @@ const CHUNK_DELAY_MS = 1100; // 1.1s between chunks for safety
 const ASSET_SYNC_BATCH_LIMIT = 50;
 
 /**
+ * A site is eligible for re-sync once its last asset sync is this old.
+ *
+ * MUST stay longer than the cron interval (every 6h). It was previously 5h,
+ * which is shorter — so by the time each run fired, every site was "stale"
+ * again and this filter excluded nothing. Combined with a head-of-list slice
+ * that meant the same sites were re-picked run after run while the tail
+ * starved: on 2026-07-22, 2,804 of 3,126 rows had not been asset-synced in
+ * over 30 days and 145 portal sites had never been ingested at all.
+ */
+const ASSET_SYNC_STALE_MS = 12 * 60 * 60 * 1000;
+
+/**
  * Max sites to poll per telemetry/alert cron invocation.
  * Now that we filter to provisioned sites only (~2400 vs 3100 total),
  * we can be more aggressive with batch sizes.
@@ -139,6 +151,55 @@ export interface AssetSyncResult {
   sitesUpdated: number;
   sitesLinked: number;
   errors: string[];
+}
+
+/** What we know about a site we've already ingested, for batch ordering. */
+export interface KnownSiteSyncState {
+  siteId: string;
+  lastAssetSyncAt: Date | null;
+}
+
+/**
+ * Choose which sites this run should sync, oldest-first.
+ *
+ * Priority order:
+ *   1. Sites Tesla reports that we have no row for at all (never ingested).
+ *      New sites append to the tail of Tesla's group ordering, so without
+ *      this they are the last thing a head-of-list slice would ever reach.
+ *   2. Rows that exist but have never been asset-synced (lastAssetSyncAt null).
+ *   3. Everything else, least-recently-synced first.
+ *
+ * Sites synced more recently than `cutoff` are skipped entirely.
+ *
+ * This mirrors what syncTelemetry() already does with
+ * `orderBy: { lastTelemetryAt: { sort: "asc", nulls: "first" } }` — asset sync
+ * was the only poller missing the rotation, which is why telemetry stayed
+ * fresh fleet-wide while asset data did not.
+ */
+export function selectAssetSyncBatch(
+  allSiteIds: string[],
+  known: KnownSiteSyncState[],
+  cutoff: Date,
+  limit: number,
+): { stale: string[]; batch: string[] } {
+  const lastSyncBySite = new Map<string, Date | null>();
+  for (const row of known) lastSyncBySite.set(row.siteId, row.lastAssetSyncAt);
+
+  const stale = allSiteIds.filter((id) => {
+    if (!lastSyncBySite.has(id)) return true; // never ingested
+    const last = lastSyncBySite.get(id) ?? null;
+    return last === null || last < cutoff;
+  });
+
+  // Rank: never-ingested (-1) < never-synced (0) < synced-at (epoch ms).
+  const rank = (id: string): number => {
+    if (!lastSyncBySite.has(id)) return -1;
+    const last = lastSyncBySite.get(id) ?? null;
+    return last === null ? 0 : last.getTime();
+  };
+  stale.sort((a, b) => rank(a) - rank(b));
+
+  return { stale, batch: stale.slice(0, limit) };
 }
 
 /**
@@ -171,25 +232,35 @@ export async function syncAssets(): Promise<AssetSyncResult> {
   collectSites(groups);
   result.sitesDiscovered = allSiteIds.length;
 
-  // 2. Find which sites were recently synced (within last 5h) — skip those
-  const recentCutoff = new Date(Date.now() - 5 * 60 * 60 * 1000);
-  const recentlySynced = await prisma.powerhubSite.findMany({
-    where: {
-      siteId: { in: allSiteIds },
-      lastAssetSyncAt: { gte: recentCutoff },
-    },
-    select: { siteId: true },
-  });
-  const recentSet = new Set(recentlySynced.map((s: { siteId: string }) => s.siteId));
+  // Tesla returning a 200 whose payload carries no sites is indistinguishable
+  // from success at the transport layer — apiCall() hands back envelope.data
+  // unvalidated. Without this guard the run falls through to "nothing to do"
+  // and reports {success: true, sitesDiscovered: 0} at HTTP 200, so a fleet-wide
+  // stall looks healthy in Sentry and the logs. Fail loudly instead.
+  if (allSiteIds.length === 0) {
+    throw new Error(
+      "PowerHub asset sync: /asset/groups returned no sites — refusing to report success",
+    );
+  }
 
-  // 3. Filter to stale/new sites, take a batch
-  const staleSiteIds = allSiteIds.filter((id) => !recentSet.has(id));
-  const batchSiteIds = staleSiteIds.slice(0, ASSET_SYNC_BATCH_LIMIT);
+  // 2. Order the fleet oldest-first so every site is reached in turn, and skip
+  //    anything synced within the staleness window.
+  const cutoff = new Date(Date.now() - ASSET_SYNC_STALE_MS);
+  const known = await prisma.powerhubSite.findMany({
+    where: { siteId: { in: allSiteIds } },
+    select: { siteId: true, lastAssetSyncAt: true },
+  });
+  const { stale: staleSiteIds, batch: batchSiteIds } = selectAssetSyncBatch(
+    allSiteIds,
+    known,
+    cutoff,
+    ASSET_SYNC_BATCH_LIMIT,
+  );
   result.sitesStale = staleSiteIds.length;
   result.sitesBatched = batchSiteIds.length;
 
   if (batchSiteIds.length === 0) {
-    return result; // All sites recently synced — nothing to do
+    return result; // All sites synced within the staleness window — nothing to do
   }
 
   // 4. Fetch deal addresses for linkage (batch query)
