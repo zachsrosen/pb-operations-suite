@@ -312,6 +312,8 @@ export interface OpsScorecardData {
   salesForecast: SalesForecast | null;
   /** Naive current-pace full-year projection (ytd / yearFrac). The CC row's
    *  revenue should be presented from the capacity model instead. */
+  /** AI commentary (route-attached after compute; guardrail-validated). */
+  aiCommentary?: { sentences: string[]; generatedAt: string } | null;
   funnelFy: Array<{ stage: string; projected: CountRev } & StageYearRow>;
   funnelMonthly: Array<{ stage: string; byMonth: Record<string, number> }>;
   /** Net revenue reaching each stage per quarter, py2 Q1 → current quarter. */
