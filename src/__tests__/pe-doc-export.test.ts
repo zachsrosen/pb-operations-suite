@@ -27,6 +27,10 @@ describe("cleanPeNote", () => {
     expect(cleanPeNote(null)).toBe("");
     expect(cleanPeNote("Synced from PE portal scraper (PROJ-1) | Responded: 2026-05-28T18:41:33Z")).toBe("");
   });
+  it("returns empty for the NOT_REQUIRED/status stub (no 'milestone:' colon) — was leaking 'not uploaded'", () => {
+    expect(cleanPeNote("Synced from PE API (CA2601-DIEP1) | not uploaded | milestone")).toBe("");
+    expect(cleanPeNote("Synced from PE API (CO2603-SMIT21) | approved | milestone")).toBe("");
+  });
 });
 
 describe("rowsToCsv", () => {

@@ -35,6 +35,11 @@ export function cleanPeNote(note: string | null | undefined): string {
   if (!note) return "";
   const code = note.match(/\[H\d+\][^"]*?:[^."]*\./);
   if (code) return code[0].trim().replace(/\s+/g, " ");
+  // Post-6/15 the notes field carries only a sync stub — "Synced from PE API
+  // (PROJ) | <doc status> | milestone" — with no reviewer content (the real
+  // reviewer comment lives in peComment). A bare stub has no reason to surface;
+  // otherwise its status word (e.g. "not uploaded") leaks in as a fake reason.
+  if (/^\s*Synced from PE (?:API|portal scraper)\b/i.test(note)) return "";
   const stripped = note
     .replace(/Synced from PE (?:API|portal scraper) \([^)]*\)/gi, "")
     .replace(/\bv\d+\b/gi, "")
