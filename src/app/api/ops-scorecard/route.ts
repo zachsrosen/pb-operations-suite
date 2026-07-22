@@ -86,7 +86,7 @@ async function loadAllProjects(): Promise<Project[]> {
       const d = cancelledDates.get(String(p.id));
       if (d) {
         if (d.date) p.cancelledDate = d.date;
-        if (d.reason) p.cancellationReason = d.reason;
+        if (d.reason) p.cancellationReasonCategory = d.reason;
       }
       const c = consultDates.get(String(p.id));
       if (c) p.firstConsultDate = c;

@@ -525,8 +525,9 @@ export interface Project {
 
   /** Earliest consult meeting held with the primary contact (stamped nightly). */
   firstConsultDate: string | null;
-  /** cancellation_reason_category bucket (18-value taxonomy, backfilled 2024+). */
-  cancellationReason: string | null;
+  /** cancellation_reason_category bucket (18-value taxonomy, backfilled 2024+).
+   *  Distinct from `cancellationReason`, which is the verbatim free-text note. */
+  cancellationReasonCategory: string | null;
 
   // Calculated fields
   daysToInstall: number | null;
@@ -1235,7 +1236,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     projectCompleteDate: parseDate(deal.hs_v2_date_entered_20440343),
     cancelledDate: parseDate(deal.hs_v2_date_entered_68229433),
     firstConsultDate: parseDate(deal.first_consult_date),
-    cancellationReason: deal.cancellation_reason_category ? String(deal.cancellation_reason_category) : null,
+    cancellationReasonCategory: deal.cancellation_reason_category ? String(deal.cancellation_reason_category) : null,
 
     // Forecasted dates
     forecastedInstallDate: parseDate(deal.forecasted_installation_date),

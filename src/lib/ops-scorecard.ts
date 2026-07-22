@@ -817,7 +817,7 @@ export function computeOpsScorecard(
   const cancelledDeals = projects.filter((p) => p.stageId === CANCELLED);
   const reasonKeys = new Set<string>();
   for (const p of cancelledDeals) {
-    reasonKeys.add(p.cancellationReason || "reason_not_documented");
+    reasonKeys.add(p.cancellationReasonCategory || "reason_not_documented");
   }
   const cyCancelledRev = sumAmount(
     cancelledDeals.filter((p) => yearOf(p.closeDate) === cy)
@@ -828,7 +828,7 @@ export function computeOpsScorecard(
         const xs = cancelledDeals.filter(
           (p) =>
             yearOf(p.closeDate) === year &&
-            (p.cancellationReason || "reason_not_documented") === reason
+            (p.cancellationReasonCategory || "reason_not_documented") === reason
         );
         return { count: xs.length, revLost: sumAmount(xs) };
       };
