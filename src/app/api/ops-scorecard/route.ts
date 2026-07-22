@@ -11,6 +11,10 @@ import { computeOpsScorecard, median, TopFunnelCounts, SalesForecastInputs } fro
 import { generateScorecardCommentary } from "@/lib/scorecard-commentary";
 
 export const dynamic = "force-dynamic";
+// Next.js App Router: the in-file segment config is what Vercel enforces —
+// the vercel.json functions entry alone left this at the 60s default, which
+// 504'd cold refreshes (~50s compute + AI commentary).
+export const maxDuration = 120;
 
 const SCORECARD_TTL = 30 * 60 * 1000; // 30 minutes
 const SCORECARD_STALE_TTL = 60 * 60 * 1000;
