@@ -318,7 +318,7 @@ export function dealToProject(deal: PrismaDeal): Project {
     projectCompleteDate: null,
     cancelledDate: null,
     firstConsultDate: null,
-    cancellationReason: null,
+    cancellationReasonCategory: null,
 
     // Forecasted dates
     forecastedInstallDate: dateToDateString(deal.forecastedInstallDate),

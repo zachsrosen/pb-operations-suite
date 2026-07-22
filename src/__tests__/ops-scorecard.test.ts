@@ -369,10 +369,10 @@ describe("computeOpsScorecard", () => {
 
   it("groups cancellations by reason on the sold-year cohort", () => {
     const projects = [
-      makeProject({ closeDate: "2026-02-01", amount: 1000, stageId: "68229433", cancellationReason: "financing_credit" }),
-      makeProject({ closeDate: "2026-03-01", amount: 3000, stageId: "68229433", cancellationReason: "financing_credit" }),
+      makeProject({ closeDate: "2026-02-01", amount: 1000, stageId: "68229433", cancellationReasonCategory: "financing_credit" }),
+      makeProject({ closeDate: "2026-03-01", amount: 3000, stageId: "68229433", cancellationReasonCategory: "financing_credit" }),
       makeProject({ closeDate: "2026-04-01", amount: 1000, stageId: "68229433" }), // no reason
-      makeProject({ closeDate: "2025-05-01", amount: 500, stageId: "68229433", cancellationReason: "lost_to_competitor" }),
+      makeProject({ closeDate: "2025-05-01", amount: 500, stageId: "68229433", cancellationReasonCategory: "lost_to_competitor" }),
       makeProject({ closeDate: "2026-06-01", amount: 9999 }), // not cancelled
     ];
     const out = computeOpsScorecard(projects, NOW);
