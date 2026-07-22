@@ -95,6 +95,48 @@ interface CountRev {
 const isNet = (p: Project) => !NET_EXCLUDED.has(p.stageId);
 const notCancelled = (p: Project) => p.stageId !== CANCELLED;
 
+/**
+ * Goal-planner forward projection — pure so its invariants are unit-testable.
+ * Hand-off convolution for DAs; conversion-discounted backlog drain for CCs.
+ * Invariants (tested): target == current pace → DA flow is flat at steady
+ * state every month; the backlog contribution sums to backlog × completion
+ * share; CC ramp converges to target × conversion.
+ */
+export interface GoalPlanInputs {
+  targetMonthly: number;
+  daConv: number;
+  ccConv: number;
+  daMonthlyCdf: number[];
+  ccMonthlyCdf: number[];
+  daPacePerMo: number;
+  burnPerMo: number;
+  backlogRev: number;
+  /** Share of today's backlog expected to complete (cancellation-discounted). */
+  backlogCompletionShare?: number;
+}
+
+export interface GoalPlanMonth {
+  da: number;
+  ccNew: number;
+  ccBacklog: number;
+  cc: number;
+}
+
+export function planGoalForward(inputs: GoalPlanInputs, monthsOut = 6): GoalPlanMonth[] {
+  const share = inputs.backlogCompletionShare ?? 0.85;
+  const usableBacklog = inputs.backlogRev * share;
+  const coverMonths = inputs.burnPerMo > 0 ? usableBacklog / inputs.burnPerMo : 0;
+  const out: GoalPlanMonth[] = [];
+  for (let k = 1; k <= monthsOut; k++) {
+    const daCdf = inputs.daMonthlyCdf[k - 1] ?? 1;
+    const da = inputs.targetMonthly * inputs.daConv * daCdf + inputs.daPacePerMo * (1 - daCdf);
+    const ccNew = inputs.targetMonthly * inputs.ccConv * (inputs.ccMonthlyCdf[k - 1] ?? 1);
+    const ccBacklog = inputs.burnPerMo * Math.max(0, Math.min(1, coverMonths - (k - 1)));
+    out.push({ da, ccNew, ccBacklog, cc: ccNew + ccBacklog });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Output types
 // ---------------------------------------------------------------------------
@@ -160,8 +202,11 @@ export interface SalesForecast {
   closeRatePct: number;
   consultsLast30: number;
   predictedCount30: number;
+  /** Predicted SIGNED (total) revenue — the count includes deals that will
+   *  later cancel, so this is a total-basis figure, not net. */
   predictedRev30: number;
-  avgNetDeal: number;
+  /** Average deal over ALL sold deals last 90d (total basis, matches the count). */
+  avgDeal: number;
 }
 
 export interface TopFunnel {
@@ -254,6 +299,8 @@ export interface OpsScorecardData {
     ccMonthlyCdf: number[];
     /** Trailing-90d average net deal size, for revenue → count conversion. */
     avgNetDeal: number | null;
+    /** Trailing-90d average deal size over ALL sold deals (total basis). */
+    avgGrossDeal: number | null;
     /** Current DA pace (net $/mo over the trailing 3 calendar months). */
     daPacePerMo: number | null;
   };
@@ -715,17 +762,18 @@ export function computeOpsScorecard(
     const sold90 = projects.filter(
       (p) => p.closeDate !== null && p.closeDate >= cut90 && p.closeDate <= nowStr
     );
-    const soldNet90 = sold90.filter(isNet);
     const closeRate = sold90.length / forecastInputs.consultsRateWindow;
-    const avgNetDeal = soldNet90.length > 0 ? sumAmount(soldNet90) / soldNet90.length : 0;
+    // Total-basis average: the predicted count includes deals that will later
+    // cancel, so revenue must use the all-deals average to stay consistent.
+    const avgDeal = sold90.length > 0 ? sumAmount(sold90) / sold90.length : 0;
     const predictedCount30 = forecastInputs.consultsLast30 * closeRate;
     salesForecast = {
       lagDays: forecastInputs.lagDays,
       closeRatePct: round1(closeRate * 100) ?? 0,
       consultsLast30: forecastInputs.consultsLast30,
       predictedCount30: Math.round(predictedCount30),
-      predictedRev30: Math.round(predictedCount30 * avgNetDeal),
-      avgNetDeal: Math.round(avgNetDeal),
+      predictedRev30: Math.round(predictedCount30 * avgDeal),
+      avgDeal: Math.round(avgDeal),
     };
   }
 
@@ -750,10 +798,9 @@ export function computeOpsScorecard(
   };
   const daModel = cdfFor((p) => p.designApprovalDate);
   const ccModel = cdfFor((p) => p.constructionCompleteDate);
-  const gmSoldNet90 = projects.filter((p) => {
-    const cut90 = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
-    return p.closeDate !== null && p.closeDate >= cut90 && isNet(p);
-  });
+  const gmCut90 = new Date(now.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
+  const gmSold90 = projects.filter((p) => p.closeDate !== null && p.closeDate >= gmCut90);
+  const gmSoldNet90 = gmSold90.filter(isNet);
   const daPacePerMo = last3Mo((p) => p.designApprovalDate, true);
 
   return {
@@ -797,6 +844,7 @@ export function computeOpsScorecard(
       daMonthlyCdf: daModel.cdf,
       ccMonthlyCdf: ccModel.cdf,
       avgNetDeal: gmSoldNet90.length > 0 ? Math.round(sumAmount(gmSoldNet90) / gmSoldNet90.length) : null,
+      avgGrossDeal: gmSold90.length > 0 ? Math.round(sumAmount(gmSold90) / gmSold90.length) : null,
       daPacePerMo: Math.round(daPacePerMo),
     },
     topFunnel,

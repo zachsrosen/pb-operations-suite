@@ -1,4 +1,4 @@
-import {
+import { planGoalForward,
   computeOpsScorecard,
   normalizeLocation,
   daysBetween,
@@ -290,9 +290,10 @@ describe("computeOpsScorecard", () => {
     // close rate = 3 sales / 300 consults = 1%; 200 consults × 1% = 2 predicted
     expect(out.salesForecast!.closeRatePct).toBe(1);
     expect(out.salesForecast!.predictedCount30).toBe(2);
-    // avg net deal = (40k + 60k) / 2 = 50k → predicted revenue 2 × 50k
-    expect(out.salesForecast!.avgNetDeal).toBe(50000);
-    expect(out.salesForecast!.predictedRev30).toBe(100000);
+    // avg deal over ALL sold (total basis, matching the all-deals count):
+    // (40k + 60k + 99999) / 3 ≈ 66,666 → predicted signed revenue 2 × that
+    expect(out.salesForecast!.avgDeal).toBe(66666);
+    expect(out.salesForecast!.predictedRev30).toBe(133333);
     expect(computeOpsScorecard(projects, NOW).salesForecast).toBeNull();
   });
 
@@ -330,6 +331,40 @@ describe("computeOpsScorecard", () => {
     // the one converted deal arrived within month 1 → cdf[0] = 1
     expect(out.goalModel.ccMonthlyCdf[0]).toBe(1);
     expect(out.goalModel.daMonthlyCdf[0]).toBe(1);
+  });
+
+  it("goal planner: steady-state identity — target at current pace stays flat", () => {
+    const cdf = [0.7, 0.9, 0.96, 0.98, 0.99, 1];
+    const plan = planGoalForward({
+      targetMonthly: 1_000_000,
+      daConv: 0.9,
+      ccConv: 0.8,
+      daMonthlyCdf: cdf,
+      ccMonthlyCdf: cdf,
+      daPacePerMo: 900_000, // == target × daConv → no transition
+      burnPerMo: 800_000,
+      backlogRev: 8_000_000,
+    });
+    for (const m of plan) {
+      expect(m.da).toBeCloseTo(900_000, 0); // flat — no phantom bulge
+    }
+    // CC ramp converges to target × conversion by the end of the curve
+    expect(plan[5].ccNew).toBeCloseTo(800_000, 0);
+  });
+
+  it("goal planner: backlog drain spends completion-discounted backlog, not all of it", () => {
+    const plan = planGoalForward({
+      targetMonthly: 0,
+      daConv: 0.9,
+      ccConv: 0.8,
+      daMonthlyCdf: [1, 1, 1, 1, 1, 1],
+      ccMonthlyCdf: [0, 0, 0, 0, 0, 0],
+      daPacePerMo: 0,
+      burnPerMo: 1_000_000,
+      backlogRev: 4_000_000,
+    }, 12);
+    const totalBacklogCc = plan.reduce((a: number, m: { ccBacklog: number }) => a + m.ccBacklog, 0);
+    expect(totalBacklogCc).toBeCloseTo(4_000_000 * 0.85, 0); // 85% completes
   });
 
   it("year framing follows the provided clock", () => {
