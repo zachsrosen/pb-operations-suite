@@ -6,6 +6,7 @@ import { StatCard, MiniStat } from "@/components/ui/MetricCard";
 import { formatCurrencyCompact } from "@/lib/format";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { planGoalForward } from "@/lib/ops-scorecard";
 import type { OpsScorecardData } from "@/lib/ops-scorecard";
 
 /**
@@ -123,7 +124,7 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
   const ccConv = mixConv;
   const fmt = (n: number) => formatCurrencyCompact(n);
   const cnt = (rev: number) =>
-    goalModel.avgNetDeal ? Math.round(rev / goalModel.avgNetDeal) : null;
+    goalModel.avgGrossDeal ? Math.round(rev / goalModel.avgGrossDeal) : null;
 
   const months: string[] = [];
   const nowD = new Date();
@@ -131,21 +132,17 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
     const d = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth() + k, 1));
     months.push(d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }));
   }
-  const cover = capacity.coverMonths ?? 0;
-  const burn = capacity.burnPerMo ?? 0;
-  const daPace = goalModel.daPacePerMo ?? 0;
-  const rows = months.map((label, i) => {
-    const k = i + 1;
-    // Hand-off convolution: as the new pace's DAs ramp in (cdf share), the old
-    // pipeline's flow ramps out by exactly the complementary share — summing
-    // the full current pace on top of the new-target share double-counts the
-    // transition month and produces a phantom bulge.
-    const daCdf = goalModel.daMonthlyCdf[k - 1] ?? 1;
-    const da = S * daConv * daCdf + daPace * (1 - daCdf);
-    const ccNew = S * ccConv * (goalModel.ccMonthlyCdf[k - 1] ?? 1);
-    const ccBacklog = burn * Math.max(0, Math.min(1, cover - (k - 1)));
-    return { label, da, ccNew, ccBacklog, cc: ccNew + ccBacklog };
+  const plan = planGoalForward({
+    targetMonthly: S,
+    daConv,
+    ccConv,
+    daMonthlyCdf: goalModel.daMonthlyCdf,
+    ccMonthlyCdf: goalModel.ccMonthlyCdf,
+    daPacePerMo: goalModel.daPacePerMo ?? 0,
+    burnPerMo: capacity.burnPerMo ?? 0,
+    backlogRev: capacity.backlogRev,
   });
+  const rows = months.map((label, i) => ({ label, ...plan[i] }));
 
   const presets: Array<[string, number | null]> = [
     ["Current pace", capacity.grossSalesPacePerMo],
@@ -183,7 +180,7 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
         ["Expected DAs", "a hand-off blend: the new target's DAs ramp in on the measured arrival curve (72% within a month) while today's pipeline ramps out by the complementary share — so month 1 is mostly the target pace already, and there's no artificial overlap bulge."],
         ["CCs from new sales", "target × mix-weighted CC conversion × the sale → CC arrival curve — new sales barely contribute for ~2 months, then ramp to steady state (~month 4–5)."],
         ["Mix-weighted conversion", "each office's own conversion rate (Westminster ~90%, Camarillo ~57%) weighted by its share of the current selling pace, instead of the blanket cohort average. If the sales mix shifts toward high-converting offices, expected CCs rise without anyone selling more."],
-        ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate for ~${capacity.coverMonths ?? "—"} months of cover, then is spent.`],
+        ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate until ~85% of it is spent (the rest is expected to cancel before completing) — about ${((capacity.backlogRev * 0.85) / (capacity.burnPerMo || 1)).toFixed(1)} months.`],
         ["Counts", "revenue ÷ trailing average net deal size."],
         ["Reverse mode", "required signed sales = CC goal ÷ mix-weighted conversion; deals = revenue ÷ trailing average deal; consults = deals ÷ the consult → sale close rate. Timing still applies: a sales-pace change reaches full CC effect ~4–5 months later."],
         ["Steady state", "once the ramp completes, DAs/mo ≈ target × DA conversion and CCs/mo ≈ target × CC conversion. Selling below sustain means the total CC line sags once the backlog is spent — exactly what the capacity section warns about."],
@@ -311,7 +308,7 @@ function ReversePlanner({
   const fmt = (n: number) => formatCurrencyCompact(n);
   const goal = ccGoalM * 1_000_000;
   const requiredSales = mixConv > 0 ? goal / mixConv : 0;
-  const requiredDeals = goalModel.avgNetDeal ? Math.round(requiredSales / goalModel.avgNetDeal) : null;
+  const requiredDeals = goalModel.avgGrossDeal ? Math.round(requiredSales / goalModel.avgGrossDeal) : null;
   const closeRate = salesForecast ? salesForecast.closeRatePct / 100 : null;
   const requiredConsults =
     requiredDeals !== null && closeRate && closeRate > 0 ? Math.round(requiredDeals / closeRate) : null;
@@ -359,7 +356,7 @@ function ReversePlanner({
         </div>
         <div>
           <div className="text-2xl font-semibold text-foreground">{requiredDeals === null ? "—" : num(requiredDeals)}</div>
-          <div className="text-xs text-muted mt-1">deals /mo (at {fmt(goalModel.avgNetDeal ?? 0)} avg)</div>
+          <div className="text-xs text-muted mt-1">deals /mo (at {fmt(goalModel.avgGrossDeal ?? 0)} avg)</div>
         </div>
         <div>
           <div className="text-2xl font-semibold text-foreground">{fmt(requiredDas)}</div>
@@ -499,7 +496,7 @@ export default function OpsScorecardPage() {
             ["Median lag", "days from a deal's first consult meeting to its close date, median over deals sold in the last 12 months (stamped on every deal as first_consult_date). Half of buyers sign within ~2 weeks."],
             ["Close rate", "deals sold in the last 90 days ÷ consults held in the 90-day window ending [lag] days ago — so consults are compared against the sales they had time to become."],
             ["Predicted sales", "consults held in the last 30 days × close rate. These consults' sales land over the next ~30 days (offset by the lag)."],
-            ["Predicted net revenue", "predicted sales × average net deal size over the last 90 days."],
+            ["Predicted signed revenue", "predicted sales × the average deal over ALL sold deals in the last 90 days — total basis, because the predicted count includes deals that will later cancel. Net-mature revenue lands ~15% lower once the leak takes its share."],
             ["What it can miss", "the ~20% of sales that close 60+ days after their consult (the nurture tail), and consults on a spouse's contact record."],
           ]}
         >
@@ -510,7 +507,7 @@ export default function OpsScorecardPage() {
             </div>
             <div>
               <div className="text-2xl font-semibold text-orange-400">{$(data.salesForecast.predictedRev30)}</div>
-              <div className="text-xs text-muted mt-1">predicted net revenue</div>
+              <div className="text-xs text-muted mt-1">predicted signed revenue (total)</div>
             </div>
             <div>
               <div className="text-2xl font-semibold text-foreground">{num(data.salesForecast.consultsLast30)}</div>
@@ -522,7 +519,7 @@ export default function OpsScorecardPage() {
             </div>
             <div>
               <div className="text-2xl font-semibold text-foreground">{data.salesForecast.lagDays}d</div>
-              <div className="text-xs text-muted mt-1">median consult → sale (avg deal {$(data.salesForecast.avgNetDeal)})</div>
+              <div className="text-xs text-muted mt-1">median consult → sale (avg deal {$(data.salesForecast.avgDeal)})</div>
             </div>
           </div>
         </SectionCard>
