@@ -323,16 +323,52 @@ export function buildTeamSections(
           .sort((a, b) => b.daysWaiting - a.daysWaiting);
         return { title, followUpDays: 0, groupBy: "lead", lines };
       };
+      // Surveys booked in the next few days. Overdue-only coverage meant a
+      // surveyor first heard about a job when it was already late; this gives
+      // them the heads-up while the layout can still be prepped on time (which
+      // is what gets the DA out quickly after the survey lands).
+      const upcoming = (
+        title: string,
+        deals: ProjectFunnelDrillDownDeal[],
+        lead: (d: ProjectFunnelDrillDownDeal) => string,
+        withinDays: number
+      ): DigestSection => {
+        const lines = deals
+          .filter(workable)
+          .filter((d) => {
+            if (!d.scheduledDate) return false;
+            const t = Date.parse(`${d.scheduledDate}T12:00:00`);
+            return t >= nowMs && t <= nowMs + withinDays * DAY;
+          })
+          .map((d) => {
+            const t = Date.parse(`${d.scheduledDate}T12:00:00`);
+            const when = new Date(t).toLocaleDateString("en-US", {
+              timeZone: "America/Denver", weekday: "short", month: "short", day: "numeric",
+            });
+            return {
+              ...toLine(d, lead(d), null),
+              // Show the booking date rather than an age — these aren't waiting.
+              status: when,
+              daysWaiting: Math.max(0, Math.round((t - nowMs) / DAY)),
+              needsFollowUp: false,
+            };
+          })
+          .sort((a, b) => a.daysWaiting - b.daysWaiting); // soonest first
+        return { title, followUpDays: null, groupBy: "lead", lines };
+      };
+
       const surveys = overdue("Overdue site surveys (days past scheduled date)", dd.awaitingSurvey, (d) => leadOf(d.siteSurveyor, leadOf(d.projectManager)));
+      const surveysSoon = upcoming("Upcoming site surveys (next 5 days)", dd.awaitingSurvey, (d) => leadOf(d.siteSurveyor, leadOf(d.projectManager)), 5);
       // Overdue surveys also land in the ops director's PERSONAL worklist,
       // not just the surveyor's (per Zach 7/8).
       const opsMgrByDeal = new Map(dd.awaitingSurvey.map((d) => [String(d.id), leadOf(d.operationsManager, "")]));
-      for (const l of surveys.lines) {
+      for (const l of [...surveys.lines, ...surveysSoon.lines]) {
         const mgr = opsMgrByDeal.get(l.id);
         if (mgr && mgr !== "—" && mgr !== "" && mgr !== l.lead) l.alsoNotify = [mgr];
       }
       return [
         surveys,
+        surveysSoon,
         overdue("Overdue installs (days past scheduled date)", dd.awaitingConstructionComplete, (d) => leadOf(d.operationsManager, leadOf(d.projectManager))),
         section("Inspections to pass", dd.awaitingInspection, (d) => leadOf(d.inspectionsLead, leadOf(d.operationsManager)), 14),
       ];
