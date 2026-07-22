@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["scripts/hubspot-email-triage-state.ts"],
+  "exclude": []
+}
