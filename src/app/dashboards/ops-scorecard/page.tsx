@@ -487,6 +487,23 @@ export default function OpsScorecardPage() {
         />
       </div>
 
+      {/* ---- AI commentary ---- */}
+      {data.aiCommentary && data.aiCommentary.sentences.length > 0 && (
+        <SectionCard
+          title="What the numbers say"
+          sub="AI-generated commentary — every figure is validated against the data below before display; sentences that fail validation are dropped automatically."
+        >
+          <ul className="space-y-2">
+            {data.aiCommentary.sentences.map((s, i) => (
+              <li key={i} className="text-sm text-foreground/90 flex gap-2">
+                <span className="text-orange-400 shrink-0">›</span>
+                <span>{s}</span>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      )}
+
       {/* ---- Consult-driven sales forecast ---- */}
       {data.salesForecast && (
         <SectionCard

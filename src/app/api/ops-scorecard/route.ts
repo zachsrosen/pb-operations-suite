@@ -8,6 +8,7 @@ import { getDealSyncSource } from "@/lib/deal-sync";
 import { dealToProject } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
 import { computeOpsScorecard, median, TopFunnelCounts, SalesForecastInputs } from "@/lib/ops-scorecard";
+import { generateScorecardCommentary } from "@/lib/scorecard-commentary";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,10 @@ export async function GET(request: NextRequest) {
           fetchTopFunnel(),
         ]);
         const forecastInputs = await fetchForecastInputs(projects);
-        return computeOpsScorecard(projects, new Date(), topFunnel, forecastInputs);
+        const scorecard = computeOpsScorecard(projects, new Date(), topFunnel, forecastInputs);
+        // AI commentary is cached with the data; null (hidden) on any failure.
+        scorecard.aiCommentary = await generateScorecardCommentary(scorecard);
+        return scorecard;
       },
       forceRefresh,
       { ttl: SCORECARD_TTL, staleTtl: SCORECARD_STALE_TTL }
