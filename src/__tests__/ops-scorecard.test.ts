@@ -367,6 +367,28 @@ describe("computeOpsScorecard", () => {
     expect(totalBacklogCc).toBeCloseTo(4_000_000 * 0.85, 0); // 85% completes
   });
 
+  it("groups cancellations by reason on the sold-year cohort", () => {
+    const projects = [
+      makeProject({ closeDate: "2026-02-01", amount: 1000, stageId: "68229433", cancellationReason: "financing_credit" }),
+      makeProject({ closeDate: "2026-03-01", amount: 3000, stageId: "68229433", cancellationReason: "financing_credit" }),
+      makeProject({ closeDate: "2026-04-01", amount: 1000, stageId: "68229433" }), // no reason
+      makeProject({ closeDate: "2025-05-01", amount: 500, stageId: "68229433", cancellationReason: "lost_to_competitor" }),
+      makeProject({ closeDate: "2026-06-01", amount: 9999 }), // not cancelled
+    ];
+    const out = computeOpsScorecard(projects, NOW);
+    const fin = out.cancellationReasons.find((r) => r.reason === "financing_credit")!;
+    expect(fin.label).toBe("Financing / Credit");
+    expect(fin.cy).toEqual({ count: 2, revLost: 4000 });
+    expect(fin.cySharePct).toBe(80); // 4000 of 5000 cancelled 2026-sold dollars
+    const undoc = out.cancellationReasons.find((r) => r.reason === "reason_not_documented")!;
+    expect(undoc.cy.count).toBe(1);
+    const comp = out.cancellationReasons.find((r) => r.reason === "lost_to_competitor")!;
+    expect(comp.py.revLost).toBe(500);
+    expect(comp.cy.count).toBe(0);
+    // sorted by current-year dollars lost
+    expect(out.cancellationReasons[0].reason).toBe("financing_credit");
+  });
+
   it("year framing follows the provided clock", () => {
     const out = computeOpsScorecard([], NOW);
     expect(out.meta.cy).toBe("2026");

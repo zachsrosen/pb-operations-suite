@@ -877,6 +877,59 @@ export default function OpsScorecardPage() {
         )}
       </SectionCard>
 
+      {/* ---- Why deals cancel ---- */}
+      {data.cancellationReasons.length > 0 && (
+        <SectionCard
+          title="Why deals cancel"
+          sub={`Cancelled deals grouped by reason, cohort keyed on the year sold — the answer to "what do we fix." Sorted by ${cy} dollars lost.`}
+          explain={[
+            ["Cohort", "a deal counts in the year it was SOLD, matching the cancellation table above — so the columns answer 'of what we sold that year, what did we lose and why.'"],
+            ["Reason", "the cancellation_reason_category property in HubSpot, backfilled across 2024+ and maintained going forward. Deals with no reason recorded show as Reason Not Documented."],
+            ["Share", `each reason's percentage of all ${cy}-sold cancelled dollars.`],
+            ["Not a true loss", "'Duplicate / Admin' entries are bookkeeping cancellations, not lost customers — exclude them when sizing the real leak."],
+            ["Basis", `eventual — every deal from that sold-year cohort that is cancelled today, matching the 'eventual' columns above (${py2} and ${py} totals reconcile exactly). The ${cy} total can run slightly above the 'to date' column above, which additionally requires a stamped cancellation date.`],
+          ]}
+        >
+          <table className="w-full min-w-[720px]">
+            <thead>
+              <tr>
+                <th className={th}>Reason</th>
+                <th className={thR}>{py2} sold cohort</th>
+                <th className={thR}>{py} sold cohort</th>
+                <th className={thR}>{cy} sold cohort</th>
+                <th className={thR}>Share of {cy} loss</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.cancellationReasons.map((r) => (
+                <tr key={r.reason}>
+                  <td className={td}>{r.label}</td>
+                  <td className={tdR}>{r.py2.count} · {$(r.py2.revLost)}</td>
+                  <td className={tdR}>{r.py.count} · {$(r.py.revLost)}</td>
+                  <td className={tdR}>{r.cy.count} · {$(r.cy.revLost)}</td>
+                  <td className={tdR + ((r.cySharePct ?? 0) >= 20 ? " text-red-400 font-semibold" : "")}>
+                    {pct(r.cySharePct)}
+                  </td>
+                </tr>
+              ))}
+              <tr className="font-semibold">
+                <td className={td}>Total</td>
+                <td className={tdR}>
+                  {data.cancellationReasons.reduce((a, r) => a + r.py2.count, 0)} · {$(data.cancellationReasons.reduce((a, r) => a + r.py2.revLost, 0))}
+                </td>
+                <td className={tdR}>
+                  {data.cancellationReasons.reduce((a, r) => a + r.py.count, 0)} · {$(data.cancellationReasons.reduce((a, r) => a + r.py.revLost, 0))}
+                </td>
+                <td className={tdR}>
+                  {data.cancellationReasons.reduce((a, r) => a + r.cy.count, 0)} · {$(data.cancellationReasons.reduce((a, r) => a + r.cy.revLost, 0))}
+                </td>
+                <td className={tdR}>100.0%</td>
+              </tr>
+            </tbody>
+          </table>
+        </SectionCard>
+      )}
+
       {/* ---- Funnel FY ---- */}
       <SectionCard
         title={data.topFunnel ? "Funnel: leads → consults → sales → DAs → CCs → inspections → PTO" : "Funnel: sales → DAs → CCs → inspections → PTO"}

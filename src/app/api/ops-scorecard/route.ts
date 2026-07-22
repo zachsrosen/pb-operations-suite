@@ -84,7 +84,10 @@ async function loadAllProjects(): Promise<Project[]> {
     ]);
     for (const p of projects) {
       const d = cancelledDates.get(String(p.id));
-      if (d) p.cancelledDate = d;
+      if (d) {
+        if (d.date) p.cancelledDate = d.date;
+        if (d.reason) p.cancellationReason = d.reason;
+      }
       const c = consultDates.get(String(p.id));
       if (c) p.firstConsultDate = c;
     }
@@ -99,9 +102,9 @@ async function loadAllProjects(): Promise<Project[]> {
 
 const CANCELLED_STAGE_ID = "68229433";
 
-/** dealId → cancellation_date (YYYY-MM-DD) for all cancelled Project-pipeline deals. */
-async function fetchCancelledDates(): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+/** dealId → {date, reason} for all cancelled Project-pipeline deals. */
+async function fetchCancelledDates(): Promise<Map<string, { date: string | null; reason: string | null }>> {
+  const out = new Map<string, { date: string | null; reason: string | null }>();
   let after: string | undefined;
   do {
     const response = await searchWithRetry({
@@ -113,13 +116,14 @@ async function fetchCancelledDates(): Promise<Map<string, string>> {
           ],
         },
       ],
-      properties: ["cancellation_date"],
+      properties: ["cancellation_date", "cancellation_reason_category"],
       limit: 100,
       after,
     });
     for (const deal of response.results) {
       const d = deal.properties.cancellation_date;
-      if (d) out.set(deal.id, d.slice(0, 10));
+      const r = deal.properties.cancellation_reason_category;
+      out.set(deal.id, { date: d ? d.slice(0, 10) : null, reason: r || null });
     }
     after = response.paging?.next?.after;
   } while (after);

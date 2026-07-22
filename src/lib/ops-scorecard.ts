@@ -216,6 +216,38 @@ export interface TopFunnel {
   monthly: { leads: Record<string, number>; consults: Record<string, number> };
 }
 
+/** Human labels for the cancellation_reason_category taxonomy (HubSpot). */
+export const CANCELLATION_REASON_LABELS: Record<string, string> = {
+  financing_credit: "Financing / Credit",
+  affordability_budget: "Affordability / Budget",
+  incentive_rebate_loss: "Incentive / Rebate Loss",
+  technical_equipment_electrical: "Technical — Equipment/Electrical",
+  technical_roof_structural: "Technical — Roof / Structural / AHJ",
+  technical_site_not_buildable: "Technical — Site Not Buildable (DQ)",
+  change_order_cost: "Change Order / Cost Increase",
+  customer_changed_mind: "Customer Changed Mind",
+  contract_esa_lease: "Contract / ESA / Lease Terms",
+  lost_to_competitor: "Lost to Competitor",
+  unresponsive_ghosted: "Unresponsive / Ghosted",
+  customer_relocating: "Customer Relocating",
+  admin_not_a_loss: "Duplicate / Admin (Not a True Loss)",
+  internal_scheduling_error: "Internal / Scheduling Error",
+  reason_not_documented: "Reason Not Documented",
+  health_life_event: "Health / Life Event",
+  installer_channel_backed_out: "Installer / Channel Backed Out",
+  new_construction_build_stalled: "New Construction / Build Stalled",
+};
+
+export interface CancellationReasonRow {
+  reason: string;
+  label: string;
+  py2: { count: number; revLost: number };
+  py: { count: number; revLost: number };
+  cy: { count: number; revLost: number };
+  /** Share of the current year's cancelled dollars. */
+  cySharePct: number | null;
+}
+
 export interface OpsScorecardData {
   meta: {
     generatedAt: string;
@@ -288,6 +320,8 @@ export interface OpsScorecardData {
     ccs: StageYearRow;
   }>;
   cancellations: OfficeCancellation[];
+  /** Why deals cancel — cohort keyed on year SOLD, sorted by current-year dollars lost. */
+  cancellationReasons: CancellationReasonRow[];
   /** Inputs for the interactive goal planner: measured conversion rates and
    *  monthly lag CDFs from the fully-baked Jan–Sep prior-year cohort. */
   goalModel: {
@@ -779,6 +813,39 @@ export function computeOpsScorecard(
     };
   }
 
+  // ---- Cancellation reasons (cohort = year sold) ----------------------------
+  const cancelledDeals = projects.filter((p) => p.stageId === CANCELLED);
+  const reasonKeys = new Set<string>();
+  for (const p of cancelledDeals) {
+    reasonKeys.add(p.cancellationReason || "reason_not_documented");
+  }
+  const cyCancelledRev = sumAmount(
+    cancelledDeals.filter((p) => yearOf(p.closeDate) === cy)
+  );
+  const cancellationReasons: CancellationReasonRow[] = [...reasonKeys]
+    .map((reason) => {
+      const forYear = (year: string) => {
+        const xs = cancelledDeals.filter(
+          (p) =>
+            yearOf(p.closeDate) === year &&
+            (p.cancellationReason || "reason_not_documented") === reason
+        );
+        return { count: xs.length, revLost: sumAmount(xs) };
+      };
+      const cyRow = forYear(cy);
+      return {
+        reason,
+        label: CANCELLATION_REASON_LABELS[reason] ?? reason,
+        py2: forYear(py2),
+        py: forYear(py),
+        cy: cyRow,
+        cySharePct:
+          cyCancelledRev > 0 ? round1((cyRow.revLost / cyCancelledRev) * 100) : null,
+      };
+    })
+    .filter((r) => r.py2.count + r.py.count + r.cy.count > 0)
+    .sort((a, b) => b.cy.revLost - a.cy.revLost || b.py.revLost - a.py.revLost);
+
   // ---- Goal planner model ---------------------------------------------------
   const gmCohort = projects.filter(
     (p) => p.closeDate !== null && p.closeDate >= `${py}-01-01` && p.closeDate < `${py}-10-01`
@@ -840,6 +907,7 @@ export function computeOpsScorecard(
     runRateByOffice,
     throughputByOffice,
     cancellations,
+    cancellationReasons,
     goalModel: {
       daConversionPct: daModel.convPct,
       ccConversionPct: ccModel.convPct,

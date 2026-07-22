@@ -525,6 +525,8 @@ export interface Project {
 
   /** Earliest consult meeting held with the primary contact (stamped nightly). */
   firstConsultDate: string | null;
+  /** cancellation_reason_category bucket (18-value taxonomy, backfilled 2024+). */
+  cancellationReason: string | null;
 
   // Calculated fields
   daysToInstall: number | null;
@@ -867,6 +869,7 @@ const DEAL_PROPERTIES = [
   "hs_v2_date_entered_20440343", // Date entered Project Complete stage
   "hs_v2_date_entered_68229433", // Date entered Cancelled stage
   "first_consult_date", // Earliest consult meeting (stamped by consult-stamp cron)
+  "cancellation_reason_category", // Cancellation reason bucket (taxonomy backfilled 7/2026)
 
   // Install planning
   "expected_days_for_install",
@@ -1232,6 +1235,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     projectCompleteDate: parseDate(deal.hs_v2_date_entered_20440343),
     cancelledDate: parseDate(deal.hs_v2_date_entered_68229433),
     firstConsultDate: parseDate(deal.first_consult_date),
+    cancellationReason: deal.cancellation_reason_category ? String(deal.cancellation_reason_category) : null,
 
     // Forecasted dates
     forecastedInstallDate: parseDate(deal.forecasted_installation_date),

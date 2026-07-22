@@ -57,6 +57,16 @@ export function buildDigest(d: OpsScorecardData): string {
       `Consult-driven forecast: ${d.salesForecast.consultsLast30} consults last 30 days at ${P(d.salesForecast.closeRatePct)} close rate and ${d.salesForecast.lagDays}-day median lag predicts ${d.salesForecast.predictedCount30} sales, ${M(d.salesForecast.predictedRev30)} signed, over the next 30 days.`
     );
   }
+  const topReasons = d.cancellationReasons.slice(0, 4);
+  if (topReasons.length) {
+    lines.push(
+      `Top cancellation reasons for ${d.meta.cy}-sold deals: ` +
+        topReasons
+          .map((r) => `${r.label} ${r.cy.count} deals ${M(r.cy.revLost)} (${P(r.cySharePct)} of the loss)`)
+          .join("; ") +
+        "."
+    );
+  }
   const west = d.capacity.byOffice.find((o) => o.office === "Westminster");
   const cam = d.capacity.byOffice.find((o) => o.office === "Camarillo");
   if (west && cam) {
