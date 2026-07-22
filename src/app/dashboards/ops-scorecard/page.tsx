@@ -136,11 +136,15 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
   const daPace = goalModel.daPacePerMo ?? 0;
   const rows = months.map((label, i) => {
     const k = i + 1;
-    const daNew = S * daConv * (goalModel.daMonthlyCdf[k - 1] ?? 1);
-    const daExisting = daPace * Math.max(0, Math.min(1, 1 - (k - 1) / 2));
+    // Hand-off convolution: as the new pace's DAs ramp in (cdf share), the old
+    // pipeline's flow ramps out by exactly the complementary share — summing
+    // the full current pace on top of the new-target share double-counts the
+    // transition month and produces a phantom bulge.
+    const daCdf = goalModel.daMonthlyCdf[k - 1] ?? 1;
+    const da = S * daConv * daCdf + daPace * (1 - daCdf);
     const ccNew = S * ccConv * (goalModel.ccMonthlyCdf[k - 1] ?? 1);
     const ccBacklog = burn * Math.max(0, Math.min(1, cover - (k - 1)));
-    return { label, da: daNew + daExisting, ccNew, ccBacklog, cc: ccNew + ccBacklog };
+    return { label, da, ccNew, ccBacklog, cc: ccNew + ccBacklog };
   });
 
   const presets: Array<[string, number | null]> = [
@@ -176,7 +180,7 @@ function GoalPlanner({ data }: { data: OpsScorecardData }) {
       }
       explain={[
         ["Why total, not net", "conversion is measured as CC dollars ÷ ALL sold dollars (81% — cancels already baked in). Survivors complete at ~99%, so if you think in net-mature terms, a net target × ~0.99 gives the same CC answer. Enter what the team signs, and the model handles the leak."],
-        ["Expected DAs", "target × DA conversion × share of deals that historically reach DA within k months of sale, plus today's sold-but-not-yet-DA'd pipeline fading out over ~2 months."],
+        ["Expected DAs", "a hand-off blend: the new target's DAs ramp in on the measured arrival curve (72% within a month) while today's pipeline ramps out by the complementary share — so month 1 is mostly the target pace already, and there's no artificial overlap bulge."],
         ["CCs from new sales", "target × mix-weighted CC conversion × the sale → CC arrival curve — new sales barely contribute for ~2 months, then ramp to steady state (~month 4–5)."],
         ["Mix-weighted conversion", "each office's own conversion rate (Westminster ~90%, Camarillo ~57%) weighted by its share of the current selling pace, instead of the blanket cohort average. If the sales mix shifts toward high-converting offices, expected CCs rise without anyone selling more."],
         ["CCs from today's backlog", `the current $${((capacity.backlogRev) / 1e6).toFixed(1)}M backlog keeps completing at the current burn rate for ~${capacity.coverMonths ?? "—"} months of cover, then is spent.`],
