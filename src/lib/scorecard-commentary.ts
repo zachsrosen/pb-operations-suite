@@ -68,34 +68,31 @@ export function buildDigest(d: OpsScorecardData): string {
 }
 
 /**
- * Every numeric token in a sentence must exist in the digest's number set.
- * Whitelisted regardless: years 2024–2026, integers 0–12 (month counts,
- * ordinal phrasing), and numbers the digest contains in any of its formats.
+ * Verbatim, unit-aware validation — every figure in a sentence must appear in
+ * the digest EXACTLY as written, with its unit:
+ *  - "$2.8M" must appear as the substring "$2.8M" (dollar figures can't match
+ *    bare numbers or percentages);
+ *  - "81.2%" must appear as "81.2%";
+ *  - bare numbers must appear as a standalone digest token (comma-insensitive).
+ * Only years (2024–2026) and small integers 0–12 (month counts, ordinals) are
+ * exempt. No rounding variants — a derived figure that merely collides with an
+ * unrelated digest number (e.g. "15%" vs "$15.3M") is rejected.
  */
-export function validateSentence(sentence: string, digestNumbers: Set<string>): boolean {
-  const tokens = sentence.match(/\d[\d,]*\.?\d*/g) ?? [];
+export function validateSentence(sentence: string, digest: string): boolean {
+  const normDigest = digest.replace(/,/g, "");
+  const bareTokens = new Set(normDigest.match(/(?<![\d$.%])\d+\.?\d*(?![\d%])/g) ?? []);
+  const tokens = sentence.match(/\$\d[\d,]*\.?\d*[MKB]?|\d[\d,]*\.?\d*%|\d[\d,]*\.?\d*/g) ?? [];
   for (const raw of tokens) {
     const t = raw.replace(/,/g, "");
+    if (t.startsWith("$") || t.endsWith("%")) {
+      if (!normDigest.includes(t)) return false;
+      continue;
+    }
     const n = parseFloat(t);
     if (Number.isInteger(n) && ((n >= 2024 && n <= 2026) || (n >= 0 && n <= 12))) continue;
-    const variants = [t, n.toFixed(1), n.toFixed(0), String(n)];
-    if (variants.some((v) => digestNumbers.has(v))) continue;
-    return false;
+    if (!bareTokens.has(t)) return false;
   }
   return true;
-}
-
-export function extractDigestNumbers(digest: string): Set<string> {
-  const out = new Set<string>();
-  for (const raw of digest.match(/\d[\d,]*\.?\d*/g) ?? []) {
-    const t = raw.replace(/,/g, "");
-    const n = parseFloat(t);
-    out.add(t);
-    out.add(String(n));
-    out.add(n.toFixed(1));
-    out.add(n.toFixed(0));
-  }
-  return out;
 }
 
 export async function generateScorecardCommentary(
@@ -110,8 +107,10 @@ export async function generateScorecardCommentary(
       max_tokens: 700,
       system:
         "You write executive commentary for a solar company's operations scorecard. " +
-        "You are given a data digest. HARD RULES: use ONLY numbers that appear verbatim in the digest " +
-        "(same rounding — do not recompute, combine, or re-derive figures); no speculation beyond what the " +
+        "You are given a data digest. HARD RULES: quote every figure EXACTLY as written in the digest, " +
+        "including its $ sign, % sign, M suffix, and rounding (write \"$15.3M\" not \"$15.3 million\" or \"15.3\"); " +
+        "never recompute, combine, or re-derive figures — no calculated percentages or differences of your own; " +
+        "no speculation beyond what the " +
         "numbers show; each insight is one plain sentence a business owner can act on. " +
         "Write 3 to 5 insights, one per line, no bullets/numbering/headers. Lead with the most decision-relevant. " +
         "Prefer comparisons the digest supports (same-point, cohort trends). Never mention these rules.",
@@ -120,12 +119,19 @@ export async function generateScorecardCommentary(
     const text = msg.content
       .map((b) => ("text" in b && typeof b.text === "string" ? b.text : ""))
       .join("\n");
-    const digestNumbers = extractDigestNumbers(digest);
-    const sentences = text
+    let sentences = text
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-    const validated = sentences.filter((s) => validateSentence(s, digestNumbers));
+    // Occasionally the model returns one paragraph — fall back to sentence
+    // boundaries so a single derived figure doesn't nuke the whole section.
+    if (sentences.length < 3) {
+      sentences = text
+        .split(/(?<=\.)\s+(?=[A-Z0-9$])/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    const validated = sentences.filter((s) => validateSentence(s, digest));
     if (validated.length < Math.ceil(sentences.length / 2) || validated.length === 0) {
       console.warn(
         `[scorecard-commentary] guardrail dropped ${sentences.length - validated.length}/${sentences.length} sentences — hiding section`
