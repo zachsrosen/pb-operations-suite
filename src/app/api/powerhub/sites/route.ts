@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { resolveDealSummaries } from "@/lib/powerhub-site-context";
-import { getTicketSummaries, buildSiteTickets } from "@/lib/powerhub-tickets";
+import { getOpenTicketsByDeal, buildSiteTicketsFromDeals } from "@/lib/powerhub-tickets";
 
 export const dynamic = "force-dynamic";
 
@@ -51,20 +51,21 @@ export async function GET(request: Request) {
     },
   });
 
-  // Nearly the whole fleet is GEO-linked to a *property* with no direct
-  // dealId (only a handful of sites carry one) — the customer must be
-  // resolved through PropertyDealLink: site → property → most recent deal.
-  const propertyIdsNeedingDeal = [
-    ...new Set(
-      sites
-        .filter((s) => !s.dealId && s.propertyId)
-        .map((s) => s.propertyId as string)
-    ),
+  // Nearly the whole fleet is GEO-linked to a *property* with no direct dealId
+  // (only a handful of sites carry one) — customer + tickets resolve through
+  // PropertyDealLink: site → property → deals.
+  //
+  // All deals per linked property, newest-first. propertyDealMap keeps the most
+  // recent deal (customer resolution); propertyAllDeals keeps every deal (ticket
+  // resolution — an open ticket can hang off any of a property's deals).
+  const linkedPropertyIdsForDeals = [
+    ...new Set(sites.map((s) => s.propertyId).filter((id): id is string => Boolean(id))),
   ];
   const propertyDealMap = new Map<string, string>();
-  if (propertyIdsNeedingDeal.length > 0) {
+  const propertyAllDeals = new Map<string, string[]>();
+  if (linkedPropertyIdsForDeals.length > 0) {
     const links = await prisma.propertyDealLink.findMany({
-      where: { propertyId: { in: propertyIdsNeedingDeal } },
+      where: { propertyId: { in: linkedPropertyIdsForDeals } },
       orderBy: { associatedAt: "desc" },
       select: { propertyId: true, dealId: true },
     });
@@ -73,6 +74,9 @@ export async function GET(request: Request) {
       if (!propertyDealMap.has(link.propertyId)) {
         propertyDealMap.set(link.propertyId, link.dealId);
       }
+      const arr = propertyAllDeals.get(link.propertyId) || [];
+      arr.push(link.dealId);
+      propertyAllDeals.set(link.propertyId, arr);
     }
   }
 
@@ -84,27 +88,17 @@ export async function GET(request: Request) {
   ];
   const dealMap = await resolveDealSummaries(allDealIds);
 
-  // Open service tickets per property (best-effort HubSpot enrichment —
-  // getTicketSummaries returns {} on any failure and never throws).
-  const linkedPropertyIds = [
-    ...new Set(sites.map((s) => s.propertyId).filter((id): id is string => Boolean(id))),
-  ];
-  const propertyTicketIds = new Map<string, string[]>();
-  if (linkedPropertyIds.length > 0) {
-    const ticketLinks = await prisma.propertyTicketLink.findMany({
-      where: { propertyId: { in: linkedPropertyIds } },
-      orderBy: { associatedAt: "desc" },
-      select: { propertyId: true, ticketId: true },
-    });
-    for (const link of ticketLinks) {
-      const arr = propertyTicketIds.get(link.propertyId) || [];
-      arr.push(link.ticketId);
-      propertyTicketIds.set(link.propertyId, arr);
-    }
-  }
-  const ticketSummaries = await getTicketSummaries(
-    [...propertyTicketIds.values()].flat()
-  );
+  // Open service tickets keyed by deal — the reliable source (tickets hang off
+  // deals; PropertyTicketLink is a lossy rollup that missed open tickets). A
+  // site's open tickets = union across all its deals (direct + property-linked).
+  // Best-effort: returns {} on any failure and never throws.
+  const openTicketsByDeal = await getOpenTicketsByDeal();
+  const siteDealIds = (s: { dealId: string | null; propertyId: string | null }): string[] => {
+    const ids = new Set<string>();
+    if (s.dealId) ids.add(s.dealId);
+    if (s.propertyId) for (const d of propertyAllDeals.get(s.propertyId) ?? []) ids.add(d);
+    return [...ids];
+  };
 
   const enrichedSites = sites.map((s) => {
     const resolvedDealId = effectiveDealId(s);
@@ -115,9 +109,7 @@ export async function GET(request: Request) {
       customerName: null,
       dealName: deal?.dealName ?? null,
       resolvedDealId,
-      tickets: s.propertyId
-        ? buildSiteTickets(propertyTicketIds.get(s.propertyId) || [], ticketSummaries)
-        : [],
+      tickets: buildSiteTicketsFromDeals(siteDealIds(s), openTicketsByDeal),
       systemSizeKwDc: s.property?.systemSizeKwDc ?? null,
       installDate: s.property?.mostRecentInstallDate ?? null,
       ...(usePropertyAddress

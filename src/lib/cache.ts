@@ -308,8 +308,7 @@ export const CACHE_KEYS = {
   PROJECT_FUNNEL: (months: number, location: string, range = "rolling") =>
     `funnel:project-pipeline:${months}:${location}:${range}` as const,
   TERRITORY_MAP: "territory-map",
-  POWERHUB_TICKET_SUMMARIES: (setHash: string) =>
-    `powerhub:ticket-summaries:${setHash}` as const,
+  POWERHUB_OPEN_TICKETS_BY_DEAL: "powerhub:open-tickets-by-deal",
   OFFICE_PERFORMANCE: (location: string) => `office-performance:${location}`,
   GOALS_PIPELINE: (location: string) => `goals-pipeline:${location}`,
   FIVE_STAR_REVIEWS: (yearMonth: string) => `five-star-reviews:${yearMonth}`,
