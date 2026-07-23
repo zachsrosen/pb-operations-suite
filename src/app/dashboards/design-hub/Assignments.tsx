@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import type { Tab } from "@/lib/design-hub/types";
 import { ACCENTS, type Accent } from "./accents";
 
 interface AssignmentRow {
@@ -33,7 +34,9 @@ export function Assignments({
   accent,
 }: {
   selectedDealId: string | null;
-  onSelect: (dealId: string) => void;
+  /** Carries the assignment's OWN tab: an ask made from the DA tab must open
+   *  a DA detail pane, or the status dropdown would write design_status. */
+  onSelect: (dealId: string, tab: Tab) => void;
   accent: Accent;
 }) {
   const a = ACCENTS[accent];
@@ -99,7 +102,9 @@ export function Assignments({
             >
               <button
                 type="button"
-                onClick={() => onSelect(row.dealId)}
+                onClick={() =>
+                  onSelect(row.dealId, row.tab === "da" ? "da" : "design")
+                }
                 className="block w-full px-3 py-2.5 text-left hover:bg-surface-2"
               >
                 <div className="text-foreground truncate text-sm font-medium">

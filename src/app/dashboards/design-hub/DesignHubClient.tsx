@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { parseTab } from "@/lib/design-hub/types";
 import type { QueueItem, Tab } from "@/lib/design-hub/types";
@@ -39,9 +38,12 @@ export function DesignHubClient({
     viewParam === "mine" && hasAssignmentQueue
       ? "mine"
       : (parseTab(viewParam) ?? "design");
-  // The assignment view has no status property, so accent/detail fall back to
-  // the design tab's — a detail pane opened from an assignment row is design.
-  const tab: Tab = view === "mine" ? "design" : view;
+
+  // The assignment view spans both status properties, so the detail pane's tab
+  // comes from the row that was clicked rather than from the view. Getting
+  // this wrong would point the status dropdown at the wrong property.
+  const [assignmentTab, setAssignmentTab] = useState<Tab>("design");
+  const tab: Tab = view === "mine" ? assignmentTab : view;
   const accent = ACCENT_FOR_TAB[tab];
 
   // Selection is per-view — a deal selected in one list is meaningless in
@@ -73,10 +75,11 @@ export function DesignHubClient({
   // which the old rows sit on screen unchanged. Surface it.
   const isSwitching = queueQuery.isPlaceholderData;
 
-  useSSE(() => queueQuery.refetch(), {
-    url: "/api/stream",
-    cacheKeyFilter: "deals:design",
-  });
+  // No useSSE here, deliberately. The stream emits deals:permit and deals:ic
+  // but nothing for design, so a subscription would be a no-op that reads
+  // like real-time. Freshness comes from the 30s staleTime, the server's
+  // 2min/15min stale-while-refresh cache, and direct invalidation after our
+  // own writes. Wire SSE up here if a deals:design key is ever published.
 
   function switchView(v: View) {
     // Rebuild from the current params so switching doesn't drop whatever else
@@ -122,7 +125,10 @@ export function DesignHubClient({
           {view === "mine" ? (
             <Assignments
               selectedDealId={selectedDealId}
-              onSelect={setSelectedDealId}
+              onSelect={(dealId, rowTab) => {
+                setAssignmentTab(rowTab);
+                setSelectedDealId(dealId);
+              }}
               accent={accent}
             />
           ) : (

@@ -142,7 +142,14 @@ export function Queue({
   }, [filtered]);
 
   const visibleGroups = groupOrder.filter((g) => (byGroup.get(g)?.length ?? 0) > 0);
-  const rows = byGroup.get(activeTab) ?? [];
+  // Filtering can empty the active lane while others still have rows. Showing
+  // an empty list with no tab highlighted reads as "no results" when the work
+  // is one click away — fall back to the first lane that has something.
+  const effectiveTab =
+    visibleGroups.length > 0 && !visibleGroups.includes(activeTab)
+      ? visibleGroups[0]
+      : activeTab;
+  const rows = byGroup.get(effectiveTab) ?? [];
 
   return (
     <div className="flex h-full flex-col">
@@ -197,7 +204,7 @@ export function Queue({
 
       <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-t-border px-2">
         {visibleGroups.map((g) => {
-          const active = g === activeTab;
+          const active = g === effectiveTab;
           const count = byGroup.get(g)?.length ?? 0;
           return (
             <button
@@ -229,7 +236,7 @@ export function Queue({
           <div className="text-muted p-4 text-sm">Loading queue…</div>
         ) : rows.length === 0 ? (
           <div className="text-muted p-4 text-sm">Nothing here right now.</div>
-        ) : SUB_GROUPED.has(activeTab) ? (
+        ) : SUB_GROUPED.has(effectiveTab) ? (
           <SubGroupedRows
             rows={rows}
             selectedDealId={selectedDealId}
