@@ -15,6 +15,7 @@ import {
   resolveSubmittedOn,
   resolveApprovedOn,
   resolveRejectedOn,
+  isNeverRejected,
   resolvePaidOn,
   computeMilestoneTiming,
   median,
@@ -50,6 +51,7 @@ import {
   type DocRejectionEvent,
   type PipelineGroupRow,
   type TimingSummary,
+  type TimingWindow,
   type MonthlyTiming,
   type HistoryEntry,
   type FunnelDeal,
@@ -690,33 +692,44 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const op2subPairs = rs.map((r) => gapPair(m === "M1" ? r.deal.inspectionPassDate : r.deal.ptoGrantedDate, m === "M1" ? r.deal.m1SubmissionDate : r.deal.m2SubmissionDate));
     const op2sub = op2subPairs.map((p) => p.v).filter((v): v is number => v !== null);
 
-    // --- Last-30-day window: same six legs, restricted to milestones whose
-    // terminal event (payment, approval, or submission) landed in the last 30
-    // days. Prop legs are gated by the milestone's terminal date; date legs use
-    // the pair anchors above. Small samples are expected (noisier than lifetime).
+    // --- Windowed cuts of the same six legs -----------------------------------
+    // `keep(record, legAnchorDate)` decides whether a milestone counts for a leg.
+    // Prop legs pass the milestone's terminal date as the anchor; date legs pass
+    // the pair anchors built above (cc2pPairs / op2subPairs are index-aligned
+    // with `rs`). Small samples are expected — noisier than the lifetime numbers.
+    const paidAnchor = (d: PeDealRow) => (m === "M1" ? d.m1PaidDate : d.m2PaidDate);
+    const buildWindow = (keep: (r: MilestoneRecord, anchor: string | null) => boolean): TimingWindow => {
+      const winProp = (sel: (d: PeDealRow) => number | null, anchor: (d: PeDealRow) => string | null) => {
+        const vals = rs.filter((r) => keep(r, anchor(r.deal))).map((r) => sel(r.deal)).filter((v): v is number => v !== null);
+        return { avg: meanDays(vals), n: vals.length };
+      };
+      const winDates = (pairs: { v: number | null; anchor: string | null }[]) => {
+        const vals = pairs.filter((p, i) => p.v !== null && keep(rs[i], p.anchor)).map((p) => p.v as number);
+        return { avg: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null, n: vals.length };
+      };
+      return {
+        ccToPaid: winDates(cc2pPairs),
+        fullCycle: winProp((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays), paidAnchor),
+        opToSub: winDates(op2subPairs),
+        submitToPay: winProp((d) => (m === "M1" ? d.m1SubmitToPayDays : d.m2SubmitToPayDays), paidAnchor),
+        submitToApprove: winProp((d) => (m === "M1" ? d.m1SubmitToApproveDays : d.m2SubmitToApproveDays), (d) => (m === "M1" ? d.m1ApprovalDate : d.m2ApprovalDate)),
+        approveToPay: winProp((d) => (m === "M1" ? d.m1ApproveToPayDays : d.m2ApproveToPayDays), paidAnchor),
+      };
+    };
+
+    // Last 30 days: terminal event (payment / approval / submission) landed in
+    // the window — a rolling read on recent turnaround.
     const cutoff = Date.now() - 30 * 86_400_000;
     const within30 = (d: string | null): boolean => {
       if (!d) return false;
       const t = Date.parse(d.length <= 10 ? `${d}T00:00:00Z` : d);
       return !Number.isNaN(t) && t >= cutoff;
     };
-    const paidAnchor = (d: PeDealRow) => (m === "M1" ? d.m1PaidDate : d.m2PaidDate);
-    const winProp = (sel: (d: PeDealRow) => number | null, anchor: (d: PeDealRow) => string | null) => {
-      const vals = rs.filter((r) => within30(anchor(r.deal))).map((r) => sel(r.deal)).filter((v): v is number => v !== null);
-      return { avg: meanDays(vals), n: vals.length };
-    };
-    const winDates = (pairs: { v: number | null; anchor: string | null }[]) => {
-      const vals = pairs.filter((p) => p.v !== null && within30(p.anchor)).map((p) => p.v as number);
-      return { avg: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null, n: vals.length };
-    };
-    const last30 = {
-      ccToPaid: winDates(cc2pPairs),
-      fullCycle: winProp((d) => (m === "M1" ? d.m1FullCycleDays : d.m2FullCycleDays), paidAnchor),
-      opToSub: winDates(op2subPairs),
-      submitToPay: winProp((d) => (m === "M1" ? d.m1SubmitToPayDays : d.m2SubmitToPayDays), paidAnchor),
-      submitToApprove: winProp((d) => (m === "M1" ? d.m1SubmitToApproveDays : d.m2SubmitToApproveDays), (d) => (m === "M1" ? d.m1ApprovalDate : d.m2ApprovalDate)),
-      approveToPay: winProp((d) => (m === "M1" ? d.m1ApproveToPayDays : d.m2ApproveToPayDays), paidAnchor),
-    };
+    const last30 = buildWindow((_r, anchor) => within30(anchor));
+
+    // Never rejected: all-time, clean-path only — see isNeverRejected for why
+    // both rejection signals are checked.
+    const neverRejected = buildWindow((r) => isNeverRejected(r.timing, r.rejectedOn));
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -746,6 +759,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       avgOpToSub: op2sub.length ? Math.round(op2sub.reduce((a, b) => a + b, 0) / op2sub.length) : null,
       opToSubCount: op2sub.length,
       last30,
+      neverRejected,
     };
   });
 

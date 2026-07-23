@@ -127,6 +127,27 @@ export function resolvePaidOn(paidDate: string | null | undefined): string | nul
   return paidDate || null;
 }
 
+/**
+ * True when PE never kicked a milestone back — the cohort behind the PE Timing
+ * "Never rejected" toggle.
+ *
+ * Deliberately checks BOTH rejection signals, because either can exist without
+ * the other: the stamped pe_m*_rejection_date is absent on deals whose rejection
+ * predates the property (and gets cleared when a rejection is corrected in
+ * HubSpot), while the status history is absent for rejections recorded only as a
+ * date. A milestone counts as clean only if neither signal fires.
+ *
+ * "Internally Rejected" is our own pre-submission gate, not a PE kickback, so it
+ * does NOT disqualify — it never appears as a "Rejected" history value and never
+ * stamps a rejection date.
+ */
+export function isNeverRejected(
+  timing: Pick<MilestoneTiming, "rejectionCount">,
+  rejectedOn: string | null,
+): boolean {
+  return timing.rejectionCount === 0 && !rejectedOn;
+}
+
 // ---------------------------------------------------------------------------
 // Timing from property history
 // ---------------------------------------------------------------------------
@@ -309,6 +330,11 @@ export interface TimingSummary {
   // approval, or submission) landed in the last 30 days — a rolling read on
   // recent turnaround. Powers the All-time ↔ Last 30d toggle.
   last30: TimingWindow;
+  // Same six legs, all-time, restricted to milestones PE never rejected (no
+  // stamped rejection date AND no "Rejected" entry in the status history) — the
+  // clean-path baseline. Internal rejections don't disqualify a milestone; only
+  // a real PE kickback does.
+  neverRejected: TimingWindow;
 }
 
 /** One windowed leg: average days + sample size within the window. */

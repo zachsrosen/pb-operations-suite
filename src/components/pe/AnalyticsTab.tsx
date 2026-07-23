@@ -2313,6 +2313,10 @@ const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "p
 // Page
 // ---------------------------------------------------------------------------
 
+/** PE Timing cohort toggle: lifetime, the last 30 days, or the never-rejected clean path. */
+const TIMING_WINDOWS = [["all", "All time"], ["30d", "Last 30d"], ["clean", "Never rejected"]] as const;
+type TimingWin = (typeof TIMING_WINDOWS)[number][0];
+
 export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
   const { data, isLoading, isError, refetch } = useQuery<PeAnalyticsPayload>({
     queryKey: queryKeys.peAnalytics.list(),
@@ -2649,9 +2653,10 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
 
   const m1Timing = data?.timing.overall.find((t) => t.milestone === "M1");
   const m2Timing = data?.timing.overall.find((t) => t.milestone === "M2");
-  // PE Timing: All-time ↔ Last 30d. In 30d mode each tile shows the same leg
-  // averaged only over milestones whose terminal event landed in the last 30 days.
-  const [timingWin, setTimingWin] = useState<"all" | "30d">("all");
+  // PE Timing: All-time ↔ Last 30d ↔ Never rejected. Each non-"all" mode shows
+  // the same leg averaged over a narrower cohort — milestones whose terminal
+  // event landed in the last 30 days, or milestones PE never kicked back.
+  const [timingWin, setTimingWin] = useState<TimingWin>("all");
   const timingTile = (
     label: string,
     t: TimingSummary | undefined,
@@ -2659,10 +2664,10 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     allAvg: number | null,
     allSub: string,
   ) => {
-    const w = t?.last30?.[leg];
-    return timingWin === "30d"
-      ? <MiniStat label={label} value={fmtDays(w?.avg ?? null)} subtitle={`last 30d · n=${w?.n ?? 0}`} />
-      : <MiniStat label={label} value={fmtDays(allAvg)} subtitle={allSub} />;
+    if (timingWin === "all") return <MiniStat label={label} value={fmtDays(allAvg)} subtitle={allSub} />;
+    const w = timingWin === "30d" ? t?.last30?.[leg] : t?.neverRejected?.[leg];
+    const cohort = timingWin === "30d" ? "last 30d" : "never rejected";
+    return <MiniStat label={label} value={fmtDays(w?.avg ?? null)} subtitle={`${cohort} · n=${w?.n ?? 0}`} />;
   };
 
   return (
@@ -2938,10 +2943,12 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             title="PE Timing"
             subtitle={timingWin === "30d"
               ? "Average days per leg over milestones whose terminal event (payment / approval / submission) landed in the last 30 days — a rolling read on recent turnaround. Small samples are noisier than the lifetime numbers."
-              : "Average days per leg, from the deal timing properties — submission → approval → payment, plus the full cycle (construction complete / inspection / PTO → payment)."}
+              : timingWin === "clean"
+                ? "Average days per leg, all time, over milestones PE never rejected — the clean-path baseline. Compare against All time to see what a rejection costs. Internal rejections don't disqualify a milestone; only a PE kickback does."
+                : "Average days per leg, from the deal timing properties — submission → approval → payment, plus the full cycle (construction complete / inspection / PTO → payment)."}
             actions={
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {([["all", "All time"], ["30d", "Last 30d"]] as const).map(([key, label]) => (
+                {TIMING_WINDOWS.map(([key, label]) => (
                   <button
                     key={key}
                     onClick={() => setTimingWin(key)}
