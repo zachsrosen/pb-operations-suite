@@ -10,6 +10,7 @@ import { SessionHeader } from "./SessionHeader";
 import { Queue } from "./Queue";
 import { ProjectDetail } from "./ProjectDetail";
 import { Assignments } from "./Assignments";
+import { GlobalAssignDialog } from "./GlobalAssignDialog";
 import { ACCENTS, ACCENT_FOR_TAB } from "./accents";
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -32,6 +33,7 @@ export function DesignHubClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [globalAssignOpen, setGlobalAssignOpen] = useState(false);
 
   const viewParam = searchParams.get("view");
   const view: View =
@@ -95,26 +97,39 @@ export function DesignHubClient({
 
   return (
     <div className="flex h-[calc(100vh-120px)] flex-col gap-3">
-      <div className="flex flex-wrap gap-2">
-        {views.map((v) => {
-          const active = v === view;
-          const acc = ACCENTS[v === "mine" ? "purple" : ACCENT_FOR_TAB[v]];
-          return (
-            <button
-              key={v}
-              type="button"
-              onClick={() => switchView(v)}
-              aria-pressed={active}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? acc.primaryButton
-                  : "bg-surface-2 text-foreground hover:bg-surface-elevated"
-              }`}
-            >
-              {v === "mine" ? "Assigned to me" : TAB_LABELS[v]}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {views.map((v) => {
+            const active = v === view;
+            const acc = ACCENTS[v === "mine" ? "purple" : ACCENT_FOR_TAB[v]];
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => switchView(v)}
+                aria-pressed={active}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  active
+                    ? acc.primaryButton
+                    : "bg-surface-2 text-foreground hover:bg-surface-elevated"
+                }`}
+              >
+                {v === "mine" ? "Assigned to me" : TAB_LABELS[v]}
+              </button>
+            );
+          })}
+        </div>
+        {/* Global assign: reach ANY deal, including ones not in a lane. Only
+            shown to roster members, who are the ones who assign work. */}
+        {hasAssignmentQueue && (
+          <button
+            type="button"
+            onClick={() => setGlobalAssignOpen(true)}
+            className="rounded-lg border border-t-border bg-surface-2 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-elevated"
+          >
+            + Assign a project
+          </button>
+        )}
       </div>
       <SessionHeader
         userEmail={userEmail}
@@ -157,6 +172,10 @@ export function DesignHubClient({
           )}
         </div>
       </div>
+
+      {globalAssignOpen && (
+        <GlobalAssignDialog onClose={() => setGlobalAssignOpen(false)} />
+      )}
     </div>
   );
 }
