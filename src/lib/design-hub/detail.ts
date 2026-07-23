@@ -14,7 +14,12 @@ import { prisma } from "@/lib/db";
 import { TAB_CONFIGS } from "./config";
 import { resolveDesignLead } from "./leads";
 import { toAssignmentView } from "./assignments";
-import type { ProjectDetail, RevisionCounters, Tab } from "./types";
+import type {
+  ProjectDetail,
+  RevisionCounters,
+  RevisionReason,
+  Tab,
+} from "./types";
 
 /** Both status timelines are fetched together — the panel merges them. */
 const HISTORY_PROPERTIES = "design_status,layout_status";
@@ -55,6 +60,25 @@ const DETAIL_PROPERTIES = [
   "permit_revision_counter",
   "interconnection_revision_counter",
   "as_built_revision_counter",
+  "idr_revision_counter",
+  // Revision / change reasons — property→type mapping mirrors chat-tools.ts
+  // stateContext (the canonical source). As-built has versioned history
+  // fields; sales/ops changes are DA (layout_status) states.
+  "design_approval_rejection_reason",
+  "design_revision_reason",
+  "permit_rejection_reason",
+  "cause_of_permit_rejection_",
+  "interconnection_rejection_reason",
+  "cause_of_interconnection_rejection_",
+  "idr_revision_reason",
+  "idr_revision_type",
+  "inspection_rejection_reason",
+  "fourth_asbuilt_revision_reason",
+  "third_as_built_revision_reason",
+  "second_as_built_revision_reason",
+  "first_as_built_rejection_reason",
+  "sales_communication_reason",
+  "ops_communication_reason",
 ];
 
 /** A Drive folder field may hold a full URL or a bare folder id (IDR sources
@@ -74,6 +98,55 @@ function num(value: string | null | undefined): number | null {
 }
 
 /**
+ * Populated revision / change reasons, labelled by workstream. The property→
+ * type mapping mirrors chat-tools.ts stateContext (the canonical source):
+ *   • design-revision reasons show whenever populated — they explain the
+ *     revision and stay relevant while the revision is worked;
+ *   • the DA "pending sales/ops changes" reasons show ONLY when the deal is
+ *     actually in that layout_status, since those fields keep stale text after
+ *     the deal moves on (`layoutStatus` gates them).
+ */
+function buildRevisionReasons(
+  props: Record<string, string | null>,
+  layoutStatus: string,
+): RevisionReason[] {
+  const val = (k: string): string | null => (props[k] ?? "").trim() || null;
+  const joined = (...keys: string[]): string | null =>
+    keys.map(val).filter(Boolean).join(" — ") || null;
+
+  const out: RevisionReason[] = [];
+  const push = (label: string, reason: string | null) => {
+    if (reason) out.push({ label, reason });
+  };
+
+  push("DA", val("design_approval_rejection_reason"));
+  push("Design", val("design_revision_reason"));
+  push("Permit / AHJ", joined("permit_rejection_reason", "cause_of_permit_rejection_"));
+  push(
+    "Utility",
+    joined("interconnection_rejection_reason", "cause_of_interconnection_rejection_"),
+  );
+  push("IDR", joined("idr_revision_reason", "idr_revision_type"));
+  // As-built: current field first, then most recent numbered history entry.
+  push(
+    "As-Built",
+    val("inspection_rejection_reason") ||
+      val("fourth_asbuilt_revision_reason") ||
+      val("third_as_built_revision_reason") ||
+      val("second_as_built_revision_reason") ||
+      val("first_as_built_rejection_reason"),
+  );
+  // DA change reasons — gated on the current layout_status (raw values).
+  if (layoutStatus === "Pending Sales Changes") {
+    push("Pending Sales Changes", val("sales_communication_reason"));
+  }
+  if (layoutStatus === "Pending Ops Changes") {
+    push("Pending Ops Changes", val("ops_communication_reason"));
+  }
+  return out;
+}
+
+/**
  * Revision counters plus the mismatch that blocks design closeout — the
  * condition `sub-counter-attribution` exists to repair. Flagged here because
  * the hub is where a coordinator first meets the deal.
@@ -87,6 +160,9 @@ function buildRevisionCounters(
   const permit = num(props.permit_revision_counter);
   const interconnection = num(props.interconnection_revision_counter);
   const asBuilt = num(props.as_built_revision_counter);
+  // IDR has its own counter and does NOT roll into revision_counter, so it's
+  // excluded from subSum below — including it would fabricate mismatches.
+  const idr = num(props.idr_revision_counter);
 
   // Two independent failure modes, either of which blocks closeout:
   //   • counter and total disagree
@@ -107,6 +183,7 @@ function buildRevisionCounters(
     permit,
     interconnection,
     asBuilt,
+    idr,
     mismatch: totalMismatch || subMismatch,
   };
 }
@@ -192,6 +269,9 @@ export async function fetchProjectDetail(
         : null,
     },
     revisions: buildRevisionCounters(props),
+    // layout_status drives the sales/ops-change gating regardless of which tab
+    // is active — it's always fetched.
+    revisionReasons: buildRevisionReasons(props, props.layout_status ?? ""),
     assignment: assignmentRow
       ? toAssignmentView(assignmentRow, status, statusLabels)
       : null,

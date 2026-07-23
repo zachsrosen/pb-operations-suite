@@ -129,8 +129,19 @@ export interface RevisionCounters {
   permit: number | null;
   interconnection: number | null;
   asBuilt: number | null;
-  /** True when the sub-counters don't sum to `counter`, or `counter` !== `total`. */
+  /** IDR revisions are tracked in their own counter and do NOT roll into
+   *  revision_counter — shown for context, excluded from the mismatch check. */
+  idr: number | null;
+  /** True when the DA/permit/utility/as-built sub-counters don't sum to
+   *  `counter`, or `counter` !== `total`. IDR is not part of this. */
   mismatch: boolean;
+}
+
+/** A populated revision / change reason, labelled by the workstream it came
+ *  from (DA, Permit, Utility, As-Built, IDR, Design, Sales, Ops). */
+export interface RevisionReason {
+  label: string;
+  reason: string;
 }
 
 export interface ProjectDetail {
@@ -167,8 +178,11 @@ export interface ProjectDetail {
     trueDesignUrl: string | null;
   };
   revisions: RevisionCounters;
+  /** Populated revision / change reasons for this deal, most relevant first. */
+  revisionReasons: RevisionReason[];
   assignment: QueueAssignment | null;
-  /** Both status timelines, merged and sorted newest-first. */
+  /** Both status timelines, each entry tagged by `property` so the UI can
+   *  split them into side-by-side Design and Design-Approval columns. */
   statusHistory: Array<{
     property: string;
     propertyLabel: string;
