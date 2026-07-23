@@ -98,6 +98,17 @@ describe("attachAssignments", () => {
     );
   });
 
+  it("never flags moved when there was no baseline status (global-search assign)", () => {
+    const [result] = attachAssignments(
+      [item({ status: "Ready for Design" })],
+      // Assigned before the deal had any design status — statusAtAssignment "".
+      new Map([["d1", row({ statusAtAssignment: "" })]]),
+      statusLabels,
+    );
+    expect(result.assignment?.statusMoved).toBe(false);
+    expect(result.assignment?.statusAtAssignmentLabel).toBe("no status yet");
+  });
+
   it("falls back to the raw email when the assignee is off the roster", () => {
     const [result] = attachAssignments(
       [item()],

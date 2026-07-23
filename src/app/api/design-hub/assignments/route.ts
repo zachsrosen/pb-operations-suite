@@ -19,8 +19,11 @@ const CreateSchema = z.object({
   tab: z.enum(["design", "da"]),
   dealId: z.string().min(1),
   assigneeEmail: z.string().email(),
-  /** The status the assigner saw — used later for the "status moved" hint. */
-  statusAtAssignment: z.string().min(1),
+  /** The status the assigner saw — used later for the "status moved" hint.
+   *  Optional and may be empty: a deal assigned from the global search can
+   *  have no design status yet ("not on the list"), in which case there is no
+   *  baseline to compare and the moved hint stays off. */
+  statusAtAssignment: z.string().default(""),
   note: z.string().max(2000).optional(),
   dueDate: z.string().datetime().optional(),
 });

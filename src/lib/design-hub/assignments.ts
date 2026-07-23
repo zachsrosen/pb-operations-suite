@@ -35,12 +35,17 @@ function toView(
     note: row.note,
     dueDate: row.dueDate ? row.dueDate.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
-    // Unknown current status (deal fell out of the queue entirely) is NOT
-    // treated as moved — an absent row is not evidence of a status change,
-    // and a false "moved" hint is worse than none.
+    // Moved only when there was a real baseline to move FROM. Two cases stay
+    // off: (a) unknown current status (deal fell out of the queue) — absence
+    // isn't evidence of a change; (b) empty baseline (assigned from global
+    // search before the deal had a design status) — nothing to compare.
     statusMoved:
-      currentStatus !== undefined && currentStatus !== row.statusAtAssignment,
-    statusAtAssignmentLabel: labelFor(statusLabels, row.statusAtAssignment),
+      !!row.statusAtAssignment &&
+      currentStatus !== undefined &&
+      currentStatus !== row.statusAtAssignment,
+    statusAtAssignmentLabel: row.statusAtAssignment
+      ? labelFor(statusLabels, row.statusAtAssignment)
+      : "no status yet",
   };
 }
 

@@ -41,6 +41,14 @@ const DETAIL_PROPERTIES = [
   "design_documents",
   "design_folder_url",
   "drive_folder_url",
+  // Quick-link folders — same sources the IDR meeting hub uses.
+  "site_survey_documents",
+  "sales_documents",
+  "all_document_parent_folder_id",
+  // External design tools — surfaced as links in the detail pane.
+  "os_project_link",
+  "link_to_opensolar",
+  "vishtik_project_url",
   "revision_counter",
   "total_revision_count",
   "da_revision_counter",
@@ -48,6 +56,16 @@ const DETAIL_PROPERTIES = [
   "interconnection_revision_counter",
   "as_built_revision_counter",
 ];
+
+/** A Drive folder field may hold a full URL or a bare folder id (IDR sources
+ *  it the same way). Pass a URL through; build the folder URL from an id. */
+function folderUrl(value: string | null | undefined): string | null {
+  const v = (value ?? "").trim();
+  if (!v) return null;
+  return v.startsWith("http")
+    ? v
+    : `https://drive.google.com/drive/folders/${v}`;
+}
 
 function num(value: string | null | undefined): number | null {
   if (value == null || value === "") return null;
@@ -113,6 +131,7 @@ export async function fetchProjectDetail(
     statusHistory,
     activity,
     assignmentRow,
+    trueDesignOrder,
   ] = await Promise.all([
     buildOwnerMap([{ properties: props }]),
     buildStageDisplayMap(),
@@ -123,6 +142,14 @@ export async function fetchProjectDetail(
     prisma.designAssignment.findFirst({
       where: { dealId, tab, clearedAt: null },
       orderBy: { createdAt: "desc" },
+    }),
+    // Most recent TrueDesign export for this deal, if any. Ordered by pull
+    // time so a re-order surfaces the latest design PDF. Nulls sort last, so
+    // filter to rows that actually have a design PDF file.
+    prisma.eagleViewOrder.findFirst({
+      where: { dealId, designPdfDriveFileId: { not: null } },
+      orderBy: { designFilesPulledAt: "desc" },
+      select: { designPdfDriveFileId: true },
     }),
   ]);
 
@@ -150,7 +177,19 @@ export async function fetchProjectDetail(
       hubspotUrl: getHubSpotDealUrl(dealId),
       // These properties hold URLs, not bare folder IDs.
       designFolderUrl: props.design_folder_url || props.design_documents || null,
-      driveFolderUrl: props.drive_folder_url ?? null,
+      surveyFolderUrl: props.site_survey_documents ?? null,
+      salesFolderUrl: props.sales_documents ?? null,
+      // Drive: prefer the all-documents parent folder (what the IDR hub links
+      // to). It may be a full URL or a bare folder id — build the URL from an
+      // id, pass a URL through, and fall back to drive_folder_url.
+      driveFolderUrl: folderUrl(props.all_document_parent_folder_id) ?? props.drive_folder_url ?? null,
+      openSolarUrl: props.os_project_link || props.link_to_opensolar || null,
+      vishtikUrl: props.vishtik_project_url || null,
+      // designPdfDriveFileId is a Drive FILE id, not a URL — build the viewer
+      // link the same way the PE tooling does.
+      trueDesignUrl: trueDesignOrder?.designPdfDriveFileId
+        ? `https://drive.google.com/file/d/${trueDesignOrder.designPdfDriveFileId}/view`
+        : null,
     },
     revisions: buildRevisionCounters(props),
     assignment: assignmentRow

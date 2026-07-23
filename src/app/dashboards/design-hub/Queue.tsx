@@ -175,9 +175,10 @@ export function Queue({
             selected={selectedLeads}
             onChange={setSelectedLeads}
             accentColor={a.filter}
-            // The rail is 420px with overflow-hidden; a left-anchored 288px
-            // dropdown here extends past it and drags the panel sideways.
-            align="right"
+            // Open rightward: the rail wrapper is overflow-visible, so the
+            // 288px dropdown spills into the detail-pane space to the right
+            // (open room) rather than off the left edge of the rail.
+            align="left"
           />
           {assignedCount > 0 && (
             <button
