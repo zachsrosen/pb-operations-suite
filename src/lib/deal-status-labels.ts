@@ -222,7 +222,9 @@ const CLOSE_OUT_STATUS: StatusMap = {
   "Closed Out": "Closed Out",
 };
 
-const STATUS_MAPS: Record<string, StatusMap> = {
+/** Exported so config tests can assert their status lists against the real
+ *  option sets — a typo'd status silently never matches otherwise. */
+export const STATUS_MAPS: Record<string, StatusMap> = {
   site_survey_status: SITE_SURVEY_STATUS,
   layout_status: LAYOUT_STATUS,
   design_status: DESIGN_STATUS,

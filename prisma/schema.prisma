@@ -5121,3 +5121,34 @@ model TechOpsBotConfig {
 
   @@map("OooBotConfig")
 }
+
+/// An ask pushed at a designer from the design hub ("do these today").
+/// App-local by decision (Zach 2026-07-22) — deliberately NOT a HubSpot task,
+/// so assigning work costs no CRM clutter and no API call. The tradeoff
+/// accepted is that assignments are invisible outside the hub.
+model DesignAssignment {
+  id            String    @id @default(cuid())
+  dealId        String
+  assigneeEmail String
+  assignedBy    String
+  note          String?
+  dueDate       DateTime?
+
+  /// Which tab the ask was made from — selects the status property that
+  /// `statusAtAssignment` refers to.
+  tab String
+
+  /// The deal's status VALUE when the ask was created. Compared against the
+  /// live status to render a "status moved" hint. Assignments are never
+  /// auto-cleared on a status change: a HubSpot workflow flipping a status
+  /// would then silently eat the ask, which is the failure mode most likely
+  /// to erode trust in the lane.
+  statusAtAssignment String
+
+  clearedAt DateTime?
+  clearedBy String?
+  createdAt DateTime  @default(now())
+
+  @@index([assigneeEmail, clearedAt])
+  @@index([dealId])
+}
