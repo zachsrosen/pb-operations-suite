@@ -10,7 +10,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma, logActivity } from "@/lib/db";
 import { getUserPermissions } from "@/lib/db";
-import { generateToken, hasActiveInvite } from "@/lib/portal-token";
+import { generateToken, hasActiveInvite, expireStaleInvites } from "@/lib/portal-token";
 import { render } from "@react-email/render";
 import { SurveyInviteEmail } from "@/emails/SurveyInviteEmail";
 import { sendPortalEmail } from "@/lib/email";
@@ -77,20 +77,27 @@ export async function POST(request: NextRequest) {
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
 
   try {
-    const invite = await prisma.surveyInvite.create({
-      data: {
-        tokenHash: hash,
-        dealId: body.dealId,
-        customerEmail: body.customerEmail,
-        customerName: body.customerName,
-        customerPhone: body.customerPhone,
-        propertyAddress: body.propertyAddress,
-        pbLocation: body.pbLocation,
-        systemSize: body.systemSize,
-        expiresAt,
-        sentBy: session.user.email,
-        sentAt: new Date(),
-      },
+    // Sweep this deal's lapsed invites in the same transaction as the insert:
+    // the partial unique index on (dealId) WHERE status IN ('PENDING',
+    // 'SCHEDULED') would otherwise reject the new row on account of an invite
+    // the customer never used.
+    const invite = await prisma.$transaction(async (tx) => {
+      await expireStaleInvites(body.dealId, tx);
+      return tx.surveyInvite.create({
+        data: {
+          tokenHash: hash,
+          dealId: body.dealId,
+          customerEmail: body.customerEmail,
+          customerName: body.customerName,
+          customerPhone: body.customerPhone,
+          propertyAddress: body.propertyAddress,
+          pbLocation: body.pbLocation,
+          systemSize: body.systemSize,
+          expiresAt,
+          sentBy: session.user.email,
+          sentAt: new Date(),
+        },
+      });
     });
 
     // Send invite email via Google Workspace (falls back to Resend) — unless

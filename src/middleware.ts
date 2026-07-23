@@ -37,6 +37,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/bottleneck-digest", // CRON_SECRET validated in route
   "/api/cron/property-reconcile",
   "/api/cron/audit-retention",
+  "/api/cron/survey-invite-expiry", // Lapsed survey-invite sweep — CRON_SECRET validated in route
   "/api/cron/pipeline-health",
   "/api/cron/daily-focus",
   "/api/cron/morning-sweep", // Zach's proactive task/ticket sweep — CRON_SECRET validated in route

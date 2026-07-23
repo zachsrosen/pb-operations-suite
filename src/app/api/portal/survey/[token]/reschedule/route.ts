@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, cacheZuperJob, getCrewMemberByName } from "@/lib/db";
 import { validateToken } from "@/lib/portal-token";
+import { bookingExpiresAt } from "@/lib/survey-invite-expiry";
 import { decodeSlotId, getDayOfWeekForTz } from "@/lib/portal-availability";
 import { getTimezoneForLocation } from "@/lib/constants";
 import { zuper } from "@/lib/zuper";
@@ -268,6 +269,8 @@ export async function PUT(
           scheduledDate: newSlot.date,
           scheduledTime: newSlot.time,
           cutoffAt: newCutoffAt,
+          // Keep the link alive past the new date (see book route).
+          expiresAt: bookingExpiresAt(newStartUtc, invite.expiresAt),
           crewMemberId: newSlot.crewMemberId,
           scheduleRecordId: newScheduleRecord.id,
         },

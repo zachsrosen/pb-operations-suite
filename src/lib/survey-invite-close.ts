@@ -12,6 +12,8 @@
  * invite couldn't be closed.
  */
 
+import { bookingExpiresAt } from "@/lib/survey-invite-expiry";
+
 // Minimal shape of the Prisma client this helper needs (keeps it unit-testable
 // while staying assignable from the fully-typed PrismaClient).
 interface InviteCapablePrisma {
@@ -44,11 +46,22 @@ export async function closeSurveyInviteForDeal(
     });
     if (!invite) return { closed: false };
 
+    // An ops-booked invite gets the same token extension a self-booked one
+    // does, so the customer can still reach the portal to reschedule.
+    const surveyStart = booking.scheduledDate
+      ? new Date(`${booking.scheduledDate}T12:00:00Z`)
+      : null;
+    const extendedExpiry =
+      surveyStart && !Number.isNaN(surveyStart.getTime())
+        ? bookingExpiresAt(surveyStart, invite.expiresAt ?? undefined)
+        : null;
+
     await prisma.surveyInvite.update({
       where: { id: invite.id },
       data: {
         status: "SCHEDULED",
         scheduledAt: new Date(),
+        ...(extendedExpiry ? { expiresAt: extendedExpiry } : {}),
         ...(booking.scheduledDate ? { scheduledDate: booking.scheduledDate } : {}),
         ...(booking.scheduledTime ? { scheduledTime: booking.scheduledTime } : {}),
         ...(booking.zuperJobUid ? { zuperJobUid: booking.zuperJobUid } : {}),

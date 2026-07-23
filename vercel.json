@@ -187,6 +187,10 @@
       "schedule": "0 5 * * 0"
     },
     {
+      "path": "/api/cron/survey-invite-expiry",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/cron/permit-hub-drafts-cleanup",
       "schedule": "0 4 * * *"
     },

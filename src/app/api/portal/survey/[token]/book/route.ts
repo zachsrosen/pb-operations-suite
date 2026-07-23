@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, cacheZuperJob, getCrewMemberByName, getCachedZuperJobByDealId } from "@/lib/db";
 import { validateToken } from "@/lib/portal-token";
+import { bookingExpiresAt } from "@/lib/survey-invite-expiry";
 import { decodeSlotId, getDayOfWeekForTz } from "@/lib/portal-availability";
 import { getTimezoneForLocation } from "@/lib/constants";
 import { zuper, createJobFromProject, type ZuperJob } from "@/lib/zuper";
@@ -261,6 +262,10 @@ export async function POST(
           scheduledDate: slot.date,
           scheduledTime: slot.time,
           cutoffAt,
+          // Carry the token past the survey — a booking made late in the
+          // 14-day window used to outlive its own link, so a customer
+          // clicking through to reschedule expired themselves out.
+          expiresAt: bookingExpiresAt(scheduledStartUtc, invite.expiresAt),
           crewMemberId: slot.crewMemberId,
           scheduleRecordId: scheduleRecord.id,
           accessNotes: accessNotes || undefined,
