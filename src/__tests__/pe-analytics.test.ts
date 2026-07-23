@@ -6,6 +6,7 @@ import {
   resolveRejectedOn,
   resolvePaidOn,
   computeMilestoneTiming,
+  isNeverRejected,
   median,
   percentile,
   buildUploaderStats,
@@ -142,6 +143,46 @@ describe("computeMilestoneTiming", () => {
     const t = computeMilestoneTiming([]);
     expect(t.firstSubmitted).toBeNull();
     expect(t.rejectionCount).toBe(0);
+  });
+});
+
+describe("isNeverRejected (PE Timing 'Never rejected' cohort)", () => {
+  const clean = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+    { value: "Approved", timestamp: "2026-05-10T00:00:00Z" },
+    { value: "Paid", timestamp: "2026-05-20T00:00:00Z" },
+  ]);
+  const kicked = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+    { value: "Rejected", timestamp: "2026-05-03T00:00:00Z" },
+    { value: "Resubmitted", timestamp: "2026-05-05T00:00:00Z" },
+    { value: "Approved", timestamp: "2026-05-10T00:00:00Z" },
+  ]);
+
+  it("keeps a milestone with no rejection history and no stamped rejection date", () => {
+    expect(isNeverRejected(clean, null)).toBe(true);
+  });
+
+  it("drops a milestone rejected in the status history even with no stamped date", () => {
+    expect(isNeverRejected(kicked, null)).toBe(false);
+  });
+
+  it("drops a milestone with a stamped rejection date even with no rejection history", () => {
+    expect(isNeverRejected(clean, "2026-05-03")).toBe(false);
+  });
+
+  it("drops a milestone when both signals fire", () => {
+    expect(isNeverRejected(kicked, "2026-05-03")).toBe(false);
+  });
+
+  it("does not disqualify on an internal rejection — that is our own pre-submission gate", () => {
+    const internal = computeMilestoneTiming([
+      { value: "Internally Rejected", timestamp: "2026-04-20T00:00:00Z" },
+      { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+      { value: "Approved", timestamp: "2026-05-10T00:00:00Z" },
+    ]);
+    expect(internal.rejectionCount).toBe(0);
+    expect(isNeverRejected(internal, null)).toBe(true);
   });
 });
 
