@@ -239,6 +239,13 @@ export const queryKeys = {
       [...queryKeys.icHub.root, "draft", dealId, actionKind] as const,
     todayCount: () => [...queryKeys.icHub.root, "today-count"] as const,
   },
+  designHub: {
+    root: ["design-hub"] as const,
+    queue: (tab: string) => [...queryKeys.designHub.root, "queue", tab] as const,
+    project: (tab: string, dealId: string) =>
+      [...queryKeys.designHub.root, "project", tab, dealId] as const,
+    assignments: () => [...queryKeys.designHub.root, "assignments"] as const,
+  },
   piHub: {
     root: ["pi-hub"] as const,
     queue: (team: string) => [...queryKeys.piHub.root, "queue", team] as const,
