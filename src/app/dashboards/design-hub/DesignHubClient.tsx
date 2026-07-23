@@ -121,7 +121,11 @@ export function DesignHubClient({
         lastUpdated={view === "mine" ? null : queueQuery.data?.lastUpdated}
       />
       <div className="flex flex-1 gap-3 overflow-hidden">
-        <div className="w-[420px] shrink-0 overflow-hidden rounded-xl border border-t-border bg-surface">
+        {/* overflow-visible, not -hidden: the filter dropdowns (fixed 288px)
+            are wider than the point they open from and must escape the 420px
+            rail into the detail-pane space beside it, or they clip. The inner
+            list has its own overflow-y-auto, so scroll is still contained. */}
+        <div className="w-[420px] shrink-0 overflow-visible rounded-xl border border-t-border bg-surface">
           {view === "mine" ? (
             <Assignments
               selectedDealId={selectedDealId}

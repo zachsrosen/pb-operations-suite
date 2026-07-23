@@ -58,6 +58,12 @@ export const TAB_CONFIGS: Record<Tab, TabConfig> = {
       "Utility Revision Completed",
       "As-Built Revision Completed",
       "IDR Revision Complete",
+      // Archived "Revision Complete" (labelled "(Archived) Revision Complete")
+      // is done work — terminal (Zach 2026-07-23). The other archived states
+      // (In Revision / Revision Initial Review / Revision Final Review /
+      // Revision In Engineering) stay in `other`: they're archived but not
+      // finished, so a deal parked on one should stay visible.
+      "Revision Complete",
       "No Design Needed",
       "New Construction - Design Completed",
       "Xcel - Site Plan & SLD Completed",

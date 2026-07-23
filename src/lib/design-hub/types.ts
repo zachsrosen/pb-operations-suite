@@ -153,6 +153,14 @@ export interface ProjectDetail {
     hubspotUrl: string;
     designFolderUrl: string | null;
     driveFolderUrl: string | null;
+    /** OpenSolar proposal (os_project_link / link_to_opensolar). */
+    openSolarUrl: string | null;
+    /** Vishtik project (vishtik_project_url deal property). */
+    vishtikUrl: string | null;
+    /** TrueDesign design PDF — a Drive file link built from the deal's most
+     *  recent EagleViewOrder.designPdfDriveFileId. Null when no order has
+     *  pulled a design export yet. */
+    trueDesignUrl: string | null;
   };
   revisions: RevisionCounters;
   assignment: QueueAssignment | null;

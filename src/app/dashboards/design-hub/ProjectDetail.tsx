@@ -127,13 +127,26 @@ export function ProjectDetail({
               : "—"}
           </Field>
         </dl>
-        {(deal.designFolderUrl || deal.driveFolderUrl) && (
+        {(deal.designFolderUrl ||
+          deal.driveFolderUrl ||
+          deal.openSolarUrl ||
+          deal.vishtikUrl ||
+          deal.trueDesignUrl) && (
           <div className="mt-3 flex flex-wrap gap-2">
             {deal.designFolderUrl && (
               <FolderLink href={deal.designFolderUrl} label="Design Files" />
             )}
             {deal.driveFolderUrl && (
               <FolderLink href={deal.driveFolderUrl} label="Project Folder" />
+            )}
+            {deal.openSolarUrl && (
+              <FolderLink href={deal.openSolarUrl} label="OpenSolar" />
+            )}
+            {deal.vishtikUrl && (
+              <FolderLink href={deal.vishtikUrl} label="Vishtik" />
+            )}
+            {deal.trueDesignUrl && (
+              <FolderLink href={deal.trueDesignUrl} label="TrueDesign PDF" />
             )}
           </div>
         )}

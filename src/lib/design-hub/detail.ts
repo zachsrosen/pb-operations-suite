@@ -41,6 +41,10 @@ const DETAIL_PROPERTIES = [
   "design_documents",
   "design_folder_url",
   "drive_folder_url",
+  // External design tools — surfaced as links in the detail pane.
+  "os_project_link",
+  "link_to_opensolar",
+  "vishtik_project_url",
   "revision_counter",
   "total_revision_count",
   "da_revision_counter",
@@ -113,6 +117,7 @@ export async function fetchProjectDetail(
     statusHistory,
     activity,
     assignmentRow,
+    trueDesignOrder,
   ] = await Promise.all([
     buildOwnerMap([{ properties: props }]),
     buildStageDisplayMap(),
@@ -123,6 +128,14 @@ export async function fetchProjectDetail(
     prisma.designAssignment.findFirst({
       where: { dealId, tab, clearedAt: null },
       orderBy: { createdAt: "desc" },
+    }),
+    // Most recent TrueDesign export for this deal, if any. Ordered by pull
+    // time so a re-order surfaces the latest design PDF. Nulls sort last, so
+    // filter to rows that actually have a design PDF file.
+    prisma.eagleViewOrder.findFirst({
+      where: { dealId, designPdfDriveFileId: { not: null } },
+      orderBy: { designFilesPulledAt: "desc" },
+      select: { designPdfDriveFileId: true },
     }),
   ]);
 
@@ -151,6 +164,13 @@ export async function fetchProjectDetail(
       // These properties hold URLs, not bare folder IDs.
       designFolderUrl: props.design_folder_url || props.design_documents || null,
       driveFolderUrl: props.drive_folder_url ?? null,
+      openSolarUrl: props.os_project_link || props.link_to_opensolar || null,
+      vishtikUrl: props.vishtik_project_url || null,
+      // designPdfDriveFileId is a Drive FILE id, not a URL — build the viewer
+      // link the same way the PE tooling does.
+      trueDesignUrl: trueDesignOrder?.designPdfDriveFileId
+        ? `https://drive.google.com/file/d/${trueDesignOrder.designPdfDriveFileId}/view`
+        : null,
     },
     revisions: buildRevisionCounters(props),
     assignment: assignmentRow
