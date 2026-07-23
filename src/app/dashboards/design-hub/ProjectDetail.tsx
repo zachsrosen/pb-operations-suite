@@ -127,29 +127,7 @@ export function ProjectDetail({
               : "—"}
           </Field>
         </dl>
-        {(deal.designFolderUrl ||
-          deal.driveFolderUrl ||
-          deal.openSolarUrl ||
-          deal.vishtikUrl ||
-          deal.trueDesignUrl) && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {deal.designFolderUrl && (
-              <FolderLink href={deal.designFolderUrl} label="Design Files" />
-            )}
-            {deal.driveFolderUrl && (
-              <FolderLink href={deal.driveFolderUrl} label="Project Folder" />
-            )}
-            {deal.openSolarUrl && (
-              <FolderLink href={deal.openSolarUrl} label="OpenSolar" />
-            )}
-            {deal.vishtikUrl && (
-              <FolderLink href={deal.vishtikUrl} label="Vishtik" />
-            )}
-            {deal.trueDesignUrl && (
-              <FolderLink href={deal.trueDesignUrl} label="TrueDesign PDF" />
-            )}
-          </div>
-        )}
+        <QuickLinks deal={deal} dealId={dealId} />
       </Section>
 
       <Section title="Revisions">
@@ -279,15 +257,105 @@ function Counter({ label, value }: { label: string; value: number | null }) {
   );
 }
 
-function FolderLink({ href, label }: { href: string; label: string }) {
+/**
+ * Quick-links row — the same set the IDR meeting hub shows when a project is
+ * enlarged (Jacob's request), plus the design-specific tools. Each chip
+ * renders only when its URL exists; the DA chip is fetched client-side; the
+ * "Open all" button opens every present link in its own tab.
+ */
+function QuickLinks({
+  deal,
+  dealId,
+}: {
+  deal: Detail["deal"];
+  dealId: string;
+}) {
+  // Ordered to match the IDR hub, with the design tools appended.
+  const links: Array<{ label: string; href: string }> = [
+    { label: "HubSpot", href: deal.hubspotUrl },
+    ...(deal.designFolderUrl
+      ? [{ label: "Design", href: deal.designFolderUrl }]
+      : []),
+    ...(deal.surveyFolderUrl
+      ? [{ label: "Survey", href: deal.surveyFolderUrl }]
+      : []),
+    ...(deal.salesFolderUrl
+      ? [{ label: "Sales", href: deal.salesFolderUrl }]
+      : []),
+    ...(deal.driveFolderUrl
+      ? [{ label: "Drive", href: deal.driveFolderUrl }]
+      : []),
+    ...(deal.openSolarUrl
+      ? [{ label: "OpenSolar", href: deal.openSolarUrl }]
+      : []),
+    ...(deal.vishtikUrl ? [{ label: "Vishtik", href: deal.vishtikUrl }] : []),
+    ...(deal.trueDesignUrl
+      ? [{ label: "TrueDesign", href: deal.trueDesignUrl }]
+      : []),
+  ];
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {links.map((l) => (
+        <QuickLink key={l.label} href={l.href} label={l.label} />
+      ))}
+      <DaChip dealId={dealId} />
+      {links.length > 1 && (
+        <button
+          type="button"
+          onClick={() => {
+            for (const l of links) {
+              window.open(l.href, "_blank", "noopener,noreferrer");
+            }
+          }}
+          title={`Open all ${links.length} links in new tabs`}
+          className="inline-flex items-center gap-0.5 rounded border border-orange-500/40 bg-orange-500/10 px-2 py-1 text-[11px] font-semibold text-orange-600 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
+        >
+          Open all ({links.length}) ↗
+        </button>
+      )}
+    </div>
+  );
+}
+
+function QuickLink({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-muted rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs font-medium hover:bg-surface-elevated"
+      className="text-muted rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface-elevated"
     >
       {label}
+    </a>
+  );
+}
+
+/** PandaDoc DA chip — reuses the IDR meeting endpoint (in the /api/idr-meeting
+ *  allowlist for these roles). Renders nothing when there's no DA or the call
+ *  fails, so it's safe for roles without idr-meeting access. */
+function DaChip({ dealId }: { dealId: string }) {
+  const { data } = useQuery({
+    queryKey: [...queryKeys.designHub.root, "da-chip", dealId],
+    queryFn: async () => {
+      const r = await fetch(`/api/idr-meeting/pandadoc-da/${dealId}`);
+      if (!r.ok) return null;
+      return (await r.json()) as {
+        da: { status: string; url: string } | null;
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const da = data?.da;
+  if (!da) return null;
+  return (
+    <a
+      href={da.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-muted rounded-lg border border-t-border bg-surface-2 px-2.5 py-1 text-xs font-medium hover:bg-surface-elevated"
+    >
+      DA: {da.status} ↗
     </a>
   );
 }

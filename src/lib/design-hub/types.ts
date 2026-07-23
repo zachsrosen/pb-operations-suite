@@ -153,6 +153,10 @@ export interface ProjectDetail {
     hubspotUrl: string;
     designFolderUrl: string | null;
     driveFolderUrl: string | null;
+    /** Site-survey document folder (site_survey_documents). */
+    surveyFolderUrl: string | null;
+    /** Sales document folder (sales_documents). */
+    salesFolderUrl: string | null;
     /** OpenSolar proposal (os_project_link / link_to_opensolar). */
     openSolarUrl: string | null;
     /** Vishtik project (vishtik_project_url deal property). */
