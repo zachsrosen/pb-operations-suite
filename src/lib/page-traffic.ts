@@ -23,6 +23,8 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/pe-prep": "Accounting",
   "/dashboards/pe-avl": "Accounting",
   "/dashboards/pe-pipeline": "Accounting",          // also operations, pe-compliance
+  "/dashboards/pe-photo-builder": "Accounting",     // also operations
+  "/dashboards/pe-analytics": "Accounting",
 
   // ── Design & Engineering ─────────────────────────────────────────────────
   "/dashboards/de-overview": "Design & Engineering",
@@ -67,6 +69,7 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/office-performance/san-luis-obispo": "Executive",
   "/dashboards/office-performance/camarillo": "Executive",
   "/dashboards/shop-health": "Executive",
+  "/dashboards/ops-scorecard": "Executive",         // also operations
 
   // ── Operations ───────────────────────────────────────────────────────────
   "/dashboards/scheduler": "Operations",            // also project-management
@@ -92,6 +95,10 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/comms": "Operations",
   "/dashboards/my-tasks": "Operations",             // also project-management
   "/dashboards/on-call": "Operations",
+  "/dashboards/atlas": "Operations",                // also project-management, service
+  "/dashboards/bottlenecks": "Operations",
+  "/dashboards/scheduler-v2": "Operations",
+  "/dashboards/workflow-map": "Operations",         // also design-engineering, dnr-roofing, permitting-interconnection, service
 
   // ── Permitting & Interconnection ─────────────────────────────────────────
   "/dashboards/permit-hub": "Permitting & Interconnection",
@@ -118,6 +125,7 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/da-drift": "Project Management",
   "/dashboards/zuper-drift": "Project Management",
   "/dashboards/shit-show-meeting": "Project Management",    // also executive
+  "/dashboards/rtb-review": "Project Management",
 
   // ── Sales & Marketing ────────────────────────────────────────────────────
   "/dashboards/request-product": "Sales & Marketing",
@@ -156,6 +164,7 @@ export const PATH_TO_SUITE: Record<string, string> = {
   "/dashboards/zuper-status-comparison": "Testing",
   "/dashboards/zuper-compliance": "Testing",        // also pe-compliance
   "/dashboards/admin/calls": "Testing",
+  "/dashboards/admin/team-activity": "Testing",
 };
 
 // Suite landing routes are also "known pages".
