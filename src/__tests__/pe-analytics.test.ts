@@ -7,6 +7,8 @@ import {
   resolvePaidOn,
   computeMilestoneTiming,
   isNeverRejected,
+  isApproved,
+  isFirstPassApproved,
   median,
   percentile,
   buildUploaderStats,
@@ -183,6 +185,57 @@ describe("isNeverRejected (PE Timing 'Never rejected' cohort)", () => {
     ]);
     expect(internal.rejectionCount).toBe(0);
     expect(isNeverRejected(internal, null)).toBe(true);
+  });
+});
+
+describe("isApproved (either signal)", () => {
+  const approvedInHistory = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+    { value: "Approved", timestamp: "2026-05-10T00:00:00Z" },
+  ]);
+  const stillInReview = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+  ]);
+
+  it("is true from status history alone", () => {
+    expect(isApproved(approvedInHistory, null)).toBe(true);
+  });
+
+  it("is true from a stamped approval date alone", () => {
+    expect(isApproved(stillInReview, "2026-05-10")).toBe(true);
+  });
+
+  it("is false when neither signal is present", () => {
+    expect(isApproved(stillInReview, null)).toBe(false);
+  });
+});
+
+describe("isFirstPassApproved (PE Timing 'First-pass' cohort)", () => {
+  const clean = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+    { value: "Approved", timestamp: "2026-05-10T00:00:00Z" },
+    { value: "Paid", timestamp: "2026-05-20T00:00:00Z" },
+  ]);
+  const kicked = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+    { value: "Rejected", timestamp: "2026-05-03T00:00:00Z" },
+    { value: "Resubmitted", timestamp: "2026-05-05T00:00:00Z" },
+    { value: "Approved", timestamp: "2026-05-10T00:00:00Z" },
+  ]);
+  const inReview = computeMilestoneTiming([
+    { value: "Submitted", timestamp: "2026-05-01T00:00:00Z" },
+  ]);
+
+  it("keeps a milestone approved with no rejection", () => {
+    expect(isFirstPassApproved(clean, null, "2026-05-10")).toBe(true);
+  });
+
+  it("drops a milestone that was rejected before it was approved", () => {
+    expect(isFirstPassApproved(kicked, null, "2026-05-10")).toBe(false);
+  });
+
+  it("drops a never-rejected milestone that is not yet approved — clean only because it hasn't been kicked back yet", () => {
+    expect(isFirstPassApproved(inReview, null, null)).toBe(false);
   });
 });
 

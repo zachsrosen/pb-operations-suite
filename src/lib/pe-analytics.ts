@@ -128,8 +128,7 @@ export function resolvePaidOn(paidDate: string | null | undefined): string | nul
 }
 
 /**
- * True when PE never kicked a milestone back — the cohort behind the PE Timing
- * "Never rejected" toggle.
+ * True when PE never kicked a milestone back.
  *
  * Deliberately checks BOTH rejection signals, because either can exist without
  * the other: the stamped pe_m*_rejection_date is absent on deals whose rejection
@@ -146,6 +145,33 @@ export function isNeverRejected(
   rejectedOn: string | null,
 ): boolean {
   return timing.rejectionCount === 0 && !rejectedOn;
+}
+
+/**
+ * True when a milestone reached PE approval — by stamped pe_m*_approval_date OR
+ * an "Approved" entry in the status history. Either signal alone is sufficient
+ * (mirrors the rejection resolvers: the date can be backfilled where history is
+ * missing, and vice versa).
+ */
+export function isApproved(
+  timing: Pick<MilestoneTiming, "firstApproved">,
+  approvedOn: string | null,
+): boolean {
+  return !!timing.firstApproved || !!approvedOn;
+}
+
+/**
+ * The PE Timing "First-pass" cohort: a milestone PE approved with no rejection
+ * along the way. Requires approval (not merely the absence of a rejection) so
+ * milestones still sitting in review — clean only because they haven't been
+ * kicked back YET — don't dilute the clean-path baseline.
+ */
+export function isFirstPassApproved(
+  timing: Pick<MilestoneTiming, "rejectionCount" | "firstApproved">,
+  rejectedOn: string | null,
+  approvedOn: string | null,
+): boolean {
+  return isNeverRejected(timing, rejectedOn) && isApproved(timing, approvedOn);
 }
 
 // ---------------------------------------------------------------------------
@@ -330,11 +356,11 @@ export interface TimingSummary {
   // approval, or submission) landed in the last 30 days — a rolling read on
   // recent turnaround. Powers the All-time ↔ Last 30d toggle.
   last30: TimingWindow;
-  // Same six legs, all-time, restricted to milestones PE never rejected (no
-  // stamped rejection date AND no "Rejected" entry in the status history) — the
-  // clean-path baseline. Internal rejections don't disqualify a milestone; only
-  // a real PE kickback does.
-  neverRejected: TimingWindow;
+  // Same six legs, all-time, restricted to the first-pass cohort: milestones PE
+  // approved with no rejection along the way — the clean-path baseline. See
+  // isFirstPassApproved. Internal rejections don't disqualify; only a real PE
+  // kickback does.
+  firstPass: TimingWindow;
 }
 
 /** One windowed leg: average days + sample size within the window. */

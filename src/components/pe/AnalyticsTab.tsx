@@ -2313,8 +2313,8 @@ const MILESTONE_MODE_ORDER: WeeklyMode[] = ["ready", "submitted", "approved", "p
 // Page
 // ---------------------------------------------------------------------------
 
-/** PE Timing cohort toggle: lifetime, the last 30 days, or the never-rejected clean path. */
-const TIMING_WINDOWS = [["all", "All time"], ["30d", "Last 30d"], ["clean", "Never rejected"]] as const;
+/** PE Timing cohort toggle: lifetime, the last 30 days, or the first-pass clean path. */
+const TIMING_WINDOWS = [["all", "All time"], ["30d", "Last 30d"], ["clean", "First-pass"]] as const;
 type TimingWin = (typeof TIMING_WINDOWS)[number][0];
 
 export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode }) {
@@ -2665,8 +2665,8 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
     allSub: string,
   ) => {
     if (timingWin === "all") return <MiniStat label={label} value={fmtDays(allAvg)} subtitle={allSub} />;
-    const w = timingWin === "30d" ? t?.last30?.[leg] : t?.neverRejected?.[leg];
-    const cohort = timingWin === "30d" ? "last 30d" : "never rejected";
+    const w = timingWin === "30d" ? t?.last30?.[leg] : t?.firstPass?.[leg];
+    const cohort = timingWin === "30d" ? "last 30d" : "first-pass";
     return <MiniStat label={label} value={fmtDays(w?.avg ?? null)} subtitle={`${cohort} · n=${w?.n ?? 0}`} />;
   };
 
@@ -2944,7 +2944,7 @@ export default function AnalyticsTab({ tabsSlot }: { tabsSlot?: React.ReactNode 
             subtitle={timingWin === "30d"
               ? "Average days per leg over milestones whose terminal event (payment / approval / submission) landed in the last 30 days — a rolling read on recent turnaround. Small samples are noisier than the lifetime numbers."
               : timingWin === "clean"
-                ? "Average days per leg, all time, over milestones PE never rejected — the clean-path baseline. Compare against All time to see what a rejection costs. Internal rejections don't disqualify a milestone; only a PE kickback does."
+                ? "Average days per leg, all time, over the first-pass cohort — milestones PE approved with no rejection along the way. The clean-path baseline; compare against All time to see what a rejection costs. Milestones still in review are excluded (clean only because they haven't been kicked back yet), and internal rejections don't disqualify — only a PE kickback does."
                 : "Average days per leg, from the deal timing properties — submission → approval → payment, plus the full cycle (construction complete / inspection / PTO → payment)."}
             actions={
               <div className="flex items-center gap-1.5 flex-shrink-0">

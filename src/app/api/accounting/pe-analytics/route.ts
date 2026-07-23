@@ -15,7 +15,7 @@ import {
   resolveSubmittedOn,
   resolveApprovedOn,
   resolveRejectedOn,
-  isNeverRejected,
+  isFirstPassApproved,
   resolvePaidOn,
   computeMilestoneTiming,
   median,
@@ -727,9 +727,9 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     };
     const last30 = buildWindow((_r, anchor) => within30(anchor));
 
-    // Never rejected: all-time, clean-path only — see isNeverRejected for why
-    // both rejection signals are checked.
-    const neverRejected = buildWindow((r) => isNeverRejected(r.timing, r.rejectedOn));
+    // First-pass: all-time clean path — PE approved it with no rejection along
+    // the way. See isFirstPassApproved.
+    const firstPass = buildWindow((r) => isFirstPassApproved(r.timing, r.rejectedOn, r.approvedOn));
     return {
       milestone: m,
       submittedCount: submitted.length,
@@ -759,7 +759,7 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
       avgOpToSub: op2sub.length ? Math.round(op2sub.reduce((a, b) => a + b, 0) / op2sub.length) : null,
       opToSubCount: op2sub.length,
       last30,
-      neverRejected,
+      firstPass,
     };
   });
 
