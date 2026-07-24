@@ -124,16 +124,15 @@ export interface SetStatusResult {
 /** Revision counters, with the mismatch `sub-counter-attribution` repairs. */
 export interface RevisionCounters {
   total: number | null;
-  counter: number | null;
   da: number | null;
   permit: number | null;
   interconnection: number | null;
   asBuilt: number | null;
-  /** IDR revisions are tracked in their own counter and do NOT roll into
-   *  revision_counter — shown for context, excluded from the mismatch check. */
+  /** IDR now rolls into total_revision_count (Zach built it into the calc
+   *  2026-07-23), so it's part of the sub-counter sum. */
   idr: number | null;
-  /** True when the DA/permit/utility/as-built sub-counters don't sum to
-   *  `counter`, or `counter` !== `total`. IDR is not part of this. */
+  /** True when the DA/permit/utility/as-built/IDR sub-counters don't sum to
+   *  `total`. */
   mismatch: boolean;
 }
 

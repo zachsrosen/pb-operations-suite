@@ -134,13 +134,10 @@ export function ProjectDetail({
       <Section title="Revisions">
         <div className="flex flex-wrap gap-3 text-xs">
           <Counter label="Total" value={revisions.total} />
-          <Counter label="Counter" value={revisions.counter} />
           <Counter label="DA" value={revisions.da} />
           <Counter label="Permit" value={revisions.permit} />
           <Counter label="Utility" value={revisions.interconnection} />
           <Counter label="As-Built" value={revisions.asBuilt} />
-          {/* IDR revisions are tracked separately and do NOT roll into Total
-              (verified against live data) — shown for context. */}
           <Counter label="IDR" value={revisions.idr} />
         </div>
         {revisions.mismatch && (

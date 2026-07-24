@@ -54,7 +54,6 @@ const DETAIL_PROPERTIES = [
   "os_project_link",
   "link_to_opensolar",
   "vishtik_project_url",
-  "revision_counter",
   "total_revision_count",
   "da_revision_counter",
   "permit_revision_counter",
@@ -154,37 +153,31 @@ function buildRevisionReasons(
 function buildRevisionCounters(
   props: Record<string, string | null>,
 ): RevisionCounters {
-  const counter = num(props.revision_counter);
   const total = num(props.total_revision_count);
   const da = num(props.da_revision_counter);
   const permit = num(props.permit_revision_counter);
   const interconnection = num(props.interconnection_revision_counter);
   const asBuilt = num(props.as_built_revision_counter);
-  // IDR has its own counter and does NOT roll into revision_counter, so it's
-  // excluded from subSum below — including it would fabricate mismatches.
+  // IDR now rolls into total_revision_count (Zach built it into the calc), so
+  // it's part of the sub-counter sum below.
   const idr = num(props.idr_revision_counter);
 
-  // Two independent failure modes, either of which blocks closeout:
-  //   • counter and total disagree
-  //   • the four sub-counters don't sum to counter
-  // Sub-counters that are entirely absent are treated as 0 rather than
-  // "unknown" — an unset counter in HubSpot means no revisions of that type.
-  const subSum = [da, permit, interconnection, asBuilt].reduce<number>(
+  // Mismatch = the five sub-counters don't sum to total_revision_count, which
+  // blocks closeout until reattributed. Sub-counters that are entirely absent
+  // count as 0 — an unset counter in HubSpot means no revisions of that type.
+  const subSum = [da, permit, interconnection, asBuilt, idr].reduce<number>(
     (acc, v) => acc + (v ?? 0),
     0,
   );
-  const totalMismatch = counter !== null && total !== null && counter !== total;
-  const subMismatch = counter !== null && subSum !== counter;
 
   return {
     total,
-    counter,
     da,
     permit,
     interconnection,
     asBuilt,
     idr,
-    mismatch: totalMismatch || subMismatch,
+    mismatch: total !== null && subSum !== total,
   };
 }
 
