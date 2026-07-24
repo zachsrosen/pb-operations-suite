@@ -26,6 +26,8 @@ export function SendToVishtikDialog({
   const [message, setMessage] = useState("");
   const [sentDryRun, setSentDryRun] = useState(false);
 
+  const [warnings, setWarnings] = useState<string[]>([]);
+
   const send = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/design-hub/vishtik/comment", {
@@ -36,14 +38,17 @@ export function SendToVishtikDialog({
       const body = (await r.json().catch(() => null)) as {
         error?: string;
         dryRun?: boolean;
+        warnings?: string[];
       } | null;
       if (!r.ok) throw new Error(body?.error ?? "Send failed");
       return body;
     },
     onSuccess: (body) => {
-      // On a real send, close. On a dry-run, keep the dialog open with a clear
-      // "nothing was posted" confirmation so it can't be mistaken for a send.
+      const w = body?.warnings ?? [];
+      // On a real send with no warnings, close. On a dry-run, or when the
+      // status flip warned, keep the dialog open so the outcome is visible.
       if (body?.dryRun) setSentDryRun(true);
+      else if (w.length > 0) setWarnings(w);
       else onClose();
     },
   });
@@ -54,8 +59,9 @@ export function SendToVishtikDialog({
         <h2 className="text-foreground mb-1 text-sm font-semibold">
           Send to Vishtik
         </h2>
-        <p className="text-muted mb-3 truncate text-xs">
-          Posts to the Vishtik chat for {dealName}
+        <p className="text-muted mb-3 text-xs">
+          Posts to the Vishtik chat for {dealName} and marks the project{" "}
+          <span className="font-medium">Request Revision</span>.
         </p>
 
         {dryRun && (
@@ -65,10 +71,20 @@ export function SendToVishtikDialog({
           </div>
         )}
 
+        {warnings.length > 0 && (
+          <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+            Message posted, but: {warnings.join("; ")}
+          </div>
+        )}
+
         {sentDryRun ? (
           <div className="mb-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-foreground">
             Dry-run OK — the payload was accepted and logged. Nothing was posted
             to Vishtik.
+          </div>
+        ) : warnings.length > 0 ? (
+          <div className="mb-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-foreground">
+            The message was sent.
           </div>
         ) : (
           <textarea
@@ -88,29 +104,34 @@ export function SendToVishtikDialog({
           </p>
         )}
 
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-muted rounded-lg bg-surface-2 px-3 py-2 text-sm hover:bg-surface"
-          >
-            {sentDryRun ? "Close" : "Cancel"}
-          </button>
-          {!sentDryRun && (
-            <button
-              type="button"
-              onClick={() => send.mutate()}
-              disabled={send.isPending || !message.trim()}
-              className={`rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50 ${a.primaryButton}`}
-            >
-              {send.isPending
-                ? "Sending…"
-                : dryRun
-                  ? "Send (dry-run)"
-                  : "Send"}
-            </button>
-          )}
-        </div>
+        {(() => {
+          const done = sentDryRun || warnings.length > 0;
+          return (
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-muted rounded-lg bg-surface-2 px-3 py-2 text-sm hover:bg-surface"
+              >
+                {done ? "Close" : "Cancel"}
+              </button>
+              {!done && (
+                <button
+                  type="button"
+                  onClick={() => send.mutate()}
+                  disabled={send.isPending || !message.trim()}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50 ${a.primaryButton}`}
+                >
+                  {send.isPending
+                    ? "Sending…"
+                    : dryRun
+                      ? "Send (dry-run)"
+                      : "Send"}
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

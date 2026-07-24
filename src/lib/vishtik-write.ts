@@ -85,34 +85,101 @@ export interface SendCommentResult {
   payload: Record<string, string>;
   /** Vishtik HTTP status on a real send; null on dry-run. */
   httpStatus: number | null;
+  /** True when the status was flipped to Request Revision after the message. */
+  revisionRequested: boolean;
+  /** Non-fatal problems (e.g. status flip failed) — the message still posted. */
+  warnings: string[];
+}
+
+/** Vishtik status code for "Request Revision" (legend reconned 2026-07-23). */
+export const STATUS_REQUEST_REVISION = "3";
+
+/**
+ * Extract the project's currently-assigned Vishtik user id — the selected
+ * option of the `.projectuserdata` control on the detail page. The status
+ * change carries this as `userid`, so we read it and pass it back UNCHANGED to
+ * avoid reassigning the project. Returns null when it can't be parsed, in
+ * which case the caller skips the status change rather than guessing.
+ */
+async function fetchAssignedUserId(
+  jar: CookieJar,
+  vishtikProjectId: string,
+): Promise<string | null> {
+  const r = await fetch(
+    `${VISHTIK_BASE}/Project/Project/Project-Details?id=${encodeURIComponent(vishtikProjectId)}`,
+    { headers: { Cookie: jar.header() } },
+  );
+  if (!r.ok) return null;
+  const html = await r.text();
+  const sel = html.match(
+    /<select[^>]*class=["'][^"']*projectuserdata[^"']*["'][^>]*>([\s\S]*?)<\/select>/i,
+  );
+  if (!sel) return null;
+  const opt = sel[1].match(/<option[^>]*\bselected\b[^>]*value=["']?(\d+)["']?/i)
+    ?? sel[1].match(/<option[^>]*value=["']?(\d+)["']?[^>]*\bselected\b/i);
+  return opt ? opt[1] : null;
+}
+
+/** POST a status change. reason is "" — the portal sends it empty. */
+async function postStatusChange(
+  jar: CookieJar,
+  args: { id: string; status: string; userid: string },
+): Promise<void> {
+  const form = new URLSearchParams({
+    id: args.id,
+    status: args.status,
+    reason: "",
+    userid: args.userid,
+  });
+  const csrf = jar.csrfToken();
+  if (csrf) form.set("ci_csrf_token", csrf);
+  const r = await fetch(`${VISHTIK_BASE}/Project/Project/Project-Chage-Status`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Requested-With": "XMLHttpRequest",
+      Cookie: jar.header(),
+    },
+    body: form,
+  });
+  if (!r.ok) throw new VishtikAuthError(`Project-Chage-Status failed (HTTP ${r.status})`);
 }
 
 /**
- * Post a chat message to a Vishtik project. On dry-run (the default) it logs
- * and returns the payload WITHOUT posting. Throws on auth failure or a non-OK
- * response so the caller surfaces it — never a silent success.
+ * Post a chat message to a Vishtik project, and — per Zach's workflow — flip
+ * the status to Request Revision (posting a message IS a revision request).
+ * The status flip preserves the current assignee and is BEST-EFFORT: if it
+ * fails, the message still posted, so it returns as a warning, never an error.
+ *
+ * On dry-run (the default) nothing posts; the payload is logged and returned.
+ * Throws only if the message POST itself fails — never a silent success.
  */
 export async function sendProjectComment(opts: {
   vishtikProjectId: string;
   message: string;
+  /** Flip status → Request Revision after the message. Default true. */
+  requestRevision?: boolean;
   dryRun?: boolean;
 }): Promise<SendCommentResult> {
   const dryRun = opts.dryRun ?? isVishtikDryRun();
+  const requestRevision = opts.requestRevision ?? true;
   const payload = buildCommentPayload(opts.vishtikProjectId, opts.message);
 
   if (dryRun) {
     console.warn(
-      `[vishtik-write] DRY-RUN Add-comment → project ${opts.vishtikProjectId}: ${JSON.stringify(payload)}`,
+      `[vishtik-write] DRY-RUN Add-comment → project ${opts.vishtikProjectId}` +
+        `${requestRevision ? " + status→Request Revision" : ""}: ${JSON.stringify(payload)}`,
     );
-    return { ok: true, dryRun: true, payload, httpStatus: null };
+    return { ok: true, dryRun: true, payload, httpStatus: null, revisionRequested: false, warnings: [] };
   }
 
   const jar = new CookieJar();
   await login(jar);
+
+  // THE message. If this fails the whole call fails.
   const form = new URLSearchParams(payload);
   const csrf = jar.csrfToken();
   if (csrf) form.set("ci_csrf_token", csrf);
-
   const r = await fetch(`${VISHTIK_BASE}/Project/Project/Add-comment`, {
     method: "POST",
     headers: {
@@ -122,8 +189,24 @@ export async function sendProjectComment(opts: {
     },
     body: form,
   });
-  if (!r.ok) {
-    throw new VishtikAuthError(`Add-comment failed (HTTP ${r.status})`);
+  if (!r.ok) throw new VishtikAuthError(`Add-comment failed (HTTP ${r.status})`);
+
+  // Best-effort status flip. Never fails the send that already landed.
+  const warnings: string[] = [];
+  let revisionRequested = false;
+  if (requestRevision) {
+    try {
+      const userid = await fetchAssignedUserId(jar, opts.vishtikProjectId);
+      if (!userid) {
+        warnings.push("skipped status change: couldn't resolve the current assignee (message posted)");
+      } else {
+        await postStatusChange(jar, { id: opts.vishtikProjectId, status: STATUS_REQUEST_REVISION, userid });
+        revisionRequested = true;
+      }
+    } catch (err) {
+      warnings.push(`status change failed (message posted): ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  return { ok: true, dryRun: false, payload, httpStatus: r.status };
+
+  return { ok: true, dryRun: false, payload, httpStatus: r.status, revisionRequested, warnings };
 }

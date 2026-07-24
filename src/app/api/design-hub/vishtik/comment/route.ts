@@ -76,6 +76,8 @@ export async function POST(req: NextRequest) {
           metadata: {
             vishtikProjectId,
             dryRun: result.dryRun,
+            revisionRequested: result.revisionRequested,
+            warnings: result.warnings,
             messagePreview: message.slice(0, 200),
           } as never,
         },
@@ -88,6 +90,8 @@ export async function POST(req: NextRequest) {
       ok: true,
       dryRun: result.dryRun,
       httpStatus: result.httpStatus,
+      revisionRequested: result.revisionRequested,
+      warnings: result.warnings,
     });
   } catch (err) {
     Sentry.captureException(err);

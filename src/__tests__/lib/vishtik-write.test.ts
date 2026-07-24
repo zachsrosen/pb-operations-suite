@@ -2,6 +2,8 @@ import {
   buildCommentPayload,
   isVishtikWriteEnabled,
   isVishtikDryRun,
+  sendProjectComment,
+  STATUS_REQUEST_REVISION,
 } from "@/lib/vishtik-write";
 
 describe("vishtik-write payload", () => {
@@ -41,5 +43,27 @@ describe("vishtik-write gating", () => {
     expect(isVishtikDryRun()).toBe(true);
     process.env.VISHTIK_WRITE_DRY_RUN = "false";
     expect(isVishtikDryRun()).toBe(false);
+  });
+});
+
+describe("sendProjectComment dry-run", () => {
+  it("posts nothing and never flips status on dry-run", async () => {
+    const res = await sendProjectComment({
+      vishtikProjectId: "7814",
+      message: "please fix the setback",
+      dryRun: true,
+    });
+    expect(res).toMatchObject({
+      ok: true,
+      dryRun: true,
+      httpStatus: null,
+      revisionRequested: false, // no live status change on dry-run
+      warnings: [],
+    });
+    expect(res.payload.message).toBe("please fix the setback");
+  });
+
+  it("exposes the Request Revision status code", () => {
+    expect(STATUS_REQUEST_REVISION).toBe("3");
   });
 });
