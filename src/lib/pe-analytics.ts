@@ -497,10 +497,20 @@ export const PE_MILESTONE_DOC_NAMES: ReadonlySet<string> = new Set<string>([
  * must be conditional too — otherwise every project without a Change Order would
  * read as missing a doc. It is deliberately NOT part of any milestone's required
  * doc set (see `pe-milestone-bucket.ts`).
+ *
+ * "Installation Order" and "State Disclosures" are also conditional. Confirmed
+ * against the live PE API (2026-07): they're a real, uploaded+approved M1 doc on
+ * ~81% of projects (both CO and CA), and PE omits the slot entirely on the rest
+ * — the presence is binary (real doc or no key; never an empty slot). So an
+ * absent slot means PE didn't require the doc on that project, NOT that we're
+ * missing it. Unlike Change Order, these two DO stay in PE_M1_DOC_NAMES — they're
+ * a genuine M1 requirement when PE creates the slot, just not on every project.
  */
 export const PE_CONDITIONAL_DOC_NAMES = new Set<string>([
   "Bill of Materials",
   "Change Order",
+  "Installation Order",
+  "State Disclosures",
 ]);
 
 export interface DocStatusStat {
