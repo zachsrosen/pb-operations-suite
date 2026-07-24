@@ -124,13 +124,23 @@ export interface SetStatusResult {
 /** Revision counters, with the mismatch `sub-counter-attribution` repairs. */
 export interface RevisionCounters {
   total: number | null;
-  counter: number | null;
   da: number | null;
   permit: number | null;
   interconnection: number | null;
   asBuilt: number | null;
-  /** True when the sub-counters don't sum to `counter`, or `counter` !== `total`. */
+  /** IDR now rolls into total_revision_count (Zach built it into the calc
+   *  2026-07-23), so it's part of the sub-counter sum. */
+  idr: number | null;
+  /** True when the DA/permit/utility/as-built/IDR sub-counters don't sum to
+   *  `total`. */
   mismatch: boolean;
+}
+
+/** A populated revision / change reason, labelled by the workstream it came
+ *  from (DA, Permit, Utility, As-Built, IDR, Design, Sales, Ops). */
+export interface RevisionReason {
+  label: string;
+  reason: string;
 }
 
 export interface ProjectDetail {
@@ -167,8 +177,11 @@ export interface ProjectDetail {
     trueDesignUrl: string | null;
   };
   revisions: RevisionCounters;
+  /** Populated revision / change reasons for this deal, most relevant first. */
+  revisionReasons: RevisionReason[];
   assignment: QueueAssignment | null;
-  /** Both status timelines, merged and sorted newest-first. */
+  /** Both status timelines, each entry tagged by `property` so the UI can
+   *  split them into side-by-side Design and Design-Approval columns. */
   statusHistory: Array<{
     property: string;
     propertyLabel: string;

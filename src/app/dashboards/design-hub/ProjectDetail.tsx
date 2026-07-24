@@ -50,7 +50,8 @@ export function ProjectDetail({
     );
   }
 
-  const { deal, revisions, assignment, statusHistory, activity } = query.data;
+  const { deal, revisions, revisionReasons, assignment, statusHistory, activity } =
+    query.data;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -133,11 +134,11 @@ export function ProjectDetail({
       <Section title="Revisions">
         <div className="flex flex-wrap gap-3 text-xs">
           <Counter label="Total" value={revisions.total} />
-          <Counter label="Counter" value={revisions.counter} />
           <Counter label="DA" value={revisions.da} />
           <Counter label="Permit" value={revisions.permit} />
           <Counter label="Utility" value={revisions.interconnection} />
           <Counter label="As-Built" value={revisions.asBuilt} />
+          <Counter label="IDR" value={revisions.idr} />
         </div>
         {revisions.mismatch && (
           // This is the condition that blocks design closeout — the hub is
@@ -148,31 +149,31 @@ export function ProjectDetail({
             are reattributed.
           </p>
         )}
+        {revisionReasons.length > 0 && (
+          <dl className="mt-3 space-y-1.5">
+            {revisionReasons.map((r) => (
+              <div key={r.label} className="text-xs">
+                <dt className="text-muted font-medium">{r.label}</dt>
+                <dd className="text-foreground whitespace-pre-wrap">
+                  {r.reason}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </Section>
 
       <Section title="Status History">
-        {statusHistory.length === 0 ? (
-          <p className="text-muted text-xs">No history available.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {statusHistory.slice(0, 25).map((h, i) => (
-              <li
-                key={`${h.property}-${h.timestamp}-${i}`}
-                className="flex items-baseline gap-2 text-xs"
-              >
-                <span className="text-muted w-28 shrink-0">
-                  {formatDateTime(h.timestamp)}
-                </span>
-                <span className="text-muted w-32 shrink-0 truncate">
-                  {h.propertyLabel}
-                </span>
-                <span className="text-foreground truncate">
-                  {h.valueLabel ?? h.value ?? "—"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="grid grid-cols-2 gap-x-4">
+          <StatusHistoryColumn
+            title="Design"
+            entries={statusHistory.filter((h) => h.property === "design_status")}
+          />
+          <StatusHistoryColumn
+            title="Design Approval"
+            entries={statusHistory.filter((h) => h.property === "layout_status")}
+          />
+        </div>
       </Section>
 
       <Section title="Activity">
@@ -242,6 +243,39 @@ function Field({
     <div>
       <dt className="text-muted">{label}</dt>
       <dd className="text-foreground mt-0.5">{children}</dd>
+    </div>
+  );
+}
+
+/** One status timeline (Design or Design-Approval), newest first. Rendered as
+ *  two of these side by side so the two streams read independently rather than
+ *  interleaved. */
+function StatusHistoryColumn({
+  title,
+  entries,
+}: {
+  title: string;
+  entries: Detail["statusHistory"];
+}) {
+  return (
+    <div>
+      <div className="text-muted mb-1.5 text-[11px] font-semibold tracking-wide uppercase">
+        {title}
+      </div>
+      {entries.length === 0 ? (
+        <p className="text-muted text-xs">No history.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {entries.slice(0, 25).map((h, i) => (
+            <li key={`${h.timestamp}-${i}`} className="text-xs">
+              <div className="text-muted">{formatDateTime(h.timestamp)}</div>
+              <div className="text-foreground">
+                {h.valueLabel ?? h.value ?? "—"}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
