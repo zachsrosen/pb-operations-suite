@@ -3877,8 +3877,13 @@ export function filterProjectsForContext(
           p.isSchedulable ||
           p.stage === "Construction" ||
           p.stage === "Inspection" ||
-          (p.constructionScheduleDate && p.constructionCompleteDate) ||
-          (p.inspectionScheduleDate && p.inspectionPassDate) ||
+          // Include projects that already COMPLETED construction or inspection on the
+          // strength of the completion date ALONE (not a schedule+complete pair). The
+          // schedule date is frequently blank on older or externally-stamped deals, and
+          // requiring the pair silently dropped completed jobs from the calendar and the
+          // construction-revenue calc.
+          !!p.constructionCompleteDate ||
+          !!p.inspectionPassDate ||
           needsSurveyScheduling(p) ||
           isNewConstructionNeedingSurvey(p)
       );

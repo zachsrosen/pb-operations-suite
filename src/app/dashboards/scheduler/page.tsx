@@ -785,14 +785,15 @@ function transformProject(p: RawProject): SchedulerProject | null {
     stage === "construction" ||
     stage === "inspection";
 
-  // Also include projects that have moved past construction/inspection but had schedule dates
-  // (these are completed projects that should still show on the calendar)
-  const isCompletedWithSchedule =
-    !isSchedulable &&
-    ((p.constructionScheduleDate && p.constructionCompleteDate) ||
-      (p.inspectionScheduleDate && p.inspectionPassDate));
+  // Also include projects that have moved past construction/inspection but already
+  // completed a milestone (these should still show on the calendar). Keyed off the
+  // completion date ALONE — the schedule date is often blank on older or externally
+  // stamped deals, and requiring the pair was silently dropping completed jobs (and
+  // their revenue) from the panel entirely.
+  const isCompletedPastStage =
+    !isSchedulable && (!!p.constructionCompleteDate || !!p.inspectionPassDate);
 
-  if (!isSchedulable && !isCompletedWithSchedule) return null;
+  if (!isSchedulable && !isCompletedPastStage) return null;
 
   // For completed projects that moved past mapped stages, determine their effective stage
   const effectiveStage = isSchedulable
@@ -861,7 +862,7 @@ function transformProject(p: RawProject): SchedulerProject | null {
     inspectionStatus: p.finalInspectionStatus || null,
     isPE: !!p.isParticipateEnergy,
     daysToInstall: p.daysToInstall ?? null,
-    isCompletedPastStage: !!isCompletedWithSchedule,
+    isCompletedPastStage,
     hubspotUrl:
       p.url ||
       `https://app.hubspot.com/contacts/21710069/record/0-3/${p.id}`,
@@ -1883,20 +1884,32 @@ export default function SchedulerPage() {
       const constructionDate = (zuperIsConstruction
         ? normalizedZuperDates.startDate
         : null) || p.constructionScheduleDate;
-      if (constructionDate) {
-        const schedDate = new Date(constructionDate + "T12:00:00");
-        const done = !!p.constructionCompleted;
+      const constructionDone = !!p.constructionCompleted;
+      // A completed install is attributed to its COMPLETION date, so its revenue counts
+      // in the week/month the job actually finished (not when it was scheduled). An
+      // in-flight install stays on its scheduled date so it renders as scheduled /
+      // overdue / tentative. A completed job with no schedule date on record still gets
+      // an event on its completion date instead of being dropped from the calendar.
+      const constructionEventDate = constructionDone
+        ? p.constructionCompleted || constructionDate
+        : constructionDate;
+      if (constructionEventDate) {
+        // Overdue is judged against the scheduled window; completed jobs are never overdue
+        // (isOverdueCheck short-circuits on `done`), so the schedule basis here is only
+        // used for in-flight events.
+        const schedBasis = constructionDate || constructionEventDate;
+        const schedDate = new Date(schedBasis + "T12:00:00");
         const days = (zuperIsConstruction ? getEffectiveConstructionDays(p) : null) || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
           events.push({
             ...p,
-            date: constructionDate,
-            eventType: done ? "construction-complete" : "construction",
+            date: constructionEventDate,
+            eventType: constructionDone ? "construction-complete" : "construction",
             days,
-            isCompleted: done,
-            isOverdue: isOverdueCheck(schedDate, days, done, true),
+            isCompleted: constructionDone,
+            isOverdue: isOverdueCheck(schedDate, days, constructionDone, true),
           });
         }
       }
@@ -1943,12 +1956,15 @@ export default function SchedulerPage() {
       if (p.scheduleDate && (p.stage === "rtb" || p.stage === "blocked") && !seenKeys.has(`${p.id}-construction`)) {
         const schedDate = new Date(p.scheduleDate + "T12:00:00");
         const done = !!p.constructionCompleted;
+        // Same rule as the primary construction event: completed jobs move to their
+        // completion date; in-flight ones stay on the scheduled date.
+        const eventDate = done ? p.constructionCompleted || p.scheduleDate : p.scheduleDate;
         const days = (zuperIsConstruction ? getEffectiveConstructionDays(p) : null) || p.daysInstall || 1;
         const key = `${p.id}-construction`;
         seenKeys.add(key);
         events.push({
           ...p,
-          date: p.scheduleDate,
+          date: eventDate,
           eventType: done ? "construction-complete" : p.stage,
           days,
           isCompleted: done,
