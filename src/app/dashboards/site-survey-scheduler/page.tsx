@@ -221,6 +221,13 @@ function locationKey(value: string | null | undefined): string {
 const PROJECT_LOCATION_MATCHES: Record<string, string[]> = {
   dtc: ["dtc", "centennial"],
   centennial: ["centennial", "dtc"],
+  // Pueblo rename bridge: deals carry pb_location "Pueblo" while crew survey
+  // availability rows still carry the legacy "Colorado Springs" label until the
+  // rename DB migration flips them. Mirror the backend LOCATION_ALIASES bridge
+  // (Pueblo <-> Colorado Springs) so Pueblo projects still match CS crew slots.
+  // Remove once CrewAvailability rows are migrated to "Pueblo".
+  pueblo: ["pueblo", "colorado springs"],
+  "colorado springs": ["colorado springs", "pueblo"],
   // Camarillo and SLO share install crews but have SEPARATE survey availability.
   // Do NOT cross-pollinate here — crew members may have different per-location
   // survey schedules (e.g. Nick: Wed-only for Camarillo, Mon–Fri for SLO).
