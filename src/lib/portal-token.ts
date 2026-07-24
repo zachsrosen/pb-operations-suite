@@ -10,8 +10,10 @@ import { randomBytes, createHash } from "crypto";
 import { prisma } from "@/lib/db";
 import type { SurveyInviteStatus } from "@/generated/prisma/enums";
 
-// Active statuses — invites that are still actionable (used for dedup guard)
-const ACTIVE_STATUSES: SurveyInviteStatus[] = ["PENDING", "SCHEDULED", "RESCHEDULED"];
+// Booked statuses — the customer has a slot. These block a duplicate invite
+// regardless of token TTL, and are never swept by the expiry sweeper.
+const BOOKED_STATUSES: SurveyInviteStatus[] = ["SCHEDULED", "RESCHEDULED"];
+
 
 // Portal-accessible statuses — tokens that can still load the portal
 // Includes CANCELLED so customers can reschedule after cancelling
@@ -76,10 +78,11 @@ export async function validateToken(rawToken: string): Promise<TokenValidation> 
     return { valid: false, reason: "not_found" };
   }
 
-  // Check expiry
-  if (new Date() > invite.expiresAt) {
-    // Mark as expired if still in an active status
-    if (ACTIVE_STATUSES.includes(invite.status)) {
+  // Check expiry. Expiry only applies to invites the customer never acted on:
+  // a booked invite past its TTL is still a real booking, and killing it here
+  // would lock the customer out of rescheduling their own survey.
+  if (new Date() > invite.expiresAt && !BOOKED_STATUSES.includes(invite.status)) {
+    if (invite.status === "PENDING") {
       await prisma.surveyInvite.update({
         where: { id: invite.id },
         data: { status: "EXPIRED" },
@@ -97,9 +100,15 @@ export async function validateToken(rawToken: string): Promise<TokenValidation> 
 }
 
 /**
- * Check if a deal already has an active invite (PENDING or SCHEDULED).
- * Used as app-level fast-path guard before creating new invites.
- * The partial unique index on SurveyInvite(dealId) enforces this at DB level too.
+ * Check if a deal already has an invite that should block a new one.
+ *
+ * "Active" means either an unexpired PENDING invite (the customer can still
+ * use the link we sent) or any booking (SCHEDULED / RESCHEDULED), which blocks
+ * regardless of token TTL because the survey is really on the calendar.
+ *
+ * A LAPSED pending invite does not block. That was the bug: this counted by
+ * status alone, and nothing ever moved a lapsed invite off PENDING, so one
+ * un-clicked link locked the deal out of re-invites forever.
  */
 export async function hasActiveInvite(dealId: string): Promise<boolean> {
   if (!prisma) return false;
@@ -107,9 +116,49 @@ export async function hasActiveInvite(dealId: string): Promise<boolean> {
   const count = await prisma.surveyInvite.count({
     where: {
       dealId,
-      status: { in: ACTIVE_STATUSES },
+      OR: [
+        { status: "PENDING", expiresAt: { gt: new Date() } },
+        { status: { in: BOOKED_STATUSES } },
+      ],
     },
   });
 
   return count > 0;
 }
+
+/** Minimal client shape — accepts the Prisma client or a transaction client. */
+interface InviteSweepClient {
+  surveyInvite: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    updateMany: (args: any) => Promise<{ count: number }>;
+  };
+}
+
+/**
+ * Flip lapsed PENDING invites to EXPIRED, returning how many were swept.
+ *
+ * Two callers: the invite routes (scoped to one deal, inside the create
+ * transaction) so the partial unique index on (dealId) WHERE status IN
+ * ('PENDING','SCHEDULED') sees a clean slate, and the nightly cron (unscoped)
+ * so the table reflects reality even for deals nobody re-invites.
+ *
+ * Only ever touches PENDING. Sweeping a booking would strand the customer.
+ */
+export async function expireStaleInvites(
+  dealId?: string,
+  client: InviteSweepClient | null = prisma,
+): Promise<number> {
+  if (!client) return 0;
+
+  const { count } = await client.surveyInvite.updateMany({
+    where: {
+      status: "PENDING",
+      expiresAt: { lte: new Date() },
+      ...(dealId ? { dealId } : {}),
+    },
+    data: { status: "EXPIRED" },
+  });
+
+  return count;
+}
+

@@ -67,6 +67,23 @@ describe("closeSurveyInviteForDeal", () => {
     expect("scheduleRecordId" in data).toBe(false);
   });
 
+  it("extends the token past the survey so the customer can still reschedule", async () => {
+    // Invite issued with the default 14-day TTL, ops books near the end of it.
+    const expiresAt = new Date("2026-07-19T00:00:00Z");
+    const { prisma, update } = makePrisma({ id: "inv-4", expiresAt });
+
+    await closeSurveyInviteForDeal(prisma as never, "1", booking);
+
+    const data = update.mock.calls[0][0].data;
+    expect(data.expiresAt.getTime()).toBeGreaterThan(expiresAt.getTime());
+  });
+
+  it("leaves expiry alone when the booking has no date", async () => {
+    const { prisma, update } = makePrisma({ id: "inv-5", expiresAt: new Date() });
+    await closeSurveyInviteForDeal(prisma as never, "1", { scheduledTime: "10:00" });
+    expect("expiresAt" in update.mock.calls[0][0].data).toBe(false);
+  });
+
   it("swallows update errors and reports not-closed (never blocks a booking)", async () => {
     const { prisma, update } = makePrisma({ id: "inv-3" });
     update.mockRejectedValueOnce(new Error("db down"));

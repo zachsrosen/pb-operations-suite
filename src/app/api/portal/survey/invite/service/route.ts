@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, logActivity } from "@/lib/db";
-import { generateToken, hasActiveInvite } from "@/lib/portal-token";
+import { generateToken, hasActiveInvite, expireStaleInvites } from "@/lib/portal-token";
 
 const InviteSchema = z.object({
   dealId: z.string().min(1),
@@ -62,20 +62,26 @@ export async function POST(request: NextRequest) {
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
   try {
-    const invite = await prisma.surveyInvite.create({
-      data: {
-        tokenHash: hash,
-        dealId: body.dealId,
-        customerEmail: body.customerEmail,
-        customerName: body.customerName,
-        customerPhone: body.customerPhone,
-        propertyAddress: body.propertyAddress,
-        pbLocation: body.pbLocation,
-        systemSize: body.systemSize,
-        expiresAt,
-        sentBy: "olivia@service",
-        sentAt: new Date(),
-      },
+    // Same transaction-scoped sweep as the internal route — see the comment
+    // there. Olivia is the caller that hit this: her SURVEY_SCHEDULING_INVITE
+    // was 409-skipping every deal whose first invite lapsed unused.
+    const invite = await prisma.$transaction(async (tx) => {
+      await expireStaleInvites(body.dealId, tx);
+      return tx.surveyInvite.create({
+        data: {
+          tokenHash: hash,
+          dealId: body.dealId,
+          customerEmail: body.customerEmail,
+          customerName: body.customerName,
+          customerPhone: body.customerPhone,
+          propertyAddress: body.propertyAddress,
+          pbLocation: body.pbLocation,
+          systemSize: body.systemSize,
+          expiresAt,
+          sentBy: "olivia@service",
+          sentAt: new Date(),
+        },
+      });
     });
 
     await logActivity({
