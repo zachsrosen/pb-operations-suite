@@ -89,6 +89,26 @@ export function groupForStatus(status: string | null | undefined): PipelineGroup
 }
 
 /**
+ * Whether a CANCELLED deal's milestone should still count in PE analytics.
+ * A cancelled deal has no live PE pipeline, so its milestones are dropped from
+ * every view — EXCEPT ones PE already approved or paid, which represent
+ * committed / already-received revenue and must stay in historical totals.
+ * Everything before approval on a dead deal (waiting, onboarding, in-review,
+ * internally-rejected) is speculative and excluded. Callers apply this only
+ * when the deal is cancelled; non-cancelled milestones always count.
+ *
+ * Uses the strict stamped-date landmarks (resolveApprovedOn / resolvePaidOn),
+ * not status, so a status that was later blanked can't smuggle a dead
+ * milestone back into — or drop a real approved/paid one out of — the totals.
+ */
+export function cancelledMilestoneCounts(
+  approvedOn: string | null | undefined,
+  paidOn: string | null | undefined,
+): boolean {
+  return !!approvedOn || !!paidOn;
+}
+
+/**
  * Date a milestone counts as "submitted" / "approved" / "rejected" / "paid" for
  * chart bucketing — STRICTLY the stamped HubSpot property, no status-history
  * fallback.

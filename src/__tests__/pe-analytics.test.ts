@@ -1,6 +1,7 @@
 import {
   weekStartUTC,
   groupForStatus,
+  cancelledMilestoneCounts,
   resolveSubmittedOn,
   resolveApprovedOn,
   resolveRejectedOn,
@@ -95,6 +96,20 @@ describe("groupForStatus", () => {
     expect(groupForStatus("Something New")).toBe("Other");
     expect(groupForStatus(null)).toBeNull();
     expect(groupForStatus("")).toBeNull();
+  });
+});
+
+describe("cancelledMilestoneCounts", () => {
+  it("keeps a cancelled deal's milestone only once PE stamped approval or payment", () => {
+    expect(cancelledMilestoneCounts("2026-05-01", null)).toBe(true); // approved
+    expect(cancelledMilestoneCounts(null, "2026-06-01")).toBe(true); // paid
+    expect(cancelledMilestoneCounts("2026-05-01", "2026-06-01")).toBe(true);
+  });
+
+  it("drops every pre-approval milestone on a dead deal (no stamped approval/paid date)", () => {
+    expect(cancelledMilestoneCounts(null, null)).toBe(false);
+    expect(cancelledMilestoneCounts("", "")).toBe(false);
+    expect(cancelledMilestoneCounts(undefined, undefined)).toBe(false);
   });
 });
 
