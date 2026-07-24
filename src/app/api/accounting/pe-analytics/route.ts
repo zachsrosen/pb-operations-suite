@@ -12,6 +12,7 @@ import { getPaymentAdjustments } from "@/lib/pe-payment-adjustments";
 import { prisma } from "@/lib/db";
 import {
   groupForStatus,
+  cancelledMilestoneCounts,
   resolveSubmittedOn,
   resolveApprovedOn,
   resolveRejectedOn,
@@ -68,6 +69,7 @@ const ANALYTICS_TTL_MS = 15 * 60 * 1000;
 const PTO_STAGE_ID = "20461940"; // in M1 — owes the 12 M1 docs
 const CLOSEOUT_STAGE_ID = "24743347"; // in M2 — owes all 15 docs
 const COMPLETE_STAGE_ID = "20440343"; // Project Complete
+const CANCELLED_STAGE_ID = "68229433"; // Cancelled — dead deal, no live PE pipeline
 
 const DEAL_PROPERTIES = [
   "hs_object_id",
@@ -400,37 +402,46 @@ async function buildPayload(): Promise<PeAnalyticsPayload> {
     const h = history.get(deal.dealId) || { m1: [], m2: [] };
     const m1Timing = computeMilestoneTiming(h.m1);
     const m2Timing = computeMilestoneTiming(h.m2);
-    records.push(
-      {
-        deal, milestone: "M1", amount: deal.paymentIC, status: deal.m1Status, timing: m1Timing,
-        // Event dates count strictly by their stamped property (no history
-        // fallback) — see the resolve* docs in pe-analytics.ts.
-        submittedOn: resolveSubmittedOn(deal.m1SubmissionDate),
-        approvedOn: resolveApprovedOn(deal.m1ApprovalDate),
-        paidOn: resolvePaidOn(deal.m1PaidDate),
-        rejectedOn: resolveRejectedOn(deal.m1RejectionDate),
-        // readyOn = the date it hit "Ready to Submit" (stamped property, workflow-
-        // set + backfilled), else inspection-passed. The status-history fallback was
-        // dropped: a manual/regressed status move (e.g. set then reverted to
-        // Onboarding) used to leave a phantom "ready since X". The property is
-        // correctable; a regressed deal that was never backfilled resolves to null.
-        readyOn: deal.m1ReadyToSubmitDate ?? deal.inspectionPassDate ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
-        remittanceOn: deal.m1RemittanceDate,
-        expectedPaidOn: deal.m1ExpectedPaidDate,
-        expectedPaidBySubOn: deal.m1ExpectedPaidBySubDate,
-      },
-      {
-        deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
-        submittedOn: resolveSubmittedOn(deal.m2SubmissionDate),
-        approvedOn: resolveApprovedOn(deal.m2ApprovalDate),
-        paidOn: resolvePaidOn(deal.m2PaidDate),
-        rejectedOn: resolveRejectedOn(deal.m2RejectionDate),
-        readyOn: deal.m2ReadyToSubmitDate ?? deal.ptoGrantedDate ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
-        remittanceOn: deal.m2RemittanceDate,
-        expectedPaidOn: deal.m2ExpectedPaidDate,
-        expectedPaidBySubOn: deal.m2ExpectedPaidBySubDate,
-      },
-    );
+    const m1: MilestoneRecord = {
+      deal, milestone: "M1", amount: deal.paymentIC, status: deal.m1Status, timing: m1Timing,
+      // Event dates count strictly by their stamped property (no history
+      // fallback) — see the resolve* docs in pe-analytics.ts.
+      submittedOn: resolveSubmittedOn(deal.m1SubmissionDate),
+      approvedOn: resolveApprovedOn(deal.m1ApprovalDate),
+      paidOn: resolvePaidOn(deal.m1PaidDate),
+      rejectedOn: resolveRejectedOn(deal.m1RejectionDate),
+      // readyOn = the date it hit "Ready to Submit" (stamped property, workflow-
+      // set + backfilled), else inspection-passed. The status-history fallback was
+      // dropped: a manual/regressed status move (e.g. set then reverted to
+      // Onboarding) used to leave a phantom "ready since X". The property is
+      // correctable; a regressed deal that was never backfilled resolves to null.
+      readyOn: deal.m1ReadyToSubmitDate ?? deal.inspectionPassDate ?? deal.m1SubmissionDate ?? m1Timing.firstSubmitted,
+      remittanceOn: deal.m1RemittanceDate,
+      expectedPaidOn: deal.m1ExpectedPaidDate,
+      expectedPaidBySubOn: deal.m1ExpectedPaidBySubDate,
+    };
+    const m2: MilestoneRecord = {
+      deal, milestone: "M2", amount: deal.paymentPC, status: deal.m2Status, timing: m2Timing,
+      submittedOn: resolveSubmittedOn(deal.m2SubmissionDate),
+      approvedOn: resolveApprovedOn(deal.m2ApprovalDate),
+      paidOn: resolvePaidOn(deal.m2PaidDate),
+      rejectedOn: resolveRejectedOn(deal.m2RejectionDate),
+      readyOn: deal.m2ReadyToSubmitDate ?? deal.ptoGrantedDate ?? deal.m2SubmissionDate ?? m2Timing.firstSubmitted,
+      remittanceOn: deal.m2RemittanceDate,
+      expectedPaidOn: deal.m2ExpectedPaidDate,
+      expectedPaidBySubOn: deal.m2ExpectedPaidBySubDate,
+    };
+    // A cancelled deal has no live PE pipeline: drop its milestones from every
+    // analytics view UNLESS PE already approved or paid it (committed / received
+    // revenue stays in historical totals). Everything before approval on a dead
+    // deal — waiting, onboarding, in-review, internally-rejected — is speculative
+    // and excluded. Without this, cancelled deals silently pad the
+    // expected-revenue and waiting-on-submission figures: MilestoneRecord /
+    // MilestoneDrillRow carry no stage, so no downstream view can filter them.
+    const keep = (r: MilestoneRecord) =>
+      deal.stage !== CANCELLED_STAGE_ID || cancelledMilestoneCounts(r.approvedOn, r.paidOn);
+    if (keep(m1)) records.push(m1);
+    if (keep(m2)) records.push(m2);
   }
 
   // --- Report 1: payments + approvals per DAY ---------------------------------
