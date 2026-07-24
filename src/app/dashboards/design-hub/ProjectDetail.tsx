@@ -6,6 +6,8 @@ import { queryKeys } from "@/lib/query-keys";
 import type { ProjectDetail as Detail, Tab } from "@/lib/design-hub/types";
 import { ACCENTS, type Accent } from "./accents";
 import { AssignDialog } from "./AssignDialog";
+import { SendToVishtikDialog } from "./SendToVishtikDialog";
+import type { VishtikSendCapability } from "./DesignHubClient";
 import { StatusDropdown } from "./StatusDropdown";
 
 function formatDateTime(iso: string): string {
@@ -21,13 +23,16 @@ export function ProjectDetail({
   tab,
   dealId,
   accent,
+  vishtikSend,
 }: {
   tab: Tab;
   dealId: string;
   accent: Accent;
+  vishtikSend: VishtikSendCapability;
 }) {
   const a = ACCENTS[accent];
   const [assigning, setAssigning] = useState(false);
+  const [sendingToVishtik, setSendingToVishtik] = useState(false);
 
   const query = useQuery<Detail>({
     queryKey: queryKeys.designHub.project(tab, dealId),
@@ -72,6 +77,15 @@ export function ProjectDetail({
           >
             Assign
           </button>
+          {vishtikSend.enabled && (
+            <button
+              type="button"
+              onClick={() => setSendingToVishtik(true)}
+              className="text-foreground rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium hover:bg-surface-elevated"
+            >
+              Send to Vishtik{vishtikSend.dryRun ? " (test)" : ""}
+            </button>
+          )}
           <a
             href={deal.hubspotUrl}
             target="_blank"
@@ -209,6 +223,15 @@ export function ProjectDetail({
           currentStatus={deal.status}
           accent={accent}
           onClose={() => setAssigning(false)}
+        />
+      )}
+      {sendingToVishtik && (
+        <SendToVishtikDialog
+          dealId={dealId}
+          dealName={deal.name}
+          accent={accent}
+          dryRun={vishtikSend.dryRun}
+          onClose={() => setSendingToVishtik(false)}
         />
       )}
     </div>

@@ -141,7 +141,7 @@ export function getProjectParams(offset: number, limit: number): Record<string, 
  * EagleView tokens). Prisma is imported dynamically so the parse helpers and
  * their tests don't pull in the DB client at module load.
  */
-async function resolveVishtikCreds(): Promise<{ user: string; pass: string }> {
+export async function resolveVishtikCreds(): Promise<{ user: string; pass: string }> {
   let user = process.env.VISHTIK_USERNAME;
   let pass = process.env.VISHTIK_PASSWORD;
   if (!user || !pass) {

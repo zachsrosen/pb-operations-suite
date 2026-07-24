@@ -6,6 +6,7 @@ import {
   isDesignHubEnabled,
 } from "@/lib/design-hub/access";
 import { isDesignLead } from "@/lib/design-hub/roster";
+import { isVishtikWriteEnabled, isVishtikDryRun } from "@/lib/vishtik-write";
 import { DesignHubClient } from "./DesignHubClient";
 
 // Flag-read pages must be dynamic — a prerendered shell would 404 once the
@@ -28,6 +29,12 @@ export default async function DesignHubPage() {
         // Only roster members have an assignment queue of their own. Everyone
         // else (an admin looking in) still sees both status tabs.
         hasAssignmentQueue={isDesignLead(email)}
+        // Send-to-Vishtik is double-gated; the button only shows when the
+        // write capability is on. dryRun drives a visible "test mode" banner.
+        vishtikSend={{
+          enabled: isVishtikWriteEnabled(),
+          dryRun: isVishtikDryRun(),
+        }}
       />
     </DashboardShell>
   );
