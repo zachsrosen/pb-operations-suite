@@ -20,7 +20,30 @@ import {
   buildPeriodUploads,
   buildDocTypeByUploader,
   UNKNOWN_UPLOADER,
+  PE_M1_DOC_NAMES,
+  PE_CONDITIONAL_DOC_NAMES,
 } from "@/lib/pe-analytics";
+
+describe("PE conditional docs (owed only when PE creates the slot)", () => {
+  it("treats Installation Order + State Disclosures as conditional", () => {
+    // Live PE API (2026-07): a real approved doc on ~81% of projects, slot omitted
+    // on the rest. Conditional → the sync records NOT_REQUIRED for an absent slot
+    // (never counts as missing) instead of NOT_UPLOADED.
+    expect(PE_CONDITIONAL_DOC_NAMES.has("Installation Order")).toBe(true);
+    expect(PE_CONDITIONAL_DOC_NAMES.has("State Disclosures")).toBe(true);
+    // and the pre-existing conditional docs are untouched
+    expect(PE_CONDITIONAL_DOC_NAMES.has("Bill of Materials")).toBe(true);
+    expect(PE_CONDITIONAL_DOC_NAMES.has("Change Order")).toBe(true);
+  });
+
+  it("keeps Installation Order + State Disclosures as real M1 docs (unlike Change Order)", () => {
+    // Conditional ≠ removed: when PE creates the slot they ARE an M1 requirement,
+    // so they remain in the M1 doc set (Change Order deliberately is not).
+    expect(PE_M1_DOC_NAMES).toContain("Installation Order");
+    expect(PE_M1_DOC_NAMES).toContain("State Disclosures");
+    expect(PE_M1_DOC_NAMES).not.toContain("Change Order");
+  });
+});
 
 describe("weekStartUTC", () => {
   it("returns the same day for a UTC Monday", () => {
