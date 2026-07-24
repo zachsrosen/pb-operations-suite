@@ -22,12 +22,19 @@ const TAB_LABELS: Record<Tab, string> = {
  *  DB rather than a status property, so it never hits the queue endpoint. */
 type View = Tab | "mine";
 
+export interface VishtikSendCapability {
+  enabled: boolean;
+  dryRun: boolean;
+}
+
 export function DesignHubClient({
   userEmail,
   hasAssignmentQueue,
+  vishtikSend,
 }: {
   userEmail: string;
   hasAssignmentQueue: boolean;
+  vishtikSend: VishtikSendCapability;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -164,7 +171,12 @@ export function DesignHubClient({
         </div>
         <div className="flex-1 overflow-hidden rounded-xl border border-t-border bg-surface">
           {selectedDealId ? (
-            <ProjectDetail tab={tab} dealId={selectedDealId} accent={accent} />
+            <ProjectDetail
+              tab={tab}
+              dealId={selectedDealId}
+              accent={accent}
+              vishtikSend={vishtikSend}
+            />
           ) : (
             <div className="text-muted flex h-full items-center justify-center">
               Select a project to begin.
